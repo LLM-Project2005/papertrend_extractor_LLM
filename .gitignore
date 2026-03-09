@@ -1,0 +1,44 @@
+# ── Secrets ──
+.env
+.env.*
+
+# ── Python virtual environments ──
+.venv/
+.venv311/
+.venv_win/
+venv/
+env/
+
+# ── Python cache ──
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ── Jupyter checkpoints ──
+.ipynb_checkpoints/
+
+# ── OS files ──
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── PDF data folders (too large for GitHub – keep locally) ──
+10_years_test/
+Test_batch/
+
+# ── IDE ──
+.vscode/
+.idea/
+
+# ── Logs ──
+*.log
+pip_install.log
+
+# ── Output data (regenerable) ──
+Master_Trends_Archive.csv
+Master_Trends_Archive.json
+EIL_Track_OneHot_Final.csv
+EIL_Track_10years1.csv

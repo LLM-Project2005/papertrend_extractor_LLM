@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-plot: #fafbfd;
+}
+
+body {
+  @apply bg-white text-gray-900 antialiased;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+/* Smooth tab transitions */
+.tab-btn {
+  @apply px-4 py-2.5 text-sm font-medium border-b-2 transition-colors duration-150;
+}
+.tab-btn-active {
+  @apply border-blue-600 text-blue-600;
+}
+.tab-btn-inactive {
+  @apply border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300;
+}
+
+/* Recharts tooltip */
+.recharts-tooltip-wrapper {
+  @apply !outline-none;
+}
