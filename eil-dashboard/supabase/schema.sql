@@ -48,6 +48,17 @@ CREATE TABLE IF NOT EXISTS paper_tracks_multi (
 );
 
 
+-- ─── 5. Paper Content — Raw & Segmented Text ─────────────────────
+CREATE TABLE IF NOT EXISTS paper_content (
+  paper_id    BIGINT   PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  raw_text    TEXT,                          -- full raw research paper text
+  abstract    TEXT,                          -- abstract section
+  body        TEXT,                          -- เนื้อหา (body / content section)
+  conclusion  TEXT,                          -- สรุป (conclusion / summary section)
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+
 -- ═══════════════════════════════════════════════════════════════════
 -- INDEXES
 -- ═══════════════════════════════════════════════════════════════════
@@ -64,12 +75,14 @@ ALTER TABLE papers              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_keywords      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_single ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_multi  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_content       ENABLE ROW LEVEL SECURITY;
 
 -- Allow anyone (including anon) to SELECT
 CREATE POLICY "anon_read" ON papers              FOR SELECT USING (true);
 CREATE POLICY "anon_read" ON paper_keywords      FOR SELECT USING (true);
 CREATE POLICY "anon_read" ON paper_tracks_single FOR SELECT USING (true);
 CREATE POLICY "anon_read" ON paper_tracks_multi  FOR SELECT USING (true);
+CREATE POLICY "anon_read" ON paper_content       FOR SELECT USING (true);
 
 
 -- ═══════════════════════════════════════════════════════════════════
@@ -114,3 +127,16 @@ SELECT
   tm.other
 FROM papers p
 JOIN paper_tracks_multi tm ON tm.paper_id = p.id;
+
+-- Paper content with metadata
+CREATE OR REPLACE VIEW papers_full AS
+SELECT
+  p.id AS paper_id,
+  p.year,
+  p.title,
+  pc.abstract,
+  pc.body,
+  pc.conclusion,
+  pc.raw_text
+FROM papers p
+LEFT JOIN paper_content pc ON pc.paper_id = p.id;

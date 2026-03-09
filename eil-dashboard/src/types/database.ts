@@ -59,3 +59,12 @@ export interface DbPaperTrack {
   other: number;
   created_at?: string;
 }
+
+export interface DbPaperContent {
+  paper_id: number;
+  raw_text?: string;
+  abstract?: string;
+  body?: string;
+  conclusion?: string;
+  created_at?: string;
+}
