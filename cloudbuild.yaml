@@ -35,3 +35,6 @@ steps:
 images:
   - us-central1-docker.pkg.dev/$PROJECT_ID/papertrend-repo/papertrend-extractor:$SHORT_SHA
   - us-central1-docker.pkg.dev/$PROJECT_ID/papertrend-repo/papertrend-extractor:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
