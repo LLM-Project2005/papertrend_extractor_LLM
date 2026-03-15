@@ -1,0 +1,15 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.notebook-job
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/papertrend-repo/papertrend-notebook-job:latest
+      - .
+
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/papertrend-repo/papertrend-notebook-job:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

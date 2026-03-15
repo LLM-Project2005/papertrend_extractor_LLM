@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY jobs/requirements-job.txt /app/jobs/requirements-job.txt
+RUN pip install --no-cache-dir -r /app/jobs/requirements-job.txt
+
+COPY . /app
+
+ENV NOTEBOOK_PATH=EIL_jupyter_ver3.ipynb
+ENV OUTPUT_NOTEBOOK_PATH=artifacts/EIL_jupyter_ver3.executed.ipynb
+ENV NOTEBOOK_CELL_TIMEOUT=900
+
+CMD ["python", "jobs/run_notebook_job.py"]
