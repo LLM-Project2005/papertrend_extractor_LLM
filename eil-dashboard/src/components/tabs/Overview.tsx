@@ -61,12 +61,12 @@ export default function Overview({
   const donutMulti = buildDonut(tracksMulti);
 
   return (
-    <div className="space-y-6">
-      <section className="app-surface px-5 py-5">
+    <div className="space-y-5">
+      <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
         <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
           Overview
         </h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
           A quick read on corpus coverage, publication volume, and track balance.
         </p>
         {useMock && (
@@ -76,7 +76,7 @@ export default function Overview({
         )}
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
         <MetricCard label="Total papers" value={nPapers} />
         <MetricCard label="Unique topics" value={nTopics} />
         <MetricCard label="Unique keywords" value={nKeywords} />
@@ -84,7 +84,7 @@ export default function Overview({
       </div>
 
       {papersByYear.length > 0 && (
-        <section className="app-surface px-5 py-5">
+        <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Papers published per year
           </h3>
@@ -102,9 +102,9 @@ export default function Overview({
         </section>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-2">
+      <div className="grid gap-5 2xl:grid-cols-2">
         {donutSingle.some((item) => item.value > 0) && (
-          <section className="app-surface px-5 py-5">
+          <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Track distribution
             </h3>
@@ -135,7 +135,7 @@ export default function Overview({
         )}
 
         {donutMulti.some((item) => item.value > 0) && (
-          <section className="app-surface px-5 py-5">
+          <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
             <h3 className="text-base font-semibold text-slate-900 dark:text-white">
               Track overlap
             </h3>

@@ -121,15 +121,15 @@ export default function PaperExplorer({
   }
 
   return (
-    <div className="space-y-6">
-      <section className="app-surface px-5 py-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="space-y-5">
+      <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
               Paper library
             </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Search titles, review the paper list, and inspect evidence without leaving the workspace style.
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+              Search titles, review the paper list, and inspect evidence without leaving the workspace flow.
             </p>
           </div>
 
@@ -146,9 +146,9 @@ export default function PaperExplorer({
         </div>
       </section>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
         <section className="app-surface overflow-hidden">
-          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <div className="border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
             <p className="text-sm font-medium text-slate-900 dark:text-white">
               Papers
             </p>
@@ -165,7 +165,7 @@ export default function PaperExplorer({
                   key={paper.paper_id}
                   type="button"
                   onClick={() => setSelectedPaperId(paper.paper_id)}
-                  className={`flex w-full items-start gap-4 px-5 py-4 text-left transition-colors ${
+                  className={`flex w-full items-start gap-3 px-4 py-4 text-left transition-colors sm:gap-4 sm:px-5 ${
                     active
                       ? "bg-slate-100 dark:bg-slate-800/70"
                       : "hover:bg-slate-50 dark:hover:bg-slate-900"
@@ -201,7 +201,7 @@ export default function PaperExplorer({
           </div>
         </section>
 
-        <aside className="app-surface px-5 py-5">
+        <aside className="app-surface px-4 py-4 sm:px-5 sm:py-5">
           {detail ? (
             <div>
               <div className="flex items-start gap-3">
@@ -234,7 +234,7 @@ export default function PaperExplorer({
                 </div>
               )}
 
-              <div className="mt-6 space-y-3">
+              <div className="mt-5 space-y-3">
                 {detail.keywords.map((keyword, index) => (
                   <article
                     key={`${keyword.keyword}-${index}`}

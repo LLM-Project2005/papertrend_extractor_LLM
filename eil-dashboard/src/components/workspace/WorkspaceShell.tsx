@@ -53,7 +53,7 @@ function SidebarContent({
         : "Connector planning";
 
   return (
-    <div className="flex h-full flex-col px-4 py-5">
+    <div className="flex h-full flex-col px-3 py-4 sm:px-4 sm:py-5">
       <Link href="/" className="flex items-center gap-3 px-2" onClick={onNavigate}>
         <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
           <LogoMarkIcon className="h-5 w-5" />
@@ -68,7 +68,7 @@ function SidebarContent({
         </div>
       </Link>
 
-      <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
         <p className="text-sm font-medium text-slate-900 dark:text-white">
           {profile.name}
         </p>
@@ -80,7 +80,7 @@ function SidebarContent({
         </p>
       </div>
 
-      <div className="mt-6">
+      <div className="mt-5">
         <p className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
           Modules
         </p>
@@ -108,7 +108,7 @@ function SidebarContent({
         </nav>
       </div>
 
-      <div className="mt-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
           Intake
         </p>
@@ -150,15 +150,15 @@ export default function WorkspaceShell({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <div className="lg:grid lg:min-h-screen lg:grid-cols-[248px_minmax(0,1fr)]">
+      <div className="lg:grid lg:min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 lg:block">
           <SidebarContent pathname={pathname} profile={profile} />
         </aside>
 
         {sidebarOpen && (
           <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden">
-            <div className="h-full max-w-[280px] border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-slate-800">
+            <div className="h-full max-w-[288px] overflow-y-auto border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+              <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-950">
                 <p className="text-sm font-medium text-slate-900 dark:text-white">
                   Workspace menu
                 </p>
@@ -181,7 +181,7 @@ export default function WorkspaceShell({
 
         <div className="min-w-0">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
-            <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6">
+            <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
               <div className="flex min-w-0 items-center gap-3">
                 <button
                   type="button"
@@ -213,7 +213,7 @@ export default function WorkspaceShell({
             </div>
           </header>
 
-          <main className="min-w-0 px-4 py-6 sm:px-6">{children}</main>
+          <main className="min-w-0 px-3 py-5 sm:px-6 sm:py-6">{children}</main>
         </div>
       </div>
     </div>
