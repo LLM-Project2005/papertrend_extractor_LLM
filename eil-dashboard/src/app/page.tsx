@@ -57,18 +57,18 @@ const JOURNEY = [
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-[#ececec]">
+      <div className="border-b border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#171717]">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-[#ececec] dark:text-[#171717]">
               <LogoMarkIcon className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+              <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">
                 Papertrend
               </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-slate-500 dark:text-[#8f8f8f]">
                 Research workspace
               </p>
             </div>
@@ -79,13 +79,13 @@ export default function LandingPage() {
             <ThemeToggle />
             <Link
               href="/start"
-              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
             >
               Start here
             </Link>
             <Link
               href="/workspace/home"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#1d1d1d] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
             >
               Open workspace
             </Link>
@@ -94,15 +94,15 @@ export default function LandingPage() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <section className="grid gap-6 rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8 xl:grid-cols-[minmax(0,1.2fr)_380px] dark:border-slate-800 dark:bg-slate-900">
+        <section className="grid gap-6 rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8 xl:grid-cols-[minmax(0,1.2fr)_380px] dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
           <div className="max-w-3xl">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
               Research intelligence for departments, labs, and faculty teams
             </p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl dark:text-white">
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl dark:text-[#ececec]">
               Turn scattered research papers into a clean, guided workspace.
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-slate-300">
+            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-[#b8b8b8]">
               Start with a simple setup flow, bring documents into the system, and
               keep dashboard analytics, grounded chat, and paper review in one place.
             </p>
@@ -110,14 +110,14 @@ export default function LandingPage() {
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
                 href="/start"
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
               >
                 <span>Start setup</span>
                 <ArrowRightIcon className="h-4 w-4" />
               </Link>
               <Link
                 href="/workspace/dashboard"
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#1d1d1d] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
               >
                 View dashboard module
               </Link>
@@ -135,15 +135,15 @@ export default function LandingPage() {
             return (
               <article
                 key={item.title}
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-5 dark:border-slate-800 dark:bg-slate-900"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-5 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-[#b8b8b8]">
                   <Icon className="h-5 w-5" />
                 </div>
-                <h2 className="mt-4 text-base font-semibold text-slate-900 dark:text-white">
+                <h2 className="mt-4 text-base font-semibold text-slate-900 dark:text-[#ececec]">
                   {item.title}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
                   {item.description}
                 </p>
               </article>
@@ -151,12 +151,12 @@ export default function LandingPage() {
           })}
         </section>
 
-        <section className="mt-8 rounded-3xl border border-slate-200 bg-white px-6 py-6 sm:px-8 dark:border-slate-800 dark:bg-slate-900">
+        <section className="mt-8 rounded-3xl border border-slate-200 bg-white px-6 py-6 sm:px-8 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
           <div className="max-w-2xl">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+            <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
               How it works
             </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#ececec]">
               Keep the dashboard, but put it inside a broader workflow.
             </h2>
           </div>
@@ -165,15 +165,15 @@ export default function LandingPage() {
             {JOURNEY.map((item) => (
               <article
                 key={item.step}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-slate-800 dark:bg-slate-950"
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-[#2c2c2c] dark:bg-[#202020]"
               >
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
                   {item.step}
                 </p>
-                <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">
+                <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-[#ececec]">
                   {item.title}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
                   {item.description}
                 </p>
               </article>
