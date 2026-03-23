@@ -7,7 +7,8 @@ export interface ChatMessage {
 
 export async function createChatCompletion(
   messages: ChatMessage[],
-  temperature = 0.2
+  temperature = 0.2,
+  modelOverride?: string
 ): Promise<string | null> {
   const config = getOpenAIConfig();
   if (!config) {
@@ -21,7 +22,7 @@ export async function createChatCompletion(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: config.model,
+      model: modelOverride?.trim() || config.model,
       temperature,
       messages,
     }),

@@ -11,6 +11,12 @@ export const runtime = "nodejs";
 interface ChatRequestBody {
   message?: string;
   messages?: Array<{ role: "user" | "assistant"; content: string }>;
+  model?: string;
+  attachments?: Array<{
+    name: string;
+    type?: string;
+    size?: number;
+  }>;
 }
 
 function buildFallbackAnswer(question: string, corpusError?: string): string {
@@ -40,6 +46,18 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Message is required." }, { status: 400 });
     }
 
+    const attachmentContext =
+      body.attachments && body.attachments.length > 0
+        ? `\n\nAttached files:\n${body.attachments
+            .map((file, index) => {
+              const fileType = file.type?.trim() || "unknown";
+              const fileSize =
+                typeof file.size === "number" ? `, ${Math.max(file.size, 0)} bytes` : "";
+              return `${index + 1}. ${file.name} (${fileType}${fileSize})`;
+            })
+            .join("\n")}`
+        : "";
+
     let papers: Awaited<ReturnType<typeof retrieveCorpusPapers>>["papers"] = [];
     let citations: Awaited<ReturnType<typeof retrieveCorpusPapers>>["citations"] = [];
     let corpusError: string | undefined;
@@ -63,10 +81,11 @@ export async function POST(request: Request) {
           },
           {
             role: "user",
-            content: `Question:\n${currentMessage}\n\nCorpus context:\n${context}`,
+            content: `Question:\n${currentMessage}${attachmentContext}\n\nCorpus context:\n${context}`,
           },
         ],
-        0.2
+        0.2,
+        body.model
       );
 
       return NextResponse.json({
@@ -84,12 +103,12 @@ export async function POST(request: Request) {
       },
       {
         role: "user" as const,
-        content: currentMessage,
+        content: `${currentMessage}${attachmentContext}`,
       },
     ];
 
     const fallbackAnswer =
-      (await createChatCompletion(fallbackPrompt, 0.4)) ??
+      (await createChatCompletion(fallbackPrompt, 0.4, body.model)) ??
       buildFallbackAnswer(currentMessage, corpusError);
 
     return NextResponse.json({

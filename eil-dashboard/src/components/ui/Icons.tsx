@@ -327,3 +327,47 @@ export function SharePointIcon({ className }: IconProps) {
     </BaseIcon>
   );
 }
+
+export function CopyIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="9" y="9" width="10.5" height="10.5" rx="2" />
+      <path d="M15 9V7a2 2 0 0 0-2-2H6.5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2H9" />
+    </BaseIcon>
+  );
+}
+
+export function RefreshIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+      <path d="M20 4v7h-7" />
+    </BaseIcon>
+  );
+}
+
+export function AttachmentIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m8.5 12.5 5.7-5.7a3 3 0 1 1 4.3 4.2l-7.4 7.5a5 5 0 1 1-7.1-7.1l7.3-7.4" />
+    </BaseIcon>
+  );
+}
+
+export function ChevronDownIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m6 9 6 6 6-6" />
+    </BaseIcon>
+  );
+}
+
+export function ImageIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2" />
+      <circle cx="9" cy="10" r="1.5" />
+      <path d="m6.5 16 3.5-3.5 2.8 2.8 2-2 2.7 2.7" />
+    </BaseIcon>
+  );
+}
