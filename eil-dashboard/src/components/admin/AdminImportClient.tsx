@@ -14,6 +14,7 @@ import {
   SharePointIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
+import Modal from "@/components/ui/Modal";
 
 interface IngestionRun {
   id: string;
@@ -325,7 +326,7 @@ export default function AdminImportClient() {
       </section>
 
       {showImportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
+        <Modal onClose={() => setShowImportModal(false)}>
           <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#212121]">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#2f2f2f] sm:px-6">
               <div>
@@ -403,7 +404,7 @@ export default function AdminImportClient() {
               </div>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
     </div>
   );
