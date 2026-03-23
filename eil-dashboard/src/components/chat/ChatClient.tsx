@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import Link from "next/link";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 
 interface Citation {
   paperId: number;
@@ -20,14 +21,19 @@ interface ConversationMessage {
 export default function ChatClient() {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
+  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([
     {
       role: "assistant",
       mode: "grounded",
       content:
-        "Ask about research papers, topics, keywords, tracks, or trends in the stored EIL corpus. If the corpus does not answer directly, I will label any broader guidance clearly.",
+        "Ask about research papers, topics, keywords, tracks, or trends in the stored EIL corpus. I will answer from the stored dataset first and clearly label any broader guidance when the corpus is not enough.",
     },
   ]);
+
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, loading]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -90,144 +96,185 @@ export default function ChatClient() {
     }
   }
 
-  return (
-    <div className="grid gap-6 lg:grid-cols-[1.3fr_0.7fr]">
-      <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <div className="mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">Corpus Chat</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Corpus-grounded answers first, with clearly labeled broader guidance
-            only when the dataset does not answer directly.
-          </p>
-        </div>
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
 
-        <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-2">
-          {messages.map((message, index) => (
-            <article
-              key={`${message.role}-${index}`}
-              className={`rounded-2xl border p-4 ${
-                message.role === "user"
-                  ? "ml-auto max-w-[85%] border-blue-200 bg-blue-50"
-                  : "max-w-[92%] border-gray-200 bg-gray-50"
-              }`}
-            >
-              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                <span>{message.role === "user" ? "You" : "Assistant"}</span>
-                {message.mode && (
-                  <span
-                    className={`rounded-full px-2 py-0.5 ${
-                      message.mode === "grounded"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-700"
+  return (
+    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
+      <header className="border-b border-gray-200 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-start justify-between gap-4 px-4 py-5 sm:px-6">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+              EIL Research Chat
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
+              Ask about papers, trends, tracks, methods, or results. Answers use the
+              stored corpus first and link back to the dashboard when relevant.
+            </p>
+          </div>
+          <div className="hidden rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600 md:block">
+            <p className="font-semibold uppercase tracking-[0.18em] text-gray-500">
+              Mode
+            </p>
+            <p className="mt-1">Corpus-grounded first</p>
+            <p>Lightweight fallback when needed</p>
+          </div>
+        </div>
+      </header>
+
+      <div className="flex-1 bg-[#f7f7f8]">
+        <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-4 sm:px-6">
+          <div className="flex-1 py-6 sm:py-8">
+            <div className="space-y-6">
+              {messages.map((message, index) => (
+                <article
+                  key={`${message.role}-${index}`}
+                  className={`flex ${
+                    message.role === "user" ? "justify-end" : "justify-start"
+                  }`}
+                >
+                  <div
+                    className={`w-full max-w-3xl rounded-3xl border px-5 py-4 shadow-sm sm:px-6 ${
+                      message.role === "user"
+                        ? "border-gray-200 bg-white"
+                        : "border-[#e7e7e9] bg-[#fcfcfd]"
                     }`}
                   >
-                    {message.mode === "grounded"
-                      ? "Grounded"
-                      : "Broader guidance"}
-                  </span>
-                )}
-              </div>
-
-              <p className="whitespace-pre-wrap text-sm leading-6 text-gray-800">
-                {message.content}
-              </p>
-
-              {message.citations && message.citations.length > 0 && (
-                <div className="mt-4 rounded-xl border border-gray-200 bg-white p-3">
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                    Paper references
-                  </p>
-                  <div className="space-y-2">
-                    {message.citations.map((citation) => (
-                      <a
-                        key={citation.paperId}
-                        href={citation.href}
-                        className="block rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700 transition-colors hover:border-blue-300 hover:bg-blue-50"
-                      >
-                        <span className="font-semibold">
-                          [Paper {citation.paperId}] {citation.title}
+                    <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                      <span>{message.role === "user" ? "You" : "Assistant"}</span>
+                      {message.mode && (
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] tracking-[0.12em] ${
+                            message.mode === "grounded"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {message.mode === "grounded"
+                            ? "Grounded"
+                            : "Broader guidance"}
                         </span>
-                        <span className="ml-2 text-gray-500">({citation.year})</span>
-                        {citation.reason && (
-                          <span className="mt-1 block text-xs text-gray-500">
-                            {citation.reason}
-                          </span>
-                        )}
-                      </a>
-                    ))}
+                      )}
+                    </div>
+
+                    <div className="whitespace-pre-wrap text-[15px] leading-7 text-gray-800">
+                      {message.content}
+                    </div>
+
+                    {message.citations && message.citations.length > 0 && (
+                      <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                          Paper references
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {message.citations.map((citation) => (
+                            <Link
+                              key={citation.paperId}
+                              href={citation.href}
+                              className="block rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                            >
+                              <span className="font-semibold">
+                                [Paper {citation.paperId}] {citation.title}
+                              </span>
+                              <span className="ml-2 text-gray-500">
+                                ({citation.year})
+                              </span>
+                              {citation.reason && (
+                                <span className="mt-1 block text-xs leading-5 text-gray-500">
+                                  {citation.reason}
+                                </span>
+                              )}
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))}
+
+              {loading && (
+                <div className="flex justify-start">
+                  <div className="w-full max-w-3xl rounded-3xl border border-[#e7e7e9] bg-[#fcfcfd] px-5 py-4 shadow-sm sm:px-6">
+                    <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                      Assistant
+                    </div>
+                    <div className="flex items-center gap-2 text-sm text-gray-500">
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400" />
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400 [animation-delay:120ms]" />
+                      <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400 [animation-delay:240ms]" />
+                      <span className="ml-2">Thinking...</span>
+                    </div>
                   </div>
                 </div>
               )}
-            </article>
-          ))}
-        </div>
 
-        <form onSubmit={handleSubmit} className="mt-5 space-y-3">
-          <textarea
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder="Ask about a paper, a topic trend, a track, or the corpus as a whole..."
-            className="min-h-28 w-full rounded-2xl border border-gray-300 px-4 py-3 text-sm text-gray-900 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-          />
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-gray-500">
-              Links in the answer open the Paper Explorer view for the cited paper.
-            </p>
-            <button
-              type="submit"
-              disabled={loading || draft.trim().length === 0}
-              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300"
-            >
-              {loading ? "Thinking..." : "Ask"}
-            </button>
+              <div ref={scrollAnchorRef} />
+            </div>
           </div>
-        </form>
-      </section>
 
-      <aside className="space-y-4 rounded-2xl border border-gray-200 bg-gray-50 p-5">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">
-            Good prompts
-          </h2>
-          <div className="mt-3 space-y-2 text-sm text-gray-700">
-            <button
-              type="button"
-              onClick={() =>
-                setDraft("What are the main topic trends in the EIL corpus over time?")
-              }
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-left hover:border-blue-300 hover:bg-blue-50"
+          <aside className="mb-4 rounded-3xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
+                  Prompt ideas
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {[
+                    "What are the main topic trends in the EIL corpus over time?",
+                    "Find papers related to translanguaging or multilingual education.",
+                    "How does LAE compare with ELI in the current dataset?",
+                  ].map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      onClick={() => setDraft(prompt)}
+                      className="rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-white"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="max-w-md text-sm leading-6 text-gray-500">
+                This v1 chat is session-only in the browser. It does not save full
+                chat history in Supabase yet.
+              </p>
+            </div>
+          </aside>
+
+          <div className="sticky bottom-0 pb-5 pt-2">
+            <form
+              onSubmit={handleSubmit}
+              className="rounded-[28px] border border-gray-200 bg-white p-3 shadow-[0_12px_40px_rgba(15,23,42,0.08)]"
             >
-              What are the main topic trends in the EIL corpus over time?
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setDraft("Find papers related to translanguaging or multilingual education.")
-              }
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-left hover:border-blue-300 hover:bg-blue-50"
-            >
-              Find papers related to translanguaging or multilingual education.
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setDraft("How does LAE compare with ELI in the current dataset?")
-              }
-              className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-left hover:border-blue-300 hover:bg-blue-50"
-            >
-              How does LAE compare with ELI in the current dataset?
-            </button>
+              <textarea
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={handleComposerKeyDown}
+                placeholder="Message the EIL research corpus..."
+                className="min-h-24 w-full resize-none border-0 bg-transparent px-3 py-2 text-[15px] leading-7 text-gray-900 placeholder:text-gray-400 focus:outline-none"
+              />
+              <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-3 pt-3">
+                <p className="text-xs text-gray-500">
+                  Press Enter to send. Shift+Enter adds a new line.
+                </p>
+                <button
+                  type="submit"
+                  disabled={loading || draft.trim().length === 0}
+                  className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                >
+                  {loading ? "Thinking..." : "Send"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-
-        <div className="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-600">
-          <p className="font-semibold text-gray-800">Behavior</p>
-          <p className="mt-2">
-            This v1 chat does not persist threads in the database. It keeps the
-            conversation only in the current browser session.
-          </p>
-        </div>
-      </aside>
+      </div>
     </div>
   );
 }
