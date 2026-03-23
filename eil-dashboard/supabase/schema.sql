@@ -369,7 +369,8 @@ SET
 -- ------------------------------------------------------------------
 -- VIEWS consumed by the Next.js app
 -- ------------------------------------------------------------------
-CREATE OR REPLACE VIEW trends_flat AS
+DROP VIEW IF EXISTS trends_flat;
+CREATE VIEW trends_flat AS
 SELECT
   p.id AS paper_id,
   p.year,
@@ -381,7 +382,8 @@ SELECT
 FROM papers p
 JOIN paper_keywords pk ON pk.paper_id = p.id;
 
-CREATE OR REPLACE VIEW tracks_single_flat AS
+DROP VIEW IF EXISTS tracks_single_flat;
+CREATE VIEW tracks_single_flat AS
 SELECT
   p.id AS paper_id,
   p.year,
@@ -393,7 +395,8 @@ SELECT
 FROM papers p
 JOIN paper_tracks_single ts ON ts.paper_id = p.id;
 
-CREATE OR REPLACE VIEW tracks_multi_flat AS
+DROP VIEW IF EXISTS tracks_multi_flat;
+CREATE VIEW tracks_multi_flat AS
 SELECT
   p.id AS paper_id,
   p.year,
@@ -405,7 +408,8 @@ SELECT
 FROM papers p
 JOIN paper_tracks_multi tm ON tm.paper_id = p.id;
 
-CREATE OR REPLACE VIEW papers_full AS
+DROP VIEW IF EXISTS papers_full;
+CREATE VIEW papers_full AS
 SELECT
   p.id AS paper_id,
   p.year,

@@ -40,7 +40,7 @@ export default function WorkspacePapersClient() {
     return (
       <div className="app-surface flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
-          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-sky-500 border-t-transparent" />
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-500 border-t-transparent dark:border-[#8e8e8e]" />
           <p className="text-sm text-slate-500 dark:text-slate-400">
             Loading paper library...
           </p>
@@ -51,30 +51,16 @@ export default function WorkspacePapersClient() {
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
-      <section className="app-surface px-4 py-4 sm:px-6 sm:py-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
-              Papers module
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-              Paper library
-            </h1>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-600 dark:text-slate-300">
-              Search the corpus and review evidence in the same calm workspace layout as the rest of the product.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setFilterOpen(true)}
-            className="inline-flex items-center gap-2 self-start rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white xl:hidden"
-          >
-            <FilterIcon className="h-4 w-4" />
-            <span>Filters</span>
-          </button>
-        </div>
-      </section>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => setFilterOpen(true)}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white xl:hidden"
+        >
+          <FilterIcon className="h-4 w-4" />
+          <span>Filters</span>
+        </button>
+      </div>
 
       <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)] 2xl:grid-cols-[296px_minmax(0,1fr)]">
         <div className="hidden xl:block">

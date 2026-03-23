@@ -122,29 +122,18 @@ export default function PaperExplorer({
 
   return (
     <div className="space-y-5">
-      <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              Paper library
-            </h2>
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-              Search titles, review the paper list, and inspect evidence without leaving the workspace flow.
-            </p>
-          </div>
-
-          <label className="relative block w-full max-w-md">
-            <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by title"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500"
-            />
-          </label>
-        </div>
-      </section>
+      <div className="flex justify-end">
+        <label className="relative block w-full max-w-md">
+          <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#8e8e8e]" />
+          <input
+            type="text"
+            placeholder="Search by title"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+          />
+        </label>
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.08fr)_minmax(320px,0.92fr)]">
         <section className="app-surface overflow-hidden">

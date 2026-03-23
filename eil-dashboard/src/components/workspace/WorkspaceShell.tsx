@@ -173,7 +173,7 @@ export default function WorkspaceShell({
     NAV_ITEMS.find((item) => pathname.startsWith(item.href)) ?? NAV_ITEMS[0];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-slate-100">
       <div
         className={`lg:grid lg:min-h-screen ${
           desktopSidebarOpen
@@ -182,7 +182,7 @@ export default function WorkspaceShell({
         }`}
       >
         <aside
-          className={`hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 lg:block ${
+          className={`hidden border-r border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121] lg:block ${
             desktopSidebarOpen ? "lg:block" : "lg:hidden"
           }`}
         >
@@ -214,7 +214,7 @@ export default function WorkspaceShell({
         )}
 
         <div className="min-w-0">
-          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-slate-800 dark:bg-slate-950/90">
+          <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-[#2f2f2f] dark:bg-[#171717]/90">
             <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
               <div className="flex min-w-0 items-center gap-3">
                 <button

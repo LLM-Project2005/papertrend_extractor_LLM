@@ -271,3 +271,59 @@ export function AppleIcon({ className }: IconProps) {
     </BaseIcon>
   );
 }
+
+export function FolderIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l1.5 2h8.5A1.5 1.5 0 0 1 20.5 9.5v8A1.5 1.5 0 0 1 19 19H5A1.5 1.5 0 0 1 3.5 17.5Z" />
+    </BaseIcon>
+  );
+}
+
+export function FileIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M8 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 7 20V5A1.5 1.5 0 0 1 8.5 3.5Z" />
+      <path d="M14 3.5V8h4" />
+    </BaseIcon>
+  );
+}
+
+export function CloudIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M8.5 18.5h9a3.5 3.5 0 0 0 .5-7 5 5 0 0 0-9.5-1.5A3.8 3.8 0 0 0 8.5 18.5Z" />
+    </BaseIcon>
+  );
+}
+
+export function DriveIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m9 4 4 7-4 7H5l4-7-4-7Z" />
+      <path d="m9 4 4 7h6l-4-7Z" />
+      <path d="m13 11-4 7h6l4-7Z" />
+    </BaseIcon>
+  );
+}
+
+export function OneDriveIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M7.5 18.5h9.8a3.2 3.2 0 0 0 .2-6.4 4.6 4.6 0 0 0-8.4-1.7A3.9 3.9 0 0 0 7.5 18.5Z" />
+      <path d="M6.8 12.4a2.8 2.8 0 0 0-2.8 2.8 3.2 3.2 0 0 0 3.2 3.3h1.3" />
+    </BaseIcon>
+  );
+}
+
+export function SharePointIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <circle cx="8" cy="12" r="3.5" />
+      <circle cx="16.5" cy="8.5" r="2.5" />
+      <circle cx="17" cy="16.5" r="2.5" />
+      <path d="M11 10.5 14.2 9" />
+      <path d="M11 13.5 14.5 15" />
+    </BaseIcon>
+  );
+}

@@ -8,6 +8,11 @@ function sanitizeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
 }
 
+function sanitizeFolderName(folderName: string): string {
+  const sanitized = folderName.replace(/[^a-zA-Z0-9._/-]+/g, "-").replace(/^\/+|\/+$/g, "");
+  return sanitized || "Inbox";
+}
+
 export async function GET(request: Request) {
   if (!(await isAuthorizedAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,6 +49,8 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const provider = String(formData.get("provider") ?? "") || null;
     const model = String(formData.get("model") ?? "") || null;
+    const folder = sanitizeFolderName(String(formData.get("folder") ?? "Inbox"));
+    const sourceKind = String(formData.get("source_kind") ?? "pdf-upload") || "pdf-upload";
     const files = formData
       .getAll("files")
       .filter((item): item is File => item instanceof File);
@@ -72,6 +79,8 @@ export async function POST(request: Request) {
           model,
           input_payload: {
             uploaded_from: "/workspace/imports",
+            folder_name: folder,
+            source_kind: sourceKind,
             original_size: file.size,
             mime_type: file.type || "application/pdf",
           },
@@ -83,7 +92,7 @@ export async function POST(request: Request) {
         throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
       }
 
-      const storagePath = `pending/${runData.id}/${sanitizeFileName(file.name)}`;
+      const storagePath = `pending/${folder}/${runData.id}/${sanitizeFileName(file.name)}`;
       const fileBuffer = Buffer.from(await file.arrayBuffer());
       const { error: uploadError } = await supabase.storage
         .from("paper-uploads")
