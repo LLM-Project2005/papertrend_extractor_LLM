@@ -41,11 +41,11 @@ export default function Sidebar({
 
   return (
     <aside className="app-surface overflow-hidden">
-      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-        <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+      <div className="border-b border-slate-200 px-5 py-4 dark:border-[#2f2f2f]">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">
           {title}
         </h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
           {description}
         </p>
       </div>
@@ -87,8 +87,8 @@ export default function Sidebar({
                   onClick={() => toggleYear(year)}
                   className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                     active
-                      ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+                      ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#171717] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a] dark:hover:text-white"
                   }`}
                 >
                   {year}
@@ -112,8 +112,8 @@ export default function Sidebar({
                   onClick={() => toggleTrack(track)}
                   className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition-colors ${
                     active
-                      ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
+                      ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#353535] dark:bg-[#171717] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a]"
                   }`}
                 >
                   <span>
@@ -121,8 +121,8 @@ export default function Sidebar({
                     <span
                       className={`mt-1 block text-xs ${
                         active
-                          ? "text-slate-200 dark:text-slate-600"
-                          : "text-slate-500 dark:text-slate-400"
+                          ? "text-slate-200 dark:text-[#4f4f4f]"
+                          : "text-slate-500 dark:text-[#9c9c9c]"
                       }`}
                     >
                       {TRACK_NAMES[track as TrackKey]}
@@ -131,8 +131,8 @@ export default function Sidebar({
                   <span
                     className={`mt-0.5 h-2.5 w-2.5 rounded-full ${
                       active
-                        ? "bg-white dark:bg-slate-900"
-                        : "bg-slate-200 dark:bg-slate-700"
+                        ? "bg-white dark:bg-[#171717]"
+                        : "bg-slate-200 dark:bg-[#404040]"
                     }`}
                   />
                 </button>
@@ -141,7 +141,7 @@ export default function Sidebar({
           </div>
         </section>
 
-        <p className="text-xs leading-6 text-slate-400 dark:text-slate-500">
+        <p className="text-xs leading-6 text-slate-400 dark:text-[#8e8e8e]">
           Data source: Supabase-backed views and imported research outputs inside
           the workspace.
         </p>

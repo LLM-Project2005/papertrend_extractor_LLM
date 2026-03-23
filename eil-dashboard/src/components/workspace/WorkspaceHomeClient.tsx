@@ -25,12 +25,12 @@ function MetricCard({
   icon: React.ReactNode;
 }) {
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white px-5 py-4">
+    <article className="app-card px-5 py-4">
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-slate-500">{label}</p>
-        <span className="text-slate-400">{icon}</span>
+        <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">{label}</p>
+        <span className="text-slate-400 dark:text-[#8e8e8e]">{icon}</span>
       </div>
-      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
+      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
         {value}
       </p>
     </article>
@@ -51,16 +51,16 @@ function QuickLink({
   return (
     <Link
       href={href}
-      className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300"
+      className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717] dark:hover:border-[#3a3a3a]"
     >
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 text-slate-400">{icon}</span>
+        <span className="mt-0.5 text-slate-400 dark:text-[#8e8e8e]">{icon}</span>
         <div>
-          <p className="text-sm font-medium text-slate-900">{title}</p>
-          <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+          <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{title}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">{description}</p>
         </div>
       </div>
-      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-300" />
+      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-300 dark:text-[#666666]" />
     </Link>
   );
 }
@@ -122,14 +122,14 @@ export default function WorkspaceHomeClient() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <section className="rounded-3xl border border-slate-200 bg-white px-6 py-6">
+      <section className="app-surface px-6 py-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-medium text-slate-500">Workspace overview</p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+            <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">Workspace overview</p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
               {profile.name}
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
               A clean control center for bringing in papers, reviewing analytics,
               and switching into grounded chat without bouncing between separate tools.
             </p>
@@ -138,19 +138,19 @@ export default function WorkspaceHomeClient() {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/workspace/dashboard"
-              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#f3f3f3] dark:text-[#171717] dark:hover:bg-white"
             >
               Open dashboard
             </Link>
             <Link
               href="/workspace/chat"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
               Open chat
             </Link>
             <Link
               href="/workspace/imports"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
               Add source
             </Link>
@@ -159,7 +159,7 @@ export default function WorkspaceHomeClient() {
       </section>
 
       {data?.useMock && (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           The workspace is currently showing preview data. Connect Supabase and run
           the import flow to replace this with real results.
         </section>
@@ -189,35 +189,35 @@ export default function WorkspaceHomeClient() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <article className="rounded-3xl border border-slate-200 bg-white p-6">
+        <article className="app-surface p-6">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">Continue setup</h2>
-              <p className="mt-1 text-sm text-slate-500">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">Continue setup</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
                 Keep the workspace focused on the next meaningful actions.
               </p>
             </div>
             <Link
               href="/start"
-              className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-[#bdbdbd] dark:hover:text-white"
             >
               Edit setup
             </Link>
           </div>
 
-          <div className="mt-5 divide-y divide-slate-200">
+          <div className="mt-5 divide-y divide-slate-200 dark:divide-[#2f2f2f]">
             {checklist.map((item) => (
               <div key={item.title} className="flex items-start gap-4 py-4 first:pt-0">
                 <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center">
                   {item.done ? (
-                    <CheckCircleIcon className="h-5 w-5 text-emerald-600" />
+                    <CheckCircleIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
                   ) : (
-                    <CircleIcon className="h-5 w-5 text-slate-300" />
+                    <CircleIcon className="h-5 w-5 text-slate-300 dark:text-[#555555]" />
                   )}
                 </span>
                 <div>
-                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
-                  <p className="mt-1 text-sm leading-6 text-slate-500">{item.detail}</p>
+                  <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{item.title}</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">{item.detail}</p>
                 </div>
               </div>
             ))}
@@ -225,8 +225,8 @@ export default function WorkspaceHomeClient() {
         </article>
 
         <div className="space-y-6">
-          <article className="rounded-3xl border border-slate-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Quick access</h2>
+          <article className="app-surface p-6">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">Quick access</h2>
             <div className="mt-4 space-y-3">
               <QuickLink
                 href="/workspace/dashboard"
@@ -249,30 +249,30 @@ export default function WorkspaceHomeClient() {
             </div>
           </article>
 
-          <article className="rounded-3xl border border-slate-200 bg-white p-6">
-            <h2 className="text-lg font-semibold text-slate-900">Workspace profile</h2>
+          <article className="app-surface p-6">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">Workspace profile</h2>
             <dl className="mt-4 space-y-4 text-sm">
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500">Organization</dt>
-                <dd className="text-right font-medium text-slate-900">
+                <dt className="text-slate-500 dark:text-[#a3a3a3]">Organization</dt>
+                <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
                   {profile.organization}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500">Domain</dt>
-                <dd className="text-right font-medium text-slate-900">
+                <dt className="text-slate-500 dark:text-[#a3a3a3]">Domain</dt>
+                <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
                   {profile.domain}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500">Goal</dt>
-                <dd className="text-right font-medium text-slate-900">
+                <dt className="text-slate-500 dark:text-[#a3a3a3]">Goal</dt>
+                <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
                   {activeGoal?.label}
                 </dd>
               </div>
               <div className="flex items-start justify-between gap-4">
-                <dt className="text-slate-500">Primary source</dt>
-                <dd className="text-right font-medium text-slate-900">
+                <dt className="text-slate-500 dark:text-[#a3a3a3]">Primary source</dt>
+                <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
                   {activeSource?.label}
                 </dd>
               </div>

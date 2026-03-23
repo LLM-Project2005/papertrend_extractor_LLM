@@ -264,8 +264,22 @@ export default function AdminImportClient() {
       {message && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">{message}</div>}
       {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{error}</div>}
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_360px]">
-        <section className="app-surface overflow-hidden">
+      <div className="app-surface px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Import access</p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
+              {user ? `Signed in as ${user.email}. Current role: ${isAdmin ? "admin" : "member"}.` : "Sign in as an admin or use the shared admin secret to manage imports."}
+            </p>
+          </div>
+          <div className="flex w-full max-w-xl gap-2">
+            <input type="password" value={adminSecret} onChange={(event) => setAdminSecret(event.target.value)} className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10" placeholder={isAdmin ? "Optional when signed in as admin" : "Enter the shared admin secret"} />
+            <button type="button" onClick={handleSecretSave} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-[#2f2f2f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#171717]">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <section className="app-surface overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#2f2f2f] sm:px-5">
             <div>
               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Files</p>
@@ -308,41 +322,7 @@ export default function AdminImportClient() {
               ))}
             </div>
           )}
-        </section>
-
-        <aside className="space-y-5">
-          <section className="app-surface px-5 py-5">
-            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Access</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">{user ? `Signed in as ${user.email}. Current role: ${isAdmin ? "admin" : "member"}.` : "Sign in as an admin or use the shared admin secret to manage imports."}</p>
-            <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-[#d4d4d4]">Shared admin secret</label>
-            <div className="mt-2 flex gap-2">
-              <input type="password" value={adminSecret} onChange={(event) => setAdminSecret(event.target.value)} className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10" placeholder={isAdmin ? "Optional when signed in as admin" : "Enter the shared admin secret"} />
-              <button type="button" onClick={handleSecretSave} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-[#2f2f2f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#171717]">Save</button>
-            </div>
-          </section>
-
-          <section className="app-surface px-5 py-5">
-            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Knowledge sources</p>
-            <div className="mt-4 space-y-3">
-              {SOURCE_OPTIONS.map((source) => {
-                const Icon = source.icon;
-                return (
-                  <div key={source.id} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-slate-600 dark:bg-[#212121] dark:text-[#d4d4d4]"><Icon className="h-5 w-5" /></span>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{source.label}</p>
-                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-[#2a2a2a] dark:text-[#b8b8b8]">{source.status}</span>
-                      </div>
-                      <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">{source.description}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-        </aside>
-      </div>
+      </section>
 
       {showImportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4 py-6">
