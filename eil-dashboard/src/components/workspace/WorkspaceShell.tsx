@@ -5,6 +5,8 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import AuthStatus from "@/components/auth/AuthStatus";
 import ThemeToggle from "@/components/theme/ThemeToggle";
+import { useIngestionRuns } from "@/hooks/useIngestionRuns";
+import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
   ChartIcon,
@@ -195,8 +197,21 @@ export default function WorkspaceShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const { profile } = useWorkspaceProfile();
+  const {
+    profile,
+    analysisSession,
+    setAnalysisMinimized,
+    clearAnalysisSession,
+  } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { runs } = useIngestionRuns({
+    enabled: Boolean(analysisSession?.runIds.length),
+    pollIntervalMs: 8000,
+  });
+
+  const activeRuns = analysisSession
+    ? runs.filter((run) => analysisSession.runIds.includes(run.id))
+    : [];
 
   const currentItem =
     NAV_ITEMS.find((item) => pathname.startsWith(item.href)) ?? NAV_ITEMS[0];
@@ -252,6 +267,18 @@ export default function WorkspaceShell({
         </header>
 
         <main className="min-w-0 px-3 py-5 sm:px-6 sm:py-6">{children}</main>
+
+        {analysisSession &&
+        (analysisSession.minimized || pathname !== "/workspace/home") ? (
+          <div className="fixed bottom-4 right-4 z-40 w-[min(360px,calc(100vw-2rem))]">
+            <AnalysisStatusCard
+              runs={activeRuns}
+              compact
+              onExpand={() => setAnalysisMinimized(false)}
+              onClear={clearAnalysisSession}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );

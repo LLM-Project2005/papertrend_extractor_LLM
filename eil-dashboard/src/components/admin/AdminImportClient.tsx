@@ -2,19 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import {
-  CloudIcon,
-  CloseIcon,
-  DriveIcon,
   FileIcon,
   FolderIcon,
-  OneDriveIcon,
-  PaperIcon,
   PlusIcon,
-  SharePointIcon,
-  UploadIcon,
 } from "@/components/ui/Icons";
-import Modal from "@/components/ui/Modal";
+import type { IngestionRunRow } from "@/types/database";
 
 interface IngestionRun {
   id: string;
@@ -29,22 +24,7 @@ interface IngestionRun {
   updated_at?: string;
 }
 
-type ImportSource =
-  | "pdf-upload"
-  | "google-drive"
-  | "onedrive"
-  | "sharepoint"
-  | "cloud-storage";
-
 const FOLDER_STORAGE_KEY = "papertrend_import_folders_v1";
-
-const SOURCE_OPTIONS = [
-  { id: "pdf-upload", label: "PDF upload", status: "ready", icon: UploadIcon, description: "Upload papers directly into the workspace knowledge library." },
-  { id: "google-drive", label: "Google Drive", status: "planned", icon: DriveIcon, description: "Planned connector for shared drive folders and research archives." },
-  { id: "onedrive", label: "OneDrive", status: "planned", icon: OneDriveIcon, description: "Planned connector for institution-managed document libraries." },
-  { id: "sharepoint", label: "SharePoint", status: "planned", icon: SharePointIcon, description: "Planned connector for Microsoft knowledge bases and file stores." },
-  { id: "cloud-storage", label: "Cloud storage", status: "planned", icon: CloudIcon, description: "Planned connector for buckets and external archives." },
-] as const;
 
 function formatTimestamp(value?: string | null) {
   if (!value) return "Not available";
@@ -78,18 +58,14 @@ function sanitizeFolderName(folderName: string) {
 
 export default function AdminImportClient() {
   const { session, isAdmin, user } = useAuth();
+  const { startAnalysisSession } = useWorkspaceProfile();
   const [adminSecret, setAdminSecret] = useState("");
-  const [provider, setProvider] = useState("");
-  const [model, setModel] = useState("");
-  const [files, setFiles] = useState<File[]>([]);
   const [runs, setRuns] = useState<IngestionRun[]>([]);
   const [folders, setFolders] = useState<string[]>(["Inbox"]);
   const [activeFolder, setActiveFolder] = useState("Inbox");
   const [draftFolderName, setDraftFolderName] = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
-  const [selectedSource, setSelectedSource] = useState<ImportSource>("pdf-upload");
   const [loadingRuns, setLoadingRuns] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -111,26 +87,17 @@ export default function AdminImportClient() {
   }, [folders]);
 
   useEffect(() => {
-    if (isAdmin && session?.access_token) void loadRuns();
-  }, [isAdmin, session?.access_token]);
-
-  const authHeaders = useMemo<Record<string, string>>(() => {
-    const headers: Record<string, string> = {};
-    if (isAdmin && session?.access_token) {
-      headers.Authorization = `Bearer ${session.access_token}`;
-      return headers;
+    if (session?.access_token) {
+      void loadRuns();
     }
-    if (adminSecret.trim()) headers["x-admin-secret"] = adminSecret.trim();
-    return headers;
-  }, [adminSecret, isAdmin, session?.access_token]);
+  }, [session?.access_token]);
 
-  const selectedSourceMeta = SOURCE_OPTIONS.find((source) => source.id === selectedSource)!;
   const visibleRuns = useMemo(() => runs.filter((run) => getFolderName(run) === activeFolder), [activeFolder, runs]);
 
   async function loadRuns(secretOverride?: string) {
     const secret = secretOverride ?? adminSecret;
     const headers: Record<string, string> | null =
-      isAdmin && session?.access_token
+      session?.access_token
         ? { Authorization: `Bearer ${session.access_token}` }
         : secret
           ? { "x-admin-secret": secret }
@@ -174,51 +141,6 @@ export default function AdminImportClient() {
     setDraftFolderName("");
     setShowFolderInput(false);
     setMessage(`Folder "${sanitized}" created.`);
-  }
-
-  async function handleUpload() {
-    if (!isAdmin && !adminSecret.trim()) {
-      setError("Sign in as an admin or enter the shared admin secret before importing.");
-      return;
-    }
-    if (selectedSource !== "pdf-upload") {
-      setError("This connector is planned but not yet live. Use PDF upload for now.");
-      return;
-    }
-    if (files.length === 0) {
-      setError("Choose at least one PDF file.");
-      return;
-    }
-
-    setUploading(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const formData = new FormData();
-      files.forEach((file) => formData.append("files", file));
-      formData.append("folder", activeFolder);
-      formData.append("source_kind", selectedSource);
-      if (provider.trim()) formData.append("provider", provider.trim());
-      if (model.trim()) formData.append("model", model.trim());
-
-      const response = await fetch("/api/admin/import", {
-        method: "POST",
-        headers: authHeaders,
-        body: formData,
-      });
-      const payload = (await response.json()) as { runs?: IngestionRun[]; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Import failed.");
-
-      setFiles([]);
-      setRuns((current) => [...(payload.runs ?? []), ...current]);
-      setFolders((current) => Array.from(new Set([...current, activeFolder])));
-      setShowImportModal(false);
-      setMessage("Files added to the knowledge library and queued for extraction.");
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Import failed.");
-    } finally {
-      setUploading(false);
-    }
   }
 
   return (
@@ -325,87 +247,23 @@ export default function AdminImportClient() {
           )}
       </section>
 
-      {showImportModal && (
-        <Modal onClose={() => setShowImportModal(false)}>
-          <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#212121]">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#2f2f2f] sm:px-6">
-              <div>
-                <p className="text-sm font-medium text-slate-500 dark:text-[#9c9c9c]">Import knowledge</p>
-                <h2 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-[#f2f2f2]">Add files and sources to {activeFolder}</h2>
-              </div>
-              <button type="button" onClick={() => setShowImportModal(false)} className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0]"><CloseIcon className="h-4 w-4" /></button>
-            </div>
-
-            <div className="space-y-6 px-5 py-5 sm:px-6">
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                {SOURCE_OPTIONS.map((source) => {
-                  const Icon = source.icon;
-                  const active = source.id === selectedSource;
-                  return (
-                    <button key={source.id} type="button" onClick={() => setSelectedSource(source.id)} className={`rounded-3xl border px-4 py-4 text-left transition-colors ${active ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a]"}`}>
-                      <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-black/5 dark:bg-black/10"><Icon className="h-5 w-5" /></span>
-                      <p className="mt-4 text-sm font-medium">{source.label}</p>
-                      <p className={`mt-2 text-xs leading-5 ${active ? "text-white/75 dark:text-[#4a4a4a]" : "text-slate-500 dark:text-[#9c9c9c]"}`}>{source.description}</p>
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-[#3a3a3a] dark:bg-[#171717]">
-                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-600 dark:bg-[#212121] dark:text-[#d0d0d0]"><PaperIcon className="h-6 w-6" /></span>
-                <p className="mt-4 text-base font-medium text-slate-900 dark:text-[#f2f2f2]">{selectedSourceMeta.id === "pdf-upload" ? "Drop PDFs here or browse files" : `${selectedSourceMeta.label} connector is planned`}</p>
-                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">{selectedSourceMeta.id === "pdf-upload" ? "The selected files will be uploaded into Supabase Storage and queued for extraction." : "Keep this source visible in the UI now, then connect the real integration later without changing the import flow."}</p>
-                {selectedSourceMeta.id === "pdf-upload" ? (
-                  <div className="mt-5">
-                    <input type="file" accept="application/pdf" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []).filter(Boolean))} className="mx-auto block w-full max-w-md text-sm text-slate-600 dark:text-[#b8b8b8]" />
-                  </div>
-                ) : (
-                  <button type="button" disabled className="mt-5 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-400 dark:border-[#2f2f2f] dark:text-[#707070]">Coming soon</button>
-                )}
-              </div>
-
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                  <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Selected files</p>
-                  {files.length === 0 ? (
-                    <p className="mt-3 text-sm text-slate-500 dark:text-[#9c9c9c]">No files selected yet.</p>
-                  ) : (
-                    <div className="mt-3 space-y-2">
-                      {files.map((file) => (
-                        <div key={file.name} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]">
-                          <div className="flex items-center gap-3">
-                            <FileIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
-                            <span className="text-sm text-slate-900 dark:text-[#f2f2f2]">{file.name}</span>
-                          </div>
-                          <span className="text-xs text-slate-500 dark:text-[#9c9c9c]">{Math.max(1, Math.round(file.size / 1024))} KB</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                  <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Processing details</p>
-                  <div className="mt-4 space-y-3">
-                    <input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="Provider, e.g. OpenRouter" className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10" />
-                    <input value={model} onChange={(event) => setModel(event.target.value)} placeholder="Model, e.g. openai/gpt-4o-mini" className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-[#2f2f2f]">
-              <p className="text-sm text-slate-500 dark:text-[#9c9c9c]">Folder: <span className="font-medium text-slate-900 dark:text-[#f2f2f2]">{activeFolder}</span></p>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => setShowImportModal(false)} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#b8b8b8]">Cancel</button>
-                <button type="button" onClick={handleUpload} disabled={uploading || selectedSource !== "pdf-upload"} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-[#f3f3f3] dark:text-[#171717] dark:disabled:bg-[#3a3a3a] dark:disabled:text-[#7e7e7e]">
-                  {uploading ? "Importing..." : "Import to folder"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </Modal>
-      )}
+      <AnalyzeFlowModal
+        open={showImportModal}
+        onClose={() => setShowImportModal(false)}
+        defaultFolder={activeFolder}
+        title={`Add files and sources to ${activeFolder}`}
+        eyebrow="Import knowledge"
+        onCreated={(createdRuns, context) => {
+          setRuns((current) => [...createdRuns, ...current]);
+          setFolders((current) =>
+            Array.from(new Set([...current, context.folder]))
+          );
+          startAnalysisSession(createdRuns as IngestionRunRow[], context);
+          setMessage("Files added to the knowledge library and queued for extraction.");
+          setError(null);
+          setShowImportModal(false);
+        }}
+      />
     </div>
   );
 }

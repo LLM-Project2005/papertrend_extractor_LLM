@@ -15,13 +15,31 @@ import {
   loadWorkspaceProfile,
   saveWorkspaceProfile as saveWorkspaceProfileLocal,
 } from "@/lib/workspace-profile";
+import type { IngestionRunRow } from "@/types/database";
 import type { WorkspaceProfile } from "@/types/workspace";
+
+const ANALYSIS_SESSION_STORAGE_KEY = "papertrend_analysis_session_v1";
+
+interface AnalysisSession {
+  runIds: string[];
+  sourceKind: string;
+  folder: string;
+  minimized: boolean;
+  startedAt: string;
+}
 
 interface WorkspaceContextValue {
   profile: WorkspaceProfile;
   hydrated: boolean;
+  analysisSession: AnalysisSession | null;
   updateProfile: (updates: Partial<WorkspaceProfile>) => void;
   resetProfile: () => void;
+  startAnalysisSession: (
+    runs: IngestionRunRow[],
+    options?: { sourceKind?: string; folder?: string }
+  ) => void;
+  setAnalysisMinimized: (minimized: boolean) => void;
+  clearAnalysisSession: () => void;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
@@ -37,6 +55,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   } = useAuth();
   const [profile, setProfile] = useState(DEFAULT_WORKSPACE_PROFILE);
   const [hydrated, setHydrated] = useState(false);
+  const [analysisSession, setAnalysisSession] = useState<AnalysisSession | null>(null);
   const loadedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -81,6 +100,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [hydrated, profile]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      const raw = window.localStorage.getItem(ANALYSIS_SESSION_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+
+      const parsed = JSON.parse(raw) as AnalysisSession;
+      if (Array.isArray(parsed.runIds) && parsed.runIds.length > 0) {
+        setAnalysisSession(parsed);
+      }
+    } catch {
+      // Ignore invalid cached analysis state.
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (!analysisSession || analysisSession.runIds.length === 0) {
+      window.localStorage.removeItem(ANALYSIS_SESSION_STORAGE_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(
+      ANALYSIS_SESSION_STORAGE_KEY,
+      JSON.stringify(analysisSession)
+    );
+  }, [analysisSession]);
+
+  useEffect(() => {
     if (!hydrated || !user) {
       return;
     }
@@ -95,6 +150,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => ({
       profile,
       hydrated,
+      analysisSession,
       updateProfile: (updates) => {
         setProfile((current) => ({
           ...current,
@@ -108,8 +164,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           updatedAt: new Date().toISOString(),
         });
       },
+      startAnalysisSession: (runs, options) => {
+        const runIds = runs.map((run) => run.id).filter(Boolean);
+        if (runIds.length === 0) {
+          return;
+        }
+
+        setAnalysisSession({
+          runIds,
+          sourceKind: options?.sourceKind ?? "pdf-upload",
+          folder: options?.folder ?? "Inbox",
+          minimized: false,
+          startedAt: new Date().toISOString(),
+        });
+      },
+      setAnalysisMinimized: (minimized) => {
+        setAnalysisSession((current) =>
+          current ? { ...current, minimized } : current
+        );
+      },
+      clearAnalysisSession: () => {
+        setAnalysisSession(null);
+      },
     }),
-    [hydrated, profile]
+    [analysisSession, hydrated, profile]
   );
 
   return (

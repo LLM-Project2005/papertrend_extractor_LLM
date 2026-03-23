@@ -1,5 +1,5 @@
-import ChatClient from "@/components/chat/ChatClient";
+import WorkspaceChatClient from "@/components/workspace/WorkspaceChatClient";
 
 export default function WorkspaceChatPage() {
-  return <ChatClient />;
+  return <WorkspaceChatClient />;
 }

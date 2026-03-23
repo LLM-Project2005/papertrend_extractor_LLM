@@ -11,6 +11,7 @@ import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
+import WorkspaceEmptyState from "@/components/workspace/WorkspaceEmptyState";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 
 const TABS = [
@@ -129,6 +130,16 @@ export default function DashboardClient({
           </p>
         </div>
       </div>
+    );
+  }
+
+  if (data.useMock) {
+    return (
+      <WorkspaceEmptyState
+        eyebrow="Dashboard locked to preview mode"
+        title="Analyze documents before using analytics"
+        description="The dashboard will switch from preview data to real workspace trends after the first analysis run completes and syncs results into Supabase."
+      />
     );
   }
 

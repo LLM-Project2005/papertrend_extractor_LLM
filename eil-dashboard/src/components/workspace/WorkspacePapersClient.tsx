@@ -7,6 +7,7 @@ import { TRACK_COLS } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import Sidebar from "@/components/Sidebar";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
+import WorkspaceEmptyState from "@/components/workspace/WorkspaceEmptyState";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 
 export default function WorkspacePapersClient() {
@@ -47,6 +48,16 @@ export default function WorkspacePapersClient() {
           </p>
         </div>
       </div>
+    );
+  }
+
+  if (data.useMock) {
+    return (
+      <WorkspaceEmptyState
+        eyebrow="Paper library waiting on analysis"
+        title="Analyze documents before browsing paper details"
+        description="The paper library becomes useful once the first analysis run has extracted titles, keywords, evidence, and track assignments into Supabase."
+      />
     );
   }
 
