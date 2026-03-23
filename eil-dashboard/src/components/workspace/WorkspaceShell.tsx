@@ -3,39 +3,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import {
+  ChartIcon,
+  ChatIcon,
+  HomeIcon,
+  LogoMarkIcon,
+  PaperIcon,
+  PlusIcon,
+  SettingsIcon,
+  UploadIcon,
+} from "@/components/ui/Icons";
 
 const NAV_ITEMS = [
-  {
-    href: "/workspace/home",
-    label: "Home",
-    description: "Workspace overview and next actions",
-  },
-  {
-    href: "/workspace/dashboard",
-    label: "Dashboard",
-    description: "Analytics, trends, and track views",
-  },
-  {
-    href: "/workspace/chat",
-    label: "Chat",
-    description: "Ask grounded questions across the corpus",
-  },
-  {
-    href: "/workspace/papers",
-    label: "Papers",
-    description: "Explore titles, topics, keywords, and evidence",
-  },
-  {
-    href: "/workspace/imports",
-    label: "Imports",
-    description: "Upload PDFs and manage source connections",
-  },
-  {
-    href: "/workspace/settings",
-    label: "Settings",
-    description: "Adjust workspace identity and defaults",
-  },
+  { href: "/workspace/home", label: "Home", icon: HomeIcon },
+  { href: "/workspace/dashboard", label: "Dashboard", icon: ChartIcon },
+  { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
+  { href: "/workspace/papers", label: "Papers", icon: PaperIcon },
+  { href: "/workspace/imports", label: "Imports", icon: UploadIcon },
+  { href: "/workspace/settings", label: "Settings", icon: SettingsIcon },
 ] as const;
+
+const PAGE_DESCRIPTIONS: Record<string, string> = {
+  "/workspace/home": "Overview, next steps, and the current state of your corpus.",
+  "/workspace/dashboard": "Analytics across trends, topics, keywords, and track views.",
+  "/workspace/chat": "A clean assistant surface for grounded questions across the corpus.",
+  "/workspace/papers": "Inspect titles, keywords, evidence, and track assignments.",
+  "/workspace/imports": "Bring new sources into the workspace and monitor intake.",
+  "/workspace/settings": "Adjust the workspace identity and onboarding defaults.",
+};
 
 export default function WorkspaceShell({
   children,
@@ -45,118 +40,109 @@ export default function WorkspaceShell({
   const pathname = usePathname();
   const { profile } = useWorkspaceProfile();
 
+  const currentItem =
+    NAV_ITEMS.find((item) => pathname.startsWith(item.href)) ?? NAV_ITEMS[0];
+
+  const intakeLabel =
+    profile.primarySource === "pdf-upload"
+      ? "PDF upload ready"
+      : profile.primarySource === "csv-import"
+        ? "Notebook sync ready"
+        : "Connector planning";
+
   return (
-    <div className="min-h-screen bg-[#f6f1e8] text-gray-900">
-      <div className="grid min-h-screen lg:grid-cols-[290px_minmax(0,1fr)]">
-        <aside className="border-b border-[#d9cfbf] bg-[#1d2b34] px-5 py-6 text-[#dce6ea] lg:border-b-0 lg:border-r lg:px-6">
-          <div className="mb-8">
-            <Link href="/" className="inline-flex items-center gap-3">
-              <span className="rounded-2xl border border-white/15 bg-white/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.22em] text-white">
-                PT
+    <div className="min-h-screen bg-[#f5f7fb] text-slate-900">
+      <div className="grid min-h-screen lg:grid-cols-[248px_minmax(0,1fr)]">
+        <aside className="border-b border-slate-200 bg-white lg:border-b-0 lg:border-r">
+          <div className="flex h-full flex-col px-4 py-5">
+            <Link href="/" className="flex items-center gap-3 px-2">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+                <LogoMarkIcon className="h-5 w-5" />
               </span>
               <div>
-                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#9bb0bc]">
-                  Papertrend
-                </p>
-                <p className="text-xl font-semibold text-white">Workspace</p>
+                <p className="text-sm font-semibold text-slate-900">Papertrend</p>
+                <p className="text-xs text-slate-500">Research workspace</p>
               </div>
             </Link>
-          </div>
 
-          <section className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9bb0bc]">
-              Active workspace
-            </p>
-            <h1 className="mt-3 text-2xl font-semibold text-white">
-              {profile.name}
-            </h1>
-            <p className="mt-2 text-sm leading-6 text-[#c4d0d6]">
-              {profile.organization}
-            </p>
-            <p className="mt-1 text-sm leading-6 text-[#9bb0bc]">
-              {profile.domain}
-            </p>
-          </section>
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-sm font-medium text-slate-900">{profile.name}</p>
+              <p className="mt-1 text-sm text-slate-500">{profile.organization}</p>
+              <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400">
+                {profile.domain}
+              </p>
+            </div>
 
-          <nav className="mt-6 space-y-2">
-            {NAV_ITEMS.map((item) => {
-              const isActive = pathname === item.href;
-              return (
+            <div className="mt-6">
+              <p className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Modules
+              </p>
+              <nav className="mt-2 space-y-1">
+                {NAV_ITEMS.map((item) => {
+                  const isActive = pathname === item.href;
+                  const Icon = item.icon;
+
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                        isActive
+                          ? "bg-slate-900 text-white"
+                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span className="font-medium">{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+
+            <div className="mt-auto rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Intake
+              </p>
+              <p className="mt-2 text-sm font-medium text-slate-900">{intakeLabel}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`block rounded-[22px] border px-4 py-3 transition-colors ${
-                    isActive
-                      ? "border-[#e8c98f] bg-[#f3dfba] text-[#172029]"
-                      : "border-white/10 bg-white/5 text-[#dce6ea] hover:border-white/20 hover:bg-white/10"
-                  }`}
+                  href="/start"
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:border-slate-300 hover:text-slate-900"
                 >
-                  <p className="text-sm font-semibold">{item.label}</p>
-                  <p
-                    className={`mt-1 text-xs leading-5 ${
-                      isActive ? "text-[#43515a]" : "text-[#9bb0bc]"
-                    }`}
-                  >
-                    {item.description}
-                  </p>
+                  Setup
                 </Link>
-              );
-            })}
-          </nav>
-
-          <section className="mt-6 rounded-[28px] border border-white/10 bg-[#233742] p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9bb0bc]">
-              Intake mode
-            </p>
-            <p className="mt-3 text-sm font-semibold text-white">
-              {profile.primarySource === "pdf-upload"
-                ? "PDF upload ready"
-                : profile.primarySource === "csv-import"
-                  ? "Batch sync ready"
-                  : "Connector planning"}
-            </p>
-            <p className="mt-2 text-sm leading-6 text-[#c4d0d6]">
-              PDF upload and notebook sync are ready now. Enterprise connectors can
-              be layered in later without changing the dashboard and chat modules.
-            </p>
-          </section>
-
-          <div className="mt-6 flex flex-wrap gap-3 text-sm">
-            <Link
-              href="/start"
-              className="rounded-full border border-white/15 px-4 py-2 text-[#dce6ea] hover:border-white/30 hover:bg-white/10"
-            >
-              Update setup
-            </Link>
-            <Link
-              href="/"
-              className="rounded-full border border-transparent px-4 py-2 text-[#9bb0bc] hover:text-white"
-            >
-              View landing page
-            </Link>
+                <Link
+                  href="/"
+                  className="rounded-lg border border-transparent px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-900"
+                >
+                  Landing
+                </Link>
+              </div>
+            </div>
           </div>
         </aside>
 
         <div className="min-w-0">
-          <div className="sticky top-0 z-10 border-b border-[#dfd5c6] bg-[#f6f1e8]/90 px-4 py-4 backdrop-blur sm:px-6">
-            <div className="flex items-center justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8b7357]">
-                  Research intelligence workspace
+          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
+            <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                  {currentItem.label}
                 </p>
-                <p className="mt-1 text-sm text-[#5a5248]">
-                  Upload or sync documents, then move between analytics, chat, and
-                  paper-level evidence without leaving the workspace.
+                <p className="mt-1 truncate text-sm text-slate-600">
+                  {PAGE_DESCRIPTIONS[currentItem.href]}
                 </p>
               </div>
               <Link
                 href="/workspace/imports"
-                className="rounded-full bg-[#172029] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#253644]"
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
               >
-                Add documents
+                <PlusIcon className="h-4 w-4" />
+                <span>Add source</span>
               </Link>
             </div>
-          </div>
+          </header>
 
           <main className="min-w-0 px-4 py-6 sm:px-6">{children}</main>
         </div>

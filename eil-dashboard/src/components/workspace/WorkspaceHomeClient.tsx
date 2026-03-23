@@ -5,28 +5,62 @@ import { useMemo } from "react";
 import { useDashboardData } from "@/hooks/useData";
 import { WORKSPACE_GOALS, WORKSPACE_SOURCES } from "@/lib/workspace-profile";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import {
+  ArrowRightIcon,
+  ChartIcon,
+  ChatIcon,
+  CheckCircleIcon,
+  CircleIcon,
+  PaperIcon,
+  UploadIcon,
+} from "@/components/ui/Icons";
 
-function QuickAction({
+function MetricCard({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <article className="rounded-2xl border border-slate-200 bg-white px-5 py-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm font-medium text-slate-500">{label}</p>
+        <span className="text-slate-400">{icon}</span>
+      </div>
+      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900">
+        {value}
+      </p>
+    </article>
+  );
+}
+
+function QuickLink({
   href,
-  eyebrow,
   title,
   description,
+  icon,
 }: {
   href: string;
-  eyebrow: string;
   title: string;
   description: string;
+  icon: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
-      className="rounded-[28px] border border-[#dfd5c6] bg-white p-5 shadow-sm transition-transform hover:-translate-y-0.5"
+      className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300"
     >
-      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8b7357]">
-        {eyebrow}
-      </p>
-      <h3 className="mt-3 text-xl font-semibold text-gray-900">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-gray-600">{description}</p>
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 text-slate-400">{icon}</span>
+        <div>
+          <p className="text-sm font-medium text-slate-900">{title}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{description}</p>
+        </div>
+      </div>
+      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-300" />
     </Link>
   );
 }
@@ -38,9 +72,9 @@ export default function WorkspaceHomeClient() {
   const summary = useMemo(() => {
     if (!data) {
       return {
-        paperCount: 0,
-        topicCount: 0,
-        keywordCount: 0,
+        paperCount: "0",
+        topicCount: "0",
+        keywordCount: "0",
         yearRange: "No data yet",
       };
     }
@@ -51,9 +85,9 @@ export default function WorkspaceHomeClient() {
     const years = [...new Set(data.trends.map((row) => row.year))].sort();
 
     return {
-      paperCount: papers,
-      topicCount: topics,
-      keywordCount: keywords,
+      paperCount: papers.toLocaleString(),
+      topicCount: topics.toLocaleString(),
+      keywordCount: keywords.toLocaleString(),
       yearRange:
         years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data yet",
     };
@@ -64,193 +98,187 @@ export default function WorkspaceHomeClient() {
   );
   const activeGoal = WORKSPACE_GOALS.find((goal) => goal.id === profile.goal);
 
+  const checklist = [
+    {
+      title: "Confirm workspace profile",
+      detail: "Name, domain, goal, and outputs can all be tuned from Settings.",
+      done: profile.onboardingComplete,
+    },
+    {
+      title: "Add the first source",
+      detail: "PDF upload and notebook sync are ready for the current pipeline.",
+      done:
+        profile.primarySource === "pdf-upload" ||
+        profile.primarySource === "csv-import",
+    },
+    {
+      title: "Validate analytics data",
+      detail: data?.useMock
+        ? "The dashboard is still showing preview data until Supabase is populated."
+        : "Analytics are reading from the current Supabase-backed dataset.",
+      done: !loading,
+    },
+  ];
+
   return (
-    <div className="space-y-6">
-      <section className="overflow-hidden rounded-[34px] border border-[#d7c9b4] bg-[#172029] text-white shadow-sm">
-        <div className="grid gap-8 px-6 py-8 lg:grid-cols-[1.1fr_0.9fr] lg:px-8">
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section className="rounded-3xl border border-slate-200 bg-white px-6 py-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#9bb0bc]">
-              Workspace home
-            </p>
-            <h1 className="mt-3 max-w-3xl text-4xl font-semibold tracking-tight">
-              {profile.name} is set up as a research workspace, not just a dashboard.
+            <p className="text-sm font-medium text-slate-500">Workspace overview</p>
+            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900">
+              {profile.name}
             </h1>
-            <p className="mt-4 max-w-2xl text-sm leading-7 text-[#d8e2e6]">
-              Use this space to bring papers in, monitor ingestion, explore trends,
-              and switch into a grounded assistant whenever you need synthesis.
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">
+              A clean control center for bringing in papers, reviewing analytics,
+              and switching into grounded chat without bouncing between separate tools.
             </p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/workspace/imports"
-                className="rounded-full bg-[#f3dfba] px-5 py-3 text-sm font-semibold text-[#172029] transition-colors hover:bg-[#edd3a0]"
-              >
-                Upload or connect sources
-              </Link>
-              <Link
-                href="/workspace/dashboard"
-                className="rounded-full border border-white/15 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10"
-              >
-                Open analytics
-              </Link>
-            </div>
           </div>
 
-          <div className="rounded-[28px] border border-white/10 bg-white/5 p-5">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#9bb0bc]">
-              Workspace profile
-            </p>
-            <dl className="mt-4 space-y-3 text-sm">
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-[#9bb0bc]">Organization</dt>
-                <dd className="text-right text-white">{profile.organization}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-[#9bb0bc]">Domain</dt>
-                <dd className="text-right text-white">{profile.domain}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-[#9bb0bc]">Primary goal</dt>
-                <dd className="text-right text-white">{activeGoal?.label}</dd>
-              </div>
-              <div className="flex items-start justify-between gap-4">
-                <dt className="text-[#9bb0bc]">Primary source</dt>
-                <dd className="text-right text-white">{activeSource?.label}</dd>
-              </div>
-            </dl>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/workspace/dashboard"
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+            >
+              Open dashboard
+            </Link>
+            <Link
+              href="/workspace/chat"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+            >
+              Open chat
+            </Link>
+            <Link
+              href="/workspace/imports"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+            >
+              Add source
+            </Link>
           </div>
         </div>
       </section>
 
+      {data?.useMock && (
+        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+          The workspace is currently showing preview data. Connect Supabase and run
+          the import flow to replace this with real results.
+        </section>
+      )}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {[
-          {
-            label: "Papers in corpus",
-            value: loading ? "..." : summary.paperCount.toLocaleString(),
-          },
-          {
-            label: "Distinct topics",
-            value: loading ? "..." : summary.topicCount.toLocaleString(),
-          },
-          {
-            label: "Distinct keywords",
-            value: loading ? "..." : summary.keywordCount.toLocaleString(),
-          },
-          {
-            label: "Coverage window",
-            value: loading ? "..." : summary.yearRange,
-          },
-        ].map((metric) => (
-          <article
-            key={metric.label}
-            className="rounded-[28px] border border-[#dfd5c6] bg-white p-5 shadow-sm"
-          >
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#8b7357]">
-              {metric.label}
-            </p>
-            <p className="mt-4 text-3xl font-semibold tracking-tight text-gray-900">
-              {metric.value}
-            </p>
+        <MetricCard
+          label="Papers"
+          value={loading ? "..." : summary.paperCount}
+          icon={<PaperIcon className="h-5 w-5" />}
+        />
+        <MetricCard
+          label="Topics"
+          value={loading ? "..." : summary.topicCount}
+          icon={<ChartIcon className="h-5 w-5" />}
+        />
+        <MetricCard
+          label="Keywords"
+          value={loading ? "..." : summary.keywordCount}
+          icon={<ChatIcon className="h-5 w-5" />}
+        />
+        <MetricCard
+          label="Coverage"
+          value={loading ? "..." : summary.yearRange}
+          icon={<UploadIcon className="h-5 w-5" />}
+        />
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+        <article className="rounded-3xl border border-slate-200 bg-white p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Continue setup</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Keep the workspace focused on the next meaningful actions.
+              </p>
+            </div>
+            <Link
+              href="/start"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900"
+            >
+              Edit setup
+            </Link>
+          </div>
+
+          <div className="mt-5 divide-y divide-slate-200">
+            {checklist.map((item) => (
+              <div key={item.title} className="flex items-start gap-4 py-4 first:pt-0">
+                <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center">
+                  {item.done ? (
+                    <CheckCircleIcon className="h-5 w-5 text-emerald-600" />
+                  ) : (
+                    <CircleIcon className="h-5 w-5 text-slate-300" />
+                  )}
+                </span>
+                <div>
+                  <p className="text-sm font-medium text-slate-900">{item.title}</p>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">{item.detail}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <div className="space-y-6">
+          <article className="rounded-3xl border border-slate-200 bg-white p-6">
+            <h2 className="text-lg font-semibold text-slate-900">Quick access</h2>
+            <div className="mt-4 space-y-3">
+              <QuickLink
+                href="/workspace/dashboard"
+                title="Dashboard"
+                description="Trends, tracks, keywords, and the current research picture."
+                icon={<ChartIcon className="h-5 w-5" />}
+              />
+              <QuickLink
+                href="/workspace/chat"
+                title="Chat"
+                description="Ask grounded questions and follow citations back to papers."
+                icon={<ChatIcon className="h-5 w-5" />}
+              />
+              <QuickLink
+                href="/workspace/papers"
+                title="Paper library"
+                description="Review titles, keywords, evidence, and track tags directly."
+                icon={<PaperIcon className="h-5 w-5" />}
+              />
+            </div>
           </article>
-        ))}
-      </section>
 
-      <section className="grid gap-4 xl:grid-cols-3">
-        <QuickAction
-          href="/workspace/dashboard"
-          eyebrow="Module"
-          title="Dashboard"
-          description="Keep your charts and trend analysis available as a core workspace view."
-        />
-        <QuickAction
-          href="/workspace/chat"
-          eyebrow="Module"
-          title="Chat"
-          description="Ask grounded questions, compare themes, and jump back to paper evidence."
-        />
-        <QuickAction
-          href="/workspace/papers"
-          eyebrow="Module"
-          title="Paper library"
-          description="Inspect titles, keywords, evidence snippets, and track tags paper by paper."
-        />
-      </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <article className="rounded-[32px] border border-[#dfd5c6] bg-white p-6 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8b7357]">
-            First-session checklist
-          </p>
-          <div className="mt-4 space-y-4">
-            {[
-              {
-                title: "Confirm workspace profile",
-                done: profile.onboardingComplete,
-                detail: "Tune name, domain, goal, and outputs in Settings when needed.",
-              },
-              {
-                title: "Add your first data source",
-                done: profile.primarySource === "pdf-upload" || profile.primarySource === "csv-import",
-                detail: "PDF upload and notebook sync are active now. Connectors can follow.",
-              },
-              {
-                title: "Validate the analytics view",
-                done: !loading,
-                detail: data?.useMock
-                  ? "The workspace is still showing mock data until Supabase is populated."
-                  : "Dashboard data is loading from Supabase-backed views.",
-              },
-            ].map((item) => (
-              <div
-                key={item.title}
-                className="rounded-[24px] border border-gray-200 bg-[#faf8f4] p-4"
-              >
-                <div className="flex items-center justify-between gap-4">
-                  <h3 className="text-base font-semibold text-gray-900">{item.title}</h3>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] ${
-                      item.done
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-amber-100 text-amber-700"
-                    }`}
-                  >
-                    {item.done ? "Ready" : "Pending"}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-gray-600">{item.detail}</p>
+          <article className="rounded-3xl border border-slate-200 bg-white p-6">
+            <h2 className="text-lg font-semibold text-slate-900">Workspace profile</h2>
+            <dl className="mt-4 space-y-4 text-sm">
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500">Organization</dt>
+                <dd className="text-right font-medium text-slate-900">
+                  {profile.organization}
+                </dd>
               </div>
-            ))}
-          </div>
-        </article>
-
-        <article className="rounded-[32px] border border-[#dfd5c6] bg-white p-6 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8b7357]">
-            Source roadmap
-          </p>
-          <div className="mt-4 space-y-3">
-            {WORKSPACE_SOURCES.map((source) => (
-              <div
-                key={source.id}
-                className="rounded-[24px] border border-gray-200 bg-[#faf8f4] p-4"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-sm font-semibold text-gray-900">{source.label}</h3>
-                  <span
-                    className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                      source.status === "ready"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-gray-200 text-gray-600"
-                    }`}
-                  >
-                    {source.status}
-                  </span>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-gray-600">
-                  {source.description}
-                </p>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500">Domain</dt>
+                <dd className="text-right font-medium text-slate-900">
+                  {profile.domain}
+                </dd>
               </div>
-            ))}
-          </div>
-        </article>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500">Goal</dt>
+                <dd className="text-right font-medium text-slate-900">
+                  {activeGoal?.label}
+                </dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500">Primary source</dt>
+                <dd className="text-right font-medium text-slate-900">
+                  {activeSource?.label}
+                </dd>
+              </div>
+            </dl>
+          </article>
+        </div>
       </section>
     </div>
   );

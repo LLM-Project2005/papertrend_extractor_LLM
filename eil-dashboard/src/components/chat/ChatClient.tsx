@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  ChatIcon,
+  PaperIcon,
+  SendIcon,
+  SparkIcon,
+} from "@/components/ui/Icons";
 
 interface Citation {
   paperId: number;
@@ -16,6 +22,28 @@ interface ConversationMessage {
   content: string;
   mode?: "grounded" | "fallback";
   citations?: Citation[];
+}
+
+const STARTER_PROMPTS = [
+  "What are the main topic trends in this workspace over time?",
+  "Find papers related to translanguaging or multilingual education.",
+  "How do the main track categories compare in the current dataset?",
+];
+
+function AssistantAvatar() {
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white">
+      <SparkIcon className="h-4 w-4" />
+    </span>
+  );
+}
+
+function UserAvatar() {
+  return (
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-slate-700">
+      <ChatIcon className="h-4 w-4" />
+    </span>
+  );
 }
 
 export default function ChatClient() {
@@ -104,174 +132,144 @@ export default function ChatClient() {
   }
 
   return (
-    <div className="flex min-h-[70vh] flex-col">
-      <header className="border-b border-gray-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-start justify-between gap-4 px-4 py-5 sm:px-6">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
-              Workspace Chat
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
-              Ask about papers, trends, tracks, methods, or results. Answers use the
-              stored corpus first and link back to the paper library when relevant.
-            </p>
-          </div>
-          <div className="hidden rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600 md:block">
-            <p className="font-semibold uppercase tracking-[0.18em] text-gray-500">
-              Mode
-            </p>
-            <p className="mt-1">Corpus-grounded first</p>
-            <p>Lightweight fallback when needed</p>
-          </div>
-        </div>
+    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white">
+      <header className="border-b border-slate-200 px-6 py-4">
+        <p className="text-sm font-medium text-slate-500">Workspace chat</p>
       </header>
 
-      <div className="flex-1 bg-[#f7f7f8]">
-        <div className="mx-auto flex h-full w-full max-w-5xl flex-col px-4 sm:px-6">
-          <div className="flex-1 py-6 sm:py-8">
-            <div className="space-y-6">
-              {messages.map((message, index) => (
-                <article
-                  key={`${message.role}-${index}`}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`w-full max-w-3xl rounded-3xl border px-5 py-4 shadow-sm sm:px-6 ${
-                      message.role === "user"
-                        ? "border-gray-200 bg-white"
-                        : "border-[#e7e7e9] bg-[#fcfcfd]"
-                    }`}
+      <div className="min-h-[72vh] bg-[#f7f7f8]">
+        <div className="max-h-[calc(100vh-16rem)] overflow-y-auto">
+          {messages.length === 1 && (
+            <section className="mx-auto max-w-3xl px-4 pb-8 pt-14 sm:px-6">
+              <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+                Ask anything about the current research corpus
+              </h1>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500">
+                This surface is intentionally plain. Ask a direct question, compare
+                themes, or jump into a cited paper when you need evidence.
+              </p>
+
+              <div className="mt-8 grid gap-3 md:grid-cols-3">
+                {STARTER_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => setDraft(prompt)}
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left text-sm text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50"
                   >
-                    <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                      <span>{message.role === "user" ? "You" : "Assistant"}</span>
-                      {message.mode && (
-                        <span
-                          className={`rounded-full px-2.5 py-1 text-[11px] tracking-[0.12em] ${
-                            message.mode === "grounded"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {message.mode === "grounded"
-                            ? "Grounded"
-                            : "Broader guidance"}
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+
+          <div className="divide-y divide-slate-200/80">
+            {messages.map((message, index) => (
+              <section
+                key={`${message.role}-${index}`}
+                className={message.role === "assistant" ? "bg-white" : "bg-[#f7f7f8]"}
+              >
+                <div className="mx-auto flex max-w-3xl gap-4 px-4 py-6 sm:px-6">
+                  <div className="mt-0.5 flex-none">
+                    {message.role === "assistant" ? <AssistantAvatar /> : <UserAvatar />}
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-900">
+                        {message.role === "assistant" ? "Assistant" : "You"}
+                      </span>
+                      {message.mode === "fallback" && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          Broader guidance
                         </span>
                       )}
                     </div>
 
-                    <div className="whitespace-pre-wrap text-[15px] leading-7 text-gray-800">
+                    <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-800">
                       {message.content}
                     </div>
 
                     {message.citations && message.citations.length > 0 && (
-                      <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                          Paper references
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {message.citations.map((citation) => (
-                            <Link
-                              key={citation.paperId}
-                              href={citation.href}
-                              className="block rounded-2xl border border-gray-200 px-4 py-3 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
-                            >
-                              <span className="font-semibold">
+                      <div className="mt-5 space-y-2">
+                        {message.citations.map((citation) => (
+                          <Link
+                            key={citation.paperId}
+                            href={citation.href}
+                            className="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition-colors hover:border-slate-300 hover:bg-white"
+                          >
+                            <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400" />
+                            <span className="min-w-0">
+                              <span className="font-medium text-slate-900">
                                 [Paper {citation.paperId}] {citation.title}
                               </span>
-                              <span className="ml-2 text-gray-500">
-                                ({citation.year})
-                              </span>
+                              <span className="ml-2 text-slate-500">({citation.year})</span>
                               {citation.reason && (
-                                <span className="mt-1 block text-xs leading-5 text-gray-500">
+                                <span className="mt-1 block text-xs leading-5 text-slate-500">
                                   {citation.reason}
                                 </span>
                               )}
-                            </Link>
-                          ))}
-                        </div>
+                            </span>
+                          </Link>
+                        ))}
                       </div>
                     )}
                   </div>
-                </article>
-              ))}
+                </div>
+              </section>
+            ))}
 
-              {loading && (
-                <div className="flex justify-start">
-                  <div className="w-full max-w-3xl rounded-3xl border border-[#e7e7e9] bg-[#fcfcfd] px-5 py-4 shadow-sm sm:px-6">
-                    <div className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                      Assistant
-                    </div>
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400" />
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400 [animation-delay:120ms]" />
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-gray-400 [animation-delay:240ms]" />
-                      <span className="ml-2">Thinking...</span>
-                    </div>
+            {loading && (
+              <section className="bg-white">
+                <div className="mx-auto flex max-w-3xl gap-4 px-4 py-6 sm:px-6">
+                  <div className="mt-0.5 flex-none">
+                    <AssistantAvatar />
+                  </div>
+                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400" />
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms]" />
+                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms]" />
+                    <span className="ml-2">Thinking...</span>
                   </div>
                 </div>
-              )}
+              </section>
+            )}
 
-              <div ref={scrollAnchorRef} />
-            </div>
+            <div ref={scrollAnchorRef} />
           </div>
+        </div>
 
-          <aside className="mb-4 rounded-3xl border border-gray-200 bg-white px-5 py-4 shadow-sm sm:px-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500">
-                  Prompt ideas
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {[
-                    "What are the main topic trends in this workspace over time?",
-                    "Find papers related to translanguaging or multilingual education.",
-                    "How do the main track categories compare in the current dataset?",
-                  ].map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => setDraft(prompt)}
-                      className="rounded-full border border-gray-200 bg-gray-50 px-4 py-2 text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-white"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <p className="max-w-md text-sm leading-6 text-gray-500">
-                This v1 chat is session-only in the browser. It does not save full
-                chat history in Supabase yet.
-              </p>
-            </div>
-          </aside>
-
-          <div className="sticky bottom-0 pb-5 pt-2">
+        <div className="border-t border-slate-200 bg-white px-4 py-4 sm:px-6">
+          <div className="mx-auto max-w-3xl">
             <form
               onSubmit={handleSubmit}
-              className="rounded-[28px] border border-gray-200 bg-white p-3 shadow-[0_12px_40px_rgba(15,23,42,0.08)]"
+              className="rounded-[28px] border border-slate-300 bg-white shadow-sm"
             >
               <textarea
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={handleComposerKeyDown}
-                placeholder="Message the workspace corpus..."
-                className="min-h-24 w-full resize-none border-0 bg-transparent px-3 py-2 text-[15px] leading-7 text-gray-900 placeholder:text-gray-400 focus:outline-none"
+                placeholder="Message the workspace..."
+                className="min-h-24 w-full resize-none border-0 bg-transparent px-5 py-4 text-[15px] leading-7 text-slate-900 placeholder:text-slate-400 focus:outline-none"
               />
-              <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-3 pt-3">
-                <p className="text-xs text-gray-500">
-                  Press Enter to send. Shift+Enter adds a new line.
+              <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3">
+                <p className="text-xs text-slate-500">
+                  Grounded on workspace data when possible.
                 </p>
                 <button
                   type="submit"
                   disabled={loading || draft.trim().length === 0}
-                  className="rounded-full bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-gray-300"
+                  className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  {loading ? "Thinking..." : "Send"}
+                  <SendIcon className="h-4 w-4" />
+                  <span>Send</span>
                 </button>
               </div>
             </form>
+            <p className="mt-3 text-center text-xs text-slate-400">
+              This chat is session-only for now and is not yet saved in Supabase.
+            </p>
           </div>
         </div>
       </div>
