@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "EIL Research Trend Dashboard",
+  title: "EIL Research Dashboard",
   description:
-    "Visualises outputs from the LLM-based extraction pipeline — English as an International Language, Chulalongkorn University",
+    "Dashboard, chat, and import tooling for the EIL paper-analysis pipeline at Chulalongkorn University",
 };
 
 export default function RootLayout({

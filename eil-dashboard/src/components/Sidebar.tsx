@@ -1,6 +1,7 @@
 "use client";
 
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import PrimaryNavigation from "@/components/PrimaryNavigation";
 
 interface Props {
   allYears: string[];
@@ -44,6 +45,10 @@ export default function Sidebar({
         <br />
         Chulalongkorn University
       </p>
+
+      <div className="mb-4">
+        <PrimaryNavigation orientation="vertical" />
+      </div>
 
       <hr className="border-sidebar-divider mb-4" />
 

@@ -1,98 +1,184 @@
--- ═══════════════════════════════════════════════════════════════════
--- EIL Research Trend Dashboard — Supabase Schema
--- ═══════════════════════════════════════════════════════════════════
--- Run this in the Supabase SQL Editor (Dashboard → SQL → New query).
--- It creates four tables, indexes, RLS policies for public read,
--- and three convenience views consumed by the Next.js app.
--- ═══════════════════════════════════════════════════════════════════
+-- ==================================================================
+-- EIL Research Trend Dashboard - Supabase Schema
+-- ==================================================================
+-- Run this in the Supabase SQL Editor.
+-- This schema is additive-only so preview work can share the same
+-- Supabase project without breaking the current production contract.
 
--- ─── 1. Papers ─────────────────────────────────────────────────────
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- ------------------------------------------------------------------
+-- 1. Papers
+-- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS papers (
-  id          BIGINT       PRIMARY KEY,        -- matches paper_id from the CSV
-  year        TEXT         NOT NULL,
-  title       TEXT         NOT NULL,
-  created_at  TIMESTAMPTZ  DEFAULT now()
+  id          BIGINT PRIMARY KEY,
+  year        TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT now()
 );
 
--- ─── 2. Paper Keywords / Trends ────────────────────────────────────
+-- ------------------------------------------------------------------
+-- 2. Paper Keywords / Trends
+-- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_keywords (
-  id                  BIGSERIAL    PRIMARY KEY,
-  paper_id            BIGINT       NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
-  topic               TEXT         NOT NULL,
-  keyword             TEXT         NOT NULL,
-  keyword_frequency   INT          DEFAULT 1,
-  evidence            TEXT,
-  created_at          TIMESTAMPTZ  DEFAULT now()
+  id                 BIGSERIAL PRIMARY KEY,
+  paper_id           BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  topic              TEXT NOT NULL,
+  keyword            TEXT NOT NULL,
+  keyword_frequency  INT DEFAULT 1,
+  evidence           TEXT,
+  created_at         TIMESTAMPTZ DEFAULT now()
 );
 
--- ─── 3. Track Classification — Single Choice ──────────────────────
---     Exactly one track flag = 1 per paper.
+-- ------------------------------------------------------------------
+-- 3. Track Classification - Single Choice
+-- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_tracks_single (
-  paper_id    BIGINT   PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
-  el          SMALLINT DEFAULT 0 CHECK (el    IN (0, 1)),
-  eli         SMALLINT DEFAULT 0 CHECK (eli   IN (0, 1)),
-  lae         SMALLINT DEFAULT 0 CHECK (lae   IN (0, 1)),
+  paper_id    BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  el          SMALLINT DEFAULT 0 CHECK (el IN (0, 1)),
+  eli         SMALLINT DEFAULT 0 CHECK (eli IN (0, 1)),
+  lae         SMALLINT DEFAULT 0 CHECK (lae IN (0, 1)),
   other       SMALLINT DEFAULT 0 CHECK (other IN (0, 1)),
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 
--- ─── 4. Track Classification — Multi-Label ────────────────────────
---     Multiple track flags may be 1 per paper.
+-- ------------------------------------------------------------------
+-- 4. Track Classification - Multi Label
+-- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_tracks_multi (
-  paper_id    BIGINT   PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
-  el          SMALLINT DEFAULT 0 CHECK (el    IN (0, 1)),
-  eli         SMALLINT DEFAULT 0 CHECK (eli   IN (0, 1)),
-  lae         SMALLINT DEFAULT 0 CHECK (lae   IN (0, 1)),
+  paper_id    BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  el          SMALLINT DEFAULT 0 CHECK (el IN (0, 1)),
+  eli         SMALLINT DEFAULT 0 CHECK (eli IN (0, 1)),
+  lae         SMALLINT DEFAULT 0 CHECK (lae IN (0, 1)),
   other       SMALLINT DEFAULT 0 CHECK (other IN (0, 1)),
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 
-
--- ─── 5. Paper Content — Raw & Segmented Text ─────────────────────
-CREATE TABLE IF NOT EXISTS paper_content (
-  paper_id    BIGINT   PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
-  raw_text    TEXT,                          -- full raw research paper text
-  abstract    TEXT,                          -- abstract section
-  body        TEXT,                          -- เนื้อหา (body / content section)
-  conclusion  TEXT,                          -- สรุป (conclusion / summary section)
-  created_at  TIMESTAMPTZ DEFAULT now()
+-- ------------------------------------------------------------------
+-- 5. Ingestion Runs
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_type      TEXT NOT NULL CHECK (source_type IN ('batch', 'upload')),
+  status           TEXT NOT NULL DEFAULT 'queued'
+                   CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
+  source_filename  TEXT,
+  source_path      TEXT,
+  provider         TEXT,
+  model            TEXT,
+  input_payload    JSONB DEFAULT '{}'::jsonb,
+  error_message    TEXT,
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now(),
+  completed_at     TIMESTAMPTZ
 );
 
+-- ------------------------------------------------------------------
+-- 6. Paper Content - Canonical section store
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_content (
+  paper_id          BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  raw_text          TEXT,
+  abstract          TEXT,
+  abstract_claims   TEXT,
+  body              TEXT,
+  methods           TEXT,
+  results           TEXT,
+  conclusion        TEXT,
+  source_filename   TEXT,
+  source_path       TEXT,
+  ingestion_run_id  UUID REFERENCES ingestion_runs(id),
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
 
--- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE paper_content
+  ADD COLUMN IF NOT EXISTS raw_text TEXT,
+  ADD COLUMN IF NOT EXISTS abstract TEXT,
+  ADD COLUMN IF NOT EXISTS abstract_claims TEXT,
+  ADD COLUMN IF NOT EXISTS body TEXT,
+  ADD COLUMN IF NOT EXISTS methods TEXT,
+  ADD COLUMN IF NOT EXISTS results TEXT,
+  ADD COLUMN IF NOT EXISTS conclusion TEXT,
+  ADD COLUMN IF NOT EXISTS source_filename TEXT,
+  ADD COLUMN IF NOT EXISTS source_path TEXT,
+  ADD COLUMN IF NOT EXISTS ingestion_run_id UUID REFERENCES ingestion_runs(id);
+
+-- ------------------------------------------------------------------
 -- INDEXES
--- ═══════════════════════════════════════════════════════════════════
-CREATE INDEX IF NOT EXISTS idx_papers_year              ON papers(year);
-CREATE INDEX IF NOT EXISTS idx_paper_keywords_paper_id  ON paper_keywords(paper_id);
-CREATE INDEX IF NOT EXISTS idx_paper_keywords_keyword   ON paper_keywords(keyword);
-CREATE INDEX IF NOT EXISTS idx_paper_keywords_topic     ON paper_keywords(topic);
+-- ------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_paper_id ON paper_keywords(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_keyword ON paper_keywords(keyword);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_topic ON paper_keywords(topic);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status ON ingestion_runs(status);
+CREATE INDEX IF NOT EXISTS idx_paper_content_run_id ON paper_content(ingestion_run_id);
 
+DO $$
+BEGIN
+  INSERT INTO storage.buckets (id, name, public)
+  VALUES ('paper-uploads', 'paper-uploads', false)
+  ON CONFLICT (id) DO NOTHING;
+EXCEPTION
+  WHEN undefined_table THEN
+    NULL;
+END $$;
 
--- ═══════════════════════════════════════════════════════════════════
--- ROW LEVEL SECURITY  (public read-only dashboard)
--- ═══════════════════════════════════════════════════════════════════
-ALTER TABLE papers              ENABLE ROW LEVEL SECURITY;
-ALTER TABLE paper_keywords      ENABLE ROW LEVEL SECURITY;
+-- ------------------------------------------------------------------
+-- ROW LEVEL SECURITY
+-- ------------------------------------------------------------------
+ALTER TABLE papers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_keywords ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_single ENABLE ROW LEVEL SECURITY;
-ALTER TABLE paper_tracks_multi  ENABLE ROW LEVEL SECURITY;
-ALTER TABLE paper_content       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_tracks_multi ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_content ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ingestion_runs ENABLE ROW LEVEL SECURITY;
 
--- Allow anyone (including anon) to SELECT
-CREATE POLICY "anon_read" ON papers              FOR SELECT USING (true);
-CREATE POLICY "anon_read" ON paper_keywords      FOR SELECT USING (true);
-CREATE POLICY "anon_read" ON paper_tracks_single FOR SELECT USING (true);
-CREATE POLICY "anon_read" ON paper_tracks_multi  FOR SELECT USING (true);
-CREATE POLICY "anon_read" ON paper_content       FOR SELECT USING (true);
+DO $$
+BEGIN
+  CREATE POLICY "anon_read" ON papers FOR SELECT USING (true);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
 
+DO $$
+BEGIN
+  CREATE POLICY "anon_read" ON paper_keywords FOR SELECT USING (true);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
 
--- ═══════════════════════════════════════════════════════════════════
--- VIEWS  (the Next.js app queries these)
--- ═══════════════════════════════════════════════════════════════════
+DO $$
+BEGIN
+  CREATE POLICY "anon_read" ON paper_tracks_single FOR SELECT USING (true);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
 
--- Flat trend rows (mirrors Master_Trends_Archive.csv)
+DO $$
+BEGIN
+  CREATE POLICY "anon_read" ON paper_tracks_multi FOR SELECT USING (true);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "anon_read" ON paper_content FOR SELECT USING (true);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+-- ------------------------------------------------------------------
+-- VIEWS consumed by the Next.js app
+-- ------------------------------------------------------------------
 CREATE OR REPLACE VIEW trends_flat AS
 SELECT
-  p.id   AS paper_id,
+  p.id AS paper_id,
   p.year,
   p.title,
   pk.topic,
@@ -102,7 +188,6 @@ SELECT
 FROM papers p
 JOIN paper_keywords pk ON pk.paper_id = p.id;
 
--- Single-choice track rows (mirrors EIL_Track_10years1.csv)
 CREATE OR REPLACE VIEW tracks_single_flat AS
 SELECT
   p.id AS paper_id,
@@ -115,7 +200,6 @@ SELECT
 FROM papers p
 JOIN paper_tracks_single ts ON ts.paper_id = p.id;
 
--- Multi-label track rows (mirrors EIL_Track_OneHot_Final.csv)
 CREATE OR REPLACE VIEW tracks_multi_flat AS
 SELECT
   p.id AS paper_id,
@@ -128,15 +212,20 @@ SELECT
 FROM papers p
 JOIN paper_tracks_multi tm ON tm.paper_id = p.id;
 
--- Paper content with metadata
 CREATE OR REPLACE VIEW papers_full AS
 SELECT
   p.id AS paper_id,
   p.year,
   p.title,
   pc.abstract,
+  COALESCE(pc.abstract_claims, pc.abstract) AS abstract_claims,
+  pc.methods,
+  pc.results,
   pc.body,
   pc.conclusion,
-  pc.raw_text
+  pc.raw_text,
+  pc.source_filename,
+  pc.source_path,
+  pc.ingestion_run_id
 FROM papers p
 LEFT JOIN paper_content pc ON pc.paper_id = p.id;

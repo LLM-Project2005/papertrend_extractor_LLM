@@ -1,18 +1,23 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { TRACK_COLS } from "@/lib/constants";
 import type { TrendRow, TrackRow } from "@/types/database";
 
 interface Props {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
+  linkedPaperId?: number | null;
 }
 
 const trackField = (t: string) =>
   t.toLowerCase() as "el" | "eli" | "lae" | "other";
 
-export default function PaperExplorer({ trends, tracksSingle }: Props) {
+export default function PaperExplorer({
+  trends,
+  tracksSingle,
+  linkedPaperId = null,
+}: Props) {
   const [search, setSearch] = useState("");
   const [selectedPaperId, setSelectedPaperId] = useState<number | null>(null);
 
@@ -90,6 +95,13 @@ export default function PaperExplorer({ trends, tracksSingle }: Props) {
       })),
     };
   }, [trends, tracksSingle, selectedPaperId]);
+
+  useEffect(() => {
+    if (linkedPaperId === null) return;
+    if (papers.some((paper) => paper.paper_id === linkedPaperId)) {
+      setSelectedPaperId(linkedPaperId);
+    }
+  }, [linkedPaperId, papers]);
 
   if (trends.length === 0)
     return <p className="text-gray-400">No data for the selected filters.</p>;

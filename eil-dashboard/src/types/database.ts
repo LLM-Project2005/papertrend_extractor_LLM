@@ -1,8 +1,3 @@
-/* ────────────────────────────────────────────────────────────────
-   Shared TypeScript types for the EIL Dashboard
-   ──────────────────────────────────────────────────────────────── */
-
-/** One row in Master_Trends_Archive (keyword-level) */
 export interface TrendRow {
   paper_id: number;
   year: string;
@@ -13,7 +8,6 @@ export interface TrendRow {
   evidence: string;
 }
 
-/** One row in the track tables (single-choice or multi-label) */
 export interface TrackRow {
   paper_id: number;
   year: string;
@@ -24,15 +18,12 @@ export interface TrackRow {
   other: number;
 }
 
-/** Combined dashboard payload */
 export interface DashboardData {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
   useMock: boolean;
 }
-
-/* ── Supabase row types (matching DB schema) ────────────────── */
 
 export interface DbPaper {
   id: number;
@@ -62,9 +53,46 @@ export interface DbPaperTrack {
 
 export interface DbPaperContent {
   paper_id: number;
-  raw_text?: string;
-  abstract?: string;
-  body?: string;
-  conclusion?: string;
+  raw_text?: string | null;
+  abstract?: string | null;
+  abstract_claims?: string | null;
+  body?: string | null;
+  methods?: string | null;
+  results?: string | null;
+  conclusion?: string | null;
+  source_filename?: string | null;
+  source_path?: string | null;
+  ingestion_run_id?: string | null;
   created_at?: string;
+}
+
+export interface IngestionRunRow {
+  id: string;
+  source_type: "batch" | "upload";
+  status: "queued" | "processing" | "succeeded" | "failed";
+  source_filename?: string | null;
+  source_path?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  input_payload?: Record<string, unknown> | null;
+  error_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
+}
+
+export interface PaperFullRow {
+  paper_id: number;
+  year: string;
+  title: string;
+  abstract?: string | null;
+  abstract_claims?: string | null;
+  methods?: string | null;
+  results?: string | null;
+  body?: string | null;
+  conclusion?: string | null;
+  raw_text?: string | null;
+  source_filename?: string | null;
+  source_path?: string | null;
+  ingestion_run_id?: string | null;
 }
