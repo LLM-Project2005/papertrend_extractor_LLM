@@ -32,7 +32,7 @@ const STARTER_PROMPTS = [
 
 function AssistantAvatar() {
   return (
-    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]">
       <SparkIcon className="h-4 w-4" />
     </span>
   );
@@ -40,7 +40,7 @@ function AssistantAvatar() {
 
 function UserAvatar() {
   return (
-    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-200 text-xs font-semibold text-slate-700 dark:bg-[#2a2a2a] dark:text-[#e0e0e0]">
       U
     </span>
   );
@@ -137,26 +137,26 @@ export default function ChatClient() {
     <div className="mx-auto flex min-h-[calc(100vh-8.5rem)] max-w-5xl flex-col">
       <div className="flex items-center justify-between gap-4 px-1 pb-4 pt-1 sm:px-2">
         <div>
-          <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">
             Workspace chat
           </p>
-          <h1 className="mt-1 text-xl font-semibold text-slate-900 dark:text-white">
+          <h1 className="mt-1 text-xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
             Research assistant
           </h1>
         </div>
-        <p className="hidden text-sm text-slate-500 dark:text-slate-400 md:block">
+        <p className="hidden text-sm text-slate-500 dark:text-[#a3a3a3] md:block">
           Grounded on workspace data first
         </p>
       </div>
 
-      <div className="flex-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
+      <div className="flex-1 overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
         <div className="h-full overflow-y-auto">
           {showEmptyState && (
             <section className="mx-auto flex min-h-[48vh] max-w-3xl flex-col justify-center px-5 py-12 sm:px-8">
-              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
+              <h2 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
                 How can I help with this research workspace?
               </h2>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500 dark:text-slate-400">
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
                 Ask for trend summaries, paper comparisons, topic deep dives, or
                 evidence-backed answers from the current corpus.
               </p>
@@ -167,7 +167,7 @@ export default function ChatClient() {
                     key={prompt}
                     type="button"
                     onClick={() => setDraft(prompt)}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left text-sm text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-700 dark:hover:bg-slate-900"
+                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left text-sm text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#1d1d1d]"
                   >
                     {prompt}
                   </button>
@@ -183,8 +183,8 @@ export default function ChatClient() {
                   key={`${message.role}-${index}`}
                   className={
                     message.role === "assistant"
-                      ? "bg-white dark:bg-slate-950"
-                      : "bg-slate-50/70 dark:bg-slate-900/60"
+                      ? "bg-white dark:bg-[#212121]"
+                      : "bg-slate-50/70 dark:bg-[#1b1b1b]"
                   }
                 >
                   <div className="mx-auto flex w-full max-w-4xl gap-3 px-4 py-6 sm:gap-4 sm:px-6">
@@ -194,7 +194,7 @@ export default function ChatClient() {
 
                     <div className="min-w-0 flex-1">
                       <div className="mb-2 flex items-center gap-2">
-                        <span className="text-sm font-medium text-slate-900 dark:text-white">
+                        <span className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                           {message.role === "assistant" ? "Assistant" : "You"}
                         </span>
                         {message.mode === "fallback" && (
@@ -204,7 +204,7 @@ export default function ChatClient() {
                         )}
                       </div>
 
-                      <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-800 dark:text-slate-200">
+                      <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-800 dark:text-[#e0e0e0]">
                         {message.content}
                       </div>
 
@@ -214,18 +214,18 @@ export default function ChatClient() {
                             <Link
                               key={citation.paperId}
                               href={citation.href}
-                              className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition-colors hover:border-slate-300 hover:bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-950"
+                              className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm transition-colors hover:border-slate-300 hover:bg-white dark:border-[#2f2f2f] dark:bg-[#171717] dark:hover:border-[#3a3a3a] dark:hover:bg-[#1d1d1d]"
                             >
-                              <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-slate-500" />
+                              <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-[#8e8e8e]" />
                               <span className="min-w-0">
-                                <span className="font-medium text-slate-900 dark:text-white">
+                                <span className="font-medium text-slate-900 dark:text-[#f2f2f2]">
                                   [Paper {citation.paperId}] {citation.title}
                                 </span>
-                                <span className="ml-2 text-slate-500 dark:text-slate-400">
+                                <span className="ml-2 text-slate-500 dark:text-[#a3a3a3]">
                                   ({citation.year})
                                 </span>
                                 {citation.reason && (
-                                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                  <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-[#a3a3a3]">
                                     {citation.reason}
                                   </span>
                                 )}
@@ -242,15 +242,15 @@ export default function ChatClient() {
           )}
 
           {loading && (
-            <section className="bg-white dark:bg-slate-950">
+            <section className="bg-white dark:bg-[#212121]">
               <div className="mx-auto flex w-full max-w-4xl gap-3 px-4 py-6 sm:gap-4 sm:px-6">
                 <div className="mt-0.5 flex-none">
                   <AssistantAvatar />
                 </div>
-                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 dark:bg-slate-500" />
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms] dark:bg-slate-500" />
-                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms] dark:bg-slate-500" />
+                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#a3a3a3]">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 dark:bg-[#8e8e8e]" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms] dark:bg-[#8e8e8e]" />
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms] dark:bg-[#8e8e8e]" />
                   <span className="ml-2">Thinking...</span>
                 </div>
               </div>
@@ -265,7 +265,7 @@ export default function ChatClient() {
         <div className="mx-auto max-w-4xl">
           <form
             onSubmit={handleSubmit}
-            className="overflow-hidden rounded-[28px] border border-slate-300 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-950 dark:shadow-none"
+            className="overflow-hidden rounded-[28px] border border-slate-300 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.08)] dark:border-[#2f2f2f] dark:bg-[#212121] dark:shadow-none"
           >
             <textarea
               value={draft}
@@ -274,14 +274,14 @@ export default function ChatClient() {
               placeholder="Message the workspace"
               className="min-h-[104px] w-full resize-none border-0 bg-transparent px-5 py-4 text-[15px] leading-7 text-slate-900 placeholder:text-slate-400 focus:outline-none dark:text-white dark:placeholder:text-slate-500"
             />
-            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 dark:border-slate-800">
-              <p className="text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 dark:border-[#2f2f2f]">
+              <p className="text-xs text-slate-500 dark:text-[#a3a3a3]">
                 Session-only chat. Not yet saved in Supabase.
               </p>
               <button
                 type="submit"
                 disabled={loading || draft.trim().length === 0}
-                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200 dark:disabled:bg-slate-700 dark:disabled:text-slate-400"
+                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-[#f3f3f3] dark:text-[#171717] dark:hover:bg-white dark:disabled:bg-[#3a3a3a] dark:disabled:text-[#7e7e7e]"
               >
                 <SendIcon className="h-4 w-4" />
                 <span>Send</span>

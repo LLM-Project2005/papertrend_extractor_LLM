@@ -56,7 +56,7 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col px-3 py-4 sm:px-4 sm:py-5">
       <Link href="/" className="flex items-center gap-3 px-2" onClick={onNavigate}>
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]">
           <LogoMarkIcon className="h-5 w-5" />
         </span>
         <div>
@@ -69,20 +69,20 @@ function SidebarContent({
         </div>
       </Link>
 
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-        <p className="text-sm font-medium text-slate-900 dark:text-white">
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+        <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
           {profile.name}
         </p>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+        <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
           {profile.organization}
         </p>
-        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+        <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
           {profile.domain}
         </p>
       </div>
 
       <div className="mt-5">
-        <p className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+        <p className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
           Modules
         </p>
         <nav className="mt-2 space-y-1">
@@ -97,8 +97,8 @@ function SidebarContent({
                 onClick={onNavigate}
                 className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                   isActive
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                    ? "bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#171717] dark:hover:text-white"
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -109,25 +109,25 @@ function SidebarContent({
         </nav>
       </div>
 
-      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-800 dark:bg-slate-900">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+      <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
           Intake
         </p>
-        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+        <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
           {intakeLabel}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/start"
             onClick={onNavigate}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
           >
             Setup
           </Link>
           <Link
             href="/"
             onClick={onNavigate}
-            className="rounded-lg border border-transparent px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            className="rounded-lg border border-transparent px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#a3a3a3] dark:hover:bg-[#212121] dark:hover:text-white"
           >
             Landing
           </Link>
@@ -190,16 +190,16 @@ export default function WorkspaceShell({
         </aside>
 
         {sidebarOpen && (
-          <div className="fixed inset-0 z-40 bg-slate-950/45 lg:hidden">
-            <div className="h-full max-w-[288px] overflow-y-auto border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
-              <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 dark:border-slate-800 dark:bg-slate-950">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">
+          <div className="fixed inset-0 z-40 bg-black/45 lg:hidden">
+            <div className="h-full max-w-[288px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
+              <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#212121]">
+                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   Workspace menu
                 </p>
                 <button
                   type="button"
                   onClick={() => setSidebarOpen(false)}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#171717] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
@@ -227,16 +227,16 @@ export default function WorkspaceShell({
 
                     setSidebarOpen(true);
                   }}
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#171717] dark:text-[#d0d0d0]"
                   aria-label="Toggle workspace navigation"
                 >
                   <MenuIcon className="h-4 w-4" />
                 </button>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
                     {currentItem.label}
                   </p>
-                  <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
+                  <p className="mt-1 truncate text-sm text-slate-600 dark:text-[#c7c7c7]">
                     {PAGE_DESCRIPTIONS[currentItem.href]}
                   </p>
                 </div>
@@ -247,7 +247,7 @@ export default function WorkspaceShell({
                 <ThemeToggle />
                 <Link
                   href="/workspace/imports"
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+                  className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#f3f3f3] dark:text-[#171717] dark:hover:bg-white"
                 >
                   <PlusIcon className="h-4 w-4" />
                   <span className="hidden sm:inline">Add source</span>
