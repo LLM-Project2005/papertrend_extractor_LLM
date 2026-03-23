@@ -36,6 +36,7 @@ function FilterPanel({
   selectedTracks,
   onTracksChange,
   useMock,
+  showHeader = true,
 }: {
   allYears: string[];
   selectedYears: string[];
@@ -43,6 +44,7 @@ function FilterPanel({
   selectedTracks: string[];
   onTracksChange: (tracks: string[]) => void;
   useMock: boolean;
+  showHeader?: boolean;
 }) {
   return (
     <Sidebar
@@ -54,6 +56,7 @@ function FilterPanel({
       useMock={useMock}
       title="Analytics filters"
       description="Narrow the years and track categories before reading the dashboard."
+      showHeader={showHeader}
     />
   );
 }
@@ -182,16 +185,16 @@ export default function DashboardClient({
 
       <div className="min-w-0">
         {filterOpen && (
-          <div className="fixed inset-0 z-40 bg-slate-950/45 xl:hidden">
-            <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 xl:max-w-md">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">
+          <div className="fixed inset-0 z-40 bg-black/55 xl:hidden">
+            <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d] xl:max-w-md">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#2c2c2c] sm:px-5">
+                <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
                   Analytics filters
                 </p>
                 <button
                   type="button"
                   onClick={() => setFilterOpen(false)}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
@@ -204,6 +207,7 @@ export default function DashboardClient({
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
                   useMock={data.useMock}
+                  showHeader={false}
                 />
               </div>
             </div>
@@ -220,15 +224,15 @@ export default function DashboardClient({
               filterOpen ? "" : "pointer-events-none opacity-0"
             } transition-all`}
           >
-            <div className="rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-slate-800">
-                <p className="text-sm font-medium text-slate-900 dark:text-white">
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#2c2c2c]">
+                <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
                   Analytics filters
                 </p>
                 <button
                   type="button"
                   onClick={() => setFilterOpen(false)}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
@@ -241,6 +245,7 @@ export default function DashboardClient({
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
                   useMock={data.useMock}
+                  showHeader={false}
                 />
               </div>
             </div>
