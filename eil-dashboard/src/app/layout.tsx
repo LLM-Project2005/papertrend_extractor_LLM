@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
+import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "EIL Research Dashboard",
+  title: "Papertrend Workspace",
   description:
-    "Dashboard, chat, and import tooling for the EIL paper-analysis pipeline at Chulalongkorn University",
+    "Landing, onboarding, analytics, chat, and import tooling for reusable research-paper workspaces",
 };
 
 export default function RootLayout({
@@ -14,7 +15,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <WorkspaceProvider>{children}</WorkspaceProvider>
+      </body>
     </html>
   );
 }

@@ -4,9 +4,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const NAV_ITEMS = [
-  { href: "/", label: "Dashboard" },
-  { href: "/chat", label: "Chat" },
-  { href: "/admin/import", label: "Admin Import" },
+  { href: "/", label: "Landing" },
+  { href: "/start", label: "Start" },
+  { href: "/workspace/home", label: "Workspace" },
 ];
 
 interface Props {

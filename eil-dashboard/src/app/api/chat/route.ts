@@ -16,7 +16,7 @@ interface ChatRequestBody {
 function buildFallbackAnswer(question: string, corpusError?: string): string {
   const lines = [
     "Broader guidance beyond the corpus:",
-    `I could not find a direct answer to "${question}" in the stored EIL paper data.`,
+    `I could not find a direct answer to "${question}" in the stored workspace paper data.`,
     "A useful next step is to narrow the question by topic, year, track, or a specific paper title so the answer can be grounded in the dataset.",
   ];
 
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
           {
             role: "system",
             content:
-              "You are the chat assistant for an EIL research dashboard. Answer from the supplied corpus context first. Cite papers inline as [Paper <id>]. If the corpus is insufficient, add a final section titled 'Broader guidance beyond the corpus'. Do not invent citations.",
+              "You are the chat assistant for a research workspace. Answer from the supplied corpus context first. Cite papers inline as [Paper <id>]. If the corpus is insufficient, add a final section titled 'Broader guidance beyond the corpus'. Do not invent citations.",
           },
           {
             role: "user",
@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       {
         role: "system" as const,
         content:
-          "You are the chat assistant for an EIL research dashboard. The stored corpus does not directly answer the user's request. Provide careful broader guidance, and begin the answer with the heading 'Broader guidance beyond the corpus:'.",
+          "You are the chat assistant for a research workspace. The stored corpus does not directly answer the user's request. Provide careful broader guidance, and begin the answer with the heading 'Broader guidance beyond the corpus:'.",
       },
       {
         role: "user" as const,

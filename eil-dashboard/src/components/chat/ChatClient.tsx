@@ -27,7 +27,7 @@ export default function ChatClient() {
       role: "assistant",
       mode: "grounded",
       content:
-        "Ask about research papers, topics, keywords, tracks, or trends in the stored EIL corpus. I will answer from the stored dataset first and clearly label any broader guidance when the corpus is not enough.",
+        "Ask about research papers, topics, keywords, tracks, or trends in the current workspace corpus. I will answer from the stored dataset first and clearly label any broader guidance when the corpus is not enough.",
     },
   ]);
 
@@ -104,16 +104,16 @@ export default function ChatClient() {
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-8rem)] flex-col">
+    <div className="flex min-h-[70vh] flex-col">
       <header className="border-b border-gray-200 bg-white/90 backdrop-blur">
         <div className="mx-auto flex w-full max-w-5xl items-start justify-between gap-4 px-4 py-5 sm:px-6">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
-              EIL Research Chat
+              Workspace Chat
             </h1>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
               Ask about papers, trends, tracks, methods, or results. Answers use the
-              stored corpus first and link back to the dashboard when relevant.
+              stored corpus first and link back to the paper library when relevant.
             </p>
           </div>
           <div className="hidden rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600 md:block">
@@ -225,9 +225,9 @@ export default function ChatClient() {
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {[
-                    "What are the main topic trends in the EIL corpus over time?",
+                    "What are the main topic trends in this workspace over time?",
                     "Find papers related to translanguaging or multilingual education.",
-                    "How does LAE compare with ELI in the current dataset?",
+                    "How do the main track categories compare in the current dataset?",
                   ].map((prompt) => (
                     <button
                       key={prompt}
@@ -256,7 +256,7 @@ export default function ChatClient() {
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={handleComposerKeyDown}
-                placeholder="Message the EIL research corpus..."
+                placeholder="Message the workspace corpus..."
                 className="min-h-24 w-full resize-none border-0 bg-transparent px-3 py-2 text-[15px] leading-7 text-gray-900 placeholder:text-gray-400 focus:outline-none"
               />
               <div className="flex items-center justify-between gap-3 border-t border-gray-100 px-3 pt-3">

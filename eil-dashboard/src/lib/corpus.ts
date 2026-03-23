@@ -46,7 +46,7 @@ function extractTracks(row: TrackRow | undefined): string[] {
 }
 
 function buildPaperHref(paperId: number): string {
-  return `/?tab=paper-explorer&paperId=${paperId}`;
+  return `/workspace/papers?paperId=${paperId}`;
 }
 
 function scorePaper(
@@ -200,7 +200,7 @@ export function buildDeterministicGroundedAnswer(
 ): string {
   const topPaper = papers[0];
   const lines = [
-    `I found ${papers.length} relevant paper${papers.length === 1 ? "" : "s"} in the EIL corpus for "${question}".`,
+    `I found ${papers.length} relevant paper${papers.length === 1 ? "" : "s"} in the workspace corpus for "${question}".`,
     "",
     `The strongest match is [Paper ${topPaper.paper_id}] ${topPaper.title} (${topPaper.year}).`,
   ];

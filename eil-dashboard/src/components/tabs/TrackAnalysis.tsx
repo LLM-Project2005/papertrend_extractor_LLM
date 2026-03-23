@@ -87,7 +87,7 @@ export default function TrackAnalysis({
 
   return (
     <div>
-      <h2 className="text-xl font-bold mb-4">EIL Track Analysis</h2>
+      <h2 className="text-xl font-bold mb-4">Track Analysis</h2>
 
       {/* ── Stacked bar ────────────────────────────────────── */}
       {stackedData.length > 0 && (

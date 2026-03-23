@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS } from "@/lib/constants";
+import { filterDashboardData } from "@/lib/dashboard-filters";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
@@ -27,7 +28,11 @@ const TAB_SLUGS = [
   "paper-explorer",
 ] as const;
 
-export default function DashboardClient() {
+export default function DashboardClient({
+  basePath = "/workspace/dashboard",
+}: {
+  basePath?: string;
+}) {
   const { data, loading, allYears } = useDashboardData();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -43,7 +48,10 @@ export default function DashboardClient() {
 
   useEffect(() => {
     const tabSlug = searchParams.get("tab");
-    if (!tabSlug) return;
+    if (!tabSlug) {
+      return;
+    }
+
     const tabIndex = TAB_SLUGS.indexOf(tabSlug as (typeof TAB_SLUGS)[number]);
     if (tabIndex >= 0 && tabIndex !== activeTab) {
       setActiveTab(tabIndex);
@@ -63,27 +71,26 @@ export default function DashboardClient() {
       params.delete("paperId");
     }
     const nextQuery = params.toString();
-    router.replace(nextQuery ? `/?${nextQuery}` : "/", { scroll: false });
+    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+      scroll: false,
+    });
   };
 
-  const filteredTrends = useMemo(
-    () => data?.trends.filter((row) => selectedYears.includes(row.year)) ?? [],
-    [data, selectedYears]
-  );
-  const filteredSingle = useMemo(
-    () =>
-      data?.tracksSingle.filter((row) => selectedYears.includes(row.year)) ?? [],
-    [data, selectedYears]
-  );
-  const filteredMulti = useMemo(
-    () =>
-      data?.tracksMulti.filter((row) => selectedYears.includes(row.year)) ?? [],
-    [data, selectedYears]
-  );
+  const filteredData = useMemo(() => {
+    if (!data) {
+      return {
+        trends: [],
+        tracksSingle: [],
+        tracksMulti: [],
+      };
+    }
+
+    return filterDashboardData(data, selectedYears, selectedTracks);
+  }, [data, selectedTracks, selectedYears]);
 
   if (loading || !data) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-[60vh] items-center justify-center rounded-[32px] border border-[#dfd5c6] bg-white">
         <div className="text-center">
           <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
           <p className="text-sm text-gray-500">Loading dashboard data...</p>
@@ -93,7 +100,7 @@ export default function DashboardClient() {
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
       <Sidebar
         allYears={allYears}
         selectedYears={selectedYears}
@@ -101,10 +108,25 @@ export default function DashboardClient() {
         selectedTracks={selectedTracks}
         onTracksChange={setSelectedTracks}
         useMock={data.useMock}
+        title="Analytics filters"
+        description="Keep the dashboard focused on the years and tracks that matter for the current workspace question."
       />
 
-      <main className="flex-1 overflow-y-auto">
-        <div className="sticky top-0 z-10 border-b border-gray-200 bg-white px-6">
+      <main className="min-w-0 overflow-hidden rounded-[32px] border border-[#dfd5c6] bg-white shadow-sm">
+        <div className="border-b border-gray-200 px-6 pt-6">
+          <div className="mb-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-[#8b7357]">
+              Dashboard module
+            </p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-gray-900">
+              Analytics workspace
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
+              The dashboard stays intact as part of the workspace. Use the filters
+              on the left to narrow the corpus before moving through the analytics tabs.
+            </p>
+          </div>
+
           <nav className="flex gap-0" aria-label="Tabs">
             {TABS.map((tab, index) => (
               <button
@@ -126,27 +148,27 @@ export default function DashboardClient() {
         <div className="p-6">
           {activeTab === 0 && (
             <Overview
-              trends={filteredTrends}
-              tracksSingle={filteredSingle}
-              tracksMulti={filteredMulti}
+              trends={filteredData.trends}
+              tracksSingle={filteredData.tracksSingle}
+              tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
               useMock={data.useMock}
             />
           )}
-          {activeTab === 1 && <TrendAnalysis trends={filteredTrends} />}
+          {activeTab === 1 && <TrendAnalysis trends={filteredData.trends} />}
           {activeTab === 2 && (
             <TrackAnalysis
-              trends={filteredTrends}
-              tracksSingle={filteredSingle}
-              tracksMulti={filteredMulti}
+              trends={filteredData.trends}
+              tracksSingle={filteredData.tracksSingle}
+              tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
             />
           )}
-          {activeTab === 3 && <KeywordExplorer trends={filteredTrends} />}
+          {activeTab === 3 && <KeywordExplorer trends={filteredData.trends} />}
           {activeTab === 4 && (
             <PaperExplorer
-              trends={filteredTrends}
-              tracksSingle={filteredSingle}
+              trends={filteredData.trends}
+              tracksSingle={filteredData.tracksSingle}
               linkedPaperId={linkedPaperId}
             />
           )}
@@ -154,9 +176,7 @@ export default function DashboardClient() {
 
         <footer className="border-t border-gray-200 px-6 py-4">
           <p className="text-xs text-gray-400">
-            EIL Research Trend Dashboard | English as an International Language
-            Program | Chulalongkorn University | Powered by Next.js + Supabase +
-            Recharts
+            Workspace analytics powered by Next.js, Supabase, and Recharts.
           </p>
         </footer>
       </main>

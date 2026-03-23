@@ -71,7 +71,7 @@ export async function POST(request: Request) {
           provider,
           model,
           input_payload: {
-            uploaded_from: "/admin/import",
+            uploaded_from: "/workspace/imports",
             original_size: file.size,
             mime_type: file.type || "application/pdf",
           },

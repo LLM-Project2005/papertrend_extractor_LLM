@@ -174,7 +174,7 @@ export default function AdminImportClient() {
   return (
     <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm">
-        <h1 className="text-2xl font-bold text-gray-900">Admin Import</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Workspace Import Queue</h1>
         <p className="mt-1 text-sm text-gray-500">
           Upload PDFs into Supabase Storage and create queued ingestion runs for
           the external extractor.

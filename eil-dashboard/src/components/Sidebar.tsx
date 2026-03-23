@@ -1,7 +1,6 @@
 "use client";
 
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
-import PrimaryNavigation from "@/components/PrimaryNavigation";
 
 interface Props {
   allYears: string[];
@@ -10,6 +9,8 @@ interface Props {
   selectedTracks: string[];
   onTracksChange: (t: string[]) => void;
   useMock: boolean;
+  title?: string;
+  description?: string;
 }
 
 export default function Sidebar({
@@ -19,111 +20,107 @@ export default function Sidebar({
   selectedTracks,
   onTracksChange,
   useMock,
+  title = "Dashboard filters",
+  description = "Narrow the active workspace dataset by year and track before exploring the analytics modules.",
 }: Props) {
-  const toggleYear = (y: string) => {
+  const toggleYear = (year: string) => {
     onYearsChange(
-      selectedYears.includes(y)
-        ? selectedYears.filter((v) => v !== y)
-        : [...selectedYears, y].sort()
+      selectedYears.includes(year)
+        ? selectedYears.filter((value) => value !== year)
+        : [...selectedYears, year].sort()
     );
   };
-  const toggleTrack = (t: string) => {
+
+  const toggleTrack = (track: string) => {
     onTracksChange(
-      selectedTracks.includes(t)
-        ? selectedTracks.filter((v) => v !== t)
-        : [...selectedTracks, t]
+      selectedTracks.includes(track)
+        ? selectedTracks.filter((value) => value !== track)
+        : [...selectedTracks, track]
     );
   };
 
   return (
-    <aside className="w-64 min-h-screen bg-sidebar-bg text-sidebar-text flex flex-col p-5 shrink-0">
-      <h1 className="text-xl font-bold text-sidebar-heading mb-0.5">
-        EIL Dashboard
-      </h1>
-      <p className="text-xs text-sidebar-muted mb-4 leading-relaxed">
-        English as an International Language
-        <br />
-        Chulalongkorn University
-      </p>
+    <aside className="rounded-[28px] bg-sidebar-bg text-sidebar-text shadow-sm">
+      <div className="flex h-full flex-col p-5">
+        <h2 className="text-xl font-bold text-sidebar-heading">{title}</h2>
+        <p className="mt-2 text-xs leading-relaxed text-sidebar-muted">
+          {description}
+        </p>
 
-      <div className="mb-4">
-        <PrimaryNavigation orientation="vertical" />
-      </div>
+        <hr className="mb-4 mt-5 border-sidebar-divider" />
 
-      <hr className="border-sidebar-divider mb-4" />
+        {useMock && (
+          <div className="mb-4 rounded-md border border-sidebar-alert-border bg-sidebar-alert px-3 py-2 text-xs text-sidebar-muted">
+            Showing mock preview data. Connect Supabase or run the extraction
+            pipeline to load real results.
+          </div>
+        )}
 
-      {useMock && (
-        <div className="bg-sidebar-alert border border-sidebar-alert-border rounded-md px-3 py-2 text-xs text-sidebar-muted mb-4">
-          Showing mock preview data. Connect Supabase or run the extraction
-          pipeline to load real results.
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-muted">
+          Filter by Year
+        </h3>
+        <div className="mb-4 max-h-52 overflow-y-auto space-y-1 pr-1">
+          <button
+            className="mb-1 text-[11px] text-blue-300 hover:underline"
+            onClick={() =>
+              onYearsChange(
+                selectedYears.length === allYears.length ? [] : [...allYears]
+              )
+            }
+          >
+            {selectedYears.length === allYears.length
+              ? "Deselect all"
+              : "Select all"}
+          </button>
+
+          {allYears.map((year) => (
+            <label
+              key={year}
+              className="flex cursor-pointer items-center gap-2 text-sm"
+            >
+              <input
+                type="checkbox"
+                checked={selectedYears.includes(year)}
+                onChange={() => toggleYear(year)}
+                className="rounded border-sidebar-divider text-blue-500 focus:ring-blue-500/30"
+              />
+              {year}
+            </label>
+          ))}
         </div>
-      )}
 
-      {/* ── Year filter ────────────────────────────────────── */}
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-sidebar-muted mb-2">
-        Filter by Year
-      </h3>
-      <div className="max-h-52 overflow-y-auto space-y-1 mb-4 pr-1">
-        <button
-          className="text-[11px] text-blue-300 hover:underline mb-1"
-          onClick={() =>
-            onYearsChange(
-              selectedYears.length === allYears.length ? [] : [...allYears]
-            )
-          }
-        >
-          {selectedYears.length === allYears.length
-            ? "Deselect all"
-            : "Select all"}
-        </button>
-        {allYears.map((y) => (
-          <label
-            key={y}
-            className="flex items-center gap-2 cursor-pointer text-sm"
-          >
-            <input
-              type="checkbox"
-              checked={selectedYears.includes(y)}
-              onChange={() => toggleYear(y)}
-              className="rounded border-sidebar-divider text-blue-500 focus:ring-blue-500/30"
-            />
-            {y}
-          </label>
-        ))}
-      </div>
-
-      {/* ── Track filter ───────────────────────────────────── */}
-      <h3 className="text-xs font-semibold uppercase tracking-wider text-sidebar-muted mb-2">
-        Filter by Track
-      </h3>
-      <div className="space-y-1 mb-4">
-        {TRACK_COLS.map((t) => (
-          <label
-            key={t}
-            className="flex items-center gap-2 cursor-pointer text-sm"
-          >
-            <input
-              type="checkbox"
-              checked={selectedTracks.includes(t)}
-              onChange={() => toggleTrack(t)}
-              className="rounded border-sidebar-divider text-blue-500 focus:ring-blue-500/30"
-            />
-            <span>
-              {t}{" "}
-              <span className="text-sidebar-muted text-xs">
-                — {TRACK_NAMES[t as TrackKey]}
+        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-muted">
+          Filter by Track
+        </h3>
+        <div className="mb-4 space-y-1">
+          {TRACK_COLS.map((track) => (
+            <label
+              key={track}
+              className="flex cursor-pointer items-center gap-2 text-sm"
+            >
+              <input
+                type="checkbox"
+                checked={selectedTracks.includes(track)}
+                onChange={() => toggleTrack(track)}
+                className="rounded border-sidebar-divider text-blue-500 focus:ring-blue-500/30"
+              />
+              <span>
+                {track}{" "}
+                <span className="text-xs text-sidebar-muted">
+                  - {TRACK_NAMES[track as TrackKey]}
+                </span>
               </span>
-            </span>
-          </label>
-        ))}
+            </label>
+          ))}
+        </div>
+
+        <hr className="my-3 border-sidebar-divider" />
+
+        <p className="mt-auto text-[11px] leading-relaxed text-sidebar-muted">
+          <strong>Data source:</strong> Supabase-backed views and imported research
+          outputs inside the workspace.
+        </p>
       </div>
-
-      <hr className="border-sidebar-divider my-3" />
-
-      <p className="text-[11px] text-sidebar-muted leading-relaxed mt-auto">
-        <strong>Data source:</strong> CSV files generated by the EIL LLM
-        extraction pipeline, stored in Supabase.
-      </p>
     </aside>
   );
 }
