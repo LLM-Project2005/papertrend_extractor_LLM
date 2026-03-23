@@ -204,3 +204,70 @@ export function CircleIcon({ className }: IconProps) {
     </BaseIcon>
   );
 }
+
+export function UserIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <circle cx="12" cy="8.5" r="3.5" />
+      <path d="M5 19a7 7 0 0 1 14 0" />
+    </BaseIcon>
+  );
+}
+
+export function LogoutIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10" />
+      <path d="M14 8.5 19 12l-5 3.5" />
+      <path d="M19 12H9" />
+    </BaseIcon>
+  );
+}
+
+export function EmailIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
+      <path d="m5 7 7 6 7-6" />
+    </BaseIcon>
+  );
+}
+
+export function MicrosoftIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="4.5" y="4.5" width="6" height="6" />
+      <rect x="13.5" y="4.5" width="6" height="6" />
+      <rect x="4.5" y="13.5" width="6" height="6" />
+      <rect x="13.5" y="13.5" width="6" height="6" />
+    </BaseIcon>
+  );
+}
+
+export function GoogleIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M19.2 12.2c0-.6-.1-1.1-.2-1.6H12v3.1h4.1a4.2 4.2 0 0 1-1.8 2.8" />
+      <path d="M14.3 16.5a7 7 0 0 1-2.3.4A6.9 6.9 0 0 1 5.5 12a6.9 6.9 0 0 1 6.5-4.9 6.7 6.7 0 0 1 4.6 1.8" />
+      <path d="M4.8 8.8a7.3 7.3 0 0 0 0 6.4" />
+      <path d="M14.3 16.5 18 19" />
+    </BaseIcon>
+  );
+}
+
+export function FacebookIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M13.5 20v-6.5H16l.5-3h-3V8.8c0-.9.3-1.5 1.6-1.5h1.6V4.7c-.3 0-1.1-.2-2.1-.2-2.1 0-3.6 1.3-3.6 3.8v2.2H8.5v3h2.5V20" />
+    </BaseIcon>
+  );
+}
+
+export function AppleIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M14 5.5c.7-.8 1.1-1.9 1-3-.9.1-2 .6-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 0 2-.5 2.7-1.3Z" />
+      <path d="M12.2 8.4c-1.5 0-2.2.9-3.3.9-1.1 0-1.4-.8-3-.8-2 0-4.1 1.7-4.1 5 .1 2.4 1 4.8 2.5 6.7.8 1 1.8 2.2 3.1 2.1 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.3.8c1.4 0 2.2-1.1 3-2.1.6-.8 1.2-1.8 1.6-2.8-2.4-.9-3.5-4-1.7-6 .8-.9 1.8-1.4 2.8-1.5-.7-1-1.9-2.5-3.9-2.5-1.3 0-2.3.9-3.5.9Z" />
+    </BaseIcon>
+  );
+}

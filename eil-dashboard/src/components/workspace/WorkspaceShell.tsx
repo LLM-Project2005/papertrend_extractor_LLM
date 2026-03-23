@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import AuthStatus from "@/components/auth/AuthStatus";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
@@ -144,14 +145,47 @@ export default function WorkspaceShell({
   const pathname = usePathname();
   const { profile } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const stored = window.localStorage.getItem("papertrend_sidebar_open");
+    if (stored === "false") {
+      setDesktopSidebarOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      "papertrend_sidebar_open",
+      desktopSidebarOpen ? "true" : "false"
+    );
+  }, [desktopSidebarOpen]);
 
   const currentItem =
     NAV_ITEMS.find((item) => pathname.startsWith(item.href)) ?? NAV_ITEMS[0];
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <div className="lg:grid lg:min-h-screen lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 lg:block">
+      <div
+        className={`lg:grid lg:min-h-screen ${
+          desktopSidebarOpen
+            ? "lg:grid-cols-[240px_minmax(0,1fr)]"
+            : "lg:grid-cols-[minmax(0,1fr)]"
+        }`}
+      >
+        <aside
+          className={`hidden border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950 lg:block ${
+            desktopSidebarOpen ? "lg:block" : "lg:hidden"
+          }`}
+        >
           <SidebarContent pathname={pathname} profile={profile} />
         </aside>
 
@@ -185,8 +219,16 @@ export default function WorkspaceShell({
               <div className="flex min-w-0 items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => setSidebarOpen(true)}
-                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 lg:hidden"
+                  onClick={() => {
+                    if (window.innerWidth >= 1024) {
+                      setDesktopSidebarOpen((current) => !current);
+                      return;
+                    }
+
+                    setSidebarOpen(true);
+                  }}
+                  className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  aria-label="Toggle workspace navigation"
                 >
                   <MenuIcon className="h-4 w-4" />
                 </button>
@@ -201,6 +243,7 @@ export default function WorkspaceShell({
               </div>
 
               <div className="flex items-center gap-2">
+                <AuthStatus />
                 <ThemeToggle />
                 <Link
                   href="/workspace/imports"

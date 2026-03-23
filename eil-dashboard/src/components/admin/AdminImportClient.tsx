@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 interface IngestionRun {
   id: string;
@@ -47,6 +48,7 @@ function StatusBadge({ status }: { status: IngestionRun["status"] }) {
 }
 
 export default function AdminImportClient() {
+  const { session, isAdmin, user } = useAuth();
   const [adminSecret, setAdminSecret] = useState("");
   const [provider, setProvider] = useState("");
   const [model, setModel] = useState("");
@@ -64,9 +66,37 @@ export default function AdminImportClient() {
     }
   }, []);
 
+  useEffect(() => {
+    if (isAdmin && session?.access_token) {
+      void loadRuns();
+    }
+  }, [isAdmin, session?.access_token]);
+
+  const authHeaders = useMemo<Record<string, string>>(() => {
+    const headers: Record<string, string> = {};
+
+    if (isAdmin && session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`;
+      return headers;
+    }
+
+    if (adminSecret.trim()) {
+      headers["x-admin-secret"] = adminSecret.trim();
+    }
+
+    return headers;
+  }, [adminSecret, isAdmin, session?.access_token]);
+
   async function loadRuns(secretOverride?: string) {
     const secret = secretOverride ?? adminSecret;
-    if (!secret) {
+    const headers: Record<string, string> | null =
+      isAdmin && session?.access_token
+        ? { Authorization: `Bearer ${session.access_token}` }
+        : secret
+          ? { "x-admin-secret": secret }
+          : null;
+
+    if (!headers) {
       return;
     }
 
@@ -74,9 +104,7 @@ export default function AdminImportClient() {
     setError(null);
     try {
       const response = await fetch("/api/admin/import", {
-        headers: {
-          "x-admin-secret": secret,
-        },
+        headers,
       });
       const payload = (await response.json()) as {
         runs?: IngestionRun[];
@@ -109,8 +137,8 @@ export default function AdminImportClient() {
   }
 
   async function handleUpload() {
-    if (!adminSecret.trim()) {
-      setError("Enter the shared admin secret before uploading.");
+    if (!isAdmin && !adminSecret.trim()) {
+      setError("Sign in as an admin or enter the shared admin secret before uploading.");
       return;
     }
     if (files.length === 0) {
@@ -134,9 +162,7 @@ export default function AdminImportClient() {
 
       const response = await fetch("/api/admin/import", {
         method: "POST",
-        headers: {
-          "x-admin-secret": adminSecret.trim(),
-        },
+        headers: authHeaders,
         body: formData,
       });
 
@@ -181,6 +207,19 @@ export default function AdminImportClient() {
         </p>
 
         <div className="mt-5 space-y-4">
+          <div className="rounded-2xl border border-gray-200 bg-gray-50 px-4 py-4">
+            <p className="text-sm font-medium text-gray-900">Admin access</p>
+            {user ? (
+              <p className="mt-1 text-sm text-gray-600">
+                Signed in as {user.email}. Current role: {isAdmin ? "admin" : "member"}.
+              </p>
+            ) : (
+              <p className="mt-1 text-sm text-gray-600">
+                Sign in to Supabase auth for role-based admin access, or use the shared admin secret below.
+              </p>
+            )}
+          </div>
+
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700">
               Shared admin secret
@@ -191,7 +230,7 @@ export default function AdminImportClient() {
                 value={adminSecret}
                 onChange={(event) => setAdminSecret(event.target.value)}
                 className="w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                placeholder="Enter the shared admin secret"
+                placeholder={isAdmin ? "Optional when signed in as admin" : "Enter the shared admin secret"}
               />
               <button
                 type="button"
@@ -301,7 +340,7 @@ export default function AdminImportClient() {
 
         {runs.length === 0 ? (
           <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-            Save the admin secret, then refresh to view ingestion runs.
+            Sign in as an admin or save the admin secret, then refresh to view ingestion runs.
           </div>
         ) : (
           <div className="space-y-3">

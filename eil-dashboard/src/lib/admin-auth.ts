@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto";
 import { getAdminImportSecret } from "@/lib/server-env";
+import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left);
@@ -10,15 +11,49 @@ function safeEqual(left: string, right: string): boolean {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-export function isAuthorizedAdminRequest(request: Request): boolean {
-  const expectedSecret = getAdminImportSecret();
-  if (!expectedSecret) {
-    return false;
-  }
+function getBearerToken(request: Request): string {
+  const authorization = request.headers.get("authorization") ?? "";
+  return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+}
 
+export async function isAuthorizedAdminRequest(request: Request): Promise<boolean> {
+  const expectedSecret = getAdminImportSecret();
   const url = new URL(request.url);
   const providedSecret =
     request.headers.get("x-admin-secret") ?? url.searchParams.get("admin_secret") ?? "";
 
-  return safeEqual(providedSecret, expectedSecret);
+  if (expectedSecret && providedSecret && safeEqual(providedSecret, expectedSecret)) {
+    return true;
+  }
+
+  const accessToken = getBearerToken(request);
+  if (!accessToken) {
+    return false;
+  }
+
+  try {
+    const supabase = getSupabaseAdmin();
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser(accessToken);
+
+    if (userError || !user) {
+      return false;
+    }
+
+    const { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      return false;
+    }
+
+    return profile?.role === "admin";
+  } catch {
+    return false;
+  }
 }

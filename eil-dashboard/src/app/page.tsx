@@ -1,4 +1,6 @@
 import Link from "next/link";
+import AuthPanel from "@/components/auth/AuthPanel";
+import AuthStatus from "@/components/auth/AuthStatus";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
   ArrowRightIcon,
@@ -73,6 +75,7 @@ export default function LandingPage() {
           </Link>
 
           <div className="flex flex-wrap gap-2">
+            <AuthStatus />
             <ThemeToggle />
             <Link
               href="/start"
@@ -91,7 +94,7 @@ export default function LandingPage() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8 dark:border-slate-800 dark:bg-slate-900">
+        <section className="grid gap-6 rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8 xl:grid-cols-[minmax(0,1.2fr)_380px] dark:border-slate-800 dark:bg-slate-900">
           <div className="max-w-3xl">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
               Research intelligence for departments, labs, and faculty teams
@@ -103,22 +106,26 @@ export default function LandingPage() {
               Start with a simple setup flow, bring documents into the system, and
               keep dashboard analytics, grounded chat, and paper review in one place.
             </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/start"
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
+              >
+                <span>Start setup</span>
+                <ArrowRightIcon className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/workspace/dashboard"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+              >
+                View dashboard module
+              </Link>
+            </div>
           </div>
 
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/start"
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
-            >
-              <span>Start setup</span>
-              <ArrowRightIcon className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/workspace/dashboard"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
-            >
-              View dashboard module
-            </Link>
+          <div id="account">
+            <AuthPanel />
           </div>
         </section>
 

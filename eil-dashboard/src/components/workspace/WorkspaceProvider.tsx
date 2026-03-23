@@ -5,13 +5,15 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   DEFAULT_WORKSPACE_PROFILE,
   loadWorkspaceProfile,
-  saveWorkspaceProfile,
+  saveWorkspaceProfile as saveWorkspaceProfileLocal,
 } from "@/lib/workspace-profile";
 import type { WorkspaceProfile } from "@/types/workspace";
 
@@ -27,21 +29,67 @@ const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
 );
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
+  const {
+    hydrated: authHydrated,
+    user,
+    profile: authProfile,
+    saveWorkspaceProfile: saveWorkspaceProfileRemote,
+  } = useAuth();
   const [profile, setProfile] = useState(DEFAULT_WORKSPACE_PROFILE);
   const [hydrated, setHydrated] = useState(false);
+  const loadedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
+    if (!authHydrated) {
+      return;
+    }
+
+    if (user) {
+      const remoteProfile = authProfile?.workspace_profile
+        ? {
+            ...DEFAULT_WORKSPACE_PROFILE,
+            ...authProfile.workspace_profile,
+            desiredOutputs:
+              authProfile.workspace_profile.desiredOutputs &&
+              authProfile.workspace_profile.desiredOutputs.length > 0
+                ? authProfile.workspace_profile.desiredOutputs
+                : DEFAULT_WORKSPACE_PROFILE.desiredOutputs,
+          }
+        : loadWorkspaceProfile();
+
+      const nextKey = `${user.id}:${authProfile?.updated_at ?? "local"}`;
+      if (loadedKeyRef.current !== nextKey) {
+        loadedKeyRef.current = nextKey;
+        setProfile(remoteProfile);
+      }
+
+      setHydrated(true);
+      return;
+    }
+
+    loadedKeyRef.current = "anonymous";
     setProfile(loadWorkspaceProfile());
     setHydrated(true);
-  }, []);
+  }, [authHydrated, authProfile, user]);
 
   useEffect(() => {
     if (!hydrated) {
       return;
     }
 
-    saveWorkspaceProfile(profile);
+    saveWorkspaceProfileLocal(profile);
   }, [hydrated, profile]);
+
+  useEffect(() => {
+    if (!hydrated || !user) {
+      return;
+    }
+
+    saveWorkspaceProfileRemote(profile).catch(() => {
+      // The local profile still persists in localStorage, so the workspace
+      // remains usable even if the remote sync fails temporarily.
+    });
+  }, [hydrated, profile, saveWorkspaceProfileRemote, user]);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({

@@ -32,8 +32,8 @@ export default function WorkspaceSettingsClient() {
           Adjust how this workspace presents itself
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-600">
-          These preferences are currently stored in the browser so you can shape
-          the workspace experience before adding full multi-workspace persistence.
+          These preferences stay in the browser for guests and sync to Supabase
+          for signed-in users so the workspace can follow the account.
         </p>
 
         <div className="mt-6 grid gap-4 md:grid-cols-2">
