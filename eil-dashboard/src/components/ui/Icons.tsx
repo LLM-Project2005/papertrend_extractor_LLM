@@ -126,6 +126,68 @@ export function SparkIcon({ className }: IconProps) {
   );
 }
 
+export function MenuIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M4 7h16" />
+      <path d="M4 12h16" />
+      <path d="M4 17h16" />
+    </BaseIcon>
+  );
+}
+
+export function CloseIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m6 6 12 12" />
+      <path d="M18 6 6 18" />
+    </BaseIcon>
+  );
+}
+
+export function SunIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2.5v2.2" />
+      <path d="M12 19.3v2.2" />
+      <path d="m4.9 4.9 1.6 1.6" />
+      <path d="m17.5 17.5 1.6 1.6" />
+      <path d="M2.5 12h2.2" />
+      <path d="M19.3 12h2.2" />
+      <path d="m4.9 19.1 1.6-1.6" />
+      <path d="m17.5 6.5 1.6-1.6" />
+    </BaseIcon>
+  );
+}
+
+export function MoonIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M20 14.2A7.8 7.8 0 0 1 9.8 4a8.5 8.5 0 1 0 10.1 10.2Z" />
+    </BaseIcon>
+  );
+}
+
+export function FilterIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M4 6h16" />
+      <path d="M7 12h10" />
+      <path d="M10 18h4" />
+    </BaseIcon>
+  );
+}
+
+export function SearchIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4 4" />
+    </BaseIcon>
+  );
+}
+
 export function CheckCircleIcon({ className }: IconProps) {
   return (
     <BaseIcon className={className}>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
 import "./globals.css";
 
@@ -14,9 +15,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <WorkspaceProvider>{children}</WorkspaceProvider>
+        <ThemeProvider>
+          <WorkspaceProvider>{children}</WorkspaceProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

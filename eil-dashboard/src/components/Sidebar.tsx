@@ -20,8 +20,8 @@ export default function Sidebar({
   selectedTracks,
   onTracksChange,
   useMock,
-  title = "Dashboard filters",
-  description = "Narrow the active workspace dataset by year and track before exploring the analytics modules.",
+  title = "Filters",
+  description = "Narrow the dataset before exploring the analytics.",
 }: Props) {
   const toggleYear = (year: string) => {
     onYearsChange(
@@ -40,85 +40,110 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="rounded-[28px] bg-sidebar-bg text-sidebar-text shadow-sm">
-      <div className="flex h-full flex-col p-5">
-        <h2 className="text-xl font-bold text-sidebar-heading">{title}</h2>
-        <p className="mt-2 text-xs leading-relaxed text-sidebar-muted">
+    <aside className="app-surface overflow-hidden">
+      <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+        <h2 className="text-base font-semibold text-slate-900 dark:text-white">
+          {title}
+        </h2>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           {description}
         </p>
+      </div>
 
-        <hr className="mb-4 mt-5 border-sidebar-divider" />
-
+      <div className="space-y-6 px-5 py-5">
         {useMock && (
-          <div className="mb-4 rounded-md border border-sidebar-alert-border bg-sidebar-alert px-3 py-2 text-xs text-sidebar-muted">
-            Showing mock preview data. Connect Supabase or run the extraction
-            pipeline to load real results.
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+            Showing preview data until Supabase is connected and populated.
           </div>
         )}
 
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-muted">
-          Filter by Year
-        </h3>
-        <div className="mb-4 max-h-52 overflow-y-auto space-y-1 pr-1">
-          <button
-            className="mb-1 text-[11px] text-blue-300 hover:underline"
-            onClick={() =>
-              onYearsChange(
-                selectedYears.length === allYears.length ? [] : [...allYears]
-              )
-            }
-          >
-            {selectedYears.length === allYears.length
-              ? "Deselect all"
-              : "Select all"}
-          </button>
-
-          {allYears.map((year) => (
-            <label
-              key={year}
-              className="flex cursor-pointer items-center gap-2 text-sm"
+        <section>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+              Years
+            </h3>
+            <button
+              type="button"
+              className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+              onClick={() =>
+                onYearsChange(
+                  selectedYears.length === allYears.length ? [] : [...allYears]
+                )
+              }
             >
-              <input
-                type="checkbox"
-                checked={selectedYears.includes(year)}
-                onChange={() => toggleYear(year)}
-                className="rounded border-sidebar-divider text-blue-500 focus:ring-blue-500/30"
-              />
-              {year}
-            </label>
-          ))}
-        </div>
+              {selectedYears.length === allYears.length
+                ? "Clear all"
+                : "Select all"}
+            </button>
+          </div>
 
-        <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-sidebar-muted">
-          Filter by Track
-        </h3>
-        <div className="mb-4 space-y-1">
-          {TRACK_COLS.map((track) => (
-            <label
-              key={track}
-              className="flex cursor-pointer items-center gap-2 text-sm"
-            >
-              <input
-                type="checkbox"
-                checked={selectedTracks.includes(track)}
-                onChange={() => toggleTrack(track)}
-                className="rounded border-sidebar-divider text-blue-500 focus:ring-blue-500/30"
-              />
-              <span>
-                {track}{" "}
-                <span className="text-xs text-sidebar-muted">
-                  - {TRACK_NAMES[track as TrackKey]}
-                </span>
-              </span>
-            </label>
-          ))}
-        </div>
+          <div className="flex flex-wrap gap-2">
+            {allYears.map((year) => {
+              const active = selectedYears.includes(year);
+              return (
+                <button
+                  key={year}
+                  type="button"
+                  onClick={() => toggleYear(year)}
+                  className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                    active
+                      ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
+                  }`}
+                >
+                  {year}
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
-        <hr className="my-3 border-sidebar-divider" />
+        <section>
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
+            Tracks
+          </h3>
+          <div className="space-y-2">
+            {TRACK_COLS.map((track) => {
+              const active = selectedTracks.includes(track);
+              return (
+                <button
+                  key={track}
+                  type="button"
+                  onClick={() => toggleTrack(track)}
+                  className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition-colors ${
+                    active
+                      ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
+                  }`}
+                >
+                  <span>
+                    <span className="block text-sm font-medium">{track}</span>
+                    <span
+                      className={`mt-1 block text-xs ${
+                        active
+                          ? "text-slate-200 dark:text-slate-600"
+                          : "text-slate-500 dark:text-slate-400"
+                      }`}
+                    >
+                      {TRACK_NAMES[track as TrackKey]}
+                    </span>
+                  </span>
+                  <span
+                    className={`mt-0.5 h-2.5 w-2.5 rounded-full ${
+                      active
+                        ? "bg-white dark:bg-slate-900"
+                        : "bg-slate-200 dark:bg-slate-700"
+                    }`}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </section>
 
-        <p className="mt-auto text-[11px] leading-relaxed text-sidebar-muted">
-          <strong>Data source:</strong> Supabase-backed views and imported research
-          outputs inside the workspace.
+        <p className="text-xs leading-6 text-slate-400 dark:text-slate-500">
+          Data source: Supabase-backed views and imported research outputs inside
+          the workspace.
         </p>
       </div>
     </aside>

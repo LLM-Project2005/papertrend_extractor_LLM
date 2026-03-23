@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
-  AreaChart,
   Area,
-  BarChart,
+  AreaChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
-  Legend,
 } from "recharts";
 import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
@@ -25,229 +25,246 @@ export default function TrendAnalysis({ trends }: Props) {
   const [topN, setTopN] = useState(10);
   const [heatN, setHeatN] = useState(15);
 
-  // ── Top-N topics ────────────────────────────────────────
   const topTopics = useMemo(() => {
     const counts: Record<string, Set<number>> = {};
-    trends.forEach((r) => {
-      (counts[r.topic] ??= new Set()).add(r.paper_id);
+    trends.forEach((row) => {
+      (counts[row.topic] ??= new Set()).add(row.paper_id);
     });
     return Object.entries(counts)
-      .sort((a, b) => b[1].size - a[1].size)
+      .sort((left, right) => right[1].size - left[1].size)
       .slice(0, topN)
-      .map(([t]) => t);
-  }, [trends, topN]);
+      .map(([topic]) => topic);
+  }, [topN, trends]);
 
-  // ── Area chart data ─────────────────────────────────────
   const areaData = useMemo(() => {
-    const years = [...new Set(trends.map((r) => r.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].sort();
     return years.map((year) => {
-      const row: Record<string, string | number> = { year };
+      const entry: Record<string, string | number> = { year };
       topTopics.forEach((topic) => {
         const ids = new Set(
           trends
-            .filter((r) => r.year === year && r.topic === topic)
-            .map((r) => r.paper_id)
+            .filter((row) => row.year === year && row.topic === topic)
+            .map((row) => row.paper_id)
         );
-        row[topic] = ids.size;
+        entry[topic] = ids.size;
       });
-      return row;
+      return entry;
     });
-  }, [trends, topTopics]);
+  }, [topTopics, trends]);
 
-  // ── Emerging / declining ────────────────────────────────
   const { emerging, declining } = useMemo(() => {
-    const years = [...new Set(trends.map((r) => r.year))].sort();
-    if (years.length < 2) return { emerging: [], declining: [] };
-    const mid = Math.floor(years.length / 2);
-    const early = new Set(years.slice(0, mid));
-    const late = new Set(years.slice(mid));
+    const years = [...new Set(trends.map((row) => row.year))].sort();
+    if (years.length < 2) {
+      return { emerging: [], declining: [] };
+    }
+
+    const midpoint = Math.floor(years.length / 2);
+    const early = new Set(years.slice(0, midpoint));
+    const late = new Set(years.slice(midpoint));
 
     const countIn = (yearSet: Set<string>) => {
-      const c: Record<string, Set<number>> = {};
+      const counts: Record<string, Set<number>> = {};
       trends
-        .filter((r) => yearSet.has(r.year))
-        .forEach((r) => (c[r.topic] ??= new Set()).add(r.paper_id));
-      return c;
+        .filter((row) => yearSet.has(row.year))
+        .forEach((row) => (counts[row.topic] ??= new Set()).add(row.paper_id));
+      return counts;
     };
-    const earlyC = countIn(early);
-    const lateC = countIn(late);
-    const allTopics = new Set([
-      ...Object.keys(earlyC),
-      ...Object.keys(lateC),
-    ]);
 
-    const shifts = [...allTopics].map((t) => ({
-      topic: t,
-      change: (lateC[t]?.size ?? 0) - (earlyC[t]?.size ?? 0),
-    }));
-    shifts.sort((a, b) => b.change - a.change);
+    const earlyCounts = countIn(early);
+    const lateCounts = countIn(late);
+    const topics = new Set([...Object.keys(earlyCounts), ...Object.keys(lateCounts)]);
+
+    const shifts = [...topics]
+      .map((topic) => ({
+        topic,
+        change: (lateCounts[topic]?.size ?? 0) - (earlyCounts[topic]?.size ?? 0),
+      }))
+      .sort((left, right) => right.change - left.change);
 
     return {
-      emerging: shifts.filter((s) => s.change > 0).slice(0, 8),
-      declining: shifts.filter((s) => s.change < 0).slice(-8).reverse(),
+      emerging: shifts.filter((shift) => shift.change > 0).slice(0, 8),
+      declining: shifts.filter((shift) => shift.change < 0).slice(-8).reverse(),
     };
   }, [trends]);
 
-  // ── Keyword heatmap ─────────────────────────────────────
   const heatmapData = useMemo(() => {
-    const years = [...new Set(trends.map((r) => r.year))].sort();
-    // aggregate keyword_frequency
-    const kwTotals: Record<string, number> = {};
-    trends.forEach((r) => {
-      kwTotals[r.keyword] = (kwTotals[r.keyword] ?? 0) + r.keyword_frequency;
+    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const keywordTotals: Record<string, number> = {};
+
+    trends.forEach((row) => {
+      keywordTotals[row.keyword] =
+        (keywordTotals[row.keyword] ?? 0) + row.keyword_frequency;
     });
-    const topKws = Object.entries(kwTotals)
-      .sort((a, b) => b[1] - a[1])
+
+    const topKeywords = Object.entries(keywordTotals)
+      .sort((left, right) => right[1] - left[1])
       .slice(0, heatN)
-      .map(([kw]) => kw);
+      .map(([keyword]) => keyword);
 
-    // build grid[kw][year]
     const grid: Record<string, Record<string, number>> = {};
-    trends.forEach((r) => {
-      if (!topKws.includes(r.keyword)) return;
-      grid[r.keyword] ??= {};
-      grid[r.keyword][r.year] =
-        (grid[r.keyword][r.year] ?? 0) + r.keyword_frequency;
+    trends.forEach((row) => {
+      if (!topKeywords.includes(row.keyword)) {
+        return;
+      }
+      grid[row.keyword] ??= {};
+      grid[row.keyword][row.year] =
+        (grid[row.keyword][row.year] ?? 0) + row.keyword_frequency;
     });
 
-    const values = topKws.map((kw) =>
-      years.map((y) => grid[kw]?.[y] ?? 0)
-    );
-
-    return { rows: topKws, cols: years, values };
-  }, [trends, heatN]);
+    return {
+      rows: topKeywords,
+      cols: years,
+      values: topKeywords.map((keyword) =>
+        years.map((year) => grid[keyword]?.[year] ?? 0)
+      ),
+    };
+  }, [heatN, trends]);
 
   if (trends.length === 0) {
-    return <p className="text-gray-400">No data for the selected filters.</p>;
+    return (
+      <div className="app-surface px-5 py-5">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          No data for the selected filters.
+        </p>
+      </div>
+    );
   }
 
   return (
-    <div>
-      <h2 className="text-xl font-bold mb-4">Research Trend Analysis</h2>
+    <div className="space-y-6">
+      <section className="app-surface px-5 py-5">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Trend analysis
+        </h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Follow topic movement and keyword intensity across the selected year range.
+        </p>
+      </section>
 
-      {/* ── Topic area chart ───────────────────────────────── */}
-      <div className="mb-8">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Topic Trends Over Time
-        </h3>
-        <label className="text-xs text-gray-500 mr-2">Show top N topics:</label>
-        <input
-          type="range"
-          min={3}
-          max={25}
-          value={topN}
-          onChange={(e) => setTopN(+e.target.value)}
-          className="align-middle w-40"
-        />
-        <span className="text-xs ml-1 text-gray-600">{topN}</span>
-
-        <ResponsiveContainer width="100%" height={360} className="mt-3">
-          <AreaChart data={areaData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-            <XAxis dataKey="year" tick={{ fontSize: 12 }} />
-            <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-            <Tooltip />
-            <Legend
-              wrapperStyle={{ fontSize: 11 }}
-              verticalAlign="bottom"
-              height={60}
-            />
-            {topTopics.map((topic, i) => (
-              <Area
-                key={topic}
-                type="monotone"
-                dataKey={topic}
-                stackId="1"
-                stroke={TOPIC_PALETTE[i % TOPIC_PALETTE.length]}
-                fill={TOPIC_PALETTE[i % TOPIC_PALETTE.length]}
-                fillOpacity={0.6}
-              />
-            ))}
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* ── Emerging / Declining ───────────────────────────── */}
-      {(emerging.length > 0 || declining.length > 0) && (
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">
-            Emerging and Declining Topics
+      <section className="app-surface px-5 py-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Topic trends over time
           </h3>
-          <p className="text-xs text-gray-400 mb-3">
-            Compares the first half vs second half of the selected year range.
+          <label className="text-xs text-slate-500 dark:text-slate-400">
+            Top topics: {topN}
+          </label>
+          <input
+            type="range"
+            min={3}
+            max={25}
+            value={topN}
+            onChange={(event) => setTopN(+event.target.value)}
+            className="w-40"
+          />
+        </div>
+
+        <div className="mt-4 h-[360px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={areaData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+              <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {topTopics.map((topic, index) => (
+                <Area
+                  key={topic}
+                  type="monotone"
+                  dataKey={topic}
+                  stackId="1"
+                  stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                  fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                  fillOpacity={0.55}
+                />
+              ))}
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+
+      {(emerging.length > 0 || declining.length > 0) && (
+        <section className="app-surface px-5 py-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Emerging and declining topics
+          </h3>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Compares the first half and second half of the current selection.
           </p>
-          <div className="grid md:grid-cols-2 gap-6">
+
+          <div className="mt-5 grid gap-6 xl:grid-cols-2">
             {emerging.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-green-700 mb-2">
+                <p className="mb-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
                   Emerging
-                </h4>
-                <ResponsiveContainer width="100%" height={emerging.length * 36 + 30}>
-                  <BarChart
-                    data={emerging}
-                    layout="vertical"
-                    margin={{ left: 10, right: 20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      type="category"
-                      dataKey="topic"
-                      width={180}
-                      tick={{ fontSize: 11 }}
-                    />
-                    <Tooltip />
-                    <Bar dataKey="change" fill="#3cba83" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                </p>
+                <div className="h-[320px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={emerging} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                      <YAxis
+                        type="category"
+                        dataKey="topic"
+                        width={180}
+                        tick={{ fontSize: 11 }}
+                        stroke="#94a3b8"
+                      />
+                      <Tooltip />
+                      <Bar dataKey="change" fill="#10b981" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             )}
+
             {declining.length > 0 && (
               <div>
-                <h4 className="text-xs font-semibold text-red-600 mb-2">
+                <p className="mb-3 text-sm font-medium text-rose-700 dark:text-rose-400">
                   Declining
-                </h4>
-                <ResponsiveContainer width="100%" height={declining.length * 36 + 30}>
-                  <BarChart
-                    data={declining}
-                    layout="vertical"
-                    margin={{ left: 10, right: 20 }}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-                    <XAxis type="number" tick={{ fontSize: 11 }} />
-                    <YAxis
-                      type="category"
-                      dataKey="topic"
-                      width={180}
-                      tick={{ fontSize: 11 }}
-                    />
-                    <Tooltip />
-                    <Bar dataKey="change" fill="#e05c5c" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                </p>
+                <div className="h-[320px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={declining} layout="vertical" margin={{ left: 10, right: 20 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                      <YAxis
+                        type="category"
+                        dataKey="topic"
+                        width={180}
+                        tick={{ fontSize: 11 }}
+                        stroke="#94a3b8"
+                      />
+                      <Tooltip />
+                      <Bar dataKey="change" fill="#f43f5e" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             )}
           </div>
-        </div>
+        </section>
       )}
 
-      {/* ── Keyword heatmap ────────────────────────────────── */}
-      <div className="mb-8">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Keyword Frequency Heatmap
-        </h3>
-        <label className="text-xs text-gray-500 mr-2">Show top N keywords:</label>
-        <input
-          type="range"
-          min={5}
-          max={40}
-          value={heatN}
-          onChange={(e) => setHeatN(+e.target.value)}
-          className="align-middle w-40"
-        />
-        <span className="text-xs ml-1 text-gray-600">{heatN}</span>
+      <section className="app-surface px-5 py-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Keyword frequency heatmap
+          </h3>
+          <label className="text-xs text-slate-500 dark:text-slate-400">
+            Top keywords: {heatN}
+          </label>
+          <input
+            type="range"
+            min={5}
+            max={40}
+            value={heatN}
+            onChange={(event) => setHeatN(+event.target.value)}
+            className="w-40"
+          />
+        </div>
 
-        <div className="mt-3">
+        <div className="mt-4">
           <Heatmap
             rows={heatmapData.rows}
             cols={heatmapData.cols}
@@ -255,7 +272,7 @@ export default function TrendAnalysis({ trends }: Props) {
             colorScale={["#fff7ec", "#cc4c02"]}
           />
         </div>
-      </div>
+      </section>
     </div>
   );
 }

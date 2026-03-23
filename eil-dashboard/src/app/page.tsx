@@ -1,4 +1,5 @@
 import Link from "next/link";
+import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
   ArrowRightIcon,
   ChartIcon,
@@ -54,29 +55,34 @@ const JOURNEY = [
 
 export default function LandingPage() {
   return (
-    <main className="min-h-screen bg-[#f5f7fb] text-slate-900">
-      <div className="border-b border-slate-200 bg-white">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-950">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
           <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
               <LogoMarkIcon className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-sm font-semibold text-slate-900">Papertrend</p>
-              <p className="text-xs text-slate-500">Research workspace</p>
+              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                Papertrend
+              </p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Research workspace
+              </p>
             </div>
           </Link>
 
           <div className="flex flex-wrap gap-2">
+            <ThemeToggle />
             <Link
               href="/start"
-              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
             >
               Start here
             </Link>
             <Link
               href="/workspace/home"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
             >
               Open workspace
             </Link>
@@ -85,15 +91,15 @@ export default function LandingPage() {
       </div>
 
       <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8">
+        <section className="rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8 dark:border-slate-800 dark:bg-slate-900">
           <div className="max-w-3xl">
-            <p className="text-sm font-medium text-slate-500">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
               Research intelligence for departments, labs, and faculty teams
             </p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl">
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl dark:text-white">
               Turn scattered research papers into a clean, guided workspace.
             </h1>
-            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600">
+            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-slate-300">
               Start with a simple setup flow, bring documents into the system, and
               keep dashboard analytics, grounded chat, and paper review in one place.
             </p>
@@ -102,14 +108,14 @@ export default function LandingPage() {
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
               href="/start"
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
             >
               <span>Start setup</span>
               <ArrowRightIcon className="h-4 w-4" />
             </Link>
             <Link
               href="/workspace/dashboard"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white"
             >
               View dashboard module
             </Link>
@@ -122,15 +128,15 @@ export default function LandingPage() {
             return (
               <article
                 key={item.title}
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-5"
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-5 dark:border-slate-800 dark:bg-slate-900"
               >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                   <Icon className="h-5 w-5" />
                 </div>
-                <h2 className="mt-4 text-base font-semibold text-slate-900">
+                <h2 className="mt-4 text-base font-semibold text-slate-900 dark:text-white">
                   {item.title}
                 </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
                   {item.description}
                 </p>
               </article>
@@ -138,10 +144,12 @@ export default function LandingPage() {
           })}
         </section>
 
-        <section className="mt-8 rounded-3xl border border-slate-200 bg-white px-6 py-6 sm:px-8">
+        <section className="mt-8 rounded-3xl border border-slate-200 bg-white px-6 py-6 sm:px-8 dark:border-slate-800 dark:bg-slate-900">
           <div className="max-w-2xl">
-            <p className="text-sm font-medium text-slate-500">How it works</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+              How it works
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
               Keep the dashboard, but put it inside a broader workflow.
             </h2>
           </div>
@@ -150,15 +158,15 @@ export default function LandingPage() {
             {JOURNEY.map((item) => (
               <article
                 key={item.step}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5"
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-slate-800 dark:bg-slate-950"
               >
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">
                   {item.step}
                 </p>
-                <h3 className="mt-3 text-lg font-semibold text-slate-900">
+                <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">
                   {item.title}
                 </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500">
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
                   {item.description}
                 </p>
               </article>

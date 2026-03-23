@@ -5,9 +5,13 @@ interface Props {
 
 export default function MetricCard({ label, value }: Props) {
   return (
-    <div className="bg-card-bg border border-card-border rounded-xl px-5 py-4">
-      <p className="text-xs text-gray-500 tracking-wide mb-1">{label}</p>
-      <p className="text-2xl font-semibold text-gray-900">{value}</p>
+    <div className="app-card px-5 py-4">
+      <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+        {label}
+      </p>
+      <p className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
+        {value}
+      </p>
     </div>
   );
 }

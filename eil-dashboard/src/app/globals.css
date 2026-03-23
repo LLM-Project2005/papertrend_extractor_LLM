@@ -7,7 +7,11 @@
 }
 
 body {
-  @apply bg-white text-gray-900 antialiased;
+  @apply bg-slate-50 text-slate-900 antialiased transition-colors;
+}
+
+.dark body {
+  @apply bg-slate-950 text-slate-100;
 }
 
 /* Custom scrollbar */
@@ -16,24 +20,44 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  @apply bg-slate-100;
+}
+
+.dark ::-webkit-scrollbar-track {
+  @apply bg-slate-900;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  @apply rounded-full bg-slate-300;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-slate-700;
 }
 
 /* Smooth tab transitions */
 .tab-btn {
-  @apply px-4 py-2.5 text-sm font-medium border-b-2 transition-colors duration-150;
+  @apply rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150;
 }
 .tab-btn-active {
-  @apply border-blue-600 text-blue-600;
+  @apply border-slate-900 bg-slate-900 text-white;
 }
 .tab-btn-inactive {
-  @apply border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300;
+  @apply border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600 dark:hover:text-white;
 }
 
 /* Recharts tooltip */
 .recharts-tooltip-wrapper {
   @apply !outline-none;
+}
+
+.app-surface {
+  @apply rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900;
+}
+
+.app-card {
+  @apply rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900;
+}
+
+.app-muted {
+  @apply text-slate-500 dark:text-slate-400;
 }

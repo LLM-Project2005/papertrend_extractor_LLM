@@ -2,14 +2,14 @@
 
 import { useMemo } from "react";
 import {
-  BarChart,
   Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
-  Legend,
 } from "recharts";
 import Heatmap from "@/components/Heatmap";
 import {
@@ -27,7 +27,8 @@ interface Props {
   selectedTracks: string[];
 }
 
-const trackField = (t: string) => t.toLowerCase() as "el" | "eli" | "lae" | "other";
+const trackField = (track: string) =>
+  track.toLowerCase() as "el" | "eli" | "lae" | "other";
 
 export default function TrackAnalysis({
   trends,
@@ -35,156 +36,162 @@ export default function TrackAnalysis({
   tracksMulti,
   selectedTracks,
 }: Props) {
-  // ── Stacked bar: papers per track per year ──────────────
   const stackedData = useMemo(() => {
-    const years = [...new Set(tracksSingle.map((r) => r.year))].sort();
+    const years = [...new Set(tracksSingle.map((row) => row.year))].sort();
     return years.map((year) => {
-      const row: Record<string, string | number> = { year };
-      const yearRows = tracksSingle.filter((r) => r.year === year);
-      TRACK_COLS.filter((t) => selectedTracks.includes(t)).forEach((t) => {
-        row[t] = yearRows.reduce((s, r) => s + r[trackField(t)], 0);
+      const entry: Record<string, string | number> = { year };
+      const yearRows = tracksSingle.filter((row) => row.year === year);
+      TRACK_COLS.filter((track) => selectedTracks.includes(track)).forEach((track) => {
+        entry[track] = yearRows.reduce((sum, row) => sum + row[trackField(track)], 0);
       });
-      return row;
+      return entry;
     });
-  }, [tracksSingle, selectedTracks]);
+  }, [selectedTracks, tracksSingle]);
 
-  // ── Co-occurrence matrix ────────────────────────────────
-  const coMatrix = useMemo(() => {
-    const matrix = TRACK_COLS.map((t1) =>
-      TRACK_COLS.map((t2) =>
-        tracksMulti.reduce(
-          (s, r) =>
-            s + (r[trackField(t1)] === 1 && r[trackField(t2)] === 1 ? 1 : 0),
-          0
+  const coMatrix = useMemo(
+    () =>
+      TRACK_COLS.map((leftTrack) =>
+        TRACK_COLS.map((rightTrack) =>
+          tracksMulti.reduce(
+            (sum, row) =>
+              sum +
+              (row[trackField(leftTrack)] === 1 && row[trackField(rightTrack)] === 1
+                ? 1
+                : 0),
+            0
+          )
         )
-      )
-    );
-    return matrix;
-  }, [tracksMulti]);
+      ),
+    [tracksMulti]
+  );
 
-  // ── Top topics per track ────────────────────────────────
   const topicsPerTrack = useMemo(() => {
-    // merge trends with single-choice track
-    const trackMap = new Map(tracksSingle.map((r) => [r.paper_id, r]));
+    const trackMap = new Map(tracksSingle.map((row) => [row.paper_id, row]));
     const result: Record<string, { topic: string; papers: number }[]> = {};
 
-    TRACK_COLS.filter((t) => selectedTracks.includes(t)).forEach((track) => {
+    TRACK_COLS.filter((track) => selectedTracks.includes(track)).forEach((track) => {
       const counts: Record<string, Set<number>> = {};
-      trends.forEach((r) => {
-        const tr = trackMap.get(r.paper_id);
-        if (tr && tr[trackField(track)] === 1) {
-          (counts[r.topic] ??= new Set()).add(r.paper_id);
+      trends.forEach((row) => {
+        const trackRow = trackMap.get(row.paper_id);
+        if (trackRow && trackRow[trackField(track)] === 1) {
+          (counts[row.topic] ??= new Set()).add(row.paper_id);
         }
       });
+
       result[track] = Object.entries(counts)
         .map(([topic, ids]) => ({ topic, papers: ids.size }))
-        .sort((a, b) => b.papers - a.papers)
+        .sort((left, right) => right.papers - left.papers)
         .slice(0, 8);
     });
 
     return result;
-  }, [trends, tracksSingle, selectedTracks]);
+  }, [selectedTracks, tracksSingle, trends]);
 
   return (
-    <div>
-      <h2 className="text-xl font-bold mb-4">Track Analysis</h2>
+    <div className="space-y-6">
+      <section className="app-surface px-5 py-5">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Track analysis
+        </h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Review category balance, overlap, and the topic clusters most tied to each track.
+        </p>
+      </section>
 
-      {/* ── Stacked bar ────────────────────────────────────── */}
       {stackedData.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            Papers per Track per Year (Single-Choice)
+        <section className="app-surface px-5 py-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Papers per track per year
           </h3>
-          <ResponsiveContainer width="100%" height={340}>
-            <BarChart data={stackedData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-              <XAxis dataKey="year" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              {TRACK_COLS.filter((t) => selectedTracks.includes(t)).map((t) => (
-                <Bar
-                  key={t}
-                  dataKey={t}
-                  stackId="a"
-                  fill={TRACK_COLORS[t as TrackKey]}
-                />
-              ))}
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+          <div className="mt-4 h-[340px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={stackedData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                {TRACK_COLS.filter((track) => selectedTracks.includes(track)).map((track) => (
+                  <Bar
+                    key={track}
+                    dataKey={track}
+                    stackId="tracks"
+                    fill={TRACK_COLORS[track as TrackKey]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
       )}
 
-      {/* ── Co-occurrence heatmap ──────────────────────────── */}
       {tracksMulti.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-1">
-            Track Co-occurrence (Multi-Label Overlap)
+        <section className="app-surface px-5 py-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Track co-occurrence
           </h3>
-          <p className="text-xs text-gray-400 mb-3">
-            How often two tracks appear together on the same paper.
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            How often tracks appear together on the same paper.
           </p>
-          <Heatmap
-            rows={[...TRACK_COLS]}
-            cols={[...TRACK_COLS]}
-            values={coMatrix}
-            colorScale={["#eff6ff", "#1e40af"]}
-          />
-        </div>
+          <div className="mt-4">
+            <Heatmap
+              rows={[...TRACK_COLS]}
+              cols={[...TRACK_COLS]}
+              values={coMatrix}
+              colorScale={["#eff6ff", "#1e40af"]}
+            />
+          </div>
+        </section>
       )}
 
-      {/* ── Top topics per track ───────────────────────────── */}
       {Object.keys(topicsPerTrack).length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            Top Topics per Track
+        <section className="app-surface px-5 py-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Top topics per track
           </h3>
           <div
-            className="grid gap-6"
+            className="mt-5 grid gap-6"
             style={{
-              gridTemplateColumns: `repeat(${
-                Object.keys(topicsPerTrack).length
-              }, 1fr)`,
+              gridTemplateColumns: `repeat(${Object.keys(topicsPerTrack).length}, minmax(0, 1fr))`,
             }}
           >
             {Object.entries(topicsPerTrack).map(([track, data]) => (
               <div key={track}>
-                <p className="text-xs font-semibold mb-2">
-                  <span style={{ color: TRACK_COLORS[track as TrackKey] }}>
-                    {track}
-                  </span>{" "}
-                  — {TRACK_NAMES[track as TrackKey]}
+                <p className="mb-3 text-sm font-medium text-slate-900 dark:text-white">
+                  <span style={{ color: TRACK_COLORS[track as TrackKey] }}>{track}</span>
+                  <span className="ml-2 text-slate-500 dark:text-slate-400">
+                    {TRACK_NAMES[track as TrackKey]}
+                  </span>
                 </p>
                 {data.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={data.length * 32 + 20}>
-                    <BarChart
-                      data={data}
-                      layout="vertical"
-                      margin={{ left: 0, right: 8 }}
-                    >
-                      <XAxis type="number" tick={{ fontSize: 10 }} hide />
-                      <YAxis
-                        type="category"
-                        dataKey="topic"
-                        width={150}
-                        tick={{ fontSize: 10 }}
-                      />
-                      <Tooltip />
-                      <Bar
-                        dataKey="papers"
-                        fill={TRACK_COLORS[track as TrackKey]}
-                        radius={[0, 4, 4, 0]}
-                        barSize={16}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  <div className="h-[280px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={data} layout="vertical" margin={{ left: 0, right: 8 }}>
+                        <XAxis type="number" tick={{ fontSize: 10 }} hide />
+                        <YAxis
+                          type="category"
+                          dataKey="topic"
+                          width={150}
+                          tick={{ fontSize: 10 }}
+                          stroke="#94a3b8"
+                        />
+                        <Tooltip />
+                        <Bar
+                          dataKey="papers"
+                          fill={TRACK_COLORS[track as TrackKey]}
+                          radius={[0, 6, 6, 0]}
+                          barSize={16}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
                 ) : (
-                  <p className="text-xs text-gray-400">No data</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">No data</p>
                 )}
               </div>
             ))}
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
