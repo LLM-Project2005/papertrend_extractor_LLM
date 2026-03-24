@@ -117,10 +117,10 @@ export default function WorkspaceHomeClient() {
     (source) => source.id === profile.primarySource
   );
   const activeGoal = WORKSPACE_GOALS.find((goal) => goal.id === profile.goal);
-  const workspaceNeedsAnalysis = data?.useMock ?? true;
+  const isPreviewMode = data?.useMock ?? true;
   const hasLiveAnalysisSession =
     Boolean(analysisSession?.runIds.length) && !analysisSession?.minimized;
-  const hasCompletedRealData = !workspaceNeedsAnalysis;
+  const hasCompletedRealData = !isPreviewMode;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -141,7 +141,9 @@ export default function WorkspaceHomeClient() {
     },
     {
       title: "Queue the first analysis run",
-      detail: "Upload PDFs and choose the first source method from Analyze.",
+      detail: isPreviewMode
+        ? "Optional for now. Preview data stays available while the live backend analysis is offline."
+        : "Upload PDFs and choose the first source method from Analyze.",
       done: activeRuns.length > 0 || hasCompletedRealData,
     },
     {
@@ -206,13 +208,11 @@ export default function WorkspaceHomeClient() {
               Workspace overview
             </p>
             <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
-              {workspaceNeedsAnalysis
-                ? "Start by analyzing your documents"
-                : profile.name}
+              {profile.name}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
-              {workspaceNeedsAnalysis
-                ? "Upload research papers, choose the intake method, and queue the first analysis run before expecting dashboard insights or grounded chat answers."
+              {isPreviewMode
+                ? "Preview data is active, so you can keep using analytics, papers, and chat while the live backend analysis process is being fixed."
                 : "A clean control center for bringing in papers, reviewing analytics, and switching into grounded chat without bouncing between separate tools."}
             </p>
           </div>
@@ -246,65 +246,13 @@ export default function WorkspaceHomeClient() {
         />
       ) : null}
 
-      {workspaceNeedsAnalysis ? (
-        <>
+      <>
+        {isPreviewMode ? (
           <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-            The workspace is still showing preview data. Run the first analysis to replace this with real papers, topics, tracks, and chat-ready corpus data.
+            Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
           </section>
+        ) : null}
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-            <article className="app-surface p-6">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                What Analyze does
-              </h2>
-              <div className="mt-5 divide-y divide-slate-200 dark:divide-[#2f2f2f]">
-                {[
-                  "Upload PDFs and choose the intake method.",
-                  "Create queued ingestion runs in Supabase immediately.",
-                  "Let the external analysis worker process the files and write results back.",
-                  "Watch status here, then continue into dashboard, chat, and paper library once data lands.",
-                ].map((item, index) => (
-                  <div key={item} className="flex items-start gap-4 py-4 first:pt-0">
-                    <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
-                      {index + 1}
-                    </span>
-                    <p className="text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
-                      {item}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <article className="app-surface p-6">
-              <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                Before data exists
-              </h2>
-              <div className="mt-4 space-y-3">
-                <QuickLink
-                  href="/workspace/dashboard"
-                  title="Dashboard"
-                  description="Charts will stay in a guided empty state until real analysis results are available."
-                  icon={<ChartIcon className="h-5 w-5" />}
-                />
-                <QuickLink
-                  href="/workspace/chat"
-                  title="Chat"
-                  description="Grounded chat unlocks once the corpus is analyzed and stored in Supabase."
-                  icon={<ChatIcon className="h-5 w-5" />}
-                />
-                <QuickLink
-                  href="/workspace/papers"
-                  title="Paper library"
-                  description="Paper-level review becomes useful after the first analysis run completes."
-                  icon={<PaperIcon className="h-5 w-5" />}
-                />
-              </div>
-            </article>
-          </section>
-        </>
-      ) : (
-        <>
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               label="Papers"
@@ -376,19 +324,27 @@ export default function WorkspaceHomeClient() {
                     description="Trends, tracks, keywords, and the current research picture."
                     icon={<ChartIcon className="h-5 w-5" />}
                   />
-                  <QuickLink
-                    href="/workspace/chat"
-                    title="Chat"
-                    description="Ask grounded questions and follow citations back to papers."
-                    icon={<ChatIcon className="h-5 w-5" />}
-                  />
-                  <QuickLink
-                    href="/workspace/papers"
-                    title="Paper library"
-                    description="Review titles, keywords, evidence, and track tags directly."
-                    icon={<PaperIcon className="h-5 w-5" />}
-                  />
-                </div>
+                <QuickLink
+                  href="/workspace/chat"
+                  title="Chat"
+                  description={
+                    isPreviewMode
+                      ? "Ask questions against the preview corpus until the live analysis backend is restored."
+                      : "Ask grounded questions and follow citations back to papers."
+                  }
+                  icon={<ChatIcon className="h-5 w-5" />}
+                />
+                <QuickLink
+                  href="/workspace/papers"
+                  title="Paper library"
+                  description={
+                    isPreviewMode
+                      ? "Browse the preview paper set with topics, keywords, evidence, and track tags."
+                      : "Review titles, keywords, evidence, and track tags directly."
+                  }
+                  icon={<PaperIcon className="h-5 w-5" />}
+                />
+              </div>
               </article>
 
               <article className="app-surface p-6">
@@ -422,8 +378,7 @@ export default function WorkspaceHomeClient() {
               </article>
             </div>
           </section>
-        </>
-      )}
+      </>
 
       <AnalyzeFlowModal
         open={showAnalyzeModal}

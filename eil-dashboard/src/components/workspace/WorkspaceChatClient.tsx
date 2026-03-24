@@ -1,7 +1,6 @@
 "use client";
 
 import ChatClient from "@/components/chat/ChatClient";
-import WorkspaceEmptyState from "@/components/workspace/WorkspaceEmptyState";
 import { useDashboardData } from "@/hooks/useData";
 
 export default function WorkspaceChatClient() {
@@ -20,15 +19,5 @@ export default function WorkspaceChatClient() {
     );
   }
 
-  if (data.useMock) {
-    return (
-      <WorkspaceEmptyState
-        eyebrow="Chat needs corpus data"
-        title="Analyze documents before using grounded chat"
-        description="The chat assistant answers from stored workspace paper data first, so it needs completed analysis results before it can respond meaningfully."
-      />
-    );
-  }
-
-  return <ChatClient />;
+  return <ChatClient previewMode={data.useMock} />;
 }

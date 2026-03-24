@@ -1,5 +1,6 @@
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { generateMockData } from "@/lib/mockData";
 import type { PaperFullRow, TrackRow, TrendRow } from "@/types/database";
 
 export interface CorpusCitation {
@@ -49,74 +50,21 @@ function buildPaperHref(paperId: number): string {
   return `/workspace/papers?paperId=${paperId}`;
 }
 
-function scorePaper(
-  question: string,
-  tokens: string[],
-  paper: Omit<CorpusPaper, "score">
-): number {
-  const titleText = paper.title.toLowerCase();
-  const keywordText = paper.keywords.join(" ").toLowerCase();
-  const topicText = paper.topics.join(" ").toLowerCase();
-  const trackText = [...paper.tracksSingle, ...paper.tracksMulti].join(" ").toLowerCase();
-  const sectionText = [
-    paper.abstract_claims,
-    paper.methods,
-    paper.results,
-    paper.conclusion,
-    paper.raw_text.slice(0, 4000),
-  ]
-    .join(" ")
-    .toLowerCase();
-
-  let score = 0;
-
-  tokens.forEach((token) => {
-    score += scoreTextMatch(titleText, token, 8);
-    score += scoreTextMatch(keywordText, token, 6);
-    score += scoreTextMatch(topicText, token, 5);
-    score += scoreTextMatch(trackText, token, 4);
-    score += scoreTextMatch(sectionText, token, 2);
-  });
-
-  if (question.toLowerCase().includes(paper.year)) {
-    score += 2;
-  }
-
-  return score;
-}
-
-export async function retrieveCorpusPapers(question: string): Promise<{
+function buildCorpusResponse(
+  papersInput: PaperFullRow[],
+  trends: TrendRow[],
+  singleRows: TrackRow[],
+  multiRows: TrackRow[],
+  question: string
+): {
   papers: CorpusPaper[];
   citations: CorpusCitation[];
-}> {
-  const supabase = getSupabaseAdmin();
-
-  const [papersResult, trendsResult, singleResult, multiResult] = await Promise.all([
-    supabase.from("papers_full").select("*"),
-    supabase.from("trends_flat").select("*"),
-    supabase.from("tracks_single_flat").select("*"),
-    supabase.from("tracks_multi_flat").select("*"),
-  ]);
-
-  if (papersResult.error) {
-    throw new Error(`Failed to load papers_full: ${papersResult.error.message}`);
-  }
-  if (trendsResult.error) {
-    throw new Error(`Failed to load trends_flat: ${trendsResult.error.message}`);
-  }
-  if (singleResult.error) {
-    throw new Error(`Failed to load tracks_single_flat: ${singleResult.error.message}`);
-  }
-  if (multiResult.error) {
-    throw new Error(`Failed to load tracks_multi_flat: ${multiResult.error.message}`);
-  }
-
-  const trends = (trendsResult.data ?? []) as TrendRow[];
+} {
   const tracksSingle = new Map<number, TrackRow>(
-    ((singleResult.data ?? []) as TrackRow[]).map((row) => [row.paper_id, row])
+    singleRows.map((row) => [row.paper_id, row])
   );
   const tracksMulti = new Map<number, TrackRow>(
-    ((multiResult.data ?? []) as TrackRow[]).map((row) => [row.paper_id, row])
+    multiRows.map((row) => [row.paper_id, row])
   );
 
   const trendGroups = new Map<number, { topics: Set<string>; keywords: Set<string> }>();
@@ -131,7 +79,7 @@ export async function retrieveCorpusPapers(question: string): Promise<{
   });
 
   const tokens = tokenize(question);
-  const papers = ((papersResult.data ?? []) as PaperFullRow[])
+  const papers = papersInput
     .map((paper) => {
       const trendGroup = trendGroups.get(paper.paper_id);
       const candidate = {
@@ -173,6 +121,133 @@ export async function retrieveCorpusPapers(question: string): Promise<{
         .join(" | "),
     })),
   };
+}
+
+function buildMockCorpusResponse(question: string): {
+  papers: CorpusPaper[];
+  citations: CorpusCitation[];
+} {
+  const mock = generateMockData();
+  const uniquePaperIds = [...new Set(mock.trends.map((row) => row.paper_id))];
+
+  const mockPapersFull: PaperFullRow[] = uniquePaperIds.map((paperId) => {
+    const paperRows = mock.trends.filter((row) => row.paper_id === paperId);
+    const firstRow = paperRows[0];
+    const topicSummary = [...new Set(paperRows.map((row) => row.topic))].join(", ");
+    const keywordSummary = [...new Set(paperRows.map((row) => row.keyword))].join(", ");
+    const evidence = paperRows
+      .map((row) => row.evidence)
+      .filter(Boolean)
+      .slice(0, 4)
+      .join(" ");
+    const abstractClaims =
+      evidence ||
+      `This preview paper focuses on ${topicSummary || "research trends"} with keywords such as ${keywordSummary || "None"}.`;
+
+    return {
+      paper_id: paperId,
+      year: firstRow?.year ?? "Unknown",
+      title: firstRow?.title ?? `Mock paper ${paperId}`,
+      abstract: abstractClaims,
+      abstract_claims: abstractClaims,
+      methods: "Preview dataset generated from mock workspace trends.",
+      results: `Representative topics: ${topicSummary || "None"}. Representative keywords: ${keywordSummary || "None"}.`,
+      conclusion:
+        "This is temporary preview data used while the live analysis backend is unavailable.",
+      raw_text: [firstRow?.title, topicSummary, keywordSummary, evidence]
+        .filter(Boolean)
+        .join(" "),
+    };
+  });
+
+  return buildCorpusResponse(
+    mockPapersFull,
+    mock.trends,
+    mock.tracksSingle,
+    mock.tracksMulti,
+    question
+  );
+}
+
+function scorePaper(
+  question: string,
+  tokens: string[],
+  paper: Omit<CorpusPaper, "score">
+): number {
+  const titleText = paper.title.toLowerCase();
+  const keywordText = paper.keywords.join(" ").toLowerCase();
+  const topicText = paper.topics.join(" ").toLowerCase();
+  const trackText = [...paper.tracksSingle, ...paper.tracksMulti].join(" ").toLowerCase();
+  const sectionText = [
+    paper.abstract_claims,
+    paper.methods,
+    paper.results,
+    paper.conclusion,
+    paper.raw_text.slice(0, 4000),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  let score = 0;
+
+  tokens.forEach((token) => {
+    score += scoreTextMatch(titleText, token, 8);
+    score += scoreTextMatch(keywordText, token, 6);
+    score += scoreTextMatch(topicText, token, 5);
+    score += scoreTextMatch(trackText, token, 4);
+    score += scoreTextMatch(sectionText, token, 2);
+  });
+
+  if (question.toLowerCase().includes(paper.year)) {
+    score += 2;
+  }
+
+  return score;
+}
+
+export async function retrieveCorpusPapers(question: string): Promise<{
+  papers: CorpusPaper[];
+  citations: CorpusCitation[];
+}> {
+  try {
+    const supabase = getSupabaseAdmin();
+
+    const [papersResult, trendsResult, singleResult, multiResult] = await Promise.all([
+      supabase.from("papers_full").select("*"),
+      supabase.from("trends_flat").select("*"),
+      supabase.from("tracks_single_flat").select("*"),
+      supabase.from("tracks_multi_flat").select("*"),
+    ]);
+
+    if (papersResult.error) {
+      throw new Error(`Failed to load papers_full: ${papersResult.error.message}`);
+    }
+    if (trendsResult.error) {
+      throw new Error(`Failed to load trends_flat: ${trendsResult.error.message}`);
+    }
+    if (singleResult.error) {
+      throw new Error(`Failed to load tracks_single_flat: ${singleResult.error.message}`);
+    }
+    if (multiResult.error) {
+      throw new Error(`Failed to load tracks_multi_flat: ${multiResult.error.message}`);
+    }
+
+    const response = buildCorpusResponse(
+      (papersResult.data ?? []) as PaperFullRow[],
+      (trendsResult.data ?? []) as TrendRow[],
+      (singleResult.data ?? []) as TrackRow[],
+      (multiResult.data ?? []) as TrackRow[],
+      question
+    );
+
+    if (response.papers.length > 0) {
+      return response;
+    }
+  } catch {
+    // Fall through to preview corpus.
+  }
+
+  return buildMockCorpusResponse(question);
 }
 
 export function buildGroundedContext(papers: CorpusPaper[]): string {

@@ -67,7 +67,11 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function ChatClient() {
+export default function ChatClient({
+  previewMode = false,
+}: {
+  previewMode?: boolean;
+}) {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -264,9 +268,18 @@ export default function ChatClient() {
             Research assistant
           </h1>
           <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-            <span>Grounded on workspace data first</span>
+            <span>
+              {previewMode
+                ? "Grounded on temporary preview data"
+                : "Grounded on workspace data first"}
+            </span>
           </div>
         </div>
+        {previewMode ? (
+          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            Preview mode is active, so chat answers are temporarily based on the mock workspace dataset until the live backend analysis pipeline is restored.
+          </div>
+        ) : null}
       </div>
 
       <div className="flex flex-1 flex-col overflow-hidden">
