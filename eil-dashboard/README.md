@@ -79,7 +79,7 @@ The schema also creates a private storage bucket named `paper-uploads` for the a
 
 ## Batch sync from notebook outputs
 
-The notebook remains the extraction engine in phase 1. After running it, sync the outputs into Supabase with:
+The notebook is still useful for experimentation, but it is not the production runtime. Its current form still includes notebook-only setup cells, local test paths, and interactive evaluation steps. For controlled backfills, you can still run it and sync the outputs into Supabase with:
 
 ```bash
 npm run sync-supabase -- "C:/path/to/output-folder"
@@ -105,6 +105,49 @@ The importer also normalizes both:
 - short headers like `EL`, `ELI`, `LAE`, `Other`
 - long multiline track headers from sample CSV exports
 
+## Automatic queued-upload processing
+
+The production-oriented path for uploaded PDFs is the queue worker in `worker/process_ingestion_queue.py`.
+
+What it does:
+
+1. polls `ingestion_runs` for queued upload jobs
+2. downloads the PDF from the private `paper-uploads` bucket
+3. extracts text with `pymupdf4llm` or `PyMuPDF`
+4. asks the configured OpenAI-compatible model for structured sections, keywords, and track labels
+5. writes the normalized rows into:
+   - `papers`
+   - `paper_keywords`
+   - `paper_tracks_single`
+   - `paper_tracks_multi`
+   - `paper_content`
+6. marks the run as `succeeded` or `failed`
+
+Install the worker dependencies in the machine that will run background processing:
+
+```bash
+cd eil-dashboard
+python -m pip install -r worker/requirements.txt
+```
+
+Run one pass:
+
+```bash
+npm run worker:queue:once
+```
+
+Run continuously:
+
+```bash
+npm run worker:queue
+```
+
+Recommended deployment model:
+
+- keep Next.js on Vercel
+- run the queue worker on a separate VM, container, or Cloud Run job
+- point both at the same Supabase project and the same `OPENAI_*` environment variables
+
 ## Admin upload flow
 
 The admin page at `/admin/import` does two things:
@@ -112,7 +155,7 @@ The admin page at `/admin/import` does two things:
 1. uploads PDFs into Supabase Storage
 2. creates queued `ingestion_runs`
 
-It does not run the heavy extraction inside Next.js. The long-running extraction still belongs to your external Python/notebook pipeline.
+It does not run the heavy extraction inside Next.js. The long-running extraction now belongs to the queue worker, not the notebook UI itself.
 
 ## Chat behavior
 

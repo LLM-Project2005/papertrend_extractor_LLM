@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "import-csv": "npx tsx scripts/import-csv.ts",
-    "sync-supabase": "npx tsx scripts/import-csv.ts"
+    "sync-supabase": "npx tsx scripts/import-csv.ts",
+    "worker:queue": "python worker/process_ingestion_queue.py",
+    "worker:queue:once": "python worker/process_ingestion_queue.py --once"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
