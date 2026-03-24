@@ -1,16 +1,16 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import {
-  LineChart,
+  CartesianGrid,
+  Legend,
   Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  Treemap,
   XAxis,
   YAxis,
-  Tooltip,
-  CartesianGrid,
-  ResponsiveContainer,
-  Legend,
-  Treemap,
 } from "recharts";
 import { TOPIC_PALETTE } from "@/lib/constants";
 import type { TrendRow } from "@/types/database";
@@ -19,7 +19,6 @@ interface Props {
   trends: TrendRow[];
 }
 
-/* Custom Treemap content renderer */
 const TreemapCell = (props: {
   x: number;
   y: number;
@@ -41,7 +40,7 @@ const TreemapCell = (props: {
         fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
         stroke="#fff"
         strokeWidth={2}
-        rx={3}
+        rx={6}
       />
       {width > 50 && height > 28 && (
         <>
@@ -53,7 +52,7 @@ const TreemapCell = (props: {
             fontSize={11}
             fontWeight={600}
           >
-            {name.length > width / 7 ? name.slice(0, Math.floor(width / 7)) + "…" : name}
+            {name.length > width / 7 ? `${name.slice(0, Math.floor(width / 7))}...` : name}
           </text>
           <text
             x={x + width / 2}
@@ -73,206 +72,221 @@ const TreemapCell = (props: {
 export default function KeywordExplorer({ trends }: Props) {
   const [search, setSearch] = useState("");
   const [treeN, setTreeN] = useState(30);
-  const [selectedKws, setSelectedKws] = useState<string[]>([]);
+  const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
 
-  // ── Aggregate keywords ──────────────────────────────────
-  const kwAgg = useMemo(() => {
+  const keywordAggregate = useMemo(() => {
     const map: Record<
       string,
       { total: number; papers: Set<number>; years: Set<string>; topics: Set<string> }
     > = {};
-    trends.forEach((r) => {
-      const m = (map[r.keyword] ??= {
+
+    trends.forEach((row) => {
+      const entry = (map[row.keyword] ??= {
         total: 0,
         papers: new Set(),
         years: new Set(),
         topics: new Set(),
       });
-      m.total += r.keyword_frequency;
-      m.papers.add(r.paper_id);
-      m.years.add(r.year);
-      m.topics.add(r.topic);
+      entry.total += row.keyword_frequency;
+      entry.papers.add(row.paper_id);
+      entry.years.add(row.year);
+      entry.topics.add(row.topic);
     });
 
     let results = Object.entries(map)
-      .map(([keyword, m]) => ({
+      .map(([keyword, entry]) => ({
         keyword,
-        totalFreq: m.total,
-        papers: m.papers.size,
-        years: Array.from(m.years).sort().join(", "),
-        topics: Array.from(m.topics).join(", "),
+        totalFreq: entry.total,
+        papers: entry.papers.size,
+        years: Array.from(entry.years).sort().join(", "),
+        topics: Array.from(entry.topics).join(", "),
       }))
-      .sort((a, b) => b.totalFreq - a.totalFreq);
+      .sort((left, right) => right.totalFreq - left.totalFreq);
 
     if (search) {
-      const q = search.toLowerCase();
-      results = results.filter((r) => r.keyword.toLowerCase().includes(q));
+      const query = search.toLowerCase();
+      results = results.filter((row) => row.keyword.toLowerCase().includes(query));
     }
-    return results;
-  }, [trends, search]);
 
-  // ── Treemap data ────────────────────────────────────────
+    return results;
+  }, [search, trends]);
+
   const treeData = useMemo(
     () =>
-      kwAgg.slice(0, treeN).map((r) => ({
-        name: r.keyword,
-        value: r.totalFreq,
+      keywordAggregate.slice(0, treeN).map((row) => ({
+        name: row.keyword,
+        value: row.totalFreq,
       })),
-    [kwAgg, treeN]
+    [keywordAggregate, treeN]
   );
 
-  // ── Timeline data ───────────────────────────────────────
-  const kws =
-    selectedKws.length > 0
-      ? selectedKws
-      : kwAgg.slice(0, 5).map((r) => r.keyword);
+  const comparisonKeywords =
+    selectedKeywords.length > 0
+      ? selectedKeywords
+      : keywordAggregate.slice(0, 5).map((row) => row.keyword);
 
   const timelineData = useMemo(() => {
-    const years = [...new Set(trends.map((r) => r.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].sort();
     return years.map((year) => {
-      const row: Record<string, string | number> = { year };
-      kws.forEach((kw) => {
-        row[kw] = trends
-          .filter((r) => r.year === year && r.keyword === kw)
-          .reduce((s, r) => s + r.keyword_frequency, 0);
+      const entry: Record<string, string | number> = { year };
+      comparisonKeywords.forEach((keyword) => {
+        entry[keyword] = trends
+          .filter((row) => row.year === year && row.keyword === keyword)
+          .reduce((sum, row) => sum + row.keyword_frequency, 0);
       });
-      return row;
+      return entry;
     });
-  }, [trends, kws]);
+  }, [comparisonKeywords, trends]);
 
-  if (trends.length === 0)
-    return <p className="text-gray-400">No data for the selected filters.</p>;
+  if (trends.length === 0) {
+    return (
+      <div className="app-surface px-5 py-5">
+        <p className="text-sm text-slate-500 dark:text-slate-400">
+          No data for the selected filters.
+        </p>
+      </div>
+    );
+  }
 
   return (
-    <div>
-      <h2 className="text-xl font-bold mb-4">Keyword Explorer</h2>
+    <div className="space-y-6">
+      <section className="app-surface px-5 py-5">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Keyword explorer
+        </h2>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          Search important terms, review keyword reach, and compare frequency over time.
+        </p>
+      </section>
 
-      {/* ── Search ─────────────────────────────────────────── */}
       <input
         type="text"
-        placeholder="Search keywords… e.g. translanguaging, assessment"
+        placeholder="Search keywords"
         value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        className="w-full md:w-96 border border-gray-300 rounded-lg px-3 py-2 text-sm mb-6 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+        onChange={(event) => setSearch(event.target.value)}
+        className="w-full max-w-md rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
       />
 
-      {/* ── Treemap ────────────────────────────────────────── */}
-      <div className="mb-8">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Keyword Treemap
-        </h3>
-        <label className="text-xs text-gray-500 mr-2">Show top N:</label>
-        <input
-          type="range"
-          min={10}
-          max={60}
-          value={treeN}
-          onChange={(e) => setTreeN(+e.target.value)}
-          className="align-middle w-40"
-        />
-        <span className="text-xs ml-1 text-gray-600">{treeN}</span>
-
+      <section className="app-surface px-5 py-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Keyword treemap
+          </h3>
+          <label className="text-xs text-slate-500 dark:text-slate-400">
+            Top keywords: {treeN}
+          </label>
+          <input
+            type="range"
+            min={10}
+            max={60}
+            value={treeN}
+            onChange={(event) => setTreeN(+event.target.value)}
+            className="w-40"
+          />
+        </div>
         {treeData.length > 0 && (
-          <ResponsiveContainer width="100%" height={420} className="mt-2">
-            <Treemap
-              data={treeData}
-              dataKey="value"
-              nameKey="name"
-              content={<TreemapCell x={0} y={0} width={0} height={0} name="" value={0} index={0} />}
-            />
-          </ResponsiveContainer>
+          <div className="mt-4 h-[420px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <Treemap
+                data={treeData}
+                dataKey="value"
+                nameKey="name"
+                content={<TreemapCell x={0} y={0} width={0} height={0} name="" value={0} index={0} />}
+              />
+            </ResponsiveContainer>
+          </div>
         )}
-      </div>
+      </section>
 
-      {/* ── Table ──────────────────────────────────────────── */}
-      <div className="mb-8">
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">
-          Keyword Table
+      <section className="app-surface px-5 py-5">
+        <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
+          Keyword table
         </h3>
-        <div className="max-h-[420px] overflow-auto border border-gray-200 rounded-lg">
+        <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
           <table className="min-w-full text-xs">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950">
               <tr>
-                <th className="text-left px-3 py-2 font-semibold">Keyword</th>
-                <th className="text-right px-3 py-2 font-semibold">
-                  Total Freq
-                </th>
-                <th className="text-right px-3 py-2 font-semibold">Papers</th>
-                <th className="text-left px-3 py-2 font-semibold">
-                  Years Active
-                </th>
-                <th className="text-left px-3 py-2 font-semibold">
-                  Associated Topics
-                </th>
+                <th className="px-3 py-2 text-left font-semibold">Keyword</th>
+                <th className="px-3 py-2 text-right font-semibold">Total Freq</th>
+                <th className="px-3 py-2 text-right font-semibold">Papers</th>
+                <th className="px-3 py-2 text-left font-semibold">Years Active</th>
+                <th className="px-3 py-2 text-left font-semibold">Associated Topics</th>
               </tr>
             </thead>
             <tbody>
-              {kwAgg.map((r) => (
-                <tr key={r.keyword} className="border-t hover:bg-gray-50">
-                  <td className="px-3 py-1.5 font-medium">{r.keyword}</td>
-                  <td className="px-3 py-1.5 text-right">{r.totalFreq}</td>
-                  <td className="px-3 py-1.5 text-right">{r.papers}</td>
-                  <td className="px-3 py-1.5 text-gray-500">{r.years}</td>
-                  <td className="px-3 py-1.5 text-gray-500 max-w-xs truncate">
-                    {r.topics}
+              {keywordAggregate.map((row) => (
+                <tr
+                  key={row.keyword}
+                  className="border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950"
+                >
+                  <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
+                    {row.keyword}
+                  </td>
+                  <td className="px-3 py-2 text-right">{row.totalFreq}</td>
+                  <td className="px-3 py-2 text-right">{row.papers}</td>
+                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                    {row.years}
+                  </td>
+                  <td className="max-w-xs truncate px-3 py-2 text-slate-500 dark:text-slate-400">
+                    {row.topics}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      </div>
+      </section>
 
-      {/* ── Keyword timeline ───────────────────────────────── */}
-      <div className="mb-8">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">
-          Keyword Timeline
+      <section className="app-surface px-5 py-5">
+        <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+          Keyword timeline
         </h3>
-        <p className="text-xs text-gray-400 mb-2">
-          Select keywords to compare (or the top 5 are shown by default).
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Select keywords to compare across the selected years.
         </p>
-        <div className="flex flex-wrap gap-1 mb-3">
-          {kwAgg.slice(0, 20).map((r) => (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {keywordAggregate.slice(0, 20).map((row) => (
             <button
-              key={r.keyword}
+              key={row.keyword}
               onClick={() =>
-                setSelectedKws((prev) =>
-                  prev.includes(r.keyword)
-                    ? prev.filter((k) => k !== r.keyword)
-                    : [...prev, r.keyword]
+                setSelectedKeywords((current) =>
+                  current.includes(row.keyword)
+                    ? current.filter((keyword) => keyword !== row.keyword)
+                    : [...current, row.keyword]
                 )
               }
-              className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
-                kws.includes(r.keyword)
-                  ? "bg-blue-600 text-white border-blue-600"
-                  : "bg-white text-gray-600 border-gray-300 hover:border-blue-400"
+              className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                comparisonKeywords.includes(row.keyword)
+                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
               }`}
             >
-              {r.keyword}
+              {row.keyword}
             </button>
           ))}
         </div>
-
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={timelineData}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-            <XAxis dataKey="year" tick={{ fontSize: 12 }} />
-            <YAxis tick={{ fontSize: 12 }} />
-            <Tooltip />
-            <Legend wrapperStyle={{ fontSize: 11 }} />
-            {kws.map((kw, i) => (
-              <Line
-                key={kw}
-                type="monotone"
-                dataKey={kw}
-                stroke={TOPIC_PALETTE[i % TOPIC_PALETTE.length]}
-                strokeWidth={2}
-                dot={{ r: 3 }}
-              />
-            ))}
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+        <div className="mt-5 h-[320px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={timelineData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+              <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+              <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: 11 }} />
+              {comparisonKeywords.map((keyword, index) => (
+                <Line
+                  key={keyword}
+                  type="monotone"
+                  dataKey={keyword}
+                  stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
     </div>
   );
 }

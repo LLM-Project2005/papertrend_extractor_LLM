@@ -1,134 +1,186 @@
-"use client";
+import Link from "next/link";
+import AuthPanel from "@/components/auth/AuthPanel";
+import AuthStatus from "@/components/auth/AuthStatus";
+import ThemeToggle from "@/components/theme/ThemeToggle";
+import {
+  ArrowRightIcon,
+  ChartIcon,
+  ChatIcon,
+  LogoMarkIcon,
+  PaperIcon,
+  UploadIcon,
+} from "@/components/ui/Icons";
 
-import { useState, useEffect, useMemo } from "react";
-import { useDashboardData } from "@/hooks/useData";
-import { TRACK_COLS } from "@/lib/constants";
-import Sidebar from "@/components/Sidebar";
-import Overview from "@/components/tabs/Overview";
-import TrendAnalysis from "@/components/tabs/TrendAnalysis";
-import TrackAnalysis from "@/components/tabs/TrackAnalysis";
-import KeywordExplorer from "@/components/tabs/KeywordExplorer";
-import PaperExplorer from "@/components/tabs/PaperExplorer";
-
-const TABS = [
-  "Overview",
-  "Trend Analysis",
-  "Track Analysis",
-  "Keyword Explorer",
-  "Paper Explorer",
+const CORE_MODULES = [
+  {
+    title: "Dashboard",
+    description: "Track trends, themes, and category changes across the corpus.",
+    icon: ChartIcon,
+  },
+  {
+    title: "Chat",
+    description: "Ask grounded questions and move directly into cited papers.",
+    icon: ChatIcon,
+  },
+  {
+    title: "Papers",
+    description: "Inspect titles, keywords, evidence, and track assignments.",
+    icon: PaperIcon,
+  },
+  {
+    title: "Imports",
+    description: "Upload PDFs or sync structured outputs into the workspace.",
+    icon: UploadIcon,
+  },
 ] as const;
 
-export default function Dashboard() {
-  const { data, loading, allYears } = useDashboardData();
+const JOURNEY = [
+  {
+    step: "01",
+    title: "Set up the workspace",
+    description:
+      "Define the team, domain, goal, and preferred outputs before anyone starts exploring data.",
+  },
+  {
+    step: "02",
+    title: "Bring sources in",
+    description:
+      "Start with PDF upload or notebook sync, then add richer institutional connectors later.",
+  },
+  {
+    step: "03",
+    title: "Work inside one system",
+    description:
+      "Move between analytics, grounded chat, and paper-level review without switching products.",
+  },
+] as const;
 
-  const [activeTab, setActiveTab] = useState(0);
-  const [selectedYears, setSelectedYears] = useState<string[]>([]);
-  const [selectedTracks, setSelectedTracks] = useState<string[]>([...TRACK_COLS]);
+export default function LandingPage() {
+  return (
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-[#ececec]">
+      <div className="border-b border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#171717]">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <Link href="/" className="flex items-center gap-3">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-[#ececec] dark:text-[#171717]">
+              <LogoMarkIcon className="h-5 w-5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">
+                Papertrend
+              </p>
+              <p className="text-xs text-slate-500 dark:text-[#8f8f8f]">
+                Research workspace
+              </p>
+            </div>
+          </Link>
 
-  // Default all years selected once data arrives
-  useEffect(() => {
-    if (allYears.length > 0 && selectedYears.length === 0) {
-      setSelectedYears(allYears);
-    }
-  }, [allYears, selectedYears.length]);
-
-  // ── Filtered data ──────────────────────────────────────
-  const filteredTrends = useMemo(
-    () => data?.trends.filter((r) => selectedYears.includes(r.year)) ?? [],
-    [data, selectedYears]
-  );
-  const filteredSingle = useMemo(
-    () =>
-      data?.tracksSingle.filter((r) => selectedYears.includes(r.year)) ?? [],
-    [data, selectedYears]
-  );
-  const filteredMulti = useMemo(
-    () =>
-      data?.tracksMulti.filter((r) => selectedYears.includes(r.year)) ?? [],
-    [data, selectedYears]
-  );
-
-  // ── Loading state ──────────────────────────────────────
-  if (loading || !data) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-gray-500 text-sm">Loading dashboard data…</p>
+          <div className="flex flex-wrap gap-2">
+            <AuthStatus />
+            <ThemeToggle />
+            <Link
+              href="/start"
+              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
+            >
+              Start here
+            </Link>
+            <Link
+              href="/workspace/home"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#1d1d1d] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+            >
+              Open workspace
+            </Link>
+          </div>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className="flex min-h-screen">
-      {/* ── Sidebar ──────────────────────────────────────── */}
-      <Sidebar
-        allYears={allYears}
-        selectedYears={selectedYears}
-        onYearsChange={setSelectedYears}
-        selectedTracks={selectedTracks}
-        onTracksChange={setSelectedTracks}
-        useMock={data.useMock}
-      />
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
+        <section className="grid gap-6 rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8 xl:grid-cols-[minmax(0,1.2fr)_380px] dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+          <div className="max-w-3xl">
+            <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
+              Research intelligence for departments, labs, and faculty teams
+            </p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl dark:text-[#ececec]">
+              Turn scattered research papers into a clean, guided workspace.
+            </h1>
+            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-[#b8b8b8]">
+              Start with a simple setup flow, bring documents into the system, and
+              keep dashboard analytics, grounded chat, and paper review in one place.
+            </p>
 
-      {/* ── Main area ────────────────────────────────────── */}
-      <main className="flex-1 overflow-y-auto">
-        {/* Tab bar */}
-        <div className="sticky top-0 z-10 bg-white border-b border-gray-200 px-6">
-          <nav className="flex gap-0" aria-label="Tabs">
-            {TABS.map((tab, i) => (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(i)}
-                className={`tab-btn ${
-                  activeTab === i ? "tab-btn-active" : "tab-btn-inactive"
-                }`}
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link
+                href="/start"
+                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
               >
-                {tab}
-              </button>
+                <span>Start setup</span>
+                <ArrowRightIcon className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/workspace/dashboard"
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#1d1d1d] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+              >
+                View dashboard module
+              </Link>
+            </div>
+          </div>
+
+          <div id="account">
+            <AuthPanel />
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {CORE_MODULES.map((item) => {
+            const Icon = item.icon;
+            return (
+              <article
+                key={item.title}
+                className="rounded-2xl border border-slate-200 bg-white px-5 py-5 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]"
+              >
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-[#b8b8b8]">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <h2 className="mt-4 text-base font-semibold text-slate-900 dark:text-[#ececec]">
+                  {item.title}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
+                  {item.description}
+                </p>
+              </article>
+            );
+          })}
+        </section>
+
+        <section className="mt-8 rounded-3xl border border-slate-200 bg-white px-6 py-6 sm:px-8 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+          <div className="max-w-2xl">
+            <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
+              How it works
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#ececec]">
+              Keep the dashboard, but put it inside a broader workflow.
+            </h2>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-3">
+            {JOURNEY.map((item) => (
+              <article
+                key={item.step}
+                className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-[#2c2c2c] dark:bg-[#202020]"
+              >
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                  {item.step}
+                </p>
+                <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-[#ececec]">
+                  {item.title}
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
+                  {item.description}
+                </p>
+              </article>
             ))}
-          </nav>
-        </div>
-
-        {/* Tab content */}
-        <div className="p-6">
-          {activeTab === 0 && (
-            <Overview
-              trends={filteredTrends}
-              tracksSingle={filteredSingle}
-              tracksMulti={filteredMulti}
-              selectedTracks={selectedTracks}
-              useMock={data.useMock}
-            />
-          )}
-          {activeTab === 1 && <TrendAnalysis trends={filteredTrends} />}
-          {activeTab === 2 && (
-            <TrackAnalysis
-              trends={filteredTrends}
-              tracksSingle={filteredSingle}
-              tracksMulti={filteredMulti}
-              selectedTracks={selectedTracks}
-            />
-          )}
-          {activeTab === 3 && <KeywordExplorer trends={filteredTrends} />}
-          {activeTab === 4 && (
-            <PaperExplorer
-              trends={filteredTrends}
-              tracksSingle={filteredSingle}
-            />
-          )}
-        </div>
-
-        {/* Footer */}
-        <footer className="border-t border-gray-200 px-6 py-4">
-          <p className="text-xs text-gray-400">
-            EIL Research Trend Dashboard &nbsp;|&nbsp; English as an
-            International Language Program &nbsp;|&nbsp; Chulalongkorn
-            University &nbsp;|&nbsp; Powered by Next.js + Supabase + Recharts
-          </p>
-        </footer>
-      </main>
-    </div>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }

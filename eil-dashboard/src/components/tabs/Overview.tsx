@@ -11,9 +11,9 @@ import {
   PieChart,
   Pie,
   Cell,
-  Legend,
 } from "recharts";
 import MetricCard from "@/components/MetricCard";
+import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
 import type { TrendRow, TrackRow } from "@/types/database";
 
@@ -32,143 +32,198 @@ export default function Overview({
   selectedTracks,
   useMock,
 }: Props) {
-  // ── Metrics ──────────────────────────────────────────────
-  const nPapers = new Set(trends.map((r) => r.paper_id)).size;
-  const nTopics = new Set(trends.map((r) => r.topic)).size;
-  const nKeywords = new Set(trends.map((r) => r.keyword)).size;
-  const years = [...new Set(trends.map((r) => r.year))].sort();
+  const { theme, hydrated } = useTheme();
+  const isDark = hydrated && theme === "dark";
+  const nPapers = new Set(trends.map((row) => row.paper_id)).size;
+  const nTopics = new Set(trends.map((row) => row.topic)).size;
+  const nKeywords = new Set(trends.map((row) => row.keyword)).size;
+  const years = [...new Set(trends.map((row) => row.year))].sort();
   const yearSpan =
-    years.length > 0 ? `${years[0]} – ${years[years.length - 1]}` : "—";
+    years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data";
 
-  // ── Papers per year ──────────────────────────────────────
   const papersByYear = Object.entries(
-    trends.reduce<Record<string, Set<number>>>((acc, r) => {
-      (acc[r.year] ??= new Set()).add(r.paper_id);
-      return acc;
+    trends.reduce<Record<string, Set<number>>>((accumulator, row) => {
+      (accumulator[row.year] ??= new Set()).add(row.paper_id);
+      return accumulator;
     }, {})
   )
     .map(([year, ids]) => ({ year, papers: ids.size }))
-    .sort((a, b) => a.year.localeCompare(b.year));
+    .sort((left, right) => left.year.localeCompare(right.year));
 
-  // ── Track donut helper ───────────────────────────────────
   const buildDonut = (rows: TrackRow[]) =>
-    TRACK_COLS.filter((t) => selectedTracks.includes(t)).map((t) => ({
-      name: t,
+    TRACK_COLS.filter((track) => selectedTracks.includes(track)).map((track) => ({
+      name: track,
       value: rows.reduce(
-        (s, r) => s + (r[t.toLowerCase() as keyof TrackRow] as number),
+        (sum, row) => sum + (row[track.toLowerCase() as keyof TrackRow] as number),
         0
       ),
     }));
 
   const donutSingle = buildDonut(tracksSingle);
   const donutMulti = buildDonut(tracksMulti);
+  const chartGrid = isDark ? "#3f3f46" : "#d7dee8";
+  const chartAxis = isDark ? "#a3a3a3" : "#7c8aa0";
+  const barFill = isDark ? "#d4a574" : "#334155";
+  const tooltipTheme = isDark
+    ? {
+        contentStyle: {
+          backgroundColor: "#1f1f1f",
+          border: "1px solid #383838",
+          borderRadius: "16px",
+          color: "#f5f5f5",
+        },
+        cursor: { fill: "rgba(255,255,255,0.04)" },
+      }
+    : {
+        contentStyle: {
+          backgroundColor: "#ffffff",
+          border: "1px solid #e2e8f0",
+          borderRadius: "16px",
+          color: "#0f172a",
+        },
+        cursor: { fill: "rgba(15,23,42,0.04)" },
+      };
+
+  function renderTrackBreakdown(
+    title: string,
+    subtitle: string,
+    items: { name: string; value: number }[]
+  ) {
+    const total = items.reduce((sum, item) => sum + item.value, 0);
+
+    return (
+      <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+        <div className="grid gap-6 lg:grid-cols-[220px_minmax(0,1fr)] lg:items-center">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              {title}
+            </h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              {subtitle}
+            </p>
+            <div className="mt-4 h-[220px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={items}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={52}
+                    outerRadius={84}
+                    paddingAngle={2}
+                    stroke={isDark ? "#1f1f1f" : "#ffffff"}
+                  >
+                    {items.map((item) => (
+                      <Cell key={item.name} fill={TRACK_COLORS[item.name as TrackKey]} />
+                    ))}
+                  </Pie>
+                  <Tooltip {...tooltipTheme} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {items.map((item) => {
+              const share = total > 0 ? Math.round((item.value / total) * 100) : 0;
+              return (
+                <div
+                  key={item.name}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#303030] dark:bg-[#202020]"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <span
+                        className="h-3 w-3 rounded-full"
+                        style={{ backgroundColor: TRACK_COLORS[item.name as TrackKey] }}
+                      />
+                      <span className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
+                        {item.name}
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                        {item.value}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-[#8f8f8f]">
+                        {share}% of selected papers
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-[#2b2b2b]">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${Math.max(share, item.value > 0 ? 8 : 0)}%`,
+                        backgroundColor: TRACK_COLORS[item.name as TrackKey],
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <div>
-      <h2 className="text-xl font-bold mb-1">Research Overview</h2>
-      {useMock && (
-        <p className="text-xs text-gray-400 mb-4">
-          Preview with mock data — actual results will replace this after
-          connecting Supabase.
+    <div className="space-y-5">
+      <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+          Overview
+        </h2>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+          A quick read on corpus coverage, publication volume, and track balance.
         </p>
-      )}
+        {useMock && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
+            Preview data is active. Real results will replace this after Supabase is populated.
+          </div>
+        )}
+      </section>
 
-      {/* ── Metric cards ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <MetricCard label="Total Papers" value={nPapers} />
-        <MetricCard label="Unique Topics" value={nTopics} />
-        <MetricCard label="Unique Keywords" value={nKeywords} />
-        <MetricCard label="Year Span" value={yearSpan} />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard label="Total papers" value={nPapers} />
+        <MetricCard label="Unique topics" value={nTopics} />
+        <MetricCard label="Unique keywords" value={nKeywords} />
+        <MetricCard label="Coverage" value={yearSpan} />
       </div>
 
-      {/* ── Papers per year bar chart ──────────────────────── */}
       {papersByYear.length > 0 && (
-        <div className="mb-8">
-          <h3 className="text-sm font-semibold text-gray-700 mb-3">
-            Papers Published per Year
+        <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Papers published per year
           </h3>
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={papersByYear}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
-              <XAxis dataKey="year" tick={{ fontSize: 12 }} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-              <Tooltip />
-              <Bar
-                dataKey="papers"
-                fill="#4a7fe5"
-                radius={[4, 4, 0, 0]}
-                label={{ position: "top", fontSize: 11 }}
-              />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+          <div className="mt-4 h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={papersByYear}>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
+                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke={chartAxis} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke={chartAxis} />
+                <Tooltip {...tooltipTheme} />
+                <Bar dataKey="papers" fill={barFill} radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
       )}
 
-      {/* ── Track donuts ───────────────────────────────────── */}
-      <div className="grid md:grid-cols-2 gap-8">
-        {donutSingle.some((d) => d.value > 0) && (
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">
-              Track Distribution (Single-Choice)
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={donutSingle}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={60}
-                  outerRadius={110}
-                  paddingAngle={2}
-                  label={({ name, percent }) =>
-                    `${name} ${(percent * 100).toFixed(0)}%`
-                  }
-                >
-                  {donutSingle.map((d) => (
-                    <Cell
-                      key={d.name}
-                      fill={TRACK_COLORS[d.name as TrackKey]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+      <div className="grid gap-5 2xl:grid-cols-2">
+        {donutSingle.some((item) => item.value > 0) &&
+          renderTrackBreakdown(
+            "Track distribution",
+            "Single-label assignments",
+            donutSingle
+          )}
 
-        {donutMulti.some((d) => d.value > 0) && (
-          <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">
-              Track Distribution (Multi-Label)
-            </h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={donutMulti}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={60}
-                  outerRadius={110}
-                  paddingAngle={2}
-                  label={({ name, percent }) =>
-                    `${name} ${(percent * 100).toFixed(0)}%`
-                  }
-                >
-                  {donutMulti.map((d) => (
-                    <Cell
-                      key={d.name}
-                      fill={TRACK_COLORS[d.name as TrackKey]}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-        )}
+        {donutMulti.some((item) => item.value > 0) &&
+          renderTrackBreakdown(
+            "Track overlap",
+            "Multi-label assignments",
+            donutMulti
+          )}
       </div>
     </div>
   );

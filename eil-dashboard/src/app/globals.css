@@ -7,7 +7,12 @@
 }
 
 body {
-  @apply bg-white text-gray-900 antialiased;
+  @apply bg-slate-50 text-slate-900 antialiased transition-colors;
+}
+
+.dark body {
+  background-color: #171717;
+  color: #ececec;
 }
 
 /* Custom scrollbar */
@@ -16,24 +21,44 @@ body {
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100;
+  @apply bg-slate-100;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background-color: #1f1f1f;
 }
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 rounded-full;
+  @apply rounded-full bg-slate-300;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background-color: #3a3a3a;
 }
 
 /* Smooth tab transitions */
 .tab-btn {
-  @apply px-4 py-2.5 text-sm font-medium border-b-2 transition-colors duration-150;
+  @apply rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150;
 }
 .tab-btn-active {
-  @apply border-blue-600 text-blue-600;
+  @apply border-slate-900 bg-slate-900 text-white dark:border-[#e8e8e8] dark:bg-[#e8e8e8] dark:text-[#171717];
 }
 .tab-btn-inactive {
-  @apply border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300;
+  @apply border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#b5b5b5] dark:hover:border-[#3a3a3a] dark:hover:text-[#f0f0f0];
 }
 
 /* Recharts tooltip */
 .recharts-tooltip-wrapper {
   @apply !outline-none;
+}
+
+.app-surface {
+  @apply rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-[#2f2f2f] dark:bg-[#212121];
+}
+
+.app-card {
+  @apply rounded-2xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121];
+}
+
+.app-muted {
+  @apply text-slate-500 dark:text-[#a3a3a3];
 }
