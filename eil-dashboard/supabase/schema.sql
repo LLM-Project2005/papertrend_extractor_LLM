@@ -33,6 +33,26 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 -- ------------------------------------------------------------------
+-- 1c. Google Drive Connections
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS google_drive_connections (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL DEFAULT 'google_drive'
+                    CHECK (provider = 'google_drive'),
+  external_email    TEXT,
+  external_user_id  TEXT,
+  access_token      TEXT,
+  refresh_token     TEXT,
+  token_type        TEXT,
+  scope             TEXT,
+  expires_at        TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (user_id, provider)
+);
+
+-- ------------------------------------------------------------------
 -- 2. Paper Keywords / Trends
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_keywords (
@@ -123,6 +143,7 @@ ALTER TABLE paper_content
 -- ------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
+CREATE INDEX IF NOT EXISTS idx_google_drive_connections_user_id ON google_drive_connections(user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_paper_id ON paper_keywords(paper_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_keyword ON paper_keywords(keyword);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_topic ON paper_keywords(topic);
@@ -144,6 +165,7 @@ END $$;
 -- ------------------------------------------------------------------
 ALTER TABLE papers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE google_drive_connections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_keywords ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_single ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_multi ENABLE ROW LEVEL SECURITY;
@@ -187,6 +209,43 @@ BEGIN
     auth.uid() = id
     AND email = auth.jwt() ->> 'email'
   );
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "google_drive_connections_select_own" ON google_drive_connections
+  FOR SELECT USING (auth.uid() = user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "google_drive_connections_insert_own" ON google_drive_connections
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "google_drive_connections_update_own" ON google_drive_connections
+  FOR UPDATE USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "google_drive_connections_delete_own" ON google_drive_connections
+  FOR DELETE USING (auth.uid() = user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;

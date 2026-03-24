@@ -61,6 +61,15 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
+Optional for the Google Drive connector:
+
+```bash
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+GOOGLE_DRIVE_REDIRECT_URI=https://YOUR_APP_DOMAIN/api/integrations/google-drive/callback
+GOOGLE_PICKER_API_KEY=your-google-picker-api-key
+```
+
 ## Local development
 
 ```bash
@@ -141,6 +150,12 @@ Run continuously:
 ```bash
 npm run worker:queue
 ```
+
+Google Drive note:
+
+- local PDF uploads are downloaded from Supabase Storage
+- Google Drive queued runs are downloaded directly from Google Drive using the stored connector token
+- the worker machine therefore also needs `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` when Google Drive runs are enabled
 
 Recommended deployment model:
 

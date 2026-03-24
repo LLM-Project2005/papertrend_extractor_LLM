@@ -37,3 +37,23 @@ export function getOpenAIConfig(): {
     model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
   };
 }
+
+export function getGoogleClientId(): string {
+  return process.env.GOOGLE_CLIENT_ID ?? "";
+}
+
+export function getGoogleClientSecret(): string {
+  return process.env.GOOGLE_CLIENT_SECRET ?? "";
+}
+
+export function getGooglePickerApiKey(): string {
+  return process.env.GOOGLE_PICKER_API_KEY ?? "";
+}
+
+export function getGoogleDriveRedirectUri(): string {
+  return process.env.GOOGLE_DRIVE_REDIRECT_URI ?? "";
+}
+
+export function getSiteUrl(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL ?? "";
+}

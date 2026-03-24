@@ -56,6 +56,8 @@ class WorkerConfig:
     openai_api_key: str
     openai_base_url: str
     openai_model: str
+    google_client_id: str
+    google_client_secret: str
     poll_interval_seconds: int
     queued_limit: int
     llm_context_chars: int
@@ -128,6 +130,30 @@ class SupabaseRestClient:
         response.raise_for_status()
         destination.write_bytes(response.content)
 
+    def get_google_drive_connection(self, user_id: str) -> Optional[Dict[str, Any]]:
+        response = self.session.get(
+            self._rest_url("google_drive_connections"),
+            params={
+                "select": "*",
+                "user_id": f"eq.{user_id}",
+                "provider": "eq.google_drive",
+                "limit": "1",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else None
+
+    def update_google_drive_connection(self, connection_id: str, patch: Dict[str, Any]) -> None:
+        response = self.session.patch(
+            self._rest_url("google_drive_connections"),
+            params={"id": f"eq.{connection_id}"},
+            json={"updated_at": now_iso(), **patch},
+            timeout=60,
+        )
+        response.raise_for_status()
+
     def delete_keywords_for_paper(self, paper_id: int) -> None:
         response = self.session.delete(
             self._rest_url("paper_keywords"),
@@ -164,6 +190,8 @@ def load_config() -> WorkerConfig:
     openai_api_key = os.getenv("OPENAI_API_KEY", "")
     openai_base_url = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
     openai_model = os.getenv("OPENAI_MODEL") or "gpt-4.1-mini"
+    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
+    google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "")
 
     missing = [
         name
@@ -183,6 +211,8 @@ def load_config() -> WorkerConfig:
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,
+        google_client_id=google_client_id,
+        google_client_secret=google_client_secret,
         poll_interval_seconds=max(int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "15")), 5),
         queued_limit=max(int(os.getenv("WORKER_QUEUED_LIMIT", "3")), 1),
         llm_context_chars=max(int(os.getenv("WORKER_LLM_CONTEXT_CHARS", "50000")), 8000),
@@ -505,15 +535,108 @@ def merge_input_payload(run: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str,
     return {**base, **patch}
 
 
+def refresh_google_access_token(config: WorkerConfig, refresh_token: str) -> Dict[str, Any]:
+    if not config.google_client_id or not config.google_client_secret:
+        raise RuntimeError(
+            "GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required for Google Drive ingestion."
+        )
+
+    response = requests.post(
+        "https://oauth2.googleapis.com/token",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data={
+          "client_id": config.google_client_id,
+          "client_secret": config.google_client_secret,
+          "refresh_token": refresh_token,
+          "grant_type": "refresh_token",
+        },
+        timeout=120,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def ensure_google_drive_access_token(
+    client: SupabaseRestClient,
+    config: WorkerConfig,
+    connector_user_id: str,
+) -> str:
+    connection = client.get_google_drive_connection(connector_user_id)
+    if not connection:
+        raise RuntimeError("No Google Drive connection was found for the queued run.")
+
+    expires_at = connection.get("expires_at")
+    access_token = connection.get("access_token")
+    if access_token and expires_at:
+        try:
+            if (
+                datetime_from_iso(expires_at).timestamp()
+                > time.time() + 60
+            ):
+                return str(access_token)
+        except ValueError:
+            pass
+
+    if access_token and not connection.get("refresh_token"):
+        return str(access_token)
+
+    refresh_token = connection.get("refresh_token")
+    if not refresh_token:
+        raise RuntimeError("The Google Drive connection is missing a refresh token.")
+
+    refreshed = refresh_google_access_token(config, str(refresh_token))
+    expires_in = int(refreshed.get("expires_in") or 3600)
+    new_expires_at = time.strftime(
+        "%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + expires_in)
+    )
+    client.update_google_drive_connection(
+        str(connection["id"]),
+        {
+            "access_token": refreshed.get("access_token"),
+            "token_type": refreshed.get("token_type"),
+            "scope": refreshed.get("scope") or connection.get("scope"),
+            "expires_at": new_expires_at,
+        },
+    )
+    return str(refreshed["access_token"])
+
+
+def datetime_from_iso(value: str):
+    from datetime import datetime
+
+    normalized = value.replace("Z", "+00:00")
+    return datetime.fromisoformat(normalized)
+
+
+def download_google_drive_file(access_token: str, file_id: str, destination: Path) -> None:
+    response = requests.get(
+        f"https://www.googleapis.com/drive/v3/files/{urllib.parse.quote(file_id, safe='')}?alt=media",
+        headers={"Authorization": f"Bearer {access_token}"},
+        timeout=300,
+    )
+    response.raise_for_status()
+    destination.write_bytes(response.content)
+
+
 def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str, Any]) -> None:
     run_id = str(run["id"])
     storage_path = str(run.get("source_path") or "")
     if not storage_path:
         raise RuntimeError("The queued run is missing its storage path.")
 
+    input_payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
+    source_kind = str(input_payload.get("source_kind") or "pdf-upload")
+
     with tempfile.TemporaryDirectory(prefix="papertrend-run-") as temp_dir:
         local_pdf = Path(temp_dir) / (str(run.get("source_filename") or "paper.pdf"))
-        client.download_storage_object(storage_path, local_pdf)
+        if source_kind == "google-drive":
+            connector_user_id = str(input_payload.get("connector_user_id") or "")
+            if not connector_user_id:
+                raise RuntimeError("The Google Drive run is missing connector ownership metadata.")
+            access_token = ensure_google_drive_access_token(client, config, connector_user_id)
+            download_google_drive_file(access_token, storage_path, local_pdf)
+        else:
+            client.download_storage_object(storage_path, local_pdf)
 
         raw_text = clean_text(extract_pdf_text(local_pdf))
         if len(raw_text) < 800:

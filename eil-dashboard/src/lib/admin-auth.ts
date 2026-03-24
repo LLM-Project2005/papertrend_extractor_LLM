@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { getAdminImportSecret } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import type { User } from "@supabase/supabase-js";
 
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left);
@@ -16,19 +17,12 @@ function getBearerToken(request: Request): string {
   return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
 }
 
-export async function isAuthorizedAdminRequest(request: Request): Promise<boolean> {
-  const expectedSecret = getAdminImportSecret();
-  const url = new URL(request.url);
-  const providedSecret =
-    request.headers.get("x-admin-secret") ?? url.searchParams.get("admin_secret") ?? "";
-
-  if (expectedSecret && providedSecret && safeEqual(providedSecret, expectedSecret)) {
-    return true;
-  }
-
+export async function getAuthenticatedUserFromRequest(
+  request: Request
+): Promise<User | null> {
   const accessToken = getBearerToken(request);
   if (!accessToken) {
-    return false;
+    return null;
   }
 
   try {
@@ -39,11 +33,24 @@ export async function isAuthorizedAdminRequest(request: Request): Promise<boolea
     } = await supabase.auth.getUser(accessToken);
 
     if (userError || !user) {
-      return false;
+      return null;
     }
 
-    return true;
+    return user;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export async function isAuthorizedAdminRequest(request: Request): Promise<boolean> {
+  const expectedSecret = getAdminImportSecret();
+  const url = new URL(request.url);
+  const providedSecret =
+    request.headers.get("x-admin-secret") ?? url.searchParams.get("admin_secret") ?? "";
+
+  if (expectedSecret && providedSecret && safeEqual(providedSecret, expectedSecret)) {
+    return true;
+  }
+
+  return Boolean(await getAuthenticatedUserFromRequest(request));
 }
