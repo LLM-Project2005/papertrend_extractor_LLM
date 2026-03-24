@@ -154,6 +154,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [user]
   );
 
+  const saveUserProfile = useCallback(
+    async (updates: { full_name?: string; avatar_url?: string }) => {
+      if (!supabase || !user) {
+        throw new Error("Supabase auth is not configured.");
+      }
+
+      const payload = {
+        full_name: updates.full_name?.trim() || null,
+        avatar_url: updates.avatar_url?.trim() || null,
+      };
+
+      const { error: profileError } = await supabase
+        .from("user_profiles")
+        .update(payload)
+        .eq("id", user.id);
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      const { error: userError } = await supabase.auth.updateUser({
+        data: payload,
+      });
+
+      if (userError) {
+        throw userError;
+      }
+
+      await loadProfile(user);
+    },
+    [loadProfile, user]
+  );
+
   const value = useMemo<AuthContextValue>(
     () => ({
       hydrated,
@@ -220,9 +253,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       refreshProfile,
+      saveUserProfile,
       saveWorkspaceProfile,
     }),
-    [hydrated, profile, refreshProfile, saveWorkspaceProfile, session, user]
+    [
+      hydrated,
+      profile,
+      refreshProfile,
+      saveUserProfile,
+      saveWorkspaceProfile,
+      session,
+      user,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

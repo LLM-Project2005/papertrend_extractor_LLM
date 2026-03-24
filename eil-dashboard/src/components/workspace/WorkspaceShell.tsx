@@ -37,6 +37,7 @@ const PAGE_DESCRIPTIONS: Record<string, string> = {
   "/workspace/papers": "Inspect titles, keywords, evidence, and track assignments.",
   "/workspace/imports": "Bring new sources into the workspace and monitor intake.",
   "/workspace/settings": "Adjust the workspace identity and onboarding defaults.",
+  "/workspace/profile": "Review the signed-in account and update the profile shown in the workspace.",
 };
 
 function DesktopSidebar({
@@ -214,7 +215,10 @@ export default function WorkspaceShell({
     : [];
 
   const currentItem =
-    NAV_ITEMS.find((item) => pathname.startsWith(item.href)) ?? NAV_ITEMS[0];
+    NAV_ITEMS.find((item) => pathname.startsWith(item.href)) ??
+    (pathname.startsWith("/workspace/profile")
+      ? { href: "/workspace/profile", label: "Profile" }
+      : NAV_ITEMS[0]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-slate-100">

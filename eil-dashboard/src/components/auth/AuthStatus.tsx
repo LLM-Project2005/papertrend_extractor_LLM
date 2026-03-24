@@ -29,7 +29,10 @@ export default function AuthStatus() {
 
   return (
     <div className="flex items-center gap-2">
-      <div className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 dark:border-[#353535] dark:bg-[#171717] sm:flex">
+      <Link
+        href="/workspace/profile"
+        className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-slate-300 dark:border-[#353535] dark:bg-[#171717] dark:hover:border-[#3a3a3a] sm:flex"
+      >
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-[#2a2a2a] dark:text-[#d0d0d0]">
           <UserIcon className="h-4 w-4" />
         </span>
@@ -41,7 +44,7 @@ export default function AuthStatus() {
             {isAdmin ? "Admin" : "Member"}
           </p>
         </div>
-      </div>
+      </Link>
       <button
         type="button"
         onClick={() => {

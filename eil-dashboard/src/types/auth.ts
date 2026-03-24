@@ -21,7 +21,7 @@ export interface AuthContextValue {
   profile: UserProfileRecord | null;
   isAdmin: boolean;
   signInWithProvider: (
-    provider: "google" | "azure" | "facebook" | "apple"
+    provider: "google" | "facebook"
   ) => Promise<void>;
   signInWithPassword: (email: string, password: string) => Promise<void>;
   signUpWithPassword: (
@@ -31,5 +31,9 @@ export interface AuthContextValue {
   ) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  saveUserProfile: (updates: {
+    full_name?: string;
+    avatar_url?: string;
+  }) => Promise<void>;
   saveWorkspaceProfile: (workspaceProfile: WorkspaceProfile) => Promise<void>;
 }

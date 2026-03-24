@@ -3,20 +3,13 @@
 import { useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  AppleIcon,
   EmailIcon,
   FacebookIcon,
   GoogleIcon,
-  MicrosoftIcon,
   UserIcon,
 } from "@/components/ui/Icons";
 
 const OAUTH_OPTIONS = [
-  {
-    provider: "azure" as const,
-    label: "Continue with Chula Microsoft",
-    icon: MicrosoftIcon,
-  },
   {
     provider: "google" as const,
     label: "Continue with Google",
@@ -26,11 +19,6 @@ const OAUTH_OPTIONS = [
     provider: "facebook" as const,
     label: "Continue with Facebook",
     icon: FacebookIcon,
-  },
-  {
-    provider: "apple" as const,
-    label: "Continue with Apple",
-    icon: AppleIcon,
   },
 ] as const;
 
