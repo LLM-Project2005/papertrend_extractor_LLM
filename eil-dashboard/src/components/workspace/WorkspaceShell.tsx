@@ -202,10 +202,11 @@ export default function WorkspaceShell({
     profile,
     analysisSession,
     setAnalysisMinimized,
+    removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { runs } = useIngestionRuns({
+  const { runs, cancelRuns } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     pollIntervalMs: 8000,
   });
@@ -219,6 +220,20 @@ export default function WorkspaceShell({
     (pathname.startsWith("/workspace/profile")
       ? { href: "/workspace/profile", label: "Profile" }
       : NAV_ITEMS[0]);
+
+  async function handleCancelRun(runId: string) {
+    try {
+      const canceledRuns = await cancelRuns([runId]);
+      if (canceledRuns.length > 0) {
+        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
+      }
+    } catch (error) {
+      console.error("[workspace] failed to cancel run", {
+        runId,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-slate-100">
@@ -280,6 +295,7 @@ export default function WorkspaceShell({
               compact
               onExpand={() => setAnalysisMinimized(false)}
               onClear={clearAnalysisSession}
+              onCancelRun={handleCancelRun}
             />
           </div>
         ) : null}

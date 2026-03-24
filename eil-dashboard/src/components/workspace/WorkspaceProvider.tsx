@@ -39,6 +39,7 @@ interface WorkspaceContextValue {
     options?: { sourceKind?: string; folder?: string }
   ) => void;
   setAnalysisMinimized: (minimized: boolean) => void;
+  removeAnalysisRunIds: (runIds: string[]) => void;
   clearAnalysisSession: () => void;
 }
 
@@ -182,6 +183,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setAnalysisSession((current) =>
           current ? { ...current, minimized } : current
         );
+      },
+      removeAnalysisRunIds: (runIds) => {
+        const idsToRemove = new Set(runIds);
+        if (idsToRemove.size === 0) {
+          return;
+        }
+
+        setAnalysisSession((current) => {
+          if (!current) {
+            return current;
+          }
+
+          const nextRunIds = current.runIds.filter((runId) => !idsToRemove.has(runId));
+          if (nextRunIds.length === 0) {
+            return null;
+          }
+
+          return {
+            ...current,
+            runIds: nextRunIds,
+          };
+        });
       },
       clearAnalysisSession: () => {
         setAnalysisSession(null);

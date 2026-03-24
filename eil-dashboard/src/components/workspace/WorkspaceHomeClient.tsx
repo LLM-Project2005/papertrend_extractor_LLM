@@ -75,10 +75,11 @@ export default function WorkspaceHomeClient() {
     analysisSession,
     startAnalysisSession,
     setAnalysisMinimized,
+    removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const { data, loading } = useDashboardData();
-  const { runs } = useIngestionRuns({
+  const { runs, cancelRuns } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     pollIntervalMs: 8000,
   });
@@ -160,6 +161,20 @@ export default function WorkspaceHomeClient() {
     setShowAnalyzeModal(false);
   }
 
+  async function handleCancelRun(runId: string) {
+    try {
+      const canceledRuns = await cancelRuns([runId]);
+      if (canceledRuns.length > 0) {
+        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
+      }
+    } catch (error) {
+      console.error("[workspace.home] failed to cancel run", {
+        runId,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="app-surface px-6 py-6">
@@ -204,6 +219,7 @@ export default function WorkspaceHomeClient() {
           loading={loading && activeRuns.length === 0}
           onMinimize={() => setAnalysisMinimized(true)}
           onClear={clearAnalysisSession}
+          onCancelRun={handleCancelRun}
         />
       ) : null}
 

@@ -113,6 +113,16 @@ class SupabaseRestClient:
         rows = response.json()
         return rows[0] if rows else None
 
+    def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        response = self.session.get(
+            self._rest_url("ingestion_runs"),
+            params={"select": "*", "id": f"eq.{run_id}", "limit": "1"},
+            timeout=60,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else None
+
     def update_run(self, run_id: str, patch: Dict[str, Any]) -> None:
         payload = {"updated_at": now_iso(), **patch}
         response = self.session.patch(
@@ -631,6 +641,17 @@ def download_google_drive_file(access_token: str, file_id: str, destination: Pat
     destination.write_bytes(response.content)
 
 
+def ensure_run_active(client: SupabaseRestClient, run_id: str) -> None:
+    latest_run = client.get_run(run_id)
+    if not latest_run:
+        raise RuntimeError("The ingestion run no longer exists.")
+
+    if latest_run.get("status") != "processing":
+        raise RuntimeError(
+            f"Run was canceled or changed state before completion (status: {latest_run.get('status')})."
+        )
+
+
 def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str, Any]) -> None:
     run_id = str(run["id"])
     storage_path = str(run.get("source_path") or "")
@@ -653,6 +674,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             logger.info("downloading storage object", extra={"run_id": run_id, "storage_path": storage_path})
             client.download_storage_object(storage_path, local_pdf)
 
+        ensure_run_active(client, run_id)
         raw_text = clean_text(extract_pdf_text(local_pdf))
         if len(raw_text) < 800:
             raise RuntimeError("The extracted text is too short for reliable analysis.")
@@ -666,6 +688,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             fallback_title=pick_title(raw_text, local_pdf.name),
             heuristic_sections=heuristic_sections,
         )
+        ensure_run_active(client, run_id)
         dataset = build_dataset(run, raw_text, analysis)
         persist_dataset(client, dataset)
         logger.info(
@@ -677,6 +700,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             },
         )
 
+        ensure_run_active(client, run_id)
         client.update_run(
             run_id,
             {
@@ -726,6 +750,13 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
             logger.info("run completed", extra={"run_id": run_id})
         except Exception as error:  # pragma: no cover - integration path
             message = str(error)
+            latest_run = client.get_run(run_id)
+            if latest_run and latest_run.get("status") != "processing":
+                logger.info(
+                    "run ended outside worker completion path",
+                    extra={"run_id": run_id, "status": latest_run.get("status")},
+                )
+                return True
             client.update_run(
                 run_id,
                 {

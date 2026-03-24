@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import type { IngestionRunRow } from "@/types/database";
-import { ArrowRightIcon, CheckCircleIcon, CircleIcon } from "@/components/ui/Icons";
+import {
+  ArrowRightIcon,
+  CheckCircleIcon,
+  CircleIcon,
+  CloseIcon,
+} from "@/components/ui/Icons";
 
 function summarizeRuns(runs: IngestionRunRow[]) {
   return runs.reduce(
@@ -25,6 +30,7 @@ export default function AnalysisStatusCard({
   onMinimize,
   onExpand,
   onClear,
+  onCancelRun,
 }: {
   runs: IngestionRunRow[];
   loading?: boolean;
@@ -32,6 +38,7 @@ export default function AnalysisStatusCard({
   onMinimize?: () => void;
   onExpand?: () => void;
   onClear?: () => void;
+  onCancelRun?: (runId: string) => void | Promise<void>;
 }) {
   const summary = summarizeRuns(runs);
   const allTerminal =
@@ -145,6 +152,18 @@ export default function AnalysisStatusCard({
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {onCancelRun &&
+                  (run.status === "queued" || run.status === "processing") ? (
+                    <button
+                      type="button"
+                      onClick={() => void onCancelRun(run.id)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+                      aria-label={`Cancel analysis for ${run.source_filename || run.id}`}
+                      title="Cancel analysis"
+                    >
+                      <CloseIcon className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                   {run.status === "succeeded" ? (
                     <CheckCircleIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
                   ) : (
