@@ -8,6 +8,7 @@ import {
   CloseIcon,
   DriveIcon,
   FileIcon,
+  FolderIcon,
   OneDriveIcon,
   PaperIcon,
   SharePointIcon,
@@ -25,10 +26,16 @@ type ImportSource =
 interface DriveFileItem {
   id: string;
   name: string;
+  kind: "folder" | "file";
   mimeType?: string;
   size?: string;
   modifiedTime?: string;
   webViewLink?: string;
+}
+
+interface DriveBreadcrumb {
+  id: string;
+  name: string;
 }
 
 const SOURCE_OPTIONS = [
@@ -104,6 +111,9 @@ export default function AnalyzeFlowModal({
   const [driveConnecting, setDriveConnecting] = useState(false);
   const [driveSearch, setDriveSearch] = useState("");
   const [selectedDriveFileIds, setSelectedDriveFileIds] = useState<string[]>([]);
+  const [driveFolderTrail, setDriveFolderTrail] = useState<DriveBreadcrumb[]>([
+    { id: "root", name: "My Drive" },
+  ]);
 
   useEffect(() => {
     setFolder(defaultFolder);
@@ -131,7 +141,7 @@ export default function AnalyzeFlowModal({
     [selectedSource]
   );
 
-  async function loadDriveFiles(search = driveSearch) {
+  async function loadDriveFiles(search = driveSearch, parentId = driveFolderTrail.at(-1)?.id ?? "root") {
     if (!session?.access_token || !user) {
       setDriveConnected(false);
       setDriveFiles([]);
@@ -142,9 +152,12 @@ export default function AnalyzeFlowModal({
     setError(null);
 
     try {
-      const query = search.trim()
-        ? `?search=${encodeURIComponent(search.trim())}`
-        : "";
+      const params = new URLSearchParams();
+      if (search.trim()) {
+        params.set("search", search.trim());
+      }
+      params.set("parentId", parentId);
+      const query = params.toString() ? `?${params.toString()}` : "";
       const response = await fetch(`/api/integrations/google-drive/files${query}`, {
         headers: {
           Authorization: `Bearer ${session.access_token}`,
@@ -187,8 +200,8 @@ export default function AnalyzeFlowModal({
       return;
     }
 
-    void loadDriveFiles();
-  }, [open, selectedSource, session?.access_token, user]);
+    void loadDriveFiles(driveSearch, driveFolderTrail.at(-1)?.id ?? "root");
+  }, [driveFolderTrail, driveSearch, open, selectedSource, session?.access_token, user]);
 
   if (!open) {
     return null;
@@ -358,6 +371,8 @@ export default function AnalyzeFlowModal({
   const selectedDriveFiles = driveFiles.filter((file) =>
     selectedDriveFileIds.includes(file.id)
   );
+  const driveFolders = driveFiles.filter((file) => file.kind === "folder");
+  const drivePdfFiles = driveFiles.filter((file) => file.kind === "file");
 
   return (
     <Modal onClose={onClose}>
@@ -481,17 +496,36 @@ export default function AnalyzeFlowModal({
                     </button>
                   ) : (
                     <div className="mt-5 space-y-3 text-left">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-[#9c9c9c]">
+                        {driveFolderTrail.map((folder, index) => (
+                          <button
+                            key={folder.id}
+                            type="button"
+                            onClick={() => {
+                              const nextTrail = driveFolderTrail.slice(0, index + 1);
+                              setDriveFolderTrail(nextTrail);
+                            }}
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#212121] dark:hover:border-[#3a3a3a]"
+                          >
+                            {folder.name}
+                          </button>
+                        ))}
+                      </div>
+
                       <div className="flex flex-col gap-2 sm:flex-row">
                         <input
                           value={driveSearch}
                           onChange={(event) => setDriveSearch(event.target.value)}
-                          placeholder="Search Drive PDFs"
+                          placeholder="Search this folder"
                           className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
                         />
                         <button
                           type="button"
                           onClick={() => {
-                            void loadDriveFiles();
+                            void loadDriveFiles(
+                              driveSearch,
+                              driveFolderTrail.at(-1)?.id ?? "root"
+                            );
                           }}
                           className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
                         >
@@ -510,12 +544,38 @@ export default function AnalyzeFlowModal({
                           </p>
                         ) : (
                           <div className="divide-y divide-slate-200 dark:divide-[#2f2f2f]">
-                            {driveFiles.map((file) => {
+                            {driveFolders.map((folder) => (
+                              <button
+                                key={folder.id}
+                                type="button"
+                                onClick={() => {
+                                  setDriveFolderTrail((current) => [
+                                    ...current,
+                                    { id: folder.id, name: folder.name },
+                                  ]);
+                                  setDriveSearch("");
+                                }}
+                                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-[#1b1b1b]"
+                              >
+                                <span className="flex h-4 w-4 items-center justify-center">
+                                  <FolderIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                                    {folder.name}
+                                  </p>
+                                  <p className="mt-1 text-xs text-slate-500 dark:text-[#9c9c9c]">
+                                    Folder
+                                  </p>
+                                </div>
+                              </button>
+                            ))}
+                            {drivePdfFiles.map((file) => {
                               const checked = selectedDriveFileIds.includes(file.id);
                               return (
                                 <label
                                   key={file.id}
-                                  className="flex cursor-pointer items-start gap-3 px-4 py-3"
+                                  className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-[#1b1b1b]"
                                 >
                                   <input
                                     type="checkbox"
@@ -530,15 +590,22 @@ export default function AnalyzeFlowModal({
                                     className="mt-1 h-4 w-4 rounded border-slate-300"
                                   />
                                   <div className="min-w-0 flex-1">
-                                    <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                                      {file.name}
-                                    </p>
-                                    <p className="mt-1 text-xs text-slate-500 dark:text-[#9c9c9c]">
-                                      {file.modifiedTime
-                                        ? new Date(file.modifiedTime).toLocaleString()
-                                        : "Modified time unavailable"}
-                                      {file.size ? ` • ${Math.max(1, Math.round(Number(file.size) / 1024))} KB` : ""}
-                                    </p>
+                                    <div className="flex items-start gap-3">
+                                      <FileIcon className="mt-0.5 h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
+                                      <div className="min-w-0 flex-1">
+                                        <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                                          {file.name}
+                                        </p>
+                                        <p className="mt-1 text-xs text-slate-500 dark:text-[#9c9c9c]">
+                                          {file.modifiedTime
+                                            ? new Date(file.modifiedTime).toLocaleString()
+                                            : "Modified time unavailable"}
+                                          {file.size
+                                            ? ` • ${Math.max(1, Math.round(Number(file.size) / 1024))} KB`
+                                            : ""}
+                                        </p>
+                                      </div>
+                                    </div>
                                   </div>
                                 </label>
                               );

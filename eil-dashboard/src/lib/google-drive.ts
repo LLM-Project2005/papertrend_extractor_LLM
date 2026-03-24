@@ -278,18 +278,21 @@ export async function ensureGoogleDriveAccessToken(
 
 export async function listGoogleDrivePdfFiles(
   accessToken: string,
-  search = ""
+  search = "",
+  parentId = "root"
 ): Promise<
   Array<{
     id: string;
     name: string;
+    kind: "folder" | "file";
     mimeType?: string;
     size?: string;
     modifiedTime?: string;
     webViewLink?: string;
   }>
 > {
-  const query = ["mimeType='application/pdf'", "trashed=false"];
+  const escapedParent = parentId.replace(/'/g, "\\'");
+  const query = [`'${escapedParent}' in parents`, "trashed=false"];
   if (search.trim()) {
     const safeSearch = search.replace(/'/g, "\\'");
     query.push(`name contains '${safeSearch}'`);
@@ -297,9 +300,15 @@ export async function listGoogleDrivePdfFiles(
 
   const url = new URL("https://www.googleapis.com/drive/v3/files");
   url.searchParams.set("pageSize", "25");
-  url.searchParams.set("orderBy", "modifiedTime desc");
-  url.searchParams.set("fields", "files(id,name,mimeType,size,modifiedTime,webViewLink)");
-  url.searchParams.set("q", query.join(" and "));
+  url.searchParams.set("orderBy", "folder,name_natural");
+  url.searchParams.set(
+    "fields",
+    "files(id,name,mimeType,size,modifiedTime,webViewLink,parents)"
+  );
+  url.searchParams.set(
+    "q",
+    `${query.join(" and ")} and (mimeType='application/pdf' or mimeType='application/vnd.google-apps.folder')`
+  );
 
   const response = await fetch(url, {
     headers: {
@@ -319,10 +328,15 @@ export async function listGoogleDrivePdfFiles(
       size?: string;
       modifiedTime?: string;
       webViewLink?: string;
+      parents?: string[];
     }>;
   };
 
-  return payload.files ?? [];
+  return (payload.files ?? []).map((file) => ({
+    ...file,
+    kind:
+      file.mimeType === "application/vnd.google-apps.folder" ? "folder" : "file",
+  }));
 }
 
 export async function getGoogleDriveFileMetadata(

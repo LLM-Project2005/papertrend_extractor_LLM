@@ -30,8 +30,12 @@ export async function GET(request: Request) {
       throw new Error(error.message);
     }
 
+    console.info("[admin.import] listed runs", { count: data?.length ?? 0 });
     return NextResponse.json({ runs: data ?? [] });
   } catch (error) {
+    console.error("[admin.import] list failed", {
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to load ingestion runs." },
       { status: 500 }
@@ -132,8 +136,18 @@ export async function POST(request: Request) {
       createdRuns.push(updatedRun ?? runData);
     }
 
+    console.info("[admin.import] queued upload runs", {
+      count: createdRuns.length,
+      folder,
+      sourceKind,
+      provider,
+      hasModel: Boolean(model),
+    });
     return NextResponse.json({ runs: createdRuns }, { status: 201 });
   } catch (error) {
+    console.error("[admin.import] upload failed", {
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Upload failed." },
       { status: 500 }

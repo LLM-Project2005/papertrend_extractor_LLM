@@ -98,8 +98,18 @@ export async function POST(request: Request) {
       );
     }
 
+    console.info("[google-drive.queue] queued drive runs", {
+      userId: user.id,
+      count: createdRuns.length,
+      folder,
+      provider,
+      hasModel: Boolean(model),
+    });
     return NextResponse.json({ runs: createdRuns }, { status: 201 });
   } catch (error) {
+    console.error("[google-drive.queue] queue failed", {
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
     return NextResponse.json(
       {
         error:

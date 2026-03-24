@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import re
 import sys
@@ -61,6 +62,9 @@ class WorkerConfig:
     poll_interval_seconds: int
     queued_limit: int
     llm_context_chars: int
+
+
+logger = logging.getLogger("papertrend_worker")
 
 
 class SupabaseRestClient:
@@ -216,6 +220,15 @@ def load_config() -> WorkerConfig:
         poll_interval_seconds=max(int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "15")), 5),
         queued_limit=max(int(os.getenv("WORKER_QUEUED_LIMIT", "3")), 1),
         llm_context_chars=max(int(os.getenv("WORKER_LLM_CONTEXT_CHARS", "50000")), 8000),
+    )
+
+
+def configure_logging() -> None:
+    level_name = os.getenv("WORKER_LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
 
@@ -634,13 +647,16 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             if not connector_user_id:
                 raise RuntimeError("The Google Drive run is missing connector ownership metadata.")
             access_token = ensure_google_drive_access_token(client, config, connector_user_id)
+            logger.info("downloading google drive file", extra={"run_id": run_id, "file_id": storage_path})
             download_google_drive_file(access_token, storage_path, local_pdf)
         else:
+            logger.info("downloading storage object", extra={"run_id": run_id, "storage_path": storage_path})
             client.download_storage_object(storage_path, local_pdf)
 
         raw_text = clean_text(extract_pdf_text(local_pdf))
         if len(raw_text) < 800:
             raise RuntimeError("The extracted text is too short for reliable analysis.")
+        logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(raw_text)})
 
         heuristic_sections = segment_by_headings(raw_text)
         analysis = request_structured_analysis(
@@ -652,6 +668,14 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
         )
         dataset = build_dataset(run, raw_text, analysis)
         persist_dataset(client, dataset)
+        logger.info(
+            "dataset persisted",
+            extra={
+                "run_id": run_id,
+                "paper_id": dataset["paper_id"],
+                "keyword_count": len(dataset["keywords"]),
+            },
+        )
 
         client.update_run(
             run_id,
@@ -685,10 +709,21 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
             continue
 
         run_id = str(claimed["id"])
-        print(f"[worker] Processing run {run_id} ({claimed.get('source_filename', 'unknown file')})")
+        logger.info(
+            "processing run",
+            extra={
+                "run_id": run_id,
+                "source_filename": claimed.get("source_filename", "unknown file"),
+                "source_kind": (
+                    claimed.get("input_payload", {}).get("source_kind")
+                    if isinstance(claimed.get("input_payload"), dict)
+                    else "pdf-upload"
+                ),
+            },
+        )
         try:
             process_run(client, config, claimed)
-            print(f"[worker] Run {run_id} completed.")
+            logger.info("run completed", extra={"run_id": run_id})
         except Exception as error:  # pragma: no cover - integration path
             message = str(error)
             client.update_run(
@@ -703,7 +738,7 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
                     ),
                 },
             )
-            print(f"[worker] Run {run_id} failed: {message}", file=sys.stderr)
+            logger.exception("run failed", extra={"run_id": run_id, "error_message": message})
         return True
 
     return False
@@ -721,6 +756,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    configure_logging()
     args = parse_args()
     config = load_config()
     client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
@@ -729,10 +765,10 @@ def main() -> None:
     if args.once:
         processed = process_once(client, config)
         if not processed:
-            print("[worker] No queued runs found.")
+            logger.info("no queued runs found")
         return
 
-    print("[worker] Queue processor started.")
+    logger.info("queue processor started")
     while run_loop:
         processed = process_once(client, config)
         if not processed:

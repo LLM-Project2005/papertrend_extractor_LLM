@@ -17,6 +17,7 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const search = url.searchParams.get("search") ?? "";
+    const parentId = url.searchParams.get("parentId") ?? "root";
     const connection = await getGoogleDriveConnection(user.id);
 
     if (!connection) {
@@ -24,9 +25,18 @@ export async function GET(request: Request) {
     }
 
     const accessToken = await ensureGoogleDriveAccessToken(connection);
-    const files = await listGoogleDrivePdfFiles(accessToken, search);
+    const files = await listGoogleDrivePdfFiles(accessToken, search, parentId);
+    console.info("[google-drive.files] listed entries", {
+      userId: user.id,
+      parentId,
+      search,
+      count: files.length,
+    });
     return NextResponse.json({ connected: true, files });
   } catch (error) {
+    console.error("[google-drive.files] failed", {
+      error: error instanceof Error ? error.message : "unknown_error",
+    });
     return NextResponse.json(
       {
         connected: false,
