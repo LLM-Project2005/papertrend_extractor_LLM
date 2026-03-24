@@ -175,6 +175,28 @@ export default function WorkspaceHomeClient() {
     }
   }
 
+  async function handleCancelAllRuns() {
+    const activeRunIds = activeRuns
+      .filter((run) => run.status === "queued" || run.status === "processing")
+      .map((run) => run.id);
+
+    if (activeRunIds.length === 0) {
+      return;
+    }
+
+    try {
+      const canceledRuns = await cancelRuns(activeRunIds);
+      if (canceledRuns.length > 0) {
+        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
+      }
+    } catch (error) {
+      console.error("[workspace.home] failed to cancel all runs", {
+        runIds: activeRunIds,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="app-surface px-6 py-6">
@@ -220,6 +242,7 @@ export default function WorkspaceHomeClient() {
           onMinimize={() => setAnalysisMinimized(true)}
           onClear={clearAnalysisSession}
           onCancelRun={handleCancelRun}
+          onCancelAll={handleCancelAllRuns}
         />
       ) : null}
 

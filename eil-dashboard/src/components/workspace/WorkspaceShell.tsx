@@ -235,6 +235,28 @@ export default function WorkspaceShell({
     }
   }
 
+  async function handleCancelAllRuns() {
+    const activeRunIds = activeRuns
+      .filter((run) => run.status === "queued" || run.status === "processing")
+      .map((run) => run.id);
+
+    if (activeRunIds.length === 0) {
+      return;
+    }
+
+    try {
+      const canceledRuns = await cancelRuns(activeRunIds);
+      if (canceledRuns.length > 0) {
+        removeAnalysisRunIds(canceledRuns.map((run) => run.id));
+      }
+    } catch (error) {
+      console.error("[workspace] failed to cancel all runs", {
+        runIds: activeRunIds,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-slate-100">
       <DesktopSidebar pathname={pathname} profile={profile} />
@@ -296,6 +318,7 @@ export default function WorkspaceShell({
               onExpand={() => setAnalysisMinimized(false)}
               onClear={clearAnalysisSession}
               onCancelRun={handleCancelRun}
+              onCancelAll={handleCancelAllRuns}
             />
           </div>
         ) : null}

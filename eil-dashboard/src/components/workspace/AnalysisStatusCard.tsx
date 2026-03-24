@@ -31,6 +31,7 @@ export default function AnalysisStatusCard({
   onExpand,
   onClear,
   onCancelRun,
+  onCancelAll,
 }: {
   runs: IngestionRunRow[];
   loading?: boolean;
@@ -39,32 +40,49 @@ export default function AnalysisStatusCard({
   onExpand?: () => void;
   onClear?: () => void;
   onCancelRun?: (runId: string) => void | Promise<void>;
+  onCancelAll?: () => void | Promise<void>;
 }) {
   const summary = summarizeRuns(runs);
   const allTerminal =
     runs.length > 0 &&
     runs.every((run) => run.status === "succeeded" || run.status === "failed");
+  const hasActiveRuns = runs.some(
+    (run) => run.status === "queued" || run.status === "processing"
+  );
 
   if (compact) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-        <button
-          type="button"
-          onClick={onExpand}
-          className="flex w-full items-center justify-between gap-4 text-left"
-        >
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
-              Analysis active
-            </p>
-            <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
-              {loading
-                ? "Refreshing status..."
-                : `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
-            </p>
-          </div>
-          <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8f8f8f]" />
-        </button>
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={onExpand}
+            className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
+          >
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                Analysis active
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
+                {loading
+                  ? "Refreshing status..."
+                  : `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
+              </p>
+            </div>
+            <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8f8f8f]" />
+          </button>
+          {hasActiveRuns && onCancelAll ? (
+            <button
+              type="button"
+              onClick={() => void onCancelAll()}
+              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+              aria-label="Cancel all active analysis runs"
+              title="Cancel all"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
+        </div>
       </div>
     );
   }
@@ -86,6 +104,17 @@ export default function AnalysisStatusCard({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {hasActiveRuns && onCancelAll ? (
+            <button
+              type="button"
+              onClick={() => void onCancelAll()}
+              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"
+              aria-label="Cancel all active analysis runs"
+              title="Cancel all"
+            >
+              <CloseIcon className="h-4 w-4" />
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onMinimize}
