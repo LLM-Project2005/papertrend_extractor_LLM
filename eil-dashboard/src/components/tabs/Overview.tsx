@@ -16,6 +16,7 @@ import MetricCard from "@/components/MetricCard";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
 import type { TrendRow, TrackRow } from "@/types/database";
+import type { VisualizationChartKey } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
@@ -23,6 +24,7 @@ interface Props {
   tracksMulti: TrackRow[];
   selectedTracks: string[];
   useMock: boolean;
+  visibleCharts?: VisualizationChartKey[];
 }
 
 export default function Overview({
@@ -31,6 +33,7 @@ export default function Overview({
   tracksMulti,
   selectedTracks,
   useMock,
+  visibleCharts,
 }: Props) {
   const { theme, hydrated } = useTheme();
   const isDark = hydrated && theme === "dark";
@@ -64,6 +67,20 @@ export default function Overview({
   const chartGrid = isDark ? "#3f3f46" : "#d7dee8";
   const chartAxis = isDark ? "#a3a3a3" : "#7c8aa0";
   const barFill = isDark ? "#d4a574" : "#334155";
+  const orderedCharts =
+    visibleCharts?.filter((chart): chart is VisualizationChartKey =>
+      [
+        "overview_metrics",
+        "papers_per_year",
+        "track_single_breakdown",
+        "track_multi_breakdown",
+      ].includes(chart)
+    ) ?? [
+      "overview_metrics",
+      "papers_per_year",
+      "track_single_breakdown",
+      "track_multi_breakdown",
+    ];
   const tooltipTheme = isDark
     ? {
         contentStyle: {
@@ -168,6 +185,66 @@ export default function Overview({
     );
   }
 
+  function renderChart(chartKey: VisualizationChartKey) {
+    if (chartKey === "overview_metrics") {
+      return (
+        <div key={chartKey} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <MetricCard label="Total papers" value={nPapers} />
+          <MetricCard label="Unique topics" value={nTopics} />
+          <MetricCard label="Unique keywords" value={nKeywords} />
+          <MetricCard label="Coverage" value={yearSpan} />
+        </div>
+      );
+    }
+
+    if (chartKey === "papers_per_year" && papersByYear.length > 0) {
+      return (
+        <section key={chartKey} className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            Papers published per year
+          </h3>
+          <div className="mt-4 h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={papersByYear}>
+                <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
+                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke={chartAxis} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke={chartAxis} />
+                <Tooltip {...tooltipTheme} />
+                <Bar dataKey="papers" fill={barFill} radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      );
+    }
+
+    if (chartKey === "track_single_breakdown" && donutSingle.some((item) => item.value > 0)) {
+      return (
+        <div key={chartKey}>
+          {renderTrackBreakdown(
+            "Track distribution",
+            "Single-label assignments",
+            donutSingle
+          )}
+        </div>
+      );
+    }
+
+    if (chartKey === "track_multi_breakdown" && donutMulti.some((item) => item.value > 0)) {
+      return (
+        <div key={chartKey}>
+          {renderTrackBreakdown(
+            "Track overlap",
+            "Multi-label assignments",
+            donutMulti
+          )}
+        </div>
+      );
+    }
+
+    return null;
+  }
+
   return (
     <div className="space-y-5">
       <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
@@ -184,47 +261,7 @@ export default function Overview({
         )}
       </section>
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label="Total papers" value={nPapers} />
-        <MetricCard label="Unique topics" value={nTopics} />
-        <MetricCard label="Unique keywords" value={nKeywords} />
-        <MetricCard label="Coverage" value={yearSpan} />
-      </div>
-
-      {papersByYear.length > 0 && (
-        <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Papers published per year
-          </h3>
-          <div className="mt-4 h-[320px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={papersByYear}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
-                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke={chartAxis} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke={chartAxis} />
-                <Tooltip {...tooltipTheme} />
-                <Bar dataKey="papers" fill={barFill} radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-      )}
-
-      <div className="grid gap-5 2xl:grid-cols-2">
-        {donutSingle.some((item) => item.value > 0) &&
-          renderTrackBreakdown(
-            "Track distribution",
-            "Single-label assignments",
-            donutSingle
-          )}
-
-        {donutMulti.some((item) => item.value > 0) &&
-          renderTrackBreakdown(
-            "Track overlap",
-            "Multi-label assignments",
-            donutMulti
-          )}
-      </div>
+      {orderedCharts.map((chartKey) => renderChart(chartKey))}
     </div>
   );
 }
