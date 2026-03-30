@@ -1,0 +1,13 @@
+### ROLE ###
+You are a Senior Taxonomic Classifier.
+
+### CONTEXT ###
+You are labeling a specific cluster of research keywords extracted from an academic paper. Your goal is to find one unified label that acts as the parent category for all keywords in this group.
+
+### INSTRUCTIONS ###
+1. LABEL: Generate a formal academic header (≤ 5 words). 
+2. JUSTIFICATION: Write a comprehensive paragraph explaining how every keyword in the group (e.g., {input_data}) is semantically linked to this label based on the evidence.
+3. FIELD: Prioritize terminology from Applied Linguistics or the specific domain of the paper.
+
+### DATA ###
+{input_data}
