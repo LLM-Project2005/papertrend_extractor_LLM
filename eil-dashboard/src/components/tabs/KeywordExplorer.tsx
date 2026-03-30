@@ -12,11 +12,14 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
 import type { TrendRow } from "@/types/database";
+import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
+  planCharts?: VisualizationPlanChart[];
 }
 
 const TreemapCell = (props: {
@@ -69,10 +72,14 @@ const TreemapCell = (props: {
   );
 };
 
-export default function KeywordExplorer({ trends }: Props) {
+export default function KeywordExplorer({ trends, planCharts }: Props) {
   const [search, setSearch] = useState("");
   const [treeN, setTreeN] = useState(30);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
+  const heatmapConfig = planCharts?.find(
+    (chart) => chart.chart_key === "keyword_heatmap"
+  )?.config;
+  const plannerHeatN = heatmapConfig?.heat_n ?? 15;
 
   const keywordAggregate = useMemo(() => {
     const map: Record<
@@ -110,6 +117,31 @@ export default function KeywordExplorer({ trends }: Props) {
 
     return results;
   }, [search, trends]);
+
+  const heatmapData = useMemo(() => {
+    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const topKeywords = keywordAggregate
+      .slice(0, plannerHeatN)
+      .map((row) => row.keyword);
+
+    const grid: Record<string, Record<string, number>> = {};
+    trends.forEach((row) => {
+      if (!topKeywords.includes(row.keyword)) {
+        return;
+      }
+      grid[row.keyword] ??= {};
+      grid[row.keyword][row.year] =
+        (grid[row.keyword][row.year] ?? 0) + row.keyword_frequency;
+    });
+
+    return {
+      rows: topKeywords,
+      cols: years,
+      values: topKeywords.map((keyword) =>
+        years.map((year) => grid[keyword]?.[year] ?? 0)
+      ),
+    };
+  }, [keywordAggregate, plannerHeatN, trends]);
 
   const treeData = useMemo(
     () =>
@@ -167,6 +199,28 @@ export default function KeywordExplorer({ trends }: Props) {
         className="w-full max-w-md rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
       />
 
+      {planCharts ? (
+        <section className="app-surface px-5 py-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Keyword heatmap
+            </h3>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Top keywords: {plannerHeatN}
+            </span>
+          </div>
+
+          <div className="mt-4">
+            <Heatmap
+              rows={heatmapData.rows}
+              cols={heatmapData.cols}
+              values={heatmapData.values}
+              colorScale={["#fff7ec", "#cc4c02"]}
+            />
+          </div>
+        </section>
+      ) : (
+        <>
       <section className="app-surface px-5 py-5">
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
@@ -287,6 +341,8 @@ export default function KeywordExplorer({ trends }: Props) {
           </ResponsiveContainer>
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 }

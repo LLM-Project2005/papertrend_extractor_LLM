@@ -16,14 +16,31 @@ import {
 import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
 import type { TrendRow } from "@/types/database";
+import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
+  planCharts?: VisualizationPlanChart[];
 }
 
-export default function TrendAnalysis({ trends }: Props) {
+export default function TrendAnalysis({ trends, planCharts }: Props) {
   const [topN, setTopN] = useState(10);
   const [heatN, setHeatN] = useState(15);
+  const orderedCharts =
+    planCharts?.map((chart) => chart.chart_key).filter(
+      (chart): chart is "topic_area" | "emerging_topics" | "declining_topics" =>
+        ["topic_area", "emerging_topics", "declining_topics"].includes(chart)
+    ) ?? ["topic_area", "emerging_topics", "declining_topics"];
+  const topicAreaConfig = planCharts?.find((chart) => chart.chart_key === "topic_area")?.config;
+  const emergingConfig = planCharts?.find(
+    (chart) => chart.chart_key === "emerging_topics"
+  )?.config;
+  const decliningConfig = planCharts?.find(
+    (chart) => chart.chart_key === "declining_topics"
+  )?.config;
+  const effectiveTopN = topicAreaConfig?.top_n ?? topN;
+  const effectiveShiftN =
+    Math.max(emergingConfig?.top_n ?? 8, decliningConfig?.top_n ?? 8) || 8;
 
   const topTopics = useMemo(() => {
     const counts: Record<string, Set<number>> = {};
@@ -32,9 +49,9 @@ export default function TrendAnalysis({ trends }: Props) {
     });
     return Object.entries(counts)
       .sort((left, right) => right[1].size - left[1].size)
-      .slice(0, topN)
+      .slice(0, effectiveTopN)
       .map(([topic]) => topic);
-  }, [topN, trends]);
+  }, [effectiveTopN, trends]);
 
   const areaData = useMemo(() => {
     const years = [...new Set(trends.map((row) => row.year))].sort();
@@ -82,43 +99,13 @@ export default function TrendAnalysis({ trends }: Props) {
       .sort((left, right) => right.change - left.change);
 
     return {
-      emerging: shifts.filter((shift) => shift.change > 0).slice(0, 8),
-      declining: shifts.filter((shift) => shift.change < 0).slice(-8).reverse(),
+      emerging: shifts.filter((shift) => shift.change > 0).slice(0, effectiveShiftN),
+      declining: shifts
+        .filter((shift) => shift.change < 0)
+        .slice(-effectiveShiftN)
+        .reverse(),
     };
-  }, [trends]);
-
-  const heatmapData = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].sort();
-    const keywordTotals: Record<string, number> = {};
-
-    trends.forEach((row) => {
-      keywordTotals[row.keyword] =
-        (keywordTotals[row.keyword] ?? 0) + row.keyword_frequency;
-    });
-
-    const topKeywords = Object.entries(keywordTotals)
-      .sort((left, right) => right[1] - left[1])
-      .slice(0, heatN)
-      .map(([keyword]) => keyword);
-
-    const grid: Record<string, Record<string, number>> = {};
-    trends.forEach((row) => {
-      if (!topKeywords.includes(row.keyword)) {
-        return;
-      }
-      grid[row.keyword] ??= {};
-      grid[row.keyword][row.year] =
-        (grid[row.keyword][row.year] ?? 0) + row.keyword_frequency;
-    });
-
-    return {
-      rows: topKeywords,
-      cols: years,
-      values: topKeywords.map((keyword) =>
-        years.map((year) => grid[keyword]?.[year] ?? 0)
-      ),
-    };
-  }, [heatN, trends]);
+  }, [effectiveShiftN, trends]);
 
   if (trends.length === 0) {
     return (
@@ -141,49 +128,61 @@ export default function TrendAnalysis({ trends }: Props) {
         </p>
       </section>
 
-      <section className="app-surface px-5 py-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Topic trends over time
-          </h3>
-          <label className="text-xs text-slate-500 dark:text-slate-400">
-            Top topics: {topN}
-          </label>
-          <input
-            type="range"
-            min={3}
-            max={25}
-            value={topN}
-            onChange={(event) => setTopN(+event.target.value)}
-            className="w-40"
-          />
-        </div>
-
-        <div className="mt-4 h-[360px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={areaData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-              <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-              {topTopics.map((topic, index) => (
-                <Area
-                  key={topic}
-                  type="monotone"
-                  dataKey={topic}
-                  stackId="1"
-                  stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                  fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                  fillOpacity={0.55}
+      {orderedCharts.includes("topic_area") ? (
+        <section className="app-surface px-5 py-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+              Topic trends over time
+            </h3>
+            {!topicAreaConfig?.top_n ? (
+              <>
+                <label className="text-xs text-slate-500 dark:text-slate-400">
+                  Top topics: {topN}
+                </label>
+                <input
+                  type="range"
+                  min={3}
+                  max={25}
+                  value={topN}
+                  onChange={(event) => setTopN(+event.target.value)}
+                  className="w-40"
                 />
-              ))}
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-      </section>
+              </>
+            ) : (
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Top topics: {effectiveTopN}
+              </span>
+            )}
+          </div>
 
-      {(emerging.length > 0 || declining.length > 0) && (
+          <div className="mt-4 h-[360px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={areaData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} />
+                {topTopics.map((topic, index) => (
+                  <Area
+                    key={topic}
+                    type="monotone"
+                    dataKey={topic}
+                    stackId="1"
+                    stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                    fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                    fillOpacity={0.55}
+                  />
+                ))}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </section>
+      ) : null}
+
+      {(orderedCharts.includes("emerging_topics") ||
+        orderedCharts.includes("declining_topics")) &&
+      (emerging.length > 0 || declining.length > 0) ? (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Emerging and declining topics
@@ -193,7 +192,7 @@ export default function TrendAnalysis({ trends }: Props) {
           </p>
 
           <div className="mt-5 grid gap-6 xl:grid-cols-2">
-            {emerging.length > 0 && (
+            {orderedCharts.includes("emerging_topics") && emerging.length > 0 ? (
               <div>
                 <p className="mb-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
                   Emerging
@@ -216,9 +215,9 @@ export default function TrendAnalysis({ trends }: Props) {
                   </ResponsiveContainer>
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {declining.length > 0 && (
+            {orderedCharts.includes("declining_topics") && declining.length > 0 ? (
               <div>
                 <p className="mb-3 text-sm font-medium text-rose-700 dark:text-rose-400">
                   Declining
@@ -241,38 +240,10 @@ export default function TrendAnalysis({ trends }: Props) {
                   </ResponsiveContainer>
                 </div>
               </div>
-            )}
+            ) : null}
           </div>
         </section>
-      )}
-
-      <section className="app-surface px-5 py-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Keyword frequency heatmap
-          </h3>
-          <label className="text-xs text-slate-500 dark:text-slate-400">
-            Top keywords: {heatN}
-          </label>
-          <input
-            type="range"
-            min={5}
-            max={40}
-            value={heatN}
-            onChange={(event) => setHeatN(+event.target.value)}
-            className="w-40"
-          />
-        </div>
-
-        <div className="mt-4">
-          <Heatmap
-            rows={heatmapData.rows}
-            cols={heatmapData.cols}
-            values={heatmapData.values}
-            colorScale={["#fff7ec", "#cc4c02"]}
-          />
-        </div>
-      </section>
+      ) : null}
     </div>
   );
 }

@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import PlannedDashboardSection from "@/components/dashboard/PlannedDashboardSection";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
+import { createDefaultVisualizationPlan } from "@/lib/visualization-plan";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
@@ -12,22 +14,24 @@ import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
+import type { TrackKey } from "@/lib/constants";
+import type { VisualizationPlan } from "@/types/visualization";
 
-const TABS = [
-  "Overview",
-  "Trend Analysis",
-  "Track Analysis",
-  "Keyword Explorer",
-  "Paper Explorer",
+const STATIC_TAB_DEFINITIONS = [
+  { key: "overview", label: "Overview" },
+  { key: "trend_analysis", label: "Trend Analysis" },
+  { key: "track_analysis", label: "Track Analysis" },
+  { key: "keyword_explorer", label: "Keyword Explorer" },
+  { key: "paper_explorer", label: "Paper Explorer" },
 ] as const;
 
-const TAB_SLUGS = [
-  "overview",
-  "trend-analysis",
-  "track-analysis",
-  "keyword-explorer",
-  "paper-explorer",
-] as const;
+function normalizeTabKey(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return value.replace(/-/g, "_");
+}
 
 function FilterPanel({
   allYears,
@@ -70,28 +74,20 @@ export default function DashboardClient({
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState(0);
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [selectedTracks, setSelectedTracks] = useState<string[]>([...TRACK_COLS]);
   const [filterOpen, setFilterOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [planState, setPlanState] = useState<{
+    plan: VisualizationPlan;
+    source: "agent" | "fallback";
+  } | null>(null);
 
   const linkedPaperId = useMemo(() => {
     const value = Number.parseInt(searchParams.get("paperId") ?? "", 10);
     return Number.isFinite(value) ? value : null;
   }, [searchParams]);
-
-  useEffect(() => {
-    const tabSlug = searchParams.get("tab");
-    if (!tabSlug) {
-      return;
-    }
-
-    const tabIndex = TAB_SLUGS.indexOf(tabSlug as (typeof TAB_SLUGS)[number]);
-    if (tabIndex >= 0 && tabIndex !== activeTab) {
-      setActiveTab(tabIndex);
-    }
-  }, [activeTab, searchParams]);
+  const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
 
   useEffect(() => {
     if (allYears.length > 0 && selectedYears.length === 0) {
@@ -99,12 +95,121 @@ export default function DashboardClient({
     }
   }, [allYears, selectedYears.length]);
 
-  const updateRouteForTab = (tabIndex: number) => {
+  useEffect(() => {
+    if (!data || selectedYears.length === 0 || plannerMode !== "agent") {
+      return;
+    }
+
+    let cancelled = false;
+    const fallbackPlan = createDefaultVisualizationPlan(
+      data.useMock ? "mock" : "live",
+      selectedTracks as TrackKey[]
+    );
+
+    if (!planState) {
+      setPlanState({ plan: fallbackPlan, source: "fallback" });
+    }
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch("/api/visualization-plan", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            selectedYears,
+            selectedTracks,
+            searchQuery,
+          }),
+        });
+
+        const payload = (await response.json()) as {
+          plan?: VisualizationPlan;
+          source?: "agent" | "fallback";
+        };
+
+        if (!response.ok || !payload.plan || cancelled) {
+          return;
+        }
+
+        setPlanState({
+          plan: payload.plan,
+          source: payload.source ?? "fallback",
+        });
+      } catch {
+        if (!cancelled) {
+          setPlanState({ plan: fallbackPlan, source: "fallback" });
+        }
+      }
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [data, planState, plannerMode, searchQuery, selectedTracks, selectedYears]);
+
+  const fallbackPlan = useMemo(
+    () =>
+      createDefaultVisualizationPlan(
+        data?.useMock ? "mock" : "live",
+        selectedTracks as TrackKey[]
+      ),
+    [data?.useMock, selectedTracks]
+  );
+
+  const activePlan = plannerMode === "agent" ? planState?.plan ?? fallbackPlan : null;
+  const tabDefinitions = plannerMode === "agent"
+    ? (activePlan?.sections.map((section) => ({
+        key: section.section_key,
+        label: section.title,
+      })) ?? STATIC_TAB_DEFINITIONS)
+    : STATIC_TAB_DEFINITIONS;
+
+  const currentTabKey = useMemo(() => {
+    const tabParam = normalizeTabKey(searchParams.get("tab"));
+    if (tabParam && tabDefinitions.some((tab) => tab.key === tabParam)) {
+      return tabParam;
+    }
+
+    return tabDefinitions[0]?.key ?? "overview";
+  }, [searchParams, tabDefinitions]);
+
+  useEffect(() => {
+    const tabParam = normalizeTabKey(searchParams.get("tab"));
+    if (tabParam === currentTabKey) {
+      return;
+    }
+
     const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", TAB_SLUGS[tabIndex]);
-    if (tabIndex !== 4) {
+    params.set("tab", currentTabKey);
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+      scroll: false,
+    });
+  }, [basePath, currentTabKey, router, searchParams]);
+
+  const updateRouteForTab = (tabKey: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", tabKey);
+    if (tabKey !== "paper_explorer") {
       params.delete("paperId");
     }
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+      scroll: false,
+    });
+  };
+
+  const updatePlannerMode = (mode: "agent" | "classic") => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (mode === "classic") {
+      params.set("planner", "classic");
+    } else {
+      params.delete("planner");
+    }
+
     const nextQuery = params.toString();
     router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
       scroll: false,
@@ -154,6 +259,30 @@ export default function DashboardClient({
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
               {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
             </span>
+            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
+              <button
+                type="button"
+                onClick={() => updatePlannerMode("agent")}
+                className={`px-3 py-2 text-sm font-medium transition-colors ${
+                  plannerMode === "agent"
+                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
+                    : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
+                }`}
+              >
+                Adaptive
+              </button>
+              <button
+                type="button"
+                onClick={() => updatePlannerMode("classic")}
+                className={`px-3 py-2 text-sm font-medium transition-colors ${
+                  plannerMode === "classic"
+                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
+                    : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
+                }`}
+              >
+                Classic
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setFilterOpen(true)}
@@ -165,19 +294,39 @@ export default function DashboardClient({
           </div>
         </div>
 
+        {plannerMode === "agent" && activePlan ? (
+          <section className="app-surface px-4 py-4 sm:px-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                  Visualization planner
+                </p>
+                <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                  {activePlan.dashboard_title}
+                </h2>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                  {activePlan.summary}
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+                {planState?.source === "agent" ? "LLM plan" : "Fallback plan"}
+              </span>
+            </div>
+          </section>
+        ) : null}
+
         <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Tabs">
-          {TABS.map((tab, index) => (
+          {tabDefinitions.map((tab) => (
             <button
-              key={tab}
+              key={tab.key}
               onClick={() => {
-                setActiveTab(index);
-                updateRouteForTab(index);
+                updateRouteForTab(tab.key);
               }}
               className={`tab-btn ${
-                activeTab === index ? "tab-btn-active" : "tab-btn-inactive"
+                currentTabKey === tab.key ? "tab-btn-active" : "tab-btn-inactive"
               }`}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </nav>
@@ -253,7 +402,20 @@ export default function DashboardClient({
         </div>
 
         <section className="min-w-0">
-          {activeTab === 0 && (
+          {plannerMode === "agent" && activePlan ? (
+            <PlannedDashboardSection
+              section={
+                activePlan.sections.find((section) => section.section_key === currentTabKey) ??
+                activePlan.sections[0]
+              }
+              data={filteredData}
+              selectedTracks={selectedTracks}
+              linkedPaperId={linkedPaperId}
+              useMock={data.useMock}
+            />
+          ) : null}
+
+          {plannerMode === "classic" && currentTabKey === "overview" ? (
             <Overview
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
@@ -261,24 +423,28 @@ export default function DashboardClient({
               selectedTracks={selectedTracks}
               useMock={data.useMock}
             />
-          )}
-          {activeTab === 1 && <TrendAnalysis trends={filteredData.trends} />}
-          {activeTab === 2 && (
+          ) : null}
+          {plannerMode === "classic" && currentTabKey === "trend_analysis" ? (
+            <TrendAnalysis trends={filteredData.trends} />
+          ) : null}
+          {plannerMode === "classic" && currentTabKey === "track_analysis" ? (
             <TrackAnalysis
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
             />
-          )}
-          {activeTab === 3 && <KeywordExplorer trends={filteredData.trends} />}
-          {activeTab === 4 && (
+          ) : null}
+          {plannerMode === "classic" && currentTabKey === "keyword_explorer" ? (
+            <KeywordExplorer trends={filteredData.trends} />
+          ) : null}
+          {plannerMode === "classic" && currentTabKey === "paper_explorer" ? (
             <PaperExplorer
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
               linkedPaperId={linkedPaperId}
             />
-          )}
+          ) : null}
         </section>
       </div>
     </div>

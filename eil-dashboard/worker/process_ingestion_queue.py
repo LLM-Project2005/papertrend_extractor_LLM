@@ -2,66 +2,34 @@
 """
 Queue worker for uploaded research PDFs.
 
-This is the production-oriented replacement for running the notebook itself as
-an ingestion engine. It consumes queued Supabase `ingestion_runs`, downloads the
-PDF from Supabase Storage, extracts text, requests structured analysis from the
-configured OpenAI-compatible endpoint, and writes the normalized records back to
-Supabase.
+This worker is intentionally thin: queue coordination, run claiming, storage and
+Google Drive downloads stay here, while reusable extraction/analysis logic now
+lives under `worker/analysis_pipeline/`.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import os
-import re
-import sys
 import tempfile
 import time
 import urllib.parse
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover - optional convenience dependency
-    load_dotenv = None
-
-try:
-    import pymupdf4llm
-except ImportError:  # pragma: no cover - runtime fallback
-    pymupdf4llm = None
-
-try:
-    import fitz  # type: ignore
-except ImportError:  # pragma: no cover - required fallback parser
-    fitz = None
-
-
-TRACK_DEFINITIONS = {
-    "el": "English Linguistics",
-    "eli": "English Language Instruction",
-    "lae": "Language Assessment and Evaluation",
-    "other": "Other or cross-cutting work that does not fit the three main tracks",
-}
-
-
-@dataclass
-class WorkerConfig:
-    supabase_url: str
-    supabase_service_key: str
-    openai_api_key: str
-    openai_base_url: str
-    openai_model: str
-    google_client_id: str
-    google_client_secret: str
-    poll_interval_seconds: int
-    queued_limit: int
-    llm_context_chars: int
+from analysis_pipeline import (
+    PIPELINE_NAME,
+    WorkerConfig,
+    configure_logging,
+    datetime_from_iso,
+    load_config,
+    merge_input_payload,
+    now_iso,
+    persist_dataset,
+    process_pdf_run,
+)
 
 
 logger = logging.getLogger("papertrend_worker")
@@ -189,375 +157,6 @@ class SupabaseRestClient:
         response.raise_for_status()
 
 
-def now_iso() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-
-
-def load_config() -> WorkerConfig:
-    if load_dotenv:
-        load_dotenv()
-
-    supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
-    supabase_service_key = (
-        os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY", "")
-    )
-    openai_api_key = os.getenv("OPENAI_API_KEY", "")
-    openai_base_url = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
-    openai_model = os.getenv("OPENAI_MODEL") or "gpt-4.1-mini"
-    google_client_id = os.getenv("GOOGLE_CLIENT_ID", "")
-    google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "")
-
-    missing = [
-        name
-        for name, value in [
-            ("SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL", supabase_url),
-            ("SUPABASE_SERVICE_ROLE_KEY", supabase_service_key),
-            ("OPENAI_API_KEY", openai_api_key),
-        ]
-        if not value
-    ]
-    if missing:
-        raise RuntimeError("Missing required worker environment variables: " + ", ".join(missing))
-
-    return WorkerConfig(
-        supabase_url=supabase_url,
-        supabase_service_key=supabase_service_key,
-        openai_api_key=openai_api_key,
-        openai_base_url=openai_base_url,
-        openai_model=openai_model,
-        google_client_id=google_client_id,
-        google_client_secret=google_client_secret,
-        poll_interval_seconds=max(int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "15")), 5),
-        queued_limit=max(int(os.getenv("WORKER_QUEUED_LIMIT", "3")), 1),
-        llm_context_chars=max(int(os.getenv("WORKER_LLM_CONTEXT_CHARS", "50000")), 8000),
-    )
-
-
-def configure_logging() -> None:
-    level_name = os.getenv("WORKER_LOG_LEVEL", "INFO").upper()
-    level = getattr(logging, level_name, logging.INFO)
-    logging.basicConfig(
-        level=level,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-
-
-def extract_pdf_text(pdf_path: Path) -> str:
-    if pymupdf4llm is not None:
-        try:
-            markdown = pymupdf4llm.to_markdown(str(pdf_path))
-            if markdown and markdown.strip():
-                return markdown
-        except Exception:
-            pass
-
-    if fitz is None:
-        raise RuntimeError(
-            "PyMuPDF is not available. Install the worker dependencies before running the queue processor."
-        )
-
-    doc = fitz.open(str(pdf_path))
-    pages: List[str] = []
-    try:
-        for page in doc:
-            text = page.get_text("text")
-            if text and text.strip():
-                pages.append(text)
-    finally:
-        doc.close()
-
-    combined = "\n\n".join(pages).strip()
-    if not combined:
-        raise RuntimeError("No extractable text was found in the PDF.")
-    return combined
-
-
-def clean_text(raw_text: str) -> str:
-    text = raw_text.replace("\r\n", "\n").replace("\r", "\n")
-    text = re.sub(r"\n{3,}", "\n\n", text)
-    text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"(?m)^\s*Page \d+\s*$", "", text)
-
-    reference_match = re.search(
-        r"(?im)^\s*(references|bibliography|works cited|รายการอ้างอิง|อ้างอิง)\s*$",
-        text,
-    )
-    if reference_match:
-        text = text[: reference_match.start()].rstrip()
-
-    return text.strip()
-
-
-def pick_title(text: str, fallback_name: str) -> str:
-    for line in text.splitlines():
-        stripped = line.strip().strip("#").strip()
-        if len(stripped) < 12:
-            continue
-        if re.fullmatch(r"[\d .-]+", stripped):
-            continue
-        return stripped[:500]
-    return Path(fallback_name).stem[:500]
-
-
-def segment_by_headings(text: str) -> Dict[str, str]:
-    section_patterns: List[Tuple[str, List[str]]] = [
-        ("abstract", ["abstract", "summary"]),
-        ("methods", ["methods", "methodology", "materials and methods", "research method"]),
-        ("results", ["results", "findings", "discussion", "results and discussion"]),
-        ("conclusion", ["conclusion", "conclusions", "implications", "closing remarks"]),
-    ]
-
-    matches: List[Tuple[int, int, str]] = []
-    for key, labels in section_patterns:
-        pattern = r"(?im)^\s*(?:#+\s*)?(?:" + "|".join(re.escape(label) for label in labels) + r")\s*$"
-        match = re.search(pattern, text)
-        if match:
-            matches.append((match.start(), match.end(), key))
-
-    matches.sort(key=lambda item: item[0])
-    sections: Dict[str, str] = {}
-
-    for index, (_, end_pos, key) in enumerate(matches):
-        next_start = matches[index + 1][0] if index + 1 < len(matches) else len(text)
-        sections[key] = text[end_pos:next_start].strip()
-
-    if "abstract" not in sections:
-        sections["abstract"] = text[:1600].strip()
-    if "conclusion" not in sections and len(text) > 1800:
-        sections["conclusion"] = text[-1800:].strip()
-
-    sections["body"] = text
-    return sections
-
-
-def build_llm_context(text: str, max_chars: int) -> str:
-    if len(text) <= max_chars:
-        return text
-
-    head = text[: max_chars // 3]
-    tail = text[-(max_chars // 3) :]
-    middle_start = max(len(text) // 2 - max_chars // 6, 0)
-    middle = text[middle_start : middle_start + max_chars // 3]
-    return "\n\n[BEGINNING]\n" + head + "\n\n[MIDDLE]\n" + middle + "\n\n[END]\n" + tail
-
-
-def parse_json_response(text: str) -> Dict[str, Any]:
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        match = re.search(r"\{.*\}", text, flags=re.DOTALL)
-        if not match:
-            raise
-        return json.loads(match.group(0))
-
-
-def normalize_track_values(track_payload: Dict[str, Any], ensure_single: bool) -> Dict[str, int]:
-    normalized = {
-        key: 1 if bool(track_payload.get(key)) else 0 for key in TRACK_DEFINITIONS.keys()
-    }
-    if ensure_single:
-        chosen = next((key for key, value in normalized.items() if value == 1), None)
-        if chosen is None:
-            chosen = "other"
-        normalized = {key: 1 if key == chosen else 0 for key in normalized.keys()}
-    elif sum(normalized.values()) == 0:
-        normalized["other"] = 1
-    return normalized
-
-
-def normalize_keywords(keywords: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    rows: List[Dict[str, Any]] = []
-    for item in keywords:
-        keyword = str(item.get("keyword") or "").strip()
-        topic = str(item.get("topic") or "").strip()
-        if not keyword or not topic:
-            continue
-        rows.append(
-            {
-                "keyword": keyword[:200],
-                "topic": topic[:200],
-                "keyword_frequency": max(int(item.get("keyword_frequency") or 1), 1),
-                "evidence": str(item.get("evidence") or "").strip()[:5000],
-            }
-        )
-
-    if rows:
-        return rows[:15]
-
-    return [
-        {
-            "keyword": "Manual review needed",
-            "topic": "Unclassified",
-            "keyword_frequency": 1,
-            "evidence": "",
-        }
-    ]
-
-
-def request_structured_analysis(
-    config: WorkerConfig,
-    text: str,
-    run: Dict[str, Any],
-    fallback_title: str,
-    heuristic_sections: Dict[str, str],
-) -> Dict[str, Any]:
-    context_text = build_llm_context(text, config.llm_context_chars)
-    model = str(run.get("model") or config.openai_model)
-
-    prompt = f"""
-You are processing a research paper for an academic trends workspace.
-Return JSON only with this exact top-level shape:
-{{
-  "title": "string",
-  "year": "string",
-  "abstract": "string",
-  "abstract_claims": "string",
-  "methods": "string",
-  "results": "string",
-  "conclusion": "string",
-  "keywords": [
-    {{
-      "topic": "broader topic label",
-      "keyword": "specific keyword or concept",
-      "keyword_frequency": 1,
-      "evidence": "short verbatim evidence sentence from the paper"
-    }}
-  ],
-  "tracks_single": {{"el": 0, "eli": 1, "lae": 0, "other": 0}},
-  "tracks_multi": {{"el": 0, "eli": 1, "lae": 1, "other": 0}}
-}}
-
-Track definitions:
-- el: {TRACK_DEFINITIONS["el"]}
-- eli: {TRACK_DEFINITIONS["eli"]}
-- lae: {TRACK_DEFINITIONS["lae"]}
-- other: {TRACK_DEFINITIONS["other"]}
-
-Rules:
-- tracks_single must have exactly one value set to 1.
-- tracks_multi can have multiple 1 values, but at least one track must be 1.
-- Prefer English in the output even if the paper text is multilingual.
-- Keep each field grounded in the supplied text. Do not invent citations or metadata.
-- Return 6 to 12 keyword rows when possible.
-- If the publication year is not explicit, return "Unknown".
-
-Fallback title if the title is unclear: {fallback_title}
-
-Heuristic sections:
-Abstract:
-{heuristic_sections.get("abstract", "")[:2000]}
-
-Methods:
-{heuristic_sections.get("methods", "")[:2000]}
-
-Results:
-{heuristic_sections.get("results", "")[:2000]}
-
-Conclusion:
-{heuristic_sections.get("conclusion", "")[:2000]}
-
-Paper text:
-{context_text}
-""".strip()
-
-    response = requests.post(
-        f"{config.openai_base_url}/chat/completions",
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {config.openai_api_key}",
-        },
-        json={
-            "model": model,
-            "temperature": 0.2,
-            "response_format": {"type": "json_object"},
-            "messages": [
-                {
-                    "role": "system",
-                    "content": "You extract structured academic metadata and must respond with valid JSON only.",
-                },
-                {"role": "user", "content": prompt},
-            ],
-        },
-        timeout=240,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    content = (
-        payload.get("choices", [{}])[0]
-        .get("message", {})
-        .get("content", "")
-        .strip()
-    )
-    if not content:
-        raise RuntimeError("The model returned an empty response.")
-    return parse_json_response(content)
-
-
-def build_dataset(run: Dict[str, Any], raw_text: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
-    paper_id = int(run["id"].replace("-", "")[:15], 16)
-    title = str(analysis.get("title") or pick_title(raw_text, str(run.get("source_filename") or paper_id))).strip()
-    year = str(analysis.get("year") or "Unknown").strip() or "Unknown"
-    filename = str(run.get("source_filename") or f"{paper_id}.pdf")
-    storage_path = str(run.get("source_path") or "")
-    heuristic_sections = segment_by_headings(raw_text)
-
-    papers = [
-        {
-            "id": paper_id,
-            "year": year[:100],
-            "title": title[:500],
-        }
-    ]
-
-    keywords = []
-    for row in normalize_keywords(list(analysis.get("keywords") or [])):
-        keywords.append({"paper_id": paper_id, **row})
-
-    tracks_single = [{"paper_id": paper_id, **normalize_track_values(analysis.get("tracks_single") or {}, True)}]
-    tracks_multi = [{"paper_id": paper_id, **normalize_track_values(analysis.get("tracks_multi") or {}, False)}]
-
-    paper_content = [
-        {
-            "paper_id": paper_id,
-            "raw_text": raw_text,
-            "abstract": str(analysis.get("abstract") or heuristic_sections.get("abstract") or "")[:12000],
-            "abstract_claims": str(analysis.get("abstract_claims") or analysis.get("abstract") or "")[:12000],
-            "methods": str(analysis.get("methods") or heuristic_sections.get("methods") or "")[:20000],
-            "results": str(analysis.get("results") or heuristic_sections.get("results") or "")[:20000],
-            "body": raw_text[:100000],
-            "conclusion": str(analysis.get("conclusion") or heuristic_sections.get("conclusion") or "")[:12000],
-            "source_filename": filename,
-            "source_path": storage_path,
-            "ingestion_run_id": run["id"],
-        }
-    ]
-
-    return {
-        "paper_id": paper_id,
-        "papers": papers,
-        "keywords": keywords,
-        "tracks_single": tracks_single,
-        "tracks_multi": tracks_multi,
-        "paper_content": paper_content,
-    }
-
-
-def persist_dataset(client: SupabaseRestClient, dataset: Dict[str, Any]) -> None:
-    paper_id = int(dataset["paper_id"])
-    client.upsert_rows("papers", dataset["papers"])
-    client.delete_keywords_for_paper(paper_id)
-    client.upsert_rows("paper_keywords", dataset["keywords"])
-    client.upsert_rows("paper_tracks_single", dataset["tracks_single"])
-    client.upsert_rows("paper_tracks_multi", dataset["tracks_multi"])
-    client.upsert_rows("paper_content", dataset["paper_content"])
-
-
-def merge_input_payload(run: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
-    existing = run.get("input_payload")
-    base = existing if isinstance(existing, dict) else {}
-    return {**base, **patch}
-
-
 def refresh_google_access_token(config: WorkerConfig, refresh_token: str) -> Dict[str, Any]:
     if not config.google_client_id or not config.google_client_secret:
         raise RuntimeError(
@@ -568,10 +167,10 @@ def refresh_google_access_token(config: WorkerConfig, refresh_token: str) -> Dic
         "https://oauth2.googleapis.com/token",
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         data={
-          "client_id": config.google_client_id,
-          "client_secret": config.google_client_secret,
-          "refresh_token": refresh_token,
-          "grant_type": "refresh_token",
+            "client_id": config.google_client_id,
+            "client_secret": config.google_client_secret,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
         },
         timeout=120,
     )
@@ -592,10 +191,7 @@ def ensure_google_drive_access_token(
     access_token = connection.get("access_token")
     if access_token and expires_at:
         try:
-            if (
-                datetime_from_iso(expires_at).timestamp()
-                > time.time() + 60
-            ):
+            if datetime_from_iso(expires_at).timestamp() > time.time() + 60:
                 return str(access_token)
         except ValueError:
             pass
@@ -622,13 +218,6 @@ def ensure_google_drive_access_token(
         },
     )
     return str(refreshed["access_token"])
-
-
-def datetime_from_iso(value: str):
-    from datetime import datetime
-
-    normalized = value.replace("Z", "+00:00")
-    return datetime.fromisoformat(normalized)
 
 
 def download_google_drive_file(access_token: str, file_id: str, destination: Path) -> None:
@@ -675,28 +264,17 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             client.download_storage_object(storage_path, local_pdf)
 
         ensure_run_active(client, run_id)
-        raw_text = clean_text(extract_pdf_text(local_pdf))
-        if len(raw_text) < 800:
-            raise RuntimeError("The extracted text is too short for reliable analysis.")
-        logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(raw_text)})
+        result = process_pdf_run(run=run, client=client, config=config, pdf_path=local_pdf)
+        logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(result.raw_text)})
 
-        heuristic_sections = segment_by_headings(raw_text)
-        analysis = request_structured_analysis(
-            config=config,
-            text=raw_text,
-            run=run,
-            fallback_title=pick_title(raw_text, local_pdf.name),
-            heuristic_sections=heuristic_sections,
-        )
         ensure_run_active(client, run_id)
-        dataset = build_dataset(run, raw_text, analysis)
-        persist_dataset(client, dataset)
+        persist_dataset(client, result.dataset)
         logger.info(
             "dataset persisted",
             extra={
                 "run_id": run_id,
-                "paper_id": dataset["paper_id"],
-                "keyword_count": len(dataset["keywords"]),
+                "paper_id": result.dataset["paper_id"],
+                "keyword_count": len(result.dataset["keywords"]),
             },
         )
 
@@ -712,10 +290,10 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 "input_payload": merge_input_payload(
                     run,
                     {
-                        "pipeline": "worker-v1",
-                        "paper_id": dataset["paper_id"],
-                        "raw_text_length": len(raw_text),
-                        "keyword_count": len(dataset["keywords"]),
+                        "pipeline": PIPELINE_NAME,
+                        "paper_id": result.dataset["paper_id"],
+                        "raw_text_length": len(result.raw_text),
+                        "keyword_count": len(result.dataset["keywords"]),
                     },
                 ),
             },
@@ -765,7 +343,7 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
                     "error_message": message[:2000],
                     "input_payload": merge_input_payload(
                         claimed,
-                        {"pipeline": "worker-v1", "last_error_stage": "processing"},
+                        {"pipeline": PIPELINE_NAME, "last_error_stage": "processing"},
                     ),
                 },
             )

@@ -19,12 +19,14 @@ import {
   type TrackKey,
 } from "@/lib/constants";
 import type { TrendRow, TrackRow } from "@/types/database";
+import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
   selectedTracks: string[];
+  planCharts?: VisualizationPlanChart[];
 }
 
 const trackField = (track: string) =>
@@ -35,23 +37,41 @@ export default function TrackAnalysis({
   tracksSingle,
   tracksMulti,
   selectedTracks,
+  planCharts,
 }: Props) {
+  const orderedCharts =
+    planCharts?.map((chart) => chart.chart_key).filter(
+      (
+        chart
+      ): chart is "track_year_stacked" | "track_cooccurrence" | "topics_per_track" =>
+        ["track_year_stacked", "track_cooccurrence", "topics_per_track"].includes(chart)
+    ) ?? ["track_year_stacked", "track_cooccurrence", "topics_per_track"];
+  const trackYearConfig = planCharts?.find(
+    (chart) => chart.chart_key === "track_year_stacked"
+  )?.config;
+  const topicsPerTrackConfig = planCharts?.find(
+    (chart) => chart.chart_key === "topics_per_track"
+  )?.config;
+  const stackedTracks = trackYearConfig?.selected_tracks ?? selectedTracks;
+  const topicTracks = topicsPerTrackConfig?.selected_tracks ?? selectedTracks;
+  const topicsPerTrackLimit = topicsPerTrackConfig?.top_n ?? 8;
+
   const stackedData = useMemo(() => {
     const years = [...new Set(tracksSingle.map((row) => row.year))].sort();
     return years.map((year) => {
       const entry: Record<string, string | number> = { year };
       const yearRows = tracksSingle.filter((row) => row.year === year);
-      TRACK_COLS.filter((track) => selectedTracks.includes(track)).forEach((track) => {
+      TRACK_COLS.filter((track) => stackedTracks.includes(track)).forEach((track) => {
         entry[track] = yearRows.reduce((sum, row) => sum + row[trackField(track)], 0);
       });
       return entry;
     });
-  }, [selectedTracks, tracksSingle]);
+  }, [stackedTracks, tracksSingle]);
 
   const coMatrix = useMemo(
     () =>
-      TRACK_COLS.map((leftTrack) =>
-        TRACK_COLS.map((rightTrack) =>
+      TRACK_COLS.filter((track) => topicTracks.includes(track)).map((leftTrack) =>
+        TRACK_COLS.filter((track) => topicTracks.includes(track)).map((rightTrack) =>
           tracksMulti.reduce(
             (sum, row) =>
               sum +
@@ -62,14 +82,14 @@ export default function TrackAnalysis({
           )
         )
       ),
-    [tracksMulti]
+    [topicTracks, tracksMulti]
   );
 
   const topicsPerTrack = useMemo(() => {
     const trackMap = new Map(tracksSingle.map((row) => [row.paper_id, row]));
     const result: Record<string, { topic: string; papers: number }[]> = {};
 
-    TRACK_COLS.filter((track) => selectedTracks.includes(track)).forEach((track) => {
+    TRACK_COLS.filter((track) => topicTracks.includes(track)).forEach((track) => {
       const counts: Record<string, Set<number>> = {};
       trends.forEach((row) => {
         const trackRow = trackMap.get(row.paper_id);
@@ -81,11 +101,11 @@ export default function TrackAnalysis({
       result[track] = Object.entries(counts)
         .map(([topic, ids]) => ({ topic, papers: ids.size }))
         .sort((left, right) => right.papers - left.papers)
-        .slice(0, 8);
+        .slice(0, topicsPerTrackLimit);
     });
 
     return result;
-  }, [selectedTracks, tracksSingle, trends]);
+  }, [topicTracks, topicsPerTrackLimit, tracksSingle, trends]);
 
   return (
     <div className="space-y-6">
@@ -98,7 +118,7 @@ export default function TrackAnalysis({
         </p>
       </section>
 
-      {stackedData.length > 0 && (
+      {orderedCharts.includes("track_year_stacked") && stackedData.length > 0 && (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Papers per track per year
@@ -111,7 +131,7 @@ export default function TrackAnalysis({
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                {TRACK_COLS.filter((track) => selectedTracks.includes(track)).map((track) => (
+                {TRACK_COLS.filter((track) => stackedTracks.includes(track)).map((track) => (
                   <Bar
                     key={track}
                     dataKey={track}
@@ -125,7 +145,7 @@ export default function TrackAnalysis({
         </section>
       )}
 
-      {tracksMulti.length > 0 && (
+      {orderedCharts.includes("track_cooccurrence") && tracksMulti.length > 0 && (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Track co-occurrence
@@ -135,8 +155,8 @@ export default function TrackAnalysis({
           </p>
           <div className="mt-4">
             <Heatmap
-              rows={[...TRACK_COLS]}
-              cols={[...TRACK_COLS]}
+              rows={TRACK_COLS.filter((track) => topicTracks.includes(track))}
+              cols={TRACK_COLS.filter((track) => topicTracks.includes(track))}
               values={coMatrix}
               colorScale={["#eff6ff", "#1e40af"]}
             />
@@ -144,7 +164,8 @@ export default function TrackAnalysis({
         </section>
       )}
 
-      {Object.keys(topicsPerTrack).length > 0 && (
+      {orderedCharts.includes("topics_per_track") &&
+      Object.keys(topicsPerTrack).length > 0 ? (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Top topics per track
@@ -192,7 +213,7 @@ export default function TrackAnalysis({
             ))}
           </div>
         </section>
-      )}
+      ) : null}
     </div>
   );
 }
