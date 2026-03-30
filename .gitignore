@@ -42,3 +42,14 @@ Master_Trends_Archive.csv
 Master_Trends_Archive.json
 EIL_Track_OneHot_Final.csv
 EIL_Track_10years1.csv
+
+# Local Research Data
+.env
+input/
+output/
+data/
+
+# Python & System Noise
+__pycache__/
+*.py[cod]
+.DS_Store
