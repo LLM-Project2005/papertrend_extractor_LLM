@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { planVisualization } from "@/lib/visualization-planner";
 import type { VisualizationPlannerRequest } from "@/types/visualization";
@@ -8,6 +9,8 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as VisualizationPlannerRequest;
+    const user = await getAuthenticatedUserFromRequest(request);
+    const ownerUserId = user?.id ?? null;
 
     let proxied:
       | {
@@ -22,7 +25,7 @@ export async function POST(request: Request) {
         plan?: unknown;
         analytics?: unknown;
         source?: "agent" | "fallback";
-      }>("/visualization", body);
+      }>("/visualization", { ...body, ownerUserId });
     } catch {
       proxied = null;
     }
@@ -31,7 +34,7 @@ export async function POST(request: Request) {
       return NextResponse.json(proxied);
     }
 
-    const result = await planVisualization(body);
+    const result = await planVisualization(body, ownerUserId);
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(

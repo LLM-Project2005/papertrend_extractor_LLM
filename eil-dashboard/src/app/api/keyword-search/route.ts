@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { runKeywordSearchFallback } from "@/lib/keyword-search-fallback";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import type { KeywordSearchRequest, KeywordSearchResponse } from "@/types/keyword-search";
@@ -8,6 +9,8 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as KeywordSearchRequest;
+    const user = await getAuthenticatedUserFromRequest(request);
+    const ownerUserId = user?.id ?? null;
     const query = body.query?.trim();
 
     if (!query) {
@@ -16,7 +19,10 @@ export async function POST(request: Request) {
 
     let proxied: KeywordSearchResponse | null = null;
     try {
-      proxied = await callPythonNodeService<KeywordSearchResponse>("/keyword-search", body);
+      proxied = await callPythonNodeService<KeywordSearchResponse>("/keyword-search", {
+        ...body,
+        ownerUserId,
+      });
     } catch {
       proxied = null;
     }
@@ -24,7 +30,7 @@ export async function POST(request: Request) {
       return NextResponse.json(proxied);
     }
 
-    const fallback = await runKeywordSearchFallback(body);
+    const fallback = await runKeywordSearchFallback(body, ownerUserId);
     return NextResponse.json(fallback);
   } catch (error) {
     return NextResponse.json(

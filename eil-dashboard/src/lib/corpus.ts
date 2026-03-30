@@ -205,18 +205,25 @@ function scorePaper(
   return score;
 }
 
-export async function retrieveCorpusPapers(question: string): Promise<{
+export async function retrieveCorpusPapers(
+  question: string,
+  ownerUserId?: string | null
+): Promise<{
   papers: CorpusPaper[];
   citations: CorpusCitation[];
 }> {
   try {
+    if (!ownerUserId) {
+      return buildMockCorpusResponse(question);
+    }
+
     const supabase = getSupabaseAdmin();
 
     const [papersResult, trendsResult, singleResult, multiResult] = await Promise.all([
-      supabase.from("papers_full").select("*"),
-      supabase.from("trends_flat").select("*"),
-      supabase.from("tracks_single_flat").select("*"),
-      supabase.from("tracks_multi_flat").select("*"),
+      supabase.from("papers_full").select("*").eq("owner_user_id", ownerUserId),
+      supabase.from("trends_flat").select("*").eq("owner_user_id", ownerUserId),
+      supabase.from("tracks_single_flat").select("*").eq("owner_user_id", ownerUserId),
+      supabase.from("tracks_multi_flat").select("*").eq("owner_user_id", ownerUserId),
     ]);
 
     if (papersResult.error) {

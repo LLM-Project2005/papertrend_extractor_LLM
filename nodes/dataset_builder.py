@@ -29,6 +29,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
     source_path = state.get("source_path") or state.get("pdf_path", "")
     source_filename = state.get("source_filename") or Path(source_path or "paper.pdf").name
     ingestion_run_id = state.get("ingestion_run_id", "")
+    owner_user_id = str(state.get("owner_user_id") or "").strip() or None
     paper_id = int(state.get("paper_id") or infer_paper_id(source_path, ingestion_run_id))
     title = (metadata.get("title") or final_json.get("title") or pick_title(raw_text, source_filename)).strip()[:500]
     year = normalize_year(str(metadata.get("year") or "Unknown"))
@@ -69,6 +70,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
             concept_rows.append(
                 {
                     "paper_id": paper_id,
+                    "owner_user_id": owner_user_id,
                     "concept_label": label,
                     "matched_terms": matched_terms,
                     "related_keywords": safe_json_list(semantic_topic.get("keywords", []), limit=24),
@@ -85,6 +87,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
                 keyword_rows.append(
                     {
                         "paper_id": paper_id,
+                        "owner_user_id": owner_user_id,
                         "topic": label,
                         "keyword": str(candidate.get("keyword") or "")[:200],
                         "keyword_frequency": max(int(candidate.get("count") or 1), 1),
@@ -98,6 +101,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
             keyword_rows.append(
                 {
                     "paper_id": paper_id,
+                    "owner_user_id": owner_user_id,
                     "topic": label,
                     "keyword": str(candidate.get("keyword") or "")[:200],
                     "keyword_frequency": max(int(candidate.get("count") or 1), 1),
@@ -108,6 +112,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
             concept_rows.append(
                 {
                     "paper_id": paper_id,
+                    "owner_user_id": owner_user_id,
                     "concept_label": label,
                     "matched_terms": safe_json_list(candidate.get("matched_terms") or [candidate.get("keyword")]),
                     "related_keywords": safe_json_list([candidate.get("keyword")]),
@@ -123,6 +128,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
     facets = [
         {
             "paper_id": paper_id,
+            "owner_user_id": owner_user_id,
             "facet_type": facet.get("facet_type"),
             "label": str(facet.get("label") or "")[:200],
             "evidence": str(facet.get("evidence") or "")[:5000],
@@ -133,13 +139,14 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
 
     dataset = {
         "paper_id": paper_id,
-        "papers": [{"id": paper_id, "year": year[:100], "title": title}],
+        "papers": [{"id": paper_id, "year": year[:100], "title": title, "owner_user_id": owner_user_id}],
         "keywords": keyword_rows,
-        "tracks_single": [{"paper_id": paper_id, **(state.get("track_single") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],
-        "tracks_multi": [{"paper_id": paper_id, **(state.get("track_multi") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],
+        "tracks_single": [{"paper_id": paper_id, "owner_user_id": owner_user_id, **(state.get("track_single") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],
+        "tracks_multi": [{"paper_id": paper_id, "owner_user_id": owner_user_id, **(state.get("track_multi") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],
         "paper_content": [
             {
                 "paper_id": paper_id,
+                "owner_user_id": owner_user_id,
                 "raw_text": raw_text,
                 "abstract": str(final_json.get("abstract_claims") or "")[:12000],
                 "abstract_claims": str(final_json.get("abstract_claims") or "")[:12000],

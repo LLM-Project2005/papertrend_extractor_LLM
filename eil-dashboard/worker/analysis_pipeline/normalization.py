@@ -52,6 +52,7 @@ def normalize_keywords(keywords: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def build_dataset(run: Dict[str, Any], raw_text: str, analysis: Dict[str, Any]) -> Dict[str, Any]:
     paper_id = int(run["id"].replace("-", "")[:15], 16)
+    owner_user_id = str(run.get("owner_user_id") or "").strip() or None
     title = str(
         analysis.get("title") or pick_title(raw_text, str(run.get("source_filename") or paper_id))
     ).strip()
@@ -65,19 +66,33 @@ def build_dataset(run: Dict[str, Any], raw_text: str, analysis: Dict[str, Any]) 
             "id": paper_id,
             "year": year[:100],
             "title": title[:500],
+            "owner_user_id": owner_user_id,
         }
     ]
 
     keywords = []
     for row in normalize_keywords(list(analysis.get("keywords") or [])):
-        keywords.append({"paper_id": paper_id, **row})
+        keywords.append({"paper_id": paper_id, "owner_user_id": owner_user_id, **row})
 
-    tracks_single = [{"paper_id": paper_id, **normalize_track_values(analysis.get("tracks_single") or {}, True)}]
-    tracks_multi = [{"paper_id": paper_id, **normalize_track_values(analysis.get("tracks_multi") or {}, False)}]
+    tracks_single = [
+        {
+            "paper_id": paper_id,
+            "owner_user_id": owner_user_id,
+            **normalize_track_values(analysis.get("tracks_single") or {}, True),
+        }
+    ]
+    tracks_multi = [
+        {
+            "paper_id": paper_id,
+            "owner_user_id": owner_user_id,
+            **normalize_track_values(analysis.get("tracks_multi") or {}, False),
+        }
+    ]
 
     paper_content = [
         {
             "paper_id": paper_id,
+            "owner_user_id": owner_user_id,
             "raw_text": raw_text,
             "abstract": str(analysis.get("abstract") or heuristic_sections.get("abstract") or "")[:12000],
             "abstract_claims": str(analysis.get("abstract_claims") or analysis.get("abstract") or "")[:12000],

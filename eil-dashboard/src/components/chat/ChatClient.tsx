@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   AttachmentIcon,
   ChevronDownIcon,
@@ -78,6 +79,7 @@ export default function ChatClient({
   selectedTracks?: string[];
   searchQuery?: string;
 }) {
+  const { session } = useAuth();
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -168,6 +170,9 @@ export default function ChatClient({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          ...(session?.access_token
+            ? { Authorization: `Bearer ${session.access_token}` }
+            : {}),
         },
         body: JSON.stringify({
           message: trimmedPrompt,

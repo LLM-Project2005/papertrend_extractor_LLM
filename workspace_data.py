@@ -16,7 +16,7 @@ TRACK_NAMES = {
     "Other": "Other / General",
 }
 
-_CACHE: Dict[str, Any] = {"loaded_at": 0.0, "dataset": None}
+_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def _get_supabase_url() -> str:
@@ -53,9 +53,13 @@ class SupabaseQueryClient:
         return payload if isinstance(payload, list) else []
 
 
-def _try_load_optional(client: SupabaseQueryClient, resource: str) -> List[Dict[str, Any]]:
+def _try_load_optional(
+    client: SupabaseQueryClient,
+    resource: str,
+    params: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
     try:
-        return client.select_rows(resource)
+        return client.select_rows(resource, params)
     except Exception:
         return []
 
@@ -89,35 +93,45 @@ def _build_mock_workspace_dataset() -> Dict[str, Any]:
     }
 
 
-def load_workspace_dataset(force_refresh: bool = False, cache_ttl_seconds: int = 20) -> Dict[str, Any]:
+def _cache_key(owner_user_id: Optional[str]) -> str:
+    return owner_user_id or "__anonymous__"
+
+
+def load_workspace_dataset(
+    owner_user_id: Optional[str] = None,
+    force_refresh: bool = False,
+    cache_ttl_seconds: int = 20,
+) -> Dict[str, Any]:
     now = time.time()
+    cache_entry = _CACHE.get(_cache_key(owner_user_id))
     if (
         not force_refresh
-        and _CACHE["dataset"] is not None
-        and now - float(_CACHE["loaded_at"]) < cache_ttl_seconds
+        and cache_entry is not None
+        and cache_entry.get("dataset") is not None
+        and now - float(cache_entry.get("loaded_at") or 0.0) < cache_ttl_seconds
     ):
-        return _CACHE["dataset"]
+        return cache_entry["dataset"]
 
     url = _get_supabase_url()
     key = _get_service_key()
-    if not url or not key:
+    if not owner_user_id or not url or not key:
         dataset = _build_mock_workspace_dataset()
-        _CACHE["dataset"] = dataset
-        _CACHE["loaded_at"] = now
+        _CACHE[_cache_key(owner_user_id)] = {"dataset": dataset, "loaded_at": now}
         return dataset
 
     try:
         client = SupabaseQueryClient(url, key)
-        papers_full = client.select_rows("papers_full")
-        trends = client.select_rows("trends_flat")
-        tracks_single = client.select_rows("tracks_single_flat")
-        tracks_multi = client.select_rows("tracks_multi_flat")
-        concepts = _try_load_optional(client, "concepts_flat")
+        scoped_params = {"owner_user_id": f"eq.{owner_user_id}"}
+        papers_full = client.select_rows("papers_full", scoped_params)
+        trends = client.select_rows("trends_flat", scoped_params)
+        tracks_single = client.select_rows("tracks_single_flat", scoped_params)
+        tracks_multi = client.select_rows("tracks_multi_flat", scoped_params)
+        concepts = _try_load_optional(client, "concepts_flat", scoped_params)
         if not concepts:
-            concepts = _try_load_optional(client, "paper_keyword_concepts")
-        facets = _try_load_optional(client, "paper_facets_flat")
+            concepts = _try_load_optional(client, "paper_keyword_concepts", scoped_params)
+        facets = _try_load_optional(client, "paper_facets_flat", scoped_params)
         if not facets:
-            facets = _try_load_optional(client, "paper_analysis_facets")
+            facets = _try_load_optional(client, "paper_analysis_facets", scoped_params)
 
         dataset = {
             "mode": "live",
@@ -139,8 +153,7 @@ def load_workspace_dataset(force_refresh: bool = False, cache_ttl_seconds: int =
     except Exception:
         dataset = _build_mock_workspace_dataset()
 
-    _CACHE["dataset"] = dataset
-    _CACHE["loaded_at"] = now
+    _CACHE[_cache_key(owner_user_id)] = {"dataset": dataset, "loaded_at": now}
     return dataset
 
 

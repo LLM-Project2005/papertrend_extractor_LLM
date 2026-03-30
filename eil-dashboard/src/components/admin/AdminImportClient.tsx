@@ -5,6 +5,10 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import {
+  getRunModelLabel,
+  getRunStageMessage,
+} from "@/lib/ingestion-status";
+import {
   FileIcon,
   FolderIcon,
   PlusIcon,
@@ -19,7 +23,7 @@ interface IngestionRun {
   source_path?: string | null;
   provider?: string | null;
   model?: string | null;
-  input_payload?: { folder_name?: string; source_kind?: string } | null;
+  input_payload?: Record<string, unknown> | null;
   error_message?: string | null;
   updated_at?: string;
 }
@@ -46,7 +50,10 @@ function StatusBadge({ status }: { status: IngestionRun["status"] }) {
 }
 
 function getFolderName(run: IngestionRun) {
-  const payloadFolder = run.input_payload?.folder_name?.trim();
+  const payloadFolder =
+    typeof run.input_payload?.folder_name === "string"
+      ? run.input_payload.folder_name.trim()
+      : "";
   if (payloadFolder) return payloadFolder;
   const parts = (run.source_path ?? "").split("/").filter(Boolean);
   return parts.length >= 3 && parts[0] === "pending" ? parts[1] : "Inbox";
@@ -228,18 +235,23 @@ export default function AdminImportClient() {
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <StatusBadge status={run.status} />
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#b8b8b8]">{run.input_payload?.source_kind ?? run.source_type}</span>
+                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#b8b8b8]">
+                        {typeof run.input_payload?.source_kind === "string"
+                          ? run.input_payload.source_kind
+                          : run.source_type}
+                      </span>
                     </div>
                     <div className="mt-3 flex items-start gap-3">
                       <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#171717] dark:text-[#b8b8b8]"><FileIcon className="h-4 w-4" /></span>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{run.source_filename || run.id}</p>
+                        <p className="mt-1 text-xs text-slate-600 dark:text-[#d8d8d8]">{getRunStageMessage(run)}</p>
                         <p className="mt-1 break-all text-xs text-slate-500 dark:text-[#8f8f8f]">{run.source_path || "Queued upload"}</p>
                       </div>
                     </div>
                   </div>
                   <div className="text-sm text-slate-500 dark:text-[#9c9c9c]"><p>Updated</p><p className="mt-1 text-slate-900 dark:text-[#e2e2e2]">{formatTimestamp(run.updated_at)}</p></div>
-                  <div className="text-sm text-slate-500 dark:text-[#9c9c9c]"><p>Model</p><p className="mt-1 text-slate-900 dark:text-[#e2e2e2]">{run.model || "Not set"}</p></div>
+                  <div className="text-sm text-slate-500 dark:text-[#9c9c9c]"><p>Analysis mode</p><p className="mt-1 text-slate-900 dark:text-[#e2e2e2]">{getRunModelLabel(run)}</p></div>
                   {run.error_message && <div className="sm:col-span-3"><p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{run.error_message}</p></div>}
                 </article>
               ))}

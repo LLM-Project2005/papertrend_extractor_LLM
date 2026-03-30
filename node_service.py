@@ -30,6 +30,7 @@ def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[s
 def _build_keyword_search_payload(body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "request_kind": "keyword-search",
+        "owner_user_id": str(body.get("ownerUserId") or ""),
         "message": str(body.get("query") or ""),
         "search_query": str(body.get("query") or ""),
         "selected_years": list(body.get("selectedYears") or []),
@@ -43,6 +44,7 @@ def _build_visualization_payload(body: Dict[str, Any]) -> Dict[str, Any]:
     context = body.get("context") if isinstance(body.get("context"), dict) else {}
     return {
         "request_kind": "visualization",
+        "owner_user_id": str(body.get("ownerUserId") or ""),
         "selected_years": list(body.get("selectedYears") or []),
         "selected_tracks": list(body.get("selectedTracks") or []),
         "search_query": str(body.get("searchQuery") or ""),
@@ -61,6 +63,7 @@ def _build_chat_payload(body: Dict[str, Any]) -> Dict[str, Any]:
                 break
     return {
         "request_kind": "chat",
+        "owner_user_id": str(body.get("ownerUserId") or ""),
         "message": current_message,
         "messages": [
             {"role": str(message.get("role") or ""), "content": str(message.get("content") or "")}

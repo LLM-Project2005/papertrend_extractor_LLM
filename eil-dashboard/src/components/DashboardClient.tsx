@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/components/auth/AuthProvider";
 import PlannedDashboardSection from "@/components/dashboard/PlannedDashboardSection";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS } from "@/lib/constants";
@@ -71,6 +72,7 @@ export default function DashboardClient({
   basePath?: string;
 }) {
   const { data, loading, allYears } = useDashboardData();
+  const { session } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -116,6 +118,9 @@ export default function DashboardClient({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
           },
           body: JSON.stringify({
             selectedYears,
@@ -148,7 +153,7 @@ export default function DashboardClient({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [data, planState, plannerMode, searchQuery, selectedTracks, selectedYears]);
+  }, [data, planState, plannerMode, searchQuery, selectedTracks, selectedYears, session?.access_token]);
 
   const fallbackPlan = useMemo(
     () =>

@@ -1,8 +1,15 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedAdminRequest } from "@/lib/admin-auth";
+import {
+  getAuthenticatedUserFromRequest,
+  isAuthorizedAdminRequest,
+} from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
+
+const AUTO_ANALYSIS_PROVIDER = "Automatic task routing";
+const AUTO_ANALYSIS_MODEL = "automatic-task-routing";
+const AUTO_ANALYSIS_LABEL = "Automatic per-task model routing";
 
 function sanitizeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
@@ -20,11 +27,16 @@ export async function GET(request: Request) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    const user = await getAuthenticatedUserFromRequest(request);
+    let query = supabase
       .from("ingestion_runs")
       .select("*")
       .order("created_at", { ascending: false })
       .limit(25);
+
+    query = user ? query.eq("owner_user_id", user.id) : query.is("owner_user_id", null);
+
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(error.message);
@@ -50,9 +62,8 @@ export async function POST(request: Request) {
 
   try {
     const supabase = getSupabaseAdmin();
+    const user = await getAuthenticatedUserFromRequest(request);
     const formData = await request.formData();
-    const provider = String(formData.get("provider") ?? "") || null;
-    const model = String(formData.get("model") ?? "") || null;
     const folder = sanitizeFolderName(String(formData.get("folder") ?? "Inbox"));
     const sourceKind = String(formData.get("source_kind") ?? "pdf-upload") || "pdf-upload";
     const files = formData
@@ -76,17 +87,24 @@ export async function POST(request: Request) {
       const { data: runData, error: insertError } = await supabase
         .from("ingestion_runs")
         .insert({
+          owner_user_id: user?.id ?? null,
           source_type: "upload",
           status: "queued",
           source_filename: file.name,
-          provider,
-          model,
+          provider: AUTO_ANALYSIS_PROVIDER,
+          model: AUTO_ANALYSIS_MODEL,
           input_payload: {
             uploaded_from: "/workspace/imports",
             folder_name: folder,
             source_kind: sourceKind,
             original_size: file.size,
             mime_type: file.type || "application/pdf",
+            analysis_mode: "automatic",
+            analysis_label: AUTO_ANALYSIS_LABEL,
+            progress_stage: "queued",
+            progress_message: "Queued for analysis",
+            progress_detail:
+              "The worker will pick this file up automatically and choose the right model mix for each task.",
           },
         })
         .select("*")
@@ -140,8 +158,8 @@ export async function POST(request: Request) {
       count: createdRuns.length,
       folder,
       sourceKind,
-      provider,
-      hasModel: Boolean(model),
+      provider: AUTO_ANALYSIS_PROVIDER,
+      model: AUTO_ANALYSIS_MODEL,
     });
     return NextResponse.json({ runs: createdRuns }, { status: 201 });
   } catch (error) {

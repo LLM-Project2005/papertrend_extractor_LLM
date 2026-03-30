@@ -12,6 +12,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS papers (
   id          BIGINT PRIMARY KEY,
+  owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   year        TEXT NOT NULL,
   title       TEXT NOT NULL,
   created_at  TIMESTAMPTZ DEFAULT now()
@@ -58,6 +59,7 @@ CREATE TABLE IF NOT EXISTS google_drive_connections (
 CREATE TABLE IF NOT EXISTS paper_keywords (
   id                 BIGSERIAL PRIMARY KEY,
   paper_id           BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id      UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   topic              TEXT NOT NULL,
   keyword            TEXT NOT NULL,
   keyword_frequency  INT DEFAULT 1,
@@ -70,6 +72,7 @@ CREATE TABLE IF NOT EXISTS paper_keywords (
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_tracks_single (
   paper_id    BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   el          SMALLINT DEFAULT 0 CHECK (el IN (0, 1)),
   eli         SMALLINT DEFAULT 0 CHECK (eli IN (0, 1)),
   lae         SMALLINT DEFAULT 0 CHECK (lae IN (0, 1)),
@@ -82,6 +85,7 @@ CREATE TABLE IF NOT EXISTS paper_tracks_single (
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_tracks_multi (
   paper_id    BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   el          SMALLINT DEFAULT 0 CHECK (el IN (0, 1)),
   eli         SMALLINT DEFAULT 0 CHECK (eli IN (0, 1)),
   lae         SMALLINT DEFAULT 0 CHECK (lae IN (0, 1)),
@@ -94,6 +98,7 @@ CREATE TABLE IF NOT EXISTS paper_tracks_multi (
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS ingestion_runs (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id    UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   source_type      TEXT NOT NULL CHECK (source_type IN ('batch', 'upload')),
   status           TEXT NOT NULL DEFAULT 'queued'
                    CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
@@ -113,6 +118,7 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS paper_content (
   paper_id          BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id     UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   raw_text          TEXT,
   abstract          TEXT,
   abstract_claims   TEXT,
@@ -127,6 +133,7 @@ CREATE TABLE IF NOT EXISTS paper_content (
 );
 
 ALTER TABLE paper_content
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   ADD COLUMN IF NOT EXISTS raw_text TEXT,
   ADD COLUMN IF NOT EXISTS abstract TEXT,
   ADD COLUMN IF NOT EXISTS abstract_claims TEXT,
@@ -144,6 +151,7 @@ ALTER TABLE paper_content
 CREATE TABLE IF NOT EXISTS paper_keyword_concepts (
   id                BIGSERIAL PRIMARY KEY,
   paper_id          BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id     UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   concept_label     TEXT NOT NULL,
   matched_terms     JSONB NOT NULL DEFAULT '[]'::jsonb,
   related_keywords  JSONB NOT NULL DEFAULT '[]'::jsonb,
@@ -162,6 +170,7 @@ CREATE TABLE IF NOT EXISTS paper_keyword_concepts (
 CREATE TABLE IF NOT EXISTS paper_analysis_facets (
   id          BIGSERIAL PRIMARY KEY,
   paper_id    BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   facet_type  TEXT NOT NULL
               CHECK (facet_type IN ('objective_verb', 'contribution_type')),
   label       TEXT NOT NULL,
@@ -169,20 +178,47 @@ CREATE TABLE IF NOT EXISTS paper_analysis_facets (
   created_at  TIMESTAMPTZ DEFAULT now()
 );
 
+ALTER TABLE papers
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE paper_keywords
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE paper_tracks_single
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE paper_tracks_multi
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE ingestion_runs
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE paper_keyword_concepts
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
+ALTER TABLE paper_analysis_facets
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+
 -- ------------------------------------------------------------------
 -- INDEXES
 -- ------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
+CREATE INDEX IF NOT EXISTS idx_papers_owner_user_id ON papers(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
 CREATE INDEX IF NOT EXISTS idx_google_drive_connections_user_id ON google_drive_connections(user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_paper_id ON paper_keywords(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_owner_user_id ON paper_keywords(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_keyword ON paper_keywords(keyword);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_topic ON paper_keywords(topic);
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status ON ingestion_runs(status);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_owner_user_id ON ingestion_runs(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_content_run_id ON paper_content(ingestion_run_id);
+CREATE INDEX IF NOT EXISTS idx_paper_content_owner_user_id ON paper_content(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_paper_id ON paper_keyword_concepts(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_owner_user_id ON paper_keyword_concepts(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_label ON paper_keyword_concepts(concept_label);
 CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_paper_id ON paper_analysis_facets(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_owner_user_id ON paper_analysis_facets(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_type ON paper_analysis_facets(facet_type);
 
 DO $$
@@ -209,9 +245,18 @@ ALTER TABLE ingestion_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_keyword_concepts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_analysis_facets ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "anon_read" ON papers;
+DROP POLICY IF EXISTS "anon_read" ON paper_keywords;
+DROP POLICY IF EXISTS "anon_read" ON paper_tracks_single;
+DROP POLICY IF EXISTS "anon_read" ON paper_tracks_multi;
+DROP POLICY IF EXISTS "anon_read" ON paper_content;
+DROP POLICY IF EXISTS "anon_read" ON paper_keyword_concepts;
+DROP POLICY IF EXISTS "anon_read" ON paper_analysis_facets;
+
 DO $$
 BEGIN
-  CREATE POLICY "anon_read" ON papers FOR SELECT USING (true);
+  CREATE POLICY "papers_select_own" ON papers
+  FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -290,7 +335,8 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE POLICY "anon_read" ON paper_keywords FOR SELECT USING (true);
+  CREATE POLICY "paper_keywords_select_own" ON paper_keywords
+  FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -298,7 +344,8 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE POLICY "anon_read" ON paper_tracks_single FOR SELECT USING (true);
+  CREATE POLICY "paper_tracks_single_select_own" ON paper_tracks_single
+  FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -306,7 +353,8 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE POLICY "anon_read" ON paper_tracks_multi FOR SELECT USING (true);
+  CREATE POLICY "paper_tracks_multi_select_own" ON paper_tracks_multi
+  FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -314,7 +362,8 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE POLICY "anon_read" ON paper_content FOR SELECT USING (true);
+  CREATE POLICY "paper_content_select_own" ON paper_content
+  FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -322,7 +371,8 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE POLICY "anon_read" ON paper_keyword_concepts FOR SELECT USING (true);
+  CREATE POLICY "paper_keyword_concepts_select_own" ON paper_keyword_concepts
+  FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -330,7 +380,17 @@ END $$;
 
 DO $$
 BEGIN
-  CREATE POLICY "anon_read" ON paper_analysis_facets FOR SELECT USING (true);
+  CREATE POLICY "paper_analysis_facets_select_own" ON paper_analysis_facets
+  FOR SELECT USING (auth.uid() = owner_user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "ingestion_runs_select_own" ON ingestion_runs
+  FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -482,9 +542,10 @@ SET
 -- VIEWS consumed by the Next.js app
 -- ------------------------------------------------------------------
 DROP VIEW IF EXISTS trends_flat;
-CREATE VIEW trends_flat AS
+CREATE VIEW trends_flat WITH (security_invoker = true) AS
 SELECT
   p.id AS paper_id,
+  p.owner_user_id,
   p.year,
   p.title,
   pk.topic,
@@ -495,9 +556,10 @@ FROM papers p
 JOIN paper_keywords pk ON pk.paper_id = p.id;
 
 DROP VIEW IF EXISTS tracks_single_flat;
-CREATE VIEW tracks_single_flat AS
+CREATE VIEW tracks_single_flat WITH (security_invoker = true) AS
 SELECT
   p.id AS paper_id,
+  p.owner_user_id,
   p.year,
   p.title,
   ts.el,
@@ -508,9 +570,10 @@ FROM papers p
 JOIN paper_tracks_single ts ON ts.paper_id = p.id;
 
 DROP VIEW IF EXISTS tracks_multi_flat;
-CREATE VIEW tracks_multi_flat AS
+CREATE VIEW tracks_multi_flat WITH (security_invoker = true) AS
 SELECT
   p.id AS paper_id,
+  p.owner_user_id,
   p.year,
   p.title,
   tm.el,
@@ -521,9 +584,10 @@ FROM papers p
 JOIN paper_tracks_multi tm ON tm.paper_id = p.id;
 
 DROP VIEW IF EXISTS papers_full;
-CREATE VIEW papers_full AS
+CREATE VIEW papers_full WITH (security_invoker = true) AS
 SELECT
   p.id AS paper_id,
+  p.owner_user_id,
   p.year,
   p.title,
   pc.abstract,
@@ -540,9 +604,10 @@ FROM papers p
 LEFT JOIN paper_content pc ON pc.paper_id = p.id;
 
 DROP VIEW IF EXISTS concepts_flat;
-CREATE VIEW concepts_flat AS
+CREATE VIEW concepts_flat WITH (security_invoker = true) AS
 SELECT
   p.id AS paper_id,
+  p.owner_user_id,
   p.year,
   p.title,
   pkc.concept_label,
@@ -558,9 +623,10 @@ FROM papers p
 JOIN paper_keyword_concepts pkc ON pkc.paper_id = p.id;
 
 DROP VIEW IF EXISTS paper_facets_flat;
-CREATE VIEW paper_facets_flat AS
+CREATE VIEW paper_facets_flat WITH (security_invoker = true) AS
 SELECT
   p.id AS paper_id,
+  p.owner_user_id,
   p.year,
   p.title,
   paf.facet_type,

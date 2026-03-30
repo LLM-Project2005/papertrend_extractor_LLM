@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import {
   Bar,
   BarChart,
@@ -84,6 +85,7 @@ export default function KeywordExplorer({
   selectedTracks = [],
   planCharts,
 }: Props) {
+  const { session } = useAuth();
   const [query, setQuery] = useState("");
   const [treeN, setTreeN] = useState(30);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
@@ -115,6 +117,9 @@ export default function KeywordExplorer({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
           },
           body: JSON.stringify({
             query: trimmed,
@@ -152,7 +157,7 @@ export default function KeywordExplorer({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [query, selectedTracks, selectedYears]);
+  }, [query, selectedTracks, selectedYears, session?.access_token]);
 
   const keywordAggregate = useMemo(() => {
     const map: Record<

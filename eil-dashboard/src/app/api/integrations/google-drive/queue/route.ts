@@ -9,6 +9,10 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 
+const AUTO_ANALYSIS_PROVIDER = "Automatic task routing";
+const AUTO_ANALYSIS_MODEL = "automatic-task-routing";
+const AUTO_ANALYSIS_LABEL = "Automatic per-task model routing";
+
 function sanitizeFolderName(folderName: string): string {
   const sanitized = folderName
     .replace(/[^a-zA-Z0-9._/-]+/g, "-")
@@ -26,8 +30,6 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       fileIds?: string[];
       folder?: string;
-      provider?: string;
-      model?: string;
     };
 
     const fileIds = (body.fileIds ?? []).filter(
@@ -50,8 +52,6 @@ export async function POST(request: Request) {
 
     const accessToken = await ensureGoogleDriveAccessToken(connection);
     const folder = sanitizeFolderName(body.folder ?? "Inbox");
-    const provider = body.provider?.trim() || "Google Drive";
-    const model = body.model?.trim() || null;
     const supabase = getSupabaseAdmin();
     const createdRuns: Array<Record<string, unknown>> = [];
 
@@ -64,12 +64,13 @@ export async function POST(request: Request) {
       const { data: runData, error: insertError } = await supabase
         .from("ingestion_runs")
         .insert({
+          owner_user_id: user.id,
           source_type: "upload",
           status: "queued",
           source_filename: file.name,
           source_path: file.id,
-          provider,
-          model,
+          provider: AUTO_ANALYSIS_PROVIDER,
+          model: AUTO_ANALYSIS_MODEL,
           input_payload: {
             source_kind: "google-drive",
             folder_name: folder,
@@ -79,6 +80,12 @@ export async function POST(request: Request) {
             mime_type: file.mimeType ?? "application/pdf",
             original_size: file.size ? Number(file.size) : null,
             uploaded_from: "/workspace/home",
+            analysis_mode: "automatic",
+            analysis_label: AUTO_ANALYSIS_LABEL,
+            progress_stage: "queued",
+            progress_message: "Queued for analysis",
+            progress_detail:
+              "The worker will pull this PDF from Google Drive and choose the right model mix for each task.",
           },
         })
         .select("*")
@@ -102,8 +109,8 @@ export async function POST(request: Request) {
       userId: user.id,
       count: createdRuns.length,
       folder,
-      provider,
-      hasModel: Boolean(model),
+      provider: AUTO_ANALYSIS_PROVIDER,
+      model: AUTO_ANALYSIS_MODEL,
     });
     return NextResponse.json({ runs: createdRuns }, { status: 201 });
   } catch (error) {

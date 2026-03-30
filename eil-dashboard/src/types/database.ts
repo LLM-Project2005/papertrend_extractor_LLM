@@ -27,6 +27,7 @@ export interface DashboardData {
 
 export interface DbPaper {
   id: number;
+  owner_user_id?: string | null;
   year: string;
   title: string;
   created_at?: string;
@@ -35,6 +36,7 @@ export interface DbPaper {
 export interface DbPaperKeyword {
   id?: number;
   paper_id: number;
+  owner_user_id?: string | null;
   topic: string;
   keyword: string;
   keyword_frequency: number;
@@ -44,6 +46,7 @@ export interface DbPaperKeyword {
 
 export interface DbPaperTrack {
   paper_id: number;
+  owner_user_id?: string | null;
   el: number;
   eli: number;
   lae: number;
@@ -53,6 +56,7 @@ export interface DbPaperTrack {
 
 export interface DbPaperContent {
   paper_id: number;
+  owner_user_id?: string | null;
   raw_text?: string | null;
   abstract?: string | null;
   abstract_claims?: string | null;
@@ -68,6 +72,7 @@ export interface DbPaperContent {
 
 export interface IngestionRunRow {
   id: string;
+  owner_user_id?: string | null;
   source_type: "batch" | "upload";
   status: "queued" | "processing" | "succeeded" | "failed";
   source_filename?: string | null;

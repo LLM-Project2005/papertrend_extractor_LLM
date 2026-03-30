@@ -127,6 +127,7 @@ class IngestionState(TypedDict, total=False):
     source_path: str
     source_filename: str
     ingestion_run_id: str
+    owner_user_id: str
     paper_id: int
     extraction_method: str
     raw_text: str
@@ -153,6 +154,7 @@ class WorkspaceQueryState(TypedDict, total=False):
     messages: List[Dict[str, str]]
     request_kind: Literal["chat", "visualization", "keyword-search"]
     message: str
+    owner_user_id: str
     selected_years: List[str]
     selected_tracks: List[str]
     search_query: str

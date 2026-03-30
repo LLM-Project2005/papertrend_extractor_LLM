@@ -19,9 +19,10 @@ function extractTracks(row: TrackRow | undefined): string[] {
 }
 
 export async function runKeywordSearchFallback(
-  request: KeywordSearchRequest
+  request: KeywordSearchRequest,
+  ownerUserId?: string | null
 ): Promise<KeywordSearchResponse> {
-  const data = await loadDashboardDataServer();
+  const data = await loadDashboardDataServer(ownerUserId);
   const selectedYears =
     request.selectedYears && request.selectedYears.length > 0
       ? request.selectedYears

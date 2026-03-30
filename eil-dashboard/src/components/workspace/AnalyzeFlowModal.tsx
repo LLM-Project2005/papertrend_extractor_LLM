@@ -99,8 +99,6 @@ export default function AnalyzeFlowModal({
   const { session, user } = useAuth();
   const [adminSecret, setAdminSecret] = useState("");
   const [folder, setFolder] = useState(defaultFolder);
-  const [provider, setProvider] = useState("");
-  const [model, setModel] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [selectedSource, setSelectedSource] = useState<ImportSource>("pdf-upload");
   const [uploading, setUploading] = useState(false);
@@ -267,12 +265,6 @@ export default function AnalyzeFlowModal({
         files.forEach((file) => formData.append("files", file));
         formData.append("folder", folder.trim() || defaultFolder);
         formData.append("source_kind", selectedSource);
-        if (provider.trim()) {
-          formData.append("provider", provider.trim());
-        }
-        if (model.trim()) {
-          formData.append("model", model.trim());
-        }
 
         const headers: Record<string, string> = {};
         if (session?.access_token && user) {
@@ -306,8 +298,6 @@ export default function AnalyzeFlowModal({
         });
 
         setFiles([]);
-        setProvider("");
-        setModel("");
         onClose();
         return;
       }
@@ -332,8 +322,6 @@ export default function AnalyzeFlowModal({
           body: JSON.stringify({
             fileIds: selectedDriveFileIds,
             folder: folder.trim() || defaultFolder,
-            provider: provider.trim(),
-            model: model.trim(),
           }),
         });
 
@@ -647,18 +635,17 @@ export default function AnalyzeFlowModal({
                     placeholder="Folder or group, e.g. Inbox"
                     className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
                   />
-                  <input
-                    value={provider}
-                    onChange={(event) => setProvider(event.target.value)}
-                    placeholder="Provider, e.g. OpenRouter or Google Drive"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
-                  />
-                  <input
-                    value={model}
-                    onChange={(event) => setModel(event.target.value)}
-                    placeholder="Model, e.g. openai/gpt-4o-mini"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
-                  />
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#8f8f8f]">
+                      Model selection
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                      Automatic per-task routing
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
+                      The pipeline now picks the best model for each step after upload, so there is no manual model box to set or forget.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -768,6 +755,9 @@ export default function AnalyzeFlowModal({
               }}
               disabled={
                 uploading ||
+                (selectedSource === "pdf-upload" && files.length === 0) ||
+                (selectedSource === "google-drive" &&
+                  (!driveConnected || selectedDriveFileIds.length === 0)) ||
                 (selectedSource !== "pdf-upload" && selectedSource !== "google-drive")
               }
               className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-[#f3f3f3] dark:text-[#171717] dark:disabled:bg-[#3a3a3a] dark:disabled:text-[#7e7e7e]"

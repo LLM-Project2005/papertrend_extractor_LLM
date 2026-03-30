@@ -1,17 +1,13 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
+import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { generateMockData } from "@/lib/mockData";
-import type { TrendRow, TrackRow, DashboardData } from "@/types/database";
+import { supabase } from "@/lib/supabase";
+import type { DashboardData, TrackRow, TrendRow } from "@/types/database";
 
-/**
- * Centralised data hook.
- * 1.  Tries to read from Supabase (the three flat views).
- * 2.  Falls back to deterministic mock data when Supabase is
- *     not configured or returns no rows.
- */
 export function useDashboardData() {
+  const { hydrated, user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,13 +15,24 @@ export function useDashboardData() {
     let cancelled = false;
 
     async function load() {
-      // ── Try Supabase ──────────────────────────────────────
+      if (!hydrated) {
+        return;
+      }
+
+      if (!user) {
+        if (!cancelled) {
+          setData(generateMockData());
+          setLoading(false);
+        }
+        return;
+      }
+
       if (supabase) {
         try {
           const [tRes, sRes, mRes] = await Promise.all([
-            supabase.from("trends_flat").select("*"),
-            supabase.from("tracks_single_flat").select("*"),
-            supabase.from("tracks_multi_flat").select("*"),
+            supabase.from("trends_flat").select("*").eq("owner_user_id", user.id),
+            supabase.from("tracks_single_flat").select("*").eq("owner_user_id", user.id),
+            supabase.from("tracks_multi_flat").select("*").eq("owner_user_id", user.id),
           ]);
 
           const trends: TrendRow[] = (tRes.data ?? []).map((r: Record<string, unknown>) => ({
@@ -51,37 +58,39 @@ export function useDashboardData() {
           const tracksSingle = (sRes.data ?? []).map(mapTrack);
           const tracksMulti = (mRes.data ?? []).map(mapTrack);
 
-          if (trends.length > 0 && !cancelled) {
-            setData({ trends, tracksSingle, tracksMulti, useMock: false });
+          if (!cancelled) {
+            if (trends.length > 0) {
+              setData({ trends, tracksSingle, tracksMulti, useMock: false });
+            } else {
+              setData(generateMockData());
+            }
             setLoading(false);
             return;
           }
         } catch {
-          // Supabase unavailable – fall through to mock
+          // Fall through to preview data.
         }
       }
 
-      // ── Mock fallback ─────────────────────────────────────
       if (!cancelled) {
         setData(generateMockData());
         setLoading(false);
       }
     }
 
-    load();
+    void load();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hydrated, user]);
 
-  // ── Derived helpers ─────────────────────────────────────────
   const allYears = useMemo(() => {
     if (!data) return [];
-    const s = new Set<string>();
-    data.trends.forEach((r) => s.add(r.year));
-    data.tracksSingle.forEach((r) => s.add(r.year));
-    data.tracksMulti.forEach((r) => s.add(r.year));
-    return [...s].sort();
+    const years = new Set<string>();
+    data.trends.forEach((row) => years.add(row.year));
+    data.tracksSingle.forEach((row) => years.add(row.year));
+    data.tracksMulti.forEach((row) => years.add(row.year));
+    return [...years].sort();
   }, [data]);
 
   return { data, loading, allYears };

@@ -14,13 +14,19 @@ function mapTrackRow(row: Record<string, unknown>): TrackRow {
   };
 }
 
-export async function loadDashboardDataServer(): Promise<DashboardData> {
+export async function loadDashboardDataServer(
+  ownerUserId?: string | null
+): Promise<DashboardData> {
   try {
+    if (!ownerUserId) {
+      return generateMockData();
+    }
+
     const supabase = getSupabaseAdmin();
     const [trendsResult, singleResult, multiResult] = await Promise.all([
-      supabase.from("trends_flat").select("*"),
-      supabase.from("tracks_single_flat").select("*"),
-      supabase.from("tracks_multi_flat").select("*"),
+      supabase.from("trends_flat").select("*").eq("owner_user_id", ownerUserId),
+      supabase.from("tracks_single_flat").select("*").eq("owner_user_id", ownerUserId),
+      supabase.from("tracks_multi_flat").select("*").eq("owner_user_id", ownerUserId),
     ]);
 
     if (trendsResult.error) {

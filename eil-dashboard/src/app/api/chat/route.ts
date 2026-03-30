@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import {
   buildDeterministicGroundedAnswer,
   buildGroundedContext,
@@ -41,6 +42,8 @@ function buildFallbackAnswer(question: string, corpusError?: string): string {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ChatRequestBody;
+    const user = await getAuthenticatedUserFromRequest(request);
+    const ownerUserId = user?.id ?? null;
 
     let proxied:
       | {
@@ -69,7 +72,7 @@ export async function POST(request: Request) {
           reason: string;
         }>;
         suggestedConcepts?: string[];
-      }>("/chat", body);
+      }>("/chat", { ...body, ownerUserId });
     } catch {
       proxied = null;
     }
@@ -105,7 +108,7 @@ export async function POST(request: Request) {
     let corpusError: string | undefined;
 
     try {
-      const corpus = await retrieveCorpusPapers(currentMessage);
+      const corpus = await retrieveCorpusPapers(currentMessage, ownerUserId);
       papers = corpus.papers;
       citations = corpus.citations;
     } catch (error) {

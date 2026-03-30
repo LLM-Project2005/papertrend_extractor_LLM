@@ -34,6 +34,10 @@ from analysis_pipeline import (
 
 logger = logging.getLogger("papertrend_worker")
 
+AUTO_ANALYSIS_PROVIDER = "Automatic task routing"
+AUTO_ANALYSIS_MODEL = "automatic-task-routing"
+AUTO_ANALYSIS_LABEL = "Automatic per-task model routing"
+
 
 class SupabaseRestClient:
     def __init__(self, url: str, service_key: str) -> None:
@@ -249,6 +253,38 @@ def ensure_run_active(client: SupabaseRestClient, run_id: str) -> None:
         )
 
 
+def update_run_progress(
+    client: SupabaseRestClient,
+    run: Dict[str, Any],
+    run_id: str,
+    *,
+    stage: str,
+    message: str,
+    detail: str,
+) -> None:
+    input_payload = merge_input_payload(
+        run,
+        {
+            "analysis_mode": "automatic",
+            "analysis_label": AUTO_ANALYSIS_LABEL,
+            "progress_stage": stage,
+            "progress_message": message,
+            "progress_detail": detail,
+        },
+    )
+    client.update_run(
+        run_id,
+        {
+            "provider": str(run.get("provider") or AUTO_ANALYSIS_PROVIDER),
+            "model": str(run.get("model") or AUTO_ANALYSIS_MODEL),
+            "input_payload": input_payload,
+        },
+    )
+    run["input_payload"] = input_payload
+    run["provider"] = str(run.get("provider") or AUTO_ANALYSIS_PROVIDER)
+    run["model"] = str(run.get("model") or AUTO_ANALYSIS_MODEL)
+
+
 def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str, Any]) -> None:
     run_id = str(run["id"])
     storage_path = str(run.get("source_path") or "")
@@ -260,18 +296,50 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
 
     with tempfile.TemporaryDirectory(prefix="papertrend-run-") as temp_dir:
         local_pdf = Path(temp_dir) / (str(run.get("source_filename") or "paper.pdf"))
+        update_run_progress(
+            client,
+            run,
+            run_id,
+            stage="preparing",
+            message="Preparing file for analysis",
+            detail="The worker has claimed this run and is getting the source ready.",
+        )
         if source_kind == "google-drive":
             connector_user_id = str(input_payload.get("connector_user_id") or "")
             if not connector_user_id:
                 raise RuntimeError("The Google Drive run is missing connector ownership metadata.")
             access_token = ensure_google_drive_access_token(client, config, connector_user_id)
+            update_run_progress(
+                client,
+                run,
+                run_id,
+                stage="downloading",
+                message="Downloading source file",
+                detail="Pulling the selected PDF from Google Drive before extraction begins.",
+            )
             logger.info("downloading google drive file", extra={"run_id": run_id, "file_id": storage_path})
             download_google_drive_file(access_token, storage_path, local_pdf)
         else:
+            update_run_progress(
+                client,
+                run,
+                run_id,
+                stage="downloading",
+                message="Downloading source file",
+                detail="Fetching the uploaded PDF from Supabase Storage before extraction begins.",
+            )
             logger.info("downloading storage object", extra={"run_id": run_id, "storage_path": storage_path})
             client.download_storage_object(storage_path, local_pdf)
 
         ensure_run_active(client, run_id)
+        update_run_progress(
+            client,
+            run,
+            run_id,
+            stage="extracting",
+            message="Extracting text and analyzing paper",
+            detail="Running text extraction, section structuring, metadata inference, keywords, tracks, and facets.",
+        )
         result = process_pdf_run(run=run, client=client, config=config, pdf_path=local_pdf)
         logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(result.raw_text)})
         logger.info(
@@ -286,6 +354,14 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
         )
 
         ensure_run_active(client, run_id)
+        update_run_progress(
+            client,
+            run,
+            run_id,
+            stage="saving",
+            message="Saving results to the workspace",
+            detail="Writing the extracted paper, keywords, tracks, and related analysis back into Supabase.",
+        )
         persist_dataset(client, result.dataset)
         logger.info(
             "dataset persisted",
@@ -303,15 +379,20 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 "status": "succeeded",
                 "completed_at": now_iso(),
                 "error_message": None,
-                "provider": str(run.get("provider") or "OpenAI-compatible"),
-                "model": str(run.get("model") or config.openai_model),
+                "provider": str(run.get("provider") or AUTO_ANALYSIS_PROVIDER),
+                "model": str(run.get("model") or AUTO_ANALYSIS_MODEL),
                 "input_payload": merge_input_payload(
                     run,
                     {
+                        "analysis_mode": "automatic",
+                        "analysis_label": AUTO_ANALYSIS_LABEL,
                         "pipeline": PIPELINE_NAME,
                         "paper_id": result.dataset["paper_id"],
                         "raw_text_length": len(result.raw_text),
                         "keyword_count": len(result.dataset["keywords"]),
+                        "progress_stage": "completed",
+                        "progress_message": "Analysis complete",
+                        "progress_detail": "This paper is ready to use across the dashboard, paper library, and chat.",
                     },
                 ),
             },
@@ -359,9 +440,19 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
                     "status": "failed",
                     "completed_at": now_iso(),
                     "error_message": message[:2000],
+                    "provider": str(claimed.get("provider") or AUTO_ANALYSIS_PROVIDER),
+                    "model": str(claimed.get("model") or AUTO_ANALYSIS_MODEL),
                     "input_payload": merge_input_payload(
                         claimed,
-                        {"pipeline": PIPELINE_NAME, "last_error_stage": "processing"},
+                        {
+                            "analysis_mode": "automatic",
+                            "analysis_label": AUTO_ANALYSIS_LABEL,
+                            "pipeline": PIPELINE_NAME,
+                            "last_error_stage": "processing",
+                            "progress_stage": "failed",
+                            "progress_message": "Analysis failed",
+                            "progress_detail": message[:400],
+                        },
                     ),
                 },
             )

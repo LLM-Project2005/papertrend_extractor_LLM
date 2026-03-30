@@ -3,6 +3,11 @@
 import Link from "next/link";
 import type { IngestionRunRow } from "@/types/database";
 import {
+  getRunModelLabel,
+  getRunStageCaption,
+  getRunStageMessage,
+} from "@/lib/ingestion-status";
+import {
   ArrowRightIcon,
   CheckCircleIcon,
   CircleIcon,
@@ -49,6 +54,10 @@ export default function AnalysisStatusCard({
   const hasActiveRuns = runs.some(
     (run) => run.status === "queued" || run.status === "processing"
   );
+  const leadRun =
+    runs.find((run) => run.status === "processing") ??
+    runs.find((run) => run.status === "queued") ??
+    runs[0];
 
   if (compact) {
     return (
@@ -66,8 +75,17 @@ export default function AnalysisStatusCard({
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
                 {loading
                   ? "Refreshing status..."
-                  : `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
+                  : leadRun
+                    ? getRunStageMessage(leadRun)
+                    : `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
               </p>
+              {!loading && leadRun ? (
+                <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
+                  {hasActiveRuns
+                    ? `${summary.processing + summary.queued} active run${summary.processing + summary.queued === 1 ? "" : "s"}`
+                    : `${summary.succeeded} completed`}
+                </p>
+              ) : null}
             </div>
             <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8f8f8f]" />
           </button>
@@ -176,8 +194,14 @@ export default function AnalysisStatusCard({
                   <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                     {run.source_filename || run.id}
                   </p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
+                    {getRunStageMessage(run)}
+                  </p>
                   <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
-                    {run.model || "Model not set"}
+                    {getRunModelLabel(run)}
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+                    {getRunStageCaption(run)}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
