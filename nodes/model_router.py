@@ -53,6 +53,8 @@ class TaskRoutingConfig:
 
 
 MODEL_PRICE_USD_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
+    "openai/gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "openai/gpt-4o": {"input": 2.50, "output": 10.00},
     "openai/gpt-4.1-mini": {"input": 0.40, "output": 1.60},
     "openai/gpt-4.1-nano": {"input": 0.10, "output": 0.40},
     "google/gemini-2.5-flash": {"input": 0.30, "output": 2.50},
@@ -61,7 +63,7 @@ MODEL_PRICE_USD_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
 
 CONSERVATIVE_PRESET: Dict[ModelTask, TaskProfile] = {
     ModelTask.DEFAULT_TEXT: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
-    ModelTask.VISION_OCR: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
+    ModelTask.VISION_OCR: TaskProfile(primary="openai/gpt-4o-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.SEGMENTATION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.TRANSLATION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.METADATA: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),

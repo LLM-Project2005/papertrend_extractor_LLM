@@ -39,7 +39,16 @@ def process_pdf_run(
     usage_summary = consume_usage_summary()
     dataset = final_state.get("dataset") or {}
     raw_text = str(final_state.get("raw_text") or "")
+    if final_state.get("status") == "failed":
+        errors = final_state.get("errors") or ["The ingestion graph reported a failure."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
+    if not raw_text.strip():
+        errors = final_state.get("errors") or ["The ingestion graph did not extract usable text."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
     if not dataset:
         errors = final_state.get("errors") or ["The ingestion graph did not return a dataset."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
+    if not (dataset.get("keywords") or []):
+        errors = final_state.get("errors") or ["The ingestion graph returned no keyword rows."]
         raise RuntimeError("; ".join(str(error) for error in errors))
     return PipelineResult(dataset=dataset, raw_text=raw_text, usage_summary=usage_summary)
