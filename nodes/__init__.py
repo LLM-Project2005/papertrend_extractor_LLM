@@ -1,30 +1,37 @@
-import os
-from langchain_openai import ChatOpenAI
-from sentence_transformers import SentenceTransformer
-from dotenv import load_dotenv
-
-# 0. Load the key BEFORE initializing LLMs
-load_dotenv()
-
-# 1. Initialize LLMs with OpenRouter Configuration
-# If base_url is not set, it defaults to OpenAI and rejects sk-or keys.
-llm_main = ChatOpenAI(
-    model="openai/gpt-4o", 
-    temperature=0,
-    openai_api_key=os.getenv("OPENAI_API_KEY"),
-    base_url="https://openrouter.ai/api/v1"
+from nodes.model_router import (
+    ModelTask,
+    RoutedChatModel,
+    clear_model_router_caches,
+    consume_usage_summary,
+    get_task_config,
+    get_task_llm,
+    model_routing_snapshot,
+    start_usage_session,
 )
 
-llm_fast = ChatOpenAI(
-    model="openai/gpt-4o-mini", 
-    temperature=0,
-    openai_api_key=os.getenv("OPENAI_API_KEY"),
-    base_url="https://openrouter.ai/api/v1"
-)
+llm_main = get_task_llm(ModelTask.SEGMENTATION)
+llm_fast = get_task_llm(ModelTask.DEFAULT_TEXT)
 
-# 2. Initialize the Embedding Model
-print("Loading Embedding Model: paraphrase-multilingual-MiniLM-L12-v2...")
-embed_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
-# 3. Export
-__all__ = ["llm_main", "llm_fast", "embed_model"]
+def get_llm_main() -> RoutedChatModel:
+    return get_task_llm(ModelTask.SEGMENTATION)
+
+
+def get_llm_fast() -> RoutedChatModel:
+    return get_task_llm(ModelTask.DEFAULT_TEXT)
+
+
+__all__ = [
+    "ModelTask",
+    "RoutedChatModel",
+    "clear_model_router_caches",
+    "consume_usage_summary",
+    "get_llm_fast",
+    "get_llm_main",
+    "get_task_config",
+    "get_task_llm",
+    "llm_fast",
+    "llm_main",
+    "model_routing_snapshot",
+    "start_usage_session",
+]

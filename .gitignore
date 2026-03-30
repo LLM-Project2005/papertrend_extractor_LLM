@@ -1,7 +1,7 @@
 # ── Secrets ──
 .env
 .env.*
-
+.env.local
 # ── Python virtual environments ──
 .venv/
 .venv311/

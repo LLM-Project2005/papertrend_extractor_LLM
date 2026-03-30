@@ -313,7 +313,8 @@ export async function planVisualization(
         },
       ],
       0,
-      undefined
+      undefined,
+      "VISUALIZATION_PLANNING"
     );
 
     if (!response) {

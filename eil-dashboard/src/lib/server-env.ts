@@ -18,7 +18,7 @@ export function getAdminImportSecret(): string {
   );
 }
 
-export function getOpenAIConfig(): {
+export function getOpenAIConfig(taskName?: string): {
   apiKey: string;
   baseUrl: string;
   model: string;
@@ -28,13 +28,19 @@ export function getOpenAIConfig(): {
     return null;
   }
 
+  const normalizedTaskName = taskName?.trim().toUpperCase();
+  const taskModel =
+    normalizedTaskName && normalizedTaskName.length > 0
+      ? process.env[`MODEL_TASK_${normalizedTaskName}`]
+      : undefined;
+
   return {
     apiKey,
     baseUrl: (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
       /\/$/,
       ""
     ),
-    model: process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+    model: taskModel ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
   };
 }
 
@@ -56,4 +62,8 @@ export function getGoogleDriveRedirectUri(): string {
 
 export function getSiteUrl(): string {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "";
+}
+
+export function getPythonNodeServiceUrl(): string {
+  return (process.env.PYTHON_NODE_SERVICE_URL ?? "").replace(/\/$/, "");
 }

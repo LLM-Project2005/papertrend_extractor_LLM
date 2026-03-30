@@ -5,6 +5,7 @@ import {
   retrieveCorpusPapers,
 } from "@/lib/corpus";
 import { createChatCompletion } from "@/lib/openai";
+import { callPythonNodeService } from "@/lib/python-node-service";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,10 @@ interface ChatRequestBody {
     type?: string;
     size?: number;
   }>;
+  selectedYears?: string[];
+  selectedTracks?: string[];
+  searchQuery?: string;
+  queryLanguage?: string;
 }
 
 function buildFallbackAnswer(question: string, corpusError?: string): string {
@@ -36,6 +41,43 @@ function buildFallbackAnswer(question: string, corpusError?: string): string {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ChatRequestBody;
+
+    let proxied:
+      | {
+          answer?: string;
+          mode?: "grounded" | "fallback";
+          citations?: Array<{
+            paperId: number;
+            title: string;
+            year: string;
+            href: string;
+            reason: string;
+          }>;
+          suggestedConcepts?: string[];
+        }
+      | null = null;
+
+    try {
+      proxied = await callPythonNodeService<{
+        answer?: string;
+        mode?: "grounded" | "fallback";
+        citations?: Array<{
+          paperId: number;
+          title: string;
+          year: string;
+          href: string;
+          reason: string;
+        }>;
+        suggestedConcepts?: string[];
+      }>("/chat", body);
+    } catch {
+      proxied = null;
+    }
+
+    if (proxied?.answer) {
+      return NextResponse.json(proxied);
+    }
+
     const currentMessage =
       body.message ??
       [...(body.messages ?? [])]
@@ -85,7 +127,8 @@ export async function POST(request: Request) {
           },
         ],
         0.2,
-        body.model
+        body.model,
+        "CHAT_SYNTHESIS"
       );
 
       return NextResponse.json({
@@ -108,7 +151,7 @@ export async function POST(request: Request) {
     ];
 
     const fallbackAnswer =
-      (await createChatCompletion(fallbackPrompt, 0.4, body.model)) ??
+      (await createChatCompletion(fallbackPrompt, 0.4, body.model, "CHAT_SYNTHESIS")) ??
       buildFallbackAnswer(currentMessage, corpusError);
 
     return NextResponse.json({

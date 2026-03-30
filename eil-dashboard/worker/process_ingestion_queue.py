@@ -144,6 +144,14 @@ class SupabaseRestClient:
         )
         response.raise_for_status()
 
+    def delete_rows_for_paper(self, table: str, paper_id: int) -> None:
+        response = self.session.delete(
+            self._rest_url(table),
+            params={"paper_id": f"eq.{paper_id}"},
+            timeout=60,
+        )
+        response.raise_for_status()
+
     def upsert_rows(self, table: str, rows: Iterable[Dict[str, Any]]) -> None:
         payload = list(rows)
         if not payload:
@@ -266,6 +274,16 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
         ensure_run_active(client, run_id)
         result = process_pdf_run(run=run, client=client, config=config, pdf_path=local_pdf)
         logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(result.raw_text)})
+        logger.info(
+            "model usage summary",
+            extra={
+                "run_id": run_id,
+                "usage_call_count": result.usage_summary.get("call_count"),
+                "usage_prompt_tokens": result.usage_summary.get("total_prompt_tokens"),
+                "usage_completion_tokens": result.usage_summary.get("total_completion_tokens"),
+                "usage_estimated_cost_usd": result.usage_summary.get("estimated_cost_usd"),
+            },
+        )
 
         ensure_run_active(client, run_id)
         persist_dataset(client, result.dataset)

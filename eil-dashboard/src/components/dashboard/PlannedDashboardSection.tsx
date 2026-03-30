@@ -11,12 +11,14 @@ import type { VisualizationPlanSection } from "@/types/visualization";
 export default function PlannedDashboardSection({
   section,
   data,
+  selectedYears,
   selectedTracks,
   linkedPaperId,
   useMock,
 }: {
   section: VisualizationPlanSection;
   data: Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti">;
+  selectedYears: string[];
   selectedTracks: string[];
   linkedPaperId?: number | null;
   useMock: boolean;
@@ -61,7 +63,12 @@ export default function PlannedDashboardSection({
       ) : null}
 
       {section.section_key === "keyword_explorer" ? (
-        <KeywordExplorer trends={data.trends} planCharts={section.charts} />
+        <KeywordExplorer
+          trends={data.trends}
+          selectedYears={selectedYears}
+          selectedTracks={selectedTracks}
+          planCharts={section.charts}
+        />
       ) : null}
 
       {section.section_key === "paper_explorer" ? (

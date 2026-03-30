@@ -1,37 +1,44 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
-from .config import WorkerConfig
-from .llm_analysis import request_structured_analysis
-from .normalization import build_dataset
-from .pdf_extract import extract_pdf_text
 from .schemas import PipelineResult
-from .sectioning import build_llm_context, segment_by_headings
-from .text_cleaning import clean_text, pick_title
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from graphs import run_ingestion_graph  # noqa: E402
+from nodes import consume_usage_summary, start_usage_session  # noqa: E402
 
 
 def process_pdf_run(
     run: Dict[str, Any],
     client: Any,
-    config: WorkerConfig,
+    config: Any,
     pdf_path: Path,
 ) -> PipelineResult:
-    del client  # reserved for future pipeline hooks and notebook parity
+    del client
+    del config
 
-    raw_text = clean_text(extract_pdf_text(pdf_path))
-    if len(raw_text) < 800:
-        raise RuntimeError("The extracted text is too short for reliable analysis.")
-
-    heuristic_sections = segment_by_headings(raw_text)
-    analysis = request_structured_analysis(
-        config=config,
-        text=raw_text,
-        run=run,
-        fallback_title=pick_title(raw_text, pdf_path.name),
-        heuristic_sections=heuristic_sections,
-        llm_context=build_llm_context(raw_text, config.llm_context_chars),
+    start_usage_session(label=f"ingestion:{run.get('id') or pdf_path.name}")
+    final_state = run_ingestion_graph(
+        {
+            "pdf_path": str(pdf_path),
+            "source_path": str(run.get("source_path") or ""),
+            "source_filename": str(run.get("source_filename") or pdf_path.name),
+            "ingestion_run_id": str(run.get("id") or ""),
+            "errors": [],
+            "messages": [],
+            "status": "starting",
+        }
     )
-    dataset = build_dataset(run, raw_text, analysis)
-    return PipelineResult(dataset=dataset, raw_text=raw_text)
+    usage_summary = consume_usage_summary()
+    dataset = final_state.get("dataset") or {}
+    raw_text = str(final_state.get("raw_text") or "")
+    if not dataset:
+        errors = final_state.get("errors") or ["The ingestion graph did not return a dataset."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
+    return PipelineResult(dataset=dataset, raw_text=raw_text, usage_summary=usage_summary)

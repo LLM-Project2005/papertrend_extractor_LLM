@@ -2,9 +2,10 @@
 
 import ChatClient from "@/components/chat/ChatClient";
 import { useDashboardData } from "@/hooks/useData";
+import { TRACK_COLS } from "@/lib/constants";
 
 export default function WorkspaceChatClient() {
-  const { data, loading } = useDashboardData();
+  const { data, loading, allYears } = useDashboardData();
 
   if (loading || !data) {
     return (
@@ -19,5 +20,11 @@ export default function WorkspaceChatClient() {
     );
   }
 
-  return <ChatClient previewMode={data.useMock} />;
+  return (
+    <ChatClient
+      previewMode={data.useMock}
+      selectedYears={allYears}
+      selectedTracks={[...TRACK_COLS]}
+    />
+  );
 }

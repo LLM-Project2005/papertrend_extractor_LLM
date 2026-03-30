@@ -409,6 +409,7 @@ export default function DashboardClient({
                 activePlan.sections[0]
               }
               data={filteredData}
+              selectedYears={selectedYears}
               selectedTracks={selectedTracks}
               linkedPaperId={linkedPaperId}
               useMock={data.useMock}
@@ -436,7 +437,11 @@ export default function DashboardClient({
             />
           ) : null}
           {plannerMode === "classic" && currentTabKey === "keyword_explorer" ? (
-            <KeywordExplorer trends={filteredData.trends} />
+            <KeywordExplorer
+              trends={filteredData.trends}
+              selectedYears={selectedYears}
+              selectedTracks={selectedTracks}
+            />
           ) : null}
           {plannerMode === "classic" && currentTabKey === "paper_explorer" ? (
             <PaperExplorer

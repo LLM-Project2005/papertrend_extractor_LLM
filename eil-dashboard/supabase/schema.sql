@@ -139,6 +139,37 @@ ALTER TABLE paper_content
   ADD COLUMN IF NOT EXISTS ingestion_run_id UUID REFERENCES ingestion_runs(id);
 
 -- ------------------------------------------------------------------
+-- 7. Canonical keyword concepts
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_keyword_concepts (
+  id                BIGSERIAL PRIMARY KEY,
+  paper_id          BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  concept_label     TEXT NOT NULL,
+  matched_terms     JSONB NOT NULL DEFAULT '[]'::jsonb,
+  related_keywords  JSONB NOT NULL DEFAULT '[]'::jsonb,
+  total_frequency   INT NOT NULL DEFAULT 1,
+  first_section     TEXT,
+  first_span_start  INT NOT NULL DEFAULT 0,
+  first_span_end    INT NOT NULL DEFAULT 0,
+  first_evidence    TEXT,
+  evidence_snippets JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 8. Higher-level analytical facets
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_analysis_facets (
+  id          BIGSERIAL PRIMARY KEY,
+  paper_id    BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  facet_type  TEXT NOT NULL
+              CHECK (facet_type IN ('objective_verb', 'contribution_type')),
+  label       TEXT NOT NULL,
+  evidence    TEXT,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
 -- INDEXES
 -- ------------------------------------------------------------------
 CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
@@ -149,6 +180,10 @@ CREATE INDEX IF NOT EXISTS idx_paper_keywords_keyword ON paper_keywords(keyword)
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_topic ON paper_keywords(topic);
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status ON ingestion_runs(status);
 CREATE INDEX IF NOT EXISTS idx_paper_content_run_id ON paper_content(ingestion_run_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_paper_id ON paper_keyword_concepts(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_label ON paper_keyword_concepts(concept_label);
+CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_paper_id ON paper_analysis_facets(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_type ON paper_analysis_facets(facet_type);
 
 DO $$
 BEGIN
@@ -171,6 +206,8 @@ ALTER TABLE paper_tracks_single ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_multi ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_content ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingestion_runs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_keyword_concepts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_analysis_facets ENABLE ROW LEVEL SECURITY;
 
 DO $$
 BEGIN
@@ -278,6 +315,22 @@ END $$;
 DO $$
 BEGIN
   CREATE POLICY "anon_read" ON paper_content FOR SELECT USING (true);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "anon_read" ON paper_keyword_concepts FOR SELECT USING (true);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "anon_read" ON paper_analysis_facets FOR SELECT USING (true);
 EXCEPTION
   WHEN duplicate_object THEN
     NULL;
@@ -485,3 +538,33 @@ SELECT
   pc.ingestion_run_id
 FROM papers p
 LEFT JOIN paper_content pc ON pc.paper_id = p.id;
+
+DROP VIEW IF EXISTS concepts_flat;
+CREATE VIEW concepts_flat AS
+SELECT
+  p.id AS paper_id,
+  p.year,
+  p.title,
+  pkc.concept_label,
+  pkc.matched_terms,
+  pkc.related_keywords,
+  pkc.total_frequency,
+  pkc.first_section,
+  pkc.first_span_start,
+  pkc.first_span_end,
+  pkc.first_evidence,
+  pkc.evidence_snippets
+FROM papers p
+JOIN paper_keyword_concepts pkc ON pkc.paper_id = p.id;
+
+DROP VIEW IF EXISTS paper_facets_flat;
+CREATE VIEW paper_facets_flat AS
+SELECT
+  p.id AS paper_id,
+  p.year,
+  p.title,
+  paf.facet_type,
+  paf.label,
+  paf.evidence
+FROM papers p
+JOIN paper_analysis_facets paf ON paf.paper_id = p.id;

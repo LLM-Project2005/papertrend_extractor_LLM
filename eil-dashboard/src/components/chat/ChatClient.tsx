@@ -69,8 +69,14 @@ function formatFileSize(size: number) {
 
 export default function ChatClient({
   previewMode = false,
+  selectedYears = [],
+  selectedTracks = [],
+  searchQuery = "",
 }: {
   previewMode?: boolean;
+  selectedYears?: string[];
+  selectedTracks?: string[];
+  searchQuery?: string;
 }) {
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(false);
@@ -172,6 +178,9 @@ export default function ChatClient({
             type,
           })),
           messages: nextMessages.map(({ role, content }) => ({ role, content })),
+          selectedYears,
+          selectedTracks,
+          searchQuery,
         }),
       });
 

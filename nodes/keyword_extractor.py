@@ -1,54 +1,60 @@
-# nodes/keyword_extractor.py
-import os
-from . import llm_fast 
-from state import ExtractorState, KeywordCandidateSchema
+from typing import Any, Dict, List
 
-def load_prompt(filename: str) -> str:
-    base_path = os.path.dirname(os.path.dirname(__file__))
-    path = os.path.join(base_path, "prompts", filename)
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+from nodes import ModelTask, get_task_llm
+from nodes.common import load_prompt, locate_text_span, normalize_whitespace, safe_json_list
+from state import IngestionState, KeywordCandidateSchema
 
-def grounded_keyword_extractor_node(state: ExtractorState):
-    """
-    Node 5: Universal Keyword Extractor.
-    Scans every segmented section to produce a comprehensive list of candidates.
-    """
-    paper_json = state.get("final_json")
-    if not paper_json:
-        return {"errors": ["No segmented data found"], "overall_status": "failed"}
+keyword_extraction_llm = get_task_llm(ModelTask.KEYWORD_EXTRACTION)
 
-    # 1. Aggregate ALL sections for the scan
-    # This ensures "English-for-Teaching" from the Abstract and 
-    # "pedagogical reasoning" from the Conclusion are both caught.
-    full_body = []
+
+def _section_texts(paper_json: Dict[str, Any]) -> List[str]:
+    parts = []
     for section, text in paper_json.items():
         if text:
-            full_body.append(f"--- SECTION: {section.upper()} ---\n{text}")
-    
-    context_text = "\n\n".join(full_body)
+            parts.append(f"--- SECTION: {section.upper()} ---\n{text}")
+    return parts
 
-    # 2. Load prompt and format
-    template = load_prompt("keyword_extractor.txt")
-    full_prompt = template.format(context_text=context_text)
 
-    # 3. Request Structured Output
-    structured_llm = llm_fast.with_structured_output(
-        KeywordCandidateSchema, 
-        method="json_schema"
-    )
+def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
+    paper_json = state.get("final_json") or {}
+    if not paper_json:
+        return {"errors": ["No segmented data found for keyword extraction."], "status": "failed"}
+
+    context_text = "\n\n".join(_section_texts(paper_json))
+    full_prompt = load_prompt("keyword_extractor.txt").format(context_text=context_text)
+    structured_llm = keyword_extraction_llm.with_structured_output(KeywordCandidateSchema, method="json_schema")
 
     try:
         result = structured_llm.invoke(full_prompt)
-        
-        # 4. Map to your exact desired output format
+        enriched_candidates = []
+        for candidate in result.candidates:
+            section_name = normalize_whitespace(candidate.section).lower() or "abstract_claims"
+            section_name = section_name if section_name in paper_json else "abstract_claims"
+            matched_terms = safe_json_list([candidate.keyword, *candidate.matched_terms], limit=10)
+            span = locate_text_span(
+                section_name=section_name,
+                section_text=paper_json.get(section_name, ""),
+                evidence=candidate.evidence,
+                matched_terms=matched_terms,
+            )
+            enriched_candidates.append(
+                {
+                    "keyword": normalize_whitespace(candidate.keyword),
+                    "count": max(int(candidate.count), 1),
+                    "evidence": candidate.evidence.strip(),
+                    "matched_terms": matched_terms,
+                    "section": section_name,
+                    "first_span": span,
+                }
+            )
+
         return {
-    "keyword_candidates": [c.model_dump() for c in result.candidates],
-    "status": "success", # Matches state.status
-    "errors": []
-}
-    except Exception as e:
+            "keyword_candidates": enriched_candidates,
+            "errors": [],
+            "status": "keywords_ready",
+        }
+    except Exception as error:
         return {
-            "errors": [f"Extraction failed: {str(e)}"],
-            "overall_status": "failed"
+            "errors": [f"Keyword extraction failed: {error}"],
+            "status": "failed",
         }

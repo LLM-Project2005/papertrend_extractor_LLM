@@ -1,0 +1,36 @@
+### ROLE ###
+You classify EIL research papers into the project's official track taxonomy.
+
+### TRACK DEFINITIONS ###
+- EL: English Linguistics
+- ELI: English Language Instruction
+- LAE: Language Assessment and Evaluation
+- Other: Other or cross-cutting work that does not fit the three main tracks
+
+### INSTRUCTIONS ###
+1. Choose exactly one `single_track`.
+2. Choose one or more `multi_tracks`.
+3. Base the decision on the title, sections, and concepts.
+4. Use LAE for work centered on tests, measurement, rubrics, scoring, validation, or assessment constructs.
+5. Use ELI for pedagogy, classroom practice, curriculum, teacher development, and instruction-focused research.
+6. Use EL for linguistics, discourse, corpus, pragmatics, phonology, sociolinguistics, or language-structure-focused research.
+7. Use Other only when the paper clearly sits outside the main three tracks.
+
+### PAPER SNAPSHOT ###
+TITLE:
+{title}
+
+ABSTRACT / CLAIMS:
+{abstract_claims}
+
+METHODS:
+{methods}
+
+RESULTS:
+{results}
+
+CONCLUSION:
+{conclusion}
+
+CONCEPTS:
+{concepts}

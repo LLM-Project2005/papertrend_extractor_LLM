@@ -8,9 +8,10 @@ export interface ChatMessage {
 export async function createChatCompletion(
   messages: ChatMessage[],
   temperature = 0.2,
-  modelOverride?: string
+  modelOverride?: string,
+  taskName?: string
 ): Promise<string | null> {
-  const config = getOpenAIConfig();
+  const config = getOpenAIConfig(taskName);
   if (!config) {
     return null;
   }

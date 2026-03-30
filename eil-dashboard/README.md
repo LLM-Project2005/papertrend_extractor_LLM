@@ -61,6 +61,34 @@ OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
+Optional but recommended for task-level model routing:
+
+```bash
+MODEL_GATEWAY=openrouter
+MODEL_POLICY_PRESET=conservative
+MODEL_TASK_METADATA=google/gemini-2.5-flash-lite
+MODEL_TASK_METADATA_FALLBACK=openai/gpt-4.1-nano
+MODEL_TASK_CHAT_SYNTHESIS=google/gemini-2.5-flash
+MODEL_TASK_CHAT_SYNTHESIS_FALLBACK=openai/gpt-4.1-mini
+ENABLE_CHAT_TOOL_CALLING=false
+CHAT_TOOL_MAX_STEPS=3
+```
+
+You can also override any individual routing task with `MODEL_TASK_<TASK>` and `MODEL_TASK_<TASK>_FALLBACK`, for example:
+
+```bash
+MODEL_TASK_SEGMENTATION=openai/gpt-4.1-mini
+MODEL_TASK_SEGMENTATION_FALLBACK=google/gemini-2.5-flash
+MODEL_TASK_QUERY_EXPANSION=google/gemini-2.5-flash-lite
+MODEL_TASK_QUERY_EXPANSION_FALLBACK=openai/gpt-4.1-nano
+```
+
+Optional but recommended for the node-first interactive backend:
+
+```bash
+PYTHON_NODE_SERVICE_URL=http://127.0.0.1:8001
+```
+
 Optional for the Google Drive connector:
 
 ```bash
@@ -76,6 +104,18 @@ GOOGLE_PICKER_API_KEY=your-google-picker-api-key
 cd eil-dashboard
 npm install
 npm run dev
+```
+
+Run the Python node service from the repo root in a separate terminal:
+
+```bash
+python node_service.py --host 127.0.0.1 --port 8001
+```
+
+Optional model-routing bake-off from the repo root:
+
+```bash
+python scripts/evaluate_model_routing.py "C:/path/to/paper-a.pdf" "C:/path/to/paper-b.pdf" --output model-routing-eval.json
 ```
 
 ## Supabase setup
@@ -161,6 +201,7 @@ Recommended deployment model:
 
 - keep Next.js on Vercel
 - run the queue worker on a separate VM, container, or Cloud Run job
+- run the Python node service beside the worker, against the same Supabase project
 - point both at the same Supabase project and the same `OPENAI_*` environment variables
 
 ## Admin upload flow
