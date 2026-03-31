@@ -2,7 +2,9 @@ import argparse
 import json
 import logging
 import os
+import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Any, Dict
 
 from dotenv import load_dotenv
@@ -13,6 +15,10 @@ from nodes import consume_usage_summary, start_usage_session
 load_dotenv()
 logging.basicConfig(level=os.getenv("NODE_SERVICE_LOG_LEVEL", "INFO").upper())
 logger = logging.getLogger("papertrend.node_service")
+PROJECT_ROOT = Path(__file__).resolve().parent
+WORKER_ROOT = PROJECT_ROOT / "eil-dashboard" / "worker"
+if str(WORKER_ROOT) not in sys.path:
+    sys.path.insert(0, str(WORKER_ROOT))
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
@@ -25,6 +31,33 @@ def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[s
     handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def _is_authorized_worker_request(handler: BaseHTTPRequestHandler) -> bool:
+    expected = (
+        os.getenv("WORKER_WEBHOOK_SECRET")
+        or os.getenv("CRON_SECRET")
+        or os.getenv("ADMIN_IMPORT_SECRET")
+        or ""
+    ).strip()
+    if not expected:
+        return False
+    return handler.headers.get("Authorization") == f"Bearer {expected}"
+
+
+def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
+    from analysis_pipeline import load_config
+    from process_ingestion_queue import SupabaseRestClient, process_batch
+
+    config = load_config()
+    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    summary = process_batch(client, config, max_runs=max_runs)
+    return {
+        **summary,
+        "max_runs": max_runs,
+        "stale_processing_after_seconds": config.stale_processing_after_seconds,
+        "heartbeat_interval_seconds": config.heartbeat_interval_seconds,
+    }
 
 
 def _build_keyword_search_payload(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -94,6 +127,9 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     "service": "papertrend-node-service",
                     "hasOpenAIKey": bool(os.getenv("OPENAI_API_KEY")),
                     "hasSupabase": bool(os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL")),
+                    "hasWorkerWebhookSecret": bool(
+                        os.getenv("WORKER_WEBHOOK_SECRET") or os.getenv("CRON_SECRET")
+                    ),
                 },
             )
             return
@@ -109,6 +145,16 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
             return
 
         try:
+            if self.path == "/process-queue":
+                if not _is_authorized_worker_request(self):
+                    _json_response(self, 401, {"error": "Unauthorized"})
+                    return
+                max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
+                summary = _run_queue_batch(max_runs=max_runs)
+                logger.info("worker queue batch %s", summary)
+                _json_response(self, 200, summary)
+                return
+
             if self.path == "/keyword-search":
                 start_usage_session(label="workspace:keyword-search")
                 final_state = run_workspace_query_graph(_build_keyword_search_payload(body))

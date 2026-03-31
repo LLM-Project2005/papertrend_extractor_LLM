@@ -67,3 +67,19 @@ export function getSiteUrl(): string {
 export function getPythonNodeServiceUrl(): string {
   return (process.env.PYTHON_NODE_SERVICE_URL ?? "").replace(/\/$/, "");
 }
+
+export function getWorkerServiceUrl(): string {
+  const explicit = process.env.WORKER_SERVICE_URL ?? "";
+  if (explicit) {
+    return explicit.replace(/\/$/, "");
+  }
+  return getPythonNodeServiceUrl();
+}
+
+export function getCronSecret(): string {
+  return process.env.CRON_SECRET ?? "";
+}
+
+export function getWorkerWebhookSecret(): string {
+  return process.env.WORKER_WEBHOOK_SECRET ?? process.env.CRON_SECRET ?? "";
+}

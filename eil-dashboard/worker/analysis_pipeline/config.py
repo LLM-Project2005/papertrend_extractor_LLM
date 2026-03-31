@@ -23,6 +23,11 @@ class WorkerConfig:
     poll_interval_seconds: int
     queued_limit: int
     llm_context_chars: int
+    heartbeat_interval_seconds: int
+    stale_processing_after_seconds: int
+    stale_processing_limit: int
+    max_recovery_attempts: int
+    invalid_success_scan_limit: int
 
 
 def now_iso() -> str:
@@ -73,6 +78,15 @@ def load_config() -> WorkerConfig:
         poll_interval_seconds=max(int(os.getenv("WORKER_POLL_INTERVAL_SECONDS", "15")), 5),
         queued_limit=max(int(os.getenv("WORKER_QUEUED_LIMIT", "3")), 1),
         llm_context_chars=max(int(os.getenv("WORKER_LLM_CONTEXT_CHARS", "50000")), 8000),
+        heartbeat_interval_seconds=max(int(os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "30")), 10),
+        stale_processing_after_seconds=max(
+            int(os.getenv("WORKER_STALE_PROCESSING_AFTER_SECONDS", "1800")), 120
+        ),
+        stale_processing_limit=max(int(os.getenv("WORKER_STALE_PROCESSING_LIMIT", "10")), 1),
+        max_recovery_attempts=max(int(os.getenv("WORKER_MAX_RECOVERY_ATTEMPTS", "2")), 1),
+        invalid_success_scan_limit=max(
+            int(os.getenv("WORKER_INVALID_SUCCESS_SCAN_LIMIT", "25")), 1
+        ),
     )
 
 
