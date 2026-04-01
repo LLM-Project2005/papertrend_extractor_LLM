@@ -6,6 +6,7 @@ import {
   getGoogleDriveFileMetadata,
 } from "@/lib/google-drive";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { triggerWorkerQueue } from "@/lib/worker-trigger";
 
 export const runtime = "nodejs";
 
@@ -112,6 +113,18 @@ export async function POST(request: Request) {
       provider: AUTO_ANALYSIS_PROVIDER,
       model: AUTO_ANALYSIS_MODEL,
     });
+    try {
+      const trigger = await triggerWorkerQueue({
+        maxRuns: Math.min(createdRuns.length, 2),
+        reason: "google-drive-queue",
+      });
+      console.info("[google-drive.queue] worker trigger result", trigger);
+    } catch (triggerError) {
+      console.error("[google-drive.queue] worker trigger failed", {
+        error:
+          triggerError instanceof Error ? triggerError.message : "unknown_error",
+      });
+    }
     return NextResponse.json({ runs: createdRuns }, { status: 201 });
   } catch (error) {
     console.error("[google-drive.queue] queue failed", {

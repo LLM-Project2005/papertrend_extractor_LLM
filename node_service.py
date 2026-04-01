@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict
@@ -19,6 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 WORKER_ROOT = PROJECT_ROOT / "eil-dashboard" / "worker"
 if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
+_QUEUE_PROCESS_LOCK = threading.Lock()
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
@@ -58,6 +60,28 @@ def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
         "stale_processing_after_seconds": config.stale_processing_after_seconds,
         "heartbeat_interval_seconds": config.heartbeat_interval_seconds,
     }
+
+
+def _run_queue_batch_background(max_runs: int) -> bool:
+    if not _QUEUE_PROCESS_LOCK.acquire(blocking=False):
+        return False
+
+    def _worker() -> None:
+        try:
+            summary = _run_queue_batch(max_runs=max_runs)
+            logger.info("worker queue batch %s", summary)
+        except Exception as error:
+            logger.exception("worker queue batch failed: %s", error)
+        finally:
+            _QUEUE_PROCESS_LOCK.release()
+
+    thread = threading.Thread(
+        target=_worker,
+        name=f"papertrend-queue-batch-{max_runs}",
+        daemon=True,
+    )
+    thread.start()
+    return True
 
 
 def _build_keyword_search_payload(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -150,6 +174,21 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     _json_response(self, 401, {"error": "Unauthorized"})
                     return
                 max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
+                run_async = bool(body.get("async", True))
+                if run_async:
+                    started = _run_queue_batch_background(max_runs=max_runs)
+                    _json_response(
+                        self,
+                        202,
+                        {
+                            "ok": True,
+                            "queued": started,
+                            "already_running": not started,
+                            "max_runs": max_runs,
+                        },
+                    )
+                    return
+
                 summary = _run_queue_batch(max_runs=max_runs)
                 logger.info("worker queue batch %s", summary)
                 _json_response(self, 200, summary)

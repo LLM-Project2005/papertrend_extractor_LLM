@@ -50,7 +50,7 @@ export async function GET(request: Request) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${workerWebhookSecret}`,
       },
-      body: JSON.stringify({ maxRuns }),
+      body: JSON.stringify({ async: true, maxRuns }),
       cache: "no-store",
     });
 
