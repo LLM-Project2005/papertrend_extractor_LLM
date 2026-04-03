@@ -5,6 +5,7 @@ import {
   getGoogleDriveConnection,
   getGoogleDriveFileMetadata,
 } from "@/lib/google-drive";
+import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { triggerWorkerQueue } from "@/lib/worker-trigger";
 
@@ -13,13 +14,6 @@ export const runtime = "nodejs";
 const AUTO_ANALYSIS_PROVIDER = "Automatic task routing";
 const AUTO_ANALYSIS_MODEL = "automatic-task-routing";
 const AUTO_ANALYSIS_LABEL = "Automatic per-task model routing";
-
-function sanitizeFolderName(folderName: string): string {
-  const sanitized = folderName
-    .replace(/[^a-zA-Z0-9._/-]+/g, "-")
-    .replace(/^\/+|\/+$/g, "");
-  return sanitized || "Inbox";
-}
 
 export async function POST(request: Request) {
   const user = await getAuthenticatedUserFromRequest(request);
@@ -54,6 +48,26 @@ export async function POST(request: Request) {
     const accessToken = await ensureGoogleDriveAccessToken(connection);
     const folder = sanitizeFolderName(body.folder ?? "Inbox");
     const supabase = getSupabaseAdmin();
+    const researchFolder = await ensureResearchFolder(supabase, user.id, folder);
+    const folderId = researchFolder?.id ?? null;
+    const { data: folderJob, error: folderJobError } = await supabase
+      .from("folder_analysis_jobs")
+      .insert({
+        owner_user_id: user.id,
+        folder_id: folderId,
+        status: "queued",
+        total_runs: fileIds.length,
+        queued_runs: fileIds.length,
+        progress_stage: "queued",
+        progress_message: "Queued",
+        progress_detail: `Preparing ${fileIds.length} Google Drive file${fileIds.length === 1 ? "" : "s"} for batch analysis.`,
+      })
+      .select("*")
+      .single();
+
+    if (folderJobError || !folderJob) {
+      throw new Error(folderJobError?.message ?? "Failed to create folder analysis job.");
+    }
     const createdRuns: Array<Record<string, unknown>> = [];
 
     for (const fileId of fileIds) {
@@ -66,6 +80,8 @@ export async function POST(request: Request) {
         .from("ingestion_runs")
         .insert({
           owner_user_id: user.id,
+          folder_id: folderId,
+          folder_analysis_job_id: folderJob.id,
           source_type: "upload",
           status: "queued",
           source_filename: file.name,
@@ -84,9 +100,9 @@ export async function POST(request: Request) {
             analysis_mode: "automatic",
             analysis_label: AUTO_ANALYSIS_LABEL,
             progress_stage: "queued",
-            progress_message: "Queued for analysis",
+            progress_message: "Queued",
             progress_detail:
-              "The worker will pull this PDF from Google Drive and choose the right model mix for each task.",
+              "Preparing Google Drive PDF for batch analysis and automatic per-task routing.",
           },
         })
         .select("*")
@@ -125,7 +141,7 @@ export async function POST(request: Request) {
           triggerError instanceof Error ? triggerError.message : "unknown_error",
       });
     }
-    return NextResponse.json({ runs: createdRuns }, { status: 201 });
+    return NextResponse.json({ runs: createdRuns, folderJob }, { status: 201 });
   } catch (error) {
     console.error("[google-drive.queue] queue failed", {
       error: error instanceof Error ? error.message : "unknown_error",

@@ -5,7 +5,10 @@ from workspace_data import filter_dashboard_data, load_workspace_dataset
 
 
 def load_workspace_data_node(state: WorkspaceQueryState) -> Dict[str, Any]:
-    dataset = load_workspace_dataset(owner_user_id=state.get("owner_user_id"))
+    dataset = load_workspace_dataset(
+        owner_user_id=state.get("owner_user_id"),
+        folder_id=state.get("folder_id"),
+    )
     filtered = filter_dashboard_data(
         dataset,
         selected_years=state.get("selected_years") or [],

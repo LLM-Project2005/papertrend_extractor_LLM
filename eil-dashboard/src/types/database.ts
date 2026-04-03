@@ -1,5 +1,6 @@
 export interface TrendRow {
   paper_id: number;
+  folder_id?: string | null;
   year: string;
   title: string;
   topic: string;
@@ -10,6 +11,7 @@ export interface TrendRow {
 
 export interface TrackRow {
   paper_id: number;
+  folder_id?: string | null;
   year: string;
   title: string;
   el: number;
@@ -28,15 +30,44 @@ export interface DashboardData {
 export interface DbPaper {
   id: number;
   owner_user_id?: string | null;
+  folder_id?: string | null;
   year: string;
   title: string;
   created_at?: string;
+}
+
+export interface ResearchFolderRow {
+  id: string;
+  owner_user_id?: string | null;
+  name: string;
+  description?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FolderAnalysisJobRow {
+  id: string;
+  owner_user_id?: string | null;
+  folder_id: string;
+  status: "queued" | "processing" | "succeeded" | "failed";
+  total_runs: number;
+  queued_runs: number;
+  processing_runs: number;
+  succeeded_runs: number;
+  failed_runs: number;
+  progress_stage?: string | null;
+  progress_message?: string | null;
+  progress_detail?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
 }
 
 export interface DbPaperKeyword {
   id?: number;
   paper_id: number;
   owner_user_id?: string | null;
+  folder_id?: string | null;
   topic: string;
   keyword: string;
   keyword_frequency: number;
@@ -47,6 +78,7 @@ export interface DbPaperKeyword {
 export interface DbPaperTrack {
   paper_id: number;
   owner_user_id?: string | null;
+  folder_id?: string | null;
   el: number;
   eli: number;
   lae: number;
@@ -57,6 +89,7 @@ export interface DbPaperTrack {
 export interface DbPaperContent {
   paper_id: number;
   owner_user_id?: string | null;
+  folder_id?: string | null;
   raw_text?: string | null;
   abstract?: string | null;
   abstract_claims?: string | null;
@@ -73,6 +106,8 @@ export interface DbPaperContent {
 export interface IngestionRunRow {
   id: string;
   owner_user_id?: string | null;
+  folder_id?: string | null;
+  folder_analysis_job_id?: string | null;
   source_type: "batch" | "upload";
   status: "queued" | "processing" | "succeeded" | "failed";
   source_filename?: string | null;
@@ -88,6 +123,7 @@ export interface IngestionRunRow {
 
 export interface PaperFullRow {
   paper_id: number;
+  folder_id?: string | null;
   year: string;
   title: string;
   abstract?: string | null;

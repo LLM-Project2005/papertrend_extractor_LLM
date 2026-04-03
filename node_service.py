@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from graphs import run_workspace_query_graph
 from nodes import consume_usage_summary, start_usage_session
+from nodes.deep_research import generate_deep_research_plan
 
 load_dotenv()
 logging.basicConfig(level=os.getenv("NODE_SERVICE_LOG_LEVEL", "INFO").upper())
@@ -21,6 +22,7 @@ WORKER_ROOT = PROJECT_ROOT / "eil-dashboard" / "worker"
 if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
 _QUEUE_PROCESS_LOCK = threading.Lock()
+_RESEARCH_PROCESS_LOCK = threading.Lock()
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
@@ -62,6 +64,15 @@ def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
     }
 
 
+def _run_research_batch(max_runs: int) -> Dict[str, Any]:
+    from analysis_pipeline import load_config
+    from process_research_queue import SupabaseRestClient, process_batch
+
+    config = load_config()
+    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    return process_batch(client, max_runs=max_runs)
+
+
 def _run_queue_batch_background(max_runs: int) -> bool:
     if not _QUEUE_PROCESS_LOCK.acquire(blocking=False):
         return False
@@ -84,10 +95,33 @@ def _run_queue_batch_background(max_runs: int) -> bool:
     return True
 
 
+def _run_research_batch_background(max_runs: int) -> bool:
+    if not _RESEARCH_PROCESS_LOCK.acquire(blocking=False):
+        return False
+
+    def _worker() -> None:
+        try:
+            summary = _run_research_batch(max_runs=max_runs)
+            logger.info("research queue batch %s", summary)
+        except Exception as error:
+            logger.exception("research queue batch failed: %s", error)
+        finally:
+            _RESEARCH_PROCESS_LOCK.release()
+
+    thread = threading.Thread(
+        target=_worker,
+        name=f"papertrend-research-batch-{max_runs}",
+        daemon=True,
+    )
+    thread.start()
+    return True
+
+
 def _build_keyword_search_payload(body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "request_kind": "keyword-search",
         "owner_user_id": str(body.get("ownerUserId") or ""),
+        "folder_id": str(body.get("folderId") or ""),
         "message": str(body.get("query") or ""),
         "search_query": str(body.get("query") or ""),
         "selected_years": list(body.get("selectedYears") or []),
@@ -102,6 +136,7 @@ def _build_visualization_payload(body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "request_kind": "visualization",
         "owner_user_id": str(body.get("ownerUserId") or ""),
+        "folder_id": str(body.get("folderId") or ""),
         "selected_years": list(body.get("selectedYears") or []),
         "selected_tracks": list(body.get("selectedTracks") or []),
         "search_query": str(body.get("searchQuery") or ""),
@@ -121,6 +156,11 @@ def _build_chat_payload(body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "request_kind": "chat",
         "owner_user_id": str(body.get("ownerUserId") or ""),
+        "folder_id": str(body.get("folderId") or ""),
+        "thread_id": str(body.get("threadId") or ""),
+        "session_id": str(body.get("sessionId") or ""),
+        "chat_mode": str(body.get("chatMode") or "normal"),
+        "action": str(body.get("action") or "message"),
         "message": current_message,
         "messages": [
             {"role": str(message.get("role") or ""), "content": str(message.get("content") or "")}
@@ -154,6 +194,7 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     "hasWorkerWebhookSecret": bool(
                         os.getenv("WORKER_WEBHOOK_SECRET") or os.getenv("CRON_SECRET")
                     ),
+                    "hasResearchQueue": True,
                 },
             )
             return
@@ -192,6 +233,42 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 summary = _run_queue_batch(max_runs=max_runs)
                 logger.info("worker queue batch %s", summary)
                 _json_response(self, 200, summary)
+                return
+
+            if self.path == "/process-research-queue":
+                if not _is_authorized_worker_request(self):
+                    _json_response(self, 401, {"error": "Unauthorized"})
+                    return
+                max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
+                run_async = bool(body.get("async", True))
+                if run_async:
+                    started = _run_research_batch_background(max_runs=max_runs)
+                    _json_response(
+                        self,
+                        202,
+                        {
+                            "ok": True,
+                            "queued": started,
+                            "already_running": not started,
+                            "max_runs": max_runs,
+                        },
+                    )
+                    return
+
+                summary = _run_research_batch(max_runs=max_runs)
+                logger.info("research queue batch %s", summary)
+                _json_response(self, 200, summary)
+                return
+
+            if self.path == "/research-plan":
+                start_usage_session(label="workspace:deep-research-plan")
+                plan = generate_deep_research_plan(
+                    owner_user_id=str(body.get("ownerUserId") or ""),
+                    folder_id=str(body.get("folderId") or "") or None,
+                    prompt=str(body.get("message") or ""),
+                )
+                logger.info("workspace usage summary %s", consume_usage_summary())
+                _json_response(self, 200, plan)
                 return
 
             if self.path == "/keyword-search":

@@ -13,10 +13,11 @@ import {
   FolderIcon,
   PlusIcon,
 } from "@/components/ui/Icons";
-import type { IngestionRunRow } from "@/types/database";
+import type { IngestionRunRow, ResearchFolderRow } from "@/types/database";
 
 interface IngestionRun {
   id: string;
+  folder_id?: string | null;
   source_type: "batch" | "upload";
   status: "queued" | "processing" | "succeeded" | "failed";
   source_filename?: string | null;
@@ -27,8 +28,6 @@ interface IngestionRun {
   error_message?: string | null;
   updated_at?: string;
 }
-
-const FOLDER_STORAGE_KEY = "papertrend_import_folders_v1";
 
 function formatTimestamp(value?: string | null) {
   if (!value) return "Not available";
@@ -49,7 +48,13 @@ function StatusBadge({ status }: { status: IngestionRun["status"] }) {
   return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${classes}`}>{status}</span>;
 }
 
-function getFolderName(run: IngestionRun) {
+function getFolderName(run: IngestionRun, folders: ResearchFolderRow[]) {
+  if (run.folder_id) {
+    const folder = folders.find((item) => item.id === run.folder_id);
+    if (folder?.name) {
+      return folder.name;
+    }
+  }
   const payloadFolder =
     typeof run.input_payload?.folder_name === "string"
       ? run.input_payload.folder_name.trim()
@@ -65,41 +70,51 @@ function sanitizeFolderName(folderName: string) {
 
 export default function AdminImportClient() {
   const { session, isAdmin, user } = useAuth();
-  const { startAnalysisSession } = useWorkspaceProfile();
+  const {
+    startAnalysisSession,
+    folders,
+    selectedFolderId,
+    setSelectedFolderId,
+    createFolder,
+    refreshFolders,
+  } = useWorkspaceProfile();
   const [adminSecret, setAdminSecret] = useState("");
   const [runs, setRuns] = useState<IngestionRun[]>([]);
-  const [folders, setFolders] = useState<string[]>(["Inbox"]);
-  const [activeFolder, setActiveFolder] = useState("Inbox");
   const [draftFolderName, setDraftFolderName] = useState("");
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const activeFolder = useMemo(
+    () =>
+      selectedFolderId === "all"
+        ? folders[0]?.name ?? "Inbox"
+        : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Inbox",
+    [folders, selectedFolderId]
+  );
+  const visibleRuns = useMemo(
+    () =>
+      runs.filter((run) =>
+        selectedFolderId === "all"
+          ? true
+          : run.folder_id
+            ? run.folder_id === selectedFolderId
+            : getFolderName(run, folders) === activeFolder
+      ),
+    [activeFolder, folders, runs, selectedFolderId]
+  );
 
   useEffect(() => {
     const savedSecret = window.localStorage.getItem("eil_admin_secret");
     if (savedSecret) setAdminSecret(savedSecret);
-    const savedFolders = window.localStorage.getItem(FOLDER_STORAGE_KEY);
-    if (savedFolders) {
-      try {
-        const parsed = JSON.parse(savedFolders) as string[];
-        if (parsed.length > 0) setFolders(Array.from(new Set(["Inbox", ...parsed])));
-      } catch {}
-    }
   }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(FOLDER_STORAGE_KEY, JSON.stringify(folders));
-  }, [folders]);
 
   useEffect(() => {
     if (session?.access_token) {
       void loadRuns();
     }
   }, [session?.access_token]);
-
-  const visibleRuns = useMemo(() => runs.filter((run) => getFolderName(run) === activeFolder), [activeFolder, runs]);
 
   async function loadRuns(secretOverride?: string) {
     const secret = secretOverride ?? adminSecret;
@@ -117,9 +132,10 @@ export default function AdminImportClient() {
       const response = await fetch("/api/admin/import", { headers });
       const payload = (await response.json()) as { runs?: IngestionRun[]; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Failed to load imported files.");
-      const nextRuns = payload.runs ?? [];
-      setRuns(nextRuns);
-      setFolders((current) => Array.from(new Set(["Inbox", ...current, ...nextRuns.map(getFolderName)])));
+      setRuns(payload.runs ?? []);
+      if (session?.access_token) {
+        await refreshFolders();
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load imported files.");
     } finally {
@@ -137,17 +153,26 @@ export default function AdminImportClient() {
     setMessage("Admin secret saved locally for this browser.");
   }
 
-  function handleCreateFolder() {
+  async function handleCreateFolder() {
     const sanitized = sanitizeFolderName(draftFolderName);
     if (!sanitized) {
       setError("Enter a folder name first.");
       return;
     }
-    setFolders((current) => Array.from(new Set([...current, sanitized])));
-    setActiveFolder(sanitized);
+    try {
+      const folder = await createFolder(sanitized);
+      setSelectedFolderId(folder.id);
+      setMessage(`Folder "${folder.name}" created.`);
+    } catch (createError) {
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Failed to create folder."
+      );
+      return;
+    }
     setDraftFolderName("");
     setShowFolderInput(false);
-    setMessage(`Folder "${sanitized}" created.`);
   }
 
   return (
@@ -180,12 +205,24 @@ export default function AdminImportClient() {
       )}
 
       <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => setSelectedFolderId("all")}
+          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+            selectedFolderId === "all"
+              ? "bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+              : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-[#212121] dark:text-[#b8b8b8] dark:hover:bg-[#2a2a2a]"
+          }`}
+        >
+          <FolderIcon className="h-4 w-4" />
+          <span>All folders</span>
+        </button>
         {folders.map((folder) => {
-          const active = folder === activeFolder;
+          const active = folder.id === selectedFolderId;
           return (
-            <button key={folder} type="button" onClick={() => setActiveFolder(folder)} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${active ? "bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-[#212121] dark:text-[#b8b8b8] dark:hover:bg-[#2a2a2a]"}`}>
+            <button key={folder.id} type="button" onClick={() => setSelectedFolderId(folder.id)} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${active ? "bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-[#212121] dark:text-[#b8b8b8] dark:hover:bg-[#2a2a2a]"}`}>
               <FolderIcon className="h-4 w-4" />
-              <span>{folder}</span>
+              <span>{folder.name}</span>
             </button>
           );
         })}
@@ -213,7 +250,7 @@ export default function AdminImportClient() {
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#2f2f2f] sm:px-5">
             <div>
               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Files</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">{visibleRuns.length} item{visibleRuns.length === 1 ? "" : "s"} in {activeFolder}</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">{visibleRuns.length} item{visibleRuns.length === 1 ? "" : "s"} in {selectedFolderId === "all" ? "all folders" : activeFolder}</p>
             </div>
             <button type="button" onClick={() => loadRuns()} disabled={loadingRuns} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-[#2f2f2f] dark:text-[#b8b8b8] dark:hover:border-[#3a3a3a] dark:hover:text-white">
               {loadingRuns ? "Refreshing..." : "Refresh"}
@@ -267,9 +304,10 @@ export default function AdminImportClient() {
         eyebrow="Import knowledge"
         onCreated={(createdRuns, context) => {
           setRuns((current) => [...createdRuns, ...current]);
-          setFolders((current) =>
-            Array.from(new Set([...current, context.folder]))
-          );
+          if (context.folderId) {
+            setSelectedFolderId(context.folderId);
+          }
+          void refreshFolders();
           startAnalysisSession(createdRuns as IngestionRunRow[], context);
           setMessage("Files added to the knowledge library and queued for extraction.");
           setError(null);

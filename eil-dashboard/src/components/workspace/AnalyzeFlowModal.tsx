@@ -14,7 +14,7 @@ import {
   SharePointIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
 type ImportSource =
   | "pdf-upload"
@@ -84,7 +84,12 @@ interface AnalyzeFlowModalProps {
   eyebrow?: string;
   onCreated?: (
     runs: IngestionRunRow[],
-    context: { folder: string; sourceKind: string }
+    context: {
+      folder: string;
+      folderId?: string | null;
+      folderJob?: FolderAnalysisJobRow | null;
+      sourceKind: string;
+    }
   ) => void;
 }
 
@@ -281,6 +286,7 @@ export default function AnalyzeFlowModal({
 
         const payload = (await response.json()) as {
           runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
           error?: string;
         };
 
@@ -294,6 +300,8 @@ export default function AnalyzeFlowModal({
 
         onCreated?.(payload.runs ?? [], {
           folder: folder.trim() || defaultFolder,
+          folderId: payload.folderJob?.folder_id ?? null,
+          folderJob: payload.folderJob ?? null,
           sourceKind: selectedSource,
         });
 
@@ -327,6 +335,7 @@ export default function AnalyzeFlowModal({
 
         const payload = (await response.json()) as {
           runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
           error?: string;
         };
 
@@ -336,6 +345,8 @@ export default function AnalyzeFlowModal({
 
         onCreated?.(payload.runs ?? [], {
           folder: folder.trim() || defaultFolder,
+          folderId: payload.folderJob?.folder_id ?? null,
+          folderJob: payload.folderJob ?? null,
           sourceKind: selectedSource,
         });
 

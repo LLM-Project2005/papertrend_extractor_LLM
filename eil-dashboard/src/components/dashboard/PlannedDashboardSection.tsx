@@ -11,6 +11,7 @@ import type { VisualizationPlanSection } from "@/types/visualization";
 export default function PlannedDashboardSection({
   section,
   data,
+  folderId,
   selectedYears,
   selectedTracks,
   linkedPaperId,
@@ -18,6 +19,7 @@ export default function PlannedDashboardSection({
 }: {
   section: VisualizationPlanSection;
   data: Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti">;
+  folderId?: string | "all";
   selectedYears: string[];
   selectedTracks: string[];
   linkedPaperId?: number | null;
@@ -65,6 +67,7 @@ export default function PlannedDashboardSection({
       {section.section_key === "keyword_explorer" ? (
         <KeywordExplorer
           trends={data.trends}
+          folderId={folderId}
           selectedYears={selectedYears}
           selectedTracks={selectedTracks}
           planCharts={section.charts}

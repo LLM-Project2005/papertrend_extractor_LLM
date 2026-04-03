@@ -33,7 +33,10 @@ export async function buildNormalizedAnalyticsPayload(
   request: VisualizationPlannerRequest = {},
   ownerUserId?: string | null
 ): Promise<NormalizedAnalyticsPayload> {
-  const data = await loadDashboardDataServer(ownerUserId);
+  const data = await loadDashboardDataServer(
+    ownerUserId,
+    request.folderId && request.folderId !== "all" ? request.folderId : null
+  );
   const years =
     request.selectedYears && request.selectedYears.length > 0
       ? request.selectedYears

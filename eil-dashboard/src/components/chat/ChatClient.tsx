@@ -1,226 +1,228 @@
 "use client";
 
 import Link from "next/link";
-import {
-  FormEvent,
-  KeyboardEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import {
-  AttachmentIcon,
-  ChevronDownIcon,
-  CopyIcon,
-  FileIcon,
-  ImageIcon,
-  PaperIcon,
-  PlusIcon,
-  RefreshIcon,
-  SendIcon,
-} from "@/components/ui/Icons";
+import { ArrowRightIcon, ChatIcon, CheckCircleIcon, CircleIcon, PaperIcon, PlusIcon, SendIcon, SparkIcon } from "@/components/ui/Icons";
+import type { ChatMode, ChatThreadDetail, DeepResearchSessionRecord, WorkspaceMessageRecord, WorkspaceThreadSummary } from "@/types/research";
 
-interface Citation {
-  paperId: number;
-  title: string;
-  year: string;
-  href: string;
-  reason: string;
+interface Citation { paperId: number; title: string; year: string; href: string; reason: string }
+interface MessageView { id: string; role: "user" | "assistant" | "system"; content: string; citations: Citation[]; kind: WorkspaceMessageRecord["message_kind"]; metadata?: Record<string, unknown> | null }
+interface ChatPayload {
+  answer?: string; mode?: "grounded" | "fallback"; citations?: Citation[]; error?: string;
+  thread?: WorkspaceThreadSummary; messages?: WorkspaceMessageRecord[]; deepResearchSession?: DeepResearchSessionRecord | null;
 }
 
-interface AttachmentItem {
-  id: string;
-  name: string;
-  size: number;
-  type: string;
-}
-
-interface ConversationMessage {
-  role: "user" | "assistant";
-  content: string;
-  mode?: "grounded" | "fallback";
-  citations?: Citation[];
-  attachments?: AttachmentItem[];
-}
-
-const STARTER_PROMPTS = [
-  "Summarize the main research trends in this workspace.",
+const NORMAL_STARTERS = [
+  "Summarize the main research trends in this folder.",
   "Find papers related to translanguaging and multilingual education.",
-  "Compare the major track categories in this corpus.",
-  "Which keywords appear most often across recent papers?",
+  "Compare the major track categories in this folder.",
+];
+const RESEARCH_STARTERS = [
+  "Plan a deep comparison of how assessment changes across the papers in this folder.",
+  "Map when intelligibility-related concepts emerge and what they co-occur with.",
+  "Compare objective verbs and contribution types across this folder.",
 ];
 
-const MODEL_OPTIONS = [
-  { value: "openai/gpt-4o-mini", label: "GPT-4o mini" },
-  { value: "openai/gpt-4.1-mini", label: "GPT-4.1 mini" },
-] as const;
+const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
+  id: message.id,
+  role: message.role,
+  content: message.content,
+  citations: message.citations ?? [],
+  kind: message.message_kind,
+  metadata: message.metadata ?? null,
+});
 
-function formatFileSize(size: number) {
-  if (size < 1024) {
-    return `${size} B`;
-  }
+const localMessage = (role: MessageView["role"], content: string, citations: Citation[] = [], metadata?: Record<string, unknown>): MessageView => ({
+  id: `local-${Math.random().toString(36).slice(2, 10)}`,
+  role,
+  content,
+  citations,
+  kind: "chat",
+  metadata: metadata ?? null,
+});
 
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`;
-  }
+const upsertThread = (threads: WorkspaceThreadSummary[], thread: WorkspaceThreadSummary) =>
+  [thread, ...threads.filter((item) => item.id !== thread.id)].sort((a, b) => (b.updated_at ?? "").localeCompare(a.updated_at ?? ""));
 
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
+const sessionLabel = (session?: DeepResearchSessionRecord | null) =>
+  session?.status === "planned" ? "Planned"
+  : session?.status === "queued" ? "Queued"
+  : session?.status === "waiting_on_analysis" ? "Waiting on analysis"
+  : session?.status === "processing" ? "Researching"
+  : session?.status === "completed" ? "Completed"
+  : session?.status === "failed" ? "Failed"
+  : null;
+
+const sessionActive = (session?: DeepResearchSessionRecord | null) =>
+  session?.status === "queued" || session?.status === "waiting_on_analysis" || session?.status === "processing";
 
 export default function ChatClient({
   previewMode = false,
+  folderId = "all",
+  folderLabel = "All folders",
   selectedYears = [],
   selectedTracks = [],
   searchQuery = "",
 }: {
   previewMode?: boolean;
+  folderId?: string | "all";
+  folderLabel?: string;
   selectedYears?: string[];
   selectedTracks?: string[];
   searchQuery?: string;
 }) {
-  const { session } = useAuth();
+  const { session, user } = useAuth();
+  const [chatMode, setChatMode] = useState<ChatMode>("normal");
   const [draft, setDraft] = useState("");
+  const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [activeThread, setActiveThread] = useState<WorkspaceThreadSummary | null>(null);
+  const [messages, setMessages] = useState<MessageView[]>([]);
+  const [deepSession, setDeepSession] = useState<DeepResearchSessionRecord | null>(null);
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<ConversationMessage[]>([]);
-  const [model, setModel] =
-    useState<(typeof MODEL_OPTIONS)[number]["value"]>("openai/gpt-4o-mini");
-  const [attachments, setAttachments] = useState<AttachmentItem[]>([]);
-  const [attachmentsMenuOpen, setAttachmentsMenuOpen] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-  const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
+  const [threadsLoading, setThreadsLoading] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  const canPersist = Boolean(user && session?.access_token);
+  const requestHeaders = useMemo(
+    (): Record<string, string> =>
+      session?.access_token
+        ? {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          }
+        : { "Content-Type": "application/json" },
+    [session?.access_token]
+  );
+  const starters = chatMode === "deep_research" ? RESEARCH_STARTERS : NORMAL_STARTERS;
 
-  useEffect(() => {
-    if (!copiedMessageKey) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => setCopiedMessageKey(null), 1800);
-    return () => window.clearTimeout(timer);
-  }, [copiedMessageKey]);
-
-  useEffect(() => {
-    function handlePointerDown(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setAttachmentsMenuOpen(false);
-      }
-    }
-
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => window.removeEventListener("mousedown", handlePointerDown);
+  const resetThread = useCallback((mode: ChatMode = "normal") => {
+    setActiveThreadId(null); setActiveThread(null); setMessages([]); setDeepSession(null); setError(null); setChatMode(mode);
   }, []);
 
-  function appendFiles(fileList: FileList | File[]) {
-    const nextFiles = Array.from(fileList).map((file) => ({
-      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
-      name: file.name,
-      size: file.size,
-      type: file.type || "application/octet-stream",
-    }));
+  const applyPayload = useCallback((payload: ChatPayload) => {
+    if (payload.thread) {
+      setActiveThread(payload.thread);
+      setActiveThreadId(payload.thread.id);
+      setChatMode(payload.thread.mode);
+      setThreads((current) => upsertThread(current, payload.thread!));
+    }
+    if (payload.messages) setMessages(payload.messages.map(mapMessage));
+    setDeepSession(payload.deepResearchSession ?? null);
+  }, []);
 
-    setAttachments((current) => {
-      const seen = new Set(current.map((item) => `${item.name}:${item.size}:${item.type}`));
-      return [
-        ...current,
-        ...nextFiles.filter((file) => {
-          const key = `${file.name}:${file.size}:${file.type}`;
-          if (seen.has(key)) {
-            return false;
-          }
-          seen.add(key);
-          return true;
-        }),
-      ];
-    });
+  const refreshThreads = useCallback(async (preferredThreadId?: string | null) => {
+    if (!canPersist || !session?.access_token) { setThreads([]); return; }
+    setThreadsLoading(true);
+    try {
+      const params = new URLSearchParams({ folderId: folderId || "all" });
+      const response = await fetch(`/api/chat/threads?${params.toString()}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const payload = await response.json() as { threads?: WorkspaceThreadSummary[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load chat history.");
+      const nextThreads = payload.threads ?? [];
+      setThreads(nextThreads);
+      setActiveThreadId((current) => preferredThreadId ?? (current && nextThreads.some((item) => item.id === current) ? current : nextThreads[0]?.id ?? null));
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to load chat history.");
+    } finally {
+      setThreadsLoading(false);
+    }
+  }, [canPersist, folderId, session?.access_token]);
+
+  const loadThreadDetail = useCallback(async (threadId: string) => {
+    if (!canPersist || !session?.access_token) return;
+    setDetailLoading(true);
+    try {
+      const response = await fetch(`/api/chat/threads/${threadId}`, { headers: { Authorization: `Bearer ${session.access_token}` } });
+      const payload = await response.json() as ChatThreadDetail & { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load thread.");
+      setActiveThread(payload.thread);
+      setChatMode(payload.thread.mode);
+      setMessages((payload.messages ?? []).map(mapMessage));
+      setDeepSession(payload.deepResearchSession ?? null);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to load thread.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }, [canPersist, session?.access_token]);
+
+  useEffect(() => { scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" }); }, [deepSession?.status, loading, messages]);
+  useEffect(() => { if (!canPersist) { setThreads([]); setActiveThreadId(null); setActiveThread(null); setDeepSession(null); return; } void refreshThreads(null); }, [canPersist, folderId, refreshThreads]);
+  useEffect(() => { if (activeThreadId && canPersist) void loadThreadDetail(activeThreadId); }, [activeThreadId, canPersist, loadThreadDetail]);
+  useEffect(() => {
+    if (!canPersist || !activeThreadId || !sessionActive(deepSession)) return;
+    const timer = window.setInterval(() => { void loadThreadDetail(activeThreadId); }, 5000);
+    return () => window.clearInterval(timer);
+  }, [activeThreadId, canPersist, deepSession, loadThreadDetail]);
+
+  async function sendRequest(body: Record<string, unknown>) {
+    const response = await fetch("/api/chat", { method: "POST", headers: requestHeaders, body: JSON.stringify(body) });
+    const payload = await response.json() as ChatPayload;
+    if (!response.ok) throw new Error(payload.error ?? "Chat request failed.");
+    return payload;
   }
 
-  async function sendPrompt(
-    prompt: string,
-    promptAttachments: AttachmentItem[],
-    baseMessages = messages
-  ) {
-    const trimmedPrompt = prompt.trim();
-    if (!trimmedPrompt || loading) {
-      return;
-    }
-
-    const nextMessages = [
-      ...baseMessages,
-      {
-        role: "user" as const,
-        content: trimmedPrompt,
-        attachments: promptAttachments,
-      },
-    ];
-
-    setMessages(nextMessages);
-    setDraft("");
-    setAttachments([]);
-    setLoading(true);
-
+  async function handleNormalSend() {
+    const prompt = draft.trim();
+    if (!prompt) return;
+    setLoading(true); setError(null);
+    const nextMessages = [...messages, localMessage("user", prompt)];
+    if (!canPersist) setMessages(nextMessages);
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token
-            ? { Authorization: `Bearer ${session.access_token}` }
-            : {}),
-        },
-        body: JSON.stringify({
-          message: trimmedPrompt,
-          model,
-          attachments: promptAttachments.map(({ name, size, type }) => ({
-            name,
-            size,
-            type,
-          })),
-          messages: nextMessages.map(({ role, content }) => ({ role, content })),
-          selectedYears,
-          selectedTracks,
-          searchQuery,
-        }),
+      const payload = await sendRequest({
+        message: prompt,
+        messages: nextMessages.map((message) => ({ role: message.role, content: message.content })),
+        selectedYears, selectedTracks, searchQuery, folderId,
+        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        chatMode: "normal", action: "message",
       });
+      setDraft("");
+      if (payload.thread && payload.messages) applyPayload(payload);
+      else setMessages([...nextMessages, localMessage("assistant", payload.answer ?? "No answer returned.", payload.citations ?? [], { mode: payload.mode ?? "fallback" })]);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Chat request failed.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      const payload = (await response.json()) as {
-        answer?: string;
-        mode?: "grounded" | "fallback";
-        citations?: Citation[];
-        error?: string;
-      };
+  async function handlePlanResearch() {
+    const prompt = draft.trim();
+    if (!prompt) return;
+    if (!canPersist) { setError("Sign in to use deep research mode."); return; }
+    setLoading(true); setError(null);
+    try {
+      const payload = await sendRequest({
+        message: prompt,
+        folderId,
+        threadId: activeThread?.mode === "deep_research" ? activeThread.id : undefined,
+        sessionId: activeThread?.mode === "deep_research" ? deepSession?.id : undefined,
+        chatMode: "deep_research", action: "plan",
+      });
+      applyPayload(payload);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to build research plan.");
+    } finally {
+      setLoading(false);
+    }
+  }
 
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Chat request failed.");
-      }
-
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: payload.answer ?? "No answer returned.",
-          mode: payload.mode,
-          citations: payload.citations ?? [],
-        },
-      ]);
-    } catch (error) {
-      setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          mode: "fallback",
-          content:
-            error instanceof Error
-              ? error.message
-              : "Something went wrong while generating the answer.",
-        },
-      ]);
+  async function handleContinueResearch() {
+    if (!canPersist || !activeThread || !deepSession) return;
+    setLoading(true); setError(null);
+    try {
+      const payload = await sendRequest({
+        folderId, threadId: activeThread.id, sessionId: deepSession.id,
+        chatMode: "deep_research", action: "continue",
+      });
+      applyPayload(payload);
+      await refreshThreads(activeThread.id);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to continue deep research.");
     } finally {
       setLoading(false);
     }
@@ -228,376 +230,115 @@ export default function ChatClient({
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await sendPrompt(draft, attachments);
+    if (chatMode === "deep_research") { await handlePlanResearch(); return; }
+    await handleNormalSend();
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      event.currentTarget.form?.requestSubmit();
-    }
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); }
   }
-
-  async function handleCopy(content: string, key: string) {
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopiedMessageKey(key);
-    } catch {
-      setCopiedMessageKey(null);
-    }
-  }
-
-  async function handleRegenerate(messageIndex: number) {
-    if (loading) {
-      return;
-    }
-
-    const previousMessages = messages.slice(0, messageIndex);
-    const lastUserMessage = [...previousMessages]
-      .reverse()
-      .find((message) => message.role === "user");
-
-    if (!lastUserMessage) {
-      return;
-    }
-
-    setMessages(previousMessages);
-    await sendPrompt(
-      lastUserMessage.content,
-      lastUserMessage.attachments ?? [],
-      previousMessages
-    );
-  }
-
-  const composerDisabled = loading || draft.trim().length === 0;
 
   return (
-    <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-5xl flex-col">
-      <div className="px-1 pb-4 pt-1 sm:px-2">
-        <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-          Workspace chat
-        </p>
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-xl font-semibold text-slate-950 dark:text-[#ececec]">
-            Research assistant
-          </h1>
-          <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-            <span>
-              {previewMode
-                ? "Grounded on temporary preview data"
-                : "Grounded on workspace data first"}
-            </span>
-          </div>
+    <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[1500px] gap-5">
+      <aside className="hidden w-[300px] flex-none rounded-[28px] border border-slate-200 bg-white p-4 dark:border-[#2f2f2f] dark:bg-[#171717] xl:block">
+        <div className="flex items-center justify-between gap-3">
+          <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">Folder scope</p><h2 className="mt-1 text-lg font-semibold text-slate-950 dark:text-[#ececec]">{folderLabel}</h2></div>
+          <button type="button" onClick={() => resetThread(chatMode)} className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#343434] dark:bg-[#202020] dark:text-[#cfcfcf] dark:hover:border-[#474747] dark:hover:text-white"><PlusIcon className="h-4 w-4" /></button>
         </div>
-        {previewMode ? (
-          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-            Preview mode is active, so chat answers are temporarily based on the mock workspace dataset until the live backend analysis pipeline is restored.
-          </div>
-        ) : null}
-      </div>
+        <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#202020]">
+          <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">Conversation history</p>
+          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{canPersist ? "Threads are saved per folder so you can reopen them later." : "Sign in to save history and deep research sessions."}</p>
+        </div>
+        <div className="mt-4 space-y-2 overflow-y-auto pr-1">
+          {threadsLoading ? <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500 dark:border-[#2f2f2f] dark:text-[#8f8f8f]">Loading threads...</div> : null}
+          {!threadsLoading && threads.length === 0 ? <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-5 text-sm text-slate-500 dark:border-[#2f2f2f] dark:text-[#8f8f8f]">{canPersist ? "No saved threads in this folder yet." : "History unlocks after sign-in."}</div> : null}
+          {threads.map((thread) => {
+            const active = thread.id === activeThreadId;
+            return <button key={thread.id} type="button" onClick={() => setActiveThreadId(thread.id)} className={`w-full rounded-2xl border px-4 py-3 text-left transition-colors ${active ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900" : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#202020] dark:text-[#ececec] dark:hover:border-[#404040]"}`}><div className="flex items-center justify-between gap-2"><span className={`rounded-full px-2 py-1 text-[11px] font-medium ${thread.mode === "deep_research" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "bg-slate-100 text-slate-600 dark:bg-[#242424] dark:text-[#bfbfbf]"}`}>{thread.mode === "deep_research" ? "Deep research" : "Normal"}</span><span className={`text-[11px] ${active ? "text-white/80 dark:text-slate-700" : "text-slate-400 dark:text-[#777777]"}`}>{thread.updated_at ? new Date(thread.updated_at).toLocaleString() : "Just now"}</span></div><p className="mt-3 line-clamp-2 text-sm font-medium">{thread.title}</p>{thread.summary ? <p className={`mt-2 line-clamp-2 text-xs leading-5 ${active ? "text-white/80 dark:text-slate-700" : "text-slate-500 dark:text-[#9a9a9a]"}`}>{thread.summary}</p> : null}</button>;
+          })}
+        </div>
+      </aside>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto px-1 sm:px-2">
-          {messages.length === 0 ? (
-            <section className="mx-auto flex min-h-[48vh] max-w-3xl flex-col justify-center px-2 py-10">
-              <h2 className="text-center text-[2rem] font-semibold tracking-tight text-slate-950 dark:text-[#ececec]">
-                How can I help with this research workspace?
-              </h2>
-              <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-7 text-slate-500 dark:text-[#8f8f8f]">
-                Ask about papers, topics, tracks, keywords, or trends. Answers stay
-                grounded in the current corpus first.
-              </p>
-
-              <div className="mt-8 grid gap-3 sm:grid-cols-2">
-                {STARTER_PROMPTS.map((prompt) => (
-                  <button
-                    key={prompt}
-                    type="button"
-                    onClick={() => setDraft(prompt)}
-                    className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left text-sm text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#303030] dark:bg-[#1f1f1f] dark:text-[#d1d1d1] dark:hover:border-[#3b3b3b] dark:hover:bg-[#232323]"
-                  >
-                    {prompt}
-                  </button>
-                ))}
+      <div className="flex min-w-0 flex-1 flex-col rounded-[30px] border border-slate-200 bg-white px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717] sm:px-5 sm:py-5">
+        <div className="border-b border-slate-200 pb-4 dark:border-[#2f2f2f]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">Workspace chat</p>
+              <h1 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-[#ececec]">Folder-scoped research assistant</h1>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]">The assistant reads from <span className="font-medium">{folderLabel}</span> first, keeps history with the folder, and can switch into a staged deep research workflow when needed.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">Scope: {folderLabel}</span>
+              <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
+                <button type="button" onClick={() => setChatMode("normal")} className={`px-3 py-2 text-sm font-medium transition-colors ${chatMode === "normal" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-600 hover:bg-slate-50 dark:text-[#cfcfcf] dark:hover:bg-[#262626]"}`}>Normal</button>
+                <button type="button" onClick={() => setChatMode("deep_research")} className={`inline-flex items-center gap-2 px-3 py-2 text-sm font-medium transition-colors ${chatMode === "deep_research" ? "bg-slate-900 text-white dark:bg-white dark:text-slate-900" : "text-slate-600 hover:bg-slate-50 dark:text-[#cfcfcf] dark:hover:bg-[#262626]"}`}><SparkIcon className="h-4 w-4" /><span>Deep Research</span></button>
               </div>
+            </div>
+          </div>
+          {previewMode ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">Preview mode is active, so answers are temporarily based on the preview dataset until live analysis is available in this folder scope.</div> : null}
+          {chatMode === "deep_research" && !canPersist ? <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-[#303030] dark:bg-[#202020] dark:text-[#d0d0d0]">Sign in to use deep research mode. Plans, step logs, and final reports are saved inside the selected folder history.</div> : null}
+        </div>
+
+        <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
+          {deepSession ? (
+            <section className="mb-5 rounded-[28px] border border-slate-200 bg-white px-5 py-5 dark:border-[#2f2f2f] dark:bg-[#1b1b1b]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900"><SparkIcon className="h-4 w-4" /></span>
+                    {sessionLabel(deepSession) ? <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#242424] dark:text-[#bfbfbf]">{sessionLabel(deepSession)}</span> : null}
+                  </div>
+                  <h2 className="mt-3 text-xl font-semibold text-slate-950 dark:text-[#f2f2f2]">Deep research plan</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]">{deepSession.plan_summary || deepSession.prompt}</p>
+                </div>
+                {deepSession.status === "planned" ? <button type="button" onClick={() => void handleContinueResearch()} disabled={loading} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"><ArrowRightIcon className="h-4 w-4" /><span>{loading ? "Starting..." : "Continue"}</span></button> : null}
+              </div>
+              {deepSession.requires_analysis ? <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">This run needs folder analysis first. After you continue, the system will queue the missing analysis and resume the research automatically.</div> : null}
+              {deepSession.last_error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{deepSession.last_error}</div> : null}
+              <div className="mt-5 space-y-3">
+                {deepSession.steps?.map((step) => {
+                  const done = step.status === "completed";
+                  const active = step.status === "processing" || step.status === "waiting";
+                  return <article key={step.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#202020]"><div className="flex items-start justify-between gap-4"><div className="min-w-0"><div className="flex items-center gap-2">{done ? <CheckCircleIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-300" /> : <CircleIcon className={`h-4 w-4 ${active ? "text-slate-900 dark:text-white" : "text-slate-400 dark:text-[#666666]"}`} />}<p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{step.position}. {step.title}</p></div>{step.description ? <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]">{step.description}</p> : null}</div><span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-[#8f8f8f]">{step.status}</span></div></article>;
+                })}
+              </div>
+              {deepSession.status === "planned" ? <p className="mt-4 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">You can revise the request in the composer below, then click Plan research again to update the steps before continuing.</p> : null}
+            </section>
+          ) : null}
+
+          {messages.length === 0 ? (
+            <section className="mx-auto flex min-h-[40vh] max-w-3xl flex-col justify-center py-8">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-slate-100 text-slate-600 dark:bg-[#202020] dark:text-[#d0d0d0]">{chatMode === "deep_research" ? <SparkIcon className="h-7 w-7" /> : <ChatIcon className="h-7 w-7" />}</div>
+              <h2 className="mt-6 text-center text-[2rem] font-semibold tracking-tight text-slate-950 dark:text-[#ececec]">{chatMode === "deep_research" ? "Plan a deeper corpus investigation" : "How can I help with this folder?"}</h2>
+              <p className="mx-auto mt-4 max-w-2xl text-center text-sm leading-7 text-slate-500 dark:text-[#8f8f8f]">{chatMode === "deep_research" ? "Plan a step-by-step corpus investigation, review the proposed steps, then continue when you're ready." : "Ask about papers, topics, tracks, keywords, or trends. Answers stay grounded in the selected folder first."}</p>
+              <div className="mt-8 grid gap-3 sm:grid-cols-2">{starters.map((prompt) => <button key={prompt} type="button" onClick={() => setDraft(prompt)} className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left text-sm text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#303030] dark:bg-[#1f1f1f] dark:text-[#d1d1d1] dark:hover:border-[#3b3b3b] dark:hover:bg-[#232323]">{prompt}</button>)}</div>
             </section>
           ) : (
-            <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 px-1 py-4 sm:px-2">
-              {messages.map((message, index) => {
-                const messageKey = `${message.role}-${index}`;
-                const canRegenerate =
-                  message.role === "assistant" &&
-                  messages.slice(0, index).some((item) => item.role === "user");
-
-                return (
-                  <section key={messageKey}>
-                    {message.role === "user" ? (
-                      <div className="flex justify-end">
-                        <div className="max-w-[82%] rounded-[26px] bg-slate-200 px-5 py-3 text-[15px] leading-7 text-slate-900 dark:bg-[#2f2f2f] dark:text-[#f5f5f5]">
-                          <div className="whitespace-pre-wrap">{message.content}</div>
-
-                          {message.attachments && message.attachments.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              {message.attachments.map((attachment) => (
-                                <span
-                                  key={attachment.id}
-                                  className="inline-flex items-center gap-2 rounded-full border border-slate-300 bg-white/70 px-3 py-1.5 text-xs text-slate-600 dark:border-[#424242] dark:bg-[#262626] dark:text-[#b9b9b9]"
-                                >
-                                  {attachment.type.startsWith("image/") ? (
-                                    <ImageIcon className="h-3.5 w-3.5" />
-                                  ) : (
-                                    <FileIcon className="h-3.5 w-3.5" />
-                                  )}
-                                  <span>{attachment.name}</span>
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {message.mode === "fallback" && (
-                          <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 dark:border-[#4a3722] dark:bg-[#2c2218] dark:text-[#e0b37b]">
-                            Broader guidance
-                          </div>
-                        )}
-
-                        <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-800 dark:text-[#e5e5e5]">
-                          {message.content}
-                        </div>
-
-                        {message.citations && message.citations.length > 0 && (
-                          <div className="space-y-2">
-                            {message.citations.map((citation) => (
-                              <Link
-                                key={citation.paperId}
-                                href={citation.href}
-                                className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#303030] dark:bg-[#202020] dark:hover:border-[#3b3b3b] dark:hover:bg-[#232323]"
-                              >
-                                <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-[#8f8f8f]" />
-                                <span className="min-w-0">
-                                  <span className="font-medium text-slate-900 dark:text-[#ececec]">
-                                    [Paper {citation.paperId}] {citation.title}
-                                  </span>
-                                  <span className="ml-2 text-slate-500 dark:text-[#8f8f8f]">
-                                    ({citation.year})
-                                  </span>
-                                  {citation.reason ? (
-                                    <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
-                                      {citation.reason}
-                                    </span>
-                                  ) : null}
-                                </span>
-                              </Link>
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(message.content, messageKey)}
-                            className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#232323] dark:hover:text-[#ececec]"
-                          >
-                            <CopyIcon className="h-4 w-4" />
-                            <span>
-                              {copiedMessageKey === messageKey ? "Copied" : "Copy"}
-                            </span>
-                          </button>
-                          {canRegenerate ? (
-                            <button
-                              type="button"
-                              onClick={() => handleRegenerate(index)}
-                              className="inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#232323] dark:hover:text-[#ececec]"
-                            >
-                              <RefreshIcon className="h-4 w-4" />
-                              <span>Regenerate</span>
-                            </button>
-                          ) : null}
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                );
+            <div className="mx-auto flex w-full max-w-4xl flex-col gap-8 py-2">
+              {messages.map((message) => {
+                const tone = message.kind === "deep_research_plan" ? "plan" : message.kind === "deep_research_report" ? "report" : message.metadata?.mode === "fallback" ? "fallback" : "default";
+                return <section key={message.id}>{message.role === "user" ? <div className="flex justify-end"><div className="max-w-[82%] rounded-[26px] bg-slate-200 px-5 py-3 text-[15px] leading-7 text-slate-900 dark:bg-[#2f2f2f] dark:text-[#f5f5f5]"><div className="whitespace-pre-wrap">{message.content}</div></div></div> : <div className="space-y-4">{tone === "plan" ? <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-700 dark:border-[#3b3b3b] dark:bg-[#202020] dark:text-[#d7d7d7]">Research plan saved</div> : null}{tone === "report" ? <div className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">Deep research report</div> : null}{tone === "fallback" ? <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">Broader guidance</div> : null}<div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-800 dark:text-[#e5e5e5]">{message.content}</div>{message.citations.length > 0 ? <div className="space-y-2">{message.citations.map((citation) => <Link key={`${message.id}-${citation.paperId}`} href={citation.href} className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#303030] dark:bg-[#202020] dark:hover:border-[#3b3b3b] dark:hover:bg-[#232323]"><PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-[#8f8f8f]" /><span className="min-w-0"><span className="font-medium text-slate-900 dark:text-[#ececec]">[Paper {citation.paperId}] {citation.title}</span><span className="ml-2 text-slate-500 dark:text-[#8f8f8f]">({citation.year})</span>{citation.reason ? <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{citation.reason}</span> : null}</span></Link>)}</div> : null}</div>}</section>;
               })}
-
-              {loading ? (
-                <section className="space-y-4">
-                  <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 dark:bg-[#8f8f8f]" />
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:120ms] dark:bg-[#8f8f8f]" />
-                    <span className="h-2 w-2 animate-pulse rounded-full bg-slate-400 [animation-delay:240ms] dark:bg-[#8f8f8f]" />
-                  </div>
-                </section>
-              ) : null}
             </div>
           )}
-
           <div ref={scrollAnchorRef} />
         </div>
 
-        <div className="sticky bottom-0 mt-4 bg-transparent px-1 pb-2 sm:px-2">
-          <div className="mx-auto max-w-4xl">
-            <form
-              onSubmit={handleSubmit}
-              onDragEnter={(event) => {
-                event.preventDefault();
-                setDragActive(true);
-              }}
-              onDragOver={(event) => {
-                event.preventDefault();
-                setDragActive(true);
-              }}
-              onDragLeave={(event) => {
-                event.preventDefault();
-                if (event.currentTarget.contains(event.relatedTarget as Node | null)) {
-                  return;
-                }
-                setDragActive(false);
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                setDragActive(false);
-                if (event.dataTransfer.files?.length) {
-                  appendFiles(event.dataTransfer.files);
-                }
-              }}
-              className={`overflow-hidden rounded-[28px] border bg-white shadow-[0_18px_45px_rgba(15,23,42,0.08)] transition-colors dark:bg-[#1f1f1f] dark:shadow-none ${
-                dragActive
-                  ? "border-slate-400 dark:border-[#5a5a5a]"
-                  : "border-slate-300 dark:border-[#303030]"
-              }`}
-            >
-              {attachments.length > 0 ? (
-                <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 dark:border-[#2c2c2c]">
-                  {attachments.map((attachment) => (
-                    <span
-                      key={attachment.id}
-                      className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-[#3a3a3a] dark:bg-[#262626] dark:text-[#c3c3c3]"
-                    >
-                      {attachment.type.startsWith("image/") ? (
-                        <ImageIcon className="h-3.5 w-3.5" />
-                      ) : (
-                        <AttachmentIcon className="h-3.5 w-3.5" />
-                      )}
-                      <span>{attachment.name}</span>
-                      <span className="text-slate-400 dark:text-[#7f7f7f]">
-                        {formatFileSize(attachment.size)}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setAttachments((current) =>
-                            current.filter((item) => item.id !== attachment.id)
-                          )
-                        }
-                        className="rounded-full px-1 text-slate-400 transition-colors hover:text-slate-700 dark:text-[#7f7f7f] dark:hover:text-[#ececec]"
-                        aria-label={`Remove ${attachment.name}`}
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              ) : null}
+        {error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{error}</div> : null}
 
-              <textarea
-                value={draft}
-                onChange={(event) => setDraft(event.target.value)}
-                onKeyDown={handleComposerKeyDown}
-                placeholder="Message Papertrend"
-                className="min-h-[72px] max-h-40 w-full resize-none border-0 bg-transparent px-5 py-4 text-[15px] leading-7 text-slate-950 placeholder:text-slate-400 focus:outline-none dark:text-[#f5f5f5] dark:placeholder:text-[#6f6f6f]"
-              />
-
-              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-3 py-3 dark:border-[#2c2c2c]">
-                <div className="flex items-center gap-2">
-                  <div className="relative" ref={menuRef}>
-                    <button
-                      type="button"
-                      onClick={() => setAttachmentsMenuOpen((current) => !current)}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#262626] dark:text-[#c8c8c8] dark:hover:border-[#444444] dark:hover:text-[#f2f2f2]"
-                      aria-label="Add attachment"
-                    >
-                      <PlusIcon className="h-4 w-4" />
-                    </button>
-
-                    {attachmentsMenuOpen ? (
-                      <div className="absolute bottom-12 left-0 z-20 w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-[#353535] dark:bg-[#212121]">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAttachmentsMenuOpen(false);
-                            fileInputRef.current?.click();
-                          }}
-                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#282828]"
-                        >
-                          <FileIcon className="h-4 w-4" />
-                          <span>Upload file</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAttachmentsMenuOpen(false);
-                            fileInputRef.current?.click();
-                          }}
-                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#282828]"
-                        >
-                          <ImageIcon className="h-4 w-4" />
-                          <span>Upload image</span>
-                        </button>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    multiple
-                    className="hidden"
-                    onChange={(event) => {
-                      if (event.target.files?.length) {
-                        appendFiles(event.target.files);
-                        event.target.value = "";
-                      }
-                    }}
-                  />
-
-                  <label className="relative">
-                    <select
-                      value={model}
-                      onChange={(event) =>
-                        setModel(event.target.value as (typeof MODEL_OPTIONS)[number]["value"])
-                      }
-                      className="appearance-none rounded-full border border-slate-200 bg-white px-4 py-2.5 pr-9 text-sm text-slate-700 outline-none transition-colors hover:border-slate-300 focus:border-slate-400 dark:border-[#353535] dark:bg-[#262626] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:focus:border-[#5a5a5a]"
-                    >
-                      {MODEL_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDownIcon className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#7f7f7f]" />
-                  </label>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <p className="hidden text-xs text-slate-500 dark:text-[#8f8f8f] sm:block">
-                    Drag files here to attach
-                  </p>
-                  <button
-                    type="submit"
-                    disabled={composerDisabled}
-                    className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white dark:disabled:bg-[#3a3a3a] dark:disabled:text-[#7e7e7e]"
-                    aria-label="Send message"
-                  >
-                    <SendIcon className="h-4 w-4" />
-                  </button>
-                </div>
-              </div>
-            </form>
+        <form onSubmit={handleSubmit} className="mt-5">
+          <div className="rounded-[28px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#202020]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div><p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">{chatMode === "deep_research" ? "Deep research request" : "Ask about this folder"}</p><p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{chatMode === "deep_research" ? "First we plan the steps. After you review the plan, click Continue to run it." : "Normal chat answers from the selected folder first and saves the conversation here."}</p></div>
+              <button type="button" onClick={() => resetThread(chatMode)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#343434] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"><PlusIcon className="h-4 w-4" /><span>New thread</span></button>
+            </div>
+            <div className="mt-4"><textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown} placeholder={chatMode === "deep_research" ? "Ask for a staged research plan, for example: Compare how assessment changes across the papers in this folder." : "Ask about papers, concepts, methods, tracks, or trends in this folder."} rows={5} className="w-full resize-none rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm leading-6 text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10" /></div>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-[#8f8f8f]"><span className="rounded-full bg-white px-3 py-1.5 dark:bg-[#171717]">{selectedYears.length} selected years</span><span className="rounded-full bg-white px-3 py-1.5 dark:bg-[#171717]">{selectedTracks.length} selected tracks</span></div>
+              <button type="submit" disabled={loading || detailLoading || draft.trim().length === 0 || (chatMode === "deep_research" && !canPersist)} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100">{chatMode === "deep_research" ? <SparkIcon className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}<span>{loading ? chatMode === "deep_research" ? "Planning..." : "Sending..." : chatMode === "deep_research" ? "Plan research" : "Send"}</span></button>
+            </div>
           </div>
-        </div>
+        </form>
       </div>
     </div>
   );

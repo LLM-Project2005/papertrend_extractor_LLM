@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import PlannedDashboardSection from "@/components/dashboard/PlannedDashboardSection";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS } from "@/lib/constants";
@@ -71,7 +72,8 @@ export default function DashboardClient({
 }: {
   basePath?: string;
 }) {
-  const { data, loading, allYears } = useDashboardData();
+  const { selectedFolderId, folders } = useWorkspaceProfile();
+  const { data, loading, allYears } = useDashboardData(selectedFolderId);
   const { session } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -90,6 +92,10 @@ export default function DashboardClient({
     return Number.isFinite(value) ? value : null;
   }, [searchParams]);
   const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
+  const selectedFolderLabel =
+    selectedFolderId === "all"
+      ? "All folders"
+      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
 
   useEffect(() => {
     if (allYears.length > 0 && selectedYears.length === 0) {
@@ -126,6 +132,7 @@ export default function DashboardClient({
             selectedYears,
             selectedTracks,
             searchQuery,
+            folderId: selectedFolderId,
           }),
         });
 
@@ -153,7 +160,16 @@ export default function DashboardClient({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [data, planState, plannerMode, searchQuery, selectedTracks, selectedYears, session?.access_token]);
+  }, [
+    data,
+    planState,
+    plannerMode,
+    searchQuery,
+    selectedFolderId,
+    selectedTracks,
+    selectedYears,
+    session?.access_token,
+  ]);
 
   const fallbackPlan = useMemo(
     () =>
@@ -258,6 +274,9 @@ export default function DashboardClient({
           </label>
 
           <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+              Scope: {selectedFolderLabel}
+            </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
               {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
             </span>
@@ -414,6 +433,7 @@ export default function DashboardClient({
                 activePlan.sections[0]
               }
               data={filteredData}
+              folderId={selectedFolderId}
               selectedYears={selectedYears}
               selectedTracks={selectedTracks}
               linkedPaperId={linkedPaperId}
@@ -444,6 +464,7 @@ export default function DashboardClient({
           {plannerMode === "classic" && currentTabKey === "keyword_explorer" ? (
             <KeywordExplorer
               trends={filteredData.trends}
+              folderId={selectedFolderId}
               selectedYears={selectedYears}
               selectedTracks={selectedTracks}
             />

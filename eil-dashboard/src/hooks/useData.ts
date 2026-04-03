@@ -6,7 +6,7 @@ import { generateMockData } from "@/lib/mockData";
 import { supabase } from "@/lib/supabase";
 import type { DashboardData, TrackRow, TrendRow } from "@/types/database";
 
-export function useDashboardData() {
+export function useDashboardData(folderId: string = "all") {
   const { hydrated, user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -29,14 +29,38 @@ export function useDashboardData() {
 
       if (supabase) {
         try {
+          let trendsQuery = supabase
+            .from("trends_flat")
+            .select("*")
+            .eq("owner_user_id", user.id);
+          let tracksSingleQuery = supabase
+            .from("tracks_single_flat")
+            .select("*")
+            .eq("owner_user_id", user.id);
+          let tracksMultiQuery = supabase
+            .from("tracks_multi_flat")
+            .select("*")
+            .eq("owner_user_id", user.id);
+
+          if (folderId && folderId !== "all") {
+            trendsQuery = trendsQuery.eq("folder_id", folderId);
+            tracksSingleQuery = tracksSingleQuery.eq("folder_id", folderId);
+            tracksMultiQuery = tracksMultiQuery.eq("folder_id", folderId);
+          }
+
           const [tRes, sRes, mRes] = await Promise.all([
-            supabase.from("trends_flat").select("*").eq("owner_user_id", user.id),
-            supabase.from("tracks_single_flat").select("*").eq("owner_user_id", user.id),
-            supabase.from("tracks_multi_flat").select("*").eq("owner_user_id", user.id),
+            trendsQuery,
+            tracksSingleQuery,
+            tracksMultiQuery,
           ]);
 
-          const trends: TrendRow[] = (tRes.data ?? []).map((r: Record<string, unknown>) => ({
+          const trendRows = (tRes.data ?? []) as Record<string, unknown>[];
+          const singleTrackRows = (sRes.data ?? []) as Record<string, unknown>[];
+          const multiTrackRows = (mRes.data ?? []) as Record<string, unknown>[];
+
+          const trends: TrendRow[] = trendRows.map((r) => ({
             paper_id: Number(r.paper_id),
+            folder_id: typeof r.folder_id === "string" ? r.folder_id : null,
             year: String(r.year),
             title: String(r.title),
             topic: String(r.topic),
@@ -47,6 +71,7 @@ export function useDashboardData() {
 
           const mapTrack = (r: Record<string, unknown>): TrackRow => ({
             paper_id: Number(r.paper_id),
+            folder_id: typeof r.folder_id === "string" ? r.folder_id : null,
             year: String(r.year),
             title: String(r.title),
             el: Number(r.el),
@@ -55,15 +80,11 @@ export function useDashboardData() {
             other: Number(r.other),
           });
 
-          const tracksSingle = (sRes.data ?? []).map(mapTrack);
-          const tracksMulti = (mRes.data ?? []).map(mapTrack);
+          const tracksSingle = singleTrackRows.map(mapTrack);
+          const tracksMulti = multiTrackRows.map(mapTrack);
 
           if (!cancelled) {
-            if (trends.length > 0) {
-              setData({ trends, tracksSingle, tracksMulti, useMock: false });
-            } else {
-              setData(generateMockData());
-            }
+            setData({ trends, tracksSingle, tracksMulti, useMock: false });
             setLoading(false);
             return;
           }
@@ -82,7 +103,7 @@ export function useDashboardData() {
     return () => {
       cancelled = true;
     };
-  }, [hydrated, user]);
+  }, [folderId, hydrated, user]);
 
   const allYears = useMemo(() => {
     if (!data) return [];

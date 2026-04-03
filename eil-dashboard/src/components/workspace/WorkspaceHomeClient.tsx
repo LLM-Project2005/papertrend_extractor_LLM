@@ -17,7 +17,7 @@ import {
   PaperIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
 function MetricCard({
   label,
@@ -72,18 +72,26 @@ function QuickLink({
 export default function WorkspaceHomeClient() {
   const {
     profile,
+    folders,
+    selectedFolderId,
+    refreshFolders,
     analysisSession,
     startAnalysisSession,
     setAnalysisMinimized,
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const { data, loading } = useDashboardData();
-  const { runs, cancelRuns } = useIngestionRuns({
+  const { data, loading } = useDashboardData(selectedFolderId);
+  const { runs, folderJob, cancelRuns } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
+    folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
   });
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
+  const selectedFolderLabel =
+    selectedFolderId === "all"
+      ? "All folders"
+      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
 
   const summary = useMemo(() => {
     if (!data) {
@@ -157,9 +165,15 @@ export default function WorkspaceHomeClient() {
 
   function handleAnalyzeCreated(
     createdRuns: IngestionRunRow[],
-    context: { folder: string; sourceKind: string }
+    context: {
+      folder: string;
+      folderId?: string | null;
+      folderJob?: FolderAnalysisJobRow | null;
+      sourceKind: string;
+    }
   ) {
     startAnalysisSession(createdRuns, context);
+    void refreshFolders();
     setShowAnalyzeModal(false);
   }
 
@@ -215,6 +229,9 @@ export default function WorkspaceHomeClient() {
                 ? "Preview data is active, so you can keep using analytics, papers, and chat while the live backend analysis process is being fixed."
                 : "A clean control center for bringing in papers, reviewing analytics, and switching into grounded chat without bouncing between separate tools."}
             </p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#6f6f6f]">
+              Current scope: {selectedFolderLabel}
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -238,6 +255,7 @@ export default function WorkspaceHomeClient() {
       {hasLiveAnalysisSession ? (
         <AnalysisStatusCard
           runs={activeRuns}
+          folderJob={folderJob}
           loading={loading && activeRuns.length === 0}
           onMinimize={() => setAnalysisMinimized(true)}
           onClear={clearAnalysisSession}

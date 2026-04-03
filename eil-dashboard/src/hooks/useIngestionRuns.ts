@@ -2,19 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
 interface UseIngestionRunsOptions {
   enabled?: boolean;
   pollIntervalMs?: number;
+  folderJobId?: string;
 }
 
 export function useIngestionRuns({
   enabled = true,
   pollIntervalMs = 12000,
+  folderJobId,
 }: UseIngestionRunsOptions = {}) {
   const { session, user } = useAuth();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
+  const [folderJob, setFolderJob] = useState<FolderAnalysisJobRow | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [adminSecret, setAdminSecret] = useState("");
@@ -50,18 +53,23 @@ export function useIngestionRuns({
 
     if (!requestHeaders) {
       setRuns([]);
+      setFolderJob(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/import", {
+      const endpoint = folderJobId
+        ? `/api/folder-analysis?jobId=${encodeURIComponent(folderJobId)}`
+        : "/api/admin/import";
+      const response = await fetch(endpoint, {
         headers: requestHeaders,
       });
 
       const payload = (await response.json()) as {
         runs?: IngestionRunRow[];
+        jobs?: FolderAnalysisJobRow[];
         error?: string;
       };
 
@@ -70,6 +78,7 @@ export function useIngestionRuns({
       }
 
       setRuns(payload.runs ?? []);
+      setFolderJob((payload.jobs ?? [])[0] ?? null);
       setError(null);
     } catch (refreshError) {
       setError(
@@ -80,7 +89,7 @@ export function useIngestionRuns({
     } finally {
       setLoading(false);
     }
-  }, [enabled, requestHeaders]);
+  }, [enabled, folderJobId, requestHeaders]);
 
   const cancelRuns = useCallback(
     async (runIds: string[]) => {
@@ -141,5 +150,5 @@ export function useIngestionRuns({
     return () => window.clearInterval(interval);
   }, [enabled, pollIntervalMs, refresh, requestHeaders]);
 
-  return { runs, loading, error, refresh, cancelRuns };
+  return { runs, folderJob, loading, error, refresh, cancelRuns };
 }

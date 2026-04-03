@@ -29,6 +29,10 @@ class ModelTask(str, Enum):
     QUERY_EXPANSION = "QUERY_EXPANSION"
     CHAT_SYNTHESIS = "CHAT_SYNTHESIS"
     VISUALIZATION_PLANNING = "VISUALIZATION_PLANNING"
+    RESEARCH_PLANNING = "RESEARCH_PLANNING"
+    RESEARCH_SUBTASK = "RESEARCH_SUBTASK"
+    RESEARCH_SYNTHESIS = "RESEARCH_SYNTHESIS"
+    RESEARCH_SUMMARIZATION = "RESEARCH_SUMMARIZATION"
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,10 @@ CONSERVATIVE_PRESET: Dict[ModelTask, TaskProfile] = {
     ModelTask.QUERY_EXPANSION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
     ModelTask.CHAT_SYNTHESIS: TaskProfile(primary="google/gemini-2.5-flash", fallback="openai/gpt-4.1-mini"),
     ModelTask.VISUALIZATION_PLANNING: TaskProfile(primary="google/gemini-2.5-flash", fallback="openai/gpt-4.1-mini"),
+    ModelTask.RESEARCH_PLANNING: TaskProfile(primary="google/gemini-2.5-flash", fallback="openai/gpt-4.1-mini"),
+    ModelTask.RESEARCH_SUBTASK: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
+    ModelTask.RESEARCH_SYNTHESIS: TaskProfile(primary="google/gemini-2.5-flash", fallback="openai/gpt-4.1-mini"),
+    ModelTask.RESEARCH_SUMMARIZATION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
 }
 
 AGGRESSIVE_COST_PRESET: Dict[ModelTask, TaskProfile] = {

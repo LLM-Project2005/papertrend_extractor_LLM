@@ -139,6 +139,67 @@ class SupabaseRestClient:
         )
         response.raise_for_status()
 
+    def list_runs_for_folder_job(self, folder_job_id: str) -> List[Dict[str, Any]]:
+        response = self.session.get(
+            self._rest_url("ingestion_runs"),
+            params={
+                "select": "*",
+                "folder_analysis_job_id": f"eq.{folder_job_id}",
+                "order": "created_at.asc",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    def update_folder_analysis_job(self, folder_job_id: str, patch: Dict[str, Any]) -> None:
+        response = self.session.patch(
+            self._rest_url("folder_analysis_jobs"),
+            params={"id": f"eq.{folder_job_id}"},
+            json={"updated_at": now_iso(), **patch},
+            timeout=60,
+        )
+        response.raise_for_status()
+
+    def list_waiting_research_sessions(self, owner_user_id: str, folder_id: str) -> List[Dict[str, Any]]:
+        response = self.session.get(
+            self._rest_url("deep_research_sessions"),
+            params={
+                "select": "*",
+                "owner_user_id": f"eq.{owner_user_id}",
+                "folder_id": f"eq.{folder_id}",
+                "status": "eq.waiting_on_analysis",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
+
+    def list_active_runs_for_folder(self, owner_user_id: str, folder_id: str) -> List[Dict[str, Any]]:
+        response = self.session.get(
+            self._rest_url("ingestion_runs"),
+            params={
+                "select": "id,status",
+                "owner_user_id": f"eq.{owner_user_id}",
+                "folder_id": f"eq.{folder_id}",
+                "status": "in.(queued,processing)",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return payload if isinstance(payload, list) else []
+
+    def update_research_session(self, session_id: str, patch: Dict[str, Any]) -> None:
+        response = self.session.patch(
+            self._rest_url("deep_research_sessions"),
+            params={"id": f"eq.{session_id}"},
+            json={"updated_at": now_iso(), **patch},
+            timeout=60,
+        )
+        response.raise_for_status()
+
     def touch_run(self, run_id: str) -> None:
         response = self.session.patch(
             self._rest_url("ingestion_runs"),
@@ -348,6 +409,8 @@ def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConf
                     ),
                 },
             )
+            sync_folder_analysis_job(client, run)
+            resume_waiting_research_sessions_for_folder(client, run)
             logger.warning(
                 "stale run marked failed after repeated recovery attempts",
                 extra={"run_id": run_id, "recovery_count": recovery_attempts},
@@ -488,6 +551,81 @@ def update_run_progress(
     run["input_payload"] = input_payload
     run["provider"] = str(run.get("provider") or AUTO_ANALYSIS_PROVIDER)
     run["model"] = str(run.get("model") or AUTO_ANALYSIS_MODEL)
+    sync_folder_analysis_job(client, run)
+
+
+def sync_folder_analysis_job(client: SupabaseRestClient, run: Dict[str, Any]) -> None:
+    folder_job_id = str(run.get("folder_analysis_job_id") or "").strip()
+    if not folder_job_id:
+        return
+
+    runs = client.list_runs_for_folder_job(folder_job_id)
+    total_runs = len(runs)
+    queued_runs = sum(1 for item in runs if item.get("status") == "queued")
+    processing_runs = sum(1 for item in runs if item.get("status") == "processing")
+    succeeded_runs = sum(1 for item in runs if item.get("status") == "succeeded")
+    failed_runs = sum(1 for item in runs if item.get("status") == "failed")
+    lead_run = next((item for item in runs if item.get("status") == "processing"), None) or next(
+        (item for item in runs if item.get("status") == "queued"),
+        None,
+    )
+
+    if processing_runs > 0:
+        status = "processing"
+    elif queued_runs > 0 and (succeeded_runs > 0 or failed_runs > 0):
+        status = "processing"
+    elif queued_runs > 0:
+        status = "queued"
+    elif failed_runs > 0 and succeeded_runs == 0:
+        status = "failed"
+    elif failed_runs > 0:
+        status = "failed"
+    else:
+        status = "succeeded"
+
+    progress_payload = (
+        lead_run.get("input_payload")
+        if isinstance(lead_run.get("input_payload"), dict)
+        else {}
+    ) if lead_run else {}
+    patch: Dict[str, Any] = {
+        "status": status,
+        "total_runs": total_runs,
+        "queued_runs": queued_runs,
+        "processing_runs": processing_runs,
+        "succeeded_runs": succeeded_runs,
+        "failed_runs": failed_runs,
+        "progress_stage": progress_payload.get("progress_stage") or ("completed" if status == "succeeded" else "failed" if status == "failed" and queued_runs == 0 and processing_runs == 0 else "queued"),
+        "progress_message": progress_payload.get("progress_message") or ("Completed" if status == "succeeded" else "Queued"),
+        "progress_detail": progress_payload.get("progress_detail") or "",
+    }
+    if queued_runs == 0 and processing_runs == 0:
+        patch["completed_at"] = now_iso()
+
+    client.update_folder_analysis_job(folder_job_id, patch)
+
+
+def resume_waiting_research_sessions_for_folder(
+    client: SupabaseRestClient,
+    run: Dict[str, Any],
+) -> None:
+    owner_user_id = str(run.get("owner_user_id") or "").strip()
+    folder_id = str(run.get("folder_id") or "").strip()
+    if not owner_user_id or not folder_id:
+        return
+
+    if client.list_active_runs_for_folder(owner_user_id, folder_id):
+        return
+
+    for session in client.list_waiting_research_sessions(owner_user_id, folder_id):
+        client.update_research_session(
+            str(session.get("id") or ""),
+            {
+                "status": "queued",
+                "pending_run_count": 0,
+                "requires_analysis": False,
+            },
+        )
 
 
 def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str, Any]) -> None:
@@ -679,6 +817,8 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
                     ),
                 },
             )
+            sync_folder_analysis_job(client, claimed)
+            resume_waiting_research_sessions_for_folder(client, claimed)
             logger.exception("run failed", extra={"run_id": run_id, "error_message": message})
         return True
 

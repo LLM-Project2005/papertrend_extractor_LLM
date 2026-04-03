@@ -22,7 +22,10 @@ export async function runKeywordSearchFallback(
   request: KeywordSearchRequest,
   ownerUserId?: string | null
 ): Promise<KeywordSearchResponse> {
-  const data = await loadDashboardDataServer(ownerUserId);
+  const data = await loadDashboardDataServer(
+    ownerUserId,
+    request.folderId && request.folderId !== "all" ? request.folderId : null
+  );
   const selectedYears =
     request.selectedYears && request.selectedYears.length > 0
       ? request.selectedYears

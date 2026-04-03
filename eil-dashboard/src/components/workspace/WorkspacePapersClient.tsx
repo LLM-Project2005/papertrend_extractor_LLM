@@ -8,10 +8,16 @@ import { filterDashboardData } from "@/lib/dashboard-filters";
 import Sidebar from "@/components/Sidebar";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 
 export default function WorkspacePapersClient() {
-  const { data, loading, allYears } = useDashboardData();
+  const { selectedFolderId, folders } = useWorkspaceProfile();
+  const { data, loading, allYears } = useDashboardData(selectedFolderId);
   const searchParams = useSearchParams();
+  const selectedFolderLabel =
+    selectedFolderId === "all"
+      ? "All folders"
+      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
 
   const [selectedYears, setSelectedYears] = useState<string[]>([]);
   const [selectedTracks, setSelectedTracks] = useState<string[]>([...TRACK_COLS]);
@@ -65,6 +71,9 @@ export default function WorkspacePapersClient() {
         </label>
 
         <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+            Scope: {selectedFolderLabel}
+          </span>
           <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
             {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
           </span>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import {
   getRunModelLabel,
   getRunStageCaption,
@@ -30,6 +30,7 @@ function summarizeRuns(runs: IngestionRunRow[]) {
 
 export default function AnalysisStatusCard({
   runs,
+  folderJob,
   loading,
   compact = false,
   onMinimize,
@@ -39,6 +40,7 @@ export default function AnalysisStatusCard({
   onCancelAll,
 }: {
   runs: IngestionRunRow[];
+  folderJob?: FolderAnalysisJobRow | null;
   loading?: boolean;
   compact?: boolean;
   onMinimize?: () => void;
@@ -58,6 +60,12 @@ export default function AnalysisStatusCard({
     runs.find((run) => run.status === "processing") ??
     runs.find((run) => run.status === "queued") ??
     runs[0];
+  const leadMessage = folderJob?.progress_message || (leadRun ? getRunStageMessage(leadRun) : "");
+  const leadDetail = folderJob?.progress_detail
+    ? folderJob.progress_detail
+    : hasActiveRuns
+      ? `${summary.processing + summary.queued} active run${summary.processing + summary.queued === 1 ? "" : "s"}`
+      : `${summary.succeeded} completed`;
 
   if (compact) {
     return (
@@ -70,20 +78,16 @@ export default function AnalysisStatusCard({
           >
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
-                Analysis active
+                {folderJob ? "Folder analysis" : "Analysis active"}
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
                 {loading
                   ? "Refreshing status..."
-                  : leadRun
-                    ? getRunStageMessage(leadRun)
-                    : `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
+                  : leadMessage || `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
               </p>
-              {!loading && leadRun ? (
+              {!loading ? (
                 <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
-                  {hasActiveRuns
-                    ? `${summary.processing + summary.queued} active run${summary.processing + summary.queued === 1 ? "" : "s"}`
-                    : `${summary.succeeded} completed`}
+                  {leadDetail}
                 </p>
               ) : null}
             </div>
@@ -110,15 +114,17 @@ export default function AnalysisStatusCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-            Analysis status
+            {folderJob ? "Folder analysis status" : "Analysis status"}
           </p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
-            Your files are being prepared for analysis
+            {folderJob
+              ? "Your folder batch is moving through analysis"
+              : "Your files are being prepared for analysis"}
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-            The app has queued the upload successfully. The external analysis worker
-            now picks up the files, runs the extraction pipeline, and writes results
-            back into Supabase.
+            {folderJob?.progress_detail
+              ? folderJob.progress_detail
+              : "The app has queued the upload successfully. The external analysis worker now picks up the files, runs the extraction pipeline, and writes results back into Supabase."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -159,6 +165,11 @@ export default function AnalysisStatusCard({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
+        {folderJob ? (
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
+            Stage: {folderJob.progress_message || folderJob.status}
+          </span>
+        ) : null}
         <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
           {summary.total} total
         </span>
@@ -179,6 +190,28 @@ export default function AnalysisStatusCard({
       </div>
 
       <div className="mt-5 space-y-3">
+        {folderJob ? (
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                  Folder batch progress
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
+                  {folderJob.progress_message || folderJob.status}
+                </p>
+                {folderJob.progress_detail ? (
+                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+                    {folderJob.progress_detail}
+                  </p>
+                ) : null}
+              </div>
+              <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-[#8f8f8f]">
+                {folderJob.status}
+              </span>
+            </div>
+          </article>
+        ) : null}
         {runs.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#a3a3a3]">
             {loading ? "Loading run status..." : "Waiting for run status to appear."}

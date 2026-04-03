@@ -26,6 +26,7 @@ interface Props {
   trends: TrendRow[];
   selectedYears?: string[];
   selectedTracks?: string[];
+  folderId?: string | "all";
   planCharts?: VisualizationPlanChart[];
 }
 
@@ -83,6 +84,7 @@ export default function KeywordExplorer({
   trends,
   selectedYears = [],
   selectedTracks = [],
+  folderId = "all",
   planCharts,
 }: Props) {
   const { session } = useAuth();
@@ -125,6 +127,7 @@ export default function KeywordExplorer({
             query: trimmed,
             selectedYears,
             selectedTracks,
+            folderId,
           }),
         });
 
@@ -157,7 +160,7 @@ export default function KeywordExplorer({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [query, selectedTracks, selectedYears, session?.access_token]);
+  }, [folderId, query, selectedTracks, selectedYears, session?.access_token]);
 
   const keywordAggregate = useMemo(() => {
     const map: Record<

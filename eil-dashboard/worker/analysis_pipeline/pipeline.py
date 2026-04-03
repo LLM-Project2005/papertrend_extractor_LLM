@@ -31,6 +31,7 @@ def process_pdf_run(
             "source_filename": str(run.get("source_filename") or pdf_path.name),
             "ingestion_run_id": str(run.get("id") or ""),
             "owner_user_id": str(run.get("owner_user_id") or ""),
+            "folder_id": str(run.get("folder_id") or ""),
             "errors": [],
             "messages": [],
             "status": "starting",

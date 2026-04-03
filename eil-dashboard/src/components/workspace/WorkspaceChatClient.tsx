@@ -3,9 +3,15 @@
 import ChatClient from "@/components/chat/ChatClient";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS } from "@/lib/constants";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 
 export default function WorkspaceChatClient() {
-  const { data, loading, allYears } = useDashboardData();
+  const { selectedFolderId, folders } = useWorkspaceProfile();
+  const { data, loading, allYears } = useDashboardData(selectedFolderId);
+  const selectedFolderLabel =
+    selectedFolderId === "all"
+      ? "All folders"
+      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
 
   if (loading || !data) {
     return (
@@ -23,6 +29,8 @@ export default function WorkspaceChatClient() {
   return (
     <ChatClient
       previewMode={data.useMock}
+      folderId={selectedFolderId}
+      folderLabel={selectedFolderLabel}
       selectedYears={allYears}
       selectedTracks={[...TRACK_COLS]}
     />

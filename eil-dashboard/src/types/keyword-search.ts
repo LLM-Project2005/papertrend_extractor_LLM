@@ -2,6 +2,7 @@ import type { TrackKey } from "@/lib/constants";
 
 export interface KeywordSearchRequest {
   query: string;
+  folderId?: string | "all";
   selectedYears?: string[];
   selectedTracks?: TrackKey[];
   queryLanguage?: string;

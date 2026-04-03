@@ -121,6 +121,31 @@ class VisualizationPlanSchema(BaseModel):
     sections: List[VisualizationPlanSection]
 
 
+class DeepResearchPlanStep(BaseModel):
+    position: int = Field(description="1-based order of the step.")
+    title: str = Field(description="Short action title for the step.")
+    description: str = Field(description="What this step will do.")
+    tool_name: Literal[
+        "list_folder_papers",
+        "get_dashboard_summary",
+        "keyword_search",
+        "fetch_papers",
+        "read_paper_sections",
+    ] = Field(description="Corpus-grounded tool to use for the step.")
+    tool_input: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Arguments for the selected tool.",
+    )
+
+
+class DeepResearchPlanSchema(BaseModel):
+    title: str = Field(description="Short research session title.")
+    summary: str = Field(description="Brief summary of the research plan.")
+    requires_analysis: bool = Field(description="Whether fresh folder analysis is needed before execution.")
+    pending_run_count: int = Field(description="How many folder files are still pending analysis.", ge=0)
+    steps: List[DeepResearchPlanStep] = Field(description="Ordered deep research steps.")
+
+
 class IngestionState(TypedDict, total=False):
     messages: Annotated[List[BaseMessage], operator.add]
     pdf_path: str
@@ -128,6 +153,7 @@ class IngestionState(TypedDict, total=False):
     source_filename: str
     ingestion_run_id: str
     owner_user_id: str
+    folder_id: str
     paper_id: int
     extraction_method: str
     raw_text: str
@@ -153,8 +179,13 @@ class IngestionState(TypedDict, total=False):
 class WorkspaceQueryState(TypedDict, total=False):
     messages: List[Dict[str, str]]
     request_kind: Literal["chat", "visualization", "keyword-search"]
+    action: Literal["message", "plan", "continue"]
     message: str
     owner_user_id: str
+    folder_id: str
+    thread_id: str
+    session_id: str
+    chat_mode: Literal["normal", "deep_research"]
     selected_years: List[str]
     selected_tracks: List[str]
     search_query: str
@@ -170,3 +201,22 @@ class WorkspaceQueryState(TypedDict, total=False):
     citations: List[Dict[str, Any]]
     errors: List[str]
     status: str
+
+
+class DeepResearchState(TypedDict, total=False):
+    owner_user_id: str
+    folder_id: str
+    thread_id: str
+    session_id: str
+    prompt: str
+    title: str
+    plan_summary: str
+    requires_analysis: bool
+    pending_run_count: int
+    steps: List[Dict[str, Any]]
+    step_results: List[Dict[str, Any]]
+    current_step_index: int
+    final_report: str
+    errors: List[str]
+    status: str
+    persist_step_update: Any

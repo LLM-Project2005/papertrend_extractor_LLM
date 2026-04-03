@@ -3,6 +3,7 @@ import {
   getAuthenticatedUserFromRequest,
   isAuthorizedAdminRequest,
 } from "@/lib/admin-auth";
+import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { triggerWorkerQueue } from "@/lib/worker-trigger";
 
@@ -14,11 +15,6 @@ const AUTO_ANALYSIS_LABEL = "Automatic per-task model routing";
 
 function sanitizeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
-}
-
-function sanitizeFolderName(folderName: string): string {
-  const sanitized = folderName.replace(/[^a-zA-Z0-9._/-]+/g, "-").replace(/^\/+|\/+$/g, "");
-  return sanitized || "Inbox";
 }
 
 export async function GET(request: Request) {
@@ -75,6 +71,32 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Upload at least one PDF file." }, { status: 400 });
     }
 
+    const researchFolder = await ensureResearchFolder(
+      supabase,
+      user?.id ?? null,
+      folder
+    );
+    const folderId = researchFolder?.id ?? null;
+
+    const { data: folderJob, error: folderJobError } = await supabase
+      .from("folder_analysis_jobs")
+      .insert({
+        owner_user_id: user?.id ?? null,
+        folder_id: folderId,
+        status: "queued",
+        total_runs: files.length,
+        queued_runs: files.length,
+        progress_stage: "queued",
+        progress_message: "Queued",
+        progress_detail: `Preparing ${files.length} file${files.length === 1 ? "" : "s"} for batch analysis.`,
+      })
+      .select("*")
+      .single();
+
+    if (folderJobError || !folderJob) {
+      throw new Error(folderJobError?.message ?? "Failed to create folder analysis job.");
+    }
+
     const createdRuns: Array<Record<string, unknown>> = [];
     for (const file of files) {
       const lowerName = file.name.toLowerCase();
@@ -89,6 +111,8 @@ export async function POST(request: Request) {
         .from("ingestion_runs")
         .insert({
           owner_user_id: user?.id ?? null,
+          folder_id: folderId,
+          folder_analysis_job_id: folderJob.id,
           source_type: "upload",
           status: "queued",
           source_filename: file.name,
@@ -103,9 +127,9 @@ export async function POST(request: Request) {
             analysis_mode: "automatic",
             analysis_label: AUTO_ANALYSIS_LABEL,
             progress_stage: "queued",
-            progress_message: "Queued for analysis",
+            progress_message: "Queued",
             progress_detail:
-              "The worker will pick this file up automatically and choose the right model mix for each task.",
+              "Preparing file for batch analysis and automatic per-task routing.",
           },
         })
         .select("*")
@@ -174,7 +198,7 @@ export async function POST(request: Request) {
           triggerError instanceof Error ? triggerError.message : "unknown_error",
       });
     }
-    return NextResponse.json({ runs: createdRuns }, { status: 201 });
+    return NextResponse.json({ runs: createdRuns, folderJob }, { status: 201 });
   } catch (error) {
     console.error("[admin.import] upload failed", {
       error: error instanceof Error ? error.message : "unknown_error",

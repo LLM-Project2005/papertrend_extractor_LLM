@@ -207,7 +207,8 @@ function scorePaper(
 
 export async function retrieveCorpusPapers(
   question: string,
-  ownerUserId?: string | null
+  ownerUserId?: string | null,
+  folderId?: string | null
 ): Promise<{
   papers: CorpusPaper[];
   citations: CorpusCitation[];
@@ -218,12 +219,35 @@ export async function retrieveCorpusPapers(
     }
 
     const supabase = getSupabaseAdmin();
+    let papersQuery = supabase
+      .from("papers_full")
+      .select("*")
+      .eq("owner_user_id", ownerUserId);
+    let trendsQuery = supabase
+      .from("trends_flat")
+      .select("*")
+      .eq("owner_user_id", ownerUserId);
+    let singleQuery = supabase
+      .from("tracks_single_flat")
+      .select("*")
+      .eq("owner_user_id", ownerUserId);
+    let multiQuery = supabase
+      .from("tracks_multi_flat")
+      .select("*")
+      .eq("owner_user_id", ownerUserId);
+
+    if (folderId && folderId !== "all") {
+      papersQuery = papersQuery.eq("folder_id", folderId);
+      trendsQuery = trendsQuery.eq("folder_id", folderId);
+      singleQuery = singleQuery.eq("folder_id", folderId);
+      multiQuery = multiQuery.eq("folder_id", folderId);
+    }
 
     const [papersResult, trendsResult, singleResult, multiResult] = await Promise.all([
-      supabase.from("papers_full").select("*").eq("owner_user_id", ownerUserId),
-      supabase.from("trends_flat").select("*").eq("owner_user_id", ownerUserId),
-      supabase.from("tracks_single_flat").select("*").eq("owner_user_id", ownerUserId),
-      supabase.from("tracks_multi_flat").select("*").eq("owner_user_id", ownerUserId),
+      papersQuery,
+      trendsQuery,
+      singleQuery,
+      multiQuery,
     ]);
 
     if (papersResult.error) {
@@ -250,8 +274,11 @@ export async function retrieveCorpusPapers(
     if (response.papers.length > 0) {
       return response;
     }
+    return { papers: [], citations: [] };
   } catch {
-    // Fall through to preview corpus.
+    if (ownerUserId) {
+      return { papers: [], citations: [] };
+    }
   }
 
   return buildMockCorpusResponse(question);

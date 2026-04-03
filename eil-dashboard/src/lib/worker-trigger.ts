@@ -3,10 +3,13 @@ import {
   getWorkerWebhookSecret,
 } from "@/lib/server-env";
 
-export async function triggerWorkerQueue(options?: {
-  maxRuns?: number;
-  reason?: string;
-}): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
+async function triggerWorkerEndpoint(
+  path: string,
+  options?: {
+    maxRuns?: number;
+    reason?: string;
+  }
+): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
   const workerServiceUrl = getWorkerServiceUrl();
   const workerWebhookSecret = getWorkerWebhookSecret();
 
@@ -18,7 +21,7 @@ export async function triggerWorkerQueue(options?: {
   const timeout = setTimeout(() => controller.abort(), 6000);
 
   try {
-    const response = await fetch(`${workerServiceUrl}/process-queue`, {
+    const response = await fetch(`${workerServiceUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -42,4 +45,18 @@ export async function triggerWorkerQueue(options?: {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function triggerWorkerQueue(options?: {
+  maxRuns?: number;
+  reason?: string;
+}): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
+  return triggerWorkerEndpoint("/process-queue", options);
+}
+
+export async function triggerResearchQueue(options?: {
+  maxRuns?: number;
+  reason?: string;
+}): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
+  return triggerWorkerEndpoint("/process-research-queue", options);
 }

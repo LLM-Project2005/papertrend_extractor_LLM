@@ -200,14 +200,18 @@ export default function WorkspaceShell({
   const pathname = usePathname();
   const {
     profile,
+    folders,
+    selectedFolderId,
+    setSelectedFolderId,
     analysisSession,
     setAnalysisMinimized,
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { runs, cancelRuns } = useIngestionRuns({
+  const { runs, folderJob, cancelRuns } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
+    folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
   });
 
@@ -294,6 +298,23 @@ export default function WorkspaceShell({
             </div>
 
             <div className="flex items-center gap-2">
+              <label className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0] sm:flex">
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-[#7a7a7a]">
+                  Folder
+                </span>
+                <select
+                  value={selectedFolderId}
+                  onChange={(event) => setSelectedFolderId(event.target.value)}
+                  className="bg-transparent text-sm font-medium text-slate-700 outline-none dark:text-[#ececec]"
+                >
+                  <option value="all">All folders</option>
+                  {folders.map((folder) => (
+                    <option key={folder.id} value={folder.id}>
+                      {folder.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <AuthStatus />
               <ThemeToggle />
               <Link
@@ -314,6 +335,7 @@ export default function WorkspaceShell({
           <div className="fixed bottom-4 right-4 z-40 w-[min(360px,calc(100vw-2rem))]">
             <AnalysisStatusCard
               runs={activeRuns}
+              folderJob={folderJob}
               compact
               onExpand={() => setAnalysisMinimized(false)}
               onClear={clearAnalysisSession}

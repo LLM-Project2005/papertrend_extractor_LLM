@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useCallback,
   useRef,
   useState,
   type ReactNode,
@@ -15,13 +16,20 @@ import {
   loadWorkspaceProfile,
   saveWorkspaceProfile as saveWorkspaceProfileLocal,
 } from "@/lib/workspace-profile";
-import type { IngestionRunRow } from "@/types/database";
+import type {
+  FolderAnalysisJobRow,
+  IngestionRunRow,
+  ResearchFolderRow,
+} from "@/types/database";
 import type { WorkspaceProfile } from "@/types/workspace";
 
 const ANALYSIS_SESSION_STORAGE_KEY = "papertrend_analysis_session_v1";
+const WORKSPACE_FOLDER_STORAGE_KEY = "papertrend_workspace_folder_v1";
 
 interface AnalysisSession {
   runIds: string[];
+  folderJobId?: string | null;
+  folderId?: string | null;
   sourceKind: string;
   folder: string;
   minimized: boolean;
@@ -32,15 +40,25 @@ interface WorkspaceContextValue {
   profile: WorkspaceProfile;
   hydrated: boolean;
   analysisSession: AnalysisSession | null;
+  folders: ResearchFolderRow[];
+  selectedFolderId: string;
   updateProfile: (updates: Partial<WorkspaceProfile>) => void;
   resetProfile: () => void;
   startAnalysisSession: (
     runs: IngestionRunRow[],
-    options?: { sourceKind?: string; folder?: string }
+    options?: {
+      sourceKind?: string;
+      folder?: string;
+      folderId?: string | null;
+      folderJob?: FolderAnalysisJobRow | null;
+    }
   ) => void;
   setAnalysisMinimized: (minimized: boolean) => void;
   removeAnalysisRunIds: (runIds: string[]) => void;
   clearAnalysisSession: () => void;
+  setSelectedFolderId: (folderId: string) => void;
+  refreshFolders: () => Promise<void>;
+  createFolder: (folderName: string) => Promise<ResearchFolderRow>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
@@ -50,6 +68,7 @@ const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const {
     hydrated: authHydrated,
+    session,
     user,
     profile: authProfile,
     saveWorkspaceProfile: saveWorkspaceProfileRemote,
@@ -57,6 +76,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState(DEFAULT_WORKSPACE_PROFILE);
   const [hydrated, setHydrated] = useState(false);
   const [analysisSession, setAnalysisSession] = useState<AnalysisSession | null>(null);
+  const [folders, setFolders] = useState<ResearchFolderRow[]>([]);
+  const [selectedFolderId, setSelectedFolderIdState] = useState("all");
   const loadedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -105,6 +126,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const savedFolderId =
+      window.localStorage.getItem(WORKSPACE_FOLDER_STORAGE_KEY) ?? "all";
+    setSelectedFolderIdState(savedFolderId);
+
     try {
       const raw = window.localStorage.getItem(ANALYSIS_SESSION_STORAGE_KEY);
       if (!raw) {
@@ -119,6 +144,90 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       // Ignore invalid cached analysis state.
     }
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(WORKSPACE_FOLDER_STORAGE_KEY, selectedFolderId);
+  }, [selectedFolderId]);
+
+  const refreshFolders = useCallback(async () => {
+    if (!user || !session?.access_token) {
+      setFolders([]);
+      setSelectedFolderIdState("all");
+      return;
+    }
+
+    const response = await fetch("/api/workspace/folders", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    const payload = (await response.json()) as {
+      folders?: ResearchFolderRow[];
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load folders.");
+    }
+
+    const nextFolders = payload.folders ?? [];
+    setFolders(nextFolders);
+    setSelectedFolderIdState((current) =>
+      current === "all" || nextFolders.some((folder) => folder.id === current)
+        ? current
+        : "all"
+    );
+  }, [session?.access_token, user]);
+
+  const createFolder = useCallback(
+    async (folderName: string) => {
+      if (!user || !session?.access_token) {
+        throw new Error("Sign in before creating folders.");
+      }
+
+      const response = await fetch("/api/workspace/folders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ name: folderName }),
+      });
+
+      const payload = (await response.json()) as {
+        folder?: ResearchFolderRow;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.folder) {
+        throw new Error(payload.error ?? "Failed to create folder.");
+      }
+
+      setFolders((current) => {
+        const next = [payload.folder!, ...current.filter((folder) => folder.id !== payload.folder!.id)];
+        next.sort((left, right) => left.name.localeCompare(right.name));
+        return next;
+      });
+      setSelectedFolderIdState(payload.folder.id);
+      return payload.folder;
+    },
+    [session?.access_token, user]
+  );
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
+    refreshFolders().catch(() => {
+      setFolders([]);
+    });
+  }, [hydrated, refreshFolders]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -152,6 +261,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       profile,
       hydrated,
       analysisSession,
+      folders,
+      selectedFolderId,
       updateProfile: (updates) => {
         setProfile((current) => ({
           ...current,
@@ -173,6 +284,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
         setAnalysisSession({
           runIds,
+          folderJobId: options?.folderJob?.id ?? null,
+          folderId: options?.folderId ?? null,
           sourceKind: options?.sourceKind ?? "pdf-upload",
           folder: options?.folder ?? "Inbox",
           minimized: false,
@@ -209,8 +322,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       clearAnalysisSession: () => {
         setAnalysisSession(null);
       },
+      setSelectedFolderId: (folderId) => {
+        setSelectedFolderIdState(folderId || "all");
+      },
+      refreshFolders,
+      createFolder,
     }),
-    [analysisSession, hydrated, profile]
+    [analysisSession, createFolder, folders, hydrated, profile, refreshFolders, selectedFolderId]
   );
 
   return (

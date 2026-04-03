@@ -93,17 +93,21 @@ def _build_mock_workspace_dataset() -> Dict[str, Any]:
     }
 
 
-def _cache_key(owner_user_id: Optional[str]) -> str:
-    return owner_user_id or "__anonymous__"
+def _cache_key(owner_user_id: Optional[str], folder_id: Optional[str]) -> str:
+    owner_part = owner_user_id or "__anonymous__"
+    folder_part = folder_id or "__all__"
+    return f"{owner_part}:{folder_part}"
 
 
 def load_workspace_dataset(
     owner_user_id: Optional[str] = None,
+    folder_id: Optional[str] = None,
     force_refresh: bool = False,
     cache_ttl_seconds: int = 20,
 ) -> Dict[str, Any]:
     now = time.time()
-    cache_entry = _CACHE.get(_cache_key(owner_user_id))
+    normalized_folder_id = folder_id if folder_id and folder_id != "all" else None
+    cache_entry = _CACHE.get(_cache_key(owner_user_id, normalized_folder_id))
     if (
         not force_refresh
         and cache_entry is not None
@@ -116,12 +120,14 @@ def load_workspace_dataset(
     key = _get_service_key()
     if not owner_user_id or not url or not key:
         dataset = _build_mock_workspace_dataset()
-        _CACHE[_cache_key(owner_user_id)] = {"dataset": dataset, "loaded_at": now}
+        _CACHE[_cache_key(owner_user_id, normalized_folder_id)] = {"dataset": dataset, "loaded_at": now}
         return dataset
 
     try:
         client = SupabaseQueryClient(url, key)
         scoped_params = {"owner_user_id": f"eq.{owner_user_id}"}
+        if normalized_folder_id:
+            scoped_params["folder_id"] = f"eq.{normalized_folder_id}"
         papers_full = client.select_rows("papers_full", scoped_params)
         trends = client.select_rows("trends_flat", scoped_params)
         tracks_single = client.select_rows("tracks_single_flat", scoped_params)
@@ -153,7 +159,7 @@ def load_workspace_dataset(
     except Exception:
         dataset = _build_mock_workspace_dataset()
 
-    _CACHE[_cache_key(owner_user_id)] = {"dataset": dataset, "loaded_at": now}
+    _CACHE[_cache_key(owner_user_id, normalized_folder_id)] = {"dataset": dataset, "loaded_at": now}
     return dataset
 
 
