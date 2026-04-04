@@ -53,3 +53,6 @@ data/
 __pycache__/
 *.py[cod]
 .DS_Store
+
+
+cloudrun.env.yaml
