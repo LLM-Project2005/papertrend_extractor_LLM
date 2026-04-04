@@ -36,6 +36,9 @@ function normalizeTabKey(value: string | null): string | null {
 }
 
 function FilterPanel({
+  folders,
+  selectedFolderId,
+  onFolderChange,
   allYears,
   selectedYears,
   onYearsChange,
@@ -44,6 +47,9 @@ function FilterPanel({
   useMock,
   showHeader = true,
 }: {
+  folders: ReturnType<typeof useWorkspaceProfile>["folders"];
+  selectedFolderId: string;
+  onFolderChange: (folderId: string) => void;
   allYears: string[];
   selectedYears: string[];
   onYearsChange: (years: string[]) => void;
@@ -54,6 +60,9 @@ function FilterPanel({
 }) {
   return (
     <Sidebar
+      folders={folders}
+      selectedFolderId={selectedFolderId}
+      onFolderChange={onFolderChange}
       allYears={allYears}
       selectedYears={selectedYears}
       onYearsChange={onYearsChange}
@@ -72,16 +81,23 @@ export default function DashboardClient({
 }: {
   basePath?: string;
 }) {
-  const { selectedFolderId, folders } = useWorkspaceProfile();
+  const {
+    selectedFolderId,
+    folders,
+    setSelectedFolderId,
+    selectedYears,
+    setSelectedYears,
+    selectedTracks,
+    setSelectedTracks,
+    searchQuery,
+    setSearchQuery,
+  } = useWorkspaceProfile();
   const { data, loading, allYears } = useDashboardData(selectedFolderId);
   const { session } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [selectedYears, setSelectedYears] = useState<string[]>([]);
-  const [selectedTracks, setSelectedTracks] = useState<string[]>([...TRACK_COLS]);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [planState, setPlanState] = useState<{
     plan: VisualizationPlan;
     source: "agent" | "fallback";
@@ -92,11 +108,6 @@ export default function DashboardClient({
     return Number.isFinite(value) ? value : null;
   }, [searchParams]);
   const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
-  const selectedFolderLabel =
-    selectedFolderId === "all"
-      ? "All folders"
-      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
-
   useEffect(() => {
     if (allYears.length > 0 && selectedYears.length === 0) {
       setSelectedYears(allYears);
@@ -275,9 +286,6 @@ export default function DashboardClient({
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
-              Scope: {selectedFolderLabel}
-            </span>
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
               {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
@@ -374,6 +382,9 @@ export default function DashboardClient({
               </div>
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <FilterPanel
+                  folders={folders}
+                  selectedFolderId={selectedFolderId}
+                  onFolderChange={setSelectedFolderId}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
@@ -412,6 +423,9 @@ export default function DashboardClient({
               </div>
               <div className="max-h-[70vh] overflow-y-auto p-4">
                 <FilterPanel
+                  folders={folders}
+                  selectedFolderId={selectedFolderId}
+                  onFolderChange={setSelectedFolderId}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}

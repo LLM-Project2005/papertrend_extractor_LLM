@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { TRACK_COLS } from "@/lib/constants";
 import {
   DEFAULT_WORKSPACE_PROFILE,
   loadWorkspaceProfile,
@@ -25,6 +26,7 @@ import type { WorkspaceProfile } from "@/types/workspace";
 
 const ANALYSIS_SESSION_STORAGE_KEY = "papertrend_analysis_session_v1";
 const WORKSPACE_FOLDER_STORAGE_KEY = "papertrend_workspace_folder_v1";
+const WORKSPACE_FILTERS_STORAGE_KEY = "papertrend_workspace_filters_v1";
 
 interface AnalysisSession {
   runIds: string[];
@@ -42,6 +44,9 @@ interface WorkspaceContextValue {
   analysisSession: AnalysisSession | null;
   folders: ResearchFolderRow[];
   selectedFolderId: string;
+  selectedYears: string[];
+  selectedTracks: string[];
+  searchQuery: string;
   updateProfile: (updates: Partial<WorkspaceProfile>) => void;
   resetProfile: () => void;
   startAnalysisSession: (
@@ -57,6 +62,10 @@ interface WorkspaceContextValue {
   removeAnalysisRunIds: (runIds: string[]) => void;
   clearAnalysisSession: () => void;
   setSelectedFolderId: (folderId: string) => void;
+  setSelectedYears: (years: string[]) => void;
+  setSelectedTracks: (tracks: string[]) => void;
+  setSearchQuery: (searchQuery: string) => void;
+  resetWorkspaceFilters: () => void;
   refreshFolders: () => Promise<void>;
   createFolder: (folderName: string) => Promise<ResearchFolderRow>;
 }
@@ -78,6 +87,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [analysisSession, setAnalysisSession] = useState<AnalysisSession | null>(null);
   const [folders, setFolders] = useState<ResearchFolderRow[]>([]);
   const [selectedFolderId, setSelectedFolderIdState] = useState("all");
+  const [selectedYears, setSelectedYearsState] = useState<string[]>([]);
+  const [selectedTracks, setSelectedTracksState] = useState<string[]>([...TRACK_COLS]);
+  const [searchQuery, setSearchQueryState] = useState("");
   const loadedKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -131,6 +143,28 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setSelectedFolderIdState(savedFolderId);
 
     try {
+      const rawFilters = window.localStorage.getItem(WORKSPACE_FILTERS_STORAGE_KEY);
+      if (rawFilters) {
+        const parsed = JSON.parse(rawFilters) as {
+          selectedYears?: string[];
+          selectedTracks?: string[];
+          searchQuery?: string;
+        };
+        if (Array.isArray(parsed.selectedYears)) {
+          setSelectedYearsState(parsed.selectedYears.filter(Boolean));
+        }
+        if (Array.isArray(parsed.selectedTracks) && parsed.selectedTracks.length > 0) {
+          setSelectedTracksState(parsed.selectedTracks.filter(Boolean));
+        }
+        if (typeof parsed.searchQuery === "string") {
+          setSearchQueryState(parsed.searchQuery);
+        }
+      }
+    } catch {
+      // Ignore invalid cached filter state.
+    }
+
+    try {
       const raw = window.localStorage.getItem(ANALYSIS_SESSION_STORAGE_KEY);
       if (!raw) {
         return;
@@ -152,6 +186,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     window.localStorage.setItem(WORKSPACE_FOLDER_STORAGE_KEY, selectedFolderId);
   }, [selectedFolderId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(
+      WORKSPACE_FILTERS_STORAGE_KEY,
+      JSON.stringify({
+        selectedYears,
+        selectedTracks,
+        searchQuery,
+      })
+    );
+  }, [searchQuery, selectedTracks, selectedYears]);
 
   const refreshFolders = useCallback(async () => {
     if (!user || !session?.access_token) {
@@ -263,6 +312,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       analysisSession,
       folders,
       selectedFolderId,
+      selectedYears,
+      selectedTracks,
+      searchQuery,
       updateProfile: (updates) => {
         setProfile((current) => ({
           ...current,
@@ -325,10 +377,37 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setSelectedFolderId: (folderId) => {
         setSelectedFolderIdState(folderId || "all");
       },
+      setSelectedYears: (years) => {
+        setSelectedYearsState([...new Set(years.filter(Boolean))].sort());
+      },
+      setSelectedTracks: (tracks) => {
+        const nextTracks = [...new Set(tracks.filter(Boolean))];
+        setSelectedTracksState(nextTracks.length > 0 ? nextTracks : [...TRACK_COLS]);
+      },
+      setSearchQuery: (nextSearchQuery) => {
+        setSearchQueryState(nextSearchQuery);
+      },
+      resetWorkspaceFilters: () => {
+        setSelectedFolderIdState("all");
+        setSelectedYearsState([]);
+        setSelectedTracksState([...TRACK_COLS]);
+        setSearchQueryState("");
+      },
       refreshFolders,
       createFolder,
     }),
-    [analysisSession, createFolder, folders, hydrated, profile, refreshFolders, selectedFolderId]
+    [
+      analysisSession,
+      createFolder,
+      folders,
+      hydrated,
+      profile,
+      refreshFolders,
+      searchQuery,
+      selectedFolderId,
+      selectedTracks,
+      selectedYears,
+    ]
   );
 
   return (

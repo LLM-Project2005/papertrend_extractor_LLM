@@ -21,21 +21,13 @@ export function buildThreadTitle(prompt: string): string {
 
 export async function listWorkspaceThreads(
   supabase: SupabaseClient,
-  ownerUserId: string,
-  folderId?: string | null
+  ownerUserId: string
 ): Promise<WorkspaceThreadSummary[]> {
-  let query = supabase
+  const { data, error } = await supabase
     .from("workspace_threads")
     .select("*")
     .eq("owner_user_id", ownerUserId)
     .order("updated_at", { ascending: false });
-
-  const normalizedFolderId = normalizeFolderId(folderId);
-  if (normalizedFolderId) {
-    query = query.eq("folder_id", normalizedFolderId);
-  }
-
-  const { data, error } = await query;
   if (error) {
     throw new Error(error.message);
   }
@@ -47,7 +39,6 @@ export async function createWorkspaceThread(
   supabase: SupabaseClient,
   input: {
     ownerUserId: string;
-    folderId?: string | null;
     mode: "normal" | "deep_research";
     title: string;
     summary?: string | null;
@@ -57,7 +48,7 @@ export async function createWorkspaceThread(
     .from("workspace_threads")
     .insert({
       owner_user_id: input.ownerUserId,
-      folder_id: normalizeFolderId(input.folderId),
+      folder_id: null,
       mode: input.mode,
       title: input.title,
       summary: input.summary ?? null,
@@ -82,6 +73,22 @@ export async function updateWorkspaceThread(
     .from("workspace_threads")
     .update({ ...patch, updated_at: new Date().toISOString() })
     .eq("id", threadId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
+export async function deleteWorkspaceThread(
+  supabase: SupabaseClient,
+  ownerUserId: string,
+  threadId: string
+): Promise<void> {
+  const { error } = await supabase
+    .from("workspace_threads")
+    .delete()
+    .eq("id", threadId)
+    .eq("owner_user_id", ownerUserId);
 
   if (error) {
     throw new Error(error.message);

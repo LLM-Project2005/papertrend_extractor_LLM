@@ -11,7 +11,11 @@ from nodes.keyword_search import keyword_search_node
 from state import WorkspaceQueryState
 from workspace_data import TRACK_COLS, build_visualization_analytics, extract_track_labels
 
-chat_synthesis_llm = get_task_llm(ModelTask.CHAT_SYNTHESIS)
+def _chat_llm_for_state(state: WorkspaceQueryState):
+    model_override = str(state.get("model") or "").strip()
+    if model_override:
+        return get_task_llm(ModelTask.CHAT_SYNTHESIS, model=model_override)
+    return get_task_llm(ModelTask.CHAT_SYNTHESIS)
 
 
 class KeywordSearchToolInput(BaseModel):
@@ -210,6 +214,7 @@ def _answer_with_tools(
     question: str,
     deterministic_fallback: str,
 ) -> str:
+    chat_synthesis_llm = _chat_llm_for_state(state)
     keyword_tool = StructuredTool.from_function(
         name="keyword_search",
         description="Search for a concept family or keyword inside the current workspace filters.",
@@ -271,6 +276,7 @@ def _answer_with_tools(
 
 
 def conversation_node(state: WorkspaceQueryState) -> Dict[str, Any]:
+    chat_synthesis_llm = _chat_llm_for_state(state)
     question = (state.get("message") or "").strip()
     concept_result = state.get("keyword_search_result") or {}
     papers = list(state.get("papers_full") or [])

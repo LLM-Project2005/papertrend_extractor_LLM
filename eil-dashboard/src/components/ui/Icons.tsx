@@ -371,3 +371,56 @@ export function ImageIcon({ className }: IconProps) {
     </BaseIcon>
   );
 }
+
+export function MoreHorizontalIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </BaseIcon>
+  );
+}
+
+export function PencilSquareIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h7" />
+      <path d="M4.5 9.5v8a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7" />
+      <path d="m13.5 5.5 5 5" />
+      <path d="m11.5 17.5 1-4 7-7a1.4 1.4 0 0 0-2-2l-7 7-4 1Z" />
+    </BaseIcon>
+  );
+}
+
+export function TrashIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M4.5 7.5h15" />
+      <path d="M9 7.5v-2h6v2" />
+      <path d="M7.5 7.5 8.3 19a1.5 1.5 0 0 0 1.5 1.4h4.4a1.5 1.5 0 0 0 1.5-1.4l.8-11.5" />
+      <path d="M10 11v5.5" />
+      <path d="M14 11v5.5" />
+    </BaseIcon>
+  );
+}
+
+export function PinIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m14 4 6 6" />
+      <path d="m16 9-5 5" />
+      <path d="M8 6.5 17.5 16" />
+      <path d="m10 14-6 6" />
+      <path d="m6.5 8 9.5 9.5" />
+    </BaseIcon>
+  );
+}
+
+export function StopIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="7" y="7" width="10" height="10" rx="1.8" />
+    </BaseIcon>
+  );
+}

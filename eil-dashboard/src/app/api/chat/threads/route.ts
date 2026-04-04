@@ -12,10 +12,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const url = new URL(request.url);
-    const folderId = url.searchParams.get("folderId");
     const supabase = getSupabaseAdmin();
-    const threads = await listWorkspaceThreads(supabase, user.id, folderId);
+    const threads = await listWorkspaceThreads(supabase, user.id);
     return NextResponse.json({ threads });
   } catch (error) {
     return NextResponse.json(

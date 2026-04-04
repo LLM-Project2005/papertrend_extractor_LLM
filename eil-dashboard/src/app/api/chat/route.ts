@@ -138,7 +138,6 @@ async function planDeepResearch(
       ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
       : await createWorkspaceThread(supabase, {
           ownerUserId,
-          folderId: body.folderId,
           mode: "deep_research",
           title: buildThreadTitle(prompt),
           summary: "Planning deep research session",
@@ -322,7 +321,6 @@ async function normalChat(
       ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
       : await createWorkspaceThread(supabase, {
           ownerUserId,
-          folderId: body.folderId,
           mode: "normal",
           title: buildThreadTitle(currentMessage),
           summary: currentMessage.slice(0, 180),

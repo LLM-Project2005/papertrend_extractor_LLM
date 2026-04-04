@@ -93,6 +93,17 @@ export default function AnalysisStatusCard({
             </div>
             <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8f8f8f]" />
           </button>
+          {allTerminal && onClear ? (
+            <button
+              type="button"
+              onClick={onClear}
+              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+              aria-label="Dismiss analysis status"
+              title="Dismiss"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
           {hasActiveRuns && onCancelAll ? (
             <button
               type="button"

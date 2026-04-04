@@ -159,6 +159,7 @@ def _build_chat_payload(body: Dict[str, Any]) -> Dict[str, Any]:
         "folder_id": str(body.get("folderId") or ""),
         "thread_id": str(body.get("threadId") or ""),
         "session_id": str(body.get("sessionId") or ""),
+        "model": str(body.get("model") or ""),
         "chat_mode": str(body.get("chatMode") or "normal"),
         "action": str(body.get("action") or "message"),
         "message": current_message,

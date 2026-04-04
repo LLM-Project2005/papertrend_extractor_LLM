@@ -33,7 +33,7 @@ const NAV_ITEMS = [
 const PAGE_DESCRIPTIONS: Record<string, string> = {
   "/workspace/home": "Overview, next steps, and the current state of your corpus.",
   "/workspace/dashboard": "Analytics across trends, topics, keywords, and track views.",
-  "/workspace/chat": "A clean assistant surface for grounded questions across the corpus.",
+  "/workspace/chat": "",
   "/workspace/papers": "Inspect titles, keywords, evidence, and track assignments.",
   "/workspace/imports": "Bring new sources into the workspace and monitor intake.",
   "/workspace/settings": "Adjust the workspace identity and onboarding defaults.",
@@ -200,9 +200,6 @@ export default function WorkspaceShell({
   const pathname = usePathname();
   const {
     profile,
-    folders,
-    selectedFolderId,
-    setSelectedFolderId,
     analysisSession,
     setAnalysisMinimized,
     removeAnalysisRunIds,
@@ -291,30 +288,15 @@ export default function WorkspaceShell({
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
                   {currentItem.label}
                 </p>
-                <p className="mt-1 truncate text-sm text-slate-600 dark:text-[#b8b8b8]">
-                  {PAGE_DESCRIPTIONS[currentItem.href]}
-                </p>
+                {PAGE_DESCRIPTIONS[currentItem.href] ? (
+                  <p className="mt-1 truncate text-sm text-slate-600 dark:text-[#b8b8b8]">
+                    {PAGE_DESCRIPTIONS[currentItem.href]}
+                  </p>
+                ) : null}
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              <label className="hidden items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0] sm:flex">
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-400 dark:text-[#7a7a7a]">
-                  Folder
-                </span>
-                <select
-                  value={selectedFolderId}
-                  onChange={(event) => setSelectedFolderId(event.target.value)}
-                  className="bg-transparent text-sm font-medium text-slate-700 outline-none dark:text-[#ececec]"
-                >
-                  <option value="all">All folders</option>
-                  {folders.map((folder) => (
-                    <option key={folder.id} value={folder.id}>
-                      {folder.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
               <AuthStatus />
               <ThemeToggle />
               <Link

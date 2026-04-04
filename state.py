@@ -185,6 +185,7 @@ class WorkspaceQueryState(TypedDict, total=False):
     folder_id: str
     thread_id: str
     session_id: str
+    model: str
     chat_mode: Literal["normal", "deep_research"]
     selected_years: List[str]
     selected_tracks: List[str]
