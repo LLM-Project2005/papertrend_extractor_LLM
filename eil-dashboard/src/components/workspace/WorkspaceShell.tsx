@@ -12,30 +12,30 @@ import {
   ChartIcon,
   ChatIcon,
   CloseIcon,
+  FileIcon,
+  FolderIcon,
   HomeIcon,
   LogoMarkIcon,
   MenuIcon,
-  PaperIcon,
   PlusIcon,
   SettingsIcon,
-  UploadIcon,
 } from "@/components/ui/Icons";
 
 const NAV_ITEMS = [
-  { href: "/workspace/home", label: "Home", icon: HomeIcon },
+  { href: "/workspace/home", label: "Project Overview", icon: HomeIcon },
   { href: "/workspace/dashboard", label: "Dashboard", icon: ChartIcon },
   { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
-  { href: "/workspace/papers", label: "Papers", icon: PaperIcon },
-  { href: "/workspace/imports", label: "Imports", icon: UploadIcon },
+  { href: "/workspace/library", label: "Library", icon: FolderIcon },
+  { href: "/workspace/logs", label: "Logs", icon: FileIcon },
   { href: "/workspace/settings", label: "Settings", icon: SettingsIcon },
 ] as const;
 
 const PAGE_DESCRIPTIONS: Record<string, string> = {
-  "/workspace/home": "Overview, next steps, and the current state of your corpus.",
+  "/workspace/home": "Current project status, scope, and the next useful actions.",
   "/workspace/dashboard": "Analytics across trends, topics, keywords, and track views.",
   "/workspace/chat": "",
-  "/workspace/papers": "Inspect titles, keywords, evidence, and track assignments.",
-  "/workspace/imports": "Bring new sources into the workspace and monitor intake.",
+  "/workspace/library": "Manage files, folders, and analyzed papers in one place.",
+  "/workspace/logs": "Track queued, completed, and failed processing activity.",
   "/workspace/settings": "Adjust the workspace identity and onboarding defaults.",
   "/workspace/profile": "Review the signed-in account and update the profile shown in the workspace.",
 };
@@ -43,41 +43,45 @@ const PAGE_DESCRIPTIONS: Record<string, string> = {
 function DesktopSidebar({
   pathname,
   profile,
+  projectName,
+  organizationName,
 }: {
   pathname: string;
   profile: ReturnType<typeof useWorkspaceProfile>["profile"];
+  projectName: string;
+  organizationName: string;
 }) {
   return (
-    <aside className="group fixed inset-y-0 left-0 z-40 hidden w-[76px] overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[296px] dark:border-[#2c2c2c] dark:bg-[#1d1d1d] lg:block">
+    <aside className="group fixed inset-y-0 left-0 z-40 hidden w-[68px] overflow-hidden border-r border-[#262626] bg-[#161616] transition-[width] duration-200 ease-out hover:w-[248px] lg:block">
       <div className="flex h-full flex-col">
         <div className="flex items-center gap-3 px-3 py-4">
-          <span className="flex h-11 w-11 flex-none items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-[#ececec] dark:text-[#171717]">
+          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-2xl bg-[#1f9d63] text-white">
             <LogoMarkIcon className="h-5 w-5" />
           </span>
           <div className="min-w-0 overflow-hidden opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-            <p className="truncate text-base font-semibold text-slate-950 dark:text-[#ececec]">
+            <p className="truncate text-base font-semibold text-[#f2f2f2]">
               Papertrend
             </p>
-            <p className="truncate text-sm text-slate-500 dark:text-[#8f8f8f]">
-              Research workspace
+            <p className="truncate text-sm text-[#8f8f8f]">
+              Project workspace
             </p>
           </div>
         </div>
 
-        <div className="border-b border-slate-200 px-3 pb-4 dark:border-[#2c2c2c]">
-          <div className="rounded-2xl border border-transparent px-1 py-1 transition-colors group-hover:border-slate-200 group-hover:bg-slate-50 dark:group-hover:border-[#2f2f2f] dark:group-hover:bg-[#202020]">
+        <div className="border-b border-[#262626] px-3 pb-4">
+          <div className="rounded-2xl border border-transparent px-1 py-1 transition-colors group-hover:border-[#2f2f2f] group-hover:bg-[#1d1d1d]">
             <div className="flex items-start gap-3 px-2 py-2">
-              <span className="mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-slate-200 bg-white dark:border-[#303030] dark:bg-[#232323]">
-                <HomeIcon className="h-4 w-4 text-slate-500 dark:text-[#8f8f8f]" />
+              <span className="mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-[#2f2f2f] bg-[#202020]">
+                <HomeIcon className="h-4 w-4 text-[#8f8f8f]" />
               </span>
               <div className="min-w-0 overflow-hidden opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-                <p className="truncate text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                  {profile.name}
+                <p className="truncate text-sm font-medium text-[#ececec]">
+                  {projectName || profile.name}
                 </p>
-                <p className="truncate text-sm text-slate-500 dark:text-[#8f8f8f]">
-                  {profile.organization}
+                <p className="truncate text-sm text-[#8f8f8f]">
+                  {organizationName || profile.organization}
                 </p>
-                <p className="mt-1 truncate text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#6f6f6f]">
+                <p className="mt-1 truncate text-xs uppercase tracking-[0.16em] text-[#6f6f6f]">
                   {profile.domain}
                 </p>
               </div>
@@ -96,8 +100,8 @@ function DesktopSidebar({
                 href={item.href}
                 className={`flex items-center gap-3 rounded-2xl px-2 py-2.5 transition-colors ${
                   isActive
-                    ? "bg-slate-100 text-slate-950 dark:bg-[#2b2b2b] dark:text-[#f2f2f2]"
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900 dark:text-[#9a9a9a] dark:hover:bg-[#232323] dark:hover:text-[#ececec]"
+                    ? "bg-[#2b2b2b] text-[#f2f2f2]"
+                    : "text-[#9a9a9a] hover:bg-[#202020] hover:text-[#ececec]"
                 }`}
               >
                 <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl">
@@ -111,16 +115,16 @@ function DesktopSidebar({
           })}
         </nav>
 
-        <div className="border-t border-slate-200 px-3 py-4 dark:border-[#2c2c2c]">
+        <div className="border-t border-[#262626] px-3 py-4">
           <Link
-            href="/workspace/imports"
-            className="flex items-center gap-3 rounded-2xl px-2 py-2.5 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:text-[#9a9a9a] dark:hover:bg-[#232323] dark:hover:text-[#ececec]"
+            href="/workspace/library"
+            className="flex items-center gap-3 rounded-2xl px-2 py-2.5 text-[#9a9a9a] transition-colors hover:bg-[#202020] hover:text-[#ececec]"
           >
             <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl">
               <PlusIcon className="h-5 w-5" />
             </span>
             <span className="overflow-hidden whitespace-nowrap text-sm font-medium opacity-0 transition-opacity duration-150 group-hover:opacity-100">
-              Add source
+              Add to library
             </span>
           </Link>
         </div>
@@ -132,36 +136,40 @@ function DesktopSidebar({
 function MobileSidebar({
   pathname,
   profile,
+  projectName,
+  organizationName,
   onClose,
 }: {
   pathname: string;
   profile: ReturnType<typeof useWorkspaceProfile>["profile"];
+  projectName: string;
+  organizationName: string;
   onClose: () => void;
 }) {
   return (
-    <div className="h-full max-w-[288px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-      <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-        <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
+    <div className="h-full max-w-[264px] overflow-y-auto border-r border-[#262626] bg-[#161616]">
+      <div className="sticky top-0 flex items-center justify-between border-b border-[#262626] bg-[#161616] px-4 py-4">
+        <p className="text-sm font-medium text-[#ececec]">
           Workspace menu
         </p>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0]"
+          className="rounded-lg border border-[#353535] bg-[#232323] p-2 text-[#d0d0d0]"
         >
           <CloseIcon className="h-4 w-4" />
         </button>
       </div>
 
       <div className="space-y-5 px-4 py-5">
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#202020]">
-          <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-            {profile.name}
+        <div className="rounded-2xl border border-[#2f2f2f] bg-[#202020] px-4 py-4">
+          <p className="text-sm font-medium text-[#ececec]">
+            {projectName || profile.name}
           </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-            {profile.organization}
+          <p className="mt-1 text-sm text-[#8f8f8f]">
+            {organizationName || profile.organization}
           </p>
-          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#6f6f6f]">
+          <p className="mt-1 text-xs uppercase tracking-[0.16em] text-[#6f6f6f]">
             {profile.domain}
           </p>
         </div>
@@ -177,8 +185,8 @@ function MobileSidebar({
                 onClick={onClose}
                 className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                   isActive
-                    ? "bg-slate-100 text-slate-950 dark:bg-[#2b2b2b] dark:text-[#f2f2f2]"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#232323] dark:hover:text-[#ececec]"
+                    ? "bg-[#2b2b2b] text-[#f2f2f2]"
+                    : "text-[#c7c7c7] hover:bg-[#232323] hover:text-[#ececec]"
                 }`}
               >
                 <Icon className="h-4 w-4" />
@@ -200,6 +208,9 @@ export default function WorkspaceShell({
   const pathname = usePathname();
   const {
     profile,
+    currentOrganization,
+    currentProject,
+    hasActiveProject,
     analysisSession,
     setAnalysisMinimized,
     removeAnalysisRunIds,
@@ -259,37 +270,44 @@ export default function WorkspaceShell({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-slate-100">
-      <DesktopSidebar pathname={pathname} profile={profile} />
+    <div className="min-h-screen bg-[#171717] text-slate-100">
+      <DesktopSidebar
+        pathname={pathname}
+        profile={profile}
+        projectName={currentProject?.name ?? ""}
+        organizationName={currentOrganization?.name ?? ""}
+      />
 
       {sidebarOpen ? (
         <div className="fixed inset-0 z-50 bg-black/45 lg:hidden">
           <MobileSidebar
             pathname={pathname}
             profile={profile}
+            projectName={currentProject?.name ?? ""}
+            organizationName={currentOrganization?.name ?? ""}
             onClose={() => setSidebarOpen(false)}
           />
         </div>
       ) : null}
 
-      <div className="min-h-screen lg:pl-[76px]">
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur dark:border-[#2c2c2c] dark:bg-[#171717]/90">
+      <div className="min-h-screen lg:pl-[68px]">
+        <header className="sticky top-0 z-30 border-b border-[#2c2c2c] bg-[#171717]/95 backdrop-blur">
           <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-4 px-4 py-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0] lg:hidden"
+                className="inline-flex items-center justify-center rounded-lg border border-[#353535] bg-[#232323] p-2 text-[#d0d0d0] lg:hidden"
                 aria-label="Open workspace navigation"
               >
                 <MenuIcon className="h-4 w-4" />
               </button>
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f6f6f]">
                   {currentItem.label}
                 </p>
                 {PAGE_DESCRIPTIONS[currentItem.href] ? (
-                  <p className="mt-1 truncate text-sm text-slate-600 dark:text-[#b8b8b8]">
+                  <p className="mt-1 truncate text-sm text-[#b8b8b8]">
                     {PAGE_DESCRIPTIONS[currentItem.href]}
                   </p>
                 ) : null}
@@ -300,17 +318,40 @@ export default function WorkspaceShell({
               <AuthStatus />
               <ThemeToggle />
               <Link
-                href="/workspace/imports"
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
+                href="/workspace/library"
+                className="inline-flex items-center gap-2 rounded-lg bg-[#ececec] px-4 py-2.5 text-sm font-medium text-[#171717] transition-colors hover:bg-white"
               >
                 <PlusIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Add source</span>
+                <span className="hidden sm:inline">Add to library</span>
               </Link>
             </div>
           </div>
         </header>
 
-        <main className="min-w-0 px-3 py-5 sm:px-6 sm:py-6">{children}</main>
+        <main className="min-w-0 px-3 py-5 sm:px-6 sm:py-6">
+          {hasActiveProject ? (
+            children
+          ) : (
+            <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
+              <div className="w-full rounded-[28px] border border-[#2c2c2c] bg-[#1b1b1b] px-8 py-10 text-center">
+                <p className="text-sm font-medium text-[#8f8f8f]">Workspace setup</p>
+                <h1 className="mt-3 text-3xl font-semibold text-white">
+                  Select a project to open the workspace
+                </h1>
+                <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+                  Projects now sit inside organizations. Pick one to continue into
+                  the library, dashboard, chat, and analysis workspace.
+                </p>
+                <Link
+                  href="/organizations"
+                  className="mt-8 inline-flex items-center rounded-xl bg-[#1f9d63] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#198451]"
+                >
+                  Open organizations
+                </Link>
+              </div>
+            </div>
+          )}
+        </main>
 
         {analysisSession &&
         (analysisSession.minimized || pathname !== "/workspace/home") ? (

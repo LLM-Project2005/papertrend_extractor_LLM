@@ -20,17 +20,21 @@ import {
   ChevronDownIcon,
   CircleIcon,
   CloseIcon,
+  DriveIcon,
+  FileIcon,
   FolderIcon,
   MoreHorizontalIcon,
   PaperIcon,
   PencilSquareIcon,
   PinIcon,
   PlusIcon,
+  SearchIcon,
   SendIcon,
   SparkIcon,
   StopIcon,
   TrashIcon,
 } from "@/components/ui/Icons";
+import Modal from "@/components/ui/Modal";
 import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
@@ -142,6 +146,43 @@ function buildFolderLabel(folderId: string, folders: ResearchFolderRow[]) {
   return folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
 }
 
+function runTitleOf(run: IngestionRunRow) {
+  return run.display_name || run.source_filename || run.id;
+}
+
+function runExtOf(run: IngestionRunRow) {
+  return (
+    run.source_extension ||
+    runTitleOf(run).split(".").pop()?.toLowerCase() ||
+    "file"
+  );
+}
+
+function runSourceLabel(run: IngestionRunRow) {
+  const sourceKind =
+    typeof run.input_payload?.source_kind === "string"
+      ? run.input_payload.source_kind
+      : run.source_type;
+  return sourceKind === "google-drive" ? "Google Drive" : "Upload";
+}
+
+function runGlyph(run: IngestionRunRow) {
+  if (runSourceLabel(run) === "Google Drive") return DriveIcon;
+  if (runExtOf(run) === "pdf") return PaperIcon;
+  return FileIcon;
+}
+
+function runGlyphTone(run: IngestionRunRow) {
+  const ext = runExtOf(run);
+  if (ext === "pdf") {
+    return "bg-red-500/15 text-red-300";
+  }
+  if (ext === "doc" || ext === "docx") {
+    return "bg-blue-500/15 text-blue-300";
+  }
+  return "bg-white/10 text-[#d4d4d4]";
+}
+
 function renderLoadingLabel(
   deepResearchEnabled: boolean,
   activeSession?: DeepResearchSessionRecord | null
@@ -226,6 +267,8 @@ export default function ChatClient() {
   const { session, user } = useAuth();
   const {
     folders,
+    currentProject,
+    selectedProjectId,
     selectedYears,
     selectedTracks,
     searchQuery,
@@ -235,15 +278,22 @@ export default function ChatClient() {
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
   const [selectedModel, setSelectedModel] = useState("");
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
-  const { allYears } = useDashboardData(
-    deepResearchEnabled ? chatScopeFolderId : "all"
+  const projectFolderIds = useMemo(
+    () => folders.map((folder) => folder.id),
+    [folders]
   );
+  const { allYears } = useDashboardData(chatScopeFolderId, projectFolderIds);
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState<WorkspaceThreadSummary | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [deepSession, setDeepSession] = useState<DeepResearchSessionRecord | null>(null);
+  const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
+  const [selectedLibraryRuns, setSelectedLibraryRuns] = useState<IngestionRunRow[]>([]);
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryQuery, setLibraryQuery] = useState("");
   const [threadsLoading, setThreadsLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -270,10 +320,33 @@ export default function ChatClient() {
     () => sortThreads(threads, pinnedThreadIds),
     [pinnedThreadIds, threads]
   );
+  const selectedRunIds = useMemo(
+    () => selectedLibraryRuns.map((run) => run.id),
+    [selectedLibraryRuns]
+  );
+  const selectedAttachments = useMemo(
+    () =>
+      selectedLibraryRuns.map((run) => ({
+        name: runTitleOf(run),
+        type: run.mime_type || runExtOf(run),
+        size: run.file_size_bytes ?? undefined,
+      })),
+    [selectedLibraryRuns]
+  );
   const activeFolderLabel = useMemo(
     () => buildFolderLabel(chatScopeFolderId, folders),
     [chatScopeFolderId, folders]
   );
+  const filteredLibraryRuns = useMemo(() => {
+    const needle = libraryQuery.trim().toLowerCase();
+    return libraryRuns.filter((run) => {
+      if (run.trashed_at) return false;
+      if (!needle) return true;
+      return [runTitleOf(run), run.source_path, runExtOf(run), runSourceLabel(run)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle));
+    });
+  }, [libraryQuery, libraryRuns]);
   const pageTitle = activeThread?.title ?? "Chat";
   const researchTitle = useMemo(
     () => buildResearchTitle(activeThread, deepSession),
@@ -357,6 +430,7 @@ export default function ChatClient() {
       setActiveThread(null);
       setMessages([]);
       setDeepSession(null);
+      setSelectedLibraryRuns([]);
       setError(null);
       setThreadMenuId(null);
       setReportFullViewOpen(false);
@@ -461,6 +535,39 @@ export default function ChatClient() {
     [canPersist, session?.access_token]
   );
 
+  const loadLibraryRuns = useCallback(async () => {
+    if (!canPersist || !selectedProjectId) {
+      setLibraryRuns([]);
+      return;
+    }
+
+    setLibraryLoading(true);
+    try {
+      const response = await fetch(
+        `/api/workspace/library?projectId=${encodeURIComponent(selectedProjectId)}`,
+        {
+          headers: { Authorization: `Bearer ${session?.access_token}` },
+        }
+      );
+      const payload = (await response.json()) as {
+        runs?: IngestionRunRow[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load library files.");
+      }
+      setLibraryRuns(payload.runs ?? []);
+    } catch (nextError) {
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Failed to load library files."
+      );
+    } finally {
+      setLibraryLoading(false);
+    }
+  }, [canPersist, selectedProjectId, session?.access_token]);
+
   useEffect(() => {
     if (!canPersist) {
       setThreads([]);
@@ -485,6 +592,17 @@ export default function ChatClient() {
     }, 5000);
     return () => window.clearInterval(timer);
   }, [activeThreadId, canPersist, deepSession, loadThreadDetail]);
+
+  useEffect(() => {
+    if (!showLibraryPicker) return;
+    void loadLibraryRuns();
+  }, [loadLibraryRuns, showLibraryPicker]);
+
+  useEffect(() => {
+    setSelectedLibraryRuns([]);
+    setLibraryRuns([]);
+    setLibraryQuery("");
+  }, [selectedProjectId]);
 
   async function sendRequest(body: Record<string, unknown>) {
     abortControllerRef.current?.abort();
@@ -519,6 +637,16 @@ export default function ChatClient() {
     });
   }
 
+  function toggleLibraryRun(run: IngestionRunRow) {
+    setSelectedLibraryRuns((current) => {
+      const exists = current.some((item) => item.id === run.id);
+      if (exists) {
+        return current.filter((item) => item.id !== run.id);
+      }
+      return [...current, run];
+    });
+  }
+
   async function handleNormalSend() {
     const prompt = draft.trim();
     if (!prompt) return;
@@ -536,6 +664,7 @@ export default function ChatClient() {
       const payload = await sendRequest({
         message: prompt,
         model: selectedModel || undefined,
+        attachments: selectedAttachments,
         messages: nextMessages.map((message) => ({
           role: message.role,
           content: message.content,
@@ -544,11 +673,14 @@ export default function ChatClient() {
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
         folderId: chatScopeFolderId,
+        projectId: selectedProjectId ?? undefined,
+        selectedRunIds,
         threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
         chatMode: "normal",
         action: "message",
       });
       setDraft("");
+      setSelectedLibraryRuns([]);
       if (payload.thread && payload.messages) {
         applyPayload(payload);
       } else {
@@ -588,7 +720,10 @@ export default function ChatClient() {
     try {
       const payload = await sendRequest({
         message: prompt,
+        attachments: selectedAttachments,
         folderId: chatScopeFolderId,
+        projectId: selectedProjectId ?? undefined,
+        selectedRunIds,
         threadId: activeThread?.mode === "deep_research" ? activeThread.id : undefined,
         sessionId:
           activeThread?.mode === "deep_research" ? deepSession?.id : undefined,
@@ -617,6 +752,8 @@ export default function ChatClient() {
     try {
       const payload = await sendRequest({
         folderId: chatScopeFolderId,
+        projectId: selectedProjectId ?? undefined,
+        selectedRunIds,
         threadId: activeThread.id,
         sessionId: deepSession.id,
         chatMode: "deep_research",
@@ -1202,6 +1339,41 @@ export default function ChatClient() {
                   </div>
                 ) : null}
 
+                {selectedLibraryRuns.length > 0 ? (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {selectedLibraryRuns.map((run) => {
+                      const Glyph = runGlyph(run);
+                      return (
+                        <span
+                          key={run.id}
+                          className="group inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#d4d4d4]"
+                        >
+                          <span
+                            className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${runGlyphTone(run)}`}
+                          >
+                            <Glyph className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="max-w-[180px] truncate">
+                            {runTitleOf(run)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedLibraryRuns((current) =>
+                                current.filter((item) => item.id !== run.id)
+                              )
+                            }
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#8e8e8e] opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100"
+                            aria-label={`Remove ${runTitleOf(run)}`}
+                          >
+                            <CloseIcon className="h-3 w-3" />
+                          </button>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : null}
+
                 <textarea
                   ref={composerRef}
                   value={draft}
@@ -1225,6 +1397,25 @@ export default function ChatClient() {
 
                       {menuOpen ? (
                         <div className="absolute bottom-12 left-0 z-30 w-72 rounded-2xl border border-white/10 bg-[#2a2a2a] p-2 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowLibraryPicker(true);
+                              setMenuOpen(false);
+                            }}
+                            className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
+                          >
+                            <span className="flex items-center gap-3">
+                              <FileIcon className="h-4 w-4" />
+                              <span>Add from library</span>
+                            </span>
+                            {selectedLibraryRuns.length > 0 ? (
+                              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-[#ececec]">
+                                {selectedLibraryRuns.length}
+                              </span>
+                            ) : null}
+                          </button>
+
                           <button
                             type="button"
                             onClick={() => {
@@ -1439,6 +1630,114 @@ export default function ChatClient() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {showLibraryPicker ? (
+        <Modal onClose={() => setShowLibraryPicker(false)}>
+          <div className="w-[min(720px,92vw)] rounded-[28px] border border-white/10 bg-[#171717] p-6 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-semibold text-[#ececec]">
+                  Add from library
+                </h2>
+                <p className="mt-1 text-sm text-[#8e8e8e]">
+                  Choose files from {currentProject?.name ?? "this project"} to focus the
+                  chat context.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLibraryPicker(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#8e8e8e] transition-colors hover:bg-[#2a2a2a] hover:text-white"
+                aria-label="Close library picker"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="relative mt-5 block">
+              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e8e8e]" />
+              <input
+                type="search"
+                value={libraryQuery}
+                onChange={(event) => setLibraryQuery(event.target.value)}
+                placeholder="Search files"
+                className="w-full rounded-2xl border border-white/10 bg-[#212121] py-3 pl-11 pr-4 text-sm text-[#ececec] outline-none placeholder:text-[#8e8e8e] focus:border-white/20"
+              />
+            </label>
+
+            <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
+              {libraryLoading ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#212121] px-4 py-4 text-sm text-[#b4b4b4]">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                  <span>Loading library files...</span>
+                </div>
+              ) : filteredLibraryRuns.length === 0 ? (
+                <div className="rounded-2xl border border-white/10 bg-[#212121] px-4 py-5 text-sm text-[#8e8e8e]">
+                  No files matched this search.
+                </div>
+              ) : (
+                filteredLibraryRuns.map((run) => {
+                  const selected = selectedRunIds.includes(run.id);
+                  const Glyph = runGlyph(run);
+                  return (
+                    <button
+                      key={run.id}
+                      type="button"
+                      onClick={() => toggleLibraryRun(run)}
+                      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                        selected
+                          ? "border-[#2b5da8] bg-[#173868]/65"
+                          : "border-white/10 bg-[#212121] hover:bg-[#262626]"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 inline-flex h-10 w-10 flex-none items-center justify-center rounded-2xl ${runGlyphTone(run)}`}
+                      >
+                        <Glyph className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm font-medium text-[#ececec]">
+                          {runTitleOf(run)}
+                        </span>
+                        <span className="mt-1 block text-xs text-[#8e8e8e]">
+                          {runSourceLabel(run)} | {runExtOf(run).toUpperCase()}
+                        </span>
+                      </span>
+                      <span
+                        className={`mt-1 inline-flex h-5 w-5 flex-none rounded-full border ${
+                          selected
+                            ? "border-[#9cc8ff] bg-[#9cc8ff]"
+                            : "border-white/20"
+                        }`}
+                      >
+                        {selected ? (
+                          <CheckCircleIcon className="h-5 w-5 text-[#173868]" />
+                        ) : null}
+                      </span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="mt-5 flex items-center justify-between gap-3">
+              <p className="text-sm text-[#8e8e8e]">
+                {selectedLibraryRuns.length} file
+                {selectedLibraryRuns.length === 1 ? "" : "s"} selected
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowLibraryPicker(false)}
+                  className="inline-flex h-10 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#2a2a2a]"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
       ) : null}
 
       <AnalyzeFlowModal

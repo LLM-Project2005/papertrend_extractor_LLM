@@ -1,186 +1,67 @@
+"use client";
+
 import Link from "next/link";
-import AuthPanel from "@/components/auth/AuthPanel";
-import AuthStatus from "@/components/auth/AuthStatus";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/components/auth/AuthProvider";
 import ThemeToggle from "@/components/theme/ThemeToggle";
-import {
-  ArrowRightIcon,
-  ChartIcon,
-  ChatIcon,
-  LogoMarkIcon,
-  PaperIcon,
-  UploadIcon,
-} from "@/components/ui/Icons";
-
-const CORE_MODULES = [
-  {
-    title: "Dashboard",
-    description: "Track trends, themes, and category changes across the corpus.",
-    icon: ChartIcon,
-  },
-  {
-    title: "Chat",
-    description: "Ask grounded questions and move directly into cited papers.",
-    icon: ChatIcon,
-  },
-  {
-    title: "Papers",
-    description: "Inspect titles, keywords, evidence, and track assignments.",
-    icon: PaperIcon,
-  },
-  {
-    title: "Imports",
-    description: "Upload PDFs or sync structured outputs into the workspace.",
-    icon: UploadIcon,
-  },
-] as const;
-
-const JOURNEY = [
-  {
-    step: "01",
-    title: "Set up the workspace",
-    description:
-      "Define the team, domain, goal, and preferred outputs before anyone starts exploring data.",
-  },
-  {
-    step: "02",
-    title: "Bring sources in",
-    description:
-      "Start with PDF upload or notebook sync, then add richer institutional connectors later.",
-  },
-  {
-    step: "03",
-    title: "Work inside one system",
-    description:
-      "Move between analytics, grounded chat, and paper-level review without switching products.",
-  },
-] as const;
+import { LogoMarkIcon } from "@/components/ui/Icons";
 
 export default function LandingPage() {
+  const router = useRouter();
+  const { hydrated, user } = useAuth();
+
+  useEffect(() => {
+    if (hydrated && user) {
+      router.replace("/organizations");
+    }
+  }, [hydrated, router, user]);
+
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#171717] dark:text-[#ececec]">
-      <div className="border-b border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#171717]">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+    <main className="min-h-screen bg-[#111111] text-white">
+      <header className="border-b border-white/10">
+        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-5">
           <Link href="/" className="flex items-center gap-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-900 text-white dark:bg-[#ececec] dark:text-[#171717]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white">
               <LogoMarkIcon className="h-5 w-5" />
             </span>
-            <div>
-              <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">
-                Papertrend
-              </p>
-              <p className="text-xs text-slate-500 dark:text-[#8f8f8f]">
-                Research workspace
-              </p>
-            </div>
+            <span className="text-xl font-semibold tracking-tight">Papertrend</span>
           </Link>
 
-          <div className="flex flex-wrap gap-2">
-            <AuthStatus />
+          <div className="flex items-center gap-3">
             <ThemeToggle />
             <Link
-              href="/start"
-              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
+              href="/login"
+              className="rounded-xl border border-white/10 bg-[#1b1b1b] px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#222222]"
             >
-              Start here
-            </Link>
-            <Link
-              href="/workspace/home"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#1d1d1d] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
-            >
-              Open workspace
+              Start your project
             </Link>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6">
-        <section className="grid gap-6 rounded-3xl border border-slate-200 bg-white px-6 py-8 sm:px-8 xl:grid-cols-[minmax(0,1.2fr)_380px] dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-          <div className="max-w-3xl">
-            <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-              Research intelligence for departments, labs, and faculty teams
-            </p>
-            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-slate-900 sm:text-5xl dark:text-[#ececec]">
-              Turn scattered research papers into a clean, guided workspace.
-            </h1>
-            <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-[#b8b8b8]">
-              Start with a simple setup flow, bring documents into the system, and
-              keep dashboard analytics, grounded chat, and paper review in one place.
-            </p>
+      <section className="mx-auto flex min-h-[calc(100vh-81px)] max-w-6xl flex-col items-center justify-center px-6 py-24 text-center">
+        <p className="text-sm font-medium text-[#34d399]">Research intelligence workspace</p>
+        <h1 className="mt-6 text-5xl font-semibold tracking-tight text-white sm:text-7xl">
+          Build a research library.
+          <br />
+          <span className="text-[#34d399]">Scale it into insight.</span>
+        </h1>
+        <p className="mt-8 max-w-3xl text-lg leading-9 text-[#bdbdbd]">
+          Papertrend helps teams organize paper collections, analyze folders in
+          batch, and move from documents to grounded dashboards and research chat
+          without juggling separate tools.
+        </p>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link
-                href="/start"
-                className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
-              >
-                <span>Start setup</span>
-                <ArrowRightIcon className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/workspace/dashboard"
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#1d1d1d] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
-              >
-                View dashboard module
-              </Link>
-            </div>
-          </div>
-
-          <div id="account">
-            <AuthPanel />
-          </div>
-        </section>
-
-        <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {CORE_MODULES.map((item) => {
-            const Icon = item.icon;
-            return (
-              <article
-                key={item.title}
-                className="rounded-2xl border border-slate-200 bg-white px-5 py-5 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-[#b8b8b8]">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <h2 className="mt-4 text-base font-semibold text-slate-900 dark:text-[#ececec]">
-                  {item.title}
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
-                  {item.description}
-                </p>
-              </article>
-            );
-          })}
-        </section>
-
-        <section className="mt-8 rounded-3xl border border-slate-200 bg-white px-6 py-6 sm:px-8 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-          <div className="max-w-2xl">
-            <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-              How it works
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#ececec]">
-              Keep the dashboard, but put it inside a broader workflow.
-            </h2>
-          </div>
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-3">
-            {JOURNEY.map((item) => (
-              <article
-                key={item.step}
-                className="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-[#2c2c2c] dark:bg-[#202020]"
-              >
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
-                  {item.step}
-                </p>
-                <h3 className="mt-3 text-lg font-semibold text-slate-900 dark:text-[#ececec]">
-                  {item.title}
-                </h3>
-                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
-                  {item.description}
-                </p>
-              </article>
-            ))}
-          </div>
-        </section>
-      </div>
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+          <Link
+            href="/login"
+            className="rounded-xl bg-[#1f9d63] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#198451]"
+          >
+            Start your project
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }

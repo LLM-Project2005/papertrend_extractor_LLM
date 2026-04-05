@@ -81,7 +81,8 @@ export default function WorkspaceHomeClient() {
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const { data, loading } = useDashboardData(selectedFolderId);
+  const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds);
   const { runs, folderJob, cancelRuns } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
@@ -243,10 +244,10 @@ export default function WorkspaceHomeClient() {
               Analyze
             </button>
             <Link
-              href="/workspace/imports"
+              href="/workspace/library"
               className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
-              Open imports
+              Open library
             </Link>
           </div>
         </div>
@@ -306,10 +307,10 @@ export default function WorkspaceHomeClient() {
                   </p>
                 </div>
                 <Link
-                  href="/start"
+                  href="/workspace/settings"
                   className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-[#bdbdbd] dark:hover:text-white"
                 >
-                  Edit setup
+                  Edit settings
                 </Link>
               </div>
 
@@ -354,14 +355,14 @@ export default function WorkspaceHomeClient() {
                 />
                 <QuickLink
                   href="/workspace/papers"
-                  title="Paper library"
-                  description={
-                    isPreviewMode
-                      ? "Browse the preview paper set with topics, keywords, evidence, and track tags."
-                      : "Review titles, keywords, evidence, and track tags directly."
-                  }
-                  icon={<PaperIcon className="h-5 w-5" />}
-                />
+                    title="Library"
+                    description={
+                      isPreviewMode
+                      ? "Browse the preview paper set and the current uploaded files in one place."
+                      : "Manage files and review analyzed papers from the same library."
+                    }
+                    icon={<PaperIcon className="h-5 w-5" />}
+                  />
               </div>
               </article>
 

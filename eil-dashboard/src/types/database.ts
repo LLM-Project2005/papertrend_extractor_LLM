@@ -36,9 +36,30 @@ export interface DbPaper {
   created_at?: string;
 }
 
+export interface WorkspaceOrganizationRow {
+  id: string;
+  owner_user_id?: string | null;
+  name: string;
+  type: "personal" | "academic" | "research_lab" | "department" | "company" | "other";
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface WorkspaceProjectRow {
+  id: string;
+  organization_id: string;
+  owner_user_id?: string | null;
+  name: string;
+  description?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface ResearchFolderRow {
   id: string;
   owner_user_id?: string | null;
+  organization_id?: string | null;
+  project_id?: string | null;
   name: string;
   description?: string | null;
   created_at?: string;
@@ -111,9 +132,16 @@ export interface IngestionRunRow {
   source_type: "batch" | "upload";
   status: "queued" | "processing" | "succeeded" | "failed";
   source_filename?: string | null;
+  display_name?: string | null;
   source_path?: string | null;
+  source_extension?: string | null;
+  mime_type?: string | null;
+  file_size_bytes?: number | null;
   provider?: string | null;
   model?: string | null;
+  is_favorite?: boolean;
+  trashed_at?: string | null;
+  copied_from_run_id?: string | null;
   input_payload?: Record<string, unknown> | null;
   error_message?: string | null;
   created_at?: string;

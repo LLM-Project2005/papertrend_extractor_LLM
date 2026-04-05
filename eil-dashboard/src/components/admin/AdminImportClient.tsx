@@ -1,186 +1,203 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/components/auth/AuthProvider";
-import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
+import Modal from "@/components/ui/Modal";
+import PaperExplorer from "@/components/tabs/PaperExplorer";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { useDashboardData } from "@/hooks/useData";
 import {
-  getRunModelLabel,
-  getRunStageMessage,
-} from "@/lib/ingestion-status";
-import {
+  DriveIcon,
   FileIcon,
   FolderIcon,
+  ImageIcon,
+  MoreHorizontalIcon,
+  PaperIcon,
   PlusIcon,
+  SearchIcon,
 } from "@/components/ui/Icons";
-import type { IngestionRunRow, ResearchFolderRow } from "@/types/database";
+import type { IngestionRunRow } from "@/types/database";
 
-interface IngestionRun {
-  id: string;
-  folder_id?: string | null;
-  source_type: "batch" | "upload";
-  status: "queued" | "processing" | "succeeded" | "failed";
-  source_filename?: string | null;
-  source_path?: string | null;
-  provider?: string | null;
-  model?: string | null;
-  input_payload?: Record<string, unknown> | null;
-  error_message?: string | null;
-  updated_at?: string;
+type LibraryView = "files" | "favorites" | "trash" | "papers";
+
+function titleOf(run: IngestionRunRow) {
+  return run.display_name || run.source_filename || run.id;
 }
 
-function formatTimestamp(value?: string | null) {
+function extOf(run: IngestionRunRow) {
+  return (
+    run.source_extension ||
+    titleOf(run).split(".").pop()?.toLowerCase() ||
+    "file"
+  );
+}
+
+function fileColor(run: IngestionRunRow) {
+  const ext = extOf(run);
+  if (ext === "pdf") return "bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-300";
+  if (ext === "docx" || ext === "doc") {
+    return "bg-blue-100 text-blue-600 dark:bg-blue-950/30 dark:text-blue-300";
+  }
+  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) {
+    return "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300";
+  }
+  return "bg-slate-200 text-slate-700 dark:bg-[#2b2b2b] dark:text-[#d6d6d6]";
+}
+
+function fileGlyph(run: IngestionRunRow) {
+  const ext = extOf(run);
+  if (sourceOf(run) === "Google Drive") return DriveIcon;
+  if (ext === "pdf") return PaperIcon;
+  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return ImageIcon;
+  return FileIcon;
+}
+
+function sourceOf(run: IngestionRunRow) {
+  const value =
+    typeof run.input_payload?.source_kind === "string"
+      ? run.input_payload.source_kind
+      : run.source_type;
+  return value === "google-drive" ? "Google Drive" : "Upload";
+}
+
+function formatBytes(value?: number | null) {
+  if (!value || value <= 0) return "Unknown size";
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formatTime(value?: string | null) {
   if (!value) return "Not available";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
 }
 
-function StatusBadge({ status }: { status: IngestionRun["status"] }) {
-  const classes =
-    status === "succeeded"
-      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200"
-      : status === "failed"
-        ? "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-200"
-        : status === "processing"
-          ? "bg-slate-200 text-slate-700 dark:bg-[#2a2a2a] dark:text-slate-200"
-          : "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-200";
-
-  return <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${classes}`}>{status}</span>;
-}
-
-function getFolderName(run: IngestionRun, folders: ResearchFolderRow[]) {
-  if (run.folder_id) {
-    const folder = folders.find((item) => item.id === run.folder_id);
-    if (folder?.name) {
-      return folder.name;
-    }
-  }
-  const payloadFolder =
-    typeof run.input_payload?.folder_name === "string"
-      ? run.input_payload.folder_name.trim()
-      : "";
-  if (payloadFolder) return payloadFolder;
-  const parts = (run.source_path ?? "").split("/").filter(Boolean);
-  return parts.length >= 3 && parts[0] === "pending" ? parts[1] : "Inbox";
-}
-
-function sanitizeFolderName(folderName: string) {
-  return folderName.trim().replace(/[\\/]+/g, "-");
-}
-
 export default function AdminImportClient() {
-  const { session, isAdmin, user } = useAuth();
   const {
-    startAnalysisSession,
+    currentProject,
     folders,
     selectedFolderId,
     setSelectedFolderId,
     createFolder,
     refreshFolders,
+    startAnalysisSession,
   } = useWorkspaceProfile();
-  const [adminSecret, setAdminSecret] = useState("");
-  const [runs, setRuns] = useState<IngestionRun[]>([]);
-  const [draftFolderName, setDraftFolderName] = useState("");
-  const [showFolderInput, setShowFolderInput] = useState(false);
-  const [loadingRuns, setLoadingRuns] = useState(false);
+  const [runs, setRuns] = useState<IngestionRunRow[]>([]);
+  const [view, setView] = useState<LibraryView>("files");
+  const [query, setQuery] = useState("");
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showFolderInput, setShowFolderInput] = useState(false);
+  const [draftFolderName, setDraftFolderName] = useState("");
+  const [menuRunId, setMenuRunId] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewTitle, setPreviewTitle] = useState("");
+  const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const activeFolder = useMemo(
-    () =>
-      selectedFolderId === "all"
-        ? folders[0]?.name ?? "Inbox"
-        : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Inbox",
-    [folders, selectedFolderId]
-  );
-  const visibleRuns = useMemo(
-    () =>
-      runs.filter((run) =>
-        selectedFolderId === "all"
-          ? true
-          : run.folder_id
-            ? run.folder_id === selectedFolderId
-            : getFolderName(run, folders) === activeFolder
-      ),
-    [activeFolder, folders, runs, selectedFolderId]
-  );
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    const savedSecret = window.localStorage.getItem("eil_admin_secret");
-    if (savedSecret) setAdminSecret(savedSecret);
-  }, []);
+  const folderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const { data } = useDashboardData(selectedFolderId, folderIds);
 
-  useEffect(() => {
-    if (session?.access_token) {
-      void loadRuns();
-    }
-  }, [session?.access_token]);
+  const activeFolder =
+    selectedFolderId === "all"
+      ? folders[0]?.name ?? "Inbox"
+      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Inbox";
 
-  async function loadRuns(secretOverride?: string) {
-    const secret = secretOverride ?? adminSecret;
-    const headers: Record<string, string> | null =
-      session?.access_token
-        ? { Authorization: `Bearer ${session.access_token}` }
-        : secret
-          ? { "x-admin-secret": secret }
-          : null;
-    if (!headers) return;
-
-    setLoadingRuns(true);
-    setError(null);
-    try {
-      const response = await fetch("/api/admin/import", { headers });
-      const payload = (await response.json()) as { runs?: IngestionRun[]; error?: string };
-      if (!response.ok) throw new Error(payload.error ?? "Failed to load imported files.");
-      setRuns(payload.runs ?? []);
-      if (session?.access_token) {
-        await refreshFolders();
-      }
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load imported files.");
-    } finally {
-      setLoadingRuns(false);
-    }
-  }
-
-  async function handleSecretSave() {
-    if (!adminSecret.trim()) {
-      setError("Enter the shared admin secret first.");
+  async function loadRuns(nextView: LibraryView = view) {
+    if (!currentProject?.id) {
+      setRuns([]);
       return;
     }
-    window.localStorage.setItem("eil_admin_secret", adminSecret.trim());
-    await loadRuns(adminSecret.trim());
-    setMessage("Admin secret saved locally for this browser.");
-  }
-
-  async function handleCreateFolder() {
-    const sanitized = sanitizeFolderName(draftFolderName);
-    if (!sanitized) {
-      setError("Enter a folder name first.");
-      return;
-    }
+    setLoading(true);
     try {
-      const folder = await createFolder(sanitized);
-      setSelectedFolderId(folder.id);
-      setMessage(`Folder "${folder.name}" created.`);
-    } catch (createError) {
-      setError(
-        createError instanceof Error
-          ? createError.message
-          : "Failed to create folder."
+      const response = await fetch(
+        `/api/workspace/library?projectId=${encodeURIComponent(
+          currentProject.id
+        )}&includeTrashed=${nextView === "trash" ? "true" : "false"}`
       );
-      return;
+      const payload = (await response.json()) as { runs?: IngestionRunRow[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load library files.");
+      setRuns(payload.runs ?? []);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Failed to load library files.");
+    } finally {
+      setLoading(false);
     }
-    setDraftFolderName("");
-    setShowFolderInput(false);
   }
+
+  useEffect(() => {
+    void loadRuns();
+  }, [currentProject?.id, view]);
+
+  async function patchRun(runId: string, body: Record<string, unknown>) {
+    const response = await fetch(`/api/workspace/library/${runId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = (await response.json()) as { run?: IngestionRunRow; error?: string };
+    if (!response.ok || !payload.run) throw new Error(payload.error ?? "Action failed.");
+    setRuns((current) => current.map((run) => (run.id === payload.run!.id ? payload.run! : run)));
+    return payload.run;
+  }
+
+  async function postRun(runId: string, action: "copy" | "open") {
+    const response = await fetch(`/api/workspace/library/${runId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    const payload = (await response.json()) as {
+      run?: IngestionRunRow;
+      url?: string;
+      error?: string;
+    };
+    if (!response.ok) throw new Error(payload.error ?? "Action failed.");
+    return payload;
+  }
+
+  const visibleRuns = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return runs.filter((run) => {
+      if (selectedFolderId !== "all" && run.folder_id !== selectedFolderId) return false;
+      if (view === "favorites" && !run.is_favorite) return false;
+      if (view === "trash" && !run.trashed_at) return false;
+      if (view !== "trash" && run.trashed_at) return false;
+      if (!needle) return true;
+      return [titleOf(run), run.source_path, sourceOf(run), extOf(run)]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(needle));
+    });
+  }, [query, runs, selectedFolderId, view]);
+
+  const paperData = useMemo(() => {
+    if (!data) return { trends: [], tracksSingle: [] };
+    if (!query.trim()) return { trends: data.trends, tracksSingle: data.tracksSingle };
+    const ids = new Set(
+      data.trends
+        .filter((row) =>
+          [row.title, row.topic, row.keyword, row.year]
+            .join(" ")
+            .toLowerCase()
+            .includes(query.trim().toLowerCase())
+        )
+        .map((row) => row.paper_id)
+    );
+    return {
+      trends: data.trends.filter((row) => ids.has(row.paper_id)),
+      tracksSingle: data.tracksSingle.filter((row) => ids.has(row.paper_id)),
+    };
+  }, [data, query]);
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div className="mx-auto max-w-[1500px] space-y-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2] sm:text-3xl">Knowledge library</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">Organize uploaded files into folders, then bring in new knowledge with a single import flow.</p>
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">Library</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
+            Manage files and analyzed papers together inside {currentProject?.name ?? "this project"}.
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setShowFolderInput((current) => !current)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white">
@@ -189,20 +206,86 @@ export default function AdminImportClient() {
           </button>
           <button type="button" onClick={() => setShowImportModal(true)} className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#f3f3f3] dark:text-[#171717] dark:hover:bg-white">
             <PlusIcon className="h-4 w-4" />
-            <span>Import</span>
+            <span>Add files</span>
           </button>
         </div>
       </div>
 
-      {showFolderInput && (
+      {showFolderInput ? (
         <div className="app-surface flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
-          <input value={draftFolderName} onChange={(event) => setDraftFolderName(event.target.value)} placeholder="Folder name" className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10" />
+          <input
+            value={draftFolderName}
+            onChange={(event) => setDraftFolderName(event.target.value)}
+            placeholder="Folder name"
+            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+          />
           <div className="flex gap-2">
-            <button type="button" onClick={handleCreateFolder} className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]">Save folder</button>
-            <button type="button" onClick={() => { setShowFolderInput(false); setDraftFolderName(""); }} className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#b0b0b0]">Cancel</button>
+            <button
+              type="button"
+              onClick={async () => {
+                if (!draftFolderName.trim()) return;
+                try {
+                  const folder = await createFolder(draftFolderName.trim());
+                  setSelectedFolderId(folder.id);
+                  setDraftFolderName("");
+                  setShowFolderInput(false);
+                  setMessage(`Folder "${folder.name}" created.`);
+                } catch (createError) {
+                  setError(createError instanceof Error ? createError.message : "Failed to create folder.");
+                }
+              }}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+            >
+              Save folder
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftFolderName("");
+                setShowFolderInput(false);
+              }}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#b0b0b0]"
+            >
+              Cancel
+            </button>
           </div>
         </div>
-      )}
+      ) : null}
+
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: "files" as const, label: "Files" },
+            { id: "favorites" as const, label: "Favorites" },
+            { id: "trash" as const, label: "Trash" },
+            { id: "papers" as const, label: "Analyzed papers" },
+          ].map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setView(item.id)}
+              className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                view === item.id
+                  ? "bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-[#212121] dark:text-[#b8b8b8] dark:hover:bg-[#2a2a2a]"
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        <label className="relative block w-full max-w-md">
+          <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#8e8e8e]" />
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={view === "papers" ? "Search analyzed papers" : "Search files"}
+            className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+          />
+        </label>
+      </div>
 
       <div className="flex flex-wrap gap-2">
         <button
@@ -217,103 +300,183 @@ export default function AdminImportClient() {
           <FolderIcon className="h-4 w-4" />
           <span>All folders</span>
         </button>
-        {folders.map((folder) => {
-          const active = folder.id === selectedFolderId;
-          return (
-            <button key={folder.id} type="button" onClick={() => setSelectedFolderId(folder.id)} className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${active ? "bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]" : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-[#212121] dark:text-[#b8b8b8] dark:hover:bg-[#2a2a2a]"}`}>
-              <FolderIcon className="h-4 w-4" />
-              <span>{folder.name}</span>
-            </button>
-          );
-        })}
+        {folders.map((folder) => (
+          <button
+            key={folder.id}
+            type="button"
+            onClick={() => setSelectedFolderId(folder.id)}
+            className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+              selectedFolderId === folder.id
+                ? "bg-slate-900 text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+                : "bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-[#212121] dark:text-[#b8b8b8] dark:hover:bg-[#2a2a2a]"
+            }`}
+          >
+            <FolderIcon className="h-4 w-4" />
+            <span>{folder.name}</span>
+          </button>
+        ))}
       </div>
 
-      {message && <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">{message}</div>}
-      {error && <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{error}</div>}
+      {message ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">{message}</div> : null}
+      {error ? <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{error}</div> : null}
 
-      <div className="app-surface px-4 py-4 sm:px-5">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Import access</p>
-            <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
-              {user ? `Signed in as ${user.email}. Current role: ${isAdmin ? "admin" : "member"}.` : "Sign in as an admin or use the shared admin secret to manage imports."}
-            </p>
-          </div>
-          <div className="flex w-full max-w-xl gap-2">
-            <input type="password" value={adminSecret} onChange={(event) => setAdminSecret(event.target.value)} className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10" placeholder={isAdmin ? "Optional when signed in as admin" : "Enter the shared admin secret"} />
-            <button type="button" onClick={handleSecretSave} className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-[#2f2f2f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#171717]">Save</button>
-          </div>
-        </div>
-      </div>
-
-      <section className="app-surface overflow-hidden">
+      {view === "papers" ? (
+        <section className="app-surface px-4 py-4 sm:px-5">
+          <PaperExplorer trends={paperData.trends} tracksSingle={paperData.tracksSingle} />
+        </section>
+      ) : (
+        <section className="app-surface overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#2f2f2f] sm:px-5">
             <div>
               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">Files</p>
-              <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">{visibleRuns.length} item{visibleRuns.length === 1 ? "" : "s"} in {selectedFolderId === "all" ? "all folders" : activeFolder}</p>
+              <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
+                {visibleRuns.length} item{visibleRuns.length === 1 ? "" : "s"} in {selectedFolderId === "all" ? "all folders" : activeFolder}
+              </p>
             </div>
-            <button type="button" onClick={() => loadRuns()} disabled={loadingRuns} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-[#2f2f2f] dark:text-[#b8b8b8] dark:hover:border-[#3a3a3a] dark:hover:text-white">
-              {loadingRuns ? "Refreshing..." : "Refresh"}
+            <button type="button" onClick={() => void loadRuns()} disabled={loading} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 dark:border-[#2f2f2f] dark:text-[#b8b8b8] dark:hover:border-[#3a3a3a] dark:hover:text-white">
+              {loading ? "Refreshing..." : "Refresh"}
             </button>
           </div>
-
           {visibleRuns.length === 0 ? (
             <div className="flex min-h-[320px] items-center justify-center px-6 py-10 text-center">
               <div>
-                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-[#171717] dark:text-[#9c9c9c]"><FolderIcon className="h-6 w-6" /></span>
-                <p className="mt-4 text-base font-medium text-slate-900 dark:text-[#f2f2f2]">No files in this folder yet</p>
-                <p className="mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">Open the import modal to upload PDFs now, or keep this folder ready for a future connector.</p>
+                <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-500 dark:bg-[#171717] dark:text-[#9c9c9c]">
+                  <FolderIcon className="h-6 w-6" />
+                </span>
+                <p className="mt-4 text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
+                  {view === "trash" ? "Trash is empty" : "No files in this view yet"}
+                </p>
               </div>
             </div>
           ) : (
             <div className="divide-y divide-slate-200 dark:divide-[#2f2f2f]">
               {visibleRuns.map((run) => (
-                <article key={run.id} className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1.3fr)_auto_auto] sm:items-center sm:px-5">
+                <article key={run.id} className="group grid gap-4 px-4 py-4 sm:grid-cols-[minmax(0,1.3fr)_170px_120px_auto] sm:items-center sm:px-5">
                   <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <StatusBadge status={run.status} />
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#b8b8b8]">
-                        {typeof run.input_payload?.source_kind === "string"
-                          ? run.input_payload.source_kind
-                          : run.source_type}
-                      </span>
-                    </div>
-                    <div className="mt-3 flex items-start gap-3">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#171717] dark:text-[#b8b8b8]"><FileIcon className="h-4 w-4" /></span>
+                    <div className="flex items-start gap-3">
+                      {(() => {
+                        const Glyph = fileGlyph(run);
+                        return (
+                          <span className={`flex h-11 w-11 flex-none items-center justify-center rounded-2xl ${fileColor(run)}`}>
+                            <Glyph className="h-5 w-5" />
+                          </span>
+                        );
+                      })()}
                       <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{run.source_filename || run.id}</p>
-                        <p className="mt-1 text-xs text-slate-600 dark:text-[#d8d8d8]">{getRunStageMessage(run)}</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{titleOf(run)}</p>
+                          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#171717] dark:text-[#b8b8b8]">{extOf(run).toUpperCase()}</span>
+                          {run.is_favorite ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">Favorite</span> : null}
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-[#9c9c9c]">{sourceOf(run)} | {formatBytes(run.file_size_bytes)}</p>
                         <p className="mt-1 break-all text-xs text-slate-500 dark:text-[#8f8f8f]">{run.source_path || "Queued upload"}</p>
                       </div>
                     </div>
                   </div>
-                  <div className="text-sm text-slate-500 dark:text-[#9c9c9c]"><p>Updated</p><p className="mt-1 text-slate-900 dark:text-[#e2e2e2]">{formatTimestamp(run.updated_at)}</p></div>
-                  <div className="text-sm text-slate-500 dark:text-[#9c9c9c]"><p>Analysis mode</p><p className="mt-1 text-slate-900 dark:text-[#e2e2e2]">{getRunModelLabel(run)}</p></div>
-                  {run.error_message && <div className="sm:col-span-3"><p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">{run.error_message}</p></div>}
+
+                  <div className="text-sm text-slate-500 dark:text-[#9c9c9c]">
+                    <p>Updated</p>
+                    <p className="mt-1 text-slate-900 dark:text-[#e2e2e2]">{formatTime(run.updated_at)}</p>
+                  </div>
+
+                  <div className="text-sm text-slate-500 dark:text-[#9c9c9c]">
+                    <p>Status</p>
+                    <p className="mt-1 capitalize text-slate-900 dark:text-[#e2e2e2]">{run.status}</p>
+                  </div>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setMenuRunId((current) => (current === run.id ? null : run.id))}
+                      className="rounded-xl border border-transparent p-2 text-slate-500 opacity-0 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900 group-hover:opacity-100 dark:text-[#8f8f8f] dark:hover:border-[#343434] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
+                    >
+                      <MoreHorizontalIcon className="h-4 w-4" />
+                    </button>
+
+                    {menuRunId === run.id ? (
+                      <div className="absolute right-0 top-11 z-20 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-[#2f2f2f] dark:bg-[#1b1b1b]">
+                        <button type="button" onClick={async () => { try { const payload = await postRun(run.id, "open"); if (payload.url) { setPreviewUrl(payload.url); setPreviewTitle(titleOf(run)); } } catch (openError) { setError(openError instanceof Error ? openError.message : "Failed to open file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Preview</button>
+                        <button type="button" onClick={async () => { try { const payload = await postRun(run.id, "open"); if (payload.url) window.open(payload.url, "_blank", "noopener,noreferrer"); } catch (openError) { setError(openError instanceof Error ? openError.message : "Failed to open file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Open in new tab</button>
+                        <button type="button" onClick={async () => { const nextName = window.prompt("Rename file", titleOf(run)); if (!nextName?.trim()) { setMenuRunId(null); return; } try { await patchRun(run.id, { action: "rename", value: nextName.trim() }); } catch (renameError) { setError(renameError instanceof Error ? renameError.message : "Failed to rename file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Edit name</button>
+                        <button type="button" onClick={async () => { try { const payload = await postRun(run.id, "copy"); if (payload.run) setRuns((current) => [payload.run!, ...current]); } catch (copyError) { setError(copyError instanceof Error ? copyError.message : "Failed to copy file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Make a copy</button>
+                        <button type="button" onClick={async () => { const target = window.prompt("Move to folder", folders.find((folder) => folder.id === run.folder_id)?.name ?? activeFolder); if (!target?.trim()) { setMenuRunId(null); return; } try { const existing = folders.find((folder) => folder.name.toLowerCase() === target.trim().toLowerCase()); const folder = existing ?? (await createFolder(target.trim())); await patchRun(run.id, { action: "move", folderId: folder.id }); await refreshFolders(); } catch (moveError) { setError(moveError instanceof Error ? moveError.message : "Failed to move file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Move to folder</button>
+                        <button type="button" onClick={async () => { try { await patchRun(run.id, { action: "favorite", value: !run.is_favorite }); } catch (favoriteError) { setError(favoriteError instanceof Error ? favoriteError.message : "Failed to update favorite."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">{run.is_favorite ? "Remove favorite" : "Add to favorite"}</button>
+                        <button type="button" onClick={() => { setInfoRun(run); setMenuRunId(null); }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">File information</button>
+                        <button type="button" onClick={async () => { try { await patchRun(run.id, { action: run.trashed_at ? "restore" : "trash" }); if (!run.trashed_at && view !== "trash") setRuns((current) => current.filter((item) => item.id !== run.id)); } catch (trashError) { setError(trashError instanceof Error ? trashError.message : "Failed to update trash."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20">{run.trashed_at ? "Restore from trash" : "Move to trash"}</button>
+                      </div>
+                    ) : null}
+                  </div>
                 </article>
               ))}
             </div>
           )}
-      </section>
+        </section>
+      )}
 
       <AnalyzeFlowModal
         open={showImportModal}
         onClose={() => setShowImportModal(false)}
         defaultFolder={activeFolder}
-        title={`Add files and sources to ${activeFolder}`}
-        eyebrow="Import knowledge"
+        title={`Add files to ${currentProject?.name ?? "this project"}`}
+        eyebrow="Library"
         onCreated={(createdRuns, context) => {
           setRuns((current) => [...createdRuns, ...current]);
-          if (context.folderId) {
-            setSelectedFolderId(context.folderId);
-          }
+          if (context.folderId) setSelectedFolderId(context.folderId);
           void refreshFolders();
           startAnalysisSession(createdRuns as IngestionRunRow[], context);
-          setMessage("Files added to the knowledge library and queued for extraction.");
+          setMessage("Files were added to the library and queued for analysis.");
           setError(null);
           setShowImportModal(false);
         }}
       />
+
+      {previewUrl ? (
+        <Modal onClose={() => setPreviewUrl(null)}>
+          <div className="h-[85vh] w-[min(1100px,92vw)] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#111111]">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#2f2f2f]">
+              <p className="text-sm font-medium text-slate-900 dark:text-white">{previewTitle}</p>
+              <button
+                type="button"
+                onClick={() => setPreviewUrl(null)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+              >
+                Close
+              </button>
+            </div>
+            <iframe src={previewUrl} title={previewTitle} className="h-[calc(85vh-65px)] w-full bg-white" />
+          </div>
+        </Modal>
+      ) : null}
+
+      {infoRun ? (
+        <Modal onClose={() => setInfoRun(null)}>
+          <div className="w-[min(560px,92vw)] rounded-[28px] border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#2f2f2f] dark:bg-[#111111]">
+            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">File information</h2>
+            <dl className="mt-5 space-y-4 text-sm">
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500 dark:text-[#9c9c9c]">Name</dt>
+                <dd className="text-right text-slate-900 dark:text-white">{titleOf(infoRun)}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500 dark:text-[#9c9c9c]">Type</dt>
+                <dd className="text-right text-slate-900 dark:text-white">{extOf(infoRun).toUpperCase()}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500 dark:text-[#9c9c9c]">Size</dt>
+                <dd className="text-right text-slate-900 dark:text-white">{formatBytes(infoRun.file_size_bytes)}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500 dark:text-[#9c9c9c]">Updated</dt>
+                <dd className="text-right text-slate-900 dark:text-white">{formatTime(infoRun.updated_at)}</dd>
+              </div>
+              <div className="flex items-start justify-between gap-4">
+                <dt className="text-slate-500 dark:text-[#9c9c9c]">Path</dt>
+                <dd className="max-w-[280px] break-all text-right text-slate-900 dark:text-white">{infoRun.source_path || "Unavailable"}</dd>
+              </div>
+            </dl>
+          </div>
+        </Modal>
+      ) : null}
     </div>
   );
 }

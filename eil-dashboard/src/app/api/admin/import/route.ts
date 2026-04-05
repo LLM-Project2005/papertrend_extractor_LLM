@@ -63,6 +63,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const folder = sanitizeFolderName(String(formData.get("folder") ?? "Inbox"));
     const sourceKind = String(formData.get("source_kind") ?? "pdf-upload") || "pdf-upload";
+    const projectId = String(formData.get("project_id") ?? "").trim();
     const files = formData
       .getAll("files")
       .filter((item): item is File => item instanceof File);
@@ -70,10 +71,14 @@ export async function POST(request: Request) {
     if (files.length === 0) {
       return NextResponse.json({ error: "Upload at least one PDF file." }, { status: 400 });
     }
+    if (!projectId) {
+      return NextResponse.json({ error: "project_id is required." }, { status: 400 });
+    }
 
     const researchFolder = await ensureResearchFolder(
       supabase,
       user?.id ?? null,
+      projectId,
       folder
     );
     const folderId = researchFolder?.id ?? null;
@@ -116,6 +121,10 @@ export async function POST(request: Request) {
           source_type: "upload",
           status: "queued",
           source_filename: file.name,
+          display_name: file.name,
+          source_extension: lowerName.split(".").pop() ?? "pdf",
+          mime_type: file.type || "application/pdf",
+          file_size_bytes: file.size,
           provider: AUTO_ANALYSIS_PROVIDER,
           model: AUTO_ANALYSIS_MODEL,
           input_payload: {

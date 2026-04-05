@@ -6,7 +6,10 @@ import { generateMockData } from "@/lib/mockData";
 import { supabase } from "@/lib/supabase";
 import type { DashboardData, TrackRow, TrendRow } from "@/types/database";
 
-export function useDashboardData(folderId: string = "all") {
+export function useDashboardData(
+  folderId: string = "all",
+  projectFolderIds: string[] = []
+) {
   const { hydrated, user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,6 +49,10 @@ export function useDashboardData(folderId: string = "all") {
             trendsQuery = trendsQuery.eq("folder_id", folderId);
             tracksSingleQuery = tracksSingleQuery.eq("folder_id", folderId);
             tracksMultiQuery = tracksMultiQuery.eq("folder_id", folderId);
+          } else if (projectFolderIds.length > 0) {
+            trendsQuery = trendsQuery.in("folder_id", projectFolderIds);
+            tracksSingleQuery = tracksSingleQuery.in("folder_id", projectFolderIds);
+            tracksMultiQuery = tracksMultiQuery.in("folder_id", projectFolderIds);
           }
 
           const [tRes, sRes, mRes] = await Promise.all([
@@ -103,7 +110,7 @@ export function useDashboardData(folderId: string = "all") {
     return () => {
       cancelled = true;
     };
-  }, [folderId, hydrated, user]);
+  }, [folderId, hydrated, projectFolderIds, user]);
 
   const allYears = useMemo(() => {
     if (!data) return [];

@@ -45,8 +45,10 @@ interface ChatRequestBody {
   selectedTracks?: string[];
   searchQuery?: string;
   queryLanguage?: string;
+  selectedRunIds?: string[];
   threadId?: string;
   folderId?: string | "all";
+  projectId?: string;
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
@@ -103,6 +105,7 @@ function buildLocalResearchPlan(prompt: string, pendingRunCount: number) {
 
 async function countPendingRuns(
   folderId: string | "all" | undefined,
+  projectId: string | undefined,
   ownerUserId: string,
 ) {
   const supabase = getSupabaseAdmin();
@@ -114,6 +117,22 @@ async function countPendingRuns(
 
   if (folderId && folderId !== "all") {
     query = query.eq("folder_id", folderId);
+  } else if (projectId) {
+    const { data: folders, error: foldersError } = await supabase
+      .from("research_folders")
+      .select("id")
+      .eq("owner_user_id", ownerUserId)
+      .eq("project_id", projectId);
+    if (foldersError) {
+      throw new Error(foldersError.message);
+    }
+    const folderIds = (folders ?? [])
+      .map((row) => String((row as { id?: string | null }).id ?? ""))
+      .filter(Boolean);
+    if (folderIds.length === 0) {
+      return 0;
+    }
+    query = query.in("folder_id", folderIds);
   }
 
   const { count, error } = await query;
@@ -187,13 +206,18 @@ async function planDeepResearch(
     }>("/research-plan", {
       ownerUserId,
       folderId: body.folderId,
+      projectId: body.projectId,
       message: prompt,
     });
   } catch {
     rawPlan = null;
   }
 
-  const pendingRunCount = await countPendingRuns(body.folderId, ownerUserId);
+  const pendingRunCount = await countPendingRuns(
+    body.folderId,
+    body.projectId,
+    ownerUserId
+  );
   const plan = rawPlan ?? buildLocalResearchPlan(prompt, pendingRunCount);
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,
@@ -245,7 +269,11 @@ async function continueDeepResearch(
   }
 
   const supabase = getSupabaseAdmin();
-  const pendingRunCount = await countPendingRuns(body.folderId, ownerUserId);
+  const pendingRunCount = await countPendingRuns(
+    body.folderId,
+    body.projectId,
+    ownerUserId
+  );
   const nextStatus = pendingRunCount > 0 ? "waiting_on_analysis" : "queued";
 
   const { error } = await supabase
@@ -369,7 +397,9 @@ async function normalChat(
       const corpus = await retrieveCorpusPapers(
         currentMessage,
         ownerUserId,
-        body.folderId && body.folderId !== "all" ? body.folderId : null
+        body.folderId && body.folderId !== "all" ? body.folderId : null,
+        body.projectId ?? null,
+        body.selectedRunIds ?? []
       );
       papers = corpus.papers;
       citations = corpus.citations;

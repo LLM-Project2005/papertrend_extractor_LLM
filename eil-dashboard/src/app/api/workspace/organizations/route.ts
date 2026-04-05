@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import { ensureResearchFolder } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { ensureWorkspaceOrganization } from "@/lib/workspace-organizations";
+import type { WorkspaceOrganizationRow } from "@/types/database";
 
 export const runtime = "nodejs";
 
@@ -13,28 +14,24 @@ export async function GET(request: Request) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get("projectId");
-    if (!projectId) {
-      return NextResponse.json({ folders: [] });
-    }
     const { data, error } = await supabase
-      .from("research_folders")
+      .from("workspace_organizations")
       .select("*")
       .eq("owner_user_id", user.id)
-      .eq("project_id", projectId)
       .order("name", { ascending: true });
 
     if (error) {
       throw new Error(error.message);
     }
 
-    return NextResponse.json({ folders: data ?? [] });
+    return NextResponse.json({ organizations: data ?? [] });
   } catch (error) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Failed to load workspace folders.",
+          error instanceof Error
+            ? error.message
+            : "Failed to load organizations.",
       },
       { status: 500 }
     );
@@ -48,27 +45,34 @@ export async function POST(request: Request) {
   }
 
   try {
-    const body = (await request.json()) as { name?: string; projectId?: string };
+    const body = (await request.json()) as {
+      name?: string;
+      type?: WorkspaceOrganizationRow["type"];
+    };
+
     if (!body.name?.trim()) {
-      return NextResponse.json({ error: "Folder name is required." }, { status: 400 });
-    }
-    if (!body.projectId?.trim()) {
-      return NextResponse.json({ error: "projectId is required." }, { status: 400 });
+      return NextResponse.json(
+        { error: "Organization name is required." },
+        { status: 400 }
+      );
     }
 
     const supabase = getSupabaseAdmin();
-    const folder = await ensureResearchFolder(
+    const organization = await ensureWorkspaceOrganization(
       supabase,
       user.id,
-      body.projectId.trim(),
-      body.name
+      body.name,
+      body.type ?? "personal"
     );
-    return NextResponse.json({ folder }, { status: 201 });
+
+    return NextResponse.json({ organization }, { status: 201 });
   } catch (error) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Failed to create workspace folder.",
+          error instanceof Error
+            ? error.message
+            : "Failed to create organization.",
       },
       { status: 500 }
     );

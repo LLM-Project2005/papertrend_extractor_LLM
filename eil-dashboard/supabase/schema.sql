@@ -20,20 +20,47 @@ CREATE TABLE IF NOT EXISTS papers (
 );
 
 -- ------------------------------------------------------------------
--- 1a. Research folders
+-- 1a. Organizations and projects
 -- ------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS research_folders (
+CREATE TABLE IF NOT EXISTS workspace_organizations (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   name          TEXT NOT NULL,
-  description   TEXT,
+  type          TEXT NOT NULL DEFAULT 'personal'
+                CHECK (type IN ('personal', 'academic', 'research_lab', 'department', 'company', 'other')),
   created_at    TIMESTAMPTZ DEFAULT now(),
   updated_at    TIMESTAMPTZ DEFAULT now(),
   UNIQUE (owner_user_id, name)
 );
 
+CREATE TABLE IF NOT EXISTS workspace_projects (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES workspace_organizations(id) ON DELETE CASCADE,
+  owner_user_id   UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  description     TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (organization_id, name)
+);
+
 -- ------------------------------------------------------------------
--- 1b. User Profiles
+-- 1b. Research folders
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS research_folders (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  organization_id UUID REFERENCES workspace_organizations(id) ON DELETE CASCADE,
+  project_id    UUID REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (owner_user_id, project_id, name)
+);
+
+-- ------------------------------------------------------------------
+-- 1c. User Profiles
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS user_profiles (
   id                 UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -48,7 +75,7 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 -- ------------------------------------------------------------------
--- 1c. Google Drive Connections
+-- 1d. Google Drive Connections
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS google_drive_connections (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -122,9 +149,16 @@ CREATE TABLE IF NOT EXISTS ingestion_runs (
   status           TEXT NOT NULL DEFAULT 'queued'
                    CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
   source_filename  TEXT,
+  display_name     TEXT,
   source_path      TEXT,
+  source_extension TEXT,
+  mime_type        TEXT,
+  file_size_bytes  BIGINT,
   provider         TEXT,
   model            TEXT,
+  is_favorite      BOOLEAN NOT NULL DEFAULT false,
+  copied_from_run_id UUID REFERENCES ingestion_runs(id),
+  trashed_at       TIMESTAMPTZ,
   input_payload    JSONB DEFAULT '{}'::jsonb,
   error_message    TEXT,
   created_at       TIMESTAMPTZ DEFAULT now(),
@@ -207,6 +241,10 @@ CREATE TABLE IF NOT EXISTS paper_keyword_concepts (
   evidence_snippets JSONB NOT NULL DEFAULT '[]'::jsonb,
   created_at        TIMESTAMPTZ DEFAULT now()
 );
+
+-- ------------------------------------------------------------------
+-- 5c. Trash helpers are stored directly on ingestion_runs via trashed_at
+-- ------------------------------------------------------------------
 
 -- ------------------------------------------------------------------
 -- 8. Higher-level analytical facets
@@ -307,7 +345,18 @@ ALTER TABLE paper_tracks_multi
 ALTER TABLE ingestion_runs
   ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   ADD COLUMN IF NOT EXISTS folder_id UUID,
-  ADD COLUMN IF NOT EXISTS folder_analysis_job_id UUID;
+  ADD COLUMN IF NOT EXISTS folder_analysis_job_id UUID,
+  ADD COLUMN IF NOT EXISTS display_name TEXT,
+  ADD COLUMN IF NOT EXISTS source_extension TEXT,
+  ADD COLUMN IF NOT EXISTS mime_type TEXT,
+  ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT,
+  ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS copied_from_run_id UUID REFERENCES ingestion_runs(id),
+  ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMPTZ;
+
+ALTER TABLE research_folders
+  ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES workspace_organizations(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES workspace_projects(id) ON DELETE CASCADE;
 
 ALTER TABLE paper_keyword_concepts
   ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -370,6 +419,16 @@ END $$;
 DO $$
 BEGIN
   ALTER TABLE ingestion_runs
+    ADD CONSTRAINT ingestion_runs_copied_from_run_id_fkey
+    FOREIGN KEY (copied_from_run_id) REFERENCES ingestion_runs(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE ingestion_runs
     ADD CONSTRAINT ingestion_runs_folder_analysis_job_id_fkey
     FOREIGN KEY (folder_analysis_job_id) REFERENCES folder_analysis_jobs(id) ON DELETE SET NULL;
 EXCEPTION
@@ -413,8 +472,13 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
 CREATE INDEX IF NOT EXISTS idx_papers_owner_user_id ON papers(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_papers_folder_id ON papers(folder_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_organizations_owner_user_id ON workspace_organizations(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_projects_organization_id ON workspace_projects(organization_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_projects_owner_user_id ON workspace_projects(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_research_folders_owner_user_id ON research_folders(owner_user_id);
-CREATE INDEX IF NOT EXISTS idx_research_folders_name ON research_folders(owner_user_id, name);
+CREATE INDEX IF NOT EXISTS idx_research_folders_organization_id ON research_folders(organization_id);
+CREATE INDEX IF NOT EXISTS idx_research_folders_project_id ON research_folders(project_id);
+CREATE INDEX IF NOT EXISTS idx_research_folders_name ON research_folders(owner_user_id, project_id, name);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
 CREATE INDEX IF NOT EXISTS idx_google_drive_connections_user_id ON google_drive_connections(user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_paper_id ON paper_keywords(paper_id);
@@ -426,6 +490,9 @@ CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status ON ingestion_runs(status);
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_owner_user_id ON ingestion_runs(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_folder_id ON ingestion_runs(folder_id);
 CREATE INDEX IF NOT EXISTS idx_ingestion_runs_folder_analysis_job_id ON ingestion_runs(folder_analysis_job_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_display_name ON ingestion_runs(display_name);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_is_favorite ON ingestion_runs(is_favorite);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_trashed_at ON ingestion_runs(trashed_at);
 CREATE INDEX IF NOT EXISTS idx_folder_analysis_jobs_owner_user_id ON folder_analysis_jobs(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_folder_analysis_jobs_folder_id ON folder_analysis_jobs(folder_id);
 CREATE INDEX IF NOT EXISTS idx_paper_content_run_id ON paper_content(ingestion_run_id);
@@ -463,6 +530,8 @@ END $$;
 -- ROW LEVEL SECURITY
 -- ------------------------------------------------------------------
 ALTER TABLE papers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_organizations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workspace_projects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE research_folders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE google_drive_connections ENABLE ROW LEVEL SECURITY;
@@ -490,6 +559,24 @@ DROP POLICY IF EXISTS "anon_read" ON paper_analysis_facets;
 DO $$
 BEGIN
   CREATE POLICY "papers_select_own" ON papers
+  FOR SELECT USING (auth.uid() = owner_user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "workspace_organizations_select_own" ON workspace_organizations
+  FOR SELECT USING (auth.uid() = owner_user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "workspace_projects_select_own" ON workspace_projects
   FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN

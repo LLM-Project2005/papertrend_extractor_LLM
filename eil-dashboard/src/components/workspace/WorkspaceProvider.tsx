@@ -2,10 +2,10 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
-  useCallback,
   useRef,
   useState,
   type ReactNode,
@@ -21,12 +21,16 @@ import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
   ResearchFolderRow,
+  WorkspaceOrganizationRow,
+  WorkspaceProjectRow,
 } from "@/types/database";
 import type { WorkspaceProfile } from "@/types/workspace";
 
 const ANALYSIS_SESSION_STORAGE_KEY = "papertrend_analysis_session_v1";
-const WORKSPACE_FOLDER_STORAGE_KEY = "papertrend_workspace_folder_v1";
+const WORKSPACE_FOLDER_STORAGE_KEY = "papertrend_workspace_folder_v2";
 const WORKSPACE_FILTERS_STORAGE_KEY = "papertrend_workspace_filters_v1";
+const WORKSPACE_ORGANIZATION_STORAGE_KEY = "papertrend_workspace_org_v1";
+const WORKSPACE_PROJECT_STORAGE_KEY = "papertrend_workspace_project_v1";
 
 interface AnalysisSession {
   runIds: string[];
@@ -42,11 +46,18 @@ interface WorkspaceContextValue {
   profile: WorkspaceProfile;
   hydrated: boolean;
   analysisSession: AnalysisSession | null;
+  organizations: WorkspaceOrganizationRow[];
+  projects: WorkspaceProjectRow[];
   folders: ResearchFolderRow[];
+  currentOrganization: WorkspaceOrganizationRow | null;
+  currentProject: WorkspaceProjectRow | null;
+  selectedOrganizationId: string | null;
+  selectedProjectId: string | null;
   selectedFolderId: string;
   selectedYears: string[];
   selectedTracks: string[];
   searchQuery: string;
+  hasActiveProject: boolean;
   updateProfile: (updates: Partial<WorkspaceProfile>) => void;
   resetProfile: () => void;
   startAnalysisSession: (
@@ -61,18 +72,34 @@ interface WorkspaceContextValue {
   setAnalysisMinimized: (minimized: boolean) => void;
   removeAnalysisRunIds: (runIds: string[]) => void;
   clearAnalysisSession: () => void;
+  setSelectedOrganizationId: (organizationId: string | null) => void;
+  setSelectedProjectId: (projectId: string | null) => void;
   setSelectedFolderId: (folderId: string) => void;
   setSelectedYears: (years: string[]) => void;
   setSelectedTracks: (tracks: string[]) => void;
   setSearchQuery: (searchQuery: string) => void;
   resetWorkspaceFilters: () => void;
+  refreshOrganizations: () => Promise<void>;
+  refreshProjects: (organizationId?: string | null) => Promise<void>;
   refreshFolders: () => Promise<void>;
+  createOrganization: (
+    name: string,
+    type: WorkspaceOrganizationRow["type"]
+  ) => Promise<WorkspaceOrganizationRow>;
+  createProject: (
+    name: string,
+    options?: { organizationId?: string | null; description?: string | null }
+  ) => Promise<WorkspaceProjectRow>;
   createFolder: (folderName: string) => Promise<ResearchFolderRow>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
   undefined
 );
+
+function sortByName<T extends { name: string }>(items: T[]): T[] {
+  return [...items].sort((left, right) => left.name.localeCompare(right.name));
+}
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const {
@@ -85,7 +112,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState(DEFAULT_WORKSPACE_PROFILE);
   const [hydrated, setHydrated] = useState(false);
   const [analysisSession, setAnalysisSession] = useState<AnalysisSession | null>(null);
+  const [organizations, setOrganizations] = useState<WorkspaceOrganizationRow[]>([]);
+  const [projects, setProjects] = useState<WorkspaceProjectRow[]>([]);
   const [folders, setFolders] = useState<ResearchFolderRow[]>([]);
+  const [selectedOrganizationIdState, setSelectedOrganizationIdState] =
+    useState<string | null>(null);
+  const [selectedProjectIdState, setSelectedProjectIdState] =
+    useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderIdState] = useState("all");
   const [selectedYears, setSelectedYearsState] = useState<string[]>([]);
   const [selectedTracks, setSelectedTracksState] = useState<string[]>([...TRACK_COLS]);
@@ -122,6 +155,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     loadedKeyRef.current = "anonymous";
     setProfile(loadWorkspaceProfile());
+    setOrganizations([]);
+    setProjects([]);
+    setFolders([]);
+    setSelectedOrganizationIdState(null);
+    setSelectedProjectIdState(null);
+    setSelectedFolderIdState("all");
     setHydrated(true);
   }, [authHydrated, authProfile, user]);
 
@@ -140,7 +179,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     const savedFolderId =
       window.localStorage.getItem(WORKSPACE_FOLDER_STORAGE_KEY) ?? "all";
+    const savedOrganizationId =
+      window.localStorage.getItem(WORKSPACE_ORGANIZATION_STORAGE_KEY) ?? null;
+    const savedProjectId =
+      window.localStorage.getItem(WORKSPACE_PROJECT_STORAGE_KEY) ?? null;
+
     setSelectedFolderIdState(savedFolderId);
+    setSelectedOrganizationIdState(savedOrganizationId);
+    setSelectedProjectIdState(savedProjectId);
 
     try {
       const rawFilters = window.localStorage.getItem(WORKSPACE_FILTERS_STORAGE_KEY);
@@ -184,6 +230,36 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (selectedOrganizationIdState) {
+      window.localStorage.setItem(
+        WORKSPACE_ORGANIZATION_STORAGE_KEY,
+        selectedOrganizationIdState
+      );
+    } else {
+      window.localStorage.removeItem(WORKSPACE_ORGANIZATION_STORAGE_KEY);
+    }
+  }, [selectedOrganizationIdState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    if (selectedProjectIdState) {
+      window.localStorage.setItem(
+        WORKSPACE_PROJECT_STORAGE_KEY,
+        selectedProjectIdState
+      );
+    } else {
+      window.localStorage.removeItem(WORKSPACE_PROJECT_STORAGE_KEY);
+    }
+  }, [selectedProjectIdState]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
     window.localStorage.setItem(WORKSPACE_FOLDER_STORAGE_KEY, selectedFolderId);
   }, [selectedFolderId]);
 
@@ -202,18 +278,93 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     );
   }, [searchQuery, selectedTracks, selectedYears]);
 
-  const refreshFolders = useCallback(async () => {
+  const refreshOrganizations = useCallback(async () => {
     if (!user || !session?.access_token) {
+      setOrganizations([]);
+      setSelectedOrganizationIdState(null);
+      return;
+    }
+
+    const response = await fetch("/api/workspace/organizations", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    const payload = (await response.json()) as {
+      organizations?: WorkspaceOrganizationRow[];
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load organizations.");
+    }
+
+    const nextOrganizations = sortByName(payload.organizations ?? []);
+    setOrganizations(nextOrganizations);
+    setSelectedOrganizationIdState((current) => {
+      if (current && nextOrganizations.some((organization) => organization.id === current)) {
+        return current;
+      }
+      return nextOrganizations[0]?.id ?? null;
+    });
+  }, [session?.access_token, user]);
+
+  const refreshProjects = useCallback(
+    async (organizationId?: string | null) => {
+      const targetOrganizationId = organizationId ?? selectedOrganizationIdState;
+
+      if (!user || !session?.access_token || !targetOrganizationId) {
+        setProjects([]);
+        setSelectedProjectIdState(null);
+        return;
+      }
+
+      const response = await fetch(
+        `/api/workspace/projects?organizationId=${encodeURIComponent(targetOrganizationId)}`,
+        {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
+      );
+
+      const payload = (await response.json()) as {
+        projects?: WorkspaceProjectRow[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load projects.");
+      }
+
+      const nextProjects = sortByName(payload.projects ?? []);
+      setProjects(nextProjects);
+      setSelectedProjectIdState((current) => {
+        if (current && nextProjects.some((project) => project.id === current)) {
+          return current;
+        }
+        return nextProjects[0]?.id ?? null;
+      });
+    },
+    [selectedOrganizationIdState, session?.access_token, user]
+  );
+
+  const refreshFolders = useCallback(async () => {
+    if (!user || !session?.access_token || !selectedProjectIdState) {
       setFolders([]);
       setSelectedFolderIdState("all");
       return;
     }
 
-    const response = await fetch("/api/workspace/folders", {
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-    });
+    const response = await fetch(
+      `/api/workspace/folders?projectId=${encodeURIComponent(selectedProjectIdState)}`,
+      {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      }
+    );
 
     const payload = (await response.json()) as {
       folders?: ResearchFolderRow[];
@@ -224,19 +375,101 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       throw new Error(payload.error ?? "Failed to load folders.");
     }
 
-    const nextFolders = payload.folders ?? [];
+    const nextFolders = sortByName(payload.folders ?? []);
     setFolders(nextFolders);
     setSelectedFolderIdState((current) =>
       current === "all" || nextFolders.some((folder) => folder.id === current)
         ? current
         : "all"
     );
-  }, [session?.access_token, user]);
+  }, [selectedProjectIdState, session?.access_token, user]);
+
+  const createOrganization = useCallback(
+    async (name: string, type: WorkspaceOrganizationRow["type"]) => {
+      if (!user || !session?.access_token) {
+        throw new Error("Sign in before creating organizations.");
+      }
+
+      const response = await fetch("/api/workspace/organizations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ name, type }),
+      });
+
+      const payload = (await response.json()) as {
+        organization?: WorkspaceOrganizationRow;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.organization) {
+        throw new Error(payload.error ?? "Failed to create organization.");
+      }
+
+      setOrganizations((current) =>
+        sortByName([
+          payload.organization!,
+          ...current.filter((organization) => organization.id !== payload.organization!.id),
+        ])
+      );
+      setSelectedOrganizationIdState(payload.organization.id);
+      return payload.organization;
+    },
+    [session?.access_token, user]
+  );
+
+  const createProject = useCallback(
+    async (
+      name: string,
+      options?: { organizationId?: string | null; description?: string | null }
+    ) => {
+      const organizationId =
+        options?.organizationId ?? selectedOrganizationIdState ?? null;
+
+      if (!user || !session?.access_token || !organizationId) {
+        throw new Error("Select an organization before creating projects.");
+      }
+
+      const response = await fetch("/api/workspace/projects", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          organizationId,
+          name,
+          description: options?.description ?? null,
+        }),
+      });
+
+      const payload = (await response.json()) as {
+        project?: WorkspaceProjectRow;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? "Failed to create project.");
+      }
+
+      setProjects((current) =>
+        sortByName([
+          payload.project!,
+          ...current.filter((project) => project.id !== payload.project!.id),
+        ])
+      );
+      setSelectedProjectIdState(payload.project.id);
+      return payload.project;
+    },
+    [selectedOrganizationIdState, session?.access_token, user]
+  );
 
   const createFolder = useCallback(
     async (folderName: string) => {
-      if (!user || !session?.access_token) {
-        throw new Error("Sign in before creating folders.");
+      if (!user || !session?.access_token || !selectedProjectIdState) {
+        throw new Error("Choose a project before creating folders.");
       }
 
       const response = await fetch("/api/workspace/folders", {
@@ -245,7 +478,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ name: folderName }),
+        body: JSON.stringify({
+          name: folderName,
+          projectId: selectedProjectIdState,
+        }),
       });
 
       const payload = (await response.json()) as {
@@ -257,26 +493,47 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         throw new Error(payload.error ?? "Failed to create folder.");
       }
 
-      setFolders((current) => {
-        const next = [payload.folder!, ...current.filter((folder) => folder.id !== payload.folder!.id)];
-        next.sort((left, right) => left.name.localeCompare(right.name));
-        return next;
-      });
+      setFolders((current) =>
+        sortByName([
+          payload.folder!,
+          ...current.filter((folder) => folder.id !== payload.folder!.id),
+        ])
+      );
       setSelectedFolderIdState(payload.folder.id);
       return payload.folder;
     },
-    [session?.access_token, user]
+    [selectedProjectIdState, session?.access_token, user]
   );
 
   useEffect(() => {
-    if (!hydrated) {
+    if (!hydrated || !user) {
+      return;
+    }
+
+    refreshOrganizations().catch(() => {
+      setOrganizations([]);
+    });
+  }, [hydrated, refreshOrganizations, user]);
+
+  useEffect(() => {
+    if (!hydrated || !user) {
+      return;
+    }
+
+    refreshProjects().catch(() => {
+      setProjects([]);
+    });
+  }, [hydrated, refreshProjects, selectedOrganizationIdState, user]);
+
+  useEffect(() => {
+    if (!hydrated || !user) {
       return;
     }
 
     refreshFolders().catch(() => {
       setFolders([]);
     });
-  }, [hydrated, refreshFolders]);
+  }, [hydrated, refreshFolders, selectedProjectIdState, user]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -305,16 +562,29 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     });
   }, [hydrated, profile, saveWorkspaceProfileRemote, user]);
 
+  const currentOrganization =
+    organizations.find((organization) => organization.id === selectedOrganizationIdState) ??
+    null;
+  const currentProject =
+    projects.find((project) => project.id === selectedProjectIdState) ?? null;
+
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       profile,
       hydrated,
       analysisSession,
+      organizations,
+      projects,
       folders,
+      currentOrganization,
+      currentProject,
+      selectedOrganizationId: selectedOrganizationIdState,
+      selectedProjectId: selectedProjectIdState,
       selectedFolderId,
       selectedYears,
       selectedTracks,
       searchQuery,
+      hasActiveProject: Boolean(currentProject),
       updateProfile: (updates) => {
         setProfile((current) => ({
           ...current,
@@ -374,6 +644,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       clearAnalysisSession: () => {
         setAnalysisSession(null);
       },
+      setSelectedOrganizationId: (organizationId) => {
+        setSelectedOrganizationIdState(organizationId);
+        setSelectedProjectIdState(null);
+        setSelectedFolderIdState("all");
+      },
+      setSelectedProjectId: (projectId) => {
+        setSelectedProjectIdState(projectId);
+        setSelectedFolderIdState("all");
+      },
       setSelectedFolderId: (folderId) => {
         setSelectedFolderIdState(folderId || "all");
       },
@@ -393,18 +672,32 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setSelectedTracksState([...TRACK_COLS]);
         setSearchQueryState("");
       },
+      refreshOrganizations,
+      refreshProjects,
       refreshFolders,
+      createOrganization,
+      createProject,
       createFolder,
     }),
     [
       analysisSession,
       createFolder,
+      createOrganization,
+      createProject,
+      currentOrganization,
+      currentProject,
       folders,
       hydrated,
+      organizations,
       profile,
+      projects,
       refreshFolders,
+      refreshOrganizations,
+      refreshProjects,
       searchQuery,
       selectedFolderId,
+      selectedOrganizationIdState,
+      selectedProjectIdState,
       selectedTracks,
       selectedYears,
     ]

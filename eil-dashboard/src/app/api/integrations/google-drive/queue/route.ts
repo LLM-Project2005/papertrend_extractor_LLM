@@ -25,6 +25,7 @@ export async function POST(request: Request) {
     const body = (await request.json()) as {
       fileIds?: string[];
       folder?: string;
+      projectId?: string;
     };
 
     const fileIds = (body.fileIds ?? []).filter(
@@ -33,6 +34,12 @@ export async function POST(request: Request) {
     if (fileIds.length === 0) {
       return NextResponse.json(
         { error: "Select at least one Google Drive PDF file." },
+        { status: 400 }
+      );
+    }
+    if (!body.projectId?.trim()) {
+      return NextResponse.json(
+        { error: "projectId is required." },
         { status: 400 }
       );
     }
@@ -48,7 +55,12 @@ export async function POST(request: Request) {
     const accessToken = await ensureGoogleDriveAccessToken(connection);
     const folder = sanitizeFolderName(body.folder ?? "Inbox");
     const supabase = getSupabaseAdmin();
-    const researchFolder = await ensureResearchFolder(supabase, user.id, folder);
+    const researchFolder = await ensureResearchFolder(
+      supabase,
+      user.id,
+      body.projectId.trim(),
+      folder
+    );
     const folderId = researchFolder?.id ?? null;
     const { data: folderJob, error: folderJobError } = await supabase
       .from("folder_analysis_jobs")
@@ -85,7 +97,11 @@ export async function POST(request: Request) {
           source_type: "upload",
           status: "queued",
           source_filename: file.name,
+          display_name: file.name,
           source_path: file.id,
+          source_extension: file.name.toLowerCase().split(".").pop() ?? "pdf",
+          mime_type: file.mimeType ?? "application/pdf",
+          file_size_bytes: file.size ? Number(file.size) : null,
           provider: AUTO_ANALYSIS_PROVIDER,
           model: AUTO_ANALYSIS_MODEL,
           input_payload: {

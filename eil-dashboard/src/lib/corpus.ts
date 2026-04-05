@@ -208,7 +208,9 @@ function scorePaper(
 export async function retrieveCorpusPapers(
   question: string,
   ownerUserId?: string | null,
-  folderId?: string | null
+  folderId?: string | null,
+  projectId?: string | null,
+  selectedRunIds: string[] = []
 ): Promise<{
   papers: CorpusPaper[];
   citations: CorpusCitation[];
@@ -223,36 +225,66 @@ export async function retrieveCorpusPapers(
       .from("papers_full")
       .select("*")
       .eq("owner_user_id", ownerUserId);
-    let trendsQuery = supabase
-      .from("trends_flat")
-      .select("*")
-      .eq("owner_user_id", ownerUserId);
-    let singleQuery = supabase
-      .from("tracks_single_flat")
-      .select("*")
-      .eq("owner_user_id", ownerUserId);
-    let multiQuery = supabase
-      .from("tracks_multi_flat")
-      .select("*")
-      .eq("owner_user_id", ownerUserId);
 
     if (folderId && folderId !== "all") {
       papersQuery = papersQuery.eq("folder_id", folderId);
-      trendsQuery = trendsQuery.eq("folder_id", folderId);
-      singleQuery = singleQuery.eq("folder_id", folderId);
-      multiQuery = multiQuery.eq("folder_id", folderId);
+    } else if (projectId) {
+      const { data: folders, error: foldersError } = await supabase
+        .from("research_folders")
+        .select("id")
+        .eq("owner_user_id", ownerUserId)
+        .eq("project_id", projectId);
+
+      if (foldersError) {
+        throw new Error(foldersError.message);
+      }
+
+      const folderIds = (folders ?? [])
+        .map((row) => String((row as { id?: string | null }).id ?? ""))
+        .filter(Boolean);
+
+      if (folderIds.length === 0) {
+        return { papers: [], citations: [] };
+      }
+
+      papersQuery = papersQuery.in("folder_id", folderIds);
     }
 
-    const [papersResult, trendsResult, singleResult, multiResult] = await Promise.all([
-      papersQuery,
-      trendsQuery,
-      singleQuery,
-      multiQuery,
-    ]);
+    const normalizedRunIds = selectedRunIds.filter(Boolean);
+    if (normalizedRunIds.length > 0) {
+      papersQuery = papersQuery.in("ingestion_run_id", normalizedRunIds);
+    }
+
+    const papersResult = await papersQuery;
 
     if (papersResult.error) {
       throw new Error(`Failed to load papers_full: ${papersResult.error.message}`);
     }
+
+    const papersData = (papersResult.data ?? []) as PaperFullRow[];
+    const paperIds = papersData.map((paper) => paper.paper_id).filter(Boolean);
+    if (paperIds.length === 0) {
+      return { papers: [], citations: [] };
+    }
+
+    const [trendsResult, singleResult, multiResult] = await Promise.all([
+      supabase
+        .from("trends_flat")
+        .select("*")
+        .eq("owner_user_id", ownerUserId)
+        .in("paper_id", paperIds),
+      supabase
+        .from("tracks_single_flat")
+        .select("*")
+        .eq("owner_user_id", ownerUserId)
+        .in("paper_id", paperIds),
+      supabase
+        .from("tracks_multi_flat")
+        .select("*")
+        .eq("owner_user_id", ownerUserId)
+        .in("paper_id", paperIds),
+    ]);
+
     if (trendsResult.error) {
       throw new Error(`Failed to load trends_flat: ${trendsResult.error.message}`);
     }
@@ -264,7 +296,7 @@ export async function retrieveCorpusPapers(
     }
 
     const response = buildCorpusResponse(
-      (papersResult.data ?? []) as PaperFullRow[],
+      papersData,
       (trendsResult.data ?? []) as TrendRow[],
       (singleResult.data ?? []) as TrackRow[],
       (multiResult.data ?? []) as TrackRow[],

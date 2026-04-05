@@ -21,7 +21,11 @@ export default function WorkspacePapersClient() {
     searchQuery,
     setSearchQuery,
   } = useWorkspaceProfile();
-  const { data, loading, allYears } = useDashboardData(selectedFolderId);
+  const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const { data, loading, allYears } = useDashboardData(
+    selectedFolderId,
+    scopedFolderIds
+  );
   const searchParams = useSearchParams();
   const [filterOpen, setFilterOpen] = useState(false);
 

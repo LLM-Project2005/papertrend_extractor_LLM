@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import Modal from "@/components/ui/Modal";
 import {
   CloudIcon,
@@ -102,6 +103,7 @@ export default function AnalyzeFlowModal({
   onCreated,
 }: AnalyzeFlowModalProps) {
   const { session, user } = useAuth();
+  const { selectedProjectId, currentProject } = useWorkspaceProfile();
   const [adminSecret, setAdminSecret] = useState("");
   const [folder, setFolder] = useState(defaultFolder);
   const [files, setFiles] = useState<File[]>([]);
@@ -256,6 +258,10 @@ export default function AnalyzeFlowModal({
       setError("Sign in or enter the shared admin secret before starting analysis.");
       return;
     }
+    if (!selectedProjectId) {
+      setError("Choose a project before adding files to the library.");
+      return;
+    }
 
     setUploading(true);
     setError(null);
@@ -270,6 +276,7 @@ export default function AnalyzeFlowModal({
         files.forEach((file) => formData.append("files", file));
         formData.append("folder", folder.trim() || defaultFolder);
         formData.append("source_kind", selectedSource);
+        formData.append("project_id", selectedProjectId);
 
         const headers: Record<string, string> = {};
         if (session?.access_token && user) {
@@ -330,6 +337,7 @@ export default function AnalyzeFlowModal({
           body: JSON.stringify({
             fileIds: selectedDriveFileIds,
             folder: folder.trim() || defaultFolder,
+            projectId: selectedProjectId,
           }),
         });
 
@@ -640,6 +648,14 @@ export default function AnalyzeFlowModal({
                   Analysis details
                 </p>
                 <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#8f8f8f]">
+                      Project
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                      {currentProject?.name ?? "No project selected"}
+                    </p>
+                  </div>
                   <input
                     value={folder}
                     onChange={(event) => setFolder(event.target.value)}

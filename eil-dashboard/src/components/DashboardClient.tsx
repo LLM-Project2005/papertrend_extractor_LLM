@@ -92,7 +92,11 @@ export default function DashboardClient({
     searchQuery,
     setSearchQuery,
   } = useWorkspaceProfile();
-  const { data, loading, allYears } = useDashboardData(selectedFolderId);
+  const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const { data, loading, allYears } = useDashboardData(
+    selectedFolderId,
+    scopedFolderIds
+  );
   const { session } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
