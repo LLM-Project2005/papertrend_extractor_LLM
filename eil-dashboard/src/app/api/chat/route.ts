@@ -68,36 +68,325 @@ function buildFallbackAnswer(question: string, corpusError?: string): string {
   return lines.join("\n");
 }
 
-function buildLocalResearchPlan(prompt: string, pendingRunCount: number) {
+type LocalPlanPaper = {
+  paper_id: number;
+  title: string;
+  year?: string | null;
+};
+
+function extractQuotedTitle(prompt: string) {
+  const matches = prompt.match(/"([^"]{8,})"|'([^']{8,})'/);
+  return (matches?.[1] ?? matches?.[2] ?? "").trim();
+}
+
+function normalizeTitle(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeSearchQuery(prompt: string, quotedTitle: string) {
+  if (quotedTitle) {
+    return quotedTitle;
+  }
+  return prompt
+    .replace(/\b(do|please|can you|could you|run|perform)\b/gi, " ")
+    .split(/\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b/i)[0]
+    .replace(/\b(deep research|analysis|structured report|report)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.,:;]+$/, "");
+}
+
+function detectRequestedSections(prompt: string) {
+  const lowered = prompt.toLowerCase();
+  const sections = [
+    ["objective", ["objective", "objectives", "aim", "purpose"]],
+    ["theoretical_background", ["theoretical background", "background", "framework", "literature"]],
+    ["methodology", ["methodology", "methods", "method", "design"]],
+    ["participants", ["participants", "participant", "learners", "students", "sample"]],
+    ["key_findings", ["key findings", "findings", "results", "outcomes"]],
+    ["limitations", ["limitations", "limitation", "constraints", "weakness"]],
+    ["implications", ["implications", "implication", "significance"]],
+  ] as const;
+  return sections
+    .filter(([, aliases]) => aliases.some((alias) => lowered.includes(alias)))
+    .map(([section]) => section);
+}
+
+function titleMatchStrength(targetTitle: string, paperTitle: string) {
+  const normalizedTarget = normalizeTitle(targetTitle);
+  const normalizedPaperTitle = normalizeTitle(paperTitle);
+  if (!normalizedTarget || !normalizedPaperTitle) {
+    return { strong: false, score: 0 };
+  }
+  if (normalizedTarget === normalizedPaperTitle) {
+    return { strong: true, score: 200 };
+  }
+  const targetTokens = new Set(normalizedTarget.split(" ").filter(Boolean));
+  const titleTokens = new Set(normalizedPaperTitle.split(" ").filter(Boolean));
+  let overlap = 0;
+  targetTokens.forEach((token) => {
+    if (titleTokens.has(token)) overlap += 1;
+  });
+  const ratio = overlap / Math.max(1, targetTokens.size);
+  const strong =
+    ratio >= 0.8 ||
+    (targetTokens.size >= 4 && normalizedPaperTitle.includes(normalizedTarget));
+  return { strong, score: Math.round(ratio * 120) };
+}
+
+function buildLocalPromptAnalysis(prompt: string, papers: LocalPlanPaper[]) {
+  const quotedTitle = extractQuotedTitle(prompt);
+  const normalizedQuery = normalizeSearchQuery(prompt, quotedTitle);
+  const lowered = prompt.toLowerCase();
+  const rankedMatches = papers
+    .map((paper) => {
+      const match = titleMatchStrength(quotedTitle, paper.title);
+      return {
+        paperId: paper.paper_id,
+        title: paper.title,
+        year: paper.year ?? "Unknown",
+        score: match.score,
+        strong_title_match: match.strong,
+      };
+    })
+    .filter((row) => row.score > 0 || row.strong_title_match)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 5);
+  const target = rankedMatches.find((row) => row.strong_title_match);
   return {
-    title: buildThreadTitle(prompt),
-    summary:
-      pendingRunCount > 0
-        ? `Analyze the pending folder files first, then complete a staged corpus review for "${prompt}".`
-        : `Run a staged corpus review for "${prompt}" using the selected folder scope.`,
-    requires_analysis: pendingRunCount > 0,
+    single_paper: Boolean(quotedTitle),
+    compare: /\b(compare|comparison|versus|contrast)\b/i.test(prompt),
+    survey: /\b(survey|review|overview|landscape|corpus|literature)\b/i.test(prompt),
+    methodology_focus: /\b(method|methods|methodology|participants|sample)\b/i.test(prompt),
+    findings_focus: /\b(findings|results|outcomes)\b/i.test(prompt),
+    limitations_focus: /\b(limitation|limitations|constraint|weakness)\b/i.test(prompt),
+    evidence_extraction:
+      detectRequestedSections(prompt).length > 0 || /\b(evidence|cite|quote)\b/i.test(prompt),
+    quoted_title: quotedTitle,
+    candidate_title: quotedTitle,
+    normalized_query: normalizedQuery || prompt.trim(),
+    requested_sections: detectRequestedSections(prompt),
+    target_in_scope: Boolean(target),
+    target_paper_id: target?.paperId ?? 0,
+    ranked_matches: rankedMatches,
+  };
+}
+
+async function loadScopedPlanPapers(
+  ownerUserId: string,
+  folderId: string | "all" | undefined,
+  projectId: string | undefined
+): Promise<LocalPlanPaper[]> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("papers_full")
+    .select("paper_id,title,year,folder_id")
+    .eq("owner_user_id", ownerUserId);
+
+  if (folderId && folderId !== "all") {
+    query = query.eq("folder_id", folderId);
+  } else if (projectId) {
+    const { data: folders, error: folderError } = await supabase
+      .from("research_folders")
+      .select("id")
+      .eq("owner_user_id", ownerUserId)
+      .eq("project_id", projectId);
+    if (folderError) {
+      throw new Error(folderError.message);
+    }
+    const folderIds = (folders ?? [])
+      .map((row) => String((row as { id?: string | null }).id ?? ""))
+      .filter(Boolean);
+    if (folderIds.length === 0) {
+      return [];
+    }
+    query = query.in("folder_id", folderIds);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? []) as LocalPlanPaper[];
+}
+
+async function buildLocalResearchPlan(
+  prompt: string,
+  pendingRunCount: number,
+  ownerUserId: string,
+  folderId: string | "all" | undefined,
+  projectId: string | undefined
+) {
+  const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId);
+  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers);
+  const baseToolInput = {
+    projectId: projectId ?? "",
+    promptAnalysis,
+    targetTitle: promptAnalysis.candidate_title || undefined,
+    targetPaperId: promptAnalysis.target_paper_id || undefined,
+  };
+  const needsAnalysis = pendingRunCount > 0;
+
+  if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
+    if (promptAnalysis.target_in_scope) {
+      return {
+        title: buildThreadTitle(promptAnalysis.candidate_title),
+        summary: needsAnalysis
+          ? `Analyze the pending files first, then read "${promptAnalysis.candidate_title}" directly and widen only if supporting context is needed.`
+          : `Read "${promptAnalysis.candidate_title}" directly first, then widen only if supporting context is needed.`,
+        requires_analysis: needsAnalysis,
+        pending_run_count: pendingRunCount,
+        steps: [
+          {
+            position: 1,
+            title: "Read the named paper first",
+            description: "Open the requested paper directly and extract the sections needed for the report.",
+            tool_name: "read_paper_sections",
+            tool_input: {
+              ...baseToolInput,
+              paperIds: [promptAnalysis.target_paper_id],
+              query: promptAnalysis.candidate_title,
+              limit: 1,
+              requestedSections: promptAnalysis.requested_sections,
+            },
+          },
+          {
+            position: 2,
+            title: "Pull only supporting context",
+            description: "Retrieve adjacent in-scope papers only if they help frame background or comparison.",
+            tool_name: "fetch_papers",
+            tool_input: {
+              ...baseToolInput,
+              query: promptAnalysis.normalized_query,
+              limit: 4,
+              excludePaperIds: [promptAnalysis.target_paper_id],
+            },
+          },
+        ],
+      };
+    }
+
+    return {
+      title: buildThreadTitle(promptAnalysis.candidate_title),
+      summary: needsAnalysis
+        ? `Analyze the pending files first, then verify whether "${promptAnalysis.candidate_title}" exists in the selected scope and report the closest matches.`
+        : `Verify whether "${promptAnalysis.candidate_title}" exists in the selected scope and report the closest matches.`,
+      requires_analysis: needsAnalysis,
+      pending_run_count: pendingRunCount,
+      steps: [
+        {
+          position: 1,
+          title: "Verify scope coverage",
+          description: "Check whether the named paper is actually present in the selected scope.",
+          tool_name: "list_folder_papers",
+          tool_input: { ...baseToolInput, limit: 12 },
+        },
+        {
+          position: 2,
+          title: "Surface closest in-scope matches",
+          description: "Find the nearest in-scope title matches so the final report can explain the gap clearly.",
+          tool_name: "fetch_papers",
+          tool_input: { ...baseToolInput, query: promptAnalysis.candidate_title, limit: 5 },
+        },
+      ],
+    };
+  }
+
+  if (promptAnalysis.compare) {
+    return {
+      title: buildThreadTitle(promptAnalysis.normalized_query),
+      summary: needsAnalysis
+        ? `Analyze the pending files first, then identify the strongest comparison papers for "${promptAnalysis.normalized_query}".`
+        : `Identify the strongest comparison papers for "${promptAnalysis.normalized_query}" and extract section-level evidence.`,
+      requires_analysis: needsAnalysis,
+      pending_run_count: pendingRunCount,
+      steps: [
+        {
+          position: 1,
+          title: "Retrieve comparison papers",
+          description: "Find the strongest in-scope papers that match the comparison request.",
+          tool_name: "fetch_papers",
+          tool_input: { ...baseToolInput, query: promptAnalysis.normalized_query, limit: 6 },
+        },
+        {
+          position: 2,
+          title: "Read comparable sections",
+          description: "Inspect methods, results, and conclusions that support direct comparison.",
+          tool_name: "read_paper_sections",
+          tool_input: { ...baseToolInput, query: promptAnalysis.normalized_query, limit: 4 },
+        },
+      ],
+    };
+  }
+
+  if (promptAnalysis.survey || papers.length >= 8) {
+    return {
+      title: buildThreadTitle(promptAnalysis.normalized_query),
+      summary: needsAnalysis
+        ? `Analyze the pending files first, then map the scoped corpus for "${promptAnalysis.normalized_query}".`
+        : `Map the scoped corpus for "${promptAnalysis.normalized_query}", retrieve the strongest papers, and synthesize section-level evidence.`,
+      requires_analysis: needsAnalysis,
+      pending_run_count: pendingRunCount,
+      steps: [
+        {
+          position: 1,
+          title: "Map the scoped corpus",
+          description: "List the in-scope papers first so the review stays grounded in the current workspace.",
+          tool_name: "list_folder_papers",
+          tool_input: { ...baseToolInput, limit: 15 },
+        },
+        {
+          position: 2,
+          title: "Pull the strongest papers",
+          description: "Retrieve the most relevant papers for the topic without echoing the full instruction prompt into search.",
+          tool_name: "fetch_papers",
+          tool_input: { ...baseToolInput, query: promptAnalysis.normalized_query, limit: 6 },
+        },
+        {
+          position: 3,
+          title: "Read the most relevant sections",
+          description: "Inspect the sections that carry the evidence the user asked for.",
+          tool_name: "read_paper_sections",
+          tool_input: { ...baseToolInput, query: promptAnalysis.normalized_query, limit: 4 },
+        },
+      ],
+    };
+  }
+
+  return {
+    title: buildThreadTitle(promptAnalysis.normalized_query || prompt),
+    summary: needsAnalysis
+      ? `Analyze the pending files first, then retrieve the most relevant in-scope papers for "${promptAnalysis.normalized_query || prompt}".`
+      : `Retrieve the most relevant in-scope papers for "${promptAnalysis.normalized_query || prompt}" and answer from their sections directly.`,
+    requires_analysis: needsAnalysis,
     pending_run_count: pendingRunCount,
     steps: [
       {
         position: 1,
-        title: "Map the scoped corpus",
-        description: "List the papers inside the current folder scope before drilling down.",
-        tool_name: "list_folder_papers",
-        tool_input: { limit: 12 },
+        title: "Retrieve relevant papers",
+        description: "Find the in-scope papers that most directly answer the request.",
+        tool_name: "fetch_papers",
+        tool_input: {
+          ...baseToolInput,
+          query: promptAnalysis.normalized_query || prompt,
+          limit: 5,
+        },
       },
       {
         position: 2,
-        title: "Inspect workspace analytics",
-        description: "Review high-level trends and coverage to orient the research.",
-        tool_name: "get_dashboard_summary",
-        tool_input: { focus: "overview" },
-      },
-      {
-        position: 3,
-        title: "Pull supporting papers",
-        description: "Fetch the most relevant papers and sections for the request.",
-        tool_name: "fetch_papers",
-        tool_input: { query: prompt, limit: 5 },
+        title: "Read the requested evidence",
+        description: "Inspect the paper sections most likely to contain the answer instead of relying on broad workspace analytics.",
+        tool_name: "read_paper_sections",
+        tool_input: {
+          ...baseToolInput,
+          query: promptAnalysis.normalized_query || prompt,
+          limit: 3,
+          requestedSections: promptAnalysis.requested_sections,
+        },
       },
     ],
   };
@@ -218,7 +507,15 @@ async function planDeepResearch(
     body.projectId,
     ownerUserId
   );
-  const plan = rawPlan ?? buildLocalResearchPlan(prompt, pendingRunCount);
+  const plan =
+    rawPlan ??
+    (await buildLocalResearchPlan(
+      prompt,
+      pendingRunCount,
+      ownerUserId,
+      body.folderId,
+      body.projectId
+    ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,
     ownerUserId,

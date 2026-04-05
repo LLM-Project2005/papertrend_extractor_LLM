@@ -110,15 +110,51 @@ class SupabaseRestClient:
         )
         response.raise_for_status()
 
-    def list_pending_runs(self, owner_user_id: str, folder_id: str) -> List[Dict[str, Any]]:
+    def list_project_folder_ids(self, owner_user_id: str, project_id: str) -> List[str]:
+        response = self.session.get(
+            self._rest_url("research_folders"),
+            params={
+                "select": "id",
+                "owner_user_id": f"eq.{owner_user_id}",
+                "project_id": f"eq.{project_id}",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, list):
+            return []
+        return [
+            str(row.get("id") or "").strip()
+            for row in payload
+            if str(row.get("id") or "").strip()
+        ]
+
+    def list_pending_runs(
+        self,
+        owner_user_id: str,
+        folder_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        if not owner_user_id:
+            return []
+
+        params: Dict[str, Any] = {
+            "select": "id,status",
+            "owner_user_id": f"eq.{owner_user_id}",
+            "status": "in.(queued,processing)",
+        }
+        if folder_id:
+            params["folder_id"] = f"eq.{folder_id}"
+        elif project_id:
+            folder_ids = self.list_project_folder_ids(owner_user_id, project_id)
+            if not folder_ids:
+                return []
+            params["folder_id"] = f"in.({','.join(folder_ids)})"
+
         response = self.session.get(
             self._rest_url("ingestion_runs"),
-            params={
-                "select": "id,status",
-                "owner_user_id": f"eq.{owner_user_id}",
-                "folder_id": f"eq.{folder_id}",
-                "status": "in.(queued,processing)",
-            },
+            params=params,
             timeout=60,
         )
         response.raise_for_status()
@@ -152,31 +188,52 @@ class SupabaseRestClient:
         response.raise_for_status()
 
 
+def _extract_scope_from_steps(steps: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    project_id = ""
+    prompt_analysis: Dict[str, Any] = {}
+    for step in steps:
+        payload = step.get("input_payload") if isinstance(step.get("input_payload"), dict) else {}
+        if not project_id:
+            project_id = str(payload.get("projectId") or payload.get("project_id") or "").strip()
+        if not prompt_analysis and isinstance(payload.get("promptAnalysis"), dict):
+            prompt_analysis = dict(payload.get("promptAnalysis") or {})
+        if project_id and prompt_analysis:
+            break
+    return {
+        "project_id": project_id,
+        "prompt_analysis": prompt_analysis,
+    }
+
+
 def _requeue_waiting_sessions(client: SupabaseRestClient, limit: int) -> int:
     resumed = 0
     for session in client.list_waiting_sessions(limit):
-      owner_user_id = str(session.get("owner_user_id") or "")
-      folder_id = str(session.get("folder_id") or "")
-      if not owner_user_id or not folder_id:
-          continue
-      pending = client.list_pending_runs(owner_user_id, folder_id)
-      if pending:
-          client.update_session(
-              str(session["id"]),
-              {
-                  "pending_run_count": len(pending),
-                  "status": "waiting_on_analysis",
-              },
-          )
-          continue
-      client.update_session(
-          str(session["id"]),
-          {
-              "pending_run_count": 0,
-              "status": "queued",
-          },
-      )
-      resumed += 1
+        owner_user_id = str(session.get("owner_user_id") or "")
+        folder_id = str(session.get("folder_id") or "").strip() or None
+        if not owner_user_id:
+            continue
+
+        steps = client.get_session_steps(str(session.get("id") or ""))
+        scope = _extract_scope_from_steps(steps)
+        project_id = str(scope.get("project_id") or "").strip() or None
+        pending = client.list_pending_runs(owner_user_id, folder_id=folder_id, project_id=project_id)
+        if pending:
+            client.update_session(
+                str(session["id"]),
+                {
+                    "pending_run_count": len(pending),
+                    "status": "waiting_on_analysis",
+                },
+            )
+            continue
+        client.update_session(
+            str(session["id"]),
+            {
+                "pending_run_count": 0,
+                "status": "queued",
+            },
+        )
+        resumed += 1
     return resumed
 
 
@@ -190,20 +247,28 @@ def _persist_step_update_factory(client: SupabaseRestClient, session_id: str):
 def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict[str, Any]:
     owner_user_id = str(session.get("owner_user_id") or "")
     folder_id = str(session.get("folder_id") or "") or None
-    dataset = load_workspace_dataset(owner_user_id=owner_user_id, folder_id=folder_id)
+    steps = client.get_session_steps(str(session["id"]))
+    scope = _extract_scope_from_steps(steps)
+    project_id = str(scope.get("project_id") or "").strip() or None
+    dataset = load_workspace_dataset(
+        owner_user_id=owner_user_id,
+        folder_id=folder_id,
+        project_id=project_id,
+    )
     filtered = filter_dashboard_data(
         dataset,
         selected_years=[],
         selected_tracks=[],
         search_query="",
     )
-    steps = client.get_session_steps(str(session["id"]))
     return {
         "owner_user_id": owner_user_id,
         "folder_id": folder_id or "",
+        "project_id": project_id or "",
         "thread_id": str(session.get("thread_id") or ""),
         "session_id": str(session.get("id") or ""),
         "prompt": str(session.get("prompt") or ""),
+        "prompt_analysis": scope.get("prompt_analysis") if isinstance(scope.get("prompt_analysis"), dict) else {},
         "plan_summary": str(session.get("plan_summary") or ""),
         "requires_analysis": bool(session.get("requires_analysis")),
         "pending_run_count": int(session.get("pending_run_count") or 0),
@@ -267,7 +332,8 @@ def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict
         pending_run_count = len(
             client.list_pending_runs(
                 str(session.get("owner_user_id") or ""),
-                str(session.get("folder_id") or ""),
+                folder_id=str(final_state.get("folder_id") or session.get("folder_id") or "").strip() or None,
+                project_id=str(final_state.get("project_id") or "").strip() or None,
             )
         )
         client.update_session(

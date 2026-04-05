@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
+import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import Modal from "@/components/ui/Modal";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
@@ -20,6 +22,11 @@ import {
 import type { IngestionRunRow } from "@/types/database";
 
 type LibraryView = "files" | "favorites" | "trash" | "papers";
+type FileMenuState = {
+  run: IngestionRunRow;
+  top: number;
+  left: number;
+};
 
 function titleOf(run: IngestionRunRow) {
   return run.display_name || run.source_filename || run.id;
@@ -88,9 +95,11 @@ export default function AdminImportClient() {
   const [view, setView] = useState<LibraryView>("files");
   const [query, setQuery] = useState("");
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showFolderInput, setShowFolderInput] = useState(false);
+  const [showFolderModal, setShowFolderModal] = useState(false);
   const [draftFolderName, setDraftFolderName] = useState("");
-  const [menuRunId, setMenuRunId] = useState<string | null>(null);
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const [folderModalError, setFolderModalError] = useState<string | null>(null);
+  const [menuState, setMenuState] = useState<FileMenuState | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState("");
   const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
@@ -119,6 +128,7 @@ export default function AdminImportClient() {
     selectedFolderId === "all"
       ? folders[0]?.name ?? "Inbox"
       : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Inbox";
+  const activeMenuRun = menuState?.run ?? null;
 
   async function loadRuns(nextView: LibraryView = view) {
     if (!currentProject?.id || !session?.access_token) {
@@ -148,6 +158,17 @@ export default function AdminImportClient() {
     void loadRuns();
   }, [currentProject?.id, requestHeaders, session?.access_token, view]);
 
+  useEffect(() => {
+    if (!menuState) return;
+    const closeMenu = () => setMenuState(null);
+    window.addEventListener("resize", closeMenu);
+    window.addEventListener("scroll", closeMenu, true);
+    return () => {
+      window.removeEventListener("resize", closeMenu);
+      window.removeEventListener("scroll", closeMenu, true);
+    };
+  }, [menuState]);
+
   async function patchRun(runId: string, body: Record<string, unknown>) {
     const response = await fetch(`/api/workspace/library/${runId}`, {
       method: "PATCH",
@@ -173,6 +194,48 @@ export default function AdminImportClient() {
     };
     if (!response.ok) throw new Error(payload.error ?? "Action failed.");
     return payload;
+  }
+
+  async function handleCreateFolder(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draftFolderName.trim()) return;
+    setCreatingFolder(true);
+    setFolderModalError(null);
+    try {
+      const folder = await createFolder(draftFolderName.trim());
+      setSelectedFolderId(folder.id);
+      setDraftFolderName("");
+      setShowFolderModal(false);
+      setMessage(`Folder "${folder.name}" created.`);
+      setError(null);
+    } catch (createError) {
+      const nextError =
+        createError instanceof Error ? createError.message : "Failed to create folder.";
+      setFolderModalError(nextError);
+      setError(nextError);
+    } finally {
+      setCreatingFolder(false);
+    }
+  }
+
+  function openFileMenu(event: ReactMouseEvent<HTMLButtonElement>, run: IngestionRunRow) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    const menuWidth = 224;
+    const estimatedHeight = 340;
+    const margin = 16;
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openAbove = spaceBelow < estimatedHeight && rect.top > estimatedHeight;
+    const top = openAbove
+      ? Math.max(margin, rect.top - estimatedHeight - 8)
+      : Math.max(
+          margin,
+          Math.min(window.innerHeight - margin - estimatedHeight, rect.bottom + 8)
+        );
+    const left = Math.min(
+      window.innerWidth - margin - menuWidth,
+      Math.max(margin, rect.right - menuWidth)
+    );
+    setMenuState({ run, top, left });
   }
 
   const visibleRuns = useMemo(() => {
@@ -218,7 +281,7 @@ export default function AdminImportClient() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setShowFolderInput((current) => !current)} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white">
+          <button type="button" onClick={() => { setFolderModalError(null); setShowFolderModal(true); }} className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white">
             <FolderIcon className="h-4 w-4" />
             <span>New folder</span>
           </button>
@@ -228,47 +291,6 @@ export default function AdminImportClient() {
           </button>
         </div>
       </div>
-
-      {showFolderInput ? (
-        <div className="app-surface flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
-          <input
-            value={draftFolderName}
-            onChange={(event) => setDraftFolderName(event.target.value)}
-            placeholder="Folder name"
-            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={async () => {
-                if (!draftFolderName.trim()) return;
-                try {
-                  const folder = await createFolder(draftFolderName.trim());
-                  setSelectedFolderId(folder.id);
-                  setDraftFolderName("");
-                  setShowFolderInput(false);
-                  setMessage(`Folder "${folder.name}" created.`);
-                } catch (createError) {
-                  setError(createError instanceof Error ? createError.message : "Failed to create folder.");
-                }
-              }}
-              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
-            >
-              Save folder
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setDraftFolderName("");
-                setShowFolderInput(false);
-              }}
-              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#b0b0b0]"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap gap-2">
@@ -405,24 +427,17 @@ export default function AdminImportClient() {
                   <div className="relative">
                     <button
                       type="button"
-                      onClick={() => setMenuRunId((current) => (current === run.id ? null : run.id))}
+                      onClick={(event) => {
+                        if (menuState?.run.id === run.id) {
+                          setMenuState(null);
+                          return;
+                        }
+                        openFileMenu(event, run);
+                      }}
                       className="rounded-xl border border-transparent p-2 text-slate-500 opacity-0 transition hover:border-slate-200 hover:bg-slate-50 hover:text-slate-900 group-hover:opacity-100 dark:text-[#8f8f8f] dark:hover:border-[#343434] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
-
-                    {menuRunId === run.id ? (
-                      <div className="absolute right-0 top-11 z-20 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-xl dark:border-[#2f2f2f] dark:bg-[#1b1b1b]">
-                        <button type="button" onClick={async () => { try { const payload = await postRun(run.id, "open"); if (payload.url) { setPreviewUrl(payload.url); setPreviewTitle(titleOf(run)); } } catch (openError) { setError(openError instanceof Error ? openError.message : "Failed to open file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Preview</button>
-                        <button type="button" onClick={async () => { try { const payload = await postRun(run.id, "open"); if (payload.url) window.open(payload.url, "_blank", "noopener,noreferrer"); } catch (openError) { setError(openError instanceof Error ? openError.message : "Failed to open file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Open in new tab</button>
-                        <button type="button" onClick={async () => { const nextName = window.prompt("Rename file", titleOf(run)); if (!nextName?.trim()) { setMenuRunId(null); return; } try { await patchRun(run.id, { action: "rename", value: nextName.trim() }); } catch (renameError) { setError(renameError instanceof Error ? renameError.message : "Failed to rename file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Edit name</button>
-                        <button type="button" onClick={async () => { try { const payload = await postRun(run.id, "copy"); if (payload.run) setRuns((current) => [payload.run!, ...current]); } catch (copyError) { setError(copyError instanceof Error ? copyError.message : "Failed to copy file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Make a copy</button>
-                        <button type="button" onClick={async () => { const target = window.prompt("Move to folder", folders.find((folder) => folder.id === run.folder_id)?.name ?? activeFolder); if (!target?.trim()) { setMenuRunId(null); return; } try { const existing = folders.find((folder) => folder.name.toLowerCase() === target.trim().toLowerCase()); const folder = existing ?? (await createFolder(target.trim())); await patchRun(run.id, { action: "move", folderId: folder.id }); await refreshFolders(); } catch (moveError) { setError(moveError instanceof Error ? moveError.message : "Failed to move file."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Move to folder</button>
-                        <button type="button" onClick={async () => { try { await patchRun(run.id, { action: "favorite", value: !run.is_favorite }); } catch (favoriteError) { setError(favoriteError instanceof Error ? favoriteError.message : "Failed to update favorite."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">{run.is_favorite ? "Remove favorite" : "Add to favorite"}</button>
-                        <button type="button" onClick={() => { setInfoRun(run); setMenuRunId(null); }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">File information</button>
-                        <button type="button" onClick={async () => { try { await patchRun(run.id, { action: run.trashed_at ? "restore" : "trash" }); if (!run.trashed_at && view !== "trash") setRuns((current) => current.filter((item) => item.id !== run.id)); } catch (trashError) { setError(trashError instanceof Error ? trashError.message : "Failed to update trash."); } finally { setMenuRunId(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20">{run.trashed_at ? "Restore from trash" : "Move to trash"}</button>
-                      </div>
-                    ) : null}
                   </div>
                 </article>
               ))}
@@ -430,6 +445,54 @@ export default function AdminImportClient() {
           )}
         </section>
       )}
+
+      <CreateEntityModal
+        open={showFolderModal}
+        title="Create folder"
+        description="Create a new folder inside the current project."
+        value={draftFolderName}
+        fieldLabel="Folder name"
+        fieldPlaceholder="For example: Syntax papers"
+        submitLabel="Create folder"
+        busyLabel="Creating..."
+        busy={creatingFolder}
+        error={folderModalError}
+        onValueChange={setDraftFolderName}
+        onClose={() => {
+          setDraftFolderName("");
+          setFolderModalError(null);
+          setShowFolderModal(false);
+        }}
+        onSubmit={handleCreateFolder}
+      />
+
+      {activeMenuRun && typeof document !== "undefined"
+        ? createPortal(
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setMenuState(null)}
+                role="presentation"
+              />
+              <div
+                className="fixed z-50 w-56 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-[#2f2f2f] dark:bg-[#1b1b1b]"
+                style={{ top: `${menuState?.top ?? 0}px`, left: `${menuState?.left ?? 0}px` }}
+                onClick={(event) => event.stopPropagation()}
+                role="presentation"
+              >
+                <button type="button" onClick={async () => { try { const payload = await postRun(activeMenuRun.id, "open"); if (payload.url) { setPreviewUrl(payload.url); setPreviewTitle(titleOf(activeMenuRun)); } } catch (openError) { setError(openError instanceof Error ? openError.message : "Failed to open file."); } finally { setMenuState(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Preview</button>
+                <button type="button" onClick={async () => { try { const payload = await postRun(activeMenuRun.id, "open"); if (payload.url) window.open(payload.url, "_blank", "noopener,noreferrer"); } catch (openError) { setError(openError instanceof Error ? openError.message : "Failed to open file."); } finally { setMenuState(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Open in new tab</button>
+                <button type="button" onClick={async () => { const nextName = window.prompt("Rename file", titleOf(activeMenuRun)); if (!nextName?.trim()) { setMenuState(null); return; } try { await patchRun(activeMenuRun.id, { action: "rename", value: nextName.trim() }); } catch (renameError) { setError(renameError instanceof Error ? renameError.message : "Failed to rename file."); } finally { setMenuState(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Edit name</button>
+                <button type="button" onClick={async () => { try { const payload = await postRun(activeMenuRun.id, "copy"); if (payload.run) setRuns((current) => [payload.run!, ...current]); } catch (copyError) { setError(copyError instanceof Error ? copyError.message : "Failed to copy file."); } finally { setMenuState(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Make a copy</button>
+                <button type="button" onClick={async () => { const target = window.prompt("Move to folder", folders.find((folder) => folder.id === activeMenuRun.folder_id)?.name ?? activeFolder); if (!target?.trim()) { setMenuState(null); return; } try { const existing = folders.find((folder) => folder.name.toLowerCase() === target.trim().toLowerCase()); const folder = existing ?? (await createFolder(target.trim())); await patchRun(activeMenuRun.id, { action: "move", folderId: folder.id }); await refreshFolders(); } catch (moveError) { setError(moveError instanceof Error ? moveError.message : "Failed to move file."); } finally { setMenuState(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">Move to folder</button>
+                <button type="button" onClick={async () => { try { await patchRun(activeMenuRun.id, { action: "favorite", value: !activeMenuRun.is_favorite }); } catch (favoriteError) { setError(favoriteError instanceof Error ? favoriteError.message : "Failed to update favorite."); } finally { setMenuState(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">{activeMenuRun.is_favorite ? "Remove favorite" : "Add to favorite"}</button>
+                <button type="button" onClick={() => { setInfoRun(activeMenuRun); setMenuState(null); }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]">File information</button>
+                <button type="button" onClick={async () => { try { await patchRun(activeMenuRun.id, { action: activeMenuRun.trashed_at ? "restore" : "trash" }); if (!activeMenuRun.trashed_at && view !== "trash") setRuns((current) => current.filter((item) => item.id !== activeMenuRun.id)); } catch (trashError) { setError(trashError instanceof Error ? trashError.message : "Failed to update trash."); } finally { setMenuState(null); } }} className="flex w-full rounded-xl px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20">{activeMenuRun.trashed_at ? "Restore from trash" : "Move to trash"}</button>
+              </div>
+            </>,
+            document.body
+          )
+        : null}
 
       <AnalyzeFlowModal
         open={showImportModal}

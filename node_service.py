@@ -122,6 +122,7 @@ def _build_keyword_search_payload(body: Dict[str, Any]) -> Dict[str, Any]:
         "request_kind": "keyword-search",
         "owner_user_id": str(body.get("ownerUserId") or ""),
         "folder_id": str(body.get("folderId") or ""),
+        "project_id": str(body.get("projectId") or ""),
         "message": str(body.get("query") or ""),
         "search_query": str(body.get("query") or ""),
         "selected_years": list(body.get("selectedYears") or []),
@@ -137,6 +138,7 @@ def _build_visualization_payload(body: Dict[str, Any]) -> Dict[str, Any]:
         "request_kind": "visualization",
         "owner_user_id": str(body.get("ownerUserId") or ""),
         "folder_id": str(body.get("folderId") or ""),
+        "project_id": str(body.get("projectId") or ""),
         "selected_years": list(body.get("selectedYears") or []),
         "selected_tracks": list(body.get("selectedTracks") or []),
         "search_query": str(body.get("searchQuery") or ""),
@@ -157,6 +159,7 @@ def _build_chat_payload(body: Dict[str, Any]) -> Dict[str, Any]:
         "request_kind": "chat",
         "owner_user_id": str(body.get("ownerUserId") or ""),
         "folder_id": str(body.get("folderId") or ""),
+        "project_id": str(body.get("projectId") or ""),
         "thread_id": str(body.get("threadId") or ""),
         "session_id": str(body.get("sessionId") or ""),
         "model": str(body.get("model") or ""),
@@ -266,6 +269,7 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 plan = generate_deep_research_plan(
                     owner_user_id=str(body.get("ownerUserId") or ""),
                     folder_id=str(body.get("folderId") or "") or None,
+                    project_id=str(body.get("projectId") or "") or None,
                     prompt=str(body.get("message") or ""),
                 )
                 logger.info("workspace usage summary %s", consume_usage_summary())

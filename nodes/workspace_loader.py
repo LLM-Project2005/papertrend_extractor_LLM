@@ -8,6 +8,7 @@ def load_workspace_data_node(state: WorkspaceQueryState) -> Dict[str, Any]:
     dataset = load_workspace_dataset(
         owner_user_id=state.get("owner_user_id"),
         folder_id=state.get("folder_id"),
+        project_id=state.get("project_id"),
     )
     filtered = filter_dashboard_data(
         dataset,

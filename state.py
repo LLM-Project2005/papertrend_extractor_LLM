@@ -183,6 +183,7 @@ class WorkspaceQueryState(TypedDict, total=False):
     message: str
     owner_user_id: str
     folder_id: str
+    project_id: str
     thread_id: str
     session_id: str
     model: str
@@ -207,9 +208,11 @@ class WorkspaceQueryState(TypedDict, total=False):
 class DeepResearchState(TypedDict, total=False):
     owner_user_id: str
     folder_id: str
+    project_id: str
     thread_id: str
     session_id: str
     prompt: str
+    prompt_analysis: Dict[str, Any]
     title: str
     plan_summary: str
     requires_analysis: bool

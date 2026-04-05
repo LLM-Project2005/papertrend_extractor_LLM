@@ -93,21 +93,59 @@ def _build_mock_workspace_dataset() -> Dict[str, Any]:
     }
 
 
-def _cache_key(owner_user_id: Optional[str], folder_id: Optional[str]) -> str:
+def _cache_key(
+    owner_user_id: Optional[str],
+    folder_id: Optional[str],
+    project_id: Optional[str] = None,
+) -> str:
     owner_part = owner_user_id or "__anonymous__"
     folder_part = folder_id or "__all__"
-    return f"{owner_part}:{folder_part}"
+    project_part = project_id or "__project_all__"
+    return f"{owner_part}:{project_part}:{folder_part}"
+
+
+def _scope_rows_to_project(
+    client: SupabaseQueryClient,
+    owner_user_id: str,
+    project_id: Optional[str],
+    rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not project_id:
+        return rows
+
+    folder_rows = client.select_rows(
+        "research_folders",
+        {
+            "owner_user_id": f"eq.{owner_user_id}",
+            "project_id": f"eq.{project_id}",
+        },
+    )
+    allowed_folder_ids = {
+        str(row.get("id") or "").strip() for row in folder_rows if str(row.get("id") or "").strip()
+    }
+    if not allowed_folder_ids:
+        return []
+
+    return [
+        row
+        for row in rows
+        if str(row.get("folder_id") or "").strip() in allowed_folder_ids
+    ]
 
 
 def load_workspace_dataset(
     owner_user_id: Optional[str] = None,
     folder_id: Optional[str] = None,
+    project_id: Optional[str] = None,
     force_refresh: bool = False,
     cache_ttl_seconds: int = 20,
 ) -> Dict[str, Any]:
     now = time.time()
     normalized_folder_id = folder_id if folder_id and folder_id != "all" else None
-    cache_entry = _CACHE.get(_cache_key(owner_user_id, normalized_folder_id))
+    normalized_project_id = project_id if project_id and project_id != "all" else None
+    cache_entry = _CACHE.get(
+        _cache_key(owner_user_id, normalized_folder_id, normalized_project_id)
+    )
     if (
         not force_refresh
         and cache_entry is not None
@@ -120,7 +158,10 @@ def load_workspace_dataset(
     key = _get_service_key()
     if not owner_user_id or not url or not key:
         dataset = _build_mock_workspace_dataset()
-        _CACHE[_cache_key(owner_user_id, normalized_folder_id)] = {"dataset": dataset, "loaded_at": now}
+        _CACHE[_cache_key(owner_user_id, normalized_folder_id, normalized_project_id)] = {
+            "dataset": dataset,
+            "loaded_at": now,
+        }
         return dataset
 
     try:
@@ -138,6 +179,26 @@ def load_workspace_dataset(
         facets = _try_load_optional(client, "paper_facets_flat", scoped_params)
         if not facets:
             facets = _try_load_optional(client, "paper_analysis_facets", scoped_params)
+
+        if normalized_project_id and not normalized_folder_id:
+            papers_full = _scope_rows_to_project(
+                client, owner_user_id, normalized_project_id, papers_full
+            )
+            trends = _scope_rows_to_project(
+                client, owner_user_id, normalized_project_id, trends
+            )
+            tracks_single = _scope_rows_to_project(
+                client, owner_user_id, normalized_project_id, tracks_single
+            )
+            tracks_multi = _scope_rows_to_project(
+                client, owner_user_id, normalized_project_id, tracks_multi
+            )
+            concepts = _scope_rows_to_project(
+                client, owner_user_id, normalized_project_id, concepts
+            )
+            facets = _scope_rows_to_project(
+                client, owner_user_id, normalized_project_id, facets
+            )
 
         dataset = {
             "mode": "live",
@@ -159,7 +220,10 @@ def load_workspace_dataset(
     except Exception:
         dataset = _build_mock_workspace_dataset()
 
-    _CACHE[_cache_key(owner_user_id, normalized_folder_id)] = {"dataset": dataset, "loaded_at": now}
+    _CACHE[_cache_key(owner_user_id, normalized_folder_id, normalized_project_id)] = {
+        "dataset": dataset,
+        "loaded_at": now,
+    }
     return dataset
 
 
