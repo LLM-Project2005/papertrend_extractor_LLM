@@ -893,8 +893,8 @@ export default function ChatClient() {
 
   return (
     <>
-      <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[1500px] overflow-hidden rounded-[24px] bg-[#212121] text-[#ececec]">
-        <aside className="hidden w-[272px] flex-none border-r border-white/10 bg-[#171717] p-3 lg:flex lg:flex-col">
+      <div className="flex min-h-[calc(100vh-5rem)] w-full overflow-hidden bg-[#212121] text-[#ececec]">
+        <aside className="hidden w-[288px] flex-none border-r border-white/10 bg-[#171717] p-3 lg:flex lg:flex-col">
           <button
             type="button"
             onClick={() => resetChat("normal")}
@@ -1027,9 +1027,9 @@ export default function ChatClient() {
             ) : null}
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-48 pt-8 sm:px-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-48 pt-8 sm:px-6 xl:px-8">
             {deepSession ? (
-              <section className="mx-auto mb-6 w-full max-w-[860px]">
+              <section className="mb-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#b4b4b4]">
@@ -1262,7 +1262,7 @@ export default function ChatClient() {
                 </h1>
               </div>
             ) : (
-              <div className="mx-auto flex w-full max-w-[800px] flex-col gap-7">
+              <div className="flex w-full max-w-[1040px] flex-col gap-7">
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
                   return (
@@ -1322,7 +1322,7 @@ export default function ChatClient() {
             )}
 
             {detailLoading ? (
-              <div className="mx-auto mt-4 flex w-full max-w-[800px] items-center gap-3 text-sm text-[#8e8e8e]">
+              <div className="mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-[#8e8e8e]">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
                 <span>Loading chat...</span>
               </div>
@@ -1330,8 +1330,8 @@ export default function ChatClient() {
             <div ref={scrollAnchorRef} />
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-6 sm:px-6">
-            <form onSubmit={handleSubmit} className="pointer-events-auto mx-auto w-full max-w-[800px]">
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-6 sm:px-6 xl:px-8">
+            <form onSubmit={handleSubmit} className="pointer-events-auto w-full max-w-[1040px]">
               <div className="rounded-[28px] border border-white/10 bg-[#2a2a2a] px-4 pb-3 pt-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                 {error ? (
                   <div className="mb-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">

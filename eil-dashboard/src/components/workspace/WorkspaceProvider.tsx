@@ -13,6 +13,13 @@ import {
 import { useAuth } from "@/components/auth/AuthProvider";
 import { TRACK_COLS } from "@/lib/constants";
 import {
+  ANALYSIS_SESSION_STORAGE_KEY,
+  WORKSPACE_FILTERS_STORAGE_KEY,
+  WORKSPACE_FOLDER_STORAGE_KEY,
+  WORKSPACE_ORGANIZATION_STORAGE_KEY,
+  WORKSPACE_PROJECT_STORAGE_KEY,
+} from "@/lib/workspace-session";
+import {
   DEFAULT_WORKSPACE_PROFILE,
   loadWorkspaceProfile,
   saveWorkspaceProfile as saveWorkspaceProfileLocal,
@@ -25,12 +32,6 @@ import type {
   WorkspaceProjectRow,
 } from "@/types/database";
 import type { WorkspaceProfile } from "@/types/workspace";
-
-const ANALYSIS_SESSION_STORAGE_KEY = "papertrend_analysis_session_v1";
-const WORKSPACE_FOLDER_STORAGE_KEY = "papertrend_workspace_folder_v2";
-const WORKSPACE_FILTERS_STORAGE_KEY = "papertrend_workspace_filters_v1";
-const WORKSPACE_ORGANIZATION_STORAGE_KEY = "papertrend_workspace_org_v1";
-const WORKSPACE_PROJECT_STORAGE_KEY = "papertrend_workspace_project_v1";
 
 interface AnalysisSession {
   runIds: string[];
@@ -128,6 +129,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [selectedTracks, setSelectedTracksState] = useState<string[]>([...TRACK_COLS]);
   const [searchQuery, setSearchQueryState] = useState("");
   const loadedKeyRef = useRef<string | null>(null);
+  const cachedWorkspaceRef = useRef<{
+    organizationId: string | null;
+    projectId: string | null;
+  }>({
+    organizationId: null,
+    projectId: null,
+  });
 
   useEffect(() => {
     if (!authHydrated) {
@@ -190,6 +198,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const savedProjectId =
       window.localStorage.getItem(WORKSPACE_PROJECT_STORAGE_KEY) ?? null;
 
+    cachedWorkspaceRef.current = {
+      organizationId: savedOrganizationId,
+      projectId: savedProjectId,
+    };
+
     setSelectedFolderIdState(savedFolderId);
     setSelectedOrganizationIdState(savedOrganizationId);
     setSelectedProjectIdState(savedProjectId);
@@ -236,6 +249,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    cachedWorkspaceRef.current.organizationId = selectedOrganizationIdState;
     if (selectedOrganizationIdState) {
       window.localStorage.setItem(
         WORKSPACE_ORGANIZATION_STORAGE_KEY,
@@ -251,6 +265,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    cachedWorkspaceRef.current.projectId = selectedProjectIdState;
     if (selectedProjectIdState) {
       window.localStorage.setItem(
         WORKSPACE_PROJECT_STORAGE_KEY,
@@ -309,8 +324,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const nextOrganizations = sortByName(payload.organizations ?? []);
     setOrganizations(nextOrganizations);
     setSelectedOrganizationIdState((current) => {
-      if (current && nextOrganizations.some((organization) => organization.id === current)) {
-        return current;
+      const preferredOrganizationId =
+        current ?? cachedWorkspaceRef.current.organizationId;
+      if (
+        preferredOrganizationId &&
+        nextOrganizations.some(
+          (organization) => organization.id === preferredOrganizationId
+        )
+      ) {
+        return preferredOrganizationId;
       }
       return nextOrganizations[0]?.id ?? null;
     });
@@ -320,9 +342,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     async (organizationId?: string | null) => {
       const targetOrganizationId = organizationId ?? selectedOrganizationIdState;
 
-      if (!user || !session?.access_token || !targetOrganizationId) {
+      if (!user || !session?.access_token) {
         setProjects([]);
         setSelectedProjectIdState(null);
+        return;
+      }
+
+      if (!targetOrganizationId) {
+        setProjects([]);
         return;
       }
 
@@ -347,8 +374,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const nextProjects = sortByName(payload.projects ?? []);
       setProjects(nextProjects);
       setSelectedProjectIdState((current) => {
-        if (current && nextProjects.some((project) => project.id === current)) {
-          return current;
+        const preferredProjectId = current ?? cachedWorkspaceRef.current.projectId;
+        if (
+          preferredProjectId &&
+          nextProjects.some((project) => project.id === preferredProjectId)
+        ) {
+          return preferredProjectId;
         }
         return nextProjects[0]?.id ?? null;
       });
@@ -600,6 +631,35 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setAllProjects([]);
     });
   }, [hydrated, refreshAllProjects, user]);
+
+  useEffect(() => {
+    if (!selectedProjectIdState || allProjects.length === 0) {
+      return;
+    }
+
+    const matchingProject = allProjects.find(
+      (project) => project.id === selectedProjectIdState
+    );
+    if (!matchingProject) {
+      return;
+    }
+
+    setSelectedOrganizationIdState((current) =>
+      current === matchingProject.organization_id
+        ? current
+        : matchingProject.organization_id
+    );
+    setProjects((current) =>
+      current.some((project) => project.id === matchingProject.id)
+        ? current
+        : sortByName(
+            allProjects.filter(
+              (project) =>
+                project.organization_id === matchingProject.organization_id
+            )
+          )
+    );
+  }, [allProjects, selectedProjectIdState]);
 
   useEffect(() => {
     if (!hydrated || !user) {

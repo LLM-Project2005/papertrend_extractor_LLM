@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import Modal from "@/components/ui/Modal";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
@@ -73,6 +74,7 @@ function formatTime(value?: string | null) {
 }
 
 export default function AdminImportClient() {
+  const { session } = useAuth();
   const {
     currentProject,
     folders,
@@ -95,6 +97,20 @@ export default function AdminImportClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const requestHeaders = useMemo<Record<string, string>>(() => {
+    const headers: Record<string, string> = {};
+    if (session?.access_token) {
+      headers.Authorization = `Bearer ${session.access_token}`;
+    }
+    return headers;
+  }, [session?.access_token]);
+  const jsonRequestHeaders = useMemo<Record<string, string>>(
+    () => ({
+      "Content-Type": "application/json",
+      ...requestHeaders,
+    }),
+    [requestHeaders]
+  );
 
   const folderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const { data } = useDashboardData(selectedFolderId, folderIds);
@@ -105,7 +121,7 @@ export default function AdminImportClient() {
       : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Inbox";
 
   async function loadRuns(nextView: LibraryView = view) {
-    if (!currentProject?.id) {
+    if (!currentProject?.id || !session?.access_token) {
       setRuns([]);
       return;
     }
@@ -114,11 +130,13 @@ export default function AdminImportClient() {
       const response = await fetch(
         `/api/workspace/library?projectId=${encodeURIComponent(
           currentProject.id
-        )}&includeTrashed=${nextView === "trash" ? "true" : "false"}`
+        )}&includeTrashed=${nextView === "trash" ? "true" : "false"}`,
+        { headers: requestHeaders }
       );
       const payload = (await response.json()) as { runs?: IngestionRunRow[]; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Failed to load library files.");
       setRuns(payload.runs ?? []);
+      setError(null);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load library files.");
     } finally {
@@ -128,12 +146,12 @@ export default function AdminImportClient() {
 
   useEffect(() => {
     void loadRuns();
-  }, [currentProject?.id, view]);
+  }, [currentProject?.id, requestHeaders, session?.access_token, view]);
 
   async function patchRun(runId: string, body: Record<string, unknown>) {
     const response = await fetch(`/api/workspace/library/${runId}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonRequestHeaders,
       body: JSON.stringify(body),
     });
     const payload = (await response.json()) as { run?: IngestionRunRow; error?: string };
@@ -145,7 +163,7 @@ export default function AdminImportClient() {
   async function postRun(runId: string, action: "copy" | "open") {
     const response = await fetch(`/api/workspace/library/${runId}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonRequestHeaders,
       body: JSON.stringify({ action }),
     });
     const payload = (await response.json()) as {

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { getStoredWorkspaceRoute } from "@/lib/workspace-session";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import { LogoMarkIcon } from "@/components/ui/Icons";
 
@@ -13,7 +14,7 @@ export default function LandingPage() {
 
   useEffect(() => {
     if (hydrated && user) {
-      router.replace("/organizations");
+      router.replace(getStoredWorkspaceRoute() ?? "/organizations");
     }
   }, [hydrated, router, user]);
 

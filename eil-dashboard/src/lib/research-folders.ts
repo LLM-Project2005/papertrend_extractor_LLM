@@ -20,30 +20,65 @@ export async function ensureResearchFolder(
   }
 
   const name = sanitizeFolderName(folderName);
-  const { data: projectRow } = await supabase
+  const { data: projectRow, error: projectError } = await supabase
     .from("workspace_projects")
     .select("organization_id")
     .eq("id", projectId)
     .eq("owner_user_id", ownerUserId)
-    .single();
+    .maybeSingle();
+
+  if (projectError) {
+    throw new Error(projectError.message);
+  }
+
+  const { data: existingFolder, error: existingFolderError } = await supabase
+    .from("research_folders")
+    .select("*")
+    .eq("owner_user_id", ownerUserId)
+    .eq("project_id", projectId)
+    .eq("name", name)
+    .maybeSingle();
+
+  if (existingFolderError) {
+    throw new Error(existingFolderError.message);
+  }
+
+  if (existingFolder) {
+    return existingFolder as ResearchFolderRow;
+  }
 
   const { data, error } = await supabase
     .from("research_folders")
-    .upsert(
-      {
-        owner_user_id: ownerUserId,
-        organization_id: (projectRow as { organization_id?: string | null } | null)
-          ?.organization_id ?? null,
-        project_id: projectId,
-        name,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "owner_user_id,project_id,name" }
-    )
+    .insert({
+      owner_user_id: ownerUserId,
+      organization_id: (projectRow as { organization_id?: string | null } | null)
+        ?.organization_id ?? null,
+      project_id: projectId,
+      name,
+      updated_at: new Date().toISOString(),
+    })
     .select("*")
     .single();
 
   if (error) {
+    if (error.code === "23505") {
+      const { data: duplicateFolder, error: duplicateFolderError } = await supabase
+        .from("research_folders")
+        .select("*")
+        .eq("owner_user_id", ownerUserId)
+        .eq("project_id", projectId)
+        .eq("name", name)
+        .maybeSingle();
+
+      if (duplicateFolderError) {
+        throw new Error(duplicateFolderError.message);
+      }
+
+      if (duplicateFolder) {
+        return duplicateFolder as ResearchFolderRow;
+      }
+    }
+
     throw new Error(error.message);
   }
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
   ChartIcon,
@@ -17,6 +17,7 @@ import {
   UserIcon,
 } from "@/components/ui/Icons";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
+import { persistWorkspaceRoute } from "@/lib/workspace-session";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
 import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
@@ -294,11 +295,16 @@ export default function WorkspaceShell({
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isChatPage = pathname.startsWith("/workspace/chat");
   const { runs, folderJob, cancelRuns } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
   });
+
+  useEffect(() => {
+    persistWorkspaceRoute(pathname);
+  }, [pathname]);
 
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
@@ -395,7 +401,7 @@ export default function WorkspaceShell({
           </div>
         </header>
 
-        <main className="min-w-0 px-4 py-5 sm:px-6 sm:py-6">
+        <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
           {hasActiveProject ? (
             children
           ) : (

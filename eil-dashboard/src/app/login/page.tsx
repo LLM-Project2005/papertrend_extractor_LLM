@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import AuthPanel from "@/components/auth/AuthPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { getStoredWorkspaceRoute } from "@/lib/workspace-session";
 import { LogoMarkIcon } from "@/components/ui/Icons";
 
 export default function LoginPage() {
@@ -12,7 +13,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (hydrated && user) {
-      router.replace("/organizations");
+      router.replace(getStoredWorkspaceRoute() ?? "/organizations");
     }
   }, [hydrated, router, user]);
 
