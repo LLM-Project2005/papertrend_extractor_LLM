@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { FileIcon } from "@/components/ui/Icons";
 import type { IngestionRunRow } from "@/types/database";
@@ -12,6 +13,7 @@ function formatTime(value?: string | null) {
 }
 
 export default function WorkspaceLogsPage() {
+  const { session } = useAuth();
   const { currentProject } = useWorkspaceProfile();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -19,7 +21,7 @@ export default function WorkspaceLogsPage() {
 
   useEffect(() => {
     async function load() {
-      if (!currentProject?.id) {
+      if (!currentProject?.id || !session?.access_token) {
         setRuns([]);
         return;
       }
@@ -28,7 +30,12 @@ export default function WorkspaceLogsPage() {
         const response = await fetch(
           `/api/workspace/library?projectId=${encodeURIComponent(
             currentProject.id
-          )}&view=logs&includeTrashed=true`
+          )}&view=logs&includeTrashed=true`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          }
         );
         const payload = (await response.json()) as {
           runs?: IngestionRunRow[];
@@ -38,6 +45,7 @@ export default function WorkspaceLogsPage() {
           throw new Error(payload.error ?? "Failed to load logs.");
         }
         setRuns(payload.runs ?? []);
+        setError(null);
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "Failed to load logs.");
       } finally {
@@ -46,7 +54,7 @@ export default function WorkspaceLogsPage() {
     }
 
     void load();
-  }, [currentProject?.id]);
+  }, [currentProject?.id, session?.access_token]);
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-6">
