@@ -15,15 +15,17 @@ export async function GET(request: Request) {
     const supabase = getSupabaseAdmin();
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
-    if (!projectId) {
-      return NextResponse.json({ folders: [] });
-    }
-    const { data, error } = await supabase
+    let query = supabase
       .from("research_folders")
       .select("*")
       .eq("owner_user_id", user.id)
-      .eq("project_id", projectId)
       .order("name", { ascending: true });
+
+    if (projectId) {
+      query = query.eq("project_id", projectId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(error.message);

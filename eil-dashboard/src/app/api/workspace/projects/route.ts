@@ -14,17 +14,19 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const organizationId = searchParams.get("organizationId");
-    if (!organizationId) {
-      return NextResponse.json({ projects: [] });
-    }
 
     const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
+    let query = supabase
       .from("workspace_projects")
       .select("*")
       .eq("owner_user_id", user.id)
-      .eq("organization_id", organizationId)
       .order("name", { ascending: true });
+
+    if (organizationId) {
+      query = query.eq("organization_id", organizationId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       throw new Error(error.message);

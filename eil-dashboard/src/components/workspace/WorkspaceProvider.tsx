@@ -48,7 +48,9 @@ interface WorkspaceContextValue {
   analysisSession: AnalysisSession | null;
   organizations: WorkspaceOrganizationRow[];
   projects: WorkspaceProjectRow[];
+  allProjects: WorkspaceProjectRow[];
   folders: ResearchFolderRow[];
+  allFolders: ResearchFolderRow[];
   currentOrganization: WorkspaceOrganizationRow | null;
   currentProject: WorkspaceProjectRow | null;
   selectedOrganizationId: string | null;
@@ -114,7 +116,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [analysisSession, setAnalysisSession] = useState<AnalysisSession | null>(null);
   const [organizations, setOrganizations] = useState<WorkspaceOrganizationRow[]>([]);
   const [projects, setProjects] = useState<WorkspaceProjectRow[]>([]);
+  const [allProjects, setAllProjects] = useState<WorkspaceProjectRow[]>([]);
   const [folders, setFolders] = useState<ResearchFolderRow[]>([]);
+  const [allFolders, setAllFolders] = useState<ResearchFolderRow[]>([]);
   const [selectedOrganizationIdState, setSelectedOrganizationIdState] =
     useState<string | null>(null);
   const [selectedProjectIdState, setSelectedProjectIdState] =
@@ -157,7 +161,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setProfile(loadWorkspaceProfile());
     setOrganizations([]);
     setProjects([]);
+    setAllProjects([]);
     setFolders([]);
+    setAllFolders([]);
     setSelectedOrganizationIdState(null);
     setSelectedProjectIdState(null);
     setSelectedFolderIdState("all");
@@ -350,6 +356,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     [selectedOrganizationIdState, session?.access_token, user]
   );
 
+  const refreshAllProjects = useCallback(async () => {
+    if (!user || !session?.access_token) {
+      setAllProjects([]);
+      return;
+    }
+
+    const response = await fetch("/api/workspace/projects", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    const payload = (await response.json()) as {
+      projects?: WorkspaceProjectRow[];
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load projects.");
+    }
+
+    setAllProjects(sortByName(payload.projects ?? []));
+  }, [session?.access_token, user]);
+
   const refreshFolders = useCallback(async () => {
     if (!user || !session?.access_token || !selectedProjectIdState) {
       setFolders([]);
@@ -383,6 +413,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         : "all"
     );
   }, [selectedProjectIdState, session?.access_token, user]);
+
+  const refreshAllFolders = useCallback(async () => {
+    if (!user || !session?.access_token) {
+      setAllFolders([]);
+      return;
+    }
+
+    const response = await fetch("/api/workspace/folders", {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+    });
+
+    const payload = (await response.json()) as {
+      folders?: ResearchFolderRow[];
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load workspace folders.");
+    }
+
+    setAllFolders(sortByName(payload.folders ?? []));
+  }, [session?.access_token, user]);
 
   const createOrganization = useCallback(
     async (name: string, type: WorkspaceOrganizationRow["type"]) => {
@@ -460,6 +514,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...current.filter((project) => project.id !== payload.project!.id),
         ])
       );
+      setAllProjects((current) =>
+        sortByName([
+          payload.project!,
+          ...current.filter((project) => project.id !== payload.project!.id),
+        ])
+      );
       setSelectedProjectIdState(payload.project.id);
       return payload.project;
     },
@@ -499,6 +559,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           ...current.filter((folder) => folder.id !== payload.folder!.id),
         ])
       );
+      setAllFolders((current) =>
+        sortByName([
+          payload.folder!,
+          ...current.filter((folder) => folder.id !== payload.folder!.id),
+        ])
+      );
       setSelectedFolderIdState(payload.folder.id);
       return payload.folder;
     },
@@ -530,10 +596,30 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    refreshAllProjects().catch(() => {
+      setAllProjects([]);
+    });
+  }, [hydrated, refreshAllProjects, user]);
+
+  useEffect(() => {
+    if (!hydrated || !user) {
+      return;
+    }
+
     refreshFolders().catch(() => {
       setFolders([]);
     });
   }, [hydrated, refreshFolders, selectedProjectIdState, user]);
+
+  useEffect(() => {
+    if (!hydrated || !user) {
+      return;
+    }
+
+    refreshAllFolders().catch(() => {
+      setAllFolders([]);
+    });
+  }, [hydrated, refreshAllFolders, user]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -566,7 +652,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     organizations.find((organization) => organization.id === selectedOrganizationIdState) ??
     null;
   const currentProject =
-    projects.find((project) => project.id === selectedProjectIdState) ?? null;
+    projects.find((project) => project.id === selectedProjectIdState) ??
+    allProjects.find((project) => project.id === selectedProjectIdState) ??
+    null;
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -575,7 +663,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       analysisSession,
       organizations,
       projects,
+      allProjects,
       folders,
+      allFolders,
       currentOrganization,
       currentProject,
       selectedOrganizationId: selectedOrganizationIdState,
@@ -645,11 +735,42 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setAnalysisSession(null);
       },
       setSelectedOrganizationId: (organizationId) => {
+        setProjects(
+          organizationId
+            ? sortByName(
+                allProjects.filter(
+                  (project) => project.organization_id === organizationId
+                )
+              )
+            : []
+        );
         setSelectedOrganizationIdState(organizationId);
         setSelectedProjectIdState(null);
         setSelectedFolderIdState("all");
       },
       setSelectedProjectId: (projectId) => {
+        const matchingProject =
+          allProjects.find((project) => project.id === projectId) ?? null;
+
+        if (matchingProject) {
+          setSelectedOrganizationIdState(matchingProject.organization_id);
+          setProjects(
+            sortByName(
+              allProjects.filter(
+                (project) =>
+                  project.organization_id === matchingProject.organization_id
+              )
+            )
+          );
+          setFolders(
+            sortByName(
+              allFolders.filter((folder) => folder.project_id === matchingProject.id)
+            )
+          );
+        } else if (!projectId) {
+          setFolders([]);
+        }
+
         setSelectedProjectIdState(projectId);
         setSelectedFolderIdState("all");
       },
@@ -686,6 +807,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       createProject,
       currentOrganization,
       currentProject,
+      allFolders,
+      allProjects,
       folders,
       hydrated,
       organizations,

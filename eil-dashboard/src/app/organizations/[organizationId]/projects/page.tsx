@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { LogoMarkIcon, MoreHorizontalIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
 
@@ -23,6 +24,7 @@ export default function ProjectsPage() {
     setSelectedProjectId,
   } = useWorkspaceProfile();
   const [query, setQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [draftName, setDraftName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,7 +58,9 @@ export default function ProjectsPage() {
     return projects.filter((project) => project.name.toLowerCase().includes(needle));
   }, [projects, query]);
 
-  async function handleCreateProject() {
+  async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
     if (!draftName.trim()) {
       setError("Project name is required.");
       return;
@@ -67,6 +71,8 @@ export default function ProjectsPage() {
     try {
       const project = await createProject(draftName, { organizationId });
       setSelectedProjectId(project.id);
+      setDraftName("");
+      setShowCreateModal(false);
       router.push("/workspace/home");
     } catch (createError) {
       setError(
@@ -90,8 +96,17 @@ export default function ProjectsPage() {
             <LogoMarkIcon className="h-5 w-5" />
           </span>
           <div>
-            <p className="text-sm text-[#8f8f8f]">Projects</p>
-            <p className="text-lg font-semibold">{heading}</p>
+            <p className="text-sm text-[#8f8f8f]">Organization</p>
+            <div className="flex items-center gap-2 text-lg font-semibold">
+              <Link
+                href="/organizations"
+                className="text-[#a3a3a3] transition-colors hover:text-white"
+              >
+                Organizations
+              </Link>
+              <span className="text-[#5f5f5f]">&gt;</span>
+              <span>{heading}</span>
+            </div>
           </div>
         </div>
       </header>
@@ -116,23 +131,18 @@ export default function ProjectsPage() {
                 className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#6f6f6f]"
               />
             </label>
-            <div className="flex flex-1 gap-2">
-              <input
-                value={draftName}
-                onChange={(event) => setDraftName(event.target.value)}
-                placeholder="New project name"
-                className="w-full rounded-xl border border-white/10 bg-[#171717] px-4 py-3 text-sm text-white outline-none placeholder:text-[#6f6f6f] focus:border-[#1f9d63]"
-              />
-              <button
-                type="button"
-                onClick={handleCreateProject}
-                disabled={creating}
-                className="inline-flex items-center gap-2 rounded-xl bg-[#1f9d63] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#198451] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                <PlusIcon className="h-4 w-4" />
-                <span>New project</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setDraftName("");
+                setError(null);
+                setShowCreateModal(true);
+              }}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1f9d63] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#198451]"
+            >
+              <PlusIcon className="h-4 w-4" />
+              <span>New project</span>
+            </button>
           </div>
         </div>
 
@@ -192,6 +202,28 @@ export default function ProjectsPage() {
           </Link>
         </div>
       </section>
+
+      <CreateEntityModal
+        open={showCreateModal}
+        title="Create project"
+        description="Create a new project inside this organization and jump straight into the workspace."
+        value={draftName}
+        fieldLabel="Project name"
+        fieldPlaceholder="Project name"
+        submitLabel="Create project"
+        busyLabel="Creating..."
+        busy={creating}
+        error={error}
+        onValueChange={setDraftName}
+        onClose={() => {
+          if (creating) {
+            return;
+          }
+          setShowCreateModal(false);
+          setError(null);
+        }}
+        onSubmit={handleCreateProject}
+      />
     </main>
   );
 }

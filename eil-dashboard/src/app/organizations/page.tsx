@@ -1,21 +1,37 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { LogoMarkIcon, SearchIcon } from "@/components/ui/Icons";
+import type { WorkspaceOrganizationRow } from "@/types/database";
+
+const ORGANIZATION_TYPES: Array<WorkspaceOrganizationRow["type"]> = [
+  "personal",
+  "academic",
+  "research_lab",
+  "department",
+  "company",
+  "other",
+];
 
 export default function OrganizationsPage() {
   const router = useRouter();
   const { hydrated, user } = useAuth();
   const {
     organizations,
+    createOrganization,
     refreshOrganizations,
     setSelectedOrganizationId,
   } = useWorkspaceProfile();
   const [query, setQuery] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [type, setType] = useState<WorkspaceOrganizationRow["type"]>("personal");
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!hydrated) {
@@ -40,6 +56,34 @@ export default function OrganizationsPage() {
     );
   }, [organizations, query]);
 
+  async function handleCreateOrganization(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!draftName.trim()) {
+      setError("Organization name is required.");
+      return;
+    }
+
+    setCreating(true);
+    setError(null);
+
+    try {
+      const organization = await createOrganization(draftName, type);
+      setDraftName("");
+      setType("personal");
+      setShowCreateModal(false);
+      router.push(`/organizations/${organization.id}/projects`);
+    } catch (createError) {
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Failed to create organization."
+      );
+    } finally {
+      setCreating(false);
+    }
+  }
+
   if (!hydrated) {
     return <main className="min-h-screen bg-[#111111]" />;
   }
@@ -55,12 +99,18 @@ export default function OrganizationsPage() {
             <span className="text-lg font-semibold">Organizations</span>
           </div>
 
-          <Link
-            href="/organizations/new"
+          <button
+            type="button"
+            onClick={() => {
+              setDraftName("");
+              setType("personal");
+              setError(null);
+              setShowCreateModal(true);
+            }}
             className="rounded-xl bg-[#1f9d63] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#198451]"
           >
             New organization
-          </Link>
+          </button>
         </div>
       </header>
 
@@ -113,6 +163,45 @@ export default function OrganizationsPage() {
           </div>
         ) : null}
       </section>
+
+      <CreateEntityModal
+        open={showCreateModal}
+        title="Create organization"
+        description="Group related research projects under one team, lab, department, or initiative."
+        value={draftName}
+        fieldLabel="Organization name"
+        fieldPlaceholder="Organization name"
+        submitLabel="Create organization"
+        busyLabel="Creating..."
+        busy={creating}
+        error={error}
+        onValueChange={setDraftName}
+        onClose={() => {
+          if (creating) {
+            return;
+          }
+          setShowCreateModal(false);
+          setError(null);
+        }}
+        onSubmit={handleCreateOrganization}
+      >
+        <label className="grid gap-3">
+          <span className="text-sm font-medium text-white">Type</span>
+          <select
+            value={type}
+            onChange={(event) =>
+              setType(event.target.value as WorkspaceOrganizationRow["type"])
+            }
+            className="rounded-2xl border border-white/10 bg-[#111111] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-[#1f9d63]"
+          >
+            {ORGANIZATION_TYPES.map((option) => (
+              <option key={option} value={option}>
+                {option.replace(/_/g, " ")}
+              </option>
+            ))}
+          </select>
+        </label>
+      </CreateEntityModal>
     </main>
   );
 }
