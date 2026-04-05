@@ -735,28 +735,56 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setAnalysisSession(null);
       },
       setSelectedOrganizationId: (organizationId) => {
-        setProjects(
-          organizationId
-            ? sortByName(
-                allProjects.filter(
-                  (project) => project.organization_id === organizationId
-                )
+        const projectSource = allProjects.length > 0 ? allProjects : projects;
+        const nextProjects = organizationId
+          ? sortByName(
+              projectSource.filter(
+                (project) => project.organization_id === organizationId
               )
-            : []
-        );
+            )
+          : [];
+
+        if (typeof window !== "undefined") {
+          if (organizationId) {
+            window.localStorage.setItem(
+              WORKSPACE_ORGANIZATION_STORAGE_KEY,
+              organizationId
+            );
+          } else {
+            window.localStorage.removeItem(WORKSPACE_ORGANIZATION_STORAGE_KEY);
+          }
+        }
+
+        setProjects(nextProjects);
         setSelectedOrganizationIdState(organizationId);
-        setSelectedProjectIdState(null);
+        setSelectedProjectIdState((currentProjectId) =>
+          currentProjectId && nextProjects.some((project) => project.id === currentProjectId)
+            ? currentProjectId
+            : null
+        );
         setSelectedFolderIdState("all");
       },
       setSelectedProjectId: (projectId) => {
         const matchingProject =
-          allProjects.find((project) => project.id === projectId) ?? null;
+          allProjects.find((project) => project.id === projectId) ??
+          projects.find((project) => project.id === projectId) ??
+          null;
 
         if (matchingProject) {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              WORKSPACE_ORGANIZATION_STORAGE_KEY,
+              matchingProject.organization_id
+            );
+          }
+
+          const projectSource = allProjects.length > 0 ? allProjects : projects;
+          const folderSource = allFolders.length > 0 ? allFolders : folders;
+
           setSelectedOrganizationIdState(matchingProject.organization_id);
           setProjects(
             sortByName(
-              allProjects.filter(
+              projectSource.filter(
                 (project) =>
                   project.organization_id === matchingProject.organization_id
               )
@@ -764,11 +792,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           );
           setFolders(
             sortByName(
-              allFolders.filter((folder) => folder.project_id === matchingProject.id)
+              folderSource.filter((folder) => folder.project_id === matchingProject.id)
             )
           );
         } else if (!projectId) {
           setFolders([]);
+        }
+
+        if (typeof window !== "undefined") {
+          if (projectId) {
+            window.localStorage.setItem(WORKSPACE_PROJECT_STORAGE_KEY, projectId);
+          } else {
+            window.localStorage.removeItem(WORKSPACE_PROJECT_STORAGE_KEY);
+          }
         }
 
         setSelectedProjectIdState(projectId);

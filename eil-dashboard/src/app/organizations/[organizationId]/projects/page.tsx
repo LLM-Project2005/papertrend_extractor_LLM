@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
@@ -28,6 +29,7 @@ export default function ProjectsPage() {
   const [draftName, setDraftName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const initializedOrganizationRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!hydrated) {
@@ -37,6 +39,12 @@ export default function ProjectsPage() {
       router.replace("/login");
       return;
     }
+
+    if (initializedOrganizationRef.current === organizationId) {
+      return;
+    }
+
+    initializedOrganizationRef.current = organizationId;
     setSelectedOrganizationId(organizationId);
     refreshOrganizations().catch(() => undefined);
     refreshProjects(organizationId).catch(() => undefined);
@@ -70,7 +78,9 @@ export default function ProjectsPage() {
     setError(null);
     try {
       const project = await createProject(draftName, { organizationId });
-      setSelectedProjectId(project.id);
+      flushSync(() => {
+        setSelectedProjectId(project.id);
+      });
       setDraftName("");
       setShowCreateModal(false);
       router.push("/workspace/home");
@@ -158,7 +168,9 @@ export default function ProjectsPage() {
               key={project.id}
               type="button"
               onClick={() => {
-                setSelectedProjectId(project.id);
+                flushSync(() => {
+                  setSelectedProjectId(project.id);
+                });
                 router.push("/workspace/home");
               }}
               className="rounded-2xl border border-white/10 bg-[#171717] p-6 text-left transition-colors hover:border-white/20 hover:bg-[#1b1b1b]"
