@@ -16,7 +16,10 @@ import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS } from "@/lib/constants";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
+  CheckCircleIcon,
   ChevronDownIcon,
+  CircleIcon,
+  CloseIcon,
   FolderIcon,
   MoreHorizontalIcon,
   PaperIcon,
@@ -149,6 +152,76 @@ function renderLoadingLabel(
   return "Running deep research...";
 }
 
+function buildResearchTitle(
+  thread?: WorkspaceThreadSummary | null,
+  session?: DeepResearchSessionRecord | null
+) {
+  const source =
+    thread?.title?.trim() ||
+    session?.plan_summary?.trim() ||
+    session?.prompt?.trim() ||
+    "Deep research";
+  return source.split("\n")[0]?.trim() || "Deep research";
+}
+
+function splitReportBlocks(report?: string | null) {
+  return String(report || "")
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
+function buildResearchProgress(session?: DeepResearchSessionRecord | null) {
+  const steps = session?.steps ?? [];
+  const completedSteps = steps.filter((step) => step.status === "completed").length;
+  const failedSteps = steps.filter((step) => step.status === "failed").length;
+  const processingStep = steps.find((step) => step.status === "processing");
+  const waitingStep = steps.find((step) => step.status === "waiting");
+  const activeStep = processingStep ?? waitingStep ?? null;
+  const totalSteps = steps.length;
+  const baseRatio = totalSteps > 0 ? completedSteps / totalSteps : 0;
+
+  let ratio = baseRatio;
+  if (session?.status === "queued" || session?.status === "waiting_on_analysis") {
+    ratio = Math.max(ratio, 0.08);
+  }
+  if (session?.status === "processing" && activeStep) {
+    ratio = Math.min(0.94, baseRatio + 0.16);
+  }
+  if (session?.status === "completed") {
+    ratio = 1;
+  }
+
+  let detail = "Plan ready to review before starting.";
+  if (session?.status === "queued") {
+    detail = "Queued and ready to start the research run.";
+  } else if (session?.status === "waiting_on_analysis") {
+    detail =
+      session.pending_run_count > 0
+        ? `Analyzing ${session.pending_run_count} pending file${session.pending_run_count === 1 ? "" : "s"} before research continues.`
+        : "Waiting for folder analysis before research continues.";
+  } else if (session?.status === "processing") {
+    detail =
+      activeStep?.description?.trim() ||
+      activeStep?.title?.trim() ||
+      "Working through the deep research plan.";
+  } else if (session?.status === "completed") {
+    detail = "Research completed and the final report is ready.";
+  } else if (session?.status === "failed") {
+    detail = session.last_error?.trim() || "Research stopped before completion.";
+  }
+
+  return {
+    steps,
+    totalSteps,
+    completedSteps,
+    failedSteps,
+    activeStep,
+    ratio,
+    detail,
+  };
+}
+
 export default function ChatClient() {
   const { session, user } = useAuth();
   const {
@@ -178,6 +251,7 @@ export default function ChatClient() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [threadMenuId, setThreadMenuId] = useState<string | null>(null);
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
+  const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
   const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
@@ -201,7 +275,33 @@ export default function ChatClient() {
     [chatScopeFolderId, folders]
   );
   const pageTitle = activeThread?.title ?? "Chat";
-  const hasContent = messages.length > 0 || Boolean(deepSession);
+  const researchTitle = useMemo(
+    () => buildResearchTitle(activeThread, deepSession),
+    [activeThread, deepSession]
+  );
+  const researchReport = useMemo(
+    () =>
+      deepSession?.final_report?.trim() ||
+      messages.find((message) => message.kind === "deep_research_report")?.content?.trim() ||
+      "",
+    [deepSession, messages]
+  );
+  const researchBlocks = useMemo(
+    () => splitReportBlocks(researchReport),
+    [researchReport]
+  );
+  const visibleMessages = useMemo(
+    () =>
+      researchReport
+        ? messages.filter((message) => message.kind !== "deep_research_report")
+        : messages,
+    [messages, researchReport]
+  );
+  const researchProgress = useMemo(
+    () => buildResearchProgress(deepSession),
+    [deepSession]
+  );
+  const hasContent = visibleMessages.length > 0 || Boolean(deepSession);
 
   const resizeComposer = useCallback(() => {
     const node = composerRef.current;
@@ -245,6 +345,12 @@ export default function ChatClient() {
     scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [deepSession?.status, loading, messages]);
 
+  useEffect(() => {
+    if (deepSession?.status !== "completed") {
+      setReportFullViewOpen(false);
+    }
+  }, [deepSession?.id, deepSession?.status]);
+
   const resetChat = useCallback(
     (mode: ChatMode = deepResearchEnabled ? "deep_research" : "normal") => {
       setActiveThreadId(null);
@@ -253,6 +359,7 @@ export default function ChatClient() {
       setDeepSession(null);
       setError(null);
       setThreadMenuId(null);
+      setReportFullViewOpen(false);
       setDeepResearchEnabled(mode === "deep_research");
     },
     [deepResearchEnabled]
@@ -403,6 +510,15 @@ export default function ChatClient() {
     setLoading(false);
   }
 
+  function focusComposerWithDraft(nextDraft: string) {
+    setDraft(nextDraft);
+    window.requestAnimationFrame(() => {
+      composerRef.current?.focus();
+      const length = nextDraft.length;
+      composerRef.current?.setSelectionRange(length, length);
+    });
+  }
+
   async function handleNormalSend() {
     const prompt = draft.trim();
     if (!prompt) return;
@@ -519,6 +635,11 @@ export default function ChatClient() {
       abortControllerRef.current = null;
       setLoading(false);
     }
+  }
+
+  function handleEditResearchPlan() {
+    setDeepResearchEnabled(true);
+    focusComposerWithDraft(deepSession?.prompt ?? "");
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -762,80 +883,238 @@ export default function ChatClient() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setDeepResearchEnabled((current) => !current)}
-              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors ${
-                deepResearchEnabled
-                  ? "border-[#10a37f] bg-[#10a37f] text-white"
-                  : "border-white/10 bg-[#2a2a2a] text-[#b4b4b4] hover:bg-[#303030] hover:text-white"
-              }`}
-            >
-              <SparkIcon className="h-4 w-4" />
-              <span>Deep research</span>
-            </button>
+            {deepSession ? (
+              <span className="inline-flex h-9 items-center rounded-full border border-white/10 bg-[#2a2a2a] px-3 text-sm text-[#b4b4b4]">
+                {sessionLabel(deepSession) ?? "Saved"}
+              </span>
+            ) : null}
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-48 pt-8 sm:px-6">
             {deepSession ? (
-              <section className="mx-auto mb-6 max-w-[800px] rounded-[20px] border border-white/10 bg-[#2a2a2a] p-5">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-[#10a37f] text-white">
-                        <SparkIcon className="h-4 w-4" />
-                      </span>
-                      {sessionLabel(deepSession) ? (
-                        <span className="rounded-full border border-white/10 bg-[#212121] px-3 py-1 text-xs font-medium text-[#b4b4b4]">
-                          {sessionLabel(deepSession)}
+              <section className="mx-auto mb-6 w-full max-w-[860px]">
+                {deepSession.status === "completed" && researchReport ? (
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#b4b4b4]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>Research completed</span>
+                        <span className="text-white/20">·</span>
+                        <span>
+                          {researchProgress.completedSteps}/{Math.max(
+                            researchProgress.totalSteps,
+                            researchProgress.completedSteps
+                          )}{" "}
+                          steps
                         </span>
-                      ) : null}
-                      {deepSession.folder_id ? (
-                        <span className="rounded-full border border-white/10 bg-[#212121] px-3 py-1 text-xs font-medium text-[#b4b4b4]">
-                          {buildFolderLabel(deepSession.folder_id, folders)}
-                        </span>
-                      ) : null}
+                        {deepSession.folder_id ? (
+                          <>
+                            <span className="text-white/20">·</span>
+                            <span>{buildFolderLabel(deepSession.folder_id, folders)}</span>
+                          </>
+                        ) : null}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setReportFullViewOpen(true)}
+                        className="inline-flex h-10 items-center rounded-full border border-white/10 bg-[#2a2a2a] px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#303030]"
+                      >
+                        Full view
+                      </button>
                     </div>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#ececec]">
-                      {deepSession.plan_summary || deepSession.prompt}
-                    </p>
-                  </div>
-                  {deepSession.status === "planned" ? (
-                    <button
-                      type="button"
-                      onClick={() => void handleContinueResearch()}
-                      disabled={loading}
-                      className="inline-flex h-10 items-center rounded-full bg-[#10a37f] px-4 text-sm font-medium text-white transition-colors hover:bg-[#0d8c6d] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Continue
-                    </button>
-                  ) : null}
-                </div>
 
-                <div className="mt-4 space-y-2">
-                  {deepSession.steps?.map((step) => (
-                    <div
-                      key={step.id}
-                      className="rounded-2xl border border-white/10 bg-[#212121] px-4 py-3"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium text-[#ececec]">
-                            {step.position}. {step.title}
-                          </p>
-                          {step.description ? (
-                            <p className="mt-1 text-sm leading-6 text-[#b4b4b4]">
-                              {step.description}
+                    <div className="overflow-hidden rounded-[26px] border border-white/10 bg-[#111111] shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
+                      <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white">
+                            <SparkIcon className="h-4 w-4" />
+                          </span>
+                          <div>
+                            <p className="text-sm font-semibold text-[#ececec]">
+                              {researchTitle}
                             </p>
+                            <p className="text-xs text-[#8e8e8e]">
+                              Deep research report
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setReportFullViewOpen(true)}
+                          className="inline-flex h-9 items-center rounded-full border border-white/10 px-3 text-xs font-medium text-[#b4b4b4] transition-colors hover:bg-[#1f1f1f] hover:text-white"
+                        >
+                          Expand
+                        </button>
+                      </div>
+
+                      <article className="space-y-5 px-6 py-7 sm:px-10 sm:py-10">
+                        <h2 className="text-[2rem] font-semibold tracking-tight text-[#ececec] sm:text-[2.6rem]">
+                          {researchTitle}
+                        </h2>
+                        <div className="space-y-5">
+                          {(researchBlocks.length > 0
+                            ? researchBlocks.slice(0, 6)
+                            : [researchReport]
+                          ).map((block, index) => (
+                            <p
+                              key={`${deepSession.id}-report-${index}`}
+                              className="whitespace-pre-wrap text-[15px] leading-8 text-[#ececec]"
+                            >
+                              {block}
+                            </p>
+                          ))}
+                        </div>
+                        {researchBlocks.length > 6 ? (
+                          <div className="rounded-2xl border border-white/10 bg-[#171717] px-4 py-3 text-sm text-[#b4b4b4]">
+                            Continue in full view to read the rest of the report.
+                          </div>
+                        ) : null}
+                      </article>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-[24px] border border-white/10 bg-[#171717] p-6 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white">
+                            <SparkIcon className="h-4 w-4" />
+                          </span>
+                          <p className="text-[1.35rem] font-semibold tracking-tight text-[#ececec]">
+                            {researchTitle}
+                          </p>
+                          {deepSession.folder_id ? (
+                            <span className="rounded-full border border-white/10 bg-[#212121] px-3 py-1 text-xs font-medium text-[#b4b4b4]">
+                              {buildFolderLabel(deepSession.folder_id, folders)}
+                            </span>
                           ) : null}
                         </div>
-                        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8e8e8e]">
-                          {step.status}
-                        </span>
+                        {deepSession.plan_summary ? (
+                          <p className="mt-3 max-w-3xl text-sm leading-6 text-[#b4b4b4]">
+                            {deepSession.plan_summary}
+                          </p>
+                        ) : null}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {deepSession.status === "planned" ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleEditResearchPlan}
+                              className="inline-flex h-11 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#242424]"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => resetChat("deep_research")}
+                              className="inline-flex h-11 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#b4b4b4] transition-colors hover:bg-[#242424] hover:text-white"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleContinueResearch()}
+                              disabled={loading}
+                              className="inline-flex h-11 items-center rounded-full bg-white px-5 text-sm font-semibold text-[#111111] transition-colors hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Start
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleEditResearchPlan}
+                            className="inline-flex h-11 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#242424]"
+                          >
+                            Update
+                          </button>
+                        )}
                       </div>
                     </div>
-                  ))}
-                </div>
+
+                    <div className="mt-6 space-y-4">
+                      {researchProgress.steps.map((step) => {
+                        const isComplete = step.status === "completed";
+                        const isProcessing =
+                          step.status === "processing" ||
+                          (deepSession.status === "waiting_on_analysis" &&
+                            step.status === "waiting");
+                        const isPending = step.status === "planned" || step.status === "waiting";
+                        return (
+                          <div
+                            key={step.id}
+                            className="flex items-start gap-4 text-left"
+                          >
+                            <span
+                              className={`mt-1 inline-flex h-6 w-6 flex-none items-center justify-center rounded-full ${
+                                isComplete
+                                  ? "bg-white text-[#111111]"
+                                  : isProcessing
+                                    ? "border border-white bg-transparent text-white"
+                                    : isPending
+                                      ? "border border-white/20 bg-transparent text-transparent"
+                                      : "border border-red-400/50 bg-red-500/10 text-red-300"
+                              }`}
+                            >
+                              {isComplete ? (
+                                <CheckCircleIcon className="h-4 w-4" />
+                              ) : step.status === "failed" ? (
+                                <CloseIcon className="h-3.5 w-3.5" />
+                              ) : (
+                                <CircleIcon
+                                  className={`h-4 w-4 ${isProcessing ? "animate-pulse" : "opacity-60"}`}
+                                />
+                              )}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-[15px] leading-7 text-[#ececec]">
+                                {step.title}
+                              </p>
+                              {step.description ? (
+                                <p className="text-sm leading-6 text-[#b4b4b4]">
+                                  {step.description}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {deepSession.status !== "planned" ? (
+                      <div className="mt-6">
+                        <div className="flex items-center justify-between gap-3 text-sm text-[#b4b4b4]">
+                          <span>{researchProgress.detail}</span>
+                          <span>
+                            {researchProgress.completedSteps}/{Math.max(
+                              researchProgress.totalSteps,
+                              researchProgress.completedSteps
+                            )}{" "}
+                            steps
+                          </span>
+                        </div>
+                        <div className="mt-3 h-2.5 rounded-full bg-white/10">
+                          <div
+                            className="h-full rounded-full bg-white transition-[width] duration-500"
+                            style={{
+                              width: `${Math.max(
+                                6,
+                                Math.min(100, researchProgress.ratio * 100)
+                              )}%`,
+                            }}
+                          />
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {deepSession.status === "failed" && deepSession.last_error ? (
+                      <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                        {deepSession.last_error}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
               </section>
             ) : null}
 
@@ -847,7 +1126,7 @@ export default function ChatClient() {
               </div>
             ) : (
               <div className="mx-auto flex w-full max-w-[800px] flex-col gap-7">
-                {messages.map((message) => {
+                {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
                   return (
                     <section key={message.id}>
@@ -859,11 +1138,6 @@ export default function ChatClient() {
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          {message.kind === "deep_research_report" ? (
-                            <span className="inline-flex rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200">
-                              Deep research report
-                            </span>
-                          ) : null}
                           <div className="whitespace-pre-wrap text-[15px] leading-7 text-[#ececec]">
                             {message.content}
                           </div>
@@ -963,6 +1237,29 @@ export default function ChatClient() {
                             <span>Upload files</span>
                           </button>
 
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDeepResearchEnabled((current) => !current);
+                              setMenuOpen(false);
+                            }}
+                            className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+                              deepResearchEnabled
+                                ? "bg-[#173868] text-[#9cc8ff]"
+                                : "text-[#ececec] hover:bg-[#303030]"
+                            }`}
+                          >
+                            <span className="flex items-center gap-3">
+                              <SparkIcon className="h-4 w-4" />
+                              <span>Deep research</span>
+                            </span>
+                            {deepResearchEnabled ? (
+                              <span className="rounded-full bg-[#2b5da8] px-2 py-0.5 text-[11px] font-medium text-white">
+                                Active
+                              </span>
+                            ) : null}
+                          </button>
+
                           <div className="mt-2 border-t border-white/10 pt-2">
                             <div className="flex items-center justify-between px-3 pb-2">
                               <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8e8e8e]">
@@ -1037,6 +1334,21 @@ export default function ChatClient() {
                       </label>
                     ) : null}
 
+                    {deepResearchEnabled ? (
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-[#2b5da8] bg-[#173868] px-3 text-xs font-medium text-[#9cc8ff]">
+                        <SparkIcon className="h-3.5 w-3.5" />
+                        Deep research
+                        <button
+                          type="button"
+                          onClick={() => setDeepResearchEnabled(false)}
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9cc8ff] opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
+                          aria-label="Disable deep research"
+                        >
+                          <CloseIcon className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : null}
+
                     {chatScopeFolderId !== "all" ? (
                       <span className="inline-flex h-9 items-center gap-1 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#b4b4b4]">
                         <FolderIcon className="h-3.5 w-3.5" />
@@ -1072,6 +1384,62 @@ export default function ChatClient() {
           </div>
         </section>
       </div>
+
+      {reportFullViewOpen && researchReport ? (
+        <div className="fixed inset-0 z-50 bg-[#171717]">
+          <div className="flex h-full flex-col">
+            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setReportFullViewOpen(false)}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#b4b4b4] transition-colors hover:bg-[#2a2a2a] hover:text-white"
+                  aria-label="Close full report"
+                >
+                  <CloseIcon className="h-4 w-4" />
+                </button>
+                <span className="text-sm font-medium text-[#b4b4b4]">
+                  Deep research report
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setReportFullViewOpen(false)}
+                className="inline-flex h-10 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#2a2a2a]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-10 sm:px-10">
+              <article className="mx-auto max-w-[900px] space-y-8">
+                <div className="space-y-3">
+                  <p className="text-sm text-[#8e8e8e]">
+                    Research completed in the selected library scope.
+                  </p>
+                  <h1 className="text-[2.2rem] font-semibold tracking-tight text-[#ececec] sm:text-[3rem]">
+                    {researchTitle}
+                  </h1>
+                </div>
+
+                <div className="space-y-6">
+                  {(researchBlocks.length > 0 ? researchBlocks : [researchReport]).map(
+                    (block, index) => (
+                      <p
+                        key={`fullscreen-report-${index}`}
+                        className="whitespace-pre-wrap text-[17px] leading-9 text-[#ececec]"
+                      >
+                        {block}
+                      </p>
+                    )
+                  )}
+                </div>
+              </article>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <AnalyzeFlowModal
         open={showAnalyzeModal}
