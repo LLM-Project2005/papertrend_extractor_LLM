@@ -110,9 +110,7 @@ function sortThreads(
   return [...threads].sort((left, right) => {
     const leftPinned = pinned.has(left.id) ? 1 : 0;
     const rightPinned = pinned.has(right.id) ? 1 : 0;
-    if (leftPinned !== rightPinned) {
-      return rightPinned - leftPinned;
-    }
+    if (leftPinned !== rightPinned) return rightPinned - leftPinned;
     return (right.updated_at ?? "").localeCompare(left.updated_at ?? "");
   });
 }
@@ -137,9 +135,7 @@ function sessionActive(session?: DeepResearchSessionRecord | null) {
 }
 
 function buildFolderLabel(folderId: string, folders: ResearchFolderRow[]) {
-  if (!folderId || folderId === "all") {
-    return "All folders";
-  }
+  if (!folderId || folderId === "all") return "All folders";
   return folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
 }
 
@@ -147,12 +143,10 @@ function renderLoadingLabel(
   deepResearchEnabled: boolean,
   activeSession?: DeepResearchSessionRecord | null
 ) {
-  if (deepResearchEnabled) {
-    if (activeSession?.status === "planned") return "Planning deep research...";
-    if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis...";
-    return "Running deep research...";
-  }
-  return "Generating answer...";
+  if (!deepResearchEnabled) return "Generating answer...";
+  if (activeSession?.status === "planned") return "Planning deep research...";
+  if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis...";
+  return "Running deep research...";
 }
 
 export default function ChatClient() {
@@ -194,12 +188,8 @@ export default function ChatClient() {
   const effectiveSelectedTracks =
     selectedTracks.length > 0 ? selectedTracks : [...TRACK_COLS];
   const requestHeaders = useMemo<Record<string, string>>(() => {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (session?.access_token) {
-      headers.Authorization = `Bearer ${session.access_token}`;
-    }
+    const headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (session?.access_token) headers.Authorization = `Bearer ${session.access_token}`;
     return headers;
   }, [session?.access_token]);
   const sortedThreads = useMemo(
@@ -210,6 +200,8 @@ export default function ChatClient() {
     () => buildFolderLabel(chatScopeFolderId, folders),
     [chatScopeFolderId, folders]
   );
+  const pageTitle = activeThread?.title ?? "Chat";
+  const hasContent = messages.length > 0 || Boolean(deepSession);
 
   const resizeComposer = useCallback(() => {
     const node = composerRef.current;
@@ -224,9 +216,7 @@ export default function ChatClient() {
       const rawPinned = window.localStorage.getItem(PINNED_THREADS_STORAGE_KEY);
       if (rawPinned) {
         const parsed = JSON.parse(rawPinned) as string[];
-        if (Array.isArray(parsed)) {
-          setPinnedThreadIds(parsed.filter(Boolean));
-        }
+        if (Array.isArray(parsed)) setPinnedThreadIds(parsed.filter(Boolean));
       }
       setSelectedModel(window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY) ?? "");
     } catch {
@@ -336,7 +326,9 @@ export default function ChatClient() {
         const response = await fetch(`/api/chat/threads/${threadId}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
-        const payload = (await response.json()) as ChatThreadDetail & { error?: string };
+        const payload = (await response.json()) as ChatThreadDetail & {
+          error?: string;
+        };
         if (!response.ok) {
           throw new Error(payload.error ?? "Failed to load chat thread.");
         }
@@ -566,7 +558,9 @@ export default function ChatClient() {
           summary: thread.summary ?? null,
         }),
       });
-      const payload = (await response.json()) as ChatThreadDetail & { error?: string };
+      const payload = (await response.json()) as ChatThreadDetail & {
+        error?: string;
+      };
       if (!response.ok) {
         throw new Error(payload.error ?? "Failed to rename chat.");
       }
@@ -639,36 +633,32 @@ export default function ChatClient() {
     void refreshFolders();
   }
 
-  const hasContent = messages.length > 0 || Boolean(deepSession);
-
   return (
     <>
-      <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[1500px] gap-4">
-        <aside className="hidden w-[280px] flex-none rounded-[28px] border border-slate-200 bg-white p-3 dark:border-[#2f2f2f] dark:bg-[#171717] lg:flex lg:flex-col">
+      <div className="mx-auto flex min-h-[calc(100vh-8rem)] max-w-[1500px] overflow-hidden rounded-[24px] bg-[#212121] text-[#ececec]">
+        <aside className="hidden w-[272px] flex-none border-r border-white/10 bg-[#171717] p-3 lg:flex lg:flex-col">
           <button
             type="button"
             onClick={() => resetChat("normal")}
-            className="inline-flex h-10 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#2f2f2f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#212121]"
           >
             <PencilSquareIcon className="h-4 w-4" />
             <span>New chat</span>
           </button>
 
-          <div className="mt-4 flex min-h-0 flex-1 flex-col">
+          <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
-              <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
-                Your chats
-              </p>
+              <p className="text-sm font-medium text-[#ececec]">Your chats</p>
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {threadsLoading ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                <div className="rounded-xl px-3 py-3 text-sm text-[#8e8e8e]">
                   Loading...
                 </div>
               ) : null}
 
               {!threadsLoading && sortedThreads.length === 0 ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                <div className="rounded-xl px-3 py-3 text-sm text-[#8e8e8e]">
                   {canPersist ? "No chats yet." : "Sign in to save chats."}
                 </div>
               ) : null}
@@ -680,9 +670,7 @@ export default function ChatClient() {
                   <div
                     key={thread.id}
                     className={`group relative rounded-xl px-2 py-1 ${
-                      active
-                        ? "bg-slate-100 dark:bg-[#232323]"
-                        : "hover:bg-slate-50 dark:hover:bg-[#1f1f1f]"
+                      active ? "bg-[#2a2a2a]" : "hover:bg-[#212121]"
                     }`}
                   >
                     <button
@@ -695,9 +683,9 @@ export default function ChatClient() {
                     >
                       <div className="flex items-center gap-2">
                         {pinned ? (
-                          <PinIcon className="h-3.5 w-3.5 flex-none text-slate-400 dark:text-[#8a8a8a]" />
+                          <PinIcon className="h-3.5 w-3.5 flex-none text-[#8e8e8e]" />
                         ) : null}
-                        <span className="truncate text-[13px] font-medium text-slate-800 dark:text-[#e8e8e8]">
+                        <span className="truncate text-[13px] font-medium text-[#ececec]">
                           {thread.title}
                         </span>
                       </div>
@@ -710,20 +698,20 @@ export default function ChatClient() {
                           current === thread.id ? null : thread.id
                         )
                       }
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 opacity-0 transition-opacity hover:bg-white hover:text-slate-700 group-hover:opacity-100 dark:hover:bg-[#2a2a2a] dark:hover:text-white"
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-[#8e8e8e] opacity-0 transition-opacity hover:bg-[#303030] hover:text-white group-hover:opacity-100"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
 
                     {threadMenuId === thread.id ? (
-                      <div className="absolute right-2 top-9 z-20 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-xl dark:border-[#2f2f2f] dark:bg-[#1d1d1d]">
+                      <div className="absolute right-2 top-9 z-20 w-40 rounded-xl border border-white/10 bg-[#2a2a2a] p-1 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                         <button
                           type="button"
                           onClick={() => {
                             togglePinnedThread(thread.id);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#252525]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
                         >
                           <PinIcon className="h-4 w-4" />
                           <span>{pinned ? "Unpin chat" : "Pin chat"}</span>
@@ -734,7 +722,7 @@ export default function ChatClient() {
                             void renameThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#252525]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
                         >
                           <PencilSquareIcon className="h-4 w-4" />
                           <span>Rename</span>
@@ -745,7 +733,7 @@ export default function ChatClient() {
                             void deleteThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-300 transition-colors hover:bg-red-950/20"
                         >
                           <TrashIcon className="h-4 w-4" />
                           <span>Delete</span>
@@ -759,58 +747,56 @@ export default function ChatClient() {
           </div>
         </aside>
 
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[30px] border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#171717]">
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-[#2f2f2f] sm:px-5">
-            <div className="flex items-center gap-2 lg:hidden">
+        <section className="relative flex min-w-0 flex-1 flex-col bg-[#212121]">
+          <header className="flex h-14 items-center justify-between border-b border-white/8 px-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-[#ececec] lg:hidden"
               >
                 <PencilSquareIcon className="h-4 w-4" />
               </button>
-              <span className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
-                Your chats
-              </span>
+              <p className="truncate text-lg font-semibold text-[#ececec]">
+                {pageTitle}
+              </p>
             </div>
 
-            <div className="ml-auto flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setDeepResearchEnabled((current) => !current)}
-                className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors ${
-                  deepResearchEnabled
-                    ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-                }`}
-              >
-                <SparkIcon className="h-4 w-4" />
-                <span>Deep research</span>
-              </button>
-            </div>
-          </div>
+            <button
+              type="button"
+              onClick={() => setDeepResearchEnabled((current) => !current)}
+              className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-sm font-medium transition-colors ${
+                deepResearchEnabled
+                  ? "border-[#10a37f] bg-[#10a37f] text-white"
+                  : "border-white/10 bg-[#2a2a2a] text-[#b4b4b4] hover:bg-[#303030] hover:text-white"
+              }`}
+            >
+              <SparkIcon className="h-4 w-4" />
+              <span>Deep research</span>
+            </button>
+          </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-48 pt-8 sm:px-6">
             {deepSession ? (
-              <section className="mx-auto mb-6 max-w-4xl rounded-[26px] border border-slate-200 bg-slate-50 p-5 dark:border-[#2f2f2f] dark:bg-[#1d1d1d]">
+              <section className="mx-auto mb-6 max-w-[800px] rounded-[20px] border border-white/10 bg-[#2a2a2a] p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-slate-900 text-white dark:bg-white dark:text-slate-900">
+                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-[#10a37f] text-white">
                         <SparkIcon className="h-4 w-4" />
                       </span>
                       {sessionLabel(deepSession) ? (
-                        <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:bg-[#252525] dark:text-[#c5c5c5]">
+                        <span className="rounded-full border border-white/10 bg-[#212121] px-3 py-1 text-xs font-medium text-[#b4b4b4]">
                           {sessionLabel(deepSession)}
                         </span>
                       ) : null}
                       {deepSession.folder_id ? (
-                        <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-600 dark:bg-[#252525] dark:text-[#c5c5c5]">
+                        <span className="rounded-full border border-white/10 bg-[#212121] px-3 py-1 text-xs font-medium text-[#b4b4b4]">
                           {buildFolderLabel(deepSession.folder_id, folders)}
                         </span>
                       ) : null}
                     </div>
-                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-[#dedede]">
+                    <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[#ececec]">
                       {deepSession.plan_summary || deepSession.prompt}
                     </p>
                   </div>
@@ -819,7 +805,7 @@ export default function ChatClient() {
                       type="button"
                       onClick={() => void handleContinueResearch()}
                       disabled={loading}
-                      className="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                      className="inline-flex h-10 items-center rounded-full bg-[#10a37f] px-4 text-sm font-medium text-white transition-colors hover:bg-[#0d8c6d] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Continue
                     </button>
@@ -830,20 +816,20 @@ export default function ChatClient() {
                   {deepSession.steps?.map((step) => (
                     <div
                       key={step.id}
-                      className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#202020]"
+                      className="rounded-2xl border border-white/10 bg-[#212121] px-4 py-3"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="text-sm font-medium text-slate-900 dark:text-[#f3f3f3]">
+                          <p className="text-sm font-medium text-[#ececec]">
                             {step.position}. {step.title}
                           </p>
                           {step.description ? (
-                            <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-[#aeaeae]">
+                            <p className="mt-1 text-sm leading-6 text-[#b4b4b4]">
                               {step.description}
                             </p>
                           ) : null}
                         </div>
-                        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-[#777777]">
+                        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-[#8e8e8e]">
                           {step.status}
                         </span>
                       </div>
@@ -855,30 +841,30 @@ export default function ChatClient() {
 
             {!hasContent && !loading ? (
               <div className="flex min-h-[52vh] items-center justify-center">
-                <h1 className="text-center text-[2rem] font-semibold tracking-tight text-slate-900 dark:text-[#ececec]">
+                <h1 className="text-center text-[2rem] font-semibold tracking-tight text-[#ececec] sm:text-[2.5rem]">
                   Where should we begin?
                 </h1>
               </div>
             ) : (
-              <div className="mx-auto flex w-full max-w-4xl flex-col gap-7">
+              <div className="mx-auto flex w-full max-w-[800px] flex-col gap-7">
                 {messages.map((message) => {
                   const isUser = message.role === "user";
                   return (
                     <section key={message.id}>
                       {isUser ? (
                         <div className="flex justify-end">
-                          <div className="max-w-[85%] rounded-[26px] bg-slate-200 px-5 py-3 text-[15px] leading-7 text-slate-900 dark:bg-[#2c2c2c] dark:text-[#f3f3f3]">
+                          <div className="max-w-[72%] rounded-[18px] bg-[#2a2a2a] px-5 py-3 text-[15px] leading-7 text-[#f3f3f3]">
                             <div className="whitespace-pre-wrap">{message.content}</div>
                           </div>
                         </div>
                       ) : (
                         <div className="space-y-4">
                           {message.kind === "deep_research_report" ? (
-                            <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-200">
+                            <span className="inline-flex rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200">
                               Deep research report
                             </span>
                           ) : null}
-                          <div className="whitespace-pre-wrap text-[15px] leading-7 text-slate-800 dark:text-[#e5e5e5]">
+                          <div className="whitespace-pre-wrap text-[15px] leading-7 text-[#ececec]">
                             {message.content}
                           </div>
                           {message.citations.length > 0 ? (
@@ -887,18 +873,18 @@ export default function ChatClient() {
                                 <Link
                                   key={`${message.id}-${citation.paperId}`}
                                   href={citation.href}
-                                  className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#303030] dark:bg-[#202020] dark:hover:border-[#3b3b3b] dark:hover:bg-[#232323]"
+                                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[#2a2a2a] px-4 py-3 text-sm transition-colors hover:bg-[#303030]"
                                 >
-                                  <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-[#8f8f8f]" />
+                                  <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-[#8e8e8e]" />
                                   <span className="min-w-0">
-                                    <span className="font-medium text-slate-900 dark:text-[#ececec]">
+                                    <span className="font-medium text-[#ececec]">
                                       [Paper {citation.paperId}] {citation.title}
                                     </span>
-                                    <span className="ml-2 text-slate-500 dark:text-[#8f8f8f]">
+                                    <span className="ml-2 text-[#8e8e8e]">
                                       ({citation.year})
                                     </span>
                                     {citation.reason ? (
-                                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+                                      <span className="mt-1 block text-xs leading-5 text-[#8e8e8e]">
                                         {citation.reason}
                                       </span>
                                     ) : null}
@@ -915,8 +901,8 @@ export default function ChatClient() {
 
                 {loading ? (
                   <div className="flex items-start gap-3">
-                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900 dark:border-[#3a3a3a] dark:border-t-white" />
-                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-[#2f2f2f] dark:bg-[#1f1f1f] dark:text-[#b8b8b8]">
+                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                    <div className="rounded-2xl border border-white/10 bg-[#2a2a2a] px-4 py-3 text-sm text-[#b4b4b4]">
                       {renderLoadingLabel(deepResearchEnabled, deepSession)}
                     </div>
                   </div>
@@ -925,170 +911,166 @@ export default function ChatClient() {
             )}
 
             {detailLoading ? (
-              <div className="mx-auto mt-4 flex w-full max-w-4xl items-center gap-3 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-900 dark:border-[#3a3a3a] dark:border-t-white" />
+              <div className="mx-auto mt-4 flex w-full max-w-[800px] items-center gap-3 text-sm text-[#8e8e8e]">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
                 <span>Loading chat...</span>
               </div>
             ) : null}
             <div ref={scrollAnchorRef} />
           </div>
 
-          {error ? (
-            <div className="border-t border-slate-200 px-4 py-3 text-sm text-red-600 dark:border-[#2f2f2f] dark:text-red-300 sm:px-6">
-              {error}
-            </div>
-          ) : null}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-6 sm:px-6">
+            <form onSubmit={handleSubmit} className="pointer-events-auto mx-auto w-full max-w-[800px]">
+              <div className="rounded-[28px] border border-white/10 bg-[#2a2a2a] px-4 pb-3 pt-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                {error ? (
+                  <div className="mb-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                    {error}
+                  </div>
+                ) : null}
 
-          <div className="border-t border-slate-200 px-4 py-4 dark:border-[#2f2f2f] sm:px-6">
-            <form onSubmit={handleSubmit} className="mx-auto w-full max-w-4xl">
-              <div className="rounded-[28px] border border-slate-200 bg-white p-3 shadow-[0_8px_30px_rgba(15,23,42,0.06)] dark:border-[#2f2f2f] dark:bg-[#1a1a1a]">
-                <div className="flex items-end gap-2">
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setMenuOpen((current) => !current)}
-                      className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"
-                    >
-                      <PlusIcon className="h-4 w-4" />
-                    </button>
+                <textarea
+                  ref={composerRef}
+                  value={draft}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={handleComposerKeyDown}
+                  placeholder="Ask anything"
+                  rows={1}
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-[#ececec] outline-none placeholder:text-[#8e8e8e]"
+                />
 
-                    {menuOpen ? (
-                      <div className="absolute bottom-12 left-0 z-30 w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl dark:border-[#2f2f2f] dark:bg-[#1c1c1c]">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowAnalyzeModal(true);
-                            setMenuOpen(false);
-                          }}
-                          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#252525]"
-                        >
-                          <PaperIcon className="h-4 w-4" />
-                          <span>Upload files</span>
-                        </button>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setMenuOpen((current) => !current)}
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#ececec] transition-colors hover:bg-[#303030]"
+                      >
+                        <PlusIcon className="h-5 w-5" />
+                      </button>
 
-                        <div className="mt-2 border-t border-slate-200 pt-2 dark:border-[#2f2f2f]">
-                          <div className="flex items-center justify-between px-3 pb-2">
-                            <span className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#777777]">
-                              Folder scope
-                            </span>
-                            <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-[#9a9a9a]">
-                              <FolderIcon className="h-3.5 w-3.5" />
-                              {activeFolderLabel}
-                            </span>
-                          </div>
+                      {menuOpen ? (
+                        <div className="absolute bottom-12 left-0 z-30 w-72 rounded-2xl border border-white/10 bg-[#2a2a2a] p-2 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                           <button
                             type="button"
                             onClick={() => {
-                              setChatScopeFolderId("all");
+                              setShowAnalyzeModal(true);
                               setMenuOpen(false);
                             }}
-                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                              chatScopeFolderId === "all"
-                                ? "bg-slate-100 text-slate-900 dark:bg-[#252525] dark:text-white"
-                                : "text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#252525]"
-                            }`}
+                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
                           >
-                            <span>All folders</span>
-                            {chatScopeFolderId === "all" ? (
-                              <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
-                            ) : null}
+                            <PaperIcon className="h-4 w-4" />
+                            <span>Upload files</span>
                           </button>
-                          <div className="mt-1 max-h-52 space-y-1 overflow-y-auto">
-                            {folders.map((folder) => {
-                              const active = folder.id === chatScopeFolderId;
-                              return (
-                                <button
-                                  key={folder.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setChatScopeFolderId(folder.id);
-                                    setMenuOpen(false);
-                                  }}
-                                  className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                                    active
-                                      ? "bg-slate-100 text-slate-900 dark:bg-[#252525] dark:text-white"
-                                      : "text-slate-700 hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#252525]"
-                                  }`}
-                                >
-                                  <span className="truncate">{folder.name}</span>
-                                  {active ? (
-                                    <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
-                                  ) : null}
-                                </button>
-                              );
-                            })}
+
+                          <div className="mt-2 border-t border-white/10 pt-2">
+                            <div className="flex items-center justify-between px-3 pb-2">
+                              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8e8e8e]">
+                                Folder scope
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-xs text-[#b4b4b4]">
+                                <FolderIcon className="h-3.5 w-3.5" />
+                                {activeFolderLabel}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatScopeFolderId("all");
+                                setMenuOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                                chatScopeFolderId === "all"
+                                  ? "bg-[#303030] text-white"
+                                  : "text-[#ececec] hover:bg-[#303030]"
+                              }`}
+                            >
+                              <span>All folders</span>
+                              {chatScopeFolderId === "all" ? (
+                                <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
+                              ) : null}
+                            </button>
+                            <div className="mt-1 max-h-52 space-y-1 overflow-y-auto">
+                              {folders.map((folder) => {
+                                const active = folder.id === chatScopeFolderId;
+                                return (
+                                  <button
+                                    key={folder.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setChatScopeFolderId(folder.id);
+                                      setMenuOpen(false);
+                                    }}
+                                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                                      active
+                                        ? "bg-[#303030] text-white"
+                                        : "text-[#ececec] hover:bg-[#303030]"
+                                    }`}
+                                  >
+                                    <span className="truncate">{folder.name}</span>
+                                    {active ? (
+                                      <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
+                                    ) : null}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </div>
                         </div>
-                      </div>
+                      ) : null}
+                    </div>
+
+                    {!deepResearchEnabled ? (
+                      <label className="inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#b4b4b4]">
+                        <span>Model</span>
+                        <select
+                          value={selectedModel}
+                          onChange={(event) => setSelectedModel(event.target.value)}
+                          className="bg-transparent text-xs font-medium text-[#ececec] outline-none"
+                        >
+                          {MODEL_OPTIONS.map((option) => (
+                            <option key={option.value || "auto"} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+
+                    {chatScopeFolderId !== "all" ? (
+                      <span className="inline-flex h-9 items-center gap-1 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#b4b4b4]">
+                        <FolderIcon className="h-3.5 w-3.5" />
+                        {activeFolderLabel}
+                      </span>
                     ) : null}
                   </div>
 
-                  <div className="min-w-0 flex-1 rounded-[24px] bg-slate-50 px-3 py-2 dark:bg-[#202020]">
-                    <textarea
-                      ref={composerRef}
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                      onKeyDown={handleComposerKeyDown}
-                      placeholder="Ask anything"
-                      rows={1}
-                      className="max-h-[220px] min-h-[24px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[15px] leading-6 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#6f6f6f]"
-                    />
-
-                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {!deepResearchEnabled ? (
-                          <label className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 dark:border-[#353535] dark:bg-[#171717] dark:text-[#c8c8c8]">
-                            <span>Model</span>
-                            <select
-                              value={selectedModel}
-                              onChange={(event) => setSelectedModel(event.target.value)}
-                              className="bg-transparent text-xs font-medium outline-none"
-                            >
-                              {MODEL_OPTIONS.map((option) => (
-                                <option key={option.value || "auto"} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </label>
-                        ) : null}
-
-                        {chatScopeFolderId !== "all" ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 dark:border-[#353535] dark:bg-[#171717] dark:text-[#c8c8c8]">
-                            <FolderIcon className="h-3.5 w-3.5" />
-                            {activeFolderLabel}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <button
-                        type="submit"
-                        disabled={
-                          (!loading && draft.trim().length === 0) ||
-                          (deepResearchEnabled && !canPersist)
-                        }
-                        className={`inline-flex h-11 w-11 items-center justify-center rounded-full transition-colors ${
-                          loading
-                            ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900"
-                            : draft.trim().length > 0
-                              ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-slate-900"
-                              : "bg-slate-200 text-slate-400 dark:bg-[#2f2f2f] dark:text-[#6f6f6f]"
-                        } disabled:cursor-not-allowed`}
-                        aria-label={loading ? "Stop generating" : "Send message"}
-                      >
-                        {loading ? (
-                          <StopIcon className="h-4 w-4" />
-                        ) : (
-                          <SendIcon className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
+                  <button
+                    type="submit"
+                    disabled={
+                      (!loading && draft.trim().length === 0) ||
+                      (deepResearchEnabled && !canPersist)
+                    }
+                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                      loading
+                        ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
+                        : draft.trim().length > 0
+                          ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
+                          : "bg-[#3a3a3a] text-[#8e8e8e]"
+                    } disabled:cursor-not-allowed`}
+                    aria-label={loading ? "Stop generating" : "Send message"}
+                  >
+                    {loading ? (
+                      <StopIcon className="h-4 w-4" />
+                    ) : (
+                      <SendIcon className="h-4 w-4" />
+                    )}
+                  </button>
                 </div>
               </div>
             </form>
           </div>
-        </div>
+        </section>
       </div>
 
       <AnalyzeFlowModal
