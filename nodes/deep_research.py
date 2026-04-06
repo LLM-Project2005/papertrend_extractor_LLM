@@ -4,11 +4,10 @@ import re
 from difflib import SequenceMatcher
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import requests
-
 from nodes import ModelTask, get_task_llm
 from nodes.keyword_search import keyword_search_node
 from state import DeepResearchPlanSchema, DeepResearchState
+from supabase_http import build_retrying_session
 from workspace_data import build_visualization_analytics, filter_dashboard_data, load_workspace_dataset
 
 research_planning_llm = get_task_llm(ModelTask.RESEARCH_PLANNING)
@@ -110,14 +109,14 @@ def _project_folder_ids(owner_user_id: str, project_id: Optional[str]) -> List[s
     if not owner_user_id or not project_id or not _get_supabase_url() or not _get_service_key():
         return []
 
-    response = requests.get(
+    session = build_retrying_session(_build_headers())
+    response = session.get(
         f"{_get_supabase_url()}/rest/v1/research_folders",
         params={
             "select": "id",
             "owner_user_id": f"eq.{owner_user_id}",
             "project_id": f"eq.{project_id}",
         },
-        headers=_build_headers(),
         timeout=30,
     )
     response.raise_for_status()
@@ -154,10 +153,10 @@ def _pending_runs(
     else:
         return 0
 
-    response = requests.get(
+    session = build_retrying_session(_build_headers())
+    response = session.get(
         f"{_get_supabase_url()}/rest/v1/ingestion_runs",
         params=params,
-        headers=_build_headers(),
         timeout=30,
     )
     response.raise_for_status()

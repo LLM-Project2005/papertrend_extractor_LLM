@@ -9,8 +9,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-import requests
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -18,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from analysis_pipeline import configure_logging, load_config, now_iso  # noqa: E402
 from graphs import run_deep_research_graph  # noqa: E402
 from nodes import consume_usage_summary, start_usage_session  # noqa: E402
+from supabase_http import build_retrying_session  # noqa: E402
 from workspace_data import filter_dashboard_data, load_workspace_dataset  # noqa: E402
 
 
@@ -27,8 +26,7 @@ logger = logging.getLogger("papertrend_research_worker")
 class SupabaseRestClient:
     def __init__(self, url: str, service_key: str) -> None:
         self.url = url.rstrip("/")
-        self.session = requests.Session()
-        self.session.headers.update(
+        self.session = build_retrying_session(
             {
                 "apikey": service_key,
                 "Authorization": f"Bearer {service_key}",

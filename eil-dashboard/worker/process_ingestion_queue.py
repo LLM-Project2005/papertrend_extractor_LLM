@@ -33,6 +33,7 @@ from analysis_pipeline import (
     persist_dataset,
     process_pdf_run,
 )
+from supabase_http import build_retrying_session
 
 
 logger = logging.getLogger("papertrend_worker")
@@ -46,8 +47,7 @@ class SupabaseRestClient:
     def __init__(self, url: str, service_key: str) -> None:
         self.url = url.rstrip("/")
         self.service_key = service_key
-        self.session = requests.Session()
-        self.session.headers.update(
+        self.session = build_retrying_session(
             {
                 "apikey": service_key,
                 "Authorization": f"Bearer {service_key}",

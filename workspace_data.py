@@ -1,10 +1,11 @@
 import json
+import logging
 import os
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-import requests
+from supabase_http import build_retrying_session
 
 
 TRACK_COLS = ["EL", "ELI", "LAE", "Other"]
@@ -17,6 +18,7 @@ TRACK_NAMES = {
 }
 
 _CACHE: Dict[str, Dict[str, Any]] = {}
+logger = logging.getLogger("papertrend.workspace_data")
 
 
 def _get_supabase_url() -> str:
@@ -34,8 +36,7 @@ def _normalize_year(value: Any) -> str:
 class SupabaseQueryClient:
     def __init__(self, url: str, service_key: str) -> None:
         self.url = url
-        self.session = requests.Session()
-        self.session.headers.update(
+        self.session = build_retrying_session(
             {
                 "apikey": service_key,
                 "Authorization": f"Bearer {service_key}",
@@ -217,7 +218,8 @@ def load_workspace_dataset(
             ],
             "facets": facets,
         }
-    except Exception:
+    except Exception as error:
+        logger.warning("workspace dataset load fell back to mock mode: %s", error)
         dataset = _build_mock_workspace_dataset()
 
     _CACHE[_cache_key(owner_user_id, normalized_folder_id, normalized_project_id)] = {
