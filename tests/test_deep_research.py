@@ -1,0 +1,131 @@
+import unittest
+
+from nodes.deep_research import (
+    INTERNAL_SYNTHESIZE_TOOL,
+    INTERNAL_VERIFY_TOOL,
+    _build_deterministic_plan,
+    _build_verification_result,
+    _next_pending_step,
+)
+
+
+class DeepResearchPlanningTests(unittest.TestCase):
+    def test_missing_named_paper_plan_includes_verification_and_synthesis(self) -> None:
+        snapshot = {
+            "prompt": 'Analyze "Avoidance of the English passive construction by L1 Chinese learners."',
+            "project_id": "project-1",
+            "pending_run_count": 0,
+            "paper_count": 0,
+            "prompt_analysis": {
+                "single_paper": True,
+                "compare": False,
+                "survey": False,
+                "candidate_title": "Avoidance of the English passive construction by L1 Chinese learners",
+                "normalized_query": "Avoidance of the English passive construction by L1 Chinese learners",
+                "requested_sections": [
+                    "objective",
+                    "methodology",
+                    "key_findings",
+                    "limitations",
+                ],
+                "target_in_scope": False,
+                "target_paper_id": 0,
+                "target_resolution_status": "missing",
+            },
+        }
+
+        plan = _build_deterministic_plan(snapshot)
+
+        self.assertGreaterEqual(len(plan["steps"]), 4)
+        self.assertEqual(plan["steps"][-2]["tool_name"], INTERNAL_VERIFY_TOOL)
+        self.assertEqual(plan["steps"][-1]["tool_name"], INTERNAL_SYNTHESIZE_TOOL)
+        self.assertEqual(plan["steps"][0]["tool_input"]["payload_version"], 2)
+        self.assertEqual(plan["steps"][0]["tool_input"]["requiredClass"], "required_before_verification")
+
+    def test_topic_review_plan_stays_multi_step_for_non_trivial_prompt(self) -> None:
+        snapshot = {
+            "prompt": "Do a deep research analysis of AI models for coding across architectures, benchmarks, limitations, and deployment workflows.",
+            "project_id": "project-1",
+            "pending_run_count": 0,
+            "paper_count": 12,
+            "prompt_analysis": {
+                "single_paper": False,
+                "compare": False,
+                "survey": True,
+                "candidate_title": "",
+                "normalized_query": "AI models for coding",
+                "requested_sections": [],
+                "target_in_scope": False,
+                "target_paper_id": 0,
+                "scope_mode": "broad",
+            },
+        }
+
+        plan = _build_deterministic_plan(snapshot)
+
+        self.assertGreaterEqual(len(plan["steps"]), 5)
+        self.assertIn("AI models for coding", plan["summary"])
+        self.assertEqual(plan["steps"][-2]["tool_name"], INTERNAL_VERIFY_TOOL)
+        self.assertEqual(plan["steps"][-1]["tool_name"], INTERNAL_SYNTHESIZE_TOOL)
+
+
+class DeepResearchExecutionContractTests(unittest.TestCase):
+    def test_verification_marks_missing_named_paper_as_partial_only(self) -> None:
+        state = {
+            "prompt": 'Analyze "Missing Paper"',
+            "prompt_analysis": {
+                "single_paper": True,
+                "candidate_title": "Missing Paper",
+                "target_paper_id": 0,
+                "target_in_scope": False,
+                "requested_sections": ["objective", "methodology"],
+                "compare": False,
+                "survey": False,
+            },
+            "papers_full": [],
+        }
+        steps = [
+            {
+                "position": 1,
+                "tool_name": "list_folder_papers",
+                "status": "completed",
+                "tool_input": {"requiredClass": "required_before_verification", "phaseClass": "research"},
+                "output_payload": {"result_kind": "scope_gap"},
+            }
+        ]
+
+        verification = _build_verification_result(state, steps, [])
+
+        self.assertFalse(verification["target_resolved"])
+        self.assertEqual(verification["overall_result"], "fail_partial_only")
+
+    def test_next_pending_step_prioritizes_required_work_over_optional_and_synthesis(self) -> None:
+        steps = [
+            {
+                "position": 2,
+                "status": "planned",
+                "tool_name": "fetch_papers",
+                "tool_input": {"requiredClass": "optional_context", "phaseClass": "research"},
+            },
+            {
+                "position": 5,
+                "status": "planned",
+                "tool_name": INTERNAL_SYNTHESIZE_TOOL,
+                "tool_input": {"requiredClass": "synthesis", "phaseClass": "synthesis"},
+            },
+            {
+                "position": 4,
+                "status": "planned",
+                "tool_name": "read_paper_sections",
+                "tool_input": {"requiredClass": "required_before_verification", "phaseClass": "research"},
+            },
+        ]
+
+        selected = _next_pending_step(steps)
+
+        self.assertIsNotNone(selected)
+        self.assertEqual(selected["position"], 4)
+
+
+if __name__ == "__main__":
+    unittest.main()

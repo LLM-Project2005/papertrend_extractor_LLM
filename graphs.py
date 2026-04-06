@@ -46,9 +46,14 @@ def _route_research_after_preflight(state: DeepResearchState) -> str:
 
 
 def _route_research_after_step(state: DeepResearchState) -> str:
-    steps = list(state.get("steps") or [])
-    index = int(state.get("current_step_index") or 0)
-    return "execute_step" if index < len(steps) else "synthesize"
+    status = str(state.get("status") or "")
+    if status == "waiting_on_analysis":
+        return "finish"
+    if status == "research_ready_for_synthesis":
+        return "synthesize"
+    if status == "research_completed":
+        return "finish"
+    return "execute_step"
 
 
 @lru_cache(maxsize=1)
@@ -137,6 +142,7 @@ def build_deep_research_graph():
         {
             "execute_step": "execute_step",
             "synthesize": "synthesize",
+            "finish": END,
         },
     )
     workflow.add_edge("synthesize", END)

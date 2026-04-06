@@ -50,6 +50,25 @@ STOPWORDS = {
     "using",
     "with",
 }
+INTERNAL_VERIFY_TOOL = "verify_research"
+INTERNAL_SYNTHESIZE_TOOL = "synthesize_report"
+PAYLOAD_VERSION = 2
+PLANNER_VERSION = "hybrid-v1"
+REQUIRED_PRIORITY = {
+    "required_before_verification": 0,
+    "optional_context": 1,
+    "verification": 2,
+    "synthesis": 3,
+}
+SECTION_TO_QUERY = {
+    "objective": "research objective",
+    "theoretical_background": "theoretical background",
+    "methodology": "methodology methods design",
+    "participants": "participants sample learners students",
+    "key_findings": "results findings outcomes",
+    "limitations": "limitations weaknesses constraints",
+    "implications": "implications significance practice",
+}
 
 
 def _get_supabase_url() -> str:
@@ -225,6 +244,79 @@ def _normalize_search_query(prompt: str, quoted_title: str) -> str:
     return normalized or _normalize_space(prompt)
 
 
+def _slugify(value: str) -> str:
+    normalized = _normalize_title(value)[:48]
+    return normalized.replace(" ", "-") or "todo"
+
+
+def _build_query_bundle(
+    primary_query: str,
+    requested_sections: Sequence[str],
+    target_title: str = "",
+    exclusion_ids: Optional[Sequence[int]] = None,
+    supporting_queries: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    normalized_supporting = [
+        _normalize_space(query)
+        for query in list(supporting_queries or [])
+        if _normalize_space(query)
+    ][:3]
+    section_query = ""
+    for section in requested_sections:
+        if section in SECTION_TO_QUERY:
+            section_query = SECTION_TO_QUERY[section]
+            break
+    return {
+        "primary_query": _normalize_space(primary_query),
+        "supporting_queries": normalized_supporting,
+        "exact_title_query": _normalize_space(target_title) or None,
+        "section_query": section_query or None,
+        "exclusion_ids": [int(item) for item in (exclusion_ids or []) if str(item).strip().isdigit()],
+    }
+
+
+def _citation_ref(
+    paper: Dict[str, Any],
+    snippet: str = "",
+    confidence: str = "high",
+    locator: Optional[str] = None,
+) -> Dict[str, Any]:
+    paper_id = int(paper.get("paper_id") or paper.get("paperId") or 0)
+    return {
+        "source_id": str(paper_id) if paper_id > 0 else str(paper.get("title") or "unknown"),
+        "source_label": str(paper.get("title") or "Untitled"),
+        "locator": locator,
+        "snippet": _normalize_space(snippet)[:320] or None,
+        "confidence": confidence if confidence in {"high", "medium", "low"} else "medium",
+    }
+
+
+def _build_step_output(
+    summary: str,
+    detail: str,
+    citations: Optional[Sequence[Dict[str, Any]]] = None,
+    result_kind: str = "document_hit",
+    diagnostics: Optional[Dict[str, Any]] = None,
+    raw: Optional[Dict[str, Any]] = None,
+    status_reason: Optional[str] = None,
+    completion_kind: Optional[str] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "payload_version": PAYLOAD_VERSION,
+        "summary": _normalize_space(summary),
+        "detail": detail.strip(),
+        "citations": list(citations or []),
+        "result_kind": result_kind,
+        "diagnostics": diagnostics or {},
+        "raw": raw or {},
+    }
+    if status_reason:
+        payload["status_reason"] = status_reason
+    if completion_kind:
+        payload["completion_kind"] = completion_kind
+    return payload
+
+
 def _title_match_strength(target_title: str, paper_title: str) -> Tuple[bool, float]:
     normalized_target = _normalize_title(target_title)
     normalized_title = _normalize_title(paper_title)
@@ -283,23 +375,36 @@ def _analyze_prompt(prompt: str, papers: Sequence[Dict[str, Any]]) -> Dict[str, 
     requested_sections = _detect_requested_sections(prompt)
     normalized_query = _normalize_search_query(prompt, quoted_title)
     lowered = prompt.lower()
+    compare = any(token in lowered for token in ("compare", "comparison", "versus", " vs ", "contrast"))
+    survey = any(
+        token in lowered
+        for token in ("survey", "review", "overview", "landscape", "corpus", "literature")
+    )
+    methodology_focus = any(
+        token in lowered for token in ("method", "methods", "methodology", "participants", "sample")
+    )
+    findings_focus = any(token in lowered for token in ("findings", "results", "outcomes"))
+    limitations_focus = any(
+        token in lowered for token in ("limitation", "limitations", "constraint", "weakness")
+    )
+    evidence_extraction = bool(requested_sections) or any(
+        token in lowered for token in ("grounded in evidence", "quote", "cite", "evidence")
+    )
     analysis = {
         "single_paper": bool(quoted_title),
-        "compare": any(token in lowered for token in ("compare", "comparison", "versus", " vs ", "contrast")),
-        "survey": any(
-            token in lowered
-            for token in ("survey", "review", "overview", "landscape", "corpus", "literature")
-        ),
-        "methodology_focus": any(token in lowered for token in ("method", "methods", "methodology", "participants", "sample")),
-        "findings_focus": any(token in lowered for token in ("findings", "results", "outcomes")),
-        "limitations_focus": any(token in lowered for token in ("limitation", "limitations", "constraint", "weakness")),
-        "evidence_extraction": bool(requested_sections)
-        or any(token in lowered for token in ("grounded in evidence", "quote", "cite", "evidence")),
+        "compare": compare,
+        "survey": survey,
+        "methodology_focus": methodology_focus,
+        "findings_focus": findings_focus,
+        "limitations_focus": limitations_focus,
+        "evidence_extraction": evidence_extraction,
         "quoted_title": quoted_title,
         "candidate_title": quoted_title,
         "author_hint": _extract_author_hint(prompt),
         "normalized_query": normalized_query[:180],
         "requested_sections": requested_sections,
+        "normalized_topic_terms": _tokenize(normalized_query)[:10],
+        "exclusion_ids": [],
     }
     ranked_matches = sorted(
         [
@@ -314,6 +419,48 @@ def _analyze_prompt(prompt: str, papers: Sequence[Dict[str, Any]]) -> Dict[str, 
     analysis["ranked_matches"] = ranked_matches
     analysis["target_paper_id"] = int(target_paper.get("paperId") or 0) if target_paper else 0
     analysis["target_paper_title"] = str(target_paper.get("title") or "") if target_paper else ""
+    if analysis["single_paper"]:
+        analysis["primary_intent"] = "paper_lookup"
+        analysis["target_entity_type"] = "paper"
+    elif compare:
+        analysis["primary_intent"] = "comparison"
+        analysis["target_entity_type"] = "topic"
+    elif evidence_extraction:
+        analysis["primary_intent"] = "evidence_audit"
+        analysis["target_entity_type"] = "section"
+    else:
+        analysis["primary_intent"] = "topic_review"
+        analysis["target_entity_type"] = "topic"
+
+    if requested_sections:
+        analysis["requested_output_mode"] = "structured_sections"
+    elif compare:
+        analysis["requested_output_mode"] = "comparison"
+    elif survey:
+        analysis["requested_output_mode"] = "narrative_review"
+    else:
+        analysis["requested_output_mode"] = "plain_summary"
+
+    trivial = (
+        not compare
+        and not requested_sections
+        and not survey
+        and (not quoted_title or bool(target_paper))
+        and not any(token in lowered for token in ("background", "limitations", "implications"))
+    )
+    analysis["scope_mode"] = "trivial" if trivial else ("broad" if survey else "medium")
+
+    if analysis["single_paper"]:
+        if target_paper:
+            analysis["target_resolution_status"] = "exact_match"
+        elif ranked_matches:
+            analysis["target_resolution_status"] = "probable_match"
+        else:
+            analysis["target_resolution_status"] = "missing"
+    elif ranked_matches:
+        analysis["target_resolution_status"] = "probable_match"
+    else:
+        analysis["target_resolution_status"] = "unresolved"
     return analysis
 
 
@@ -355,26 +502,74 @@ def _build_planning_snapshot(
     }
 
 
-def _merge_tool_input(
+def _todo_input(
     snapshot: Dict[str, Any],
+    *,
+    todo_id: str,
+    title: str,
+    phase_class: str,
+    required_class: str,
+    purpose: str,
+    expected_output: str,
+    completion_condition: str,
+    origin: str = "initial",
+    tool_query: str = "",
+    target_title: str = "",
+    target_paper_id: int = 0,
+    requested_sections: Optional[Sequence[str]] = None,
+    exclusion_ids: Optional[Sequence[int]] = None,
+    supersedes_todo_id: Optional[str] = None,
+    status_reason: Optional[str] = None,
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     prompt_analysis = snapshot.get("prompt_analysis") if isinstance(snapshot.get("prompt_analysis"), dict) else {}
+    requested = list(requested_sections or prompt_analysis.get("requested_sections") or [])
+    exclusions = [int(item) for item in (exclusion_ids or []) if str(item).strip().isdigit()]
+    primary_query = tool_query or str(prompt_analysis.get("normalized_query") or snapshot.get("prompt") or "")
     payload: Dict[str, Any] = {
+        "payload_version": PAYLOAD_VERSION,
+        "planner_version": PLANNER_VERSION,
+        "todoId": todo_id,
+        "todoTitle": title,
+        "phaseClass": phase_class,
+        "requiredClass": required_class,
+        "origin": origin,
+        "purpose": purpose,
+        "expectedOutput": expected_output,
+        "completionCondition": completion_condition,
         "projectId": snapshot.get("project_id") or "",
         "promptAnalysis": prompt_analysis,
+        "normalizedQuery": _build_query_bundle(
+            primary_query,
+            requested,
+            target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
+            exclusion_ids=exclusions,
+        ),
+        "requestedSections": requested,
+        "exclusionIds": exclusions,
     }
-    if prompt_analysis.get("candidate_title"):
-        payload["targetTitle"] = prompt_analysis.get("candidate_title")
-    if prompt_analysis.get("target_paper_id"):
-        payload["targetPaperId"] = prompt_analysis.get("target_paper_id")
+    resolved_title = target_title or str(prompt_analysis.get("candidate_title") or "")
+    resolved_paper_id = target_paper_id or int(prompt_analysis.get("target_paper_id") or 0)
+    if resolved_title:
+        payload["targetTitle"] = resolved_title
+    if resolved_paper_id:
+        payload["targetPaperId"] = resolved_paper_id
+    if primary_query:
+        payload["query"] = primary_query
+    if exclusions:
+        payload["excludePaperIds"] = exclusions
+    if supersedes_todo_id:
+        payload["supersedesTodoId"] = supersedes_todo_id
+    if status_reason:
+        payload["statusReason"] = status_reason
     if extra:
         payload.update(extra)
     return payload
 
 
-def _plan_step(
+def _todo_step(
     position: int,
+    *,
     title: str,
     description: str,
     tool_name: str,
@@ -397,178 +592,303 @@ def _build_deterministic_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     pending_run_count = int(snapshot.get("pending_run_count") or 0)
     needs_analysis = pending_run_count > 0
     paper_count = int(snapshot.get("paper_count") or 0)
-    steps: List[Dict[str, Any]]
+    steps: List[Dict[str, Any]] = []
+
+    def add_step(
+        title: str,
+        description: str,
+        tool_name: str,
+        *,
+        phase_class: str,
+        required_class: str,
+        purpose: str,
+        expected_output: str,
+        completion_condition: str,
+        origin: str = "initial",
+        tool_query: str = "",
+        target_title: str = "",
+        target_paper_id: int = 0,
+        requested: Optional[Sequence[str]] = None,
+        exclusion_ids: Optional[Sequence[int]] = None,
+        extra: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        position = len(steps) + 1
+        todo_id = f"{origin}-{position}-{_slugify(title)}"
+        steps.append(
+            _todo_step(
+                position,
+                title=title,
+                description=description,
+                tool_name=tool_name,
+                tool_input=_todo_input(
+                    snapshot,
+                    todo_id=todo_id,
+                    title=title,
+                    phase_class=phase_class,
+                    required_class=required_class,
+                    purpose=purpose,
+                    expected_output=expected_output,
+                    completion_condition=completion_condition,
+                    origin=origin,
+                    tool_query=tool_query or normalized_query,
+                    target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
+                    target_paper_id=target_paper_id or int(prompt_analysis.get("target_paper_id") or 0),
+                    requested_sections=requested or requested_sections,
+                    exclusion_ids=exclusion_ids,
+                    extra=extra,
+                ),
+            )
+        )
 
     if prompt_analysis.get("single_paper") and prompt_analysis.get("candidate_title"):
         candidate_title = str(prompt_analysis.get("candidate_title") or "")
+        target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
         if prompt_analysis.get("target_in_scope"):
-            target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
-            steps = [
-                _plan_step(
-                    1,
-                    "Read the named paper first",
-                    f'Open "{candidate_title}" directly and extract the sections needed for the requested report.',
-                    "read_paper_sections",
-                    _merge_tool_input(
-                        snapshot,
-                        {
-                            "paperIds": [target_paper_id],
-                            "limit": 1,
-                            "query": candidate_title,
-                            "requestedSections": requested_sections,
-                        },
-                    ),
-                ),
-                _plan_step(
-                    2,
-                    "Pull only supporting context",
-                    "Retrieve adjacent in-scope papers only if they help explain background or compare the findings.",
-                    "fetch_papers",
-                    _merge_tool_input(
-                        snapshot,
-                        {
-                            "query": normalized_query,
-                            "limit": 4,
-                            "excludePaperIds": [target_paper_id],
-                        },
-                    ),
-                ),
-            ]
-            if prompt_analysis.get("compare") or "theoretical_background" in requested_sections:
-                steps.append(
-                    _plan_step(
-                        3,
-                        "Read supporting evidence",
-                        "Inspect the strongest supporting papers so the final report can add context without losing focus on the named paper.",
-                        "read_paper_sections",
-                        _merge_tool_input(
-                            snapshot,
-                            {
-                                "query": normalized_query,
-                                "limit": 3,
-                                "excludePaperIds": [target_paper_id],
-                                "requestedSections": requested_sections,
-                            },
-                        ),
-                    )
-                )
+            add_step(
+                "Confirm the target paper in scope",
+                f'Confirm that "{candidate_title}" is the exact in-scope anchor for this report.',
+                "list_folder_papers",
+                phase_class="research",
+                required_class="required_before_verification",
+                purpose="Lock the target paper before extracting evidence.",
+                expected_output="A scope confirmation for the named paper and any ambiguity note if needed.",
+                completion_condition="The target paper is confirmed or any residual ambiguity is stated.",
+                tool_query=candidate_title,
+                target_title=candidate_title,
+                target_paper_id=target_paper_id,
+                extra={"limit": 12},
+            )
+            add_step(
+                "Extract the requested sections",
+                "Read the named paper directly and pull the sections needed for the user's requested structure.",
+                "read_paper_sections",
+                phase_class="research",
+                required_class="required_before_verification",
+                purpose="Ground the answer in the exact paper first.",
+                expected_output="Section-level evidence from the named paper.",
+                completion_condition="The named paper's relevant sections are extracted.",
+                tool_query=candidate_title,
+                target_title=candidate_title,
+                target_paper_id=target_paper_id,
+                requested=requested_sections,
+                extra={"paperIds": [target_paper_id], "limit": 1},
+            )
+            add_step(
+                "Pull supporting context",
+                "Retrieve adjacent in-scope papers only if they help explain background, contrast, or implications.",
+                "fetch_papers",
+                phase_class="research",
+                required_class="optional_context",
+                purpose="Broaden context without losing the named paper as the anchor.",
+                expected_output="A shortlist of supporting papers for context.",
+                completion_condition="Supporting context is gathered or explicitly judged unnecessary.",
+                tool_query=normalized_query,
+                target_title=candidate_title,
+                target_paper_id=target_paper_id,
+                exclusion_ids=[target_paper_id],
+                extra={"limit": 4},
+            )
+            add_step(
+                "Read supporting evidence",
+                "Inspect the strongest supporting papers for claims that need context beyond the target paper alone.",
+                "read_paper_sections",
+                phase_class="research",
+                required_class="optional_context",
+                purpose="Collect broader evidence for background, comparison, or implications.",
+                expected_output="Supporting section evidence from adjacent papers.",
+                completion_condition="Supporting evidence is reviewed or marked unnecessary.",
+                tool_query=normalized_query,
+                target_title=candidate_title,
+                target_paper_id=target_paper_id,
+                requested=requested_sections,
+                exclusion_ids=[target_paper_id],
+                extra={"limit": 3},
+            )
             summary = (
-                f'Read the in-scope paper "{candidate_title}" first, then widen only if supporting context helps answer the requested sections.'
+                f'Read the in-scope paper "{candidate_title}" first, then expand only where supporting context strengthens the requested report.'
             )
         else:
-            steps = [
-                _plan_step(
-                    1,
-                    "Verify scope coverage",
-                    f'Check the current scope for "{candidate_title}" and confirm whether the named paper is actually available.',
-                    "list_folder_papers",
-                    _merge_tool_input(snapshot, {"limit": 12}),
-                ),
-                _plan_step(
-                    2,
-                    "Surface closest in-scope matches",
-                    "Look for the nearest title matches so the final report can clearly explain the gap instead of pretending the paper was found.",
-                    "fetch_papers",
-                    _merge_tool_input(snapshot, {"query": candidate_title, "limit": 5}),
-                ),
-            ]
+            add_step(
+                "Verify scope coverage",
+                f'Check the current scope for "{candidate_title}" and confirm whether the named paper is available.',
+                "list_folder_papers",
+                phase_class="research",
+                required_class="required_before_verification",
+                purpose="Validate whether the requested paper exists in the current workspace scope.",
+                expected_output="A scope summary and any exact/probable matches.",
+                completion_condition="The scope confirms presence, ambiguity, or absence of the named paper.",
+                tool_query=candidate_title,
+                target_title=candidate_title,
+                extra={"limit": 12},
+            )
+            add_step(
+                "Search for exact and probable matches",
+                "Look for the nearest in-scope title matches so the report can explain the gap instead of hallucinating coverage.",
+                "fetch_papers",
+                phase_class="research",
+                required_class="required_before_verification",
+                purpose="Gather the strongest in-scope alternatives if the target paper is absent.",
+                expected_output="A ranked set of probable in-scope matches.",
+                completion_condition="Nearest matches are gathered or the scope gap is confirmed.",
+                tool_query=candidate_title,
+                target_title=candidate_title,
+                extra={"limit": 5},
+            )
             summary = (
-                f'The request names "{candidate_title}", which is not currently in the selected scope. Verify coverage and report the closest in-scope matches before recommending an upload or scope change.'
+                f'Investigate whether "{candidate_title}" exists in the selected scope, capture the strongest matches, and prepare a scope-gap report if it is absent.'
             )
     elif prompt_analysis.get("compare"):
-        steps = [
-            _plan_step(
-                1,
-                "Retrieve comparison papers",
-                "Find the strongest in-scope papers that match the comparison request.",
-                "fetch_papers",
-                _merge_tool_input(snapshot, {"query": normalized_query, "limit": 6}),
-            ),
-            _plan_step(
-                2,
-                "Read comparable sections",
-                "Inspect the methods, results, and conclusions needed to compare the papers directly.",
-                "read_paper_sections",
-                _merge_tool_input(snapshot, {"query": normalized_query, "limit": 4}),
-            ),
-        ]
-        if paper_count >= 6:
-            steps.append(
-                _plan_step(
-                    3,
-                    "Check corpus coverage",
-                    "Use high-level scope signals only to frame how representative the comparison is inside this workspace.",
-                    "get_dashboard_summary",
-                    _merge_tool_input(snapshot, {"focus": "overview"}),
-                )
-            )
-        summary = f'Identify the strongest comparison papers for "{normalized_query}" and extract section-level evidence before writing the synthesis.'
+        add_step(
+            "Retrieve comparison papers",
+            "Find the strongest in-scope papers that match the requested comparison.",
+            "fetch_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Build the comparison set before drawing conclusions.",
+            expected_output="A focused comparison set of relevant papers.",
+            completion_condition="At least one strong comparison set is assembled or an evidence gap is recorded.",
+            tool_query=normalized_query,
+            extra={"limit": 6},
+        )
+        add_step(
+            "Read comparable sections",
+            "Inspect methods, findings, and conclusions that support direct paper-to-paper comparison.",
+            "read_paper_sections",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Extract direct evidence for the requested comparison dimensions.",
+            expected_output="Comparable section evidence across the retrieved papers.",
+            completion_condition="Comparison evidence is extracted from the strongest papers.",
+            tool_query=normalized_query,
+            requested=requested_sections,
+            extra={"limit": 4},
+        )
+        add_step(
+            "Check corpus framing",
+            "Use workspace-level context only where it helps explain representativeness or coverage.",
+            "get_dashboard_summary",
+            phase_class="research",
+            required_class="optional_context",
+            purpose="Add light corpus framing without replacing document evidence.",
+            expected_output="A concise coverage note for the comparison set.",
+            completion_condition="Corpus framing is captured or judged unnecessary.",
+            tool_query=normalized_query,
+            extra={"focus": "overview"},
+        )
+        summary = f'Identify the strongest comparison papers for "{normalized_query}", extract comparable evidence, and then verify whether the requested contrast is fully supported.'
     elif prompt_analysis.get("survey") or paper_count >= 8:
-        steps = [
-            _plan_step(
-                1,
-                "Map the scoped corpus",
-                "List the in-scope papers first so the review stays grounded in the current workspace.",
-                "list_folder_papers",
-                _merge_tool_input(snapshot, {"limit": 15}),
-            ),
-            _plan_step(
-                2,
-                "Pull the strongest papers",
-                "Retrieve the most relevant papers for the topic without echoing the full instruction prompt into search.",
-                "fetch_papers",
-                _merge_tool_input(snapshot, {"query": normalized_query, "limit": 6}),
-            ),
-            _plan_step(
-                3,
-                "Read the most relevant sections",
-                "Inspect the sections that carry the evidence the user is asking for.",
-                "read_paper_sections",
-                _merge_tool_input(snapshot, {"query": normalized_query, "limit": 4}),
-            ),
-        ]
-        if paper_count >= 10:
-            steps.append(
-                _plan_step(
-                    4,
-                    "Frame coverage patterns",
-                    "Use workspace-level trends only where they help explain coverage, chronology, or topic distribution.",
-                    "get_dashboard_summary",
-                    _merge_tool_input(snapshot, {"focus": "trends"}),
-                )
-            )
-        summary = f'Map the scoped corpus for "{normalized_query}", retrieve the strongest papers, and then synthesize section-level evidence into a topic review.'
+        add_step(
+            "Map the scoped corpus",
+            "List the in-scope papers first so the review stays grounded in the current workspace.",
+            "list_folder_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Establish what evidence is actually available in the workspace.",
+            expected_output="A scope map of the currently available papers.",
+            completion_condition="The corpus scope is summarized.",
+            tool_query=normalized_query,
+            extra={"limit": 15},
+        )
+        add_step(
+            "Retrieve the strongest papers",
+            "Pull the most relevant papers for the topic without echoing the full instruction prompt into retrieval.",
+            "fetch_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Build the core evidence base for the topic review.",
+            expected_output="A grounded shortlist of the strongest topic-relevant papers.",
+            completion_condition="The evidence base is retrieved or a scope gap is recorded.",
+            tool_query=normalized_query,
+            extra={"limit": 6},
+        )
+        add_step(
+            "Read the most relevant sections",
+            "Inspect the sections that carry the evidence the user asked for.",
+            "read_paper_sections",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Extract the evidence needed for the requested topic review.",
+            expected_output="Section-level evidence from the strongest papers.",
+            completion_condition="Relevant sections are extracted from the evidence base.",
+            tool_query=normalized_query,
+            requested=requested_sections,
+            extra={"limit": 4},
+        )
+        add_step(
+            "Frame coverage patterns",
+            "Use workspace-level trends only when they improve chronology, coverage, or topic framing.",
+            "get_dashboard_summary",
+            phase_class="research",
+            required_class="optional_context",
+            purpose="Add high-level context without replacing the paper evidence.",
+            expected_output="A concise trend or coverage framing note.",
+            completion_condition="Coverage framing is captured or marked unnecessary.",
+            tool_query=normalized_query,
+            extra={"focus": "trends" if paper_count >= 10 else "overview"},
+        )
+        summary = f'Map the scoped corpus for "{normalized_query}", retrieve the strongest papers, extract section evidence, and verify whether the review fully covers the request.'
     else:
-        steps = [
-            _plan_step(
-                1,
-                "Retrieve relevant papers",
-                "Find the in-scope papers that most directly answer the request.",
-                "fetch_papers",
-                _merge_tool_input(snapshot, {"query": normalized_query, "limit": 5}),
-            ),
-            _plan_step(
-                2,
-                "Read the requested evidence",
-                "Inspect the paper sections most likely to contain the answer instead of relying on broad workspace analytics.",
-                "read_paper_sections",
-                _merge_tool_input(snapshot, {"query": normalized_query, "limit": 3}),
-            ),
-        ]
-        if prompt_analysis.get("evidence_extraction") and paper_count >= 4:
-            steps.insert(
-                0,
-                _plan_step(
-                    1,
-                    "Check scoped coverage",
-                    "Quickly verify the workspace coverage before drilling into evidence-heavy extraction.",
-                    "list_folder_papers",
-                    _merge_tool_input(snapshot, {"limit": 10}),
-                ),
-            )
-            for index, step in enumerate(steps, start=1):
-                step["position"] = index
-        summary = f'Retrieve the most relevant in-scope papers for "{normalized_query}" and answer from their sections directly.'
+        add_step(
+            "Check scoped coverage",
+            "Quickly verify the workspace coverage before drilling into the evidence-heavy answer.",
+            "list_folder_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Understand the available scope before answering.",
+            expected_output="A concise scope snapshot for this request.",
+            completion_condition="Scope coverage is summarized.",
+            tool_query=normalized_query,
+            extra={"limit": 10},
+        )
+        add_step(
+            "Retrieve relevant papers",
+            "Find the in-scope papers that most directly answer the request.",
+            "fetch_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Build the smallest grounded evidence set needed to answer the request.",
+            expected_output="A shortlist of directly relevant papers.",
+            completion_condition="Relevant papers are retrieved or the evidence gap is recorded.",
+            tool_query=normalized_query,
+            extra={"limit": 5},
+        )
+        add_step(
+            "Read the requested evidence",
+            "Inspect the paper sections most likely to contain the answer instead of relying on broad analytics.",
+            "read_paper_sections",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Extract evidence for the exact sections or claims the user requested.",
+            expected_output="Section-level evidence from the most relevant papers.",
+            completion_condition="Requested evidence is extracted from the selected papers.",
+            tool_query=normalized_query,
+            requested=requested_sections,
+            extra={"limit": 3},
+        )
+        summary = f'Retrieve the most relevant in-scope papers for "{normalized_query}" and verify whether their sections fully support the requested answer.'
+
+    add_step(
+        "Verify coverage before synthesis",
+        "Check that target resolution, requested sections, citation coverage, and evidence-gap disclosure are all sufficient before drafting the report.",
+        INTERNAL_VERIFY_TOOL,
+        phase_class="verification",
+        required_class="verification",
+        purpose="Prevent synthesis from running on incomplete or misleading evidence.",
+        expected_output="A verification decision with either approval, warnings, or new required work.",
+        completion_condition="Verification passes, passes with warnings, or generates follow-up work.",
+        tool_query=normalized_query,
+    )
+    add_step(
+        "Draft the final report",
+        "Synthesize the verified findings into a grounded prose report that follows the requested format and never exposes raw tool output.",
+        INTERNAL_SYNTHESIZE_TOOL,
+        phase_class="synthesis",
+        required_class="synthesis",
+        purpose="Produce the final report only after verification has decided the evidence path.",
+        expected_output="A grounded prose report that reflects the completed evidence path.",
+        completion_condition="A valid full or partial report is produced.",
+        tool_query=normalized_query,
+    )
 
     if needs_analysis:
         summary = f"Analyze the pending files first, then {summary[0].lower() + summary[1:]}"
@@ -819,71 +1139,387 @@ def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, A
     raise ValueError(f"Unsupported deep research tool: {tool_name}")
 
 
+def _step_input_payload(step: Dict[str, Any]) -> Dict[str, Any]:
+    payload = step.get("tool_input")
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _step_output_payload(step: Dict[str, Any]) -> Dict[str, Any]:
+    payload = step.get("output_payload")
+    return dict(payload) if isinstance(payload, dict) else {}
+
+
+def _step_position(step: Dict[str, Any]) -> int:
+    return int(step.get("position") or 0)
+
+
+def _step_status(step: Dict[str, Any]) -> str:
+    return str(step.get("status") or "planned")
+
+
+def _step_phase_class(step: Dict[str, Any]) -> str:
+    payload = _step_input_payload(step)
+    return str(payload.get("phaseClass") or "research")
+
+
+def _step_required_class(step: Dict[str, Any]) -> str:
+    payload = _step_input_payload(step)
+    return str(payload.get("requiredClass") or "required_before_verification")
+
+
+def _step_todo_id(step: Dict[str, Any]) -> str:
+    payload = _step_input_payload(step)
+    return str(payload.get("todoId") or f"todo-{_step_position(step)}")
+
+
+def _step_supersedes_todo_id(step: Dict[str, Any]) -> str:
+    payload = _step_input_payload(step)
+    return str(payload.get("supersedesTodoId") or "")
+
+
+def _step_result_kind(step: Dict[str, Any]) -> str:
+    return str(_step_output_payload(step).get("result_kind") or "")
+
+
+def _step_status_reason(step: Dict[str, Any]) -> str:
+    output_payload = _step_output_payload(step)
+    if str(output_payload.get("status_reason") or "").strip():
+        return str(output_payload.get("status_reason") or "").strip()
+    return str(_step_input_payload(step).get("statusReason") or "").strip()
+
+
+def _is_step_resolved(step: Dict[str, Any]) -> bool:
+    status = _step_status(step)
+    result_kind = _step_result_kind(step)
+    return status == "completed" and result_kind != "blocked"
+
+
+def _is_required_before_verification_resolved(step: Dict[str, Any]) -> bool:
+    if _step_required_class(step) != "required_before_verification":
+        return True
+    return _is_step_resolved(step)
+
+
+def _pending_required_steps(steps: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        step
+        for step in steps
+        if _step_required_class(step) == "required_before_verification"
+        and not _is_required_before_verification_resolved(step)
+    ]
+
+
+def _next_pending_step(steps: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    pending = [step for step in steps if _step_status(step) == "planned"]
+    if not pending:
+        return None
+    return sorted(
+        pending,
+        key=lambda step: (
+            REQUIRED_PRIORITY.get(_step_required_class(step), 99),
+            _step_position(step),
+        ),
+    )[0]
+
+
+def _replace_step(steps: Sequence[Dict[str, Any]], updated: Dict[str, Any]) -> List[Dict[str, Any]]:
+    updated_position = _step_position(updated)
+    replaced = []
+    for step in steps:
+        if _step_position(step) == updated_position:
+            replaced.append(updated)
+        else:
+            replaced.append(step)
+    return replaced
+
+
+def _step_result_entry(step: Dict[str, Any], output_payload: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "position": _step_position(step),
+        "title": step.get("title"),
+        "description": step.get("description"),
+        "tool_name": step.get("tool_name"),
+        "phase_class": _step_phase_class(step),
+        "required_class": _step_required_class(step),
+        "summary": output_payload.get("summary"),
+        "detail": output_payload.get("detail"),
+        "citations": list(output_payload.get("citations") or []),
+        "result_kind": output_payload.get("result_kind"),
+        "diagnostics": output_payload.get("diagnostics") or {},
+        "raw": output_payload.get("raw") or {},
+        "status_reason": output_payload.get("status_reason"),
+        "todo_id": _step_todo_id(step),
+        "supersedes_todo_id": _step_supersedes_todo_id(step) or None,
+    }
+
+
+def _upsert_step_result(
+    step_results: Sequence[Dict[str, Any]],
+    step: Dict[str, Any],
+    output_payload: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    entry = _step_result_entry(step, output_payload)
+    remainder = [
+        item
+        for item in step_results
+        if int(item.get("position") or 0) != _step_position(step)
+    ]
+    remainder.append(entry)
+    remainder.sort(key=lambda item: int(item.get("position") or 0))
+    return remainder
+
+
+def _distinct_source_hits(step_results: Sequence[Dict[str, Any]]) -> List[str]:
+    seen: List[str] = []
+    for step in step_results:
+        citations = step.get("citations") if isinstance(step.get("citations"), list) else []
+        for citation in citations:
+            if isinstance(citation, dict):
+                source_id = str(citation.get("source_id") or "").strip()
+            else:
+                source_id = str(citation or "").strip()
+            if source_id and source_id not in seen:
+                seen.append(source_id)
+    return seen
+
+
+def _step_papers_from_output(output_payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    raw = output_payload.get("raw") if isinstance(output_payload.get("raw"), dict) else {}
+    papers = raw.get("papers") if isinstance(raw.get("papers"), list) else []
+    return [paper for paper in papers if isinstance(paper, dict)]
+
+
+def _format_paper_labels(papers: Sequence[Dict[str, Any]], limit: int = 4) -> str:
+    labels = []
+    for paper in papers[:limit]:
+        paper_id = int(paper.get("paperId") or paper.get("paper_id") or 0)
+        title = str(paper.get("title") or "Untitled")
+        if paper_id > 0:
+            labels.append(f"{title} [Paper {paper_id}]")
+        else:
+            labels.append(title)
+    return ", ".join(labels)
+
+
 def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> Dict[str, Any]:
     if not raw_output:
-        return {"summary": "No grounded output returned for this step.", "citations": []}
-
-    citations: List[int] = []
-    papers = raw_output.get("papers") if isinstance(raw_output, dict) else []
-    if isinstance(papers, list):
-        for paper in papers:
-            paper_id = paper.get("paperId") or paper.get("paper_id")
-            if paper_id:
-                try:
-                    citations.append(int(paper_id))
-                except Exception:
-                    continue
-    first_appearance = raw_output.get("firstAppearance") if isinstance(raw_output, dict) else None
-    if isinstance(first_appearance, dict) and first_appearance.get("paperId"):
-        try:
-            citations.append(int(first_appearance["paperId"]))
-        except Exception:
-            pass
-    citation_ids = sorted({citation for citation in citations if citation > 0})
+        return _build_step_output(
+            "No grounded output was returned for this step.",
+            "The workspace tool completed without returning a usable payload.",
+            result_kind="insufficient_evidence",
+            diagnostics={"confidence": "low", "retrieval_count": 0},
+            raw={},
+        )
 
     tool_name = str(step.get("tool_name") or "")
+    papers = raw_output.get("papers") if isinstance(raw_output.get("papers"), list) else []
+    citations = [_citation_ref(paper) for paper in papers if isinstance(paper, dict)]
+    retrieval_count = len(citations)
+    prompt_analysis = _selected_prompt_analysis({}, _step_input_payload(step))
+
     if tool_name == "list_folder_papers":
         paper_count = int(raw_output.get("paperCount") or len(papers))
         target_title = str(raw_output.get("targetTitle") or "")
         ranked_matches = list(raw_output.get("rankedMatches") or [])
         if paper_count == 0:
-            summary = "The current scope has no analyzed papers yet."
-        elif target_title and raw_output.get("targetFound"):
-            summary = f'The current scope contains {paper_count} analyzed papers and includes a strong match for "{target_title}".'
-        elif target_title and ranked_matches:
+            return _build_step_output(
+                "The selected scope does not contain any analyzed papers yet.",
+                "Deep research cannot ground the answer until the selected workspace contains analyzed papers.",
+                result_kind="scope_gap",
+                diagnostics={"confidence": "low", "retrieval_count": 0, "thin_evidence": True},
+                raw=raw_output,
+            )
+        if target_title and raw_output.get("targetFound"):
+            detail = f'The selected scope contains {paper_count} analyzed papers and includes a strong match for "{target_title}".'
+            return _build_step_output(
+                detail,
+                detail,
+                citations=citations[:5],
+                result_kind="document_hit",
+                diagnostics={"confidence": "high", "retrieval_count": retrieval_count},
+                raw=raw_output,
+            )
+        if target_title and ranked_matches:
             closest = ", ".join(
                 str(match.get("title") or "")
                 for match in ranked_matches[:3]
                 if str(match.get("title") or "").strip()
             )
-            summary = f'The current scope contains {paper_count} analyzed papers, but "{target_title}" is not an exact in-scope match. Closest matches: {closest}.'
-        else:
-            summary = f"The current scope contains {paper_count} analyzed papers."
-    elif tool_name == "get_dashboard_summary":
-        overview = raw_output.get("overview") if isinstance(raw_output.get("overview"), dict) else {}
-        paper_count = overview.get("paper_count") or overview.get("paperCount") or 0
-        year_range = overview.get("year_range") or "Unknown range"
-        summary = f"Workspace coverage overview: {paper_count} papers across {year_range}."
-    elif tool_name in {"fetch_papers", "read_paper_sections"}:
-        if citation_ids:
-            labels = ", ".join(
-                f'{str(paper.get("title") or "Untitled")} [Paper {int(paper.get("paperId") or paper.get("paper_id") or 0)}]'
-                for paper in papers[:4]
+            summary = f'The named paper "{target_title}" is not an exact in-scope match.'
+            detail = (
+                f'The selected scope currently contains {paper_count} analyzed papers. '
+                f'Closest matches in scope: {closest}.'
             )
-            summary = f"Grounded evidence retrieved from {len(citation_ids)} paper(s): {labels}."
-        else:
-            query = str(raw_output.get("query") or "")
-            summary = f'No in-scope papers matched "{query}" strongly enough to support the step.'
-    elif tool_name == "keyword_search":
-        summary = "Keyword search completed against the current workspace scope."
-    else:
-        summary = "Grounded step completed."
+            return _build_step_output(
+                summary,
+                detail,
+                citations=citations[:5],
+                result_kind="scope_gap",
+                diagnostics={
+                    "confidence": "medium",
+                    "retrieval_count": retrieval_count,
+                    "ambiguity_flag": True,
+                    "thin_evidence": True,
+                },
+                raw=raw_output,
+            )
+        return _build_step_output(
+            f"The selected scope contains {paper_count} analyzed papers.",
+            f"The current workspace scope contains {paper_count} analyzed papers that can be used for this run.",
+            citations=citations[:5],
+            result_kind="document_hit",
+            diagnostics={"confidence": "medium", "retrieval_count": retrieval_count},
+            raw=raw_output,
+        )
 
+    if tool_name == "get_dashboard_summary":
+        focus = str(raw_output.get("focus") or "overview")
+        overview = raw_output.get("overview") if isinstance(raw_output.get("overview"), dict) else {}
+        paper_count = int(overview.get("paper_count") or overview.get("paperCount") or 0)
+        year_range = str(overview.get("year_range") or "Unknown range")
+        return _build_step_output(
+            f"Workspace {focus} framing is available for this request.",
+            f"The workspace {focus} view covers {paper_count} papers across {year_range}.",
+            result_kind="synthesis_input",
+            diagnostics={"confidence": "medium", "retrieval_count": paper_count, "tool_name": tool_name},
+            raw=raw_output,
+        )
+
+    if tool_name in {"fetch_papers", "read_paper_sections"}:
+        query = str(raw_output.get("query") or "")
+        if retrieval_count == 0:
+            return _build_step_output(
+                f'No in-scope papers strongly matched "{query}".',
+                "The current scope did not return enough grounded paper evidence for this step.",
+                result_kind="document_miss",
+                diagnostics={"confidence": "low", "retrieval_count": 0, "thin_evidence": True},
+                raw=raw_output,
+            )
+        result_kind = "comparison" if bool(prompt_analysis.get("compare")) else "document_hit"
+        detail = (
+            f"Grounded evidence was pulled from {retrieval_count} paper(s): "
+            f"{_format_paper_labels(papers)}."
+        )
+        contradiction_flag = False
+        conflict_notes: List[str] = []
+        if bool(prompt_analysis.get("compare")) and retrieval_count >= 2:
+            paper_titles = {str(paper.get("title") or "").strip().lower() for paper in papers}
+            contradiction_flag = len(paper_titles) >= 2
+            if contradiction_flag:
+                conflict_notes.append("Multiple papers must be compared rather than collapsed into one consensus claim.")
+        return _build_step_output(
+            f"Grounded evidence is available from {retrieval_count} paper(s).",
+            detail,
+            citations=citations,
+            result_kind="conflicting_evidence" if contradiction_flag else result_kind,
+            diagnostics={
+                "confidence": "high" if retrieval_count >= 2 else "medium",
+                "retrieval_count": retrieval_count,
+                "thin_evidence": retrieval_count < (2 if bool(prompt_analysis.get("compare") or prompt_analysis.get("survey")) else 1),
+                "contradiction_flag": contradiction_flag,
+                "conflict_notes": conflict_notes,
+            },
+            raw=raw_output,
+        )
+
+    if tool_name == "keyword_search":
+        concepts = raw_output.get("suggestedConcepts") if isinstance(raw_output.get("suggestedConcepts"), list) else []
+        detail = "Keyword search completed against the current workspace scope."
+        if concepts:
+            detail = f"{detail} Suggested concepts: {', '.join(str(item) for item in concepts[:5])}."
+        return _build_step_output(
+            "Keyword search completed for the current scope.",
+            detail,
+            result_kind="synthesis_input",
+            diagnostics={"confidence": "medium", "tool_name": tool_name},
+            raw=raw_output,
+        )
+
+    return _build_step_output(
+        "Grounded step completed.",
+        "The workspace tool completed successfully.",
+        result_kind="synthesis_input",
+        diagnostics={"confidence": "medium", "tool_name": tool_name},
+        raw=raw_output,
+    )
+
+
+def _state_snapshot_for_todos(state: DeepResearchState) -> Dict[str, Any]:
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
     return {
-        "summary": summary,
-        "citations": citation_ids,
-        "raw": raw_output,
+        "prompt": str(state.get("prompt") or ""),
+        "project_id": str(state.get("project_id") or ""),
+        "prompt_analysis": prompt_analysis,
     }
+
+
+def _persist_step_patch(state: DeepResearchState, position: int, patch: Dict[str, Any]) -> None:
+    callback = state.get("persist_step_update")
+    if callable(callback):
+        callback(position, patch)
+
+
+def _persist_insert_step(state: DeepResearchState, step: Dict[str, Any]) -> None:
+    callback = state.get("persist_step_insert")
+    if callable(callback):
+        callback(step)
+
+
+def _append_runtime_step(
+    state: DeepResearchState,
+    steps: Sequence[Dict[str, Any]],
+    *,
+    title: str,
+    description: str,
+    tool_name: str,
+    phase_class: str,
+    required_class: str,
+    purpose: str,
+    expected_output: str,
+    completion_condition: str,
+    origin: str,
+    tool_query: str = "",
+    target_title: str = "",
+    target_paper_id: int = 0,
+    requested_sections: Optional[Sequence[str]] = None,
+    exclusion_ids: Optional[Sequence[int]] = None,
+    supersedes_todo_id: Optional[str] = None,
+    status_reason: Optional[str] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    snapshot = _state_snapshot_for_todos(state)
+    position = max([_step_position(step) for step in steps] or [0]) + 1
+    todo_id = f"{origin}-{position}-{_slugify(title)}"
+    step = _todo_step(
+        position,
+        title=title,
+        description=description,
+        tool_name=tool_name,
+        tool_input=_todo_input(
+            snapshot,
+            todo_id=todo_id,
+            title=title,
+            phase_class=phase_class,
+            required_class=required_class,
+            purpose=purpose,
+            expected_output=expected_output,
+            completion_condition=completion_condition,
+            origin=origin,
+            tool_query=tool_query,
+            target_title=target_title,
+            target_paper_id=target_paper_id,
+            requested_sections=requested_sections,
+            exclusion_ids=exclusion_ids,
+            supersedes_todo_id=supersedes_todo_id,
+            status_reason=status_reason,
+            extra=extra,
+        ),
+    )
+    step["status"] = "planned"
+    step["output_payload"] = {}
+    new_steps = list(steps) + [step]
+    _persist_insert_step(state, step)
+    return new_steps, step
 
 
 def research_preflight_node(state: DeepResearchState) -> Dict[str, Any]:
@@ -896,54 +1532,83 @@ def research_preflight_node(state: DeepResearchState) -> Dict[str, Any]:
         return {
             "pending_run_count": pending_run_count,
             "requires_analysis": True,
+            "session_phase": "waiting_on_analysis",
             "status": "waiting_on_analysis",
         }
     return {
         "pending_run_count": 0,
         "requires_analysis": False,
+        "session_phase": "ready",
         "status": "research_ready",
     }
 
 
 def research_execute_step_node(state: DeepResearchState) -> Dict[str, Any]:
     steps = list(state.get("steps") or [])
-    index = int(state.get("current_step_index") or 0)
-    if index >= len(steps):
+    if not steps:
         return {
-            "status": "research_steps_complete",
+            "session_phase": "synthesizing",
+            "status": "research_ready_for_synthesis",
         }
 
-    step = steps[index]
-    callback = state.get("persist_step_update")
-    if callable(callback):
-        callback(int(step.get("position") or index + 1), {"status": "processing"})
+    step = _next_pending_step(steps)
+    if not step:
+        return {
+            "steps": steps,
+            "session_phase": "synthesizing",
+            "status": "research_ready_for_synthesis",
+        }
 
-    raw_output = _execute_tool(step, state)
+    position = _step_position(step)
+    running_step = {**step, "status": "processing"}
+    steps = _replace_step(steps, running_step)
+    _persist_step_patch(state, position, {"status": "processing"})
+
+    tool_name = str(step.get("tool_name") or "")
+    if tool_name == INTERNAL_VERIFY_TOOL:
+        return _run_verification_step(state, steps, running_step)
+    if tool_name == INTERNAL_SYNTHESIZE_TOOL:
+        return {
+            "steps": steps,
+            "synthesis_step_position": position,
+            "session_phase": "synthesizing",
+            "status": "research_ready_for_synthesis",
+        }
+
+    try:
+        raw_output = _execute_tool(step, state)
+    except Exception as first_error:
+        try:
+            raw_output = _execute_tool(step, state)
+        except Exception as second_error:
+            return _handle_step_failure(
+                state,
+                steps,
+                step,
+                second_error if str(second_error) else first_error,
+            )
+
     summarized = _summarize_step_result(step, raw_output)
-
-    if callable(callback):
-        callback(
-            int(step.get("position") or index + 1),
-            {
-                "status": "completed",
-                "output_payload": summarized,
-            },
-        )
+    completed_step = {
+        **running_step,
+        "status": "completed",
+        "output_payload": summarized,
+    }
+    steps = _replace_step(steps, completed_step)
+    _persist_step_patch(
+        state,
+        position,
+        {
+            "status": "completed",
+            "output_payload": summarized,
+        },
+    )
 
     return {
-        "step_results": list(state.get("step_results") or [])
-        + [
-            {
-                "position": int(step.get("position") or index + 1),
-                "title": step.get("title"),
-                "description": step.get("description"),
-                "tool_name": step.get("tool_name"),
-                "summary": summarized.get("summary"),
-                "citations": summarized.get("citations", []),
-                "raw": summarized.get("raw", {}),
-            }
-        ],
-        "current_step_index": index + 1,
+        "steps": steps,
+        "step_results": _upsert_step_result(list(state.get("step_results") or []), completed_step, summarized),
+        "current_step_index": max(int(state.get("current_step_index") or 0), position),
+        "session_phase": "executing",
         "status": "research_step_completed",
     }
 
@@ -983,6 +1648,350 @@ def _pick_evidence(text: str, keywords: Sequence[str], fallback_count: int = 2) 
     ]
     selected = matches or sentences
     return " ".join(selected[:fallback_count]).strip()
+
+
+def _paper_has_section_evidence(paper: Dict[str, Any], section: str) -> bool:
+    evidence = _section_report(paper, section)
+    lowered = evidence.lower()
+    return not (
+        lowered.startswith("no grounded evidence")
+        or "do not state explicit limitations clearly" in lowered
+    )
+
+
+def _requested_section_coverage(
+    state: DeepResearchState,
+    step_results: Sequence[Dict[str, Any]],
+) -> Dict[str, bool]:
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    requested_sections = list(prompt_analysis.get("requested_sections") or [])
+    if not requested_sections:
+        return {}
+    papers = _step_papers(step_results)
+    coverage: Dict[str, bool] = {}
+    for section in requested_sections:
+        coverage[section] = any(_paper_has_section_evidence(paper, section) for paper in papers)
+    return coverage
+
+
+def _verification_followup_exists(steps: Sequence[Dict[str, Any]]) -> bool:
+    for step in steps:
+        payload = _step_input_payload(step)
+        if (
+            str(payload.get("origin") or "") == "verification_generated"
+            and _step_required_class(step) == "required_before_verification"
+            and _step_status(step) in {"planned", "processing", "waiting"}
+        ):
+            return True
+    return False
+
+
+def _build_verification_result(
+    state: DeepResearchState,
+    steps: Sequence[Dict[str, Any]],
+    step_results: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    requested_sections = list(prompt_analysis.get("requested_sections") or [])
+    target_resolved = True
+    if prompt_analysis.get("single_paper"):
+        target_resolved = bool(_target_paper(state, step_results)) and bool(prompt_analysis.get("target_in_scope"))
+
+    section_coverage = _requested_section_coverage(state, step_results)
+    unresolved_sections = [section for section, covered in section_coverage.items() if not covered]
+    distinct_hits = _distinct_source_hits(step_results)
+    broad_or_compare = bool(prompt_analysis.get("compare") or prompt_analysis.get("survey"))
+    thin_evidence = (
+        (broad_or_compare and len(distinct_hits) < 2)
+        or bool(unresolved_sections)
+        or (bool(prompt_analysis.get("single_paper")) and not target_resolved)
+    )
+    citation_coverage_ok = (
+        not unresolved_sections
+        and (
+            not broad_or_compare
+            or len(distinct_hits) >= 2
+            or bool(prompt_analysis.get("single_paper"))
+        )
+    )
+    warnings: List[str] = []
+    if not target_resolved:
+        warnings.append("The named paper could not be confirmed in the current scope.")
+    if unresolved_sections:
+        warnings.append(
+            "Unresolved requested sections: "
+            + ", ".join(section.replace("_", " ") for section in unresolved_sections)
+            + "."
+        )
+    if broad_or_compare and len(distinct_hits) < 2:
+        warnings.append("Cross-document claims are still supported by fewer than two distinct source hits.")
+
+    if not target_resolved and bool(prompt_analysis.get("single_paper")):
+        overall_result = "fail_partial_only"
+    elif unresolved_sections or (broad_or_compare and len(distinct_hits) < 2):
+        overall_result = "fail_requires_replan" if not _verification_followup_exists(steps) else "fail_partial_only"
+    elif thin_evidence:
+        overall_result = "pass_with_warnings"
+    else:
+        overall_result = "pass"
+
+    return {
+        "target_resolved": target_resolved,
+        "requested_sections_covered": not unresolved_sections,
+        "citation_coverage_ok": citation_coverage_ok,
+        "evidence_gap_disclosed": thin_evidence or not target_resolved or not bool(step_results),
+        "format_matches_request": True,
+        "final_answer_non_json": True,
+        "overall_result": overall_result,
+        "warnings": warnings,
+        "unresolved_sections": unresolved_sections,
+        "distinct_source_hits": distinct_hits,
+        "thin_evidence": thin_evidence,
+    }
+
+
+def _append_verification_followups(
+    state: DeepResearchState,
+    steps: Sequence[Dict[str, Any]],
+    verification_result: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    query = str(prompt_analysis.get("normalized_query") or state.get("prompt") or "")
+    target_title = str(prompt_analysis.get("candidate_title") or "")
+    target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
+    unresolved_sections = list(verification_result.get("unresolved_sections") or [])
+    distinct_hits = list(verification_result.get("distinct_source_hits") or [])
+    exclusion_ids = [int(item) for item in distinct_hits if str(item).isdigit()]
+    new_steps = list(steps)
+
+    if unresolved_sections:
+        new_steps, _ = _append_runtime_step(
+            state,
+            new_steps,
+            title="Resolve uncovered sections",
+            description="Re-read the strongest in-scope papers with section-specific focus for the parts of the report that still lack direct evidence.",
+            tool_name="read_paper_sections",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Close the section-level evidence gaps surfaced during verification.",
+            expected_output="Direct evidence for the unresolved requested sections.",
+            completion_condition="The unresolved sections are supported or explicitly confirmed as unavailable in scope.",
+            origin="verification_generated",
+            tool_query=query,
+            target_title=target_title,
+            target_paper_id=target_paper_id,
+            requested_sections=unresolved_sections,
+            exclusion_ids=exclusion_ids,
+            extra={"limit": 4},
+        )
+    elif bool(prompt_analysis.get("compare") or prompt_analysis.get("survey")) and len(distinct_hits) < 2:
+        new_steps, _ = _append_runtime_step(
+            state,
+            new_steps,
+            title="Retrieve broader supporting evidence",
+            description="Pull additional in-scope papers so any comparison or cross-document conclusion is backed by more than one source.",
+            tool_name="fetch_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Strengthen cross-document evidence before the final report is drafted.",
+            expected_output="Additional distinct source hits for cross-document claims.",
+            completion_condition="At least one additional relevant source is retrieved or the evidence gap is confirmed.",
+            origin="verification_generated",
+            tool_query=query,
+            target_title=target_title,
+            target_paper_id=target_paper_id,
+            exclusion_ids=exclusion_ids,
+            extra={"limit": 4},
+        )
+
+    new_steps, _ = _append_runtime_step(
+        state,
+        new_steps,
+        title="Re-verify coverage after follow-up research",
+        description="Check again that target resolution, requested sections, and citation coverage are now sufficient for synthesis.",
+        tool_name=INTERNAL_VERIFY_TOOL,
+        phase_class="verification",
+        required_class="verification",
+        purpose="Confirm that follow-up work resolved the verification gap before synthesis resumes.",
+        expected_output="A final verification decision after appended evidence collection.",
+        completion_condition="Verification passes, passes with warnings, or downgrades the session to a partial report path.",
+        origin="verification_generated",
+        tool_query=query,
+        target_title=target_title,
+        target_paper_id=target_paper_id,
+        requested_sections=list(prompt_analysis.get("requested_sections") or []),
+    )
+    return new_steps
+
+
+def _handle_step_failure(
+    state: DeepResearchState,
+    steps: Sequence[Dict[str, Any]],
+    step: Dict[str, Any],
+    error: Exception,
+) -> Dict[str, Any]:
+    required_class = _step_required_class(step)
+    step_input = _step_input_payload(step)
+    status_reason = _normalize_space(str(error))
+    allow_recovery = required_class == "required_before_verification" and not bool(
+        _step_supersedes_todo_id(step) or str(step_input.get("origin") or "") in {"replanned", "verification_generated"}
+    )
+    output_payload = _build_step_output(
+        f'The step "{str(step.get("title") or "Untitled step")}" could not complete.',
+        status_reason or "The workspace tool failed twice and did not return grounded evidence.",
+        result_kind="blocked" if allow_recovery else "tool_failure",
+        diagnostics={"confidence": "low", "tool_name": str(step.get("tool_name") or ""), "notes": [status_reason]},
+        raw={"error": status_reason},
+        status_reason=status_reason,
+    )
+
+    failed_status = "waiting" if allow_recovery else "failed"
+    failed_step = {
+        **step,
+        "status": failed_status,
+        "output_payload": output_payload,
+    }
+    new_steps = _replace_step(steps, failed_step)
+    _persist_step_patch(
+        state,
+        _step_position(step),
+        {
+            "status": failed_status,
+            "output_payload": output_payload,
+        },
+    )
+
+    if allow_recovery:
+        new_steps, _ = _append_runtime_step(
+            state,
+            new_steps,
+            title=f"Retry: {str(step.get('title') or 'Recover failed step')}",
+            description="Retry the blocked required step so the report can still complete with grounded evidence if the tool issue was temporary.",
+            tool_name=str(step.get("tool_name") or "fetch_papers"),
+            phase_class=_step_phase_class(step),
+            required_class="required_before_verification",
+            purpose=str(step_input.get("purpose") or "Recover required evidence collection."),
+            expected_output=str(step_input.get("expectedOutput") or "A successful recovery of the blocked research step."),
+            completion_condition=str(
+                step_input.get("completionCondition")
+                or "The blocked step succeeds or the evidence gap is confirmed."
+            ),
+            origin="replanned",
+            tool_query=str(step_input.get("query") or state.get("prompt") or ""),
+            target_title=str(step_input.get("targetTitle") or ""),
+            target_paper_id=int(step_input.get("targetPaperId") or 0),
+            requested_sections=list(step_input.get("requestedSections") or []),
+            exclusion_ids=[int(item) for item in list(step_input.get("excludePaperIds") or []) if str(item).isdigit()],
+            supersedes_todo_id=_step_todo_id(step),
+            status_reason=status_reason,
+            extra={
+                key: value
+                for key, value in step_input.items()
+                if key
+                not in {
+                    "payload_version",
+                    "planner_version",
+                    "todoId",
+                    "todoTitle",
+                    "phaseClass",
+                    "requiredClass",
+                    "origin",
+                    "purpose",
+                    "expectedOutput",
+                    "completionCondition",
+                    "supersedesTodoId",
+                    "statusReason",
+                }
+            },
+        )
+        return {
+            "steps": new_steps,
+            "step_results": _upsert_step_result(list(state.get("step_results") or []), failed_step, output_payload),
+            "session_phase": "replanning",
+            "status": "research_step_completed",
+        }
+
+    return {
+        "steps": new_steps,
+        "step_results": _upsert_step_result(list(state.get("step_results") or []), failed_step, output_payload),
+        "completion_kind": "partial" if required_class == "required_before_verification" else str(state.get("completion_kind") or "full"),
+        "session_phase": "executing",
+        "status": "research_step_completed",
+    }
+
+
+def _run_verification_step(
+    state: DeepResearchState,
+    steps: Sequence[Dict[str, Any]],
+    step: Dict[str, Any],
+) -> Dict[str, Any]:
+    step_results = list(state.get("step_results") or [])
+    verification_result = _build_verification_result(state, steps, step_results)
+    warnings = list(verification_result.get("warnings") or [])
+    outcome = str(verification_result.get("overall_result") or "pass")
+    if outcome == "pass":
+        summary = "Verification passed and the report can move into synthesis."
+    elif outcome == "pass_with_warnings":
+        summary = "Verification passed with warnings, so synthesis can continue with explicit evidence-gap language."
+    elif outcome == "fail_requires_replan":
+        summary = "Verification found unresolved evidence gaps and appended follow-up work before synthesis."
+    else:
+        summary = "Verification concluded that only a partial report can be produced from the current scope."
+
+    detail_parts = []
+    if warnings:
+        detail_parts.append("Warnings: " + " ".join(warnings))
+    unresolved_sections = list(verification_result.get("unresolved_sections") or [])
+    if unresolved_sections:
+        detail_parts.append(
+            "Unresolved sections: " + ", ".join(section.replace("_", " ") for section in unresolved_sections) + "."
+        )
+    if not detail_parts:
+        detail_parts.append("Target resolution, requested coverage, and citation coverage are sufficient for synthesis.")
+    output_payload = _build_step_output(
+        summary,
+        " ".join(detail_parts),
+        result_kind="verification",
+        diagnostics={
+            "confidence": "high" if outcome in {"pass", "pass_with_warnings"} else "medium",
+            "thin_evidence": bool(verification_result.get("thin_evidence")),
+            "notes": warnings,
+        },
+        raw={"verification": verification_result},
+        completion_kind="partial" if outcome == "fail_partial_only" else "full",
+    )
+
+    completed_step = {
+        **step,
+        "status": "completed",
+        "output_payload": output_payload,
+    }
+    new_steps = _replace_step(steps, completed_step)
+    _persist_step_patch(
+        state,
+        _step_position(step),
+        {
+            "status": "completed",
+            "output_payload": output_payload,
+        },
+    )
+
+    completion_kind = "partial" if outcome == "fail_partial_only" else "full"
+    if outcome == "fail_requires_replan":
+        new_steps = _append_verification_followups(state, new_steps, verification_result)
+        session_phase = "replanning"
+    else:
+        session_phase = "verifying"
+
+    return {
+        "steps": new_steps,
+        "step_results": _upsert_step_result(step_results, completed_step, output_payload),
+        "verification_result": verification_result,
+        "completion_kind": completion_kind,
+        "current_step_index": max(int(state.get("current_step_index") or 0), _step_position(step)),
+        "session_phase": session_phase,
+        "status": "research_step_completed",
+    }
 
 
 def _paper_lookup(state: DeepResearchState) -> Dict[int, Dict[str, Any]]:
@@ -1122,6 +2131,7 @@ def _single_paper_report(state: DeepResearchState, step_results: Sequence[Dict[s
 def _general_report(state: DeepResearchState, step_results: Sequence[Dict[str, Any]]) -> str:
     prompt = str(state.get("prompt") or "")
     plan_summary = str(state.get("plan_summary") or "")
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
     papers = _step_papers(step_results)
     if not papers:
         return f"{plan_summary or prompt}\n\nThe current scope did not return grounded paper evidence for this request."
@@ -1131,20 +2141,76 @@ def _general_report(state: DeepResearchState, step_results: Sequence[Dict[str, A
         for paper in papers[:5]
     )
     observations = [
-        str(step.get("summary") or "").strip()
+        str(step.get("detail") or step.get("summary") or "").strip()
         for step in step_results
         if str(step.get("summary") or "").strip()
     ]
-    lines = [
-        plan_summary or prompt,
-        "",
-        "## Evidence Base",
-        evidence_base,
-        "",
-        "## Grounded Findings",
-    ]
-    lines.extend(f"- {observation}" for observation in observations[:6])
+    warnings = list((state.get("verification_result") or {}).get("warnings") or [])
+    requested_sections = list(prompt_analysis.get("requested_sections") or [])
+    lines = [plan_summary or prompt, "", "## Evidence Base", evidence_base]
+    if warnings:
+        lines.extend(["", "## Evidence Gaps", *[f"- {warning}" for warning in warnings]])
+    if requested_sections:
+        labels = {
+            "objective": "Objective",
+            "theoretical_background": "Theoretical Background",
+            "methodology": "Methodology",
+            "participants": "Participants",
+            "key_findings": "Key Findings",
+            "limitations": "Limitations",
+            "implications": "Implications",
+        }
+        for section in requested_sections:
+            lines.extend(["", f"## {labels.get(section, section.replace('_', ' ').title())}"])
+            section_lines = [
+                observation
+                for observation in observations
+                if any(token in observation.lower() for token in SECTION_ALIASES.get(section, (section,)))
+            ]
+            lines.append(
+                section_lines[0]
+                if section_lines
+                else "The available step evidence did not isolate this section cleanly, so the report should treat it as unresolved in scope."
+            )
+    else:
+        lines.extend(["", "## Grounded Findings"])
+        lines.extend(f"- {observation}" for observation in observations[:6])
     return "\n".join(lines)
+
+
+def _compact_step_findings(step_results: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    findings: List[Dict[str, Any]] = []
+    for step in step_results:
+        findings.append(
+            {
+                "position": step.get("position"),
+                "title": step.get("title"),
+                "phase_class": step.get("phase_class"),
+                "required_class": step.get("required_class"),
+                "summary": step.get("summary"),
+                "detail": step.get("detail"),
+                "citations": step.get("citations") or [],
+                "result_kind": step.get("result_kind"),
+                "status_reason": step.get("status_reason"),
+            }
+        )
+    return findings
+
+
+def _report_is_invalid(report: str, requested_sections: Sequence[str]) -> bool:
+    trimmed = report.strip()
+    if not trimmed:
+        return True
+    if trimmed.startswith("{") or trimmed.startswith("["):
+        return True
+    if '"papers": [' in trimmed or '"summary":' in trimmed:
+        return True
+    lowered = trimmed.lower()
+    for section in requested_sections:
+        label = section.replace("_", " ")
+        if label not in lowered and f"## {label}" not in lowered:
+            return True
+    return False
 
 
 def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
@@ -1152,34 +2218,110 @@ def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
     plan_summary = str(state.get("plan_summary") or "")
     prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
     step_results = list(state.get("step_results") or [])
+    requested_sections = list(prompt_analysis.get("requested_sections") or [])
+    completion_kind = str(state.get("completion_kind") or "full")
+    final_citations = []
+    for source_id in _distinct_source_hits(step_results):
+        citation = next(
+            (
+                candidate
+                for step in step_results
+                for candidate in list(step.get("citations") or [])
+                if isinstance(candidate, dict) and str(candidate.get("source_id") or "") == source_id
+            ),
+            None,
+        )
+        if citation:
+            final_citations.append(citation)
 
     if prompt_analysis.get("single_paper") and not prompt_analysis.get("target_in_scope"):
         final_report = _missing_target_report(state)
+        completion_kind = "partial"
     elif prompt_analysis.get("single_paper"):
         final_report = _single_paper_report(state, step_results)
     else:
         final_report = ""
+        step_findings = _compact_step_findings(step_results)
         try:
             response = research_synthesis_llm.invoke(
                 (
                     "You are synthesizing a deep research report from a workspace-scoped research corpus.\n"
                     "Use only the supplied step findings.\n"
+                    "Return prose only.\n"
                     "Do not echo raw JSON, do not invent papers, and say plainly when evidence is thin.\n"
                     "Mention paper IDs inline as [Paper <id>] when available.\n"
                     f"User request:\n{prompt}\n\n"
                     f"Plan summary:\n{plan_summary}\n\n"
                     f"Prompt analysis:\n{json.dumps(prompt_analysis, ensure_ascii=False)}\n\n"
-                    f"Step findings:\n{json.dumps(step_results, ensure_ascii=False)}"
+                    f"Step findings:\n{json.dumps(step_findings, ensure_ascii=False)}"
                 )
             )
             final_report = str(getattr(response, "content", "") or "").strip()
         except Exception:
             final_report = ""
 
-        if not final_report or final_report.startswith("{") or '"papers": [' in final_report:
+        if _report_is_invalid(final_report, requested_sections):
+            try:
+                response = research_synthesis_llm.invoke(
+                    (
+                        "Write a strict prose-only deep research report.\n"
+                        "Use only the supplied summaries, details, and citations.\n"
+                        "Exclude all raw data.\n"
+                        "Follow the requested headings when present.\n"
+                        "Use paragraphs and flat bullets only.\n"
+                        "Do not emit JSON, tables, field names, or tool-call phrasing.\n"
+                        f"User request:\n{prompt}\n\n"
+                        f"Requested sections:\n{json.dumps(requested_sections, ensure_ascii=False)}\n\n"
+                        f"Verification:\n{json.dumps(state.get('verification_result') or {}, ensure_ascii=False)}\n\n"
+                        f"Findings:\n{json.dumps(step_findings, ensure_ascii=False)}"
+                    )
+                )
+                final_report = str(getattr(response, "content", "") or "").strip()
+            except Exception:
+                final_report = ""
+
+        if _report_is_invalid(final_report, requested_sections):
             final_report = _general_report(state, step_results)
+            if (state.get("verification_result") or {}).get("overall_result") == "fail_partial_only":
+                completion_kind = "partial"
+
+    synthesis_position = int(state.get("synthesis_step_position") or 0)
+    synthesis_payload = _build_step_output(
+        "The final report is ready.",
+        "A grounded prose report was assembled from the completed research steps.",
+        citations=final_citations,
+        result_kind="synthesis_input",
+        diagnostics={"confidence": "high" if completion_kind == "full" else "medium"},
+        raw={},
+        completion_kind=completion_kind,
+    )
+    steps = list(state.get("steps") or [])
+    if synthesis_position > 0:
+        for step in steps:
+            if _step_position(step) == synthesis_position:
+                updated_step = {
+                    **step,
+                    "status": "completed",
+                    "output_payload": synthesis_payload,
+                }
+                steps = _replace_step(steps, updated_step)
+                _persist_step_patch(
+                    state,
+                    synthesis_position,
+                    {
+                        "status": "completed",
+                        "output_payload": synthesis_payload,
+                    },
+                )
+                step_results = _upsert_step_result(step_results, updated_step, synthesis_payload)
+                break
 
     return {
+        "steps": steps,
+        "step_results": step_results,
         "final_report": final_report,
+        "final_citations": final_citations,
+        "completion_kind": completion_kind,
+        "session_phase": "completed_partial" if completion_kind == "partial" else "completed",
         "status": "research_completed",
     }

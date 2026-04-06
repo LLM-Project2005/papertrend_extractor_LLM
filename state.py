@@ -131,6 +131,8 @@ class DeepResearchPlanStep(BaseModel):
         "keyword_search",
         "fetch_papers",
         "read_paper_sections",
+        "verify_research",
+        "synthesize_report",
     ] = Field(description="Corpus-grounded tool to use for the step.")
     tool_input: Dict[str, Any] = Field(
         default_factory=dict,
@@ -217,10 +219,16 @@ class DeepResearchState(TypedDict, total=False):
     plan_summary: str
     requires_analysis: bool
     pending_run_count: int
+    session_phase: str
     steps: List[Dict[str, Any]]
     step_results: List[Dict[str, Any]]
     current_step_index: int
+    verification_result: Dict[str, Any]
     final_report: str
+    final_citations: List[Dict[str, Any]]
+    completion_kind: str
+    synthesis_step_position: int
     errors: List[str]
     status: str
     persist_step_update: Any
+    persist_step_insert: Any

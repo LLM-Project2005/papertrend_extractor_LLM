@@ -124,11 +124,14 @@ function sortThreads(
 
 function sessionLabel(session?: DeepResearchSessionRecord | null) {
   if (!session) return null;
+  const partialCompletion = session.steps?.some(
+    (step) => step.output_payload?.completion_kind === "partial"
+  );
   if (session.status === "planned") return "Planned";
   if (session.status === "queued") return "Queued";
   if (session.status === "waiting_on_analysis") return "Waiting on analysis";
   if (session.status === "processing") return "Researching";
-  if (session.status === "completed") return "Completed";
+  if (session.status === "completed") return partialCompletion ? "Completed (partial)" : "Completed";
   if (session.status === "failed") return "Failed";
   return null;
 }
@@ -214,13 +217,25 @@ function splitReportBlocks(report?: string | null) {
 
 function buildResearchProgress(session?: DeepResearchSessionRecord | null) {
   const steps = session?.steps ?? [];
-  const completedSteps = steps.filter((step) => step.status === "completed").length;
+  const completedSteps = steps.filter(
+    (step) =>
+      step.status === "completed" &&
+      step.output_payload?.result_kind !== "blocked"
+  ).length;
+  const obsoleteSteps = steps.filter(
+    (step) => step.output_payload?.result_kind === "obsolete"
+  ).length;
   const failedSteps = steps.filter((step) => step.status === "failed").length;
   const processingStep = steps.find((step) => step.status === "processing");
-  const waitingStep = steps.find((step) => step.status === "waiting");
+  const waitingStep = steps.find(
+    (step) =>
+      step.status === "waiting" ||
+      step.output_payload?.result_kind === "blocked"
+  );
   const activeStep = processingStep ?? waitingStep ?? null;
   const totalSteps = steps.length;
-  const baseRatio = totalSteps > 0 ? completedSteps / totalSteps : 0;
+  const resolvedSteps = completedSteps + obsoleteSteps;
+  const baseRatio = totalSteps > 0 ? resolvedSteps / totalSteps : 0;
 
   let ratio = baseRatio;
   if (session?.status === "queued" || session?.status === "waiting_on_analysis") {
@@ -243,11 +258,15 @@ function buildResearchProgress(session?: DeepResearchSessionRecord | null) {
         : "Waiting for folder analysis before research continues.";
   } else if (session?.status === "processing") {
     detail =
+      activeStep?.output_payload?.summary?.trim() ||
       activeStep?.description?.trim() ||
       activeStep?.title?.trim() ||
       "Working through the deep research plan.";
   } else if (session?.status === "completed") {
-    detail = "Research completed and the final report is ready.";
+    detail =
+      session.steps?.find((step) => step.output_payload?.completion_kind === "partial")
+        ?.output_payload?.summary?.trim() ||
+      "Research completed and the final report is ready.";
   } else if (session?.status === "failed") {
     detail = session.last_error?.trim() || "Research stopped before completion.";
   }
@@ -255,7 +274,7 @@ function buildResearchProgress(session?: DeepResearchSessionRecord | null) {
   return {
     steps,
     totalSteps,
-    completedSteps,
+    completedSteps: resolvedSteps,
     failedSteps,
     activeStep,
     ratio,
@@ -1172,12 +1191,27 @@ export default function ChatClient() {
 
                     <div className="mt-6 space-y-4">
                       {researchProgress.steps.map((step) => {
-                        const isComplete = step.status === "completed";
+                        const isObsolete = step.output_payload?.result_kind === "obsolete";
+                        const isBlocked =
+                          step.status === "waiting" ||
+                          step.output_payload?.result_kind === "blocked";
+                        const isComplete =
+                          step.status === "completed" && !isObsolete && !isBlocked;
                         const isProcessing =
                           step.status === "processing" ||
                           (deepSession.status === "waiting_on_analysis" &&
                             step.status === "waiting");
-                        const isPending = step.status === "planned" || step.status === "waiting";
+                        const isPending = step.status === "planned";
+                        const isFailed = step.status === "failed";
+                        const isAppended = step.input_payload?.origin && step.input_payload.origin !== "initial";
+                        const statusReason =
+                          step.output_payload?.status_reason?.trim() ||
+                          step.input_payload?.statusReason?.trim() ||
+                          "";
+                        const stepBody =
+                          step.output_payload?.summary?.trim() ||
+                          step.description?.trim() ||
+                          "";
                         return (
                           <div
                             key={step.id}
@@ -1189,6 +1223,8 @@ export default function ChatClient() {
                                   ? "bg-white text-[#111111]"
                                   : isProcessing
                                     ? "border border-white bg-transparent text-white"
+                                    : isBlocked
+                                      ? "border border-amber-400/60 bg-amber-500/10 text-amber-200"
                                     : isPending
                                       ? "border border-white/20 bg-transparent text-transparent"
                                       : "border border-red-400/50 bg-red-500/10 text-red-300"
@@ -1196,7 +1232,9 @@ export default function ChatClient() {
                             >
                               {isComplete ? (
                                 <CheckCircleIcon className="h-4 w-4" />
-                              ) : step.status === "failed" ? (
+                              ) : isBlocked ? (
+                                <CircleIcon className="h-4 w-4 opacity-90" />
+                              ) : isFailed ? (
                                 <CloseIcon className="h-3.5 w-3.5" />
                               ) : (
                                 <CircleIcon
@@ -1205,12 +1243,39 @@ export default function ChatClient() {
                               )}
                             </span>
                             <div className="min-w-0">
-                              <p className="text-[15px] leading-7 text-[#ececec]">
-                                {step.title}
-                              </p>
-                              {step.description ? (
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-[15px] leading-7 text-[#ececec]">
+                                  {step.title}
+                                </p>
+                                {isAppended ? (
+                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-blue-200">
+                                    Added
+                                  </span>
+                                ) : null}
+                                {isObsolete ? (
+                                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-[#b4b4b4]">
+                                    Obsolete
+                                  </span>
+                                ) : null}
+                                {isBlocked ? (
+                                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-amber-200">
+                                    Waiting on recovery
+                                  </span>
+                                ) : null}
+                                {isFailed ? (
+                                  <span className="rounded-full border border-red-400/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-red-200">
+                                    Failed
+                                  </span>
+                                ) : null}
+                              </div>
+                              {stepBody ? (
                                 <p className="text-sm leading-6 text-[#b4b4b4]">
-                                  {step.description}
+                                  {stepBody}
+                                </p>
+                              ) : null}
+                              {statusReason ? (
+                                <p className="text-xs leading-5 text-[#8e8e8e]">
+                                  {statusReason}
                                 </p>
                               ) : null}
                             </div>

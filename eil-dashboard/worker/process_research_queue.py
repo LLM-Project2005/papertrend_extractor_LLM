@@ -110,6 +110,15 @@ class SupabaseRestClient:
         )
         response.raise_for_status()
 
+    def insert_step(self, row: Dict[str, Any]) -> None:
+        response = self.session.post(
+            self._rest_url("deep_research_steps"),
+            json=[row],
+            headers={"Prefer": "return=minimal"},
+            timeout=60,
+        )
+        response.raise_for_status()
+
     def list_project_folder_ids(self, owner_user_id: str, project_id: str) -> List[str]:
         response = self.session.get(
             self._rest_url("research_folders"),
@@ -244,6 +253,65 @@ def _persist_step_update_factory(client: SupabaseRestClient, session_id: str):
     return _persist
 
 
+def _persist_step_insert_factory(client: SupabaseRestClient, session_id: str, owner_user_id: str):
+    def _persist(step: Dict[str, Any]) -> None:
+        client.insert_step(
+            {
+                "session_id": session_id,
+                "owner_user_id": owner_user_id,
+                "position": int(step.get("position") or 0),
+                "title": step.get("title"),
+                "description": step.get("description"),
+                "tool_name": step.get("tool_name"),
+                "status": str(step.get("status") or "planned"),
+                "input_payload": step.get("tool_input") if isinstance(step.get("tool_input"), dict) else {},
+                "output_payload": step.get("output_payload") if isinstance(step.get("output_payload"), dict) else {},
+                "updated_at": now_iso(),
+            }
+        )
+
+    return _persist
+
+
+def _step_result_from_row(step: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    output_payload = step.get("output_payload") if isinstance(step.get("output_payload"), dict) else {}
+    if not output_payload or str(step.get("status") or "") != "completed":
+        return None
+    return {
+        "position": int(step.get("position") or 0),
+        "title": step.get("title"),
+        "description": step.get("description"),
+        "tool_name": step.get("tool_name"),
+        "phase_class": output_payload.get("phase_class") or (
+            step.get("input_payload", {}).get("phaseClass")
+            if isinstance(step.get("input_payload"), dict)
+            else None
+        ),
+        "required_class": output_payload.get("required_class") or (
+            step.get("input_payload", {}).get("requiredClass")
+            if isinstance(step.get("input_payload"), dict)
+            else None
+        ),
+        "summary": output_payload.get("summary"),
+        "detail": output_payload.get("detail"),
+        "citations": list(output_payload.get("citations") or []),
+        "result_kind": output_payload.get("result_kind"),
+        "diagnostics": output_payload.get("diagnostics") or {},
+        "raw": output_payload.get("raw") or {},
+        "status_reason": output_payload.get("status_reason"),
+        "todo_id": (
+            step.get("input_payload", {}).get("todoId")
+            if isinstance(step.get("input_payload"), dict)
+            else None
+        ),
+        "supersedes_todo_id": (
+            step.get("input_payload", {}).get("supersedesTodoId")
+            if isinstance(step.get("input_payload"), dict)
+            else None
+        ),
+    }
+
+
 def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict[str, Any]:
     owner_user_id = str(session.get("owner_user_id") or "")
     folder_id = str(session.get("folder_id") or "") or None
@@ -278,12 +346,18 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
                 "title": step.get("title"),
                 "description": step.get("description"),
                 "tool_name": step.get("tool_name"),
+                "status": str(step.get("status") or "planned"),
                 "tool_input": step.get("input_payload") if isinstance(step.get("input_payload"), dict) else {},
+                "output_payload": step.get("output_payload") if isinstance(step.get("output_payload"), dict) else {},
             }
             for step in steps
         ],
         "current_step_index": 0,
-        "step_results": [],
+        "step_results": [
+            result
+            for result in (_step_result_from_row(step) for step in steps)
+            if result
+        ],
         "dashboard_data": dataset,
         "filtered_data": filtered,
         "papers_full": filtered.get("papers_full", []),
@@ -291,11 +365,27 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         "facet_rows": filtered.get("facets", []),
         "errors": [],
         "status": "queued",
+        "session_phase": "ready",
+        "completion_kind": "partial"
+        if any(
+            (
+                isinstance(step.get("output_payload"), dict)
+                and str(step.get("output_payload", {}).get("completion_kind") or "") == "partial"
+            )
+            for step in steps
+        )
+        else "full",
         "persist_step_update": _persist_step_update_factory(client, str(session["id"])),
+        "persist_step_insert": _persist_step_insert_factory(client, str(session["id"]), owner_user_id),
     }
 
 
-def _save_final_report(client: SupabaseRestClient, session: Dict[str, Any], final_report: str) -> None:
+def _save_final_report(
+    client: SupabaseRestClient,
+    session: Dict[str, Any],
+    final_report: str,
+    completion_kind: str = "full",
+) -> None:
     thread_id = str(session.get("thread_id") or "")
     owner_user_id = str(session.get("owner_user_id") or "")
     if not thread_id or not owner_user_id:
@@ -310,7 +400,10 @@ def _save_final_report(client: SupabaseRestClient, session: Dict[str, Any], fina
             "message_kind": "deep_research_report",
             "content": final_report,
             "citations": [],
-            "metadata": {"sessionId": session.get("id")},
+            "metadata": {
+                "sessionId": session.get("id"),
+                "completion_kind": completion_kind if completion_kind == "partial" else "full",
+            },
             "updated_at": now_iso(),
         }
     )
@@ -350,6 +443,11 @@ def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict
     if not final_report:
         raise RuntimeError("Deep research execution completed without a final report.")
 
+    completion_kind = (
+        str(final_state.get("completion_kind") or "full").strip().lower() == "partial"
+        and "partial"
+        or "full"
+    )
     client.update_session(
         str(session["id"]),
         {
@@ -360,8 +458,8 @@ def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict
             "requires_analysis": False,
         },
     )
-    _save_final_report(client, session, final_report)
-    return {"status": "completed", "usage_summary": usage_summary}
+    _save_final_report(client, session, final_report, completion_kind=completion_kind)
+    return {"status": "completed", "completion_kind": completion_kind, "usage_summary": usage_summary}
 
 
 def process_batch(client: SupabaseRestClient, max_runs: int) -> Dict[str, Any]:
