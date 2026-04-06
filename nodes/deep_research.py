@@ -1136,6 +1136,30 @@ def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, A
             target_title=target_title,
             exclude_paper_ids=exclude_paper_ids,
         )
+    if tool_name == INTERNAL_VERIFY_TOOL:
+        verification_result = _build_verification_result(
+            state,
+            list(state.get("steps") or []),
+            list(state.get("step_results") or []),
+        )
+        return {"verification": verification_result}
+    if tool_name == INTERNAL_SYNTHESIZE_TOOL:
+        prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+        step_results = list(state.get("step_results") or [])
+        if prompt_analysis.get("single_paper") and not prompt_analysis.get("target_in_scope"):
+            report = _missing_target_report(state)
+            completion_kind = "partial"
+        elif prompt_analysis.get("single_paper"):
+            report = _single_paper_report(state, step_results)
+            completion_kind = str(state.get("completion_kind") or "full")
+        else:
+            report = _general_report(state, step_results)
+            completion_kind = str(state.get("completion_kind") or "full")
+        return {
+            "report": report,
+            "completionKind": completion_kind,
+            "citations": list(state.get("final_citations") or []),
+        }
     raise ValueError(f"Unsupported deep research tool: {tool_name}")
 
 
@@ -1433,6 +1457,45 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
             result_kind="synthesis_input",
             diagnostics={"confidence": "medium", "tool_name": tool_name},
             raw=raw_output,
+        )
+
+    if tool_name == INTERNAL_VERIFY_TOOL:
+        verification = raw_output.get("verification") if isinstance(raw_output.get("verification"), dict) else {}
+        outcome = str(verification.get("overall_result") or "pass")
+        if outcome == "fail_requires_replan":
+            summary = "Verification found unresolved evidence gaps and requested follow-up work."
+        elif outcome == "fail_partial_only":
+            summary = "Verification concluded that only a partial report can be produced from the current scope."
+        elif outcome == "pass_with_warnings":
+            summary = "Verification passed with warnings, so the report should disclose thin evidence clearly."
+        else:
+            summary = "Verification passed and the report can proceed."
+        warnings = list(verification.get("warnings") or [])
+        detail = " ".join(warnings) or "Target resolution, requested sections, and citation coverage are acceptable for synthesis."
+        return _build_step_output(
+            summary,
+            detail,
+            result_kind="verification",
+            diagnostics={
+                "confidence": "high" if outcome in {"pass", "pass_with_warnings"} else "medium",
+                "thin_evidence": bool(verification.get("thin_evidence")),
+                "notes": warnings,
+            },
+            raw=raw_output,
+            completion_kind="partial" if outcome == "fail_partial_only" else "full",
+        )
+
+    if tool_name == INTERNAL_SYNTHESIZE_TOOL:
+        report = str(raw_output.get("report") or "").strip()
+        completion_kind = str(raw_output.get("completionKind") or "full")
+        return _build_step_output(
+            "The final report draft is ready.",
+            report[:600] or "A grounded report draft was assembled.",
+            citations=list(raw_output.get("citations") or []),
+            result_kind="synthesis_input",
+            diagnostics={"confidence": "medium"},
+            raw={},
+            completion_kind="partial" if completion_kind == "partial" else "full",
         )
 
     return _build_step_output(

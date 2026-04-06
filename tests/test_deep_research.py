@@ -5,6 +5,7 @@ from nodes.deep_research import (
     INTERNAL_VERIFY_TOOL,
     _build_deterministic_plan,
     _build_verification_result,
+    _execute_tool,
     _next_pending_step,
 )
 
@@ -125,6 +126,33 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
 
         self.assertIsNotNone(selected)
         self.assertEqual(selected["position"], 4)
+
+    def test_internal_tools_do_not_raise_in_execute_tool(self) -> None:
+        state = {
+            "prompt": "Compare two papers",
+            "prompt_analysis": {
+                "single_paper": False,
+                "compare": True,
+                "survey": False,
+                "requested_sections": [],
+                "target_in_scope": False,
+            },
+            "steps": [],
+            "step_results": [],
+            "papers_full": [],
+        }
+
+        verification = _execute_tool(
+            {"tool_name": INTERNAL_VERIFY_TOOL, "tool_input": {}},
+            state,
+        )
+        synthesis = _execute_tool(
+            {"tool_name": INTERNAL_SYNTHESIZE_TOOL, "tool_input": {}},
+            state,
+        )
+
+        self.assertIn("verification", verification)
+        self.assertIn("report", synthesis)
 
 
 if __name__ == "__main__":
