@@ -1,9 +1,13 @@
+import logging
 import os
 import re
 from typing import Any, Dict
 
 from nodes import ModelTask, get_task_llm
 from state import IngestionState
+
+
+logger = logging.getLogger("papertrend.extractor")
 
 
 def _looks_like_garbage(text: str) -> bool:
@@ -73,35 +77,27 @@ def _extract_with_vision(document: Any, pdf_path: str) -> str:
 def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
     import fitz
 
-    try:
-        import pymupdf4llm
-    except ImportError:
-        pymupdf4llm = None
-
     pdf_path = state.get("pdf_path", "")
     if not pdf_path:
         return {"errors": ["No PDF path provided."], "status": "failed"}
 
     md_text = ""
-    extraction_method = "pymupdf4llm"
+    extraction_method = "fitz_text"
 
     try:
-        if pymupdf4llm is not None:
-            try:
-                md_text = pymupdf4llm.to_markdown(pdf_path)
-            except Exception:
-                md_text = ""
-
-        if not md_text.strip() or _looks_like_garbage(md_text):
-            extraction_method = "fitz_text"
-            document = fitz.open(pdf_path)
-            try:
-                md_text = _extract_with_fitz(document)
-                if not md_text.strip():
-                    extraction_method = "vision_fallback"
-                    md_text = _extract_with_vision(document, pdf_path)
-            finally:
-                document.close()
+        logger.info("starting extraction", extra={"pdf_path": pdf_path})
+        document = fitz.open(pdf_path)
+        try:
+            md_text = _extract_with_fitz(document)
+            if not md_text.strip() or _looks_like_garbage(md_text):
+                extraction_method = "vision_fallback"
+                logger.warning(
+                    "fitz extraction looked unusable; switching to vision fallback",
+                    extra={"pdf_path": pdf_path},
+                )
+                md_text = _extract_with_vision(document, pdf_path)
+        finally:
+            document.close()
 
         if not md_text.strip():
             return {
