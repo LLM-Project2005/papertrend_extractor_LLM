@@ -89,6 +89,7 @@ export default function WorkspaceHomeClient() {
     cancelRuns,
     cancelAllActiveRuns,
     retryActiveProcessing,
+    startQueuedProcessing,
     refresh,
   } =
     useIngestionRuns({
@@ -230,6 +231,23 @@ export default function WorkspaceHomeClient() {
     }
   }
 
+  async function handleStartProcessing() {
+    try {
+      await startQueuedProcessing(analysisSession?.folderJobId ?? undefined);
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to start queued processing.";
+      console.error("[workspace.home] failed to start queued processing", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: message,
+      });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="app-surface px-6 py-6">
@@ -279,6 +297,7 @@ export default function WorkspaceHomeClient() {
           onCancelRun={handleCancelRun}
           onCancelAll={handleCancelAllRuns}
           onRetryQueue={handleRetryQueue}
+          onStartProcessing={handleStartProcessing}
         />
       ) : null}
 

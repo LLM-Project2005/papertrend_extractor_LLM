@@ -50,6 +50,10 @@ export function getRunStageMessage(run: RunLike): string {
   switch (stage) {
     case "queued":
       return "Queued for analysis";
+    case "queued_waiting_for_worker":
+      return "Waiting for an active worker";
+    case "queued_but_unstarted":
+      return "Queued, but processing did not start";
     case "preparing":
       return "Preparing file for analysis";
     case "downloading":

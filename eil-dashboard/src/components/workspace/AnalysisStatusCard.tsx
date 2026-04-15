@@ -58,6 +58,7 @@ export default function AnalysisStatusCard({
   onCancelRun,
   onCancelAll,
   onRetryQueue,
+  onStartProcessing,
 }: {
   runs: IngestionRunRow[];
   folderJob?: FolderAnalysisJobRow | null;
@@ -69,6 +70,7 @@ export default function AnalysisStatusCard({
   onCancelRun?: (runId: string) => void | Promise<void>;
   onCancelAll?: () => void | Promise<void>;
   onRetryQueue?: () => void | Promise<void>;
+  onStartProcessing?: () => void | Promise<void>;
 }) {
   const summary = summarizeRuns(runs);
   const allTerminal =
@@ -77,6 +79,9 @@ export default function AnalysisStatusCard({
   const hasActiveRuns = runs.some(
     (run) => run.status === "queued" || run.status === "processing"
   );
+  const hasQueuedWithoutProcessing =
+    runs.some((run) => run.status === "queued") &&
+    !runs.some((run) => run.status === "processing");
   const leadRun =
     runs.find((run) => run.status === "processing") ??
     runs.find((run) => run.status === "queued") ??
@@ -153,6 +158,17 @@ export default function AnalysisStatusCard({
               Retry
             </button>
           ) : null}
+          {hasQueuedWithoutProcessing && onStartProcessing ? (
+            <button
+              type="button"
+              onClick={() => void onStartProcessing()}
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-sky-300 bg-sky-50 px-3 text-xs font-medium text-sky-800 transition-colors hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200 dark:hover:border-sky-800"
+              aria-label="Start queued analysis processing now"
+              title="Start processing now"
+            >
+              Start now
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -197,6 +213,17 @@ export default function AnalysisStatusCard({
               title="Retry processing"
             >
               Retry processing
+            </button>
+          ) : null}
+          {hasQueuedWithoutProcessing && onStartProcessing ? (
+            <button
+              type="button"
+              onClick={() => void onStartProcessing()}
+              className="inline-flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-medium text-sky-800 transition-colors hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200 dark:hover:border-sky-800"
+              aria-label="Start queued analysis processing now"
+              title="Start processing now"
+            >
+              Start processing now
             </button>
           ) : null}
           <button

@@ -302,6 +302,7 @@ export default function WorkspaceShell({
     cancelRuns,
     cancelAllActiveRuns,
     retryActiveProcessing,
+    startQueuedProcessing,
     refresh,
   } =
     useIngestionRuns({
@@ -353,6 +354,23 @@ export default function WorkspaceShell({
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to retry processing.";
       console.error("[workspace] failed to retry processing", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: message,
+      });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
+    }
+  }
+
+  async function handleStartProcessing() {
+    try {
+      await startQueuedProcessing(analysisSession?.folderJobId ?? undefined);
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to start queued processing.";
+      console.error("[workspace] failed to start queued processing", {
         folderJobId: analysisSession?.folderJobId ?? null,
         error: message,
       });
@@ -456,6 +474,7 @@ export default function WorkspaceShell({
               onCancelRun={handleCancelRun}
               onCancelAll={handleCancelAllRuns}
               onRetryQueue={handleRetryQueue}
+              onStartProcessing={handleStartProcessing}
             />
           </div>
         ) : null}

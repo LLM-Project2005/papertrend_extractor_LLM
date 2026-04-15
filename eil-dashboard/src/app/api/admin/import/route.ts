@@ -5,7 +5,11 @@ import {
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { triggerWorkerQueue } from "@/lib/worker-trigger";
+import {
+  persistWorkerStartState,
+  triggerWorkerQueueWithRetries,
+  type WorkerQueueStartResult,
+} from "@/lib/worker-queue-start";
 
 export const runtime = "nodejs";
 
@@ -195,19 +199,58 @@ export async function POST(request: Request) {
       provider: AUTO_ANALYSIS_PROVIDER,
       model: AUTO_ANALYSIS_MODEL,
     });
+
+    let queueStart: WorkerQueueStartResult;
     try {
-      const trigger = await triggerWorkerQueue({
+      queueStart = await triggerWorkerQueueWithRetries({
         maxRuns: Math.min(createdRuns.length, 5),
         reason: "admin-import-upload",
       });
-      console.info("[admin.import] worker trigger result", trigger);
     } catch (triggerError) {
-      console.error("[admin.import] worker trigger failed", {
-        error:
-          triggerError instanceof Error ? triggerError.message : "unknown_error",
-      });
+      queueStart = {
+        started: false,
+        alreadyRunning: false,
+        attempts: 1,
+        trigger: {
+          started: false,
+          status: 0,
+          payload: {
+            reason: "trigger_exception",
+            message:
+              triggerError instanceof Error ? triggerError.message : "unknown_error",
+          },
+        },
+        progressStage: "queued_but_unstarted",
+        progressMessage: "Upload succeeded, but processing did not start",
+        progressDetail:
+          "The files were uploaded successfully, but the app could not reach the analysis worker. Use “Start processing now” to retry once worker connectivity is restored.",
+      };
     }
-    return NextResponse.json({ runs: createdRuns, folderJob }, { status: 201 });
+
+    await persistWorkerStartState({
+      supabase,
+      runIds: createdRuns
+        .map((run) => String(run.id ?? ""))
+        .filter(Boolean),
+      folderJobId: String(folderJob.id ?? ""),
+      result: queueStart,
+    });
+
+    console.info("[admin.import] worker trigger result", queueStart);
+    return NextResponse.json(
+      {
+        runs: createdRuns,
+        folderJob: {
+          ...folderJob,
+          progress_stage: queueStart.progressStage,
+          progress_message: queueStart.progressMessage,
+          progress_detail: queueStart.progressDetail,
+        },
+        queueStart,
+        warning: queueStart.started ? null : queueStart.progressMessage,
+      },
+      { status: queueStart.started || queueStart.alreadyRunning ? 201 : 202 }
+    );
   } catch (error) {
     console.error("[admin.import] upload failed", {
       error: error instanceof Error ? error.message : "unknown_error",

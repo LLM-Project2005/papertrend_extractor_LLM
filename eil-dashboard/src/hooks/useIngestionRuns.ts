@@ -218,6 +218,51 @@ export function useIngestionRuns({
     [requestHeaders]
   );
 
+  const startQueuedProcessing = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to start queued processing.");
+      }
+
+      const response = await fetch("/api/folder-analysis/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        queuedCount?: number;
+        processingCount?: number;
+        queueStart?: { started?: boolean; alreadyRunning?: boolean; progressMessage?: string };
+        message?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        const message = payload.error ?? "Failed to start queued processing.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      if (!payload.ok && payload.queueStart) {
+        const message =
+          payload.queueStart.progressMessage ??
+          payload.message ??
+          "The worker did not start queued processing.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      setError(null);
+      return payload;
+    },
+    [requestHeaders]
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -243,5 +288,6 @@ export function useIngestionRuns({
     cancelRuns,
     cancelAllActiveRuns,
     retryActiveProcessing,
+    startQueuedProcessing,
   };
 }

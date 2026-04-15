@@ -560,6 +560,7 @@ export default function AdminImportClient() {
       const createdRuns: IngestionRunRow[] = [];
       let nextFolderId: string | null = null;
       let nextFolderJob: FolderAnalysisJobRow | null = null;
+      let queueWarning: string | null = null;
 
       for (const batch of batches) {
         const formData = new FormData();
@@ -579,6 +580,7 @@ export default function AdminImportClient() {
         const payload = await readJsonPayload<{
           runs?: IngestionRunRow[];
           folderJob?: FolderAnalysisJobRow | null;
+          warning?: string | null;
           error?: string;
         }>(response);
 
@@ -593,6 +595,9 @@ export default function AdminImportClient() {
         createdRuns.push(...(payload?.runs ?? []));
         nextFolderId = payload?.folderJob?.folder_id ?? nextFolderId;
         nextFolderJob = payload?.folderJob ?? nextFolderJob;
+        if (payload?.warning) {
+          queueWarning = payload.warning;
+        }
       }
 
       setRuns((current) => {
@@ -614,7 +619,7 @@ export default function AdminImportClient() {
           ? `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"}. Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
           : `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} for analysis.`
       );
-      setError(null);
+      setError(queueWarning);
     } catch (uploadError) {
       setError(
         uploadError instanceof Error ? uploadError.message : "Failed to queue uploads."

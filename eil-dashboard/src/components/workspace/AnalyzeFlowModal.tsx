@@ -322,6 +322,7 @@ export default function AnalyzeFlowModal({
         const batches = splitIntoUploadBatches(files);
         const queuedRuns: IngestionRunRow[] = [];
         let folderJob: FolderAnalysisJobRow | null = null;
+        let queueWarning: string | null = null;
 
         for (const batch of batches) {
           const formData = new FormData();
@@ -339,6 +340,7 @@ export default function AnalyzeFlowModal({
           const payload = await readJsonPayload<{
             runs?: IngestionRunRow[];
             folderJob?: FolderAnalysisJobRow | null;
+            warning?: string | null;
             error?: string;
           }>(response);
 
@@ -353,6 +355,9 @@ export default function AnalyzeFlowModal({
 
           queuedRuns.push(...(payload?.runs ?? []));
           folderJob = payload?.folderJob ?? folderJob;
+          if (payload?.warning) {
+            queueWarning = payload.warning;
+          }
         }
 
         if (adminSecret.trim() && typeof window !== "undefined") {
@@ -367,6 +372,9 @@ export default function AnalyzeFlowModal({
         });
 
         setFiles([]);
+        if (queueWarning) {
+          setError(queueWarning);
+        }
         onClose();
         return;
       }
@@ -398,6 +406,7 @@ export default function AnalyzeFlowModal({
         const payload = (await response.json()) as {
           runs?: IngestionRunRow[];
           folderJob?: FolderAnalysisJobRow | null;
+          warning?: string | null;
           error?: string;
         };
 
@@ -413,6 +422,9 @@ export default function AnalyzeFlowModal({
         });
 
         setSelectedDriveFileIds([]);
+        if (payload.warning) {
+          setError(payload.warning);
+        }
         onClose();
         return;
       }
