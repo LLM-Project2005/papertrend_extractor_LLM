@@ -131,6 +131,37 @@ def scope_filtered_data_to_runs(
     return next_filtered
 
 
+def load_papers_full_by_run_ids(
+    owner_user_id: Optional[str],
+    selected_run_ids: Sequence[str],
+) -> List[Dict[str, Any]]:
+    normalized_run_ids = [
+        str(run_id).strip()
+        for run_id in selected_run_ids
+        if str(run_id).strip()
+    ]
+    if not owner_user_id or not normalized_run_ids:
+        return []
+
+    url = _get_supabase_url()
+    key = _get_service_key()
+    if not url or not key:
+        return []
+
+    try:
+        client = SupabaseQueryClient(url, key)
+        return client.select_rows(
+            "papers_full",
+            {
+                "owner_user_id": f"eq.{owner_user_id}",
+                "ingestion_run_id": f"in.({','.join(normalized_run_ids)})",
+            },
+        )
+    except Exception as error:
+        logger.warning("selected run fallback load failed: %s", error)
+        return []
+
+
 def _build_mock_workspace_dataset() -> Dict[str, Any]:
     return {
         "mode": "mock",

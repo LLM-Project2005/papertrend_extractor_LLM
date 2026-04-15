@@ -10,6 +10,7 @@ from nodes.deep_research import (
     _next_pending_step,
     _target_in_scope_effective,
 )
+from unittest.mock import patch
 
 
 class DeepResearchPlanningTests(unittest.TestCase):
@@ -57,6 +58,36 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertTrue(analysis["target_in_scope"])
         self.assertEqual(analysis["target_paper_id"], 21)
         self.assertEqual(analysis["target_resolution_status"], "exact_match")
+
+    @patch("nodes.deep_research.load_papers_full_by_run_ids")
+    @patch("nodes.deep_research.scope_filtered_data_to_runs")
+    @patch("nodes.deep_research.filter_dashboard_data")
+    @patch("nodes.deep_research.load_workspace_dataset")
+    def test_scope_dataset_falls_back_to_selected_run_papers_when_filtered_scope_is_empty(
+        self,
+        mock_load_workspace_dataset,
+        mock_filter_dashboard_data,
+        mock_scope_filtered_data_to_runs,
+        mock_load_papers_full_by_run_ids,
+    ) -> None:
+        mock_load_workspace_dataset.return_value = {"mode": "live"}
+        mock_filter_dashboard_data.return_value = {"papers_full": [], "trends": [], "tracksSingle": [], "tracksMulti": [], "concepts": [], "facets": []}
+        mock_scope_filtered_data_to_runs.return_value = {"papers_full": [], "trends": [], "tracksSingle": [], "tracksMulti": [], "concepts": [], "facets": []}
+        mock_load_papers_full_by_run_ids.return_value = [
+            {
+                "paper_id": 44,
+                "title": "Fallback Paper",
+                "year": "2025",
+                "ingestion_run_id": "run-44",
+            }
+        ]
+
+        from nodes.deep_research import _scope_dataset
+
+        _, filtered = _scope_dataset("user-1", None, "project-1", ["run-44"])
+
+        self.assertEqual(len(filtered["papers_full"]), 1)
+        self.assertEqual(filtered["papers_full"][0]["paper_id"], 44)
 
     def test_missing_named_paper_plan_includes_verification_and_synthesis(self) -> None:
         snapshot = {

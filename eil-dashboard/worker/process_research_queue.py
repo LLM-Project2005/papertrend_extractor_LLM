@@ -17,7 +17,12 @@ from analysis_pipeline import configure_logging, load_config, now_iso  # noqa: E
 from graphs import run_deep_research_graph  # noqa: E402
 from nodes import consume_usage_summary, start_usage_session  # noqa: E402
 from supabase_http import build_retrying_session  # noqa: E402
-from workspace_data import filter_dashboard_data, load_workspace_dataset, scope_filtered_data_to_runs  # noqa: E402
+from workspace_data import (  # noqa: E402
+    filter_dashboard_data,
+    load_papers_full_by_run_ids,
+    load_workspace_dataset,
+    scope_filtered_data_to_runs,
+)
 
 
 logger = logging.getLogger("papertrend_research_worker")
@@ -354,6 +359,11 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         search_query="",
     )
     filtered = scope_filtered_data_to_runs(filtered, selected_run_ids)
+    if selected_run_ids and not list(filtered.get("papers_full") or []):
+        fallback_papers = load_papers_full_by_run_ids(owner_user_id, selected_run_ids)
+        if fallback_papers:
+            filtered = dict(filtered)
+            filtered["papers_full"] = fallback_papers
     return {
         "owner_user_id": owner_user_id,
         "folder_id": folder_id or "",

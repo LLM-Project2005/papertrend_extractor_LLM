@@ -11,6 +11,7 @@ from supabase_http import build_retrying_session
 from workspace_data import (
     build_visualization_analytics,
     filter_dashboard_data,
+    load_papers_full_by_run_ids,
     load_workspace_dataset,
     scope_filtered_data_to_runs,
 )
@@ -110,6 +111,11 @@ def _scope_dataset(
         search_query="",
     )
     filtered = scope_filtered_data_to_runs(filtered, selected_run_ids or [])
+    if list(selected_run_ids or []) and not list(filtered.get("papers_full") or []):
+        fallback_papers = load_papers_full_by_run_ids(owner_user_id, selected_run_ids or [])
+        if fallback_papers:
+            filtered = dict(filtered)
+            filtered["papers_full"] = fallback_papers
     return dataset, filtered
 
 
