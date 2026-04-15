@@ -1250,7 +1250,7 @@ def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, A
     if tool_name == INTERNAL_SYNTHESIZE_TOOL:
         prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
         step_results = list(state.get("step_results") or [])
-        if prompt_analysis.get("single_paper") and not prompt_analysis.get("target_in_scope"):
+        if prompt_analysis.get("single_paper") and not _target_in_scope_effective(state, step_results):
             report = _missing_target_report(state)
             completion_kind = "partial"
         elif prompt_analysis.get("single_paper"):
@@ -1864,7 +1864,7 @@ def _build_verification_result(
     requested_sections = list(prompt_analysis.get("requested_sections") or [])
     target_resolved = True
     if prompt_analysis.get("single_paper"):
-        target_resolved = bool(_target_paper(state, step_results)) and bool(prompt_analysis.get("target_in_scope"))
+        target_resolved = _target_in_scope_effective(state, step_results)
 
     section_coverage = _requested_section_coverage(state, step_results)
     unresolved_sections = [section for section, covered in section_coverage.items() if not covered]
@@ -2190,6 +2190,24 @@ def _target_paper(state: DeepResearchState, step_results: Sequence[Dict[str, Any
     return None
 
 
+def _target_in_scope_effective(
+    state: DeepResearchState,
+    step_results: Sequence[Dict[str, Any]],
+) -> bool:
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    if bool(_target_paper(state, step_results)):
+        return True
+
+    candidate_title = str(prompt_analysis.get("candidate_title") or "")
+    if not candidate_title:
+        return False
+
+    for match in list(prompt_analysis.get("ranked_matches") or []):
+        if _title_match_strength(candidate_title, str(match.get("title") or ""))[0]:
+            return True
+    return False
+
+
 def _section_report(
     paper: Dict[str, Any],
     section: str,
@@ -2403,7 +2421,7 @@ def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
         if citation:
             final_citations.append(citation)
 
-    if prompt_analysis.get("single_paper") and not prompt_analysis.get("target_in_scope"):
+    if prompt_analysis.get("single_paper") and not _target_in_scope_effective(state, step_results):
         final_report = _missing_target_report(state)
         completion_kind = "partial"
     elif prompt_analysis.get("single_paper"):

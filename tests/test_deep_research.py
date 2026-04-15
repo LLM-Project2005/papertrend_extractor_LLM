@@ -8,6 +8,7 @@ from nodes.deep_research import (
     _build_verification_result,
     _execute_tool,
     _next_pending_step,
+    _target_in_scope_effective,
 )
 
 
@@ -145,6 +146,46 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
 
         self.assertFalse(verification["target_resolved"])
         self.assertEqual(verification["overall_result"], "fail_partial_only")
+
+    def test_effective_target_resolution_recovers_when_ranked_match_exists(self) -> None:
+        state = {
+            "prompt": 'Analyze "A centering theory analysis of discrepancies on subject Zero Anaphor in English to Thai translation"',
+            "prompt_analysis": {
+                "single_paper": True,
+                "candidate_title": "A centering theory analysis of discrepancies on subject Zero Anaphor in English to Thai translation",
+                "target_paper_id": 0,
+                "target_in_scope": False,
+                "ranked_matches": [
+                    {
+                        "paperId": 111,
+                        "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+                        "year": "2025",
+                        "score": 192,
+                        "strong_title_match": True,
+                    }
+                ],
+                "requested_sections": ["objective", "methodology"],
+                "compare": False,
+                "survey": False,
+            },
+            "papers_full": [
+                {
+                    "paper_id": 111,
+                    "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+                    "year": "2025",
+                    "abstract_claims": "The study aims to examine discrepancies in subject zero anaphor translation.",
+                    "methods": "Participants translated examples between English and Thai.",
+                    "results": "The findings show recurring discourse-resolution discrepancies.",
+                    "conclusion": "The paper discusses implications for translation studies.",
+                }
+            ],
+        }
+        step_results = []
+
+        self.assertTrue(_target_in_scope_effective(state, step_results))
+
+        verification = _build_verification_result(state, [], step_results)
+        self.assertTrue(verification["target_resolved"])
 
     def test_next_pending_step_prioritizes_required_work_over_optional_and_synthesis(self) -> None:
         steps = [
