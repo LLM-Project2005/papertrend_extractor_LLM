@@ -4,6 +4,7 @@ import {
   appendWorkspaceMessage,
   buildThreadTitle,
   createWorkspaceThread,
+  getDeepResearchSession,
   getWorkspaceThreadDetail,
   replaceDeepResearchPlan,
   updateWorkspaceThread,
@@ -52,6 +53,69 @@ interface ChatRequestBody {
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
+}
+
+function normalizeIdList(values: string[] = []) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
+}
+
+function normalizeOptionalScopeId(value?: string | null) {
+  if (!value || value === "all") {
+    return "";
+  }
+  return value.trim();
+}
+
+async function resolveReusableDeepResearchSessionId(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  ownerUserId: string,
+  body: ChatRequestBody,
+): Promise<string | undefined> {
+  const sessionId = body.sessionId?.trim();
+  if (!sessionId) {
+    return undefined;
+  }
+
+  let existing: DeepResearchSessionRecord;
+  try {
+    existing = await getDeepResearchSession(supabase, sessionId);
+  } catch {
+    return undefined;
+  }
+
+  if (String(existing.owner_user_id ?? "") !== ownerUserId) {
+    return undefined;
+  }
+
+  const firstStep = existing.steps?.[0];
+  const inputPayload =
+    firstStep?.input_payload && typeof firstStep.input_payload === "object"
+      ? firstStep.input_payload
+      : null;
+
+  const previousPrompt = String(existing.prompt ?? "").trim();
+  const nextPrompt = String(body.message ?? "").trim();
+  const previousFolderId = normalizeOptionalScopeId(existing.folder_id ?? null);
+  const nextFolderId = normalizeOptionalScopeId(body.folderId);
+  const previousProjectId =
+    inputPayload && typeof inputPayload.projectId === "string"
+      ? normalizeOptionalScopeId(inputPayload.projectId)
+      : "";
+  const nextProjectId = normalizeOptionalScopeId(body.projectId);
+  const previousRunIds =
+    inputPayload && Array.isArray(inputPayload.selectedRunIds)
+      ? normalizeIdList(inputPayload.selectedRunIds.map((value) => String(value)))
+      : [];
+  const nextRunIds = normalizeIdList(body.selectedRunIds ?? []);
+
+  const samePrompt = previousPrompt === nextPrompt;
+  const sameFolder = previousFolderId === nextFolderId;
+  const sameProject = previousProjectId === nextProjectId;
+  const sameRuns =
+    previousRunIds.length === nextRunIds.length &&
+    previousRunIds.every((value, index) => value === nextRunIds[index]);
+
+  return samePrompt && sameFolder && sameProject && sameRuns ? sessionId : undefined;
 }
 
 function buildFallbackAnswer(question: string, corpusError?: string): string {
@@ -787,6 +851,11 @@ async function planDeepResearch(
   }
 
   const supabase = getSupabaseAdmin();
+  const reusableSessionId = await resolveReusableDeepResearchSessionId(
+    supabase,
+    ownerUserId,
+    body
+  );
   const thread =
     body.threadId
       ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
@@ -869,7 +938,7 @@ async function planDeepResearch(
     threadId: thread.id,
     ownerUserId,
     folderId: body.folderId,
-    sessionId: body.sessionId,
+    sessionId: reusableSessionId,
     prompt,
     title: String(plan.title || buildThreadTitle(prompt)),
     summary: String(plan.summary || `Deep research plan for "${prompt}"`),

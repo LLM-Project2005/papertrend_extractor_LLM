@@ -236,6 +236,15 @@ export async function replaceDeepResearchPlan(
     throw new Error(planMessageDeleteError.message);
   }
 
+  const { error: reportMessageDeleteError } = await supabase
+    .from("workspace_messages")
+    .delete()
+    .eq("thread_id", input.threadId)
+    .eq("message_kind", "deep_research_report");
+  if (reportMessageDeleteError) {
+    throw new Error(reportMessageDeleteError.message);
+  }
+
   await appendWorkspaceMessage(supabase, {
     threadId: input.threadId,
     ownerUserId: input.ownerUserId,

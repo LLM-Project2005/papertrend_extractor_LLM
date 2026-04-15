@@ -11,6 +11,8 @@ export interface DeepResearchCitationRef {
 export interface DeepResearchStepInputPayload {
   payload_version?: number;
   planner_version?: string;
+  projectId?: string;
+  selectedRunIds?: string[];
   promptAnalysis?: Record<string, unknown>;
   normalizedQuery?: Record<string, unknown>;
   targetTitle?: string;

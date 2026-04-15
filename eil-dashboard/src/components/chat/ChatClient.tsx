@@ -372,10 +372,21 @@ export default function ChatClient() {
     [activeThread, deepSession]
   );
   const researchReport = useMemo(
-    () =>
-      deepSession?.final_report?.trim() ||
-      messages.find((message) => message.kind === "deep_research_report")?.content?.trim() ||
-      "",
+    () => {
+      const sessionReport = deepSession?.final_report?.trim();
+      if (sessionReport) {
+        return sessionReport;
+      }
+      if (deepSession && deepSession.status !== "completed") {
+        return "";
+      }
+      return (
+        [...messages]
+          .reverse()
+          .find((message) => message.kind === "deep_research_report")
+          ?.content?.trim() || ""
+      );
+    },
     [deepSession, messages]
   );
   const researchBlocks = useMemo(
