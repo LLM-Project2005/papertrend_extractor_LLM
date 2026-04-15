@@ -82,6 +82,55 @@ def _coerce_json_list(value: Any) -> List[str]:
     return []
 
 
+def scope_filtered_data_to_runs(
+    filtered: Dict[str, Any],
+    selected_run_ids: Sequence[str],
+) -> Dict[str, Any]:
+    normalized_run_ids = {
+        str(run_id).strip()
+        for run_id in selected_run_ids
+        if str(run_id).strip()
+    }
+    if not normalized_run_ids:
+        return filtered
+
+    scoped_papers = [
+        paper
+        for paper in list(filtered.get("papers_full") or [])
+        if str(paper.get("ingestion_run_id") or "").strip() in normalized_run_ids
+    ]
+    allowed_paper_ids = {
+        int(paper.get("paper_id") or 0)
+        for paper in scoped_papers
+        if int(paper.get("paper_id") or 0) > 0
+    }
+    if not allowed_paper_ids:
+        next_filtered = dict(filtered)
+        next_filtered["papers_full"] = []
+        next_filtered["trends"] = []
+        next_filtered["tracksSingle"] = []
+        next_filtered["tracksMulti"] = []
+        next_filtered["concepts"] = []
+        next_filtered["facets"] = []
+        return next_filtered
+
+    def _filter_rows(key: str) -> List[Dict[str, Any]]:
+        return [
+            row
+            for row in list(filtered.get(key) or [])
+            if int(row.get("paper_id") or 0) in allowed_paper_ids
+        ]
+
+    next_filtered = dict(filtered)
+    next_filtered["papers_full"] = scoped_papers
+    next_filtered["trends"] = _filter_rows("trends")
+    next_filtered["tracksSingle"] = _filter_rows("tracksSingle")
+    next_filtered["tracksMulti"] = _filter_rows("tracksMulti")
+    next_filtered["concepts"] = _filter_rows("concepts")
+    next_filtered["facets"] = _filter_rows("facets")
+    return next_filtered
+
+
 def _build_mock_workspace_dataset() -> Dict[str, Any]:
     return {
         "mode": "mock",

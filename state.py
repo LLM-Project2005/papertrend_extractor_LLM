@@ -211,6 +211,7 @@ class DeepResearchState(TypedDict, total=False):
     owner_user_id: str
     folder_id: str
     project_id: str
+    selected_run_ids: List[str]
     thread_id: str
     session_id: str
     prompt: str

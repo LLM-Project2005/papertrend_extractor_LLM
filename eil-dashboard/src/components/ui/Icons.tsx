@@ -362,6 +362,68 @@ export function ChevronDownIcon({ className }: IconProps) {
   );
 }
 
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m5 12 4.2 4.2L19 6.5" />
+    </BaseIcon>
+  );
+}
+
+export function DownloadIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M12 4.5v10" />
+      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+      <path d="M5 18.5h14" />
+    </BaseIcon>
+  );
+}
+
+export function StarIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m12 4.5 2.3 4.8 5.2.7-3.8 3.8.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.8 5.2-.7Z" />
+    </BaseIcon>
+  );
+}
+
+export function ListViewIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M8 7h11" />
+      <path d="M8 12h11" />
+      <path d="M8 17h11" />
+      <path d="M4.5 7h.01" />
+      <path d="M4.5 12h.01" />
+      <path d="M4.5 17h.01" />
+    </BaseIcon>
+  );
+}
+
+export function GridViewIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="4.5" y="4.5" width="6" height="6" rx="1.2" />
+      <rect x="13.5" y="4.5" width="6" height="6" rx="1.2" />
+      <rect x="4.5" y="13.5" width="6" height="6" rx="1.2" />
+      <rect x="13.5" y="13.5" width="6" height="6" rx="1.2" />
+    </BaseIcon>
+  );
+}
+
+export function SortIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M5 7h11" />
+      <path d="M5 12h8" />
+      <path d="M5 17h5" />
+      <path d="m17 7 2 2 2-2" />
+      <path d="M19 9v8" />
+    </BaseIcon>
+  );
+}
+
 export function ImageIcon({ className }: IconProps) {
   return (
     <BaseIcon className={className}>

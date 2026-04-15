@@ -3,6 +3,7 @@ import unittest
 from nodes.deep_research import (
     INTERNAL_SYNTHESIZE_TOOL,
     INTERNAL_VERIFY_TOOL,
+    _analyze_prompt,
     _build_deterministic_plan,
     _build_verification_result,
     _execute_tool,
@@ -11,6 +12,25 @@ from nodes.deep_research import (
 
 
 class DeepResearchPlanningTests(unittest.TestCase):
+    def test_selected_single_run_can_anchor_named_paper_even_with_title_variation(self) -> None:
+        papers = [
+            {
+                "paper_id": 11,
+                "title": "Avoidance of the English passive construction by L1 Chinese learners",
+                "year": "2024",
+                "ingestion_run_id": "run-1",
+            }
+        ]
+
+        analysis = _analyze_prompt(
+            'Do a deep research analysis of "Avoidance of the English passive construction by L1 Chinese learners."',
+            papers,
+            ["run-1"],
+        )
+
+        self.assertTrue(analysis["target_in_scope"])
+        self.assertEqual(analysis["target_paper_id"], 11)
+
     def test_missing_named_paper_plan_includes_verification_and_synthesis(self) -> None:
         snapshot = {
             "prompt": 'Analyze "Avoidance of the English passive construction by L1 Chinese learners."',

@@ -17,7 +17,7 @@ from analysis_pipeline import configure_logging, load_config, now_iso  # noqa: E
 from graphs import run_deep_research_graph  # noqa: E402
 from nodes import consume_usage_summary, start_usage_session  # noqa: E402
 from supabase_http import build_retrying_session  # noqa: E402
-from workspace_data import filter_dashboard_data, load_workspace_dataset  # noqa: E402
+from workspace_data import filter_dashboard_data, load_workspace_dataset, scope_filtered_data_to_runs  # noqa: E402
 
 
 logger = logging.getLogger("papertrend_research_worker")
@@ -142,6 +142,7 @@ class SupabaseRestClient:
         owner_user_id: str,
         folder_id: Optional[str] = None,
         project_id: Optional[str] = None,
+        selected_run_ids: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         if not owner_user_id:
             return []
@@ -151,7 +152,14 @@ class SupabaseRestClient:
             "owner_user_id": f"eq.{owner_user_id}",
             "status": "in.(queued,processing)",
         }
-        if folder_id:
+        normalized_run_ids = [
+            str(run_id).strip()
+            for run_id in list(selected_run_ids or [])
+            if str(run_id).strip()
+        ]
+        if normalized_run_ids:
+            params["id"] = f"in.({','.join(normalized_run_ids)})"
+        elif folder_id:
             params["folder_id"] = f"eq.{folder_id}"
         elif project_id:
             folder_ids = self.list_project_folder_ids(owner_user_id, project_id)
@@ -198,16 +206,24 @@ class SupabaseRestClient:
 def _extract_scope_from_steps(steps: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     project_id = ""
     prompt_analysis: Dict[str, Any] = {}
+    selected_run_ids: List[str] = []
     for step in steps:
         payload = step.get("input_payload") if isinstance(step.get("input_payload"), dict) else {}
         if not project_id:
             project_id = str(payload.get("projectId") or payload.get("project_id") or "").strip()
+        if not selected_run_ids:
+            selected_run_ids = [
+                str(run_id).strip()
+                for run_id in list(payload.get("selectedRunIds") or payload.get("selected_run_ids") or [])
+                if str(run_id).strip()
+            ]
         if not prompt_analysis and isinstance(payload.get("promptAnalysis"), dict):
             prompt_analysis = dict(payload.get("promptAnalysis") or {})
-        if project_id and prompt_analysis:
+        if project_id and prompt_analysis and selected_run_ids:
             break
     return {
         "project_id": project_id,
+        "selected_run_ids": selected_run_ids,
         "prompt_analysis": prompt_analysis,
     }
 
@@ -223,7 +239,12 @@ def _requeue_waiting_sessions(client: SupabaseRestClient, limit: int) -> int:
         steps = client.get_session_steps(str(session.get("id") or ""))
         scope = _extract_scope_from_steps(steps)
         project_id = str(scope.get("project_id") or "").strip() or None
-        pending = client.list_pending_runs(owner_user_id, folder_id=folder_id, project_id=project_id)
+        pending = client.list_pending_runs(
+            owner_user_id,
+            folder_id=folder_id,
+            project_id=project_id,
+            selected_run_ids=list(scope.get("selected_run_ids") or []),
+        )
         if pending:
             client.update_session(
                 str(session["id"]),
@@ -316,6 +337,11 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
     steps = client.get_session_steps(str(session["id"]))
     scope = _extract_scope_from_steps(steps)
     project_id = str(scope.get("project_id") or "").strip() or None
+    selected_run_ids = [
+        str(run_id).strip()
+        for run_id in list(scope.get("selected_run_ids") or [])
+        if str(run_id).strip()
+    ]
     dataset = load_workspace_dataset(
         owner_user_id=owner_user_id,
         folder_id=folder_id,
@@ -327,10 +353,12 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         selected_tracks=[],
         search_query="",
     )
+    filtered = scope_filtered_data_to_runs(filtered, selected_run_ids)
     return {
         "owner_user_id": owner_user_id,
         "folder_id": folder_id or "",
         "project_id": project_id or "",
+        "selected_run_ids": selected_run_ids,
         "thread_id": str(session.get("thread_id") or ""),
         "session_id": str(session.get("id") or ""),
         "prompt": str(session.get("prompt") or ""),
@@ -425,6 +453,7 @@ def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict
                 str(session.get("owner_user_id") or ""),
                 folder_id=str(final_state.get("folder_id") or session.get("folder_id") or "").strip() or None,
                 project_id=str(final_state.get("project_id") or "").strip() or None,
+                selected_run_ids=list(final_state.get("selected_run_ids") or []),
             )
         )
         client.update_session(

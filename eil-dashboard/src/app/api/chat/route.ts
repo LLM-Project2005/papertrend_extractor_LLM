@@ -72,6 +72,7 @@ type LocalPlanPaper = {
   paper_id: number;
   title: string;
   year?: string | null;
+  ingestion_run_id?: string | null;
 };
 
 const LOCAL_PAYLOAD_VERSION = 2;
@@ -150,7 +151,11 @@ function titleMatchStrength(targetTitle: string, paperTitle: string) {
   return { strong, score: Math.round(ratio * 120) };
 }
 
-function buildLocalPromptAnalysis(prompt: string, papers: LocalPlanPaper[]) {
+function buildLocalPromptAnalysis(
+  prompt: string,
+  papers: LocalPlanPaper[],
+  selectedRunIds: string[] = []
+) {
   const quotedTitle = extractQuotedTitle(prompt);
   const normalizedQuery = normalizeSearchQuery(prompt, quotedTitle);
   const lowered = prompt.toLowerCase();
@@ -173,7 +178,16 @@ function buildLocalPromptAnalysis(prompt: string, papers: LocalPlanPaper[]) {
     .filter((row) => row.score > 0 || row.strong_title_match)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
-  const target = rankedMatches.find((row) => row.strong_title_match);
+  let target = rankedMatches.find((row) => row.strong_title_match);
+  if (!target && quotedTitle && selectedRunIds.length > 0 && papers.length === 1) {
+    target = {
+      paperId: papers[0].paper_id,
+      title: papers[0].title,
+      year: papers[0].year ?? "Unknown",
+      score: Math.max(rankedMatches[0]?.score ?? 0, 80),
+      strong_title_match: true,
+    };
+  }
   const trivial =
     !compare &&
     requestedSections.length === 0 &&
@@ -253,6 +267,7 @@ function buildLocalQueryBundle(
 function buildLocalTodoInput(args: {
   promptAnalysis: Record<string, unknown>;
   projectId?: string;
+  selectedRunIds?: string[];
   todoId: string;
   title: string;
   phaseClass: "research" | "verification" | "synthesis";
@@ -285,6 +300,7 @@ function buildLocalTodoInput(args: {
     expectedOutput: args.expectedOutput,
     completionCondition: args.completionCondition,
     projectId: args.projectId ?? "",
+    selectedRunIds: args.selectedRunIds ?? [],
     promptAnalysis: args.promptAnalysis,
     normalizedQuery: buildLocalQueryBundle(
       args.query,
@@ -306,6 +322,7 @@ function buildLocalTodo(
   config: {
     promptAnalysis: Record<string, unknown>;
     projectId?: string;
+    selectedRunIds?: string[];
     title: string;
     description: string;
     toolName: string;
@@ -333,6 +350,7 @@ function buildLocalTodo(
     tool_input: buildLocalTodoInput({
       promptAnalysis: config.promptAnalysis,
       projectId: config.projectId,
+      selectedRunIds: config.selectedRunIds,
       todoId: `initial-${position}-${slugifyTodo(config.title)}`,
       title: config.title,
       phaseClass: config.phaseClass,
@@ -352,15 +370,19 @@ function buildLocalTodo(
 async function loadScopedPlanPapers(
   ownerUserId: string,
   folderId: string | "all" | undefined,
-  projectId: string | undefined
+  projectId: string | undefined,
+  selectedRunIds: string[] = []
 ): Promise<LocalPlanPaper[]> {
   const supabase = getSupabaseAdmin();
+  const normalizedRunIds = selectedRunIds.filter(Boolean);
   let query = supabase
     .from("papers_full")
-    .select("paper_id,title,year,folder_id")
+    .select("paper_id,title,year,folder_id,ingestion_run_id")
     .eq("owner_user_id", ownerUserId);
 
-  if (folderId && folderId !== "all") {
+  if (normalizedRunIds.length > 0) {
+    query = query.in("ingestion_run_id", normalizedRunIds);
+  } else if (folderId && folderId !== "all") {
     query = query.eq("folder_id", folderId);
   } else if (projectId) {
     const { data: folders, error: folderError } = await supabase
@@ -392,10 +414,11 @@ async function buildLocalResearchPlan(
   pendingRunCount: number,
   ownerUserId: string,
   folderId: string | "all" | undefined,
-  projectId: string | undefined
+  projectId: string | undefined,
+  selectedRunIds: string[] = []
 ) {
-  const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId);
-  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers);
+  const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId, selectedRunIds);
+  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds);
   const needsAnalysis = pendingRunCount > 0;
   const requestedSections = Array.isArray(promptAnalysis.requested_sections)
     ? promptAnalysis.requested_sections
@@ -412,13 +435,14 @@ async function buildLocalResearchPlan(
   }> = [];
 
   const addStep = (
-    config: Omit<Parameters<typeof buildLocalTodo>[1], "promptAnalysis" | "projectId">
+    config: Omit<Parameters<typeof buildLocalTodo>[1], "promptAnalysis" | "projectId" | "selectedRunIds">
   ) => {
     steps.push(
       buildLocalTodo(steps.length + 1, {
         ...config,
         promptAnalysis,
         projectId,
+        selectedRunIds,
       })
     );
   };
@@ -678,15 +702,19 @@ async function countPendingRuns(
   folderId: string | "all" | undefined,
   projectId: string | undefined,
   ownerUserId: string,
+  selectedRunIds: string[] = [],
 ) {
   const supabase = getSupabaseAdmin();
+  const normalizedRunIds = selectedRunIds.filter(Boolean);
   let query = supabase
     .from("ingestion_runs")
     .select("id", { count: "exact", head: true })
     .eq("owner_user_id", ownerUserId)
     .in("status", ["queued", "processing"]);
 
-  if (folderId && folderId !== "all") {
+  if (normalizedRunIds.length > 0) {
+    query = query.in("id", normalizedRunIds);
+  } else if (folderId && folderId !== "all") {
     query = query.eq("folder_id", folderId);
   } else if (projectId) {
     const { data: folders, error: foldersError } = await supabase
@@ -778,6 +806,7 @@ async function planDeepResearch(
       ownerUserId,
       folderId: body.folderId,
       projectId: body.projectId,
+      selectedRunIds: body.selectedRunIds ?? [],
       message: prompt,
     });
   } catch {
@@ -787,7 +816,8 @@ async function planDeepResearch(
   const pendingRunCount = await countPendingRuns(
     body.folderId,
     body.projectId,
-    ownerUserId
+    ownerUserId,
+    body.selectedRunIds ?? []
   );
   const plan =
     rawPlan ??
@@ -796,7 +826,8 @@ async function planDeepResearch(
       pendingRunCount,
       ownerUserId,
       body.folderId,
-      body.projectId
+      body.projectId,
+      body.selectedRunIds ?? []
     ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,
@@ -851,7 +882,8 @@ async function continueDeepResearch(
   const pendingRunCount = await countPendingRuns(
     body.folderId,
     body.projectId,
-    ownerUserId
+    ownerUserId,
+    body.selectedRunIds ?? []
   );
   const nextStatus = pendingRunCount > 0 ? "waiting_on_analysis" : "queued";
 

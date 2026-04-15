@@ -8,7 +8,12 @@ from nodes import ModelTask, get_task_llm
 from nodes.keyword_search import keyword_search_node
 from state import DeepResearchPlanSchema, DeepResearchState
 from supabase_http import build_retrying_session
-from workspace_data import build_visualization_analytics, filter_dashboard_data, load_workspace_dataset
+from workspace_data import (
+    build_visualization_analytics,
+    filter_dashboard_data,
+    load_workspace_dataset,
+    scope_filtered_data_to_runs,
+)
 
 research_planning_llm = get_task_llm(ModelTask.RESEARCH_PLANNING)
 research_subtask_llm = get_task_llm(ModelTask.RESEARCH_SUBTASK)
@@ -90,6 +95,7 @@ def _scope_dataset(
     owner_user_id: str,
     folder_id: Optional[str],
     project_id: Optional[str],
+    selected_run_ids: Optional[Sequence[str]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     dataset = load_workspace_dataset(
         owner_user_id=owner_user_id,
@@ -102,6 +108,7 @@ def _scope_dataset(
         selected_tracks=[],
         search_query="",
     )
+    filtered = scope_filtered_data_to_runs(filtered, selected_run_ids or [])
     return dataset, filtered
 
 
@@ -134,6 +141,7 @@ def _pending_runs(
     owner_user_id: str,
     folder_id: Optional[str],
     project_id: Optional[str],
+    selected_run_ids: Optional[Sequence[str]] = None,
 ) -> int:
     if not owner_user_id or not _get_supabase_url() or not _get_service_key():
         return 0
@@ -143,7 +151,14 @@ def _pending_runs(
         "owner_user_id": f"eq.{owner_user_id}",
         "status": "in.(queued,processing)",
     }
-    if folder_id:
+    normalized_run_ids = [
+        str(run_id).strip()
+        for run_id in list(selected_run_ids or [])
+        if str(run_id).strip()
+    ]
+    if normalized_run_ids:
+        params["id"] = f"in.({','.join(normalized_run_ids)})"
+    elif folder_id:
         params["folder_id"] = f"eq.{folder_id}"
     elif project_id:
         folder_ids = _project_folder_ids(owner_user_id, project_id)
@@ -369,7 +384,11 @@ def _score_paper_match(
     }
 
 
-def _analyze_prompt(prompt: str, papers: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
+def _analyze_prompt(
+    prompt: str,
+    papers: Sequence[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
     quoted_title = _extract_quoted_title(prompt)
     requested_sections = _detect_requested_sections(prompt)
     normalized_query = _normalize_search_query(prompt, quoted_title)
@@ -405,6 +424,13 @@ def _analyze_prompt(prompt: str, papers: Sequence[Dict[str, Any]]) -> Dict[str, 
         "normalized_topic_terms": _tokenize(normalized_query)[:10],
         "exclusion_ids": [],
     }
+    explicit_selected_scope = bool(
+        {
+            str(run_id).strip()
+            for run_id in list(selected_run_ids or [])
+            if str(run_id).strip()
+        }
+    )
     ranked_matches = sorted(
         [
             _score_paper_match(paper, analysis["normalized_query"], analysis["candidate_title"])
@@ -414,6 +440,22 @@ def _analyze_prompt(prompt: str, papers: Sequence[Dict[str, Any]]) -> Dict[str, 
         reverse=True,
     )[:5]
     target_paper = next((match for match in ranked_matches if match.get("strong_title_match")), None)
+    if (
+        analysis["single_paper"]
+        and not target_paper
+        and explicit_selected_scope
+        and len(papers) == 1
+    ):
+        only_paper = papers[0]
+        target_paper = {
+            "paperId": int(only_paper.get("paper_id") or 0),
+            "title": str(only_paper.get("title") or ""),
+            "year": str(only_paper.get("year") or "Unknown"),
+            "score": max(int(ranked_matches[0].get("score") or 0), 80) if ranked_matches else 80,
+            "strong_title_match": True,
+            "selected_scope_anchor": True,
+        }
+        ranked_matches = [target_paper, *[row for row in ranked_matches if int(row.get("paperId") or 0) != target_paper["paperId"]]][:5]
     analysis["target_in_scope"] = bool(target_paper)
     analysis["ranked_matches"] = ranked_matches
     analysis["target_paper_id"] = int(target_paper.get("paperId") or 0) if target_paper else 0
@@ -468,11 +510,12 @@ def _build_planning_snapshot(
     folder_id: Optional[str],
     project_id: Optional[str],
     prompt: str,
+    selected_run_ids: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
-    dataset, filtered = _scope_dataset(owner_user_id, folder_id, project_id)
+    dataset, filtered = _scope_dataset(owner_user_id, folder_id, project_id, selected_run_ids)
     analytics = build_visualization_analytics(filtered)
     papers = list(filtered.get("papers_full") or [])
-    prompt_analysis = _analyze_prompt(prompt, papers)
+    prompt_analysis = _analyze_prompt(prompt, papers, selected_run_ids)
     available_sections = {
         section: sum(1 for paper in papers if str(paper.get(section) or "").strip())
         for section in ("abstract_claims", "methods", "results", "conclusion")
@@ -488,9 +531,10 @@ def _build_planning_snapshot(
         "prompt": prompt,
         "folder_id": folder_id,
         "project_id": project_id,
+        "selected_run_ids": [str(run_id).strip() for run_id in list(selected_run_ids or []) if str(run_id).strip()],
         "mode": dataset.get("mode", "live"),
         "paper_count": len(papers),
-        "pending_run_count": _pending_runs(owner_user_id, folder_id, project_id),
+        "pending_run_count": _pending_runs(owner_user_id, folder_id, project_id, selected_run_ids),
         "overview": analytics.get("overview", {}),
         "top_papers": _safe_papers(filtered),
         "filters": analytics.get("filters", {}),
@@ -537,6 +581,7 @@ def _todo_input(
         "expectedOutput": expected_output,
         "completionCondition": completion_condition,
         "projectId": snapshot.get("project_id") or "",
+        "selectedRunIds": list(snapshot.get("selected_run_ids") or []),
         "promptAnalysis": prompt_analysis,
         "normalizedQuery": _build_query_bundle(
             primary_query,
@@ -908,8 +953,15 @@ def generate_deep_research_plan(
     folder_id: Optional[str],
     prompt: str,
     project_id: Optional[str] = None,
+    selected_run_ids: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
-    snapshot = _build_planning_snapshot(owner_user_id, folder_id, project_id, prompt)
+    snapshot = _build_planning_snapshot(
+        owner_user_id,
+        folder_id,
+        project_id,
+        prompt,
+        selected_run_ids,
+    )
     plan = _build_deterministic_plan(snapshot)
     return plan
 
@@ -1511,6 +1563,7 @@ def _state_snapshot_for_todos(state: DeepResearchState) -> Dict[str, Any]:
     return {
         "prompt": str(state.get("prompt") or ""),
         "project_id": str(state.get("project_id") or ""),
+        "selected_run_ids": [str(run_id).strip() for run_id in list(state.get("selected_run_ids") or []) if str(run_id).strip()],
         "prompt_analysis": prompt_analysis,
     }
 
@@ -1589,6 +1642,7 @@ def research_preflight_node(state: DeepResearchState) -> Dict[str, Any]:
         str(state.get("owner_user_id") or ""),
         str(state.get("folder_id") or "") or None,
         str(state.get("project_id") or "") or None,
+        list(state.get("selected_run_ids") or []),
     )
     if pending_run_count > 0:
         return {
