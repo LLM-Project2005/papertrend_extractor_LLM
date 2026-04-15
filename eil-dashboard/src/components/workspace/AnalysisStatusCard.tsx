@@ -41,10 +41,37 @@ function getRunProgressEpochMs(run?: IngestionRunRow | null): number {
     return 0;
   }
   const payloadValue = run.input_payload?.progress_updated_at;
+  const progressMs =
+    typeof payloadValue === "string" && payloadValue.trim()
+      ? toEpochMs(payloadValue)
+      : 0;
+  return Math.max(progressMs, toEpochMs(run.updated_at ?? null));
+}
+
+function getRunStageEpochMs(run?: IngestionRunRow | null): number {
+  if (!run) {
+    return 0;
+  }
+  const payloadValue = run.input_payload?.progress_updated_at;
   if (typeof payloadValue === "string" && payloadValue.trim()) {
     return toEpochMs(payloadValue);
   }
   return toEpochMs(run.updated_at ?? null);
+}
+
+function formatDurationMinutes(totalMinutes: number) {
+  if (totalMinutes < 1) {
+    return "under a minute";
+  }
+  if (totalMinutes < 60) {
+    return `${totalMinutes} minute${totalMinutes === 1 ? "" : "s"}`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (minutes === 0) {
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
 export default function AnalysisStatusCard({
@@ -98,8 +125,21 @@ export default function AnalysisStatusCard({
     getRunProgressEpochMs(leadRun),
     toEpochMs(folderJob?.updated_at ?? null)
   );
+  const stageReferenceMs = getRunStageEpochMs(leadRun);
+  const workerTouchMs = Math.max(
+    toEpochMs(leadRun?.updated_at ?? null),
+    toEpochMs(folderJob?.updated_at ?? null)
+  );
   const staleMinutes = staleReferenceMs > 0 ? (Date.now() - staleReferenceMs) / 60000 : 0;
-  const isLikelyStalled = hasActiveRuns && staleMinutes >= 3;
+  const stageMinutes = stageReferenceMs > 0 ? (Date.now() - stageReferenceMs) / 60000 : 0;
+  const hasRecentWorkerTouch = workerTouchMs > 0 && Date.now() - workerTouchMs <= 120000;
+  const isLikelyStalled = hasActiveRuns && staleMinutes >= 5 && !hasRecentWorkerTouch;
+  const isLongRunningStage =
+    Boolean(leadRun) &&
+    leadRun?.status === "processing" &&
+    stageMinutes >= 3 &&
+    hasRecentWorkerTouch;
+  const stageDurationLabel = formatDurationMinutes(Math.floor(stageMinutes));
 
   if (compact) {
     return (
@@ -306,6 +346,11 @@ export default function AnalysisStatusCard({
             Processing appears stalled. The queue has not advanced for about {Math.floor(staleMinutes)} minute{Math.floor(staleMinutes) === 1 ? "" : "s"}. Use Retry processing to trigger the worker again.
           </div>
         ) : null}
+        {isLongRunningStage ? (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-200">
+            The worker is still active. The current stage has been running for about {stageDurationLabel}, and some paper-analysis steps can legitimately take several minutes before the next visible progress update.
+          </div>
+        ) : null}
         {folderJob ? (
           <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
             <div className="flex items-start justify-between gap-4">
@@ -352,6 +397,16 @@ export default function AnalysisStatusCard({
                   <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
                     {getRunStageCaption(run)}
                   </p>
+                  {run.status === "processing" && getRunStageEpochMs(run) > 0 ? (
+                    <p className="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300">
+                      Current stage duration:{" "}
+                      {formatDurationMinutes(
+                        Math.floor(
+                          (Date.now() - getRunStageEpochMs(run)) / 60000
+                        )
+                      )}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2">
                   {onCancelRun &&

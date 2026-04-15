@@ -151,6 +151,12 @@ function titleMatchStrength(targetTitle: string, paperTitle: string) {
   return { strong, score: Math.round(ratio * 120) };
 }
 
+function isExactNormalizedTitleMatch(targetTitle: string, paperTitle: string) {
+  const normalizedTarget = normalizeTitle(targetTitle);
+  const normalizedPaperTitle = normalizeTitle(paperTitle);
+  return Boolean(normalizedTarget) && normalizedTarget === normalizedPaperTitle;
+}
+
 function buildLocalPromptAnalysis(
   prompt: string,
   papers: LocalPlanPaper[],
@@ -173,20 +179,50 @@ function buildLocalPromptAnalysis(
         year: paper.year ?? "Unknown",
         score: match.score,
         strong_title_match: match.strong,
+        exact_normalized_title_match: isExactNormalizedTitleMatch(quotedTitle, paper.title),
+        ingestion_run_id: paper.ingestion_run_id ?? null,
       };
     })
     .filter((row) => row.score > 0 || row.strong_title_match)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5);
-  let target = rankedMatches.find((row) => row.strong_title_match);
-  if (!target && quotedTitle && selectedRunIds.length > 0 && papers.length === 1) {
-    target = {
-      paperId: papers[0].paper_id,
-      title: papers[0].title,
-      year: papers[0].year ?? "Unknown",
-      score: Math.max(rankedMatches[0]?.score ?? 0, 80),
-      strong_title_match: true,
-    };
+  let target =
+    rankedMatches.find((row) => row.exact_normalized_title_match) ??
+    rankedMatches.find((row) => row.strong_title_match);
+  if (!target && quotedTitle && selectedRunIds.length > 0) {
+    const selectedMatches = papers
+      .filter((paper) => selectedRunIds.includes(String(paper.ingestion_run_id ?? "")))
+      .map((paper) => {
+        const match = titleMatchStrength(quotedTitle, paper.title);
+        return {
+          paperId: paper.paper_id,
+          title: paper.title,
+          year: paper.year ?? "Unknown",
+          score: match.score,
+          strong_title_match: match.strong,
+          exact_normalized_title_match: isExactNormalizedTitleMatch(quotedTitle, paper.title),
+          ingestion_run_id: paper.ingestion_run_id ?? null,
+        };
+      });
+    target =
+      selectedMatches.find((row) => row.exact_normalized_title_match) ??
+      selectedMatches.find((row) => row.strong_title_match);
+    if (!target && selectedMatches.length === 1) {
+      const normalizedTargetTokens = new Set(normalizeTitle(quotedTitle).split(" ").filter(Boolean));
+      const normalizedOnlyTokens = new Set(normalizeTitle(selectedMatches[0].title).split(" ").filter(Boolean));
+      let overlap = 0;
+      normalizedTargetTokens.forEach((token) => {
+        if (normalizedOnlyTokens.has(token)) overlap += 1;
+      });
+      const ratio = overlap / Math.max(1, normalizedTargetTokens.size);
+      if (ratio >= 0.75) {
+        target = {
+          ...selectedMatches[0],
+          score: Math.max(selectedMatches[0].score, 80),
+          strong_title_match: true,
+        };
+      }
+    }
   }
   const trivial =
     !compare &&

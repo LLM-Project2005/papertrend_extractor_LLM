@@ -31,6 +31,32 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertTrue(analysis["target_in_scope"])
         self.assertEqual(analysis["target_paper_id"], 11)
 
+    def test_selected_run_can_anchor_exact_named_paper_even_when_scope_has_multiple_papers(self) -> None:
+        papers = [
+            {
+                "paper_id": 21,
+                "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+                "year": "2025",
+                "ingestion_run_id": "run-target",
+            },
+            {
+                "paper_id": 22,
+                "title": "Another Translation Study",
+                "year": "2024",
+                "ingestion_run_id": "run-other",
+            },
+        ]
+
+        analysis = _analyze_prompt(
+            'Do a deep research analysis of "A centering theory analysis of discrepancies on subject Zero Anaphor in English to Thai translation"',
+            papers,
+            ["run-target"],
+        )
+
+        self.assertTrue(analysis["target_in_scope"])
+        self.assertEqual(analysis["target_paper_id"], 21)
+        self.assertEqual(analysis["target_resolution_status"], "exact_match")
+
     def test_missing_named_paper_plan_includes_verification_and_synthesis(self) -> None:
         snapshot = {
             "prompt": 'Analyze "Avoidance of the English passive construction by L1 Chinese learners."',

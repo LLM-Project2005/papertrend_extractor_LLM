@@ -381,6 +381,11 @@ def _score_paper_match(
         "year": str(paper.get("year") or "Unknown"),
         "score": score,
         "strong_title_match": title_match,
+        "exact_normalized_title_match": bool(
+            candidate_title
+            and _normalize_title(candidate_title)
+            and _normalize_title(candidate_title) == _normalize_title(paper_title)
+        ),
     }
 
 
@@ -439,23 +444,71 @@ def _analyze_prompt(
         key=lambda row: (int(row.get("score") or 0), bool(row.get("strong_title_match"))),
         reverse=True,
     )[:5]
-    target_paper = next((match for match in ranked_matches if match.get("strong_title_match")), None)
+    normalized_candidate_title = _normalize_title(analysis["candidate_title"])
+    target_paper = next(
+        (match for match in ranked_matches if bool(match.get("exact_normalized_title_match"))),
+        None,
+    ) or next((match for match in ranked_matches if match.get("strong_title_match")), None)
     if (
         analysis["single_paper"]
         and not target_paper
         and explicit_selected_scope
-        and len(papers) == 1
     ):
-        only_paper = papers[0]
-        target_paper = {
-            "paperId": int(only_paper.get("paper_id") or 0),
-            "title": str(only_paper.get("title") or ""),
-            "year": str(only_paper.get("year") or "Unknown"),
-            "score": max(int(ranked_matches[0].get("score") or 0), 80) if ranked_matches else 80,
-            "strong_title_match": True,
-            "selected_scope_anchor": True,
-        }
-        ranked_matches = [target_paper, *[row for row in ranked_matches if int(row.get("paperId") or 0) != target_paper["paperId"]]][:5]
+        selected_scope_matches = [
+            _score_paper_match(paper, analysis["normalized_query"], analysis["candidate_title"])
+            for paper in papers
+            if str(paper.get("ingestion_run_id") or "").strip()
+            in {
+                str(run_id).strip()
+                for run_id in list(selected_run_ids or [])
+                if str(run_id).strip()
+            }
+        ]
+        selected_exact = next(
+            (
+                match
+                for match in selected_scope_matches
+                if bool(match.get("exact_normalized_title_match"))
+            ),
+            None,
+        )
+        selected_strong = next(
+            (
+                match
+                for match in selected_scope_matches
+                if match.get("strong_title_match")
+            ),
+            None,
+        )
+        selected_anchor = selected_exact or selected_strong
+        if not selected_anchor and len(selected_scope_matches) == 1:
+            only_paper = selected_scope_matches[0]
+            only_title = str(only_paper.get("title") or "")
+            token_overlap = (
+                len(set(_tokenize(normalized_candidate_title)) & set(_tokenize(only_title)))
+                / max(1, len(set(_tokenize(normalized_candidate_title))))
+                if normalized_candidate_title
+                else 0.0
+            )
+            if token_overlap >= 0.75:
+                selected_anchor = {
+                    **only_paper,
+                    "score": max(int(only_paper.get("score") or 0), 80),
+                    "strong_title_match": True,
+                }
+        if selected_anchor:
+            target_paper = {
+                **selected_anchor,
+                "selected_scope_anchor": True,
+            }
+            ranked_matches = [
+                target_paper,
+                *[
+                    row
+                    for row in ranked_matches
+                    if int(row.get("paperId") or 0) != int(target_paper.get("paperId") or 0)
+                ],
+            ][:5]
     analysis["target_in_scope"] = bool(target_paper)
     analysis["ranked_matches"] = ranked_matches
     analysis["target_paper_id"] = int(target_paper.get("paperId") or 0) if target_paper else 0
