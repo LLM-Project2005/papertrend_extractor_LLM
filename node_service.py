@@ -4,9 +4,10 @@ import logging
 import os
 import sys
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
@@ -23,6 +24,36 @@ if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
 _QUEUE_PROCESS_LOCK = threading.Lock()
 _RESEARCH_PROCESS_LOCK = threading.Lock()
+_QUEUE_THREAD_GUARD = threading.Lock()
+_RESEARCH_THREAD_GUARD = threading.Lock()
+_QUEUE_PROCESS_THREAD: Optional[threading.Thread] = None
+_RESEARCH_PROCESS_THREAD: Optional[threading.Thread] = None
+_QUEUE_PROCESS_STARTED_AT = 0.0
+_RESEARCH_PROCESS_STARTED_AT = 0.0
+_FORCED_QUEUE_BATCH_COUNT = 0
+_FORCED_RESEARCH_BATCH_COUNT = 0
+
+
+def _batch_stale_after_seconds(env_name: str, default_seconds: int) -> float:
+    try:
+        return max(float(os.getenv(env_name, str(default_seconds))), 30.0)
+    except Exception:
+        return float(default_seconds)
+
+
+def _active_thread_state(
+    thread: Optional[threading.Thread],
+    started_at: float,
+    stale_after_seconds: float,
+) -> Dict[str, Any]:
+    alive = bool(thread and thread.is_alive())
+    age_seconds = max(time.monotonic() - started_at, 0.0) if started_at > 0 else 0.0
+    stale = alive and age_seconds >= stale_after_seconds
+    return {
+        "alive": alive,
+        "age_seconds": round(age_seconds, 1),
+        "stale": stale,
+    }
 
 
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
@@ -73,9 +104,25 @@ def _run_research_batch(max_runs: int) -> Dict[str, Any]:
     return process_batch(client, max_runs=max_runs)
 
 
-def _run_queue_batch_background(max_runs: int) -> bool:
-    if not _QUEUE_PROCESS_LOCK.acquire(blocking=False):
-        return False
+def _run_queue_batch_background(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
+    global _QUEUE_PROCESS_THREAD, _QUEUE_PROCESS_STARTED_AT, _FORCED_QUEUE_BATCH_COUNT
+
+    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_QUEUE_STALE_LOCK_SECONDS", 180)
+    with _QUEUE_THREAD_GUARD:
+        active_state = _active_thread_state(
+            _QUEUE_PROCESS_THREAD,
+            _QUEUE_PROCESS_STARTED_AT,
+            stale_after_seconds,
+        )
+        if active_state["alive"] and not (force or active_state["stale"]):
+            return {
+                "started": False,
+                "already_running": True,
+                "stale_lock_recovered": False,
+                "active_batch_age_seconds": active_state["age_seconds"],
+            }
+        if active_state["alive"] and (force or active_state["stale"]):
+            _FORCED_QUEUE_BATCH_COUNT += 1
 
     def _worker() -> None:
         try:
@@ -84,20 +131,50 @@ def _run_queue_batch_background(max_runs: int) -> bool:
         except Exception as error:
             logger.exception("worker queue batch failed: %s", error)
         finally:
-            _QUEUE_PROCESS_LOCK.release()
+            global _QUEUE_PROCESS_THREAD, _QUEUE_PROCESS_STARTED_AT
+            with _QUEUE_THREAD_GUARD:
+                current = threading.current_thread()
+                if _QUEUE_PROCESS_THREAD is current:
+                    _QUEUE_PROCESS_THREAD = None
+                    _QUEUE_PROCESS_STARTED_AT = 0.0
 
     thread = threading.Thread(
         target=_worker,
         name=f"papertrend-queue-batch-{max_runs}",
         daemon=True,
     )
+    with _QUEUE_THREAD_GUARD:
+        _QUEUE_PROCESS_THREAD = thread
+        _QUEUE_PROCESS_STARTED_AT = time.monotonic()
     thread.start()
-    return True
+    return {
+        "started": True,
+        "already_running": False,
+        "stale_lock_recovered": bool(active_state["alive"] and (force or active_state["stale"])),
+        "active_batch_age_seconds": active_state["age_seconds"],
+        "forced_batch_count": _FORCED_QUEUE_BATCH_COUNT,
+    }
 
 
-def _run_research_batch_background(max_runs: int) -> bool:
-    if not _RESEARCH_PROCESS_LOCK.acquire(blocking=False):
-        return False
+def _run_research_batch_background(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
+    global _RESEARCH_PROCESS_THREAD, _RESEARCH_PROCESS_STARTED_AT, _FORCED_RESEARCH_BATCH_COUNT
+
+    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_RESEARCH_STALE_LOCK_SECONDS", 180)
+    with _RESEARCH_THREAD_GUARD:
+        active_state = _active_thread_state(
+            _RESEARCH_PROCESS_THREAD,
+            _RESEARCH_PROCESS_STARTED_AT,
+            stale_after_seconds,
+        )
+        if active_state["alive"] and not (force or active_state["stale"]):
+            return {
+                "started": False,
+                "already_running": True,
+                "stale_lock_recovered": False,
+                "active_batch_age_seconds": active_state["age_seconds"],
+            }
+        if active_state["alive"] and (force or active_state["stale"]):
+            _FORCED_RESEARCH_BATCH_COUNT += 1
 
     def _worker() -> None:
         try:
@@ -106,15 +183,29 @@ def _run_research_batch_background(max_runs: int) -> bool:
         except Exception as error:
             logger.exception("research queue batch failed: %s", error)
         finally:
-            _RESEARCH_PROCESS_LOCK.release()
+            global _RESEARCH_PROCESS_THREAD, _RESEARCH_PROCESS_STARTED_AT
+            with _RESEARCH_THREAD_GUARD:
+                current = threading.current_thread()
+                if _RESEARCH_PROCESS_THREAD is current:
+                    _RESEARCH_PROCESS_THREAD = None
+                    _RESEARCH_PROCESS_STARTED_AT = 0.0
 
     thread = threading.Thread(
         target=_worker,
         name=f"papertrend-research-batch-{max_runs}",
         daemon=True,
     )
+    with _RESEARCH_THREAD_GUARD:
+        _RESEARCH_PROCESS_THREAD = thread
+        _RESEARCH_PROCESS_STARTED_AT = time.monotonic()
     thread.start()
-    return True
+    return {
+        "started": True,
+        "already_running": False,
+        "stale_lock_recovered": bool(active_state["alive"] and (force or active_state["stale"])),
+        "active_batch_age_seconds": active_state["age_seconds"],
+        "forced_batch_count": _FORCED_RESEARCH_BATCH_COUNT,
+    }
 
 
 def _build_keyword_search_payload(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -220,16 +311,24 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     return
                 max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
                 run_async = bool(body.get("async", True))
+                force_start = bool(body.get("force", False))
                 if run_async:
-                    started = _run_queue_batch_background(max_runs=max_runs)
+                    start_result = _run_queue_batch_background(
+                        max_runs=max_runs,
+                        force=force_start,
+                    )
                     _json_response(
                         self,
                         202,
                         {
                             "ok": True,
-                            "queued": started,
-                            "already_running": not started,
+                            "queued": bool(start_result["started"]),
+                            "already_running": bool(start_result["already_running"]),
                             "max_runs": max_runs,
+                            "force": force_start,
+                            "stale_lock_recovered": bool(start_result["stale_lock_recovered"]),
+                            "active_batch_age_seconds": start_result["active_batch_age_seconds"],
+                            "forced_batch_count": start_result.get("forced_batch_count", 0),
                         },
                     )
                     return
@@ -245,16 +344,24 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     return
                 max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
                 run_async = bool(body.get("async", True))
+                force_start = bool(body.get("force", False))
                 if run_async:
-                    started = _run_research_batch_background(max_runs=max_runs)
+                    start_result = _run_research_batch_background(
+                        max_runs=max_runs,
+                        force=force_start,
+                    )
                     _json_response(
                         self,
                         202,
                         {
                             "ok": True,
-                            "queued": started,
-                            "already_running": not started,
+                            "queued": bool(start_result["started"]),
+                            "already_running": bool(start_result["already_running"]),
                             "max_runs": max_runs,
+                            "force": force_start,
+                            "stale_lock_recovered": bool(start_result["stale_lock_recovered"]),
+                            "active_batch_age_seconds": start_result["active_batch_age_seconds"],
+                            "forced_batch_count": start_result.get("forced_batch_count", 0),
                         },
                     )
                     return

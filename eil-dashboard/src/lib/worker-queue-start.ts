@@ -77,6 +77,7 @@ export async function triggerWorkerQueueWithRetries(options?: {
   reason?: string;
   attempts?: number;
   retryDelayMs?: number;
+  force?: boolean;
 }): Promise<WorkerQueueStartResult> {
   const maxAttempts = Math.min(Math.max(options?.attempts ?? 3, 1), 4);
   const retryDelayMs = Math.max(options?.retryDelayMs ?? 900, 100);
@@ -84,6 +85,7 @@ export async function triggerWorkerQueueWithRetries(options?: {
   let lastTrigger = await triggerWorkerQueue({
     maxRuns: options?.maxRuns,
     reason: options?.reason,
+    force: options?.force,
   });
   let attempt = 1;
 
@@ -97,6 +99,7 @@ export async function triggerWorkerQueueWithRetries(options?: {
     lastTrigger = await triggerWorkerQueue({
       maxRuns: options?.maxRuns,
       reason: options?.reason ? `${options.reason}-retry-${attempt}` : `worker-start-retry-${attempt}`,
+      force: options?.force,
     });
   }
 

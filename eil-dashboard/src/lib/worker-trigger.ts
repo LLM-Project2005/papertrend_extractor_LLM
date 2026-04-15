@@ -8,6 +8,7 @@ async function triggerWorkerEndpoint(
   options?: {
     maxRuns?: number;
     reason?: string;
+    force?: boolean;
   }
 ): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
   const workerServiceUrl = getWorkerServiceUrl();
@@ -31,6 +32,7 @@ async function triggerWorkerEndpoint(
         async: true,
         maxRuns: Math.min(Math.max(options?.maxRuns ?? 1, 1), 5),
         reason: options?.reason ?? "api-trigger",
+        force: Boolean(options?.force),
       }),
       cache: "no-store",
       signal: controller.signal,
@@ -55,6 +57,7 @@ async function triggerWorkerEndpoint(
 export async function triggerWorkerQueue(options?: {
   maxRuns?: number;
   reason?: string;
+  force?: boolean;
 }): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
   return triggerWorkerEndpoint("/process-queue", options);
 }
@@ -62,6 +65,7 @@ export async function triggerWorkerQueue(options?: {
 export async function triggerResearchQueue(options?: {
   maxRuns?: number;
   reason?: string;
+  force?: boolean;
 }): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
   return triggerWorkerEndpoint("/process-research-queue", options);
 }
