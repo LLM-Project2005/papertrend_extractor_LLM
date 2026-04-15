@@ -24,28 +24,58 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseAdmin();
     const timestamp = new Date().toISOString();
-    const { data, error } = await supabase
+    const { data: activeRuns, error: activeRunsError } = await supabase
       .from("ingestion_runs")
-      .update({
-        status: "failed",
-        error_message: "Canceled by user.",
-        completed_at: timestamp,
-        updated_at: timestamp,
-      })
+      .select("*")
       .in("id", runIds)
-      .in("status", ["queued", "processing"])
-      .select("*");
+      .in("status", ["queued", "processing"]);
 
-    if (error) {
-      throw new Error(error.message);
+    if (activeRunsError) {
+      throw new Error(activeRunsError.message);
+    }
+
+    const data = [];
+    for (const run of activeRuns ?? []) {
+      const existingPayload =
+        run.input_payload && typeof run.input_payload === "object" && !Array.isArray(run.input_payload)
+          ? (run.input_payload as Record<string, unknown>)
+          : {};
+      const { data: canceledRun, error } = await supabase
+        .from("ingestion_runs")
+        .update({
+          status: "failed",
+          error_message: "Canceled by user.",
+          completed_at: timestamp,
+          updated_at: timestamp,
+          input_payload: {
+            ...existingPayload,
+            progress_stage: "failed",
+            progress_message: "Analysis canceled",
+            progress_detail:
+              "This run was canceled manually before the worker finished the analysis pipeline.",
+            progress_updated_at: timestamp,
+            canceled_by_user: true,
+          },
+        })
+        .eq("id", run.id)
+        .in("status", ["queued", "processing"])
+        .select("*")
+        .maybeSingle();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+      if (canceledRun) {
+        data.push(canceledRun);
+      }
     }
 
     console.info("[admin.import.cancel] canceled runs", {
       requestedCount: runIds.length,
-      canceledCount: data?.length ?? 0,
+      canceledCount: data.length,
     });
 
-    return NextResponse.json({ runs: data ?? [] });
+    return NextResponse.json({ runs: data });
   } catch (error) {
     console.error("[admin.import.cancel] failed", {
       error: error instanceof Error ? error.message : "unknown_error",

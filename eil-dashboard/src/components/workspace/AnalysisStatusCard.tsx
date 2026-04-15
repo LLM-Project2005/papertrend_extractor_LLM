@@ -36,6 +36,17 @@ function toEpochMs(value?: string | null): number {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
+function getRunProgressEpochMs(run?: IngestionRunRow | null): number {
+  if (!run) {
+    return 0;
+  }
+  const payloadValue = run.input_payload?.progress_updated_at;
+  if (typeof payloadValue === "string" && payloadValue.trim()) {
+    return toEpochMs(payloadValue);
+  }
+  return toEpochMs(run.updated_at ?? null);
+}
+
 export default function AnalysisStatusCard({
   runs,
   folderJob,
@@ -77,7 +88,7 @@ export default function AnalysisStatusCard({
       ? `${summary.processing + summary.queued} active run${summary.processing + summary.queued === 1 ? "" : "s"}`
       : `${summary.succeeded} completed`;
   const staleReferenceMs = Math.max(
-    toEpochMs(leadRun?.updated_at ?? null),
+    getRunProgressEpochMs(leadRun),
     toEpochMs(folderJob?.updated_at ?? null)
   );
   const staleMinutes = staleReferenceMs > 0 ? (Date.now() - staleReferenceMs) / 60000 : 0;

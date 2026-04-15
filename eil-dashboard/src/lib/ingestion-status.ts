@@ -54,8 +54,31 @@ export function getRunStageMessage(run: RunLike): string {
       return "Preparing file for analysis";
     case "downloading":
       return "Downloading source file";
+    case "starting_analysis":
+      return "Starting the analysis pipeline";
     case "extracting":
-      return "Extracting text and analyzing paper";
+    case "extracting_text":
+      return "Extracting text from the PDF";
+    case "cleaning_text":
+      return "Cleaning and routing extracted text";
+    case "translating_text":
+      return "Translating non-English content";
+    case "structuring_sections":
+      return "Structuring paper sections";
+    case "inferring_metadata":
+      return "Inferring title and publication metadata";
+    case "extracting_keywords":
+      return "Extracting grounded keywords";
+    case "grouping_topics":
+      return "Grouping keywords into topics";
+    case "labeling_topics":
+      return "Labeling topic trends";
+    case "classifying_tracks":
+      return "Classifying research tracks";
+    case "extracting_facets":
+      return "Extracting research facets";
+    case "building_dataset":
+      return "Building the workspace dataset";
     case "saving":
       return "Saving results to the workspace";
     case "completed":

@@ -80,7 +80,7 @@ def load_config() -> WorkerConfig:
         llm_context_chars=max(int(os.getenv("WORKER_LLM_CONTEXT_CHARS", "50000")), 8000),
         heartbeat_interval_seconds=max(int(os.getenv("WORKER_HEARTBEAT_INTERVAL_SECONDS", "30")), 10),
         stale_processing_after_seconds=max(
-            int(os.getenv("WORKER_STALE_PROCESSING_AFTER_SECONDS", "1800")), 120
+            int(os.getenv("WORKER_STALE_PROCESSING_AFTER_SECONDS", "300")), 120
         ),
         stale_processing_limit=max(int(os.getenv("WORKER_STALE_PROCESSING_LIMIT", "10")), 1),
         max_recovery_attempts=max(int(os.getenv("WORKER_MAX_RECOVERY_ATTEMPTS", "2")), 1),

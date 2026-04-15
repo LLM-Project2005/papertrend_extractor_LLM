@@ -37,8 +37,13 @@ async function triggerWorkerEndpoint(
     });
 
     const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const queuedValue = payload.queued;
+    const actuallyStarted =
+      response.ok &&
+      !(typeof queuedValue === "boolean" && queuedValue === false);
+
     return {
-      started: response.ok,
+      started: actuallyStarted,
       status: response.status,
       payload,
     };

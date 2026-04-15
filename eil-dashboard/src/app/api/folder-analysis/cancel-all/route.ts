@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import type { IngestionRunRow } from "@/types/database";
 
 export const runtime = "nodejs";
 
@@ -96,7 +97,7 @@ export async function POST(request: Request) {
 
     let runQuery = supabase
       .from("ingestion_runs")
-      .select("id,folder_analysis_job_id,folder_id")
+      .select("id,folder_analysis_job_id,folder_id,input_payload")
       .eq("owner_user_id", user.id)
       .eq("source_type", "upload")
       .in("status", ["queued", "processing"])
@@ -122,20 +123,40 @@ export async function POST(request: Request) {
     }
 
     const timestamp = new Date().toISOString();
-    const { data: canceledRuns, error: cancelError } = await supabase
-      .from("ingestion_runs")
-      .update({
-        status: "failed",
-        error_message: "Canceled by user.",
-        completed_at: timestamp,
-        updated_at: timestamp,
-      })
-      .in("id", activeRunIds)
-      .in("status", ["queued", "processing"])
-      .select("id,folder_analysis_job_id,folder_id,status,error_message,updated_at,completed_at");
+    const canceledRuns: IngestionRunRow[] = [];
+    for (const run of activeRuns ?? []) {
+      const existingPayload =
+        run.input_payload && typeof run.input_payload === "object" && !Array.isArray(run.input_payload)
+          ? (run.input_payload as Record<string, unknown>)
+          : {};
+      const { data: canceledRun, error: cancelError } = await supabase
+        .from("ingestion_runs")
+        .update({
+          status: "failed",
+          error_message: "Canceled by user.",
+          completed_at: timestamp,
+          updated_at: timestamp,
+          input_payload: {
+            ...existingPayload,
+            progress_stage: "failed",
+            progress_message: "Analysis canceled",
+            progress_detail:
+              "This run was canceled manually before the worker finished the analysis pipeline.",
+            progress_updated_at: timestamp,
+            canceled_by_user: true,
+          },
+        })
+        .eq("id", run.id)
+        .in("status", ["queued", "processing"])
+        .select("id,folder_analysis_job_id,folder_id,status,error_message,updated_at,completed_at,input_payload")
+        .maybeSingle();
 
-    if (cancelError) {
-      throw new Error(cancelError.message);
+      if (cancelError) {
+        throw new Error(cancelError.message);
+      }
+      if (canceledRun) {
+        canceledRuns.push(canceledRun as IngestionRunRow);
+      }
     }
 
     const jobIds = (canceledRuns ?? [])

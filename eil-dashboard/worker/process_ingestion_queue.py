@@ -16,7 +16,6 @@ import threading
 import time
 import urllib.parse
 from contextlib import contextmanager
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -41,6 +40,65 @@ logger = logging.getLogger("papertrend_worker")
 AUTO_ANALYSIS_PROVIDER = "Automatic task routing"
 AUTO_ANALYSIS_MODEL = "automatic-task-routing"
 AUTO_ANALYSIS_LABEL = "Automatic per-task model routing"
+USER_STALE_REQUEUE_AFTER_SECONDS = 180
+
+INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
+    "extract": {
+        "stage": "extracting_text",
+        "message": "Extracting text from the PDF",
+        "detail": "Reading the PDF and recovering usable text for downstream analysis.",
+    },
+    "clean": {
+        "stage": "cleaning_text",
+        "message": "Cleaning and routing extracted text",
+        "detail": "Normalizing the extracted text and deciding whether translation is needed.",
+    },
+    "translate": {
+        "stage": "translating_text",
+        "message": "Translating non-English content",
+        "detail": "Converting the paper into English so the downstream analysis stays consistent.",
+    },
+    "segment": {
+        "stage": "structuring_sections",
+        "message": "Structuring paper sections",
+        "detail": "Splitting the paper into machine-usable sections for metadata and findings analysis.",
+    },
+    "metadata": {
+        "stage": "inferring_metadata",
+        "message": "Inferring title and publication metadata",
+        "detail": "Resolving the paper title, year, and key document metadata from the extracted content.",
+    },
+    "mine_keywords": {
+        "stage": "extracting_keywords",
+        "message": "Extracting grounded keywords",
+        "detail": "Finding evidence-backed keywords and concept candidates in the paper.",
+    },
+    "group_topics": {
+        "stage": "grouping_topics",
+        "message": "Grouping keywords into topics",
+        "detail": "Merging related keywords into higher-level topic families grounded in the paper text.",
+    },
+    "label_trends": {
+        "stage": "labeling_topics",
+        "message": "Labeling topic trends",
+        "detail": "Choosing concise academic labels for the topic clusters identified in the paper.",
+    },
+    "classify_tracks": {
+        "stage": "classifying_tracks",
+        "message": "Classifying research tracks",
+        "detail": "Assigning the paper to the most relevant EL, ELI, LAE, or Other tracks.",
+    },
+    "extract_facets": {
+        "stage": "extracting_facets",
+        "message": "Extracting research facets",
+        "detail": "Capturing grounded objective and contribution facets from the paper.",
+    },
+    "build_dataset": {
+        "stage": "building_dataset",
+        "message": "Building the workspace dataset",
+        "detail": "Preparing the final normalized records that will be written back into Supabase.",
+    },
+}
 
 
 class SupabaseRestClient:
@@ -72,14 +130,13 @@ class SupabaseRestClient:
         response.raise_for_status()
         return response.json()
 
-    def list_stale_processing_runs(self, older_than_iso: str, limit: int) -> List[Dict[str, Any]]:
+    def list_processing_runs(self, limit: int) -> List[Dict[str, Any]]:
         response = self.session.get(
             self._rest_url("ingestion_runs"),
             params={
                 "select": "*",
                 "source_type": "eq.upload",
                 "status": "eq.processing",
-                "updated_at": f"lt.{older_than_iso}",
                 "order": "updated_at.asc",
                 "limit": str(limit),
             },
@@ -372,17 +429,61 @@ def _recovery_payload(
             "progress_stage": "queued",
             "progress_message": stage_message,
             "progress_detail": detail,
+            "progress_updated_at": now_iso(),
         },
     )
 
 
+def _is_stale(run: Dict[str, Any], threshold_seconds: int) -> bool:
+    payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
+    progress_updated_at = str(payload.get("progress_updated_at") or run.get("updated_at") or "").strip()
+    if not progress_updated_at:
+        return False
+    try:
+        age_seconds = (
+            datetime_from_iso(now_iso()) - datetime_from_iso(progress_updated_at)
+        ).total_seconds()
+    except Exception:
+        return False
+    return age_seconds >= threshold_seconds
+
+
+def force_requeue_runs(
+    client: SupabaseRestClient,
+    runs: Iterable[Dict[str, Any]],
+    *,
+    counter_key: str,
+    stage_message: str,
+    detail: str,
+) -> int:
+    requeued = 0
+    for run in runs:
+        run_id = str(run.get("id") or "")
+        if not run_id:
+            continue
+        client.update_run(
+            run_id,
+            {
+                "status": "queued",
+                "completed_at": None,
+                "error_message": None,
+                "input_payload": _recovery_payload(
+                    run,
+                    counter_key=counter_key,
+                    stage_message=stage_message,
+                    detail=detail,
+                ),
+            },
+        )
+        requeued += 1
+    return requeued
+
+
 def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConfig) -> int:
-    cutoff = datetime_from_iso(now_iso()) - timedelta(seconds=config.stale_processing_after_seconds)
     recovered = 0
-    for run in client.list_stale_processing_runs(
-        older_than_iso=cutoff.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        limit=config.stale_processing_limit,
-    ):
+    for run in client.list_processing_runs(limit=config.stale_processing_limit):
+        if not _is_stale(run, config.stale_processing_after_seconds):
+            continue
         run_id = str(run.get("id") or "")
         if not run_id:
             continue
@@ -467,6 +568,7 @@ def recover_invalid_succeeded_runs(client: SupabaseRestClient, config: WorkerCon
                         "progress_stage": "queued",
                         "progress_message": "Requeued after incomplete analysis",
                         "progress_detail": "The previous run reported success without extracted text or keyword output, so it was returned to the queue automatically.",
+                        "progress_updated_at": now_iso(),
                     },
                 ),
             },
@@ -538,6 +640,7 @@ def update_run_progress(
             "progress_stage": stage,
             "progress_message": message,
             "progress_detail": detail,
+            "progress_updated_at": now_iso(),
         },
     )
     client.update_run(
@@ -552,6 +655,41 @@ def update_run_progress(
     run["provider"] = str(run.get("provider") or AUTO_ANALYSIS_PROVIDER)
     run["model"] = str(run.get("model") or AUTO_ANALYSIS_MODEL)
     sync_folder_analysis_job(client, run)
+
+
+def update_run_graph_progress(
+    client: SupabaseRestClient,
+    run: Dict[str, Any],
+    run_id: str,
+    node_name: str,
+    node_update: Dict[str, Any],
+    merged_state: Dict[str, Any],
+) -> None:
+    progress = INGESTION_NODE_PROGRESS.get(node_name)
+    if not progress:
+        return
+
+    detail = progress["detail"]
+    if node_name == "translate":
+        detail = (
+            progress["detail"]
+            if merged_state.get("needs_translation")
+            else "The paper appears to be in English already, so translation was skipped."
+        )
+    if node_name == "extract" and merged_state.get("extraction_method"):
+        detail = f"{progress['detail']} Method: {merged_state.get('extraction_method')}."
+    if node_name == "build_dataset":
+        keyword_count = len((merged_state.get("dataset") or {}).get("keywords") or [])
+        detail = f"{progress['detail']} Current keyword rows prepared: {keyword_count}."
+
+    update_run_progress(
+        client,
+        run,
+        run_id,
+        stage=progress["stage"],
+        message=progress["message"],
+        detail=detail,
+    )
 
 
 def sync_folder_analysis_job(client: SupabaseRestClient, run: Dict[str, Any]) -> None:
@@ -686,11 +824,28 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 client,
                 run,
                 run_id,
-                stage="extracting",
-                message="Extracting text and analyzing paper",
-                detail="Running text extraction, section structuring, metadata inference, keywords, tracks, and facets.",
+                stage="starting_analysis",
+                message="Starting the analysis pipeline",
+                detail="The worker is entering the paper analysis graph and will update progress as each stage completes.",
             )
-            result = process_pdf_run(run=run, client=client, config=config, pdf_path=local_pdf)
+            result = process_pdf_run(
+                run=run,
+                client=client,
+                config=config,
+                pdf_path=local_pdf,
+                progress_callback=lambda node_name, node_update, merged_state: (
+                    ensure_run_active(client, run_id),
+                    update_run_graph_progress(
+                        client,
+                        run,
+                        run_id,
+                        node_name,
+                        node_update,
+                        merged_state,
+                    ),
+                ),
+                checkpoint_callback=lambda: ensure_run_active(client, run_id),
+            )
             logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(result.raw_text)})
             logger.info(
                 "model usage summary",
@@ -740,9 +895,11 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                             "paper_id": result.dataset["paper_id"],
                             "raw_text_length": len(result.raw_text),
                             "keyword_count": len(result.dataset["keywords"]),
+                            "progress_stage_sequence": list(INGESTION_NODE_PROGRESS.keys()),
                             "progress_stage": "completed",
                             "progress_message": "Analysis complete",
                             "progress_detail": "This paper is ready to use across the dashboard, paper library, and chat.",
+                            "progress_updated_at": now_iso(),
                         },
                     ),
                 },
@@ -813,6 +970,7 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
                             "progress_stage": "failed",
                             "progress_message": "Analysis failed",
                             "progress_detail": message[:400],
+                            "progress_updated_at": now_iso(),
                         },
                     ),
                 },
