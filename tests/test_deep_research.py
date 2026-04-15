@@ -187,6 +187,38 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
         verification = _build_verification_result(state, [], step_results)
         self.assertTrue(verification["target_resolved"])
 
+    def test_verification_stops_replanning_after_one_followup_round(self) -> None:
+        state = {
+            "prompt": 'Analyze "Paper"',
+            "prompt_analysis": {
+                "single_paper": False,
+                "compare": False,
+                "survey": False,
+                "requested_sections": ["objective", "methodology"],
+            },
+            "papers_full": [],
+        }
+        steps = [
+            {
+                "position": 5,
+                "status": "completed",
+                "tool_name": INTERNAL_VERIFY_TOOL,
+                "tool_input": {
+                    "origin": "verification_generated",
+                    "requiredClass": "verification",
+                    "phaseClass": "verification",
+                },
+            }
+        ]
+        step_results = []
+
+        verification = _build_verification_result(state, steps, step_results)
+
+        self.assertEqual(verification["overall_result"], "fail_partial_only")
+        self.assertTrue(
+            any("will stop appending new work" in warning for warning in verification["warnings"])
+        )
+
     def test_next_pending_step_prioritizes_required_work_over_optional_and_synthesis(self) -> None:
         steps = [
             {

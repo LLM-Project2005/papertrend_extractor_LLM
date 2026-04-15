@@ -58,6 +58,7 @@ INTERNAL_VERIFY_TOOL = "verify_research"
 INTERNAL_SYNTHESIZE_TOOL = "synthesize_report"
 PAYLOAD_VERSION = 2
 PLANNER_VERSION = "hybrid-v1"
+MAX_VERIFICATION_REPLAN_ROUNDS = 1
 REQUIRED_PRIORITY = {
     "required_before_verification": 0,
     "optional_context": 1,
@@ -1855,6 +1856,15 @@ def _verification_followup_exists(steps: Sequence[Dict[str, Any]]) -> bool:
     return False
 
 
+def _verification_followup_rounds(steps: Sequence[Dict[str, Any]]) -> int:
+    return sum(
+        1
+        for step in steps
+        if str(_step_input_payload(step).get("origin") or "") == "verification_generated"
+        and _step_required_class(step) == "verification"
+    )
+
+
 def _build_verification_result(
     state: DeepResearchState,
     steps: Sequence[Dict[str, Any]],
@@ -1895,7 +1905,17 @@ def _build_verification_result(
     if broad_or_compare and len(distinct_hits) < 2:
         warnings.append("Cross-document claims are still supported by fewer than two distinct source hits.")
 
+    verification_rounds = _verification_followup_rounds(steps)
+    if verification_rounds >= MAX_VERIFICATION_REPLAN_ROUNDS and (
+        unresolved_sections or (broad_or_compare and len(distinct_hits) < 2)
+    ):
+        warnings.append("Follow-up verification already ran once, so the session will stop appending new work and finish as partial if coverage remains incomplete.")
+
     if not target_resolved and bool(prompt_analysis.get("single_paper")):
+        overall_result = "fail_partial_only"
+    elif verification_rounds >= MAX_VERIFICATION_REPLAN_ROUNDS and (
+        unresolved_sections or (broad_or_compare and len(distinct_hits) < 2)
+    ):
         overall_result = "fail_partial_only"
     elif unresolved_sections or (broad_or_compare and len(distinct_hits) < 2):
         overall_result = "fail_requires_replan" if not _verification_followup_exists(steps) else "fail_partial_only"
@@ -1924,6 +1944,9 @@ def _append_verification_followups(
     steps: Sequence[Dict[str, Any]],
     verification_result: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
+    if _verification_followup_rounds(steps) >= MAX_VERIFICATION_REPLAN_ROUNDS:
+        return list(steps)
+
     prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
     query = str(prompt_analysis.get("normalized_query") or state.get("prompt") or "")
     target_title = str(prompt_analysis.get("candidate_title") or "")
