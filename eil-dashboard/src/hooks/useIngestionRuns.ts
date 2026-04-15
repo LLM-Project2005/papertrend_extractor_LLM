@@ -134,6 +134,44 @@ export function useIngestionRuns({
     [requestHeaders]
   );
 
+  const cancelAllActiveRuns = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to cancel analysis processing.");
+      }
+
+      const response = await fetch("/api/folder-analysis/cancel-all", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        canceledRuns?: IngestionRunRow[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to cancel active processing.");
+      }
+
+      const canceledRuns = payload.canceledRuns ?? [];
+      if (canceledRuns.length > 0) {
+        setRuns((current) => {
+          const updates = new Map(canceledRuns.map((run) => [run.id, run]));
+          return current.map((run) => updates.get(run.id) ?? run);
+        });
+      }
+
+      setError(null);
+      return canceledRuns;
+    },
+    [requestHeaders]
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -150,5 +188,13 @@ export function useIngestionRuns({
     return () => window.clearInterval(interval);
   }, [enabled, pollIntervalMs, refresh, requestHeaders]);
 
-  return { runs, folderJob, loading, error, refresh, cancelRuns };
+  return {
+    runs,
+    folderJob,
+    loading,
+    error,
+    refresh,
+    cancelRuns,
+    cancelAllActiveRuns,
+  };
 }

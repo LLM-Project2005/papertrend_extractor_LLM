@@ -108,11 +108,11 @@ export default function AnalysisStatusCard({
             <button
               type="button"
               onClick={() => void onCancelAll()}
-              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"
               aria-label="Cancel all active analysis runs"
-              title="Cancel all"
+              title="Cancel all processing"
             >
-              <CloseIcon className="h-3.5 w-3.5" />
+              Cancel all
             </button>
           ) : null}
         </div>
@@ -143,11 +143,11 @@ export default function AnalysisStatusCard({
             <button
               type="button"
               onClick={() => void onCancelAll()}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"
+              className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200 dark:hover:border-red-800 dark:hover:bg-red-950/35"
               aria-label="Cancel all active analysis runs"
-              title="Cancel all"
+              title="Cancel all processing"
             >
-              <CloseIcon className="h-4 w-4" />
+              Cancel all processing
             </button>
           ) : null}
           <button

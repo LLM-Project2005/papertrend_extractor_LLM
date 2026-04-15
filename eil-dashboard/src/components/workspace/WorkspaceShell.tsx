@@ -296,7 +296,7 @@ export default function WorkspaceShell({
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isChatPage = pathname.startsWith("/workspace/chat");
-  const { runs, folderJob, cancelRuns } = useIngestionRuns({
+  const { runs, folderJob, cancelRuns, cancelAllActiveRuns } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
@@ -325,22 +325,14 @@ export default function WorkspaceShell({
   }
 
   async function handleCancelAllRuns() {
-    const activeRunIds = activeRuns
-      .filter((run) => run.status === "queued" || run.status === "processing")
-      .map((run) => run.id);
-
-    if (activeRunIds.length === 0) {
-      return;
-    }
-
     try {
-      const canceledRuns = await cancelRuns(activeRunIds);
+      const canceledRuns = await cancelAllActiveRuns(analysisSession?.folderJobId ?? undefined);
       if (canceledRuns.length > 0) {
         removeAnalysisRunIds(canceledRuns.map((run) => run.id));
       }
     } catch (error) {
       console.error("[workspace] failed to cancel all runs", {
-        runIds: activeRunIds,
+        folderJobId: analysisSession?.folderJobId ?? null,
         error: error instanceof Error ? error.message : "unknown_error",
       });
     }
