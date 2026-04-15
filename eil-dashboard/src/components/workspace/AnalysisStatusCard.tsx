@@ -59,6 +59,7 @@ export default function AnalysisStatusCard({
   onCancelAll,
   onRetryQueue,
   onStartProcessing,
+  onDebugClearQueue,
 }: {
   runs: IngestionRunRow[];
   folderJob?: FolderAnalysisJobRow | null;
@@ -71,6 +72,7 @@ export default function AnalysisStatusCard({
   onCancelAll?: () => void | Promise<void>;
   onRetryQueue?: () => void | Promise<void>;
   onStartProcessing?: () => void | Promise<void>;
+  onDebugClearQueue?: () => void | Promise<void>;
 }) {
   const summary = summarizeRuns(runs);
   const allTerminal =
@@ -169,6 +171,17 @@ export default function AnalysisStatusCard({
               Start now
             </button>
           ) : null}
+          {onDebugClearQueue ? (
+            <button
+              type="button"
+              onClick={() => void onDebugClearQueue()}
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-3 text-xs font-medium text-rose-800 transition-colors hover:border-rose-400 hover:bg-rose-100 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:border-rose-800"
+              aria-label="Debug clear worker queue"
+              title="Debug clear queue"
+            >
+              Debug reset
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -224,6 +237,17 @@ export default function AnalysisStatusCard({
               title="Start processing now"
             >
               Start processing now
+            </button>
+          ) : null}
+          {onDebugClearQueue ? (
+            <button
+              type="button"
+              onClick={() => void onDebugClearQueue()}
+              className="inline-flex items-center justify-center rounded-lg border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-800 transition-colors hover:border-rose-400 hover:bg-rose-100 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:border-rose-800"
+              aria-label="Debug clear worker queue"
+              title="Debug clear queue"
+            >
+              Debug clear queue
             </button>
           ) : null}
           <button

@@ -56,6 +56,27 @@ def _active_thread_state(
     }
 
 
+def _reset_queue_worker_gate() -> Dict[str, Any]:
+    global _QUEUE_PROCESS_THREAD, _QUEUE_PROCESS_STARTED_AT, _FORCED_QUEUE_BATCH_COUNT
+    with _QUEUE_THREAD_GUARD:
+        active_state = _active_thread_state(
+            _QUEUE_PROCESS_THREAD,
+            _QUEUE_PROCESS_STARTED_AT,
+            _batch_stale_after_seconds("NODE_SERVICE_QUEUE_STALE_LOCK_SECONDS", 180),
+        )
+        _QUEUE_PROCESS_THREAD = None
+        _QUEUE_PROCESS_STARTED_AT = 0.0
+        _FORCED_QUEUE_BATCH_COUNT += 1
+        return {
+            "ok": True,
+            "cleared": True,
+            "previously_alive": active_state["alive"],
+            "previous_age_seconds": active_state["age_seconds"],
+            "previously_stale": active_state["stale"],
+            "forced_batch_count": _FORCED_QUEUE_BATCH_COUNT,
+        }
+
+
 def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[str, Any]) -> None:
     body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     handler.send_response(status)
@@ -369,6 +390,13 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 summary = _run_research_batch(max_runs=max_runs)
                 logger.info("research queue batch %s", summary)
                 _json_response(self, 200, summary)
+                return
+
+            if self.path == "/debug/reset-queue-lock":
+                if not _is_authorized_worker_request(self):
+                    _json_response(self, 401, {"error": "Unauthorized"})
+                    return
+                _json_response(self, 200, _reset_queue_worker_gate())
                 return
 
             if self.path == "/research-plan":

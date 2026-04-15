@@ -263,6 +263,46 @@ export function useIngestionRuns({
     [requestHeaders]
   );
 
+  const debugClearQueue = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to clear the worker queue.");
+      }
+
+      const response = await fetch("/api/folder-analysis/debug/clear-queue", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        canceledCount?: number;
+        workerReset?: { ok?: boolean; payload?: Record<string, unknown> };
+        error?: string;
+      };
+
+      if (!response.ok) {
+        const message = payload.error ?? "Failed to clear the worker queue.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      if (!payload.workerReset?.ok) {
+        const message = payload.error ?? "The worker queue reset did not complete successfully.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      setError(null);
+      return payload;
+    },
+    [requestHeaders]
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -289,5 +329,6 @@ export function useIngestionRuns({
     cancelAllActiveRuns,
     retryActiveProcessing,
     startQueuedProcessing,
+    debugClearQueue,
   };
 }

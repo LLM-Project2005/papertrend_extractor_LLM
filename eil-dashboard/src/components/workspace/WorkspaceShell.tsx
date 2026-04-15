@@ -303,6 +303,7 @@ export default function WorkspaceShell({
     cancelAllActiveRuns,
     retryActiveProcessing,
     startQueuedProcessing,
+    debugClearQueue,
     refresh,
   } =
     useIngestionRuns({
@@ -371,6 +372,24 @@ export default function WorkspaceShell({
       const message =
         error instanceof Error ? error.message : "Failed to start queued processing.";
       console.error("[workspace] failed to start queued processing", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: message,
+      });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
+    }
+  }
+
+  async function handleDebugClearQueue() {
+    try {
+      await debugClearQueue(analysisSession?.folderJobId ?? undefined);
+      clearAnalysisSession();
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to clear the worker queue.";
+      console.error("[workspace] failed to debug-clear queue", {
         folderJobId: analysisSession?.folderJobId ?? null,
         error: message,
       });
@@ -475,6 +494,7 @@ export default function WorkspaceShell({
               onCancelAll={handleCancelAllRuns}
               onRetryQueue={handleRetryQueue}
               onStartProcessing={handleStartProcessing}
+              onDebugClearQueue={handleDebugClearQueue}
             />
           </div>
         ) : null}

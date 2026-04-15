@@ -90,6 +90,7 @@ export default function WorkspaceHomeClient() {
     cancelAllActiveRuns,
     retryActiveProcessing,
     startQueuedProcessing,
+    debugClearQueue,
     refresh,
   } =
     useIngestionRuns({
@@ -248,6 +249,24 @@ export default function WorkspaceHomeClient() {
     }
   }
 
+  async function handleDebugClearQueue() {
+    try {
+      await debugClearQueue(analysisSession?.folderJobId ?? undefined);
+      clearAnalysisSession();
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to clear the worker queue.";
+      console.error("[workspace.home] failed to debug-clear queue", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: message,
+      });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="app-surface px-6 py-6">
@@ -298,6 +317,7 @@ export default function WorkspaceHomeClient() {
           onCancelAll={handleCancelAllRuns}
           onRetryQueue={handleRetryQueue}
           onStartProcessing={handleStartProcessing}
+          onDebugClearQueue={handleDebugClearQueue}
         />
       ) : null}
 
