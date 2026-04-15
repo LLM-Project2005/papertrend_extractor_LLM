@@ -147,7 +147,7 @@ export async function POST(request: Request) {
     });
     try {
       const trigger = await triggerWorkerQueue({
-        maxRuns: Math.min(createdRuns.length, 2),
+        maxRuns: Math.min(createdRuns.length, 5),
         reason: "google-drive-queue",
       });
       console.info("[google-drive.queue] worker trigger result", trigger);

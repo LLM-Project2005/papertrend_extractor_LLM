@@ -77,6 +77,46 @@ const SOURCE_OPTIONS = [
   },
 ] as const;
 
+const MAX_UPLOAD_BATCH_FILES = 8;
+const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
+
+function splitIntoUploadBatches(files: File[]) {
+  const batches: File[][] = [];
+  let currentBatch: File[] = [];
+  let currentBytes = 0;
+
+  for (const file of files) {
+    const wouldOverflowCount = currentBatch.length >= MAX_UPLOAD_BATCH_FILES;
+    const wouldOverflowBytes =
+      currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES;
+
+    if (wouldOverflowCount || wouldOverflowBytes) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentBytes = 0;
+    }
+
+    currentBatch.push(file);
+    currentBytes += file.size;
+  }
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  return batches;
+}
+
+async function readJsonPayload<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 interface AnalyzeFlowModalProps {
   open: boolean;
   onClose: () => void;
@@ -272,12 +312,6 @@ export default function AnalyzeFlowModal({
           throw new Error("Choose at least one PDF file.");
         }
 
-        const formData = new FormData();
-        files.forEach((file) => formData.append("files", file));
-        formData.append("folder", folder.trim() || defaultFolder);
-        formData.append("source_kind", selectedSource);
-        formData.append("project_id", selectedProjectId);
-
         const headers: Record<string, string> = {};
         if (session?.access_token && user) {
           headers.Authorization = `Bearer ${session.access_token}`;
@@ -285,30 +319,50 @@ export default function AnalyzeFlowModal({
           headers["x-admin-secret"] = adminSecret.trim();
         }
 
-        const response = await fetch("/api/admin/import", {
-          method: "POST",
-          headers,
-          body: formData,
-        });
+        const batches = splitIntoUploadBatches(files);
+        const queuedRuns: IngestionRunRow[] = [];
+        let folderJob: FolderAnalysisJobRow | null = null;
 
-        const payload = (await response.json()) as {
-          runs?: IngestionRunRow[];
-          folderJob?: FolderAnalysisJobRow | null;
-          error?: string;
-        };
+        for (const batch of batches) {
+          const formData = new FormData();
+          batch.forEach((file) => formData.append("files", file));
+          formData.append("folder", folder.trim() || defaultFolder);
+          formData.append("source_kind", selectedSource);
+          formData.append("project_id", selectedProjectId);
 
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to queue analysis.");
+          const response = await fetch("/api/admin/import", {
+            method: "POST",
+            headers,
+            body: formData,
+          });
+
+          const payload = await readJsonPayload<{
+            runs?: IngestionRunRow[];
+            folderJob?: FolderAnalysisJobRow | null;
+            error?: string;
+          }>(response);
+
+          if (!response.ok) {
+            if (response.status === 413) {
+              throw new Error(
+                "This upload batch is too large for the server. Try fewer or smaller PDFs at a time."
+              );
+            }
+            throw new Error(payload?.error ?? `Failed to queue analysis (status ${response.status}).`);
+          }
+
+          queuedRuns.push(...(payload?.runs ?? []));
+          folderJob = payload?.folderJob ?? folderJob;
         }
 
         if (adminSecret.trim() && typeof window !== "undefined") {
           window.localStorage.setItem("eil_admin_secret", adminSecret.trim());
         }
 
-        onCreated?.(payload.runs ?? [], {
+        onCreated?.(queuedRuns, {
           folder: folder.trim() || defaultFolder,
-          folderId: payload.folderJob?.folder_id ?? null,
-          folderJob: payload.folderJob ?? null,
+          folderId: folderJob?.folder_id ?? null,
+          folderJob,
           sourceKind: selectedSource,
         });
 

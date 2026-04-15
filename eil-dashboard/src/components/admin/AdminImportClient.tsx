@@ -224,6 +224,53 @@ function getFolderUploadName(files: File[]) {
   return "Uploaded folder";
 }
 
+const MAX_UPLOAD_BATCH_FILES = 8;
+const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
+
+function splitIntoUploadBatches(files: File[]) {
+  const batches: File[][] = [];
+  let currentBatch: File[] = [];
+  let currentBytes = 0;
+
+  for (const file of files) {
+    const wouldOverflowCount = currentBatch.length >= MAX_UPLOAD_BATCH_FILES;
+    const wouldOverflowBytes =
+      currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES;
+
+    if (wouldOverflowCount || wouldOverflowBytes) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentBytes = 0;
+    }
+
+    currentBatch.push(file);
+    currentBytes += file.size;
+  }
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  return batches;
+}
+
+async function readJsonPayload<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function buildUploadErrorMessage(fallback: string, payload: { error?: string } | null) {
+  if (payload?.error?.trim()) {
+    return payload.error;
+  }
+  return fallback;
+}
+
 function glyphForEntry(item: LibraryEntry) {
   if (item.kind === "folder") return FolderIcon;
   if (item.sourceFilter === "google-drive") return DriveIcon;
@@ -509,32 +556,44 @@ export default function AdminImportClient() {
 
     setLoading(true);
     try {
-      const formData = new FormData();
-      pdfFiles.forEach((file) => formData.append("files", file));
-      formData.append("folder", targetFolderName);
-      formData.append("source_kind", "pdf-upload");
-      formData.append("project_id", currentProject.id);
+      const batches = splitIntoUploadBatches(pdfFiles);
+      const createdRuns: IngestionRunRow[] = [];
+      let nextFolderId: string | null = null;
+      let nextFolderJob: FolderAnalysisJobRow | null = null;
 
-      const response = await fetch("/api/admin/import", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: formData,
-      });
+      for (const batch of batches) {
+        const formData = new FormData();
+        batch.forEach((file) => formData.append("files", file));
+        formData.append("folder", targetFolderName);
+        formData.append("source_kind", "pdf-upload");
+        formData.append("project_id", currentProject.id);
 
-      const payload = (await response.json()) as {
-        runs?: IngestionRunRow[];
-        folderJob?: FolderAnalysisJobRow | null;
-        error?: string;
-      };
+        const response = await fetch("/api/admin/import", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: formData,
+        });
 
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to queue uploads.");
+        const payload = await readJsonPayload<{
+          runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
+          error?: string;
+        }>(response);
+
+        if (!response.ok) {
+          const fallbackMessage =
+            response.status === 413
+              ? "This upload batch is too large for the server. Try fewer or smaller PDFs at a time."
+              : `Upload request failed with status ${response.status}.`;
+          throw new Error(buildUploadErrorMessage(fallbackMessage, payload));
+        }
+
+        createdRuns.push(...(payload?.runs ?? []));
+        nextFolderId = payload?.folderJob?.folder_id ?? nextFolderId;
+        nextFolderJob = payload?.folderJob ?? nextFolderJob;
       }
-
-      const createdRuns = payload.runs ?? [];
-      const nextFolderId = payload.folderJob?.folder_id ?? null;
 
       setRuns((current) => {
         const createdIds = new Set(createdRuns.map((run) => run.id));
@@ -545,7 +604,7 @@ export default function AdminImportClient() {
         sourceKind: "pdf-upload",
         folder: targetFolderName,
         folderId: nextFolderId,
-        folderJob: payload.folderJob ?? null,
+        folderJob: nextFolderJob,
       });
       if (nextFolderId && (mode === "folder" || selectedFolderId !== "all")) {
         setSelectedFolderId(nextFolderId);

@@ -197,7 +197,7 @@ export async function POST(request: Request) {
     });
     try {
       const trigger = await triggerWorkerQueue({
-        maxRuns: Math.min(createdRuns.length, 2),
+        maxRuns: Math.min(createdRuns.length, 5),
         reason: "admin-import-upload",
       });
       console.info("[admin.import] worker trigger result", trigger);
