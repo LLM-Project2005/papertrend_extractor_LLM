@@ -83,7 +83,8 @@ export default function WorkspaceHomeClient() {
   } = useWorkspaceProfile();
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds);
-  const { runs, folderJob, cancelRuns, cancelAllActiveRuns } = useIngestionRuns({
+  const { runs, folderJob, cancelRuns, cancelAllActiveRuns, retryActiveProcessing } =
+    useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
@@ -206,6 +207,17 @@ export default function WorkspaceHomeClient() {
     }
   }
 
+  async function handleRetryQueue() {
+    try {
+      await retryActiveProcessing(analysisSession?.folderJobId ?? undefined);
+    } catch (error) {
+      console.error("[workspace.home] failed to retry processing", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  }
+
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="app-surface px-6 py-6">
@@ -254,6 +266,7 @@ export default function WorkspaceHomeClient() {
           onClear={clearAnalysisSession}
           onCancelRun={handleCancelRun}
           onCancelAll={handleCancelAllRuns}
+          onRetryQueue={handleRetryQueue}
         />
       ) : null}
 

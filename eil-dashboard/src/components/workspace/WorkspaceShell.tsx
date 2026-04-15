@@ -296,7 +296,8 @@ export default function WorkspaceShell({
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isChatPage = pathname.startsWith("/workspace/chat");
-  const { runs, folderJob, cancelRuns, cancelAllActiveRuns } = useIngestionRuns({
+  const { runs, folderJob, cancelRuns, cancelAllActiveRuns, retryActiveProcessing } =
+    useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
@@ -332,6 +333,17 @@ export default function WorkspaceShell({
       }
     } catch (error) {
       console.error("[workspace] failed to cancel all runs", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: error instanceof Error ? error.message : "unknown_error",
+      });
+    }
+  }
+
+  async function handleRetryQueue() {
+    try {
+      await retryActiveProcessing(analysisSession?.folderJobId ?? undefined);
+    } catch (error) {
+      console.error("[workspace] failed to retry processing", {
         folderJobId: analysisSession?.folderJobId ?? null,
         error: error instanceof Error ? error.message : "unknown_error",
       });
@@ -431,6 +443,7 @@ export default function WorkspaceShell({
               onClear={clearAnalysisSession}
               onCancelRun={handleCancelRun}
               onCancelAll={handleCancelAllRuns}
+              onRetryQueue={handleRetryQueue}
             />
           </div>
         ) : null}

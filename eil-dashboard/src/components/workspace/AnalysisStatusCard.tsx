@@ -28,6 +28,14 @@ function summarizeRuns(runs: IngestionRunRow[]) {
   );
 }
 
+function toEpochMs(value?: string | null): number {
+  if (!value) {
+    return 0;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 export default function AnalysisStatusCard({
   runs,
   folderJob,
@@ -38,6 +46,7 @@ export default function AnalysisStatusCard({
   onClear,
   onCancelRun,
   onCancelAll,
+  onRetryQueue,
 }: {
   runs: IngestionRunRow[];
   folderJob?: FolderAnalysisJobRow | null;
@@ -48,6 +57,7 @@ export default function AnalysisStatusCard({
   onClear?: () => void;
   onCancelRun?: (runId: string) => void | Promise<void>;
   onCancelAll?: () => void | Promise<void>;
+  onRetryQueue?: () => void | Promise<void>;
 }) {
   const summary = summarizeRuns(runs);
   const allTerminal =
@@ -66,6 +76,12 @@ export default function AnalysisStatusCard({
     : hasActiveRuns
       ? `${summary.processing + summary.queued} active run${summary.processing + summary.queued === 1 ? "" : "s"}`
       : `${summary.succeeded} completed`;
+  const staleReferenceMs = Math.max(
+    toEpochMs(leadRun?.updated_at ?? null),
+    toEpochMs(folderJob?.updated_at ?? null)
+  );
+  const staleMinutes = staleReferenceMs > 0 ? (Date.now() - staleReferenceMs) / 60000 : 0;
+  const isLikelyStalled = hasActiveRuns && staleMinutes >= 3;
 
   if (compact) {
     return (
@@ -115,6 +131,17 @@ export default function AnalysisStatusCard({
               Cancel all
             </button>
           ) : null}
+          {isLikelyStalled && onRetryQueue ? (
+            <button
+              type="button"
+              onClick={() => void onRetryQueue()}
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 transition-colors hover:border-amber-400 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:border-amber-800"
+              aria-label="Retry stalled analysis queue"
+              title="Retry processing"
+            >
+              Retry
+            </button>
+          ) : null}
         </div>
       </div>
     );
@@ -148,6 +175,17 @@ export default function AnalysisStatusCard({
               title="Cancel all processing"
             >
               Cancel all processing
+            </button>
+          ) : null}
+          {isLikelyStalled && onRetryQueue ? (
+            <button
+              type="button"
+              onClick={() => void onRetryQueue()}
+              className="inline-flex items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 transition-colors hover:border-amber-400 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:border-amber-800"
+              aria-label="Retry stalled analysis queue"
+              title="Retry processing"
+            >
+              Retry processing
             </button>
           ) : null}
           <button
@@ -201,6 +239,11 @@ export default function AnalysisStatusCard({
       </div>
 
       <div className="mt-5 space-y-3">
+        {isLikelyStalled ? (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+            Processing appears stalled. The queue has not advanced for about {Math.floor(staleMinutes)} minute{Math.floor(staleMinutes) === 1 ? "" : "s"}. Use Retry processing to trigger the worker again.
+          </div>
+        ) : null}
         {folderJob ? (
           <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
             <div className="flex items-start justify-between gap-4">

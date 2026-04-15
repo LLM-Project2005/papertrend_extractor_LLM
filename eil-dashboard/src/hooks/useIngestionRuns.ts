@@ -172,6 +172,38 @@ export function useIngestionRuns({
     [requestHeaders]
   );
 
+  const retryActiveProcessing = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to retry processing.");
+      }
+
+      const response = await fetch("/api/folder-analysis/retry", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        activeCount?: number;
+        trigger?: { started?: boolean; status?: number; payload?: Record<string, unknown> };
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to trigger processing retry.");
+      }
+
+      setError(null);
+      return payload;
+    },
+    [requestHeaders]
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -196,5 +228,6 @@ export function useIngestionRuns({
     refresh,
     cancelRuns,
     cancelAllActiveRuns,
+    retryActiveProcessing,
   };
 }
