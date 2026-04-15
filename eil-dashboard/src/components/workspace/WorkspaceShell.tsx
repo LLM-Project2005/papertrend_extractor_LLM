@@ -296,7 +296,14 @@ export default function WorkspaceShell({
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const isChatPage = pathname.startsWith("/workspace/chat");
-  const { runs, folderJob, cancelRuns, cancelAllActiveRuns, retryActiveProcessing } =
+  const {
+    runs,
+    folderJob,
+    cancelRuns,
+    cancelAllActiveRuns,
+    retryActiveProcessing,
+    refresh,
+  } =
     useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
@@ -342,11 +349,16 @@ export default function WorkspaceShell({
   async function handleRetryQueue() {
     try {
       await retryActiveProcessing(analysisSession?.folderJobId ?? undefined);
+      await refresh();
     } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to retry processing.";
       console.error("[workspace] failed to retry processing", {
         folderJobId: analysisSession?.folderJobId ?? null,
-        error: error instanceof Error ? error.message : "unknown_error",
+        error: message,
       });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
     }
   }
 

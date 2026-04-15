@@ -195,7 +195,21 @@ export function useIngestionRuns({
       };
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to trigger processing retry.");
+        const message = payload.error ?? "Failed to trigger processing retry.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      if (!payload.trigger?.started) {
+        const reason = String(payload.trigger?.payload?.reason ?? "unknown_reason");
+        if (reason !== "no_active_runs") {
+          const message =
+            reason === "missing_worker_config"
+              ? "Worker service is not configured. Check WORKER_SERVICE_URL and WORKER_WEBHOOK_SECRET."
+              : "Worker trigger did not start. Please retry in a moment.";
+          setError(message);
+          throw new Error(message);
+        }
       }
 
       setError(null);

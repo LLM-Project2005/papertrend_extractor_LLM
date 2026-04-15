@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
+import {
+  getAuthenticatedUserFromRequest,
+  isAuthorizedAdminRequest,
+} from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { triggerWorkerQueue } from "@/lib/worker-trigger";
 
@@ -11,7 +14,8 @@ type RetryBody = {
 
 export async function POST(request: Request) {
   const user = await getAuthenticatedUserFromRequest(request);
-  if (!user) {
+  const isAdmin = await isAuthorizedAdminRequest(request);
+  if (!user && !isAdmin) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -23,10 +27,13 @@ export async function POST(request: Request) {
     let query = supabase
       .from("ingestion_runs")
       .select("id", { count: "exact" })
-      .eq("owner_user_id", user.id)
       .eq("source_type", "upload")
       .in("status", ["queued", "processing"])
       .limit(5);
+
+    if (user) {
+      query = query.eq("owner_user_id", user.id);
+    }
 
     if (folderJobId) {
       query = query.eq("folder_analysis_job_id", folderJobId);
@@ -50,6 +57,21 @@ export async function POST(request: Request) {
       maxRuns: Math.min(Math.max(activeCount, 1), 5),
       reason: "user-retry-folder-analysis",
     });
+
+    if (!trigger.started) {
+      const reason = String((trigger.payload?.reason as string) || "unknown_reason");
+      return NextResponse.json(
+        {
+          error:
+            reason === "missing_worker_config"
+              ? "Worker service is not configured (WORKER_SERVICE_URL/WORKER_WEBHOOK_SECRET)."
+              : "Worker trigger did not start processing.",
+          activeCount,
+          trigger,
+        },
+        { status: 503 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,
