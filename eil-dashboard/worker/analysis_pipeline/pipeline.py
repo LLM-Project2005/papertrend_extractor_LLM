@@ -1,37 +1,79 @@
 from __future__ import annotations
 
+import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Callable, Dict, Optional
 
-from .config import WorkerConfig
-from .llm_analysis import request_structured_analysis
-from .normalization import build_dataset
-from .pdf_extract import extract_pdf_text
 from .schemas import PipelineResult
-from .sectioning import build_llm_context, segment_by_headings
-from .text_cleaning import clean_text, pick_title
+
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from graphs import build_ingestion_graph, run_ingestion_graph  # noqa: E402
+from nodes import consume_usage_summary, start_usage_session  # noqa: E402
+
+GraphProgressCallback = Callable[[str, Dict[str, Any], Dict[str, Any]], None]
+GraphCheckpointCallback = Callable[[], None]
 
 
 def process_pdf_run(
     run: Dict[str, Any],
     client: Any,
-    config: WorkerConfig,
+    config: Any,
     pdf_path: Path,
+    progress_callback: Optional[GraphProgressCallback] = None,
+    checkpoint_callback: Optional[GraphCheckpointCallback] = None,
 ) -> PipelineResult:
-    del client  # reserved for future pipeline hooks and notebook parity
+    del client
+    del config
 
-    raw_text = clean_text(extract_pdf_text(pdf_path))
-    if len(raw_text) < 800:
-        raise RuntimeError("The extracted text is too short for reliable analysis.")
+    start_usage_session(label=f"ingestion:{run.get('id') or pdf_path.name}")
+    initial_state = {
+        "pdf_path": str(pdf_path),
+        "source_path": str(run.get("source_path") or ""),
+        "source_filename": str(run.get("source_filename") or pdf_path.name),
+        "ingestion_run_id": str(run.get("id") or ""),
+        "owner_user_id": str(run.get("owner_user_id") or ""),
+        "folder_id": str(run.get("folder_id") or ""),
+        "errors": [],
+        "messages": [],
+        "status": "starting",
+    }
 
-    heuristic_sections = segment_by_headings(raw_text)
-    analysis = request_structured_analysis(
-        config=config,
-        text=raw_text,
-        run=run,
-        fallback_title=pick_title(raw_text, pdf_path.name),
-        heuristic_sections=heuristic_sections,
-        llm_context=build_llm_context(raw_text, config.llm_context_chars),
-    )
-    dataset = build_dataset(run, raw_text, analysis)
-    return PipelineResult(dataset=dataset, raw_text=raw_text)
+    final_state: Dict[str, Any]
+    if progress_callback or checkpoint_callback:
+        graph = build_ingestion_graph()
+        merged_state: Dict[str, Any] = dict(initial_state)
+        for chunk in graph.stream(initial_state, stream_mode="updates"):
+            if checkpoint_callback:
+                checkpoint_callback()
+            if not isinstance(chunk, dict):
+                continue
+
+            for node_name, node_update in chunk.items():
+                if not isinstance(node_update, dict):
+                    continue
+                merged_state.update(node_update)
+                if progress_callback:
+                    progress_callback(node_name, node_update, dict(merged_state))
+        final_state = merged_state
+    else:
+        final_state = run_ingestion_graph(initial_state)
+
+    usage_summary = consume_usage_summary()
+    dataset = final_state.get("dataset") or {}
+    raw_text = str(final_state.get("raw_text") or "")
+    if final_state.get("status") == "failed":
+        errors = final_state.get("errors") or ["The ingestion graph reported a failure."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
+    if not raw_text.strip():
+        errors = final_state.get("errors") or ["The ingestion graph did not extract usable text."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
+    if not dataset:
+        errors = final_state.get("errors") or ["The ingestion graph did not return a dataset."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
+    if not (dataset.get("keywords") or []):
+        errors = final_state.get("errors") or ["The ingestion graph returned no keyword rows."]
+        raise RuntimeError("; ".join(str(error) for error in errors))
+    return PipelineResult(dataset=dataset, raw_text=raw_text, usage_summary=usage_summary)

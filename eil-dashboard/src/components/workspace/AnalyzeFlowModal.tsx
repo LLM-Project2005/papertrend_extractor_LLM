@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import Modal from "@/components/ui/Modal";
 import {
   CloudIcon,
@@ -14,7 +15,7 @@ import {
   SharePointIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
 type ImportSource =
   | "pdf-upload"
@@ -76,6 +77,46 @@ const SOURCE_OPTIONS = [
   },
 ] as const;
 
+const MAX_UPLOAD_BATCH_FILES = 8;
+const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
+
+function splitIntoUploadBatches(files: File[]) {
+  const batches: File[][] = [];
+  let currentBatch: File[] = [];
+  let currentBytes = 0;
+
+  for (const file of files) {
+    const wouldOverflowCount = currentBatch.length >= MAX_UPLOAD_BATCH_FILES;
+    const wouldOverflowBytes =
+      currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES;
+
+    if (wouldOverflowCount || wouldOverflowBytes) {
+      batches.push(currentBatch);
+      currentBatch = [];
+      currentBytes = 0;
+    }
+
+    currentBatch.push(file);
+    currentBytes += file.size;
+  }
+
+  if (currentBatch.length > 0) {
+    batches.push(currentBatch);
+  }
+
+  return batches;
+}
+
+async function readJsonPayload<T>(response: Response): Promise<T | null> {
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
 interface AnalyzeFlowModalProps {
   open: boolean;
   onClose: () => void;
@@ -84,7 +125,12 @@ interface AnalyzeFlowModalProps {
   eyebrow?: string;
   onCreated?: (
     runs: IngestionRunRow[],
-    context: { folder: string; sourceKind: string }
+    context: {
+      folder: string;
+      folderId?: string | null;
+      folderJob?: FolderAnalysisJobRow | null;
+      sourceKind: string;
+    }
   ) => void;
 }
 
@@ -97,10 +143,9 @@ export default function AnalyzeFlowModal({
   onCreated,
 }: AnalyzeFlowModalProps) {
   const { session, user } = useAuth();
+  const { selectedProjectId, currentProject } = useWorkspaceProfile();
   const [adminSecret, setAdminSecret] = useState("");
   const [folder, setFolder] = useState(defaultFolder);
-  const [provider, setProvider] = useState("");
-  const [model, setModel] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [selectedSource, setSelectedSource] = useState<ImportSource>("pdf-upload");
   const [uploading, setUploading] = useState(false);
@@ -253,6 +298,10 @@ export default function AnalyzeFlowModal({
       setError("Sign in or enter the shared admin secret before starting analysis.");
       return;
     }
+    if (!selectedProjectId) {
+      setError("Choose a project before adding files to the library.");
+      return;
+    }
 
     setUploading(true);
     setError(null);
@@ -263,17 +312,6 @@ export default function AnalyzeFlowModal({
           throw new Error("Choose at least one PDF file.");
         }
 
-        const formData = new FormData();
-        files.forEach((file) => formData.append("files", file));
-        formData.append("folder", folder.trim() || defaultFolder);
-        formData.append("source_kind", selectedSource);
-        if (provider.trim()) {
-          formData.append("provider", provider.trim());
-        }
-        if (model.trim()) {
-          formData.append("model", model.trim());
-        }
-
         const headers: Record<string, string> = {};
         if (session?.access_token && user) {
           headers.Authorization = `Bearer ${session.access_token}`;
@@ -281,33 +319,62 @@ export default function AnalyzeFlowModal({
           headers["x-admin-secret"] = adminSecret.trim();
         }
 
-        const response = await fetch("/api/admin/import", {
-          method: "POST",
-          headers,
-          body: formData,
-        });
+        const batches = splitIntoUploadBatches(files);
+        const queuedRuns: IngestionRunRow[] = [];
+        let folderJob: FolderAnalysisJobRow | null = null;
+        let queueWarning: string | null = null;
 
-        const payload = (await response.json()) as {
-          runs?: IngestionRunRow[];
-          error?: string;
-        };
+        for (const batch of batches) {
+          const formData = new FormData();
+          batch.forEach((file) => formData.append("files", file));
+          formData.append("folder", folder.trim() || defaultFolder);
+          formData.append("source_kind", selectedSource);
+          formData.append("project_id", selectedProjectId);
 
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to queue analysis.");
+          const response = await fetch("/api/admin/import", {
+            method: "POST",
+            headers,
+            body: formData,
+          });
+
+          const payload = await readJsonPayload<{
+            runs?: IngestionRunRow[];
+            folderJob?: FolderAnalysisJobRow | null;
+            warning?: string | null;
+            error?: string;
+          }>(response);
+
+          if (!response.ok) {
+            if (response.status === 413) {
+              throw new Error(
+                "This upload batch is too large for the server. Try fewer or smaller PDFs at a time."
+              );
+            }
+            throw new Error(payload?.error ?? `Failed to queue analysis (status ${response.status}).`);
+          }
+
+          queuedRuns.push(...(payload?.runs ?? []));
+          folderJob = payload?.folderJob ?? folderJob;
+          if (payload?.warning) {
+            queueWarning = payload.warning;
+          }
         }
 
         if (adminSecret.trim() && typeof window !== "undefined") {
           window.localStorage.setItem("eil_admin_secret", adminSecret.trim());
         }
 
-        onCreated?.(payload.runs ?? [], {
+        onCreated?.(queuedRuns, {
           folder: folder.trim() || defaultFolder,
+          folderId: folderJob?.folder_id ?? null,
+          folderJob,
           sourceKind: selectedSource,
         });
 
         setFiles([]);
-        setProvider("");
-        setModel("");
+        if (queueWarning) {
+          setError(queueWarning);
+        }
         onClose();
         return;
       }
@@ -332,13 +399,14 @@ export default function AnalyzeFlowModal({
           body: JSON.stringify({
             fileIds: selectedDriveFileIds,
             folder: folder.trim() || defaultFolder,
-            provider: provider.trim(),
-            model: model.trim(),
+            projectId: selectedProjectId,
           }),
         });
 
         const payload = (await response.json()) as {
           runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
+          warning?: string | null;
           error?: string;
         };
 
@@ -348,10 +416,15 @@ export default function AnalyzeFlowModal({
 
         onCreated?.(payload.runs ?? [], {
           folder: folder.trim() || defaultFolder,
+          folderId: payload.folderJob?.folder_id ?? null,
+          folderJob: payload.folderJob ?? null,
           sourceKind: selectedSource,
         });
 
         setSelectedDriveFileIds([]);
+        if (payload.warning) {
+          setError(payload.warning);
+        }
         onClose();
         return;
       }
@@ -641,24 +714,31 @@ export default function AnalyzeFlowModal({
                   Analysis details
                 </p>
                 <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#8f8f8f]">
+                      Project
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                      {currentProject?.name ?? "No project selected"}
+                    </p>
+                  </div>
                   <input
                     value={folder}
                     onChange={(event) => setFolder(event.target.value)}
                     placeholder="Folder or group, e.g. Inbox"
                     className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
                   />
-                  <input
-                    value={provider}
-                    onChange={(event) => setProvider(event.target.value)}
-                    placeholder="Provider, e.g. OpenRouter or Google Drive"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
-                  />
-                  <input
-                    value={model}
-                    onChange={(event) => setModel(event.target.value)}
-                    placeholder="Model, e.g. openai/gpt-4o-mini"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
-                  />
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#8f8f8f]">
+                      Model selection
+                    </p>
+                    <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                      Automatic per-task routing
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
+                      The pipeline now picks the best model for each step after upload, so there is no manual model box to set or forget.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -768,6 +848,9 @@ export default function AnalyzeFlowModal({
               }}
               disabled={
                 uploading ||
+                (selectedSource === "pdf-upload" && files.length === 0) ||
+                (selectedSource === "google-drive" &&
+                  (!driveConnected || selectedDriveFileIds.length === 0)) ||
                 (selectedSource !== "pdf-upload" && selectedSource !== "google-drive")
               }
               className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-slate-300 dark:bg-[#f3f3f3] dark:text-[#171717] dark:disabled:bg-[#3a3a3a] dark:disabled:text-[#7e7e7e]"

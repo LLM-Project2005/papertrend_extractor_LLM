@@ -1,6 +1,7 @@
 "use client";
 
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import type { ResearchFolderRow } from "@/types/database";
 
 interface Props {
   allYears: string[];
@@ -8,6 +9,9 @@ interface Props {
   onYearsChange: (y: string[]) => void;
   selectedTracks: string[];
   onTracksChange: (t: string[]) => void;
+  folders?: ResearchFolderRow[];
+  selectedFolderId?: string;
+  onFolderChange?: (folderId: string) => void;
   useMock: boolean;
   title?: string;
   description?: string;
@@ -20,6 +24,9 @@ export default function Sidebar({
   onYearsChange,
   selectedTracks,
   onTracksChange,
+  folders = [],
+  selectedFolderId = "all",
+  onFolderChange,
   useMock,
   title = "Filters",
   description = "Narrow the dataset before exploring the analytics.",
@@ -60,6 +67,44 @@ export default function Sidebar({
             Showing preview data until Supabase is connected and populated.
           </div>
         )}
+
+        {onFolderChange ? (
+          <section>
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+              Folders
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => onFolderChange("all")}
+                className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                  selectedFolderId === "all"
+                    ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+                }`}
+              >
+                All folders
+              </button>
+              {folders.map((folder) => {
+                const active = folder.id === selectedFolderId;
+                return (
+                  <button
+                    key={folder.id}
+                    type="button"
+                    onClick={() => onFolderChange(folder.id)}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                      active
+                        ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+                    }`}
+                  >
+                    {folder.name}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">

@@ -19,3 +19,4 @@ AnalysisDataset = Dict[str, Any]
 class PipelineResult:
     dataset: AnalysisDataset
     raw_text: str
+    usage_summary: Dict[str, Any]

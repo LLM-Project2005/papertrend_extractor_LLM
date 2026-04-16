@@ -21,7 +21,7 @@ function getRedirectTo(): string | undefined {
     return undefined;
   }
 
-  return `${window.location.origin}/workspace/home`;
+  return `${window.location.origin}/organizations`;
 }
 
 function getUserMetadata(user: User): { full_name: string | null; avatar_url: string | null } {

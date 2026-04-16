@@ -1,103 +1,118 @@
-# nodes/extractor.py
-import pymupdf4llm
-import fitz  # PyMuPDF
-import base64
-import re
+import logging
 import os
-from typing import Dict, Any
-from langchain_openai import ChatOpenAI
-from langchain_core.messages import HumanMessage
-from state import ExtractorState  # Import the contract
+import re
+from typing import Any, Dict
 
-def extract_pdf_node(state: ExtractorState) -> Dict[str, Any]:
-    """
-    Node 1: PDF-to-Markdown extraction with Robust Vision Fallback.
-    """
-    pdf_path = state.get("pdf_path")
+from nodes import ModelTask, get_task_llm
+from state import IngestionState
+
+
+logger = logging.getLogger("papertrend.extractor")
+
+
+def _looks_like_garbage(text: str) -> bool:
+    content_only = re.sub(r"[^a-zA-Z]", "", text or "")
+    if not content_only or len(content_only) < 200:
+        return True
+
+    real_words = re.findall(r"[a-zA-Z]{3,}", text or "")
+    if not real_words:
+        return True
+
+    unique_ratio = len(set(word.lower() for word in real_words)) / len(real_words)
+    avg_word_len = sum(len(word) for word in real_words) / len(real_words)
+    return unique_ratio < 0.10 or avg_word_len < 2.5
+
+
+def _extract_with_fitz(document: Any) -> str:
+    pages = []
+    for page in document:
+        page_text = page.get_text("text")
+        if page_text and page_text.strip():
+            pages.append(page_text.strip())
+    return "\n\n".join(pages).strip()
+
+
+def _extract_with_vision(document: Any, pdf_path: str) -> str:
+    import base64
+
+    import fitz
+    from langchain_core.messages import HumanMessage
+
+    llm_kwargs: Dict[str, Any] = {"max_completion_tokens": 4096}
+    vision_model = (os.getenv("OPENAI_MODEL_VISION") or "").strip()
+    if vision_model:
+        llm_kwargs["model"] = vision_model
+    vision_client = get_task_llm(ModelTask.VISION_OCR, **llm_kwargs)
+
+    vision_pages = []
+    total_pages = min(len(document), 15)
+    for page_num in range(total_pages):
+        page = document.load_page(page_num)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
+        image_b64 = base64.b64encode(pixmap.tobytes("png")).decode("utf-8")
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": f"Page {page_num + 1}/{total_pages}. OCR the page verbatim in Markdown.",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                },
+            ]
+        )
+        response = vision_client.invoke([message])
+        page_text = str(response.content).strip()
+        if page_text:
+            vision_pages.append(page_text)
+
+    combined = "\n\n---\n\n".join(vision_pages).strip()
+    if not combined:
+        raise RuntimeError(f"Vision OCR produced no usable text for {os.path.basename(pdf_path)}.")
+    return combined
+
+
+def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
+    import fitz
+
+    pdf_path = state.get("pdf_path", "")
+    if not pdf_path:
+        return {"errors": ["No PDF path provided."], "status": "failed"}
+
     md_text = ""
-    extraction_method = "pymupdf"
+    extraction_method = "fitz_text"
 
     try:
-        # ── 1. ATTEMPT STANDARD EXTRACTION ──
+        logger.info("starting extraction", extra={"pdf_path": pdf_path})
+        document = fitz.open(pdf_path)
         try:
-            md_text = pymupdf4llm.to_markdown(pdf_path)
-        except Exception as e:
-            print(f"   ⚠️ PyMuPDF crash: {e}")
-            md_text = ""
-
-        # ── 2. ENHANCED CONTENT-QUALITY CHECK ──
-        content_only = re.sub(r'[^a-zA-Z]', '', md_text if md_text else "")
-
-        is_garbage = False
-        if content_only and len(content_only) >= 200:
-            real_words = re.findall(r'[a-zA-Z]{3,}', md_text or "")
-            if real_words:
-                unique_ratio = len(set(w.lower() for w in real_words)) / len(real_words)
-                avg_word_len = sum(len(w) for w in real_words) / len(real_words)
-                is_garbage = unique_ratio < 0.10 or avg_word_len < 2.5
-
-        # ── 3. VISION FALLBACK ──
-        if not md_text or len(content_only) < 200 or is_garbage:
-            reason = ("empty" if not md_text
-                      else f"low content ({len(content_only)} chars)" if len(content_only) < 200
-                      else "OCR garbage detected")
-            print(f"   ⚠️ Fallback triggered ({reason}). Routing to Vision LLM: {os.path.basename(pdf_path)}")
-
-            extraction_method = "gpt4o_vision"
-            doc = fitz.open(pdf_path)
-
-            # Using the same OpenRouter config from your notebook/logic
-            llm_vision = ChatOpenAI(
-                model="openai/gpt-4o",
-                openai_api_key=os.getenv("OPENAI_API_KEY"),
-                base_url="https://openrouter.ai/api/v1",
-                temperature=0,
-                max_tokens=4096
-            )
-
-            vision_transcriptions = []
-            total_pages = min(len(doc), 15) # Safety cap for cost
-
-            for page_num in range(total_pages):
-                page = doc.load_page(page_num)
-                pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
-                img_b64 = base64.b64encode(pix.tobytes("png")).decode("utf-8")
-
-                msg = HumanMessage(
-                    content=[
-                        {"type": "text", "text": f"Page {page_num + 1}/{total_pages}. OCR verbatim in Markdown."},
-                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}", "detail": "high"}}
-                    ]
+            md_text = _extract_with_fitz(document)
+            if not md_text.strip() or _looks_like_garbage(md_text):
+                extraction_method = "vision_fallback"
+                logger.warning(
+                    "fitz extraction looked unusable; switching to vision fallback",
+                    extra={"pdf_path": pdf_path},
                 )
+                md_text = _extract_with_vision(document, pdf_path)
+        finally:
+            document.close()
 
-                try:
-                    response = llm_vision.invoke([msg])
-                    page_text = response.content
-                    vision_transcriptions.append(page_text.strip())
-                    print(f"      📄 Page {page_num + 1}/{total_pages} processed.")
-                except Exception as page_err:
-                    print(f"      ❌ Page {page_num + 1} failed: {page_err}")
-                    continue
-
-            doc.close()
-            md_text = "\n\n---\n\n".join(vision_transcriptions)
-
-        # ── 4. FINAL VALIDATION & STATE RETURN ──
-        if not md_text or not md_text.strip():
+        if not md_text.strip():
             return {
-                "errors": [f"Extraction empty for {os.path.basename(pdf_path)}"],
-                "overall_status": "failed"
+                "errors": [f"Extraction produced no usable text for {os.path.basename(pdf_path)}."],
+                "status": "failed",
             }
 
         return {
-    "raw_text": md_text,
-    "extraction_method": extraction_method,
-    "status": "extracted", # Matches state.status
-    "errors": []
-}
-
-    except Exception as e:
+            "raw_text": md_text,
+            "extraction_method": extraction_method,
+            "status": "extracted",
+            "errors": [],
+        }
+    except Exception as error:
         return {
-            "errors": [f"Critical Node Failure: {str(e)}"],
-            "overall_status": "failed"
+            "errors": [f"Critical extraction failure: {error}"],
+            "status": "failed",
         }

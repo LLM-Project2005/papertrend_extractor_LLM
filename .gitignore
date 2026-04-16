@@ -1,7 +1,7 @@
 # ── Secrets ──
 .env
 .env.*
-
+.env.local
 # ── Python virtual environments ──
 .venv/
 .venv311/
@@ -53,3 +53,7 @@ data/
 __pycache__/
 *.py[cod]
 .DS_Store
+
+
+cloudrun.env.yaml
+.gcloud/

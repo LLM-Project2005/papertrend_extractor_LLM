@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import PlannedDashboardSection from "@/components/dashboard/PlannedDashboardSection";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS } from "@/lib/constants";
@@ -34,6 +36,9 @@ function normalizeTabKey(value: string | null): string | null {
 }
 
 function FilterPanel({
+  folders,
+  selectedFolderId,
+  onFolderChange,
   allYears,
   selectedYears,
   onYearsChange,
@@ -42,6 +47,9 @@ function FilterPanel({
   useMock,
   showHeader = true,
 }: {
+  folders: ReturnType<typeof useWorkspaceProfile>["folders"];
+  selectedFolderId: string;
+  onFolderChange: (folderId: string) => void;
   allYears: string[];
   selectedYears: string[];
   onYearsChange: (years: string[]) => void;
@@ -52,6 +60,9 @@ function FilterPanel({
 }) {
   return (
     <Sidebar
+      folders={folders}
+      selectedFolderId={selectedFolderId}
+      onFolderChange={onFolderChange}
       allYears={allYears}
       selectedYears={selectedYears}
       onYearsChange={onYearsChange}
@@ -70,14 +81,27 @@ export default function DashboardClient({
 }: {
   basePath?: string;
 }) {
-  const { data, loading, allYears } = useDashboardData();
+  const {
+    selectedFolderId,
+    folders,
+    setSelectedFolderId,
+    selectedYears,
+    setSelectedYears,
+    selectedTracks,
+    setSelectedTracks,
+    searchQuery,
+    setSearchQuery,
+  } = useWorkspaceProfile();
+  const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const { data, loading, allYears } = useDashboardData(
+    selectedFolderId,
+    scopedFolderIds
+  );
+  const { session } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const [selectedYears, setSelectedYears] = useState<string[]>([]);
-  const [selectedTracks, setSelectedTracks] = useState<string[]>([...TRACK_COLS]);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [planState, setPlanState] = useState<{
     plan: VisualizationPlan;
     source: "agent" | "fallback";
@@ -88,7 +112,6 @@ export default function DashboardClient({
     return Number.isFinite(value) ? value : null;
   }, [searchParams]);
   const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
-
   useEffect(() => {
     if (allYears.length > 0 && selectedYears.length === 0) {
       setSelectedYears(allYears);
@@ -116,11 +139,15 @@ export default function DashboardClient({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            ...(session?.access_token
+              ? { Authorization: `Bearer ${session.access_token}` }
+              : {}),
           },
           body: JSON.stringify({
             selectedYears,
             selectedTracks,
             searchQuery,
+            folderId: selectedFolderId,
           }),
         });
 
@@ -148,7 +175,16 @@ export default function DashboardClient({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [data, planState, plannerMode, searchQuery, selectedTracks, selectedYears]);
+  }, [
+    data,
+    planState,
+    plannerMode,
+    searchQuery,
+    selectedFolderId,
+    selectedTracks,
+    selectedYears,
+    session?.access_token,
+  ]);
 
   const fallbackPlan = useMemo(
     () =>
@@ -350,6 +386,9 @@ export default function DashboardClient({
               </div>
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <FilterPanel
+                  folders={folders}
+                  selectedFolderId={selectedFolderId}
+                  onFolderChange={setSelectedFolderId}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
@@ -388,6 +427,9 @@ export default function DashboardClient({
               </div>
               <div className="max-h-[70vh] overflow-y-auto p-4">
                 <FilterPanel
+                  folders={folders}
+                  selectedFolderId={selectedFolderId}
+                  onFolderChange={setSelectedFolderId}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
@@ -409,6 +451,8 @@ export default function DashboardClient({
                 activePlan.sections[0]
               }
               data={filteredData}
+              folderId={selectedFolderId}
+              selectedYears={selectedYears}
               selectedTracks={selectedTracks}
               linkedPaperId={linkedPaperId}
               useMock={data.useMock}
@@ -436,7 +480,12 @@ export default function DashboardClient({
             />
           ) : null}
           {plannerMode === "classic" && currentTabKey === "keyword_explorer" ? (
-            <KeywordExplorer trends={filteredData.trends} />
+            <KeywordExplorer
+              trends={filteredData.trends}
+              folderId={selectedFolderId}
+              selectedYears={selectedYears}
+              selectedTracks={selectedTracks}
+            />
           ) : null}
           {plannerMode === "classic" && currentTabKey === "paper_explorer" ? (
             <PaperExplorer

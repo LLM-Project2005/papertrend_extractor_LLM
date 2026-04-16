@@ -1,7 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
+import {
+  getRunModelLabel,
+  getRunStageCaption,
+  getRunStageMessage,
+} from "@/lib/ingestion-status";
 import {
   ArrowRightIcon,
   CheckCircleIcon,
@@ -23,8 +28,55 @@ function summarizeRuns(runs: IngestionRunRow[]) {
   );
 }
 
+function toEpochMs(value?: string | null): number {
+  if (!value) {
+    return 0;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function getRunProgressEpochMs(run?: IngestionRunRow | null): number {
+  if (!run) {
+    return 0;
+  }
+  const payloadValue = run.input_payload?.progress_updated_at;
+  const progressMs =
+    typeof payloadValue === "string" && payloadValue.trim()
+      ? toEpochMs(payloadValue)
+      : 0;
+  return Math.max(progressMs, toEpochMs(run.updated_at ?? null));
+}
+
+function getRunStageEpochMs(run?: IngestionRunRow | null): number {
+  if (!run) {
+    return 0;
+  }
+  const payloadValue = run.input_payload?.progress_updated_at;
+  if (typeof payloadValue === "string" && payloadValue.trim()) {
+    return toEpochMs(payloadValue);
+  }
+  return toEpochMs(run.updated_at ?? null);
+}
+
+function formatDurationMinutes(totalMinutes: number) {
+  if (totalMinutes < 1) {
+    return "under a minute";
+  }
+  if (totalMinutes < 60) {
+    return `${totalMinutes} minute${totalMinutes === 1 ? "" : "s"}`;
+  }
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (minutes === 0) {
+    return `${hours} hour${hours === 1 ? "" : "s"}`;
+  }
+  return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
+}
+
 export default function AnalysisStatusCard({
   runs,
+  folderJob,
   loading,
   compact = false,
   onMinimize,
@@ -32,8 +84,12 @@ export default function AnalysisStatusCard({
   onClear,
   onCancelRun,
   onCancelAll,
+  onRetryQueue,
+  onStartProcessing,
+  onDebugClearQueue,
 }: {
   runs: IngestionRunRow[];
+  folderJob?: FolderAnalysisJobRow | null;
   loading?: boolean;
   compact?: boolean;
   onMinimize?: () => void;
@@ -41,6 +97,9 @@ export default function AnalysisStatusCard({
   onClear?: () => void;
   onCancelRun?: (runId: string) => void | Promise<void>;
   onCancelAll?: () => void | Promise<void>;
+  onRetryQueue?: () => void | Promise<void>;
+  onStartProcessing?: () => void | Promise<void>;
+  onDebugClearQueue?: () => void | Promise<void>;
 }) {
   const summary = summarizeRuns(runs);
   const allTerminal =
@@ -49,6 +108,38 @@ export default function AnalysisStatusCard({
   const hasActiveRuns = runs.some(
     (run) => run.status === "queued" || run.status === "processing"
   );
+  const hasQueuedWithoutProcessing =
+    runs.some((run) => run.status === "queued") &&
+    !runs.some((run) => run.status === "processing");
+  const leadRun =
+    runs.find((run) => run.status === "processing") ??
+    runs.find((run) => run.status === "queued") ??
+    runs[0];
+  const leadMessage = folderJob?.progress_message || (leadRun ? getRunStageMessage(leadRun) : "");
+  const leadDetail = folderJob?.progress_detail
+    ? folderJob.progress_detail
+    : hasActiveRuns
+      ? `${summary.processing + summary.queued} active run${summary.processing + summary.queued === 1 ? "" : "s"}`
+      : `${summary.succeeded} completed`;
+  const staleReferenceMs = Math.max(
+    getRunProgressEpochMs(leadRun),
+    toEpochMs(folderJob?.updated_at ?? null)
+  );
+  const stageReferenceMs = getRunStageEpochMs(leadRun);
+  const workerTouchMs = Math.max(
+    toEpochMs(leadRun?.updated_at ?? null),
+    toEpochMs(folderJob?.updated_at ?? null)
+  );
+  const staleMinutes = staleReferenceMs > 0 ? (Date.now() - staleReferenceMs) / 60000 : 0;
+  const stageMinutes = stageReferenceMs > 0 ? (Date.now() - stageReferenceMs) / 60000 : 0;
+  const hasRecentWorkerTouch = workerTouchMs > 0 && Date.now() - workerTouchMs <= 120000;
+  const isLikelyStalled = hasActiveRuns && staleMinutes >= 5 && !hasRecentWorkerTouch;
+  const isLongRunningStage =
+    Boolean(leadRun) &&
+    leadRun?.status === "processing" &&
+    stageMinutes >= 3 &&
+    hasRecentWorkerTouch;
+  const stageDurationLabel = formatDurationMinutes(Math.floor(stageMinutes));
 
   if (compact) {
     return (
@@ -61,25 +152,74 @@ export default function AnalysisStatusCard({
           >
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
-                Analysis active
+                {folderJob ? "Folder analysis" : "Analysis active"}
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
                 {loading
                   ? "Refreshing status..."
-                  : `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
+                  : leadMessage || `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
               </p>
+              {!loading ? (
+                <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
+                  {leadDetail}
+                </p>
+              ) : null}
             </div>
             <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8f8f8f]" />
           </button>
+          {allTerminal && onClear ? (
+            <button
+              type="button"
+              onClick={onClear}
+              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+              aria-label="Dismiss analysis status"
+              title="Dismiss"
+            >
+              <CloseIcon className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
           {hasActiveRuns && onCancelAll ? (
             <button
               type="button"
               onClick={() => void onCancelAll()}
-              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"
               aria-label="Cancel all active analysis runs"
-              title="Cancel all"
+              title="Cancel all processing"
             >
-              <CloseIcon className="h-3.5 w-3.5" />
+              Cancel all
+            </button>
+          ) : null}
+          {isLikelyStalled && onRetryQueue ? (
+            <button
+              type="button"
+              onClick={() => void onRetryQueue()}
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 transition-colors hover:border-amber-400 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:border-amber-800"
+              aria-label="Retry stalled analysis queue"
+              title="Retry processing"
+            >
+              Retry
+            </button>
+          ) : null}
+          {hasQueuedWithoutProcessing && onStartProcessing ? (
+            <button
+              type="button"
+              onClick={() => void onStartProcessing()}
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-sky-300 bg-sky-50 px-3 text-xs font-medium text-sky-800 transition-colors hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200 dark:hover:border-sky-800"
+              aria-label="Start queued analysis processing now"
+              title="Start processing now"
+            >
+              Start now
+            </button>
+          ) : null}
+          {onDebugClearQueue ? (
+            <button
+              type="button"
+              onClick={() => void onDebugClearQueue()}
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-3 text-xs font-medium text-rose-800 transition-colors hover:border-rose-400 hover:bg-rose-100 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:border-rose-800"
+              aria-label="Debug clear worker queue"
+              title="Debug clear queue"
+            >
+              Debug reset
             </button>
           ) : null}
         </div>
@@ -92,15 +232,17 @@ export default function AnalysisStatusCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-            Analysis status
+            {folderJob ? "Folder analysis status" : "Analysis status"}
           </p>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
-            Your files are being prepared for analysis
+            {folderJob
+              ? "Your folder batch is moving through analysis"
+              : "Your files are being prepared for analysis"}
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-            The app has queued the upload successfully. The external analysis worker
-            now picks up the files, runs the extraction pipeline, and writes results
-            back into Supabase.
+            {folderJob?.progress_detail
+              ? folderJob.progress_detail
+              : "The app has queued the upload successfully. The external analysis worker now picks up the files, runs the extraction pipeline, and writes results back into Supabase."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -108,11 +250,44 @@ export default function AnalysisStatusCard({
             <button
               type="button"
               onClick={() => void onCancelAll()}
-              className="inline-flex items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"
+              className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200 dark:hover:border-red-800 dark:hover:bg-red-950/35"
               aria-label="Cancel all active analysis runs"
-              title="Cancel all"
+              title="Cancel all processing"
             >
-              <CloseIcon className="h-4 w-4" />
+              Cancel all processing
+            </button>
+          ) : null}
+          {isLikelyStalled && onRetryQueue ? (
+            <button
+              type="button"
+              onClick={() => void onRetryQueue()}
+              className="inline-flex items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 transition-colors hover:border-amber-400 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:border-amber-800"
+              aria-label="Retry stalled analysis queue"
+              title="Retry processing"
+            >
+              Retry processing
+            </button>
+          ) : null}
+          {hasQueuedWithoutProcessing && onStartProcessing ? (
+            <button
+              type="button"
+              onClick={() => void onStartProcessing()}
+              className="inline-flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-medium text-sky-800 transition-colors hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200 dark:hover:border-sky-800"
+              aria-label="Start queued analysis processing now"
+              title="Start processing now"
+            >
+              Start processing now
+            </button>
+          ) : null}
+          {onDebugClearQueue ? (
+            <button
+              type="button"
+              onClick={() => void onDebugClearQueue()}
+              className="inline-flex items-center justify-center rounded-lg border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-800 transition-colors hover:border-rose-400 hover:bg-rose-100 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:border-rose-800"
+              aria-label="Debug clear worker queue"
+              title="Debug clear queue"
+            >
+              Debug clear queue
             </button>
           ) : null}
           <button
@@ -141,6 +316,11 @@ export default function AnalysisStatusCard({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
+        {folderJob ? (
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
+            Stage: {folderJob.progress_message || folderJob.status}
+          </span>
+        ) : null}
         <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
           {summary.total} total
         </span>
@@ -161,6 +341,38 @@ export default function AnalysisStatusCard({
       </div>
 
       <div className="mt-5 space-y-3">
+        {isLikelyStalled ? (
+          <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+            Processing appears stalled. The queue has not advanced for about {Math.floor(staleMinutes)} minute{Math.floor(staleMinutes) === 1 ? "" : "s"}. Use Retry processing to trigger the worker again.
+          </div>
+        ) : null}
+        {isLongRunningStage ? (
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-200">
+            The worker is still active. The current stage has been running for about {stageDurationLabel}, and some paper-analysis steps can legitimately take several minutes before the next visible progress update.
+          </div>
+        ) : null}
+        {folderJob ? (
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+            <div className="flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                  Folder batch progress
+                </p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
+                  {folderJob.progress_message || folderJob.status}
+                </p>
+                {folderJob.progress_detail ? (
+                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+                    {folderJob.progress_detail}
+                  </p>
+                ) : null}
+              </div>
+              <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-[#8f8f8f]">
+                {folderJob.status}
+              </span>
+            </div>
+          </article>
+        ) : null}
         {runs.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#a3a3a3]">
             {loading ? "Loading run status..." : "Waiting for run status to appear."}
@@ -176,9 +388,25 @@ export default function AnalysisStatusCard({
                   <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                     {run.source_filename || run.id}
                   </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
-                    {run.model || "Model not set"}
+                  <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
+                    {getRunStageMessage(run)}
                   </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
+                    {getRunModelLabel(run)}
+                  </p>
+                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+                    {getRunStageCaption(run)}
+                  </p>
+                  {run.status === "processing" && getRunStageEpochMs(run) > 0 ? (
+                    <p className="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300">
+                      Current stage duration:{" "}
+                      {formatDurationMinutes(
+                        Math.floor(
+                          (Date.now() - getRunStageEpochMs(run)) / 60000
+                        )
+                      )}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-2">
                   {onCancelRun &&

@@ -2,19 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
 interface UseIngestionRunsOptions {
   enabled?: boolean;
   pollIntervalMs?: number;
+  folderJobId?: string;
 }
 
 export function useIngestionRuns({
   enabled = true,
   pollIntervalMs = 12000,
+  folderJobId,
 }: UseIngestionRunsOptions = {}) {
   const { session, user } = useAuth();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
+  const [folderJob, setFolderJob] = useState<FolderAnalysisJobRow | null>(null);
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [adminSecret, setAdminSecret] = useState("");
@@ -50,18 +53,23 @@ export function useIngestionRuns({
 
     if (!requestHeaders) {
       setRuns([]);
+      setFolderJob(null);
       setLoading(false);
       return;
     }
 
     setLoading(true);
     try {
-      const response = await fetch("/api/admin/import", {
+      const endpoint = folderJobId
+        ? `/api/folder-analysis?jobId=${encodeURIComponent(folderJobId)}`
+        : "/api/admin/import";
+      const response = await fetch(endpoint, {
         headers: requestHeaders,
       });
 
       const payload = (await response.json()) as {
         runs?: IngestionRunRow[];
+        jobs?: FolderAnalysisJobRow[];
         error?: string;
       };
 
@@ -70,6 +78,7 @@ export function useIngestionRuns({
       }
 
       setRuns(payload.runs ?? []);
+      setFolderJob((payload.jobs ?? [])[0] ?? null);
       setError(null);
     } catch (refreshError) {
       setError(
@@ -80,7 +89,7 @@ export function useIngestionRuns({
     } finally {
       setLoading(false);
     }
-  }, [enabled, requestHeaders]);
+  }, [enabled, folderJobId, requestHeaders]);
 
   const cancelRuns = useCallback(
     async (runIds: string[]) => {
@@ -125,6 +134,175 @@ export function useIngestionRuns({
     [requestHeaders]
   );
 
+  const cancelAllActiveRuns = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to cancel analysis processing.");
+      }
+
+      const response = await fetch("/api/folder-analysis/cancel-all", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        canceledRuns?: IngestionRunRow[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to cancel active processing.");
+      }
+
+      const canceledRuns = payload.canceledRuns ?? [];
+      if (canceledRuns.length > 0) {
+        setRuns((current) => {
+          const updates = new Map(canceledRuns.map((run) => [run.id, run]));
+          return current.map((run) => updates.get(run.id) ?? run);
+        });
+      }
+
+      setError(null);
+      return canceledRuns;
+    },
+    [requestHeaders]
+  );
+
+  const retryActiveProcessing = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to retry processing.");
+      }
+
+      const response = await fetch("/api/folder-analysis/retry", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        activeCount?: number;
+        trigger?: { started?: boolean; status?: number; payload?: Record<string, unknown> };
+        error?: string;
+      };
+
+      if (!response.ok) {
+        const message = payload.error ?? "Failed to trigger processing retry.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      if (!payload.trigger?.started) {
+        const reason = String(payload.trigger?.payload?.reason ?? "unknown_reason");
+        if (reason !== "no_active_runs") {
+          const message =
+            reason === "missing_worker_config"
+              ? "Worker service is not configured. Check WORKER_SERVICE_URL and WORKER_WEBHOOK_SECRET."
+              : "Worker trigger did not start. Please retry in a moment.";
+          setError(message);
+          throw new Error(message);
+        }
+      }
+
+      setError(null);
+      return payload;
+    },
+    [requestHeaders]
+  );
+
+  const startQueuedProcessing = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to start queued processing.");
+      }
+
+      const response = await fetch("/api/folder-analysis/start", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        queuedCount?: number;
+        processingCount?: number;
+        queueStart?: { started?: boolean; alreadyRunning?: boolean; progressMessage?: string };
+        message?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        const message = payload.error ?? "Failed to start queued processing.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      if (!payload.ok && payload.queueStart) {
+        const message =
+          payload.queueStart.progressMessage ??
+          payload.message ??
+          "The worker did not start queued processing.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      setError(null);
+      return payload;
+    },
+    [requestHeaders]
+  );
+
+  const debugClearQueue = useCallback(
+    async (folderJobId?: string) => {
+      if (!requestHeaders) {
+        throw new Error("You must be signed in to clear the worker queue.");
+      }
+
+      const response = await fetch("/api/folder-analysis/debug/clear-queue", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...requestHeaders,
+        },
+        body: JSON.stringify({ folderJobId }),
+      });
+
+      const payload = (await response.json()) as {
+        ok?: boolean;
+        canceledCount?: number;
+        workerReset?: { ok?: boolean; payload?: Record<string, unknown> };
+        error?: string;
+      };
+
+      if (!response.ok) {
+        const message = payload.error ?? "Failed to clear the worker queue.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      if (!payload.workerReset?.ok) {
+        const message = payload.error ?? "The worker queue reset did not complete successfully.";
+        setError(message);
+        throw new Error(message);
+      }
+
+      setError(null);
+      return payload;
+    },
+    [requestHeaders]
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -141,5 +319,16 @@ export function useIngestionRuns({
     return () => window.clearInterval(interval);
   }, [enabled, pollIntervalMs, refresh, requestHeaders]);
 
-  return { runs, loading, error, refresh, cancelRuns };
+  return {
+    runs,
+    folderJob,
+    loading,
+    error,
+    refresh,
+    cancelRuns,
+    cancelAllActiveRuns,
+    retryActiveProcessing,
+    startQueuedProcessing,
+    debugClearQueue,
+  };
 }

@@ -5,6 +5,7 @@ import type { DashboardData, TrackRow, TrendRow } from "@/types/database";
 function mapTrackRow(row: Record<string, unknown>): TrackRow {
   return {
     paper_id: Number(row.paper_id),
+    folder_id: typeof row.folder_id === "string" ? row.folder_id : null,
     year: String(row.year),
     title: String(row.title),
     el: Number(row.el),
@@ -14,13 +15,48 @@ function mapTrackRow(row: Record<string, unknown>): TrackRow {
   };
 }
 
-export async function loadDashboardDataServer(): Promise<DashboardData> {
+function emptyDashboardData(): DashboardData {
+  return {
+    trends: [],
+    tracksSingle: [],
+    tracksMulti: [],
+    useMock: false,
+  };
+}
+
+export async function loadDashboardDataServer(
+  ownerUserId?: string | null,
+  folderId?: string | null
+): Promise<DashboardData> {
   try {
+    if (!ownerUserId) {
+      return generateMockData();
+    }
+
     const supabase = getSupabaseAdmin();
+    let trendsQuery = supabase
+      .from("trends_flat")
+      .select("*")
+      .eq("owner_user_id", ownerUserId);
+    let singleQuery = supabase
+      .from("tracks_single_flat")
+      .select("*")
+      .eq("owner_user_id", ownerUserId);
+    let multiQuery = supabase
+      .from("tracks_multi_flat")
+      .select("*")
+      .eq("owner_user_id", ownerUserId);
+
+    if (folderId && folderId !== "all") {
+      trendsQuery = trendsQuery.eq("folder_id", folderId);
+      singleQuery = singleQuery.eq("folder_id", folderId);
+      multiQuery = multiQuery.eq("folder_id", folderId);
+    }
+
     const [trendsResult, singleResult, multiResult] = await Promise.all([
-      supabase.from("trends_flat").select("*"),
-      supabase.from("tracks_single_flat").select("*"),
-      supabase.from("tracks_multi_flat").select("*"),
+      trendsQuery,
+      singleQuery,
+      multiQuery,
     ]);
 
     if (trendsResult.error) {
@@ -36,6 +72,7 @@ export async function loadDashboardDataServer(): Promise<DashboardData> {
     const trends: TrendRow[] = (trendsResult.data ?? []).map(
       (row: Record<string, unknown>) => ({
         paper_id: Number(row.paper_id),
+        folder_id: typeof row.folder_id === "string" ? row.folder_id : null,
         year: String(row.year),
         title: String(row.title),
         topic: String(row.topic),
@@ -45,10 +82,6 @@ export async function loadDashboardDataServer(): Promise<DashboardData> {
       })
     );
 
-    if (trends.length === 0) {
-      return generateMockData();
-    }
-
     return {
       trends,
       tracksSingle: (singleResult.data ?? []).map(mapTrackRow),
@@ -56,6 +89,6 @@ export async function loadDashboardDataServer(): Promise<DashboardData> {
       useMock: false,
     };
   } catch {
-    return generateMockData();
+    return ownerUserId ? emptyDashboardData() : generateMockData();
   }
 }

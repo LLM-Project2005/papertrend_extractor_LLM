@@ -30,9 +30,13 @@ function parseJsonPayload(text: string): unknown {
 }
 
 export async function buildNormalizedAnalyticsPayload(
-  request: VisualizationPlannerRequest = {}
+  request: VisualizationPlannerRequest = {},
+  ownerUserId?: string | null
 ): Promise<NormalizedAnalyticsPayload> {
-  const data = await loadDashboardDataServer();
+  const data = await loadDashboardDataServer(
+    ownerUserId,
+    request.folderId && request.folderId !== "all" ? request.folderId : null
+  );
   const years =
     request.selectedYears && request.selectedYears.length > 0
       ? request.selectedYears
@@ -287,13 +291,14 @@ ${JSON.stringify(analytics, null, 2)}
 }
 
 export async function planVisualization(
-  request: VisualizationPlannerRequest = {}
+  request: VisualizationPlannerRequest = {},
+  ownerUserId?: string | null
 ): Promise<{
   plan: VisualizationPlan;
   analytics: NormalizedAnalyticsPayload;
   source: "agent" | "fallback";
 }> {
-  const analytics = await buildNormalizedAnalyticsPayload(request);
+  const analytics = await buildNormalizedAnalyticsPayload(request, ownerUserId);
   const fallback = createDefaultVisualizationPlan(
     analytics.mode,
     analytics.filters.selected_tracks
@@ -313,7 +318,8 @@ export async function planVisualization(
         },
       ],
       0,
-      undefined
+      undefined,
+      "VISUALIZATION_PLANNING"
     );
 
     if (!response) {

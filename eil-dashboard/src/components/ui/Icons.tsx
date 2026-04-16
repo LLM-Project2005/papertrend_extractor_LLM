@@ -362,12 +362,127 @@ export function ChevronDownIcon({ className }: IconProps) {
   );
 }
 
+export function CheckIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m5 12 4.2 4.2L19 6.5" />
+    </BaseIcon>
+  );
+}
+
+export function DownloadIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M12 4.5v10" />
+      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
+      <path d="M5 18.5h14" />
+    </BaseIcon>
+  );
+}
+
+export function StarIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m12 4.5 2.3 4.8 5.2.7-3.8 3.8.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.8 5.2-.7Z" />
+    </BaseIcon>
+  );
+}
+
+export function ListViewIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M8 7h11" />
+      <path d="M8 12h11" />
+      <path d="M8 17h11" />
+      <path d="M4.5 7h.01" />
+      <path d="M4.5 12h.01" />
+      <path d="M4.5 17h.01" />
+    </BaseIcon>
+  );
+}
+
+export function GridViewIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="4.5" y="4.5" width="6" height="6" rx="1.2" />
+      <rect x="13.5" y="4.5" width="6" height="6" rx="1.2" />
+      <rect x="4.5" y="13.5" width="6" height="6" rx="1.2" />
+      <rect x="13.5" y="13.5" width="6" height="6" rx="1.2" />
+    </BaseIcon>
+  );
+}
+
+export function SortIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M5 7h11" />
+      <path d="M5 12h8" />
+      <path d="M5 17h5" />
+      <path d="m17 7 2 2 2-2" />
+      <path d="M19 9v8" />
+    </BaseIcon>
+  );
+}
+
 export function ImageIcon({ className }: IconProps) {
   return (
     <BaseIcon className={className}>
       <rect x="3.5" y="5" width="17" height="14" rx="2" />
       <circle cx="9" cy="10" r="1.5" />
       <path d="m6.5 16 3.5-3.5 2.8 2.8 2-2 2.7 2.7" />
+    </BaseIcon>
+  );
+}
+
+export function MoreHorizontalIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
+      <circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none" />
+    </BaseIcon>
+  );
+}
+
+export function PencilSquareIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h7" />
+      <path d="M4.5 9.5v8a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7" />
+      <path d="m13.5 5.5 5 5" />
+      <path d="m11.5 17.5 1-4 7-7a1.4 1.4 0 0 0-2-2l-7 7-4 1Z" />
+    </BaseIcon>
+  );
+}
+
+export function TrashIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M4.5 7.5h15" />
+      <path d="M9 7.5v-2h6v2" />
+      <path d="M7.5 7.5 8.3 19a1.5 1.5 0 0 0 1.5 1.4h4.4a1.5 1.5 0 0 0 1.5-1.4l.8-11.5" />
+      <path d="M10 11v5.5" />
+      <path d="M14 11v5.5" />
+    </BaseIcon>
+  );
+}
+
+export function PinIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="m14 4 6 6" />
+      <path d="m16 9-5 5" />
+      <path d="M8 6.5 17.5 16" />
+      <path d="m10 14-6 6" />
+      <path d="m6.5 8 9.5 9.5" />
+    </BaseIcon>
+  );
+}
+
+export function StopIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="7" y="7" width="10" height="10" rx="1.8" />
     </BaseIcon>
   );
 }

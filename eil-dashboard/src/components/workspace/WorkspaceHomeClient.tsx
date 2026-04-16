@@ -17,7 +17,7 @@ import {
   PaperIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
-import type { IngestionRunRow } from "@/types/database";
+import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
 function MetricCard({
   label,
@@ -72,18 +72,37 @@ function QuickLink({
 export default function WorkspaceHomeClient() {
   const {
     profile,
+    folders,
+    selectedFolderId,
+    refreshFolders,
     analysisSession,
     startAnalysisSession,
     setAnalysisMinimized,
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const { data, loading } = useDashboardData();
-  const { runs, cancelRuns } = useIngestionRuns({
+  const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds);
+  const {
+    runs,
+    folderJob,
+    cancelRuns,
+    cancelAllActiveRuns,
+    retryActiveProcessing,
+    startQueuedProcessing,
+    debugClearQueue,
+    refresh,
+  } =
+    useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
+    folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
   });
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
+  const selectedFolderLabel =
+    selectedFolderId === "all"
+      ? "All folders"
+      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
 
   const summary = useMemo(() => {
     if (!data) {
@@ -157,9 +176,15 @@ export default function WorkspaceHomeClient() {
 
   function handleAnalyzeCreated(
     createdRuns: IngestionRunRow[],
-    context: { folder: string; sourceKind: string }
+    context: {
+      folder: string;
+      folderId?: string | null;
+      folderJob?: FolderAnalysisJobRow | null;
+      sourceKind: string;
+    }
   ) {
     startAnalysisSession(createdRuns, context);
+    void refreshFolders();
     setShowAnalyzeModal(false);
   }
 
@@ -178,24 +203,67 @@ export default function WorkspaceHomeClient() {
   }
 
   async function handleCancelAllRuns() {
-    const activeRunIds = activeRuns
-      .filter((run) => run.status === "queued" || run.status === "processing")
-      .map((run) => run.id);
-
-    if (activeRunIds.length === 0) {
-      return;
-    }
-
     try {
-      const canceledRuns = await cancelRuns(activeRunIds);
+      const canceledRuns = await cancelAllActiveRuns(analysisSession?.folderJobId ?? undefined);
       if (canceledRuns.length > 0) {
         removeAnalysisRunIds(canceledRuns.map((run) => run.id));
       }
     } catch (error) {
       console.error("[workspace.home] failed to cancel all runs", {
-        runIds: activeRunIds,
+        folderJobId: analysisSession?.folderJobId ?? null,
         error: error instanceof Error ? error.message : "unknown_error",
       });
+    }
+  }
+
+  async function handleRetryQueue() {
+    try {
+      await retryActiveProcessing(analysisSession?.folderJobId ?? undefined);
+      await refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to retry processing.";
+      console.error("[workspace.home] failed to retry processing", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: message,
+      });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
+    }
+  }
+
+  async function handleStartProcessing() {
+    try {
+      await startQueuedProcessing(analysisSession?.folderJobId ?? undefined);
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to start queued processing.";
+      console.error("[workspace.home] failed to start queued processing", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: message,
+      });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
+    }
+  }
+
+  async function handleDebugClearQueue() {
+    try {
+      await debugClearQueue(analysisSession?.folderJobId ?? undefined);
+      clearAnalysisSession();
+      await refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to clear the worker queue.";
+      console.error("[workspace.home] failed to debug-clear queue", {
+        folderJobId: analysisSession?.folderJobId ?? null,
+        error: message,
+      });
+      if (typeof window !== "undefined") {
+        window.alert(message);
+      }
     }
   }
 
@@ -215,6 +283,9 @@ export default function WorkspaceHomeClient() {
                 ? "Preview data is active, so you can keep using analytics, papers, and chat while the live backend analysis process is being fixed."
                 : "A clean control center for bringing in papers, reviewing analytics, and switching into grounded chat without bouncing between separate tools."}
             </p>
+            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#6f6f6f]">
+              Current scope: {selectedFolderLabel}
+            </p>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -226,10 +297,10 @@ export default function WorkspaceHomeClient() {
               Analyze
             </button>
             <Link
-              href="/workspace/imports"
+              href="/workspace/library"
               className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
-              Open imports
+              Open library
             </Link>
           </div>
         </div>
@@ -238,11 +309,15 @@ export default function WorkspaceHomeClient() {
       {hasLiveAnalysisSession ? (
         <AnalysisStatusCard
           runs={activeRuns}
+          folderJob={folderJob}
           loading={loading && activeRuns.length === 0}
           onMinimize={() => setAnalysisMinimized(true)}
           onClear={clearAnalysisSession}
           onCancelRun={handleCancelRun}
           onCancelAll={handleCancelAllRuns}
+          onRetryQueue={handleRetryQueue}
+          onStartProcessing={handleStartProcessing}
+          onDebugClearQueue={handleDebugClearQueue}
         />
       ) : null}
 
@@ -288,10 +363,10 @@ export default function WorkspaceHomeClient() {
                   </p>
                 </div>
                 <Link
-                  href="/start"
+                  href="/workspace/settings"
                   className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-[#bdbdbd] dark:hover:text-white"
                 >
-                  Edit setup
+                  Edit settings
                 </Link>
               </div>
 
@@ -336,14 +411,14 @@ export default function WorkspaceHomeClient() {
                 />
                 <QuickLink
                   href="/workspace/papers"
-                  title="Paper library"
-                  description={
-                    isPreviewMode
-                      ? "Browse the preview paper set with topics, keywords, evidence, and track tags."
-                      : "Review titles, keywords, evidence, and track tags directly."
-                  }
-                  icon={<PaperIcon className="h-5 w-5" />}
-                />
+                    title="Library"
+                    description={
+                      isPreviewMode
+                      ? "Browse the preview paper set and the current uploaded files in one place."
+                      : "Manage files and review analyzed papers from the same library."
+                    }
+                    icon={<PaperIcon className="h-5 w-5" />}
+                  />
               </div>
               </article>
 

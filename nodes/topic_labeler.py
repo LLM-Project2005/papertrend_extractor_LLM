@@ -1,61 +1,58 @@
-# nodes/topic_labeler.py
-import os
-from . import llm_fast  # Using GPT-4o-mini for efficient labeling
-from state import ExtractorState, TopicLabelerSchema
+from typing import Any, Dict, List
 
-def load_prompt(filename: str) -> str:
-    base_path = os.path.dirname(os.path.dirname(__file__))
-    path = os.path.join(base_path, "prompts", filename)
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read()
+from nodes import ModelTask, get_task_llm
+from nodes.common import load_prompt
+from state import IngestionState, TopicLabelerSchema
 
-def topic_labeler_node(state: ExtractorState):
-    """
-    Agent 4: Topic Labeling.
-    Processes each cluster to assign one authoritative label and a detailed justification.
-    """
-    # Using 'semantic_topics' as defined in your Phase 3 state
+topic_labeling_llm = get_task_llm(ModelTask.TOPIC_LABELING)
+
+
+def topic_labeler_node(state: IngestionState) -> Dict[str, Any]:
     semantic_topics = state.get("semantic_topics", [])
     if not semantic_topics:
-        return {"errors": ["No semantic clusters found to label"], "status": "failed"}
+        return {"errors": ["No semantic topic groups were available for labeling."], "status": "failed"}
 
-    # Structured LLM for TopicLabelerSchema (topic_label, justification)
-    structured_llm = llm_fast.with_structured_output(TopicLabelerSchema, method="json_schema")
+    structured_llm = topic_labeling_llm.with_structured_output(TopicLabelerSchema, method="json_schema")
     template = load_prompt("topic_labeler.txt")
-    
-    final_results = []
+    final_results: List[Dict[str, Any]] = []
 
     for cluster in semantic_topics:
-        # Prepare the input for this specific group
-        # Each group gets its own LLM call to ensure a unique, focused label
         input_data = (
-            f"KEYWORDS: {', '.join(cluster['keywords'])}\n"
-            f"EVIDENCE: {' | '.join(cluster['evidence'])}"
+            f"KEYWORDS: {', '.join(cluster.get('keywords', []))}\n"
+            f"MATCHED TERMS: {', '.join(cluster.get('matched_terms', []))}\n"
+            f"EVIDENCE: {' | '.join(cluster.get('evidence', []))}"
         )
         full_prompt = template.format(input_data=input_data)
 
         try:
-            # Generate label and justification for THIS group
             result = structured_llm.invoke(full_prompt)
+            final_results.append(
+                {
+                    "label": result.topic_label.strip(),
+                    "total_count": int(cluster.get("total_count") or 1),
+                    "justification": result.justification.strip(),
+                    "original_keywords": cluster.get("keywords", []),
+                    "matched_terms": cluster.get("matched_terms", []),
+                    "evidence": cluster.get("evidence", []),
+                    "status": "success",
+                }
+            )
+        except Exception:
+            final_results.append(
+                {
+                    "label": cluster.get("label", "Unlabeled concept"),
+                    "total_count": int(cluster.get("total_count") or 1),
+                    "justification": cluster.get("rationale", ""),
+                    "original_keywords": cluster.get("keywords", []),
+                    "matched_terms": cluster.get("matched_terms", []),
+                    "evidence": cluster.get("evidence", []),
+                    "status": "fallback",
+                }
+            )
 
-            # Build the individual topic dictionary
-            final_results.append({
-                "label": result.topic_label,
-                "total_count": cluster['total_count'],
-                "justification": result.justification,
-                "original_keywords": cluster['keywords'],
-                "evidence": cluster['evidence'],
-                "status": "success"
-            })
-
-        except Exception as e:
-            print(f"   ⚠️ Labeling failed for cluster {cluster.get('keywords', 'unknown')}: {e}")
-            continue
-
-    # Final overall response structure matching your desired JSON
     return {
         "final_labeled_topics": final_results,
-        "status": "completed",
+        "status": "topics_labeled",
         "total_clusters_processed": len(final_results),
-        "errors": []
+        "errors": [],
     }

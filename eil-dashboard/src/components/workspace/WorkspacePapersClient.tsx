@@ -3,20 +3,31 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDashboardData } from "@/hooks/useData";
-import { TRACK_COLS } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import Sidebar from "@/components/Sidebar";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 
 export default function WorkspacePapersClient() {
-  const { data, loading, allYears } = useDashboardData();
+  const {
+    selectedFolderId,
+    setSelectedFolderId,
+    folders,
+    selectedYears,
+    setSelectedYears,
+    selectedTracks,
+    setSelectedTracks,
+    searchQuery,
+    setSearchQuery,
+  } = useWorkspaceProfile();
+  const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const { data, loading, allYears } = useDashboardData(
+    selectedFolderId,
+    scopedFolderIds
+  );
   const searchParams = useSearchParams();
-
-  const [selectedYears, setSelectedYears] = useState<string[]>([]);
-  const [selectedTracks, setSelectedTracks] = useState<string[]>([...TRACK_COLS]);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
 
   const linkedPaperId = useMemo(() => {
     const value = Number.parseInt(searchParams.get("paperId") ?? "", 10);
@@ -100,6 +111,9 @@ export default function WorkspacePapersClient() {
               </div>
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <Sidebar
+                  folders={folders}
+                  selectedFolderId={selectedFolderId}
+                  onFolderChange={setSelectedFolderId}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}

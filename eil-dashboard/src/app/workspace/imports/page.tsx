@@ -1,5 +1,5 @@
-import AdminImportClient from "@/components/admin/AdminImportClient";
+import { redirect } from "next/navigation";
 
 export default function WorkspaceImportsPage() {
-  return <AdminImportClient />;
+  redirect("/workspace/library");
 }

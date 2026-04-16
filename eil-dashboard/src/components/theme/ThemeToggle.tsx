@@ -3,9 +3,28 @@
 import { MoonIcon, SunIcon } from "@/components/ui/Icons";
 import { useTheme } from "@/components/theme/ThemeProvider";
 
-export default function ThemeToggle() {
+export default function ThemeToggle({ compact = false }: { compact?: boolean }) {
   const { theme, hydrated, toggleTheme } = useTheme();
   const isDark = hydrated && theme === "dark";
+  const label = isDark ? "Dark" : "Light";
+
+  if (compact) {
+    return (
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        aria-label={`Switch to ${isDark ? "light" : "dark"} mode`}
+        title={label}
+      >
+        {isDark ? (
+          <MoonIcon className="h-4 w-4" />
+        ) : (
+          <SunIcon className="h-4 w-4" />
+        )}
+      </button>
+    );
+  }
 
   return (
     <button
@@ -19,7 +38,7 @@ export default function ThemeToggle() {
       ) : (
         <SunIcon className="h-4 w-4" />
       )}
-      <span>{isDark ? "Dark" : "Light"}</span>
+      <span>{label}</span>
     </button>
   );
 }
