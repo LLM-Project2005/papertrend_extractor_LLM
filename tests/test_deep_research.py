@@ -145,6 +145,40 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertEqual(plan["steps"][0]["tool_input"]["payload_version"], 2)
         self.assertEqual(plan["steps"][0]["tool_input"]["requiredClass"], "required_before_verification")
 
+    def test_large_target_paper_id_is_serialized_safely_in_plan_payload(self) -> None:
+        large_paper_id = 1115913522557912292
+        snapshot = {
+            "prompt": 'Analyze "Large Paper"',
+            "project_id": "project-1",
+            "pending_run_count": 0,
+            "paper_count": 1,
+            "prompt_analysis": {
+                "single_paper": True,
+                "compare": False,
+                "survey": False,
+                "candidate_title": "Large Paper",
+                "normalized_query": "Large Paper",
+                "requested_sections": ["objective"],
+                "target_in_scope": True,
+                "target_paper_id": large_paper_id,
+                "ranked_matches": [
+                    {
+                        "paperId": large_paper_id,
+                        "title": "Large Paper",
+                        "score": 200,
+                        "strong_title_match": True,
+                    }
+                ],
+                "target_resolution_status": "exact_match",
+            },
+        }
+
+        plan = _build_deterministic_plan(snapshot)
+
+        first_input = plan["steps"][0]["tool_input"]
+        self.assertEqual(first_input["targetPaperId"], str(large_paper_id))
+        self.assertEqual(first_input["promptAnalysis"]["target_paper_id"], str(large_paper_id))
+
     def test_topic_review_plan_stays_multi_step_for_non_trivial_prompt(self) -> None:
         snapshot = {
             "prompt": "Do a deep research analysis of AI models for coding across architectures, benchmarks, limitations, and deployment workflows.",

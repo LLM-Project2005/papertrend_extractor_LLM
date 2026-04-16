@@ -49,7 +49,7 @@ import type {
 } from "@/types/research";
 
 interface Citation {
-  paperId: number;
+  paperId: number | string;
   title: string;
   year: string;
   href: string;

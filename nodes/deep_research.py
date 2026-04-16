@@ -23,6 +23,7 @@ research_planning_llm = get_task_llm(ModelTask.RESEARCH_PLANNING)
 research_subtask_llm = get_task_llm(ModelTask.RESEARCH_SUBTASK)
 research_synthesis_llm = get_task_llm(ModelTask.RESEARCH_SYNTHESIS)
 logger = logging.getLogger("papertrend.deep_research")
+MAX_SAFE_JS_INTEGER = 9007199254740991
 
 SECTION_ALIASES = {
     "objective": ("objective", "objectives", "aim", "aims", "purpose", "research objective"),
@@ -383,6 +384,36 @@ def _citation_ref(
     }
 
 
+def _json_safe_id(value: Any) -> Any:
+    try:
+        numeric = int(value)
+    except Exception:
+        return value
+    if abs(numeric) > MAX_SAFE_JS_INTEGER:
+        return str(numeric)
+    return numeric
+
+
+def _json_safe_prompt_analysis(prompt_analysis: Dict[str, Any]) -> Dict[str, Any]:
+    safe = dict(prompt_analysis or {})
+    if "target_paper_id" in safe:
+        safe["target_paper_id"] = _json_safe_id(safe.get("target_paper_id"))
+    ranked_matches = []
+    for match in list(safe.get("ranked_matches") or []):
+        next_match = dict(match or {})
+        if "paperId" in next_match:
+            next_match["paperId"] = _json_safe_id(next_match.get("paperId"))
+        ranked_matches.append(next_match)
+    if ranked_matches:
+        safe["ranked_matches"] = ranked_matches
+    exclusion_ids = []
+    for item in list(safe.get("exclusion_ids") or []):
+        exclusion_ids.append(_json_safe_id(item))
+    if exclusion_ids:
+        safe["exclusion_ids"] = exclusion_ids
+    return safe
+
+
 def _build_step_output(
     summary: str,
     detail: str,
@@ -454,7 +485,7 @@ def _score_paper_match(
         elif token in haystack:
             score += 3
     return {
-        "paperId": int(paper.get("paper_id") or 0),
+        "paperId": _json_safe_id(int(paper.get("paper_id") or 0)),
         "title": paper_title,
         "year": str(paper.get("year") or "Unknown"),
         "score": score,
@@ -671,6 +702,7 @@ def _build_planning_snapshot(
             if str(row.get("keyword") or "").strip()
         }
     )
+    safe_prompt_analysis = _json_safe_prompt_analysis(prompt_analysis)
     return {
         "prompt": prompt,
         "folder_id": folder_id,
@@ -682,8 +714,8 @@ def _build_planning_snapshot(
         "overview": analytics.get("overview", {}),
         "top_papers": _safe_papers(filtered),
         "filters": analytics.get("filters", {}),
-        "prompt_analysis": prompt_analysis,
-        "ranked_matches": prompt_analysis.get("ranked_matches", []),
+        "prompt_analysis": safe_prompt_analysis,
+        "ranked_matches": safe_prompt_analysis.get("ranked_matches", []),
         "available_sections": available_sections,
         "keyword_coverage": keyword_coverage,
     }
@@ -710,6 +742,7 @@ def _todo_input(
     extra: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     prompt_analysis = snapshot.get("prompt_analysis") if isinstance(snapshot.get("prompt_analysis"), dict) else {}
+    safe_prompt_analysis = _json_safe_prompt_analysis(prompt_analysis)
     requested = list(requested_sections or prompt_analysis.get("requested_sections") or [])
     exclusions = [int(item) for item in (exclusion_ids or []) if str(item).strip().isdigit()]
     primary_query = tool_query or str(prompt_analysis.get("normalized_query") or snapshot.get("prompt") or "")
@@ -726,7 +759,7 @@ def _todo_input(
         "completionCondition": completion_condition,
         "projectId": snapshot.get("project_id") or "",
         "selectedRunIds": list(snapshot.get("selected_run_ids") or []),
-        "promptAnalysis": prompt_analysis,
+        "promptAnalysis": safe_prompt_analysis,
         "normalizedQuery": _build_query_bundle(
             primary_query,
             requested,
@@ -741,7 +774,7 @@ def _todo_input(
     if resolved_title:
         payload["targetTitle"] = resolved_title
     if resolved_paper_id:
-        payload["targetPaperId"] = resolved_paper_id
+        payload["targetPaperId"] = _json_safe_id(resolved_paper_id)
     if primary_query:
         payload["query"] = primary_query
     if exclusions:
@@ -751,7 +784,10 @@ def _todo_input(
     if status_reason:
         payload["statusReason"] = status_reason
     if extra:
-        payload.update(extra)
+        merged_extra = dict(extra)
+        if "paperIds" in merged_extra:
+            merged_extra["paperIds"] = [_json_safe_id(item) for item in list(merged_extra.get("paperIds") or [])]
+        payload.update(merged_extra)
     return payload
 
 
@@ -1179,7 +1215,7 @@ def _list_folder_papers_tool(
         "rankedMatches": ranked_matches,
         "papers": [
             {
-                "paperId": int(paper.get("paper_id") or 0),
+                "paperId": _json_safe_id(int(paper.get("paper_id") or 0)),
                 "title": str(paper.get("title") or ""),
                 "year": str(paper.get("year") or "Unknown"),
             }

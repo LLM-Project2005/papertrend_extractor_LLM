@@ -16,7 +16,7 @@ export interface DeepResearchStepInputPayload {
   promptAnalysis?: Record<string, unknown>;
   normalizedQuery?: Record<string, unknown>;
   targetTitle?: string;
-  targetPaperId?: number;
+  targetPaperId?: number | string;
   requestedSections?: string[];
   exclusionIds?: number[] | string[];
   phaseClass?: "research" | "verification" | "synthesis";
@@ -76,7 +76,7 @@ export interface WorkspaceMessageRecord {
   message_kind: "chat" | "deep_research_plan" | "deep_research_report" | "status";
   content: string;
   citations?: Array<{
-    paperId: number;
+    paperId: number | string;
     title: string;
     year: string;
     href: string;

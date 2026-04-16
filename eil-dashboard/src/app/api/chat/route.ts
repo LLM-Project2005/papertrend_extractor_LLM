@@ -26,7 +26,7 @@ import type {
 export const runtime = "nodejs";
 
 interface Citation {
-  paperId: number;
+  paperId: number | string;
   title: string;
   year: string;
   href: string;
