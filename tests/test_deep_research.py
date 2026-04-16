@@ -8,6 +8,7 @@ from nodes.deep_research import (
     _build_verification_result,
     _execute_tool,
     _next_pending_step,
+    _section_report,
     _target_in_scope_effective,
 )
 from unittest.mock import patch
@@ -321,6 +322,30 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
 
         self.assertIn("Focused report on", synthesis["report"])
         self.assertNotIn("not currently in the selected workspace scope", synthesis["report"])
+
+    def test_section_report_prefers_clean_objective_and_methodology_evidence(self) -> None:
+        paper = {
+            "paper_id": 111,
+            "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+            "abstract_claims": (
+                "This study aims to analyze possible ways to translate English zero pronominals into Thai "
+                "and compare centering-theory transition states between source and target texts."
+            ),
+            "methods": (
+                "The analysis covers 84 zero anaphors in 50 informative texts. "
+                "Example (3) ST: Scientists knew snakes used their sides to push off twigs and rocks but Ø were baffled... "
+                "TT: ก   ก  !\"."
+            ),
+            "results": "Most zero anaphors occur in Continuation state in both source and target texts.",
+            "conclusion": "The findings suggest centering theory can help explain translation choices.",
+        }
+
+        objective = _section_report(paper, "objective")
+        methodology = _section_report(paper, "methodology")
+
+        self.assertIn("This study aims", objective)
+        self.assertIn("84 zero anaphors in 50 informative texts", methodology)
+        self.assertNotIn("TT:", methodology)
 
     def test_verification_stops_replanning_after_one_followup_round(self) -> None:
         state = {

@@ -1932,18 +1932,98 @@ def _sentences(text: str) -> List[str]:
     ]
 
 
+def _sentence_noise_score(sentence: str) -> int:
+    score = 0
+    if len(sentence) < 40:
+        score += 2
+    if len(re.findall(r"[A-Za-z]{1,3}\d", sentence)) > 2:
+        score += 2
+    if sentence.count("[") + sentence.count("]") > 2:
+        score += 2
+    if re.search(r"\b(ST|TT)\s*:", sentence):
+        score += 4
+    if re.search(r"\([A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}", sentence):
+        score += 2
+    if len(re.findall(r"[^\x00-\x7F]", sentence)) > 12:
+        score += 4
+    if any(token in sentence for token in ("Example (", "Examples (", "Word-by-word translation")):
+        score += 5
+    return score
+
+
+def _sentence_relevance_score(sentence: str, keywords: Sequence[str]) -> int:
+    lowered = sentence.lower()
+    score = 0
+    for keyword in keywords:
+        if keyword.lower() in lowered:
+            score += 4
+    if any(token in lowered for token in ("we aim", "this study", "this paper", "the study", "our aims")):
+        score += 2
+    if any(token in lowered for token in ("participants", "sample", "texts", "data", "translated", "analyzed", "collected")):
+        score += 1
+    score -= _sentence_noise_score(sentence)
+    return score
+
+
 def _pick_evidence(text: str, keywords: Sequence[str], fallback_count: int = 2) -> str:
     sentences = _sentences(text)
     if not sentences:
         return ""
-    lowered_keywords = [keyword.lower() for keyword in keywords]
-    matches = [
-        sentence
-        for sentence in sentences
-        if any(keyword in sentence.lower() for keyword in lowered_keywords)
-    ]
-    selected = matches or sentences
+    scored = sorted(
+        (
+            (sentence, _sentence_relevance_score(sentence, keywords))
+            for sentence in sentences
+        ),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    strong = [sentence for sentence, score in scored if score >= 3]
+    usable = [sentence for sentence, score in scored if score >= 0]
+    selected = strong or usable or [sentence for sentence, _ in scored]
     return " ".join(selected[:fallback_count]).strip()
+
+
+def _pick_section_evidence(paper: Dict[str, Any], section: str) -> str:
+    sources: List[Tuple[str, Sequence[str], int]] = []
+    if section == "objective":
+        sources = [
+            (str(paper.get("abstract_claims") or ""), ["aim", "purpose", "investig", "exam", "explor", "objective"], 2),
+            (str(paper.get("conclusion") or ""), ["aim", "purpose", "study"], 1),
+        ]
+    elif section == "theoretical_background":
+        sources = [
+            (" ".join([str(paper.get("abstract_claims") or ""), str(paper.get("conclusion") or "")]), ["background", "literature", "framework", "previous", "prior", "theory"], 2),
+        ]
+    elif section == "methodology":
+        sources = [
+            (str(paper.get("methods") or ""), ["method", "procedure", "design", "data", "analy", "texts", "translation"], 2),
+            (str(paper.get("abstract_claims") or ""), ["data", "analy", "texts", "translation"], 1),
+        ]
+    elif section == "participants":
+        sources = [
+            (str(paper.get("methods") or ""), ["participant", "learner", "student", "sample", "subject", "text", "informative texts", "data set"], 2),
+            (str(paper.get("abstract_claims") or ""), ["participant", "sample", "text", "informative texts"], 1),
+        ]
+    elif section == "key_findings":
+        sources = [
+            (" ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]), ["find", "result", "show", "indicat", "revea"], 2),
+            (str(paper.get("abstract_claims") or ""), ["find", "result", "show"], 1),
+        ]
+    elif section == "limitations":
+        sources = [
+            (" ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]), ["limit", "constraint", "future", "caution", "weakness"], 2),
+        ]
+    elif section == "implications":
+        sources = [
+            (str(paper.get("conclusion") or ""), ["impli", "suggest", "pedagog", "teaching", "practice"], 2),
+            (str(paper.get("abstract_claims") or ""), ["impli", "suggest"], 1),
+        ]
+
+    for text, keywords, fallback_count in sources:
+        evidence = _pick_evidence(text, keywords, fallback_count=fallback_count)
+        if evidence:
+            return evidence
+    return ""
 
 
 def _paper_has_section_evidence(paper: Dict[str, Any], section: str) -> bool:
@@ -2366,39 +2446,9 @@ def _section_report(
     paper: Dict[str, Any],
     section: str,
 ) -> str:
-    if section == "objective":
-        evidence = _pick_evidence(str(paper.get("abstract_claims") or ""), ["aim", "purpose", "investig", "exam", "explor"])
-    elif section == "theoretical_background":
-        evidence = _pick_evidence(
-            " ".join([str(paper.get("abstract_claims") or ""), str(paper.get("conclusion") or "")]),
-            ["background", "literature", "framework", "previous", "prior"],
-        )
-    elif section == "methodology":
-        evidence = _pick_evidence(str(paper.get("methods") or ""), ["method", "procedure", "design", "data"], fallback_count=3)
-    elif section == "participants":
-        evidence = _pick_evidence(str(paper.get("methods") or ""), ["participant", "learner", "student", "sample", "subject", "n=", "n ="], fallback_count=2)
-    elif section == "key_findings":
-        evidence = _pick_evidence(
-            " ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]),
-            ["find", "result", "show", "indicat", "revea"],
-            fallback_count=3,
-        )
-    elif section == "limitations":
-        evidence = _pick_evidence(
-            " ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]),
-            ["limit", "constraint", "future", "caution", "weakness"],
-            fallback_count=2,
-        )
-        if not evidence:
-            evidence = "The extracted sections do not state explicit limitations clearly."
-    elif section == "implications":
-        evidence = _pick_evidence(
-            str(paper.get("conclusion") or ""),
-            ["impli", "suggest", "pedagog", "teaching", "practice"],
-            fallback_count=2,
-        )
-    else:
-        evidence = ""
+    evidence = _pick_section_evidence(paper, section)
+    if section == "limitations" and not evidence:
+        evidence = "The extracted sections do not state explicit limitations clearly."
 
     paper_id = int(paper.get("paper_id") or paper.get("paperId") or 0)
     if not evidence:
