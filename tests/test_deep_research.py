@@ -218,6 +218,52 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
         verification = _build_verification_result(state, [], step_results)
         self.assertTrue(verification["target_resolved"])
 
+    @patch("nodes.deep_research.load_papers_full_by_paper_ids")
+    def test_synthesis_recovers_target_paper_by_paper_id_when_scope_rows_are_missing(
+        self,
+        mock_load_papers_full_by_paper_ids,
+    ) -> None:
+        mock_load_papers_full_by_paper_ids.return_value = [
+            {
+                "paper_id": 111,
+                "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+                "year": "2025",
+                "abstract_claims": "The study investigates discrepancies in zero anaphor translation.",
+                "methods": "The paper analyzes English-to-Thai translation examples.",
+                "results": "The findings identify discourse-level mismatches.",
+                "conclusion": "The paper discusses implications for translation analysis.",
+            }
+        ]
+        state = {
+            "owner_user_id": "user-1",
+            "prompt": 'Analyze "A centering theory analysis of discrepancies on subject Zero Anaphor in English to Thai translation"',
+            "prompt_analysis": {
+                "single_paper": True,
+                "candidate_title": "A centering theory analysis of discrepancies on subject Zero Anaphor in English to Thai translation",
+                "target_paper_id": 111,
+                "target_in_scope": False,
+                "ranked_matches": [
+                    {
+                        "paperId": 111,
+                        "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+                        "score": 200,
+                        "strong_title_match": True,
+                    }
+                ],
+                "requested_sections": ["objective", "methodology", "key_findings"],
+            },
+            "step_results": [],
+            "papers_full": [],
+        }
+
+        synthesis = _execute_tool(
+            {"tool_name": INTERNAL_SYNTHESIZE_TOOL, "tool_input": {}},
+            state,
+        )
+
+        self.assertIn("Focused report on", synthesis["report"])
+        self.assertNotIn("not currently in the selected workspace scope", synthesis["report"])
+
     def test_verification_stops_replanning_after_one_followup_round(self) -> None:
         state = {
             "prompt": 'Analyze "Paper"',

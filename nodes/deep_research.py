@@ -11,6 +11,7 @@ from supabase_http import build_retrying_session
 from workspace_data import (
     build_visualization_analytics,
     filter_dashboard_data,
+    load_papers_full_by_paper_ids,
     load_papers_full_by_run_ids,
     load_workspace_dataset,
     scope_filtered_data_to_runs,
@@ -117,6 +118,29 @@ def _scope_dataset(
             filtered = dict(filtered)
             filtered["papers_full"] = fallback_papers
     return dataset, filtered
+
+
+def _ensure_target_paper_in_filtered_scope(
+    owner_user_id: str,
+    filtered: Dict[str, Any],
+    prompt_analysis: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    analysis = prompt_analysis if isinstance(prompt_analysis, dict) else {}
+    target_paper_id = int(analysis.get("target_paper_id") or 0)
+    if target_paper_id <= 0:
+        return filtered
+
+    papers = list(filtered.get("papers_full") or [])
+    if any(int(paper.get("paper_id") or 0) == target_paper_id for paper in papers):
+        return filtered
+
+    fallback_papers = load_papers_full_by_paper_ids(owner_user_id, [target_paper_id])
+    if not fallback_papers:
+        return filtered
+
+    next_filtered = dict(filtered)
+    next_filtered["papers_full"] = [*papers, *fallback_papers]
+    return next_filtered
 
 
 def _project_folder_ids(owner_user_id: str, project_id: Optional[str]) -> List[str]:
@@ -576,6 +600,8 @@ def _build_planning_snapshot(
     analytics = build_visualization_analytics(filtered)
     papers = list(filtered.get("papers_full") or [])
     prompt_analysis = _analyze_prompt(prompt, papers, selected_run_ids)
+    filtered = _ensure_target_paper_in_filtered_scope(owner_user_id, filtered, prompt_analysis)
+    papers = list(filtered.get("papers_full") or [])
     available_sections = {
         section: sum(1 for paper in papers if str(paper.get(section) or "").strip())
         for section in ("abstract_claims", "methods", "results", "conclusion")
@@ -2206,6 +2232,11 @@ def _target_paper(state: DeepResearchState, step_results: Sequence[Dict[str, Any
     target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
     if target_paper_id and target_paper_id in lookup:
         return lookup[target_paper_id]
+    if target_paper_id:
+        owner_user_id = str(state.get("owner_user_id") or "").strip()
+        fallback_papers = load_papers_full_by_paper_ids(owner_user_id, [target_paper_id])
+        if fallback_papers:
+            return fallback_papers[0]
 
     candidate_title = str(prompt_analysis.get("candidate_title") or "")
     if candidate_title:

@@ -19,6 +19,7 @@ from nodes import consume_usage_summary, start_usage_session  # noqa: E402
 from supabase_http import build_retrying_session  # noqa: E402
 from workspace_data import (  # noqa: E402
     filter_dashboard_data,
+    load_papers_full_by_paper_ids,
     load_papers_full_by_run_ids,
     load_workspace_dataset,
     scope_filtered_data_to_runs,
@@ -364,6 +365,16 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         if fallback_papers:
             filtered = dict(filtered)
             filtered["papers_full"] = fallback_papers
+    prompt_analysis = scope.get("prompt_analysis") if isinstance(scope.get("prompt_analysis"), dict) else {}
+    target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
+    if target_paper_id > 0 and not any(
+        int(paper.get("paper_id") or 0) == target_paper_id
+        for paper in list(filtered.get("papers_full") or [])
+    ):
+        fallback_papers = load_papers_full_by_paper_ids(owner_user_id, [target_paper_id])
+        if fallback_papers:
+            filtered = dict(filtered)
+            filtered["papers_full"] = [*list(filtered.get("papers_full") or []), *fallback_papers]
     return {
         "owner_user_id": owner_user_id,
         "folder_id": folder_id or "",
@@ -372,7 +383,7 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         "thread_id": str(session.get("thread_id") or ""),
         "session_id": str(session.get("id") or ""),
         "prompt": str(session.get("prompt") or ""),
-        "prompt_analysis": scope.get("prompt_analysis") if isinstance(scope.get("prompt_analysis"), dict) else {},
+        "prompt_analysis": prompt_analysis,
         "plan_summary": str(session.get("plan_summary") or ""),
         "requires_analysis": bool(session.get("requires_analysis")),
         "pending_run_count": int(session.get("pending_run_count") or 0),

@@ -162,6 +162,37 @@ def load_papers_full_by_run_ids(
         return []
 
 
+def load_papers_full_by_paper_ids(
+    owner_user_id: Optional[str],
+    paper_ids: Sequence[int],
+) -> List[Dict[str, Any]]:
+    normalized_paper_ids = [
+        int(paper_id)
+        for paper_id in paper_ids
+        if str(paper_id).strip().isdigit() and int(paper_id) > 0
+    ]
+    if not owner_user_id or not normalized_paper_ids:
+        return []
+
+    url = _get_supabase_url()
+    key = _get_service_key()
+    if not url or not key:
+        return []
+
+    try:
+        client = SupabaseQueryClient(url, key)
+        return client.select_rows(
+            "papers_full",
+            {
+                "owner_user_id": f"eq.{owner_user_id}",
+                "paper_id": f"in.({','.join(str(paper_id) for paper_id in normalized_paper_ids)})",
+            },
+        )
+    except Exception as error:
+        logger.warning("paper id fallback load failed: %s", error)
+        return []
+
+
 def _build_mock_workspace_dataset() -> Dict[str, Any]:
     return {
         "mode": "mock",
