@@ -258,6 +258,34 @@ def _extract_quoted_title(prompt: str) -> str:
     return ""
 
 
+def _extract_candidate_title(prompt: str) -> str:
+    quoted = _extract_quoted_title(prompt)
+    if quoted:
+        return quoted
+
+    normalized = _normalize_space(prompt)
+    truncated = re.split(
+        r"(?i)\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b",
+        normalized,
+        maxsplit=1,
+    )[0]
+    patterns = [
+        r"(?i)\bdeep research analysis of\s+(.+)$",
+        r"(?i)\banalysis of\s+(.+)$",
+        r"(?i)\banalyze\s+(.+)$",
+        r"(?i)\banalyse\s+(.+)$",
+        r"(?i)\bresearch\s+(.+)$",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, truncated)
+        if not match:
+            continue
+        candidate = _normalize_space(match.group(1)).strip(" .,:;")
+        if len(candidate) >= 12:
+            return candidate
+    return ""
+
+
 def _extract_author_hint(prompt: str) -> str:
     match = re.search(r'(?i)"[^"]+"\s+by\s+([^.,;\n]+)', prompt)
     if match:
@@ -265,9 +293,9 @@ def _extract_author_hint(prompt: str) -> str:
     return ""
 
 
-def _normalize_search_query(prompt: str, quoted_title: str) -> str:
-    if quoted_title:
-        return quoted_title
+def _normalize_search_query(prompt: str, candidate_title: str) -> str:
+    if candidate_title:
+        return candidate_title
 
     normalized = _normalize_space(prompt)
     normalized = re.sub(
@@ -425,9 +453,10 @@ def _analyze_prompt(
     papers: Sequence[Dict[str, Any]],
     selected_run_ids: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
+    candidate_title = _extract_candidate_title(prompt)
     quoted_title = _extract_quoted_title(prompt)
     requested_sections = _detect_requested_sections(prompt)
-    normalized_query = _normalize_search_query(prompt, quoted_title)
+    normalized_query = _normalize_search_query(prompt, candidate_title)
     lowered = prompt.lower()
     compare = any(token in lowered for token in ("compare", "comparison", "versus", " vs ", "contrast"))
     survey = any(
@@ -445,7 +474,7 @@ def _analyze_prompt(
         token in lowered for token in ("grounded in evidence", "quote", "cite", "evidence")
     )
     analysis = {
-        "single_paper": bool(quoted_title),
+        "single_paper": bool(candidate_title),
         "compare": compare,
         "survey": survey,
         "methodology_focus": methodology_focus,
@@ -453,7 +482,7 @@ def _analyze_prompt(
         "limitations_focus": limitations_focus,
         "evidence_extraction": evidence_extraction,
         "quoted_title": quoted_title,
-        "candidate_title": quoted_title,
+        "candidate_title": candidate_title,
         "author_hint": _extract_author_hint(prompt),
         "normalized_query": normalized_query[:180],
         "requested_sections": requested_sections,
@@ -570,7 +599,7 @@ def _analyze_prompt(
         not compare
         and not requested_sections
         and not survey
-        and (not quoted_title or bool(target_paper))
+        and (not candidate_title or bool(target_paper))
         and not any(token in lowered for token in ("background", "limitations", "implications"))
     )
     analysis["scope_mode"] = "trivial" if trivial else ("broad" if survey else "medium")

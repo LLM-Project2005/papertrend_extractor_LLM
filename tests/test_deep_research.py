@@ -14,6 +14,30 @@ from unittest.mock import patch
 
 
 class DeepResearchPlanningTests(unittest.TestCase):
+    def test_unquoted_named_paper_prompt_is_treated_as_single_paper_lookup(self) -> None:
+        papers = [
+            {
+                "paper_id": 31,
+                "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+                "year": "2025",
+                "ingestion_run_id": "run-target",
+            }
+        ]
+
+        analysis = _analyze_prompt(
+            "Do a deep research analysis of A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation First create a step-by-step plan. Then identify the research objective, theoretical background, methodology, participants, key findings, limitations, and implications. Finish with a structured report grounded in evidence from the paper.",
+            papers,
+            ["run-target"],
+        )
+
+        self.assertTrue(analysis["single_paper"])
+        self.assertEqual(
+            analysis["candidate_title"],
+            "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+        )
+        self.assertTrue(analysis["target_in_scope"])
+        self.assertEqual(analysis["target_paper_id"], 31)
+
     def test_selected_single_run_can_anchor_named_paper_even_with_title_variation(self) -> None:
         papers = [
             {

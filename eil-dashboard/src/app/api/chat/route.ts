@@ -156,6 +156,31 @@ function extractQuotedTitle(prompt: string) {
   return (matches?.[1] ?? matches?.[2] ?? "").trim();
 }
 
+function extractCandidateTitle(prompt: string) {
+  const quoted = extractQuotedTitle(prompt);
+  if (quoted) return quoted;
+  const truncated = prompt
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b/i)[0]
+    .trim();
+  const patterns = [
+    /\bdeep research analysis of\s+(.+)$/i,
+    /\banalysis of\s+(.+)$/i,
+    /\banalyze\s+(.+)$/i,
+    /\banalyse\s+(.+)$/i,
+    /\bresearch\s+(.+)$/i,
+  ];
+  for (const pattern of patterns) {
+    const match = truncated.match(pattern);
+    const candidate = (match?.[1] ?? "").trim().replace(/[.,:;]+$/, "");
+    if (candidate.length >= 12) {
+      return candidate;
+    }
+  }
+  return "";
+}
+
 function normalizeTitle(value: string) {
   return value
     .toLowerCase()
@@ -164,9 +189,9 @@ function normalizeTitle(value: string) {
     .trim();
 }
 
-function normalizeSearchQuery(prompt: string, quotedTitle: string) {
-  if (quotedTitle) {
-    return quotedTitle;
+function normalizeSearchQuery(prompt: string, candidateTitle: string) {
+  if (candidateTitle) {
+    return candidateTitle;
   }
   return prompt
     .replace(/\b(do|please|can you|could you|run|perform)\b/gi, " ")
@@ -226,8 +251,9 @@ function buildLocalPromptAnalysis(
   papers: LocalPlanPaper[],
   selectedRunIds: string[] = []
 ) {
+  const candidateTitle = extractCandidateTitle(prompt);
   const quotedTitle = extractQuotedTitle(prompt);
-  const normalizedQuery = normalizeSearchQuery(prompt, quotedTitle);
+  const normalizedQuery = normalizeSearchQuery(prompt, candidateTitle);
   const lowered = prompt.toLowerCase();
   const requestedSections = detectRequestedSections(prompt);
   const compare = /\b(compare|comparison|versus|contrast)\b/i.test(prompt);
@@ -236,14 +262,14 @@ function buildLocalPromptAnalysis(
     requestedSections.length > 0 || /\b(evidence|cite|quote)\b/i.test(prompt);
   const rankedMatches = papers
     .map((paper) => {
-      const match = titleMatchStrength(quotedTitle, paper.title);
+      const match = titleMatchStrength(candidateTitle, paper.title);
       return {
         paperId: paper.paper_id,
         title: paper.title,
         year: paper.year ?? "Unknown",
         score: match.score,
         strong_title_match: match.strong,
-        exact_normalized_title_match: isExactNormalizedTitleMatch(quotedTitle, paper.title),
+        exact_normalized_title_match: isExactNormalizedTitleMatch(candidateTitle, paper.title),
         ingestion_run_id: paper.ingestion_run_id ?? null,
       };
     })
@@ -253,18 +279,18 @@ function buildLocalPromptAnalysis(
   let target =
     rankedMatches.find((row) => row.exact_normalized_title_match) ??
     rankedMatches.find((row) => row.strong_title_match);
-  if (!target && quotedTitle && selectedRunIds.length > 0) {
+  if (!target && candidateTitle && selectedRunIds.length > 0) {
     const selectedMatches = papers
       .filter((paper) => selectedRunIds.includes(String(paper.ingestion_run_id ?? "")))
       .map((paper) => {
-        const match = titleMatchStrength(quotedTitle, paper.title);
+        const match = titleMatchStrength(candidateTitle, paper.title);
         return {
           paperId: paper.paper_id,
           title: paper.title,
           year: paper.year ?? "Unknown",
           score: match.score,
           strong_title_match: match.strong,
-          exact_normalized_title_match: isExactNormalizedTitleMatch(quotedTitle, paper.title),
+          exact_normalized_title_match: isExactNormalizedTitleMatch(candidateTitle, paper.title),
           ingestion_run_id: paper.ingestion_run_id ?? null,
         };
       });
@@ -272,7 +298,7 @@ function buildLocalPromptAnalysis(
       selectedMatches.find((row) => row.exact_normalized_title_match) ??
       selectedMatches.find((row) => row.strong_title_match);
     if (!target && selectedMatches.length === 1) {
-      const normalizedTargetTokens = new Set(normalizeTitle(quotedTitle).split(" ").filter(Boolean));
+      const normalizedTargetTokens = new Set(normalizeTitle(candidateTitle).split(" ").filter(Boolean));
       const normalizedOnlyTokens = new Set(normalizeTitle(selectedMatches[0].title).split(" ").filter(Boolean));
       let overlap = 0;
       normalizedTargetTokens.forEach((token) => {
@@ -292,9 +318,9 @@ function buildLocalPromptAnalysis(
     !compare &&
     requestedSections.length === 0 &&
     !survey &&
-    (!quotedTitle || Boolean(target));
+    (!candidateTitle || Boolean(target));
   return {
-    single_paper: Boolean(quotedTitle),
+    single_paper: Boolean(candidateTitle),
     compare,
     survey,
     methodology_focus: /\b(method|methods|methodology|participants|sample)\b/i.test(prompt),
@@ -302,20 +328,20 @@ function buildLocalPromptAnalysis(
     limitations_focus: /\b(limitation|limitations|constraint|weakness)\b/i.test(prompt),
     evidence_extraction: evidenceExtraction,
     quoted_title: quotedTitle,
-    candidate_title: quotedTitle,
+    candidate_title: candidateTitle,
     normalized_query: normalizedQuery || prompt.trim(),
     requested_sections: requestedSections,
     target_in_scope: Boolean(target),
     target_paper_id: target?.paperId ?? 0,
     ranked_matches: rankedMatches,
-    primary_intent: quotedTitle
+    primary_intent: candidateTitle
       ? "paper_lookup"
       : compare
         ? "comparison"
         : evidenceExtraction
           ? "evidence_audit"
           : "topic_review",
-    target_entity_type: quotedTitle ? "paper" : "topic",
+    target_entity_type: candidateTitle ? "paper" : "topic",
     requested_output_mode:
       requestedSections.length > 0
         ? "structured_sections"
@@ -325,7 +351,7 @@ function buildLocalPromptAnalysis(
             ? "narrative_review"
             : "plain_summary",
     scope_mode: trivial ? "trivial" : survey ? "broad" : "medium",
-    target_resolution_status: quotedTitle
+    target_resolution_status: candidateTitle
       ? target
         ? "exact_match"
         : rankedMatches.length > 0
