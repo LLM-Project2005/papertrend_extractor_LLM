@@ -133,14 +133,18 @@ function buildFallbackAnswer(question: string, corpusError?: string): string {
 }
 
 type LocalPlanPaper = {
-  paper_id: number;
+  paper_id: number | string;
   title: string;
   year?: string | null;
   ingestion_run_id?: string | null;
+  abstract_claims?: string | null;
+  methods?: string | null;
+  results?: string | null;
+  conclusion?: string | null;
 };
 
-const LOCAL_PAYLOAD_VERSION = 2;
-const LOCAL_PLANNER_VERSION = "hybrid-v1";
+const LOCAL_PAYLOAD_VERSION = 3;
+const LOCAL_PLANNER_VERSION = "hybrid-v2";
 const SECTION_TO_QUERY: Record<string, string> = {
   objective: "research objective",
   theoretical_background: "theoretical background",
@@ -150,6 +154,32 @@ const SECTION_TO_QUERY: Record<string, string> = {
   limitations: "limitations weaknesses constraints",
   implications: "implications significance practice",
 };
+const STOPWORDS = new Set([
+  "about",
+  "after",
+  "analysis",
+  "analyze",
+  "corpus",
+  "create",
+  "deep",
+  "evidence",
+  "finish",
+  "first",
+  "grounded",
+  "identify",
+  "paper",
+  "plan",
+  "please",
+  "report",
+  "research",
+  "review",
+  "step",
+  "steps",
+  "structured",
+  "then",
+  "using",
+  "with",
+]);
 
 function extractQuotedTitle(prompt: string) {
   const matches = prompt.match(/"([^"]{8,})"|'([^']{8,})'/);
@@ -181,12 +211,24 @@ function extractCandidateTitle(prompt: string) {
   return "";
 }
 
+function extractAuthorHint(prompt: string) {
+  const match = prompt.match(/(?:^|["'])[^"']+(?:["'])?\s+by\s+([^.,;\n]+)/i);
+  return (match?.[1] ?? "").trim();
+}
+
 function normalizeTitle(value: string) {
   return value
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function tokenize(value: string) {
+  return normalizeTitle(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 3 && !STOPWORDS.has(token));
 }
 
 function normalizeSearchQuery(prompt: string, candidateTitle: string) {
@@ -222,13 +264,13 @@ function titleMatchStrength(targetTitle: string, paperTitle: string) {
   const normalizedTarget = normalizeTitle(targetTitle);
   const normalizedPaperTitle = normalizeTitle(paperTitle);
   if (!normalizedTarget || !normalizedPaperTitle) {
-    return { strong: false, score: 0 };
+    return { strong: false, ratio: 0 };
   }
   if (normalizedTarget === normalizedPaperTitle) {
-    return { strong: true, score: 200 };
+    return { strong: true, ratio: 1 };
   }
-  const targetTokens = new Set(normalizedTarget.split(" ").filter(Boolean));
-  const titleTokens = new Set(normalizedPaperTitle.split(" ").filter(Boolean));
+  const targetTokens = new Set(tokenize(normalizedTarget));
+  const titleTokens = new Set(tokenize(normalizedPaperTitle));
   let overlap = 0;
   targetTokens.forEach((token) => {
     if (titleTokens.has(token)) overlap += 1;
@@ -237,13 +279,105 @@ function titleMatchStrength(targetTitle: string, paperTitle: string) {
   const strong =
     ratio >= 0.8 ||
     (targetTokens.size >= 4 && normalizedPaperTitle.includes(normalizedTarget));
-  return { strong, score: Math.round(ratio * 120) };
+  return { strong, ratio };
 }
 
 function isExactNormalizedTitleMatch(targetTitle: string, paperTitle: string) {
   const normalizedTarget = normalizeTitle(targetTitle);
   const normalizedPaperTitle = normalizeTitle(paperTitle);
   return Boolean(normalizedTarget) && normalizedTarget === normalizedPaperTitle;
+}
+
+function paperTextHaystack(paper: LocalPlanPaper) {
+  return [
+    paper.title,
+    paper.abstract_claims ?? "",
+    paper.methods ?? "",
+    paper.results ?? "",
+    paper.conclusion ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function paperNoisePenalty(paper: LocalPlanPaper) {
+  const haystack = paperTextHaystack(paper);
+  let penalty = 0;
+  const nonAscii = (haystack.match(/[^\x00-\x7F]/g) ?? []).length;
+  if (nonAscii > 200) penalty += 10;
+  if ((haystack.match(/\bst:|\btt:/g) ?? []).length >= 4) penalty += 6;
+  if (haystack.includes("word-by-word translation")) penalty += 8;
+  return penalty;
+}
+
+function tokenOverlapCount(left: string, right: string) {
+  const leftTokens = new Set(tokenize(left));
+  const rightTokens = new Set(tokenize(right));
+  let overlap = 0;
+  leftTokens.forEach((token) => {
+    if (rightTokens.has(token)) overlap += 1;
+  });
+  return overlap;
+}
+
+function scorePaperMatch(
+  paper: LocalPlanPaper,
+  normalizedQuery: string,
+  candidateTitle: string,
+  authorHint: string,
+  requestedSections: string[],
+  selectedScopeAnchor: boolean
+) {
+  const paperTitle = String(paper.title ?? "");
+  const titleMatch = titleMatchStrength(candidateTitle, paperTitle);
+  const exactNormalizedTitleMatch = isExactNormalizedTitleMatch(candidateTitle, paperTitle);
+  const haystack = paperTextHaystack(paper);
+  const titleComponent = exactNormalizedTitleMatch ? 1000 : Math.round(titleMatch.ratio * 160);
+  const selectedScopeAnchorBonus = selectedScopeAnchor ? 60 : 0;
+  const authorComponent = tokenOverlapCount(authorHint, paperTitle) * 12;
+  const requestedSectionTerms = requestedSections
+    .map((section) => SECTION_TO_QUERY[section] ?? "")
+    .join(" ")
+    .trim();
+  let requestedSectionComponent = 0;
+  tokenize(requestedSectionTerms).forEach((token) => {
+    if (token && haystack.includes(token)) {
+      requestedSectionComponent += 6;
+    }
+  });
+  let generalComponent = 0;
+  tokenize(normalizedQuery).forEach((token) => {
+    if (normalizeTitle(paperTitle).includes(token)) {
+      generalComponent += 8;
+    } else if (haystack.includes(token)) {
+      generalComponent += 3;
+    }
+  });
+  const noisePenalty = paperNoisePenalty(paper);
+  return {
+    paperId: paper.paper_id,
+    title: paper.title,
+    year: paper.year ?? "Unknown",
+    score:
+      titleComponent +
+      selectedScopeAnchorBonus +
+      authorComponent +
+      requestedSectionComponent +
+      generalComponent -
+      noisePenalty,
+    strong_title_match: titleMatch.strong,
+    exact_normalized_title_match: exactNormalizedTitleMatch,
+    selected_scope_anchor: selectedScopeAnchor,
+    score_components: {
+      title: titleComponent,
+      selected_scope_anchor: selectedScopeAnchorBonus,
+      author_hint: authorComponent,
+      requested_sections: requestedSectionComponent,
+      general_content: generalComponent,
+      noise_penalty: -noisePenalty,
+    },
+    ingestion_run_id: paper.ingestion_run_id ?? null,
+  };
 }
 
 function buildLocalPromptAnalysis(
@@ -253,6 +387,7 @@ function buildLocalPromptAnalysis(
 ) {
   const candidateTitle = extractCandidateTitle(prompt);
   const quotedTitle = extractQuotedTitle(prompt);
+  const authorHint = extractAuthorHint(prompt);
   const normalizedQuery = normalizeSearchQuery(prompt, candidateTitle);
   const lowered = prompt.toLowerCase();
   const requestedSections = detectRequestedSections(prompt);
@@ -261,45 +396,47 @@ function buildLocalPromptAnalysis(
   const evidenceExtraction =
     requestedSections.length > 0 || /\b(evidence|cite|quote)\b/i.test(prompt);
   const rankedMatches = papers
-    .map((paper) => {
-      const match = titleMatchStrength(candidateTitle, paper.title);
-      return {
-        paperId: paper.paper_id,
-        title: paper.title,
-        year: paper.year ?? "Unknown",
-        score: match.score,
-        strong_title_match: match.strong,
-        exact_normalized_title_match: isExactNormalizedTitleMatch(candidateTitle, paper.title),
-        ingestion_run_id: paper.ingestion_run_id ?? null,
-      };
-    })
+    .map((paper) =>
+      scorePaperMatch(
+        paper,
+        normalizedQuery,
+        candidateTitle,
+        authorHint,
+        requestedSections,
+        selectedRunIds.includes(String(paper.ingestion_run_id ?? ""))
+      )
+    )
     .filter((row) => row.score > 0 || row.strong_title_match)
-    .sort((a, b) => b.score - a.score)
+    .sort((left, right) => {
+      if (Boolean(left.exact_normalized_title_match) !== Boolean(right.exact_normalized_title_match)) {
+        return Number(Boolean(right.exact_normalized_title_match)) - Number(Boolean(left.exact_normalized_title_match));
+      }
+      if (Boolean(left.selected_scope_anchor) !== Boolean(right.selected_scope_anchor)) {
+        return Number(Boolean(right.selected_scope_anchor)) - Number(Boolean(left.selected_scope_anchor));
+      }
+      if (Boolean(left.strong_title_match) !== Boolean(right.strong_title_match)) {
+        return Number(Boolean(right.strong_title_match)) - Number(Boolean(left.strong_title_match));
+      }
+      return right.score - left.score;
+    })
     .slice(0, 5);
   let target =
     rankedMatches.find((row) => row.exact_normalized_title_match) ??
+    rankedMatches.find((row) => row.selected_scope_anchor && row.strong_title_match) ??
     rankedMatches.find((row) => row.strong_title_match);
   if (!target && candidateTitle && selectedRunIds.length > 0) {
     const selectedMatches = papers
       .filter((paper) => selectedRunIds.includes(String(paper.ingestion_run_id ?? "")))
-      .map((paper) => {
-        const match = titleMatchStrength(candidateTitle, paper.title);
-        return {
-          paperId: paper.paper_id,
-          title: paper.title,
-          year: paper.year ?? "Unknown",
-          score: match.score,
-          strong_title_match: match.strong,
-          exact_normalized_title_match: isExactNormalizedTitleMatch(candidateTitle, paper.title),
-          ingestion_run_id: paper.ingestion_run_id ?? null,
-        };
-      });
+      .map((paper) =>
+        scorePaperMatch(paper, normalizedQuery, candidateTitle, authorHint, requestedSections, true)
+      );
     target =
       selectedMatches.find((row) => row.exact_normalized_title_match) ??
+      selectedMatches.find((row) => row.selected_scope_anchor && row.strong_title_match) ??
       selectedMatches.find((row) => row.strong_title_match);
     if (!target && selectedMatches.length === 1) {
-      const normalizedTargetTokens = new Set(normalizeTitle(candidateTitle).split(" ").filter(Boolean));
-      const normalizedOnlyTokens = new Set(normalizeTitle(selectedMatches[0].title).split(" ").filter(Boolean));
+      const normalizedTargetTokens = new Set(tokenize(candidateTitle));
+      const normalizedOnlyTokens = new Set(tokenize(selectedMatches[0].title));
       let overlap = 0;
       normalizedTargetTokens.forEach((token) => {
         if (normalizedOnlyTokens.has(token)) overlap += 1;
@@ -329,6 +466,7 @@ function buildLocalPromptAnalysis(
     evidence_extraction: evidenceExtraction,
     quoted_title: quotedTitle,
     candidate_title: candidateTitle,
+    author_hint: authorHint,
     normalized_query: normalizedQuery || prompt.trim(),
     requested_sections: requestedSections,
     target_in_scope: Boolean(target),
@@ -377,7 +515,8 @@ function buildLocalQueryBundle(
   primaryQuery: string,
   requestedSections: string[],
   targetTitle: string,
-  exclusionIds: number[] = []
+  exclusionIds: Array<number | string> = [],
+  authorHint = ""
 ) {
   return {
     primary_query: primaryQuery.trim(),
@@ -386,6 +525,8 @@ function buildLocalQueryBundle(
     section_query:
       requestedSections.find((section) => SECTION_TO_QUERY[section]) &&
       SECTION_TO_QUERY[requestedSections.find((section) => SECTION_TO_QUERY[section])!],
+    author_hint: authorHint || null,
+    requested_sections: requestedSections,
     exclusion_ids: exclusionIds,
   };
 }
@@ -408,9 +549,9 @@ function buildLocalTodoInput(args: {
   origin?: "initial" | "replanned" | "verification_generated";
   query: string;
   targetTitle?: string;
-  targetPaperId?: number;
+  targetPaperId?: number | string;
   requestedSections?: string[];
-  exclusionIds?: number[];
+  exclusionIds?: Array<number | string>;
 }) {
   const requestedSections = args.requestedSections ?? [];
   const exclusionIds = args.exclusionIds ?? [];
@@ -428,11 +569,19 @@ function buildLocalTodoInput(args: {
     projectId: args.projectId ?? "",
     selectedRunIds: args.selectedRunIds ?? [],
     promptAnalysis: args.promptAnalysis,
+    queryBundle: buildLocalQueryBundle(
+      args.query,
+      requestedSections,
+      args.targetTitle ?? "",
+      exclusionIds,
+      typeof args.promptAnalysis.author_hint === "string" ? args.promptAnalysis.author_hint : ""
+    ),
     normalizedQuery: buildLocalQueryBundle(
       args.query,
       requestedSections,
       args.targetTitle ?? "",
-      exclusionIds
+      exclusionIds,
+      typeof args.promptAnalysis.author_hint === "string" ? args.promptAnalysis.author_hint : ""
     ),
     query: args.query,
     targetTitle: args.targetTitle ?? undefined,
@@ -463,9 +612,9 @@ function buildLocalTodo(
     completionCondition: string;
     query: string;
     targetTitle?: string;
-    targetPaperId?: number;
+    targetPaperId?: number | string;
     requestedSections?: string[];
-    exclusionIds?: number[];
+    exclusionIds?: Array<number | string>;
   }
 ) {
   return {
@@ -503,7 +652,7 @@ async function loadScopedPlanPapers(
   const normalizedRunIds = await resolveScopedRunIds(supabase, ownerUserId, selectedRunIds);
   let query = supabase
     .from("papers_full")
-    .select("paper_id,title,year,folder_id,ingestion_run_id")
+    .select("paper_id,title,year,folder_id,ingestion_run_id,abstract_claims,methods,results,conclusion")
     .eq("owner_user_id", ownerUserId);
 
   if (normalizedRunIds.length > 0) {
@@ -582,7 +731,11 @@ async function buildLocalResearchPlan(
     : [];
   const normalizedQuery = String(promptAnalysis.normalized_query || prompt).trim();
   const candidateTitle = String(promptAnalysis.candidate_title || "");
-  const targetPaperId = Number(promptAnalysis.target_paper_id || 0);
+  const targetPaperId =
+    (typeof promptAnalysis.target_paper_id === "string" ||
+      typeof promptAnalysis.target_paper_id === "number")
+      ? promptAnalysis.target_paper_id
+      : 0;
   const steps: Array<{
     position: number;
     title: string;

@@ -4,10 +4,12 @@ from nodes.deep_research import (
     INTERNAL_SYNTHESIZE_TOOL,
     INTERNAL_VERIFY_TOOL,
     _analyze_prompt,
+    _build_paper_evidence_items,
     _build_deterministic_plan,
     _build_verification_result,
     _execute_tool,
     _next_pending_step,
+    _score_paper_match,
     _section_report,
     _target_in_scope_effective,
 )
@@ -143,8 +145,9 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertGreaterEqual(len(plan["steps"]), 4)
         self.assertEqual(plan["steps"][-2]["tool_name"], INTERNAL_VERIFY_TOOL)
         self.assertEqual(plan["steps"][-1]["tool_name"], INTERNAL_SYNTHESIZE_TOOL)
-        self.assertEqual(plan["steps"][0]["tool_input"]["payload_version"], 2)
+        self.assertEqual(plan["steps"][0]["tool_input"]["payload_version"], 3)
         self.assertEqual(plan["steps"][0]["tool_input"]["requiredClass"], "required_before_verification")
+        self.assertIn("queryBundle", plan["steps"][0]["tool_input"])
 
     def test_large_target_paper_id_is_serialized_safely_in_plan_payload(self) -> None:
         large_paper_id = 1115913522557912292
@@ -179,6 +182,42 @@ class DeepResearchPlanningTests(unittest.TestCase):
         first_input = plan["steps"][0]["tool_input"]
         self.assertEqual(first_input["targetPaperId"], str(large_paper_id))
         self.assertEqual(first_input["promptAnalysis"]["target_paper_id"], str(large_paper_id))
+        self.assertEqual(first_input["queryBundle"]["exact_title_query"], "Large Paper")
+
+    def test_exact_title_match_outranks_broader_semantic_match(self) -> None:
+        exact = _score_paper_match(
+            {
+                "paper_id": 1,
+                "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+                "abstract_claims": "This study analyzes subject zero anaphor translation.",
+                "methods": "The study analyzes 50 informative texts.",
+                "results": "",
+                "conclusion": "",
+            },
+            "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+            "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+            author_hint="",
+            requested_sections=["methodology"],
+            selected_scope_anchor=False,
+        )
+        semantic = _score_paper_match(
+            {
+                "paper_id": 2,
+                "title": "Translation Mismatches in English and Thai Discourse",
+                "abstract_claims": "This paper discusses discourse mismatches in translation and zero anaphora.",
+                "methods": "The study reviews many translation examples.",
+                "results": "",
+                "conclusion": "",
+            },
+            "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+            "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+            author_hint="",
+            requested_sections=["methodology"],
+            selected_scope_anchor=False,
+        )
+
+        self.assertTrue(exact["exact_normalized_title_match"])
+        self.assertGreater(exact["score"], semantic["score"])
 
     def test_topic_review_plan_stays_multi_step_for_non_trivial_prompt(self) -> None:
         snapshot = {
@@ -347,6 +386,98 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
         self.assertIn("84 zero anaphors in 50 informative texts", methodology)
         self.assertNotIn("TT:", methodology)
 
+    def test_build_paper_evidence_items_marks_participants_unresolved_when_not_explicit(self) -> None:
+        paper = {
+            "paper_id": 111,
+            "title": "A Centering Theory Analysis of Discrepancies on Subject Zero Anaphor in English to Thai Translation",
+            "abstract_claims": "This study aims to analyze zero pronominal translation discrepancies.",
+            "methods": (
+                "The analysis covers 84 zero anaphors in 50 informative texts. "
+                "Example (3) ST: Scientists knew snakes used their sides to push off twigs and rocks but Ø were baffled... "
+                "TT: ก  ."
+            ),
+            "results": "Most zero anaphors occur in Continuation state in both source and target texts.",
+            "conclusion": "The findings suggest centering theory can help explain translation choices.",
+        }
+
+        evidence_items, diagnostics = _build_paper_evidence_items(
+            paper,
+            ["methodology", "participants", "key_findings"],
+        )
+
+        methodology_items = [
+            item for item in evidence_items if item["requested_section"] == "methodology" and item["supports_section"]
+        ]
+        participant_items = [
+            item for item in evidence_items if item["requested_section"] == "participants"
+        ]
+
+        self.assertTrue(methodology_items)
+        self.assertIn("84 zero anaphors in 50 informative texts", methodology_items[0]["snippet"])
+        self.assertNotIn("TT:", methodology_items[0]["snippet"])
+        self.assertEqual(len(participant_items), 1)
+        self.assertFalse(participant_items[0]["supports_section"])
+        self.assertGreaterEqual(diagnostics["discarded_noisy_counts"]["methodology"], 1)
+
+    def test_verification_uses_evidence_items_for_section_coverage(self) -> None:
+        state = {
+            "prompt": 'Analyze "Paper"',
+            "prompt_analysis": {
+                "single_paper": False,
+                "compare": False,
+                "survey": False,
+                "requested_sections": ["objective", "methodology", "participants"],
+            },
+            "papers_full": [],
+        }
+        step_results = [
+            {
+                "position": 2,
+                "raw": {
+                    "evidenceItems": [
+                        {
+                            "paperId": 11,
+                            "title": "Paper",
+                            "section": "abstract_claims",
+                            "requested_section": "objective",
+                            "snippet": "This study aims to examine translation choices.",
+                            "relevance_score": 8,
+                            "noise_score": 0,
+                            "supports_section": True,
+                        },
+                        {
+                            "paperId": 11,
+                            "title": "Paper",
+                            "section": "methods",
+                            "requested_section": "methodology",
+                            "snippet": "The analysis covers 84 zero anaphors in 50 informative texts.",
+                            "relevance_score": 9,
+                            "noise_score": 0,
+                            "supports_section": True,
+                        },
+                        {
+                            "paperId": 11,
+                            "title": "Paper",
+                            "section": "unresolved",
+                            "requested_section": "participants",
+                            "snippet": "The extracted sections do not provide clean grounded evidence about participants or sample characteristics.",
+                            "relevance_score": 0,
+                            "noise_score": 0,
+                            "supports_section": False,
+                        },
+                    ]
+                },
+                "citations": [{"source_id": "11"}],
+            }
+        ]
+
+        verification = _build_verification_result(state, [], step_results)
+
+        self.assertTrue(verification["section_coverage_map"]["objective"])
+        self.assertTrue(verification["section_coverage_map"]["methodology"])
+        self.assertFalse(verification["section_coverage_map"]["participants"])
+        self.assertEqual(verification["section_evidence_counts"]["participants"], 0)
+
     def test_verification_stops_replanning_after_one_followup_round(self) -> None:
         state = {
             "prompt": 'Analyze "Paper"',
@@ -432,6 +563,77 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
 
         self.assertIn("verification", verification)
         self.assertIn("report", synthesis)
+
+    def test_single_paper_synthesis_prefers_evidence_items_and_abstains_narrowly(self) -> None:
+        state = {
+            "prompt": 'Analyze "Paper"',
+            "prompt_analysis": {
+                "single_paper": True,
+                "candidate_title": "Paper",
+                "target_paper_id": 11,
+                "target_in_scope": True,
+                "requested_sections": ["objective", "participants", "key_findings"],
+            },
+            "owner_user_id": "user-1",
+            "papers_full": [
+                {
+                    "paper_id": 11,
+                    "title": "Paper",
+                    "abstract_claims": "This study aims to examine translation choices.",
+                    "methods": "The analysis covers 84 zero anaphors in 50 informative texts.",
+                    "results": "Most zero anaphors occur in Continuation state.",
+                    "conclusion": "The findings suggest centering theory can help explain translation choices.",
+                }
+            ],
+            "step_results": [
+                {
+                    "position": 2,
+                    "raw": {
+                        "evidenceItems": [
+                            {
+                                "paperId": 11,
+                                "title": "Paper",
+                                "section": "abstract_claims",
+                                "requested_section": "objective",
+                                "snippet": "This study aims to examine translation choices.",
+                                "relevance_score": 8,
+                                "noise_score": 0,
+                                "supports_section": True,
+                            },
+                            {
+                                "paperId": 11,
+                                "title": "Paper",
+                                "section": "results",
+                                "requested_section": "key_findings",
+                                "snippet": "Most zero anaphors occur in Continuation state.",
+                                "relevance_score": 8,
+                                "noise_score": 0,
+                                "supports_section": True,
+                            },
+                            {
+                                "paperId": 11,
+                                "title": "Paper",
+                                "section": "unresolved",
+                                "requested_section": "participants",
+                                "snippet": "The extracted sections do not provide clean grounded evidence about participants or sample characteristics.",
+                                "relevance_score": 0,
+                                "noise_score": 0,
+                                "supports_section": False,
+                            },
+                        ]
+                    }
+                }
+            ],
+        }
+
+        synthesis = _execute_tool(
+            {"tool_name": INTERNAL_SYNTHESIZE_TOOL, "tool_input": {}},
+            state,
+        )
+
+        self.assertIn("This study aims to examine translation choices.", synthesis["report"])
+        self.assertIn("Most zero anaphors occur in Continuation state.", synthesis["report"])
+        self.assertIn("do not provide clean grounded evidence about participants", synthesis["report"])
 
 
 if __name__ == "__main__":
