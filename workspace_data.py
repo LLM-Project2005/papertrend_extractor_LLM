@@ -150,16 +150,64 @@ def load_papers_full_by_run_ids(
 
     try:
         client = SupabaseQueryClient(url, key)
+        resolved_run_ids = resolve_related_run_ids(owner_user_id, normalized_run_ids, client)
         return client.select_rows(
             "papers_full",
             {
                 "owner_user_id": f"eq.{owner_user_id}",
-                "ingestion_run_id": f"in.({','.join(normalized_run_ids)})",
+                "ingestion_run_id": f"in.({','.join(resolved_run_ids or normalized_run_ids)})",
             },
         )
     except Exception as error:
         logger.warning("selected run fallback load failed: %s", error)
         return []
+
+
+def resolve_related_run_ids(
+    owner_user_id: Optional[str],
+    selected_run_ids: Sequence[str],
+    client: Optional[SupabaseQueryClient] = None,
+) -> List[str]:
+    normalized_run_ids = [
+        str(run_id).strip()
+        for run_id in selected_run_ids
+        if str(run_id).strip()
+    ]
+    if not owner_user_id or not normalized_run_ids:
+        return normalized_run_ids
+
+    url = _get_supabase_url()
+    key = _get_service_key()
+    if not client and (not url or not key):
+        return normalized_run_ids
+
+    local_client = client or SupabaseQueryClient(url, key)
+    resolved = set(normalized_run_ids)
+    frontier = set(normalized_run_ids)
+
+    try:
+        for _ in range(4):
+            if not frontier:
+                break
+            rows = local_client.select_rows(
+                "ingestion_runs",
+                {
+                    "owner_user_id": f"eq.{owner_user_id}",
+                    "id": f"in.({','.join(sorted(frontier))})",
+                },
+            )
+            frontier = {
+                str(row.get("copied_from_run_id") or "").strip()
+                for row in rows
+                if str(row.get("copied_from_run_id") or "").strip()
+                and str(row.get("copied_from_run_id") or "").strip() not in resolved
+            }
+            resolved.update(frontier)
+    except Exception as error:
+        logger.warning("run alias resolution failed: %s", error)
+        return normalized_run_ids
+
+    return sorted(resolved)
 
 
 def load_papers_full_by_paper_ids(

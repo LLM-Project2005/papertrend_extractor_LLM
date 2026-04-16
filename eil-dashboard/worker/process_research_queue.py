@@ -22,6 +22,7 @@ from workspace_data import (  # noqa: E402
     load_papers_full_by_paper_ids,
     load_papers_full_by_run_ids,
     load_workspace_dataset,
+    resolve_related_run_ids,
     scope_filtered_data_to_runs,
 )
 
@@ -348,6 +349,7 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         for run_id in list(scope.get("selected_run_ids") or [])
         if str(run_id).strip()
     ]
+    resolved_run_ids = resolve_related_run_ids(owner_user_id, selected_run_ids)
     dataset = load_workspace_dataset(
         owner_user_id=owner_user_id,
         folder_id=folder_id,
@@ -359,9 +361,9 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         selected_tracks=[],
         search_query="",
     )
-    filtered = scope_filtered_data_to_runs(filtered, selected_run_ids)
-    if selected_run_ids and not list(filtered.get("papers_full") or []):
-        fallback_papers = load_papers_full_by_run_ids(owner_user_id, selected_run_ids)
+    filtered = scope_filtered_data_to_runs(filtered, resolved_run_ids)
+    if resolved_run_ids and not list(filtered.get("papers_full") or []):
+        fallback_papers = load_papers_full_by_run_ids(owner_user_id, resolved_run_ids)
         if fallback_papers:
             filtered = dict(filtered)
             filtered["papers_full"] = fallback_papers
@@ -375,6 +377,14 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         if fallback_papers:
             filtered = dict(filtered)
             filtered["papers_full"] = [*list(filtered.get("papers_full") or []), *fallback_papers]
+    logger.info(
+        "deep research worker state session=%s selected_runs=%s resolved_runs=%s paper_count=%s target_paper_id=%s",
+        str(session.get("id") or ""),
+        selected_run_ids,
+        resolved_run_ids,
+        len(list(filtered.get("papers_full") or [])),
+        target_paper_id,
+    )
     return {
         "owner_user_id": owner_user_id,
         "folder_id": folder_id or "",

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 from difflib import SequenceMatcher
@@ -14,12 +15,14 @@ from workspace_data import (
     load_papers_full_by_paper_ids,
     load_papers_full_by_run_ids,
     load_workspace_dataset,
+    resolve_related_run_ids,
     scope_filtered_data_to_runs,
 )
 
 research_planning_llm = get_task_llm(ModelTask.RESEARCH_PLANNING)
 research_subtask_llm = get_task_llm(ModelTask.RESEARCH_SUBTASK)
 research_synthesis_llm = get_task_llm(ModelTask.RESEARCH_SYNTHESIS)
+logger = logging.getLogger("papertrend.deep_research")
 
 SECTION_ALIASES = {
     "objective": ("objective", "objectives", "aim", "aims", "purpose", "research objective"),
@@ -111,12 +114,28 @@ def _scope_dataset(
         selected_tracks=[],
         search_query="",
     )
-    filtered = scope_filtered_data_to_runs(filtered, selected_run_ids or [])
-    if list(selected_run_ids or []) and not list(filtered.get("papers_full") or []):
-        fallback_papers = load_papers_full_by_run_ids(owner_user_id, selected_run_ids or [])
+    resolved_run_ids = resolve_related_run_ids(owner_user_id, selected_run_ids or [])
+    logger.info(
+        "deep research scope dataset owner=%s project=%s folder=%s selected_runs=%s resolved_runs=%s initial_papers=%s",
+        owner_user_id,
+        project_id or "",
+        folder_id or "",
+        list(selected_run_ids or []),
+        resolved_run_ids,
+        len(list(filtered.get("papers_full") or [])),
+    )
+    filtered = scope_filtered_data_to_runs(filtered, resolved_run_ids)
+    if resolved_run_ids and not list(filtered.get("papers_full") or []):
+        fallback_papers = load_papers_full_by_run_ids(owner_user_id, resolved_run_ids)
         if fallback_papers:
             filtered = dict(filtered)
             filtered["papers_full"] = fallback_papers
+            logger.info(
+                "deep research scope fallback loaded papers owner=%s resolved_runs=%s paper_count=%s",
+                owner_user_id,
+                resolved_run_ids,
+                len(fallback_papers),
+            )
     return dataset, filtered
 
 
@@ -631,6 +650,16 @@ def _build_planning_snapshot(
     prompt_analysis = _analyze_prompt(prompt, papers, selected_run_ids)
     filtered = _ensure_target_paper_in_filtered_scope(owner_user_id, filtered, prompt_analysis)
     papers = list(filtered.get("papers_full") or [])
+    logger.info(
+        "deep research planning snapshot owner=%s project=%s folder=%s paper_count=%s target_paper_id=%s target_in_scope=%s candidate_title=%s",
+        owner_user_id,
+        project_id or "",
+        folder_id or "",
+        len(papers),
+        int(prompt_analysis.get("target_paper_id") or 0),
+        bool(prompt_analysis.get("target_in_scope")),
+        str(prompt_analysis.get("candidate_title") or ""),
+    )
     available_sections = {
         section: sum(1 for paper in papers if str(paper.get(section) or "").strip())
         for section in ("abstract_claims", "methods", "results", "conclusion")

@@ -500,7 +500,7 @@ async function loadScopedPlanPapers(
   selectedRunIds: string[] = []
 ): Promise<LocalPlanPaper[]> {
   const supabase = getSupabaseAdmin();
-  const normalizedRunIds = selectedRunIds.filter(Boolean);
+  const normalizedRunIds = await resolveScopedRunIds(supabase, ownerUserId, selectedRunIds);
   let query = supabase
     .from("papers_full")
     .select("paper_id,title,year,folder_id,ingestion_run_id")
@@ -533,6 +533,37 @@ async function loadScopedPlanPapers(
     throw new Error(error.message);
   }
   return (data ?? []) as LocalPlanPaper[];
+}
+
+async function resolveScopedRunIds(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  ownerUserId: string,
+  selectedRunIds: string[] = []
+) {
+  const normalizedRunIds = [...new Set(selectedRunIds.filter(Boolean))];
+  if (normalizedRunIds.length === 0) {
+    return normalizedRunIds;
+  }
+
+  const resolved = new Set(normalizedRunIds);
+  let frontier = [...normalizedRunIds];
+
+  for (let depth = 0; depth < 4 && frontier.length > 0; depth += 1) {
+    const { data, error } = await supabase
+      .from("ingestion_runs")
+      .select("id,copied_from_run_id")
+      .eq("owner_user_id", ownerUserId)
+      .in("id", frontier);
+    if (error) {
+      throw new Error(error.message);
+    }
+    frontier = (data ?? [])
+      .map((row) => String((row as { copied_from_run_id?: string | null }).copied_from_run_id ?? ""))
+      .filter((runId) => Boolean(runId) && !resolved.has(runId));
+    frontier.forEach((runId) => resolved.add(runId));
+  }
+
+  return [...resolved];
 }
 
 async function buildLocalResearchPlan(
