@@ -34,8 +34,8 @@ export default function WorkspacePapersClient() {
   const [filterOpen, setFilterOpen] = useState(false);
 
   const linkedPaperId = useMemo(() => {
-    const value = Number.parseInt(searchParams.get("paperId") ?? "", 10);
-    return Number.isFinite(value) ? value : null;
+    const value = (searchParams.get("paperId") ?? "").trim();
+    return value || null;
   }, [searchParams]);
 
   useEffect(() => {

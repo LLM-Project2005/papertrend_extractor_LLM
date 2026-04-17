@@ -147,7 +147,7 @@ export function generateMockData(): DashboardData {
 
       for (const kw of paperKws) {
         trends.push({
-          paper_id: paperId,
+          paper_id: String(paperId),
           year,
           title,
           topic: rng.choice(paperTopics),

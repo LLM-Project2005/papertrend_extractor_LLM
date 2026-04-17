@@ -120,8 +120,8 @@ export default function DashboardClient({
   } | null>(null);
 
   const linkedPaperId = useMemo(() => {
-    const value = Number.parseInt(searchParams.get("paperId") ?? "", 10);
-    return Number.isFinite(value) ? value : null;
+    const value = (searchParams.get("paperId") ?? "").trim();
+    return value || null;
   }, [searchParams]);
   const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
   useEffect(() => {
@@ -414,6 +414,11 @@ export default function DashboardClient({
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
                   {data.useMock ? "Preview data" : "Live data"}
                 </span>
+                {data.diagnostics?.recoveredFromLegacyScope ? (
+                  <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                    Showing recovered legacy analyses
+                  </span>
+                ) : null}
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
                   {planState?.source === "agent" ? "LLM plan" : "Fallback plan"}
                 </span>

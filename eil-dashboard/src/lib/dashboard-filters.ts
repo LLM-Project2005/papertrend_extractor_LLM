@@ -1,5 +1,5 @@
 import { TRACK_COLS } from "@/lib/constants";
-import type { DashboardData, TrackRow } from "@/types/database";
+import type { DashboardData, PaperId, TrackRow } from "@/types/database";
 
 function matchesTrackSelection(row: TrackRow, selectedTracks: string[]): boolean {
   return TRACK_COLS.some((track) => {
@@ -8,8 +8,8 @@ function matchesTrackSelection(row: TrackRow, selectedTracks: string[]): boolean
   });
 }
 
-function collectFallbackPaperIds(data: DashboardData, selectedYears: string[]): Set<number> {
-  return new Set<number>([
+function collectFallbackPaperIds(data: DashboardData, selectedYears: string[]): Set<PaperId> {
+  return new Set<PaperId>([
     ...data.trends
       .filter((row) => selectedYears.includes(row.year))
       .map((row) => row.paper_id),
@@ -56,7 +56,7 @@ export function filterDashboardData(
   const searchMatchedPaperIds =
     normalizedQuery.length === 0
       ? null
-      : new Set<number>([
+      : new Set<PaperId>([
           ...data.trends
             .filter((row) =>
               [

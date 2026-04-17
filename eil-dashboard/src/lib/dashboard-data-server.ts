@@ -1,35 +1,29 @@
 import { generateMockData } from "@/lib/mockData";
+import { normalizePaperId, paperIdFromRunId, paperLookupKey } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type {
   DashboardData,
   DashboardDataMode,
+  PaperId,
   TrackRow,
   TrendRow,
 } from "@/types/database";
 
-function mapTrackRow(row: Record<string, unknown>): TrackRow {
-  return {
-    paper_id: Number(row.paper_id),
-    folder_id: typeof row.folder_id === "string" ? row.folder_id : null,
-    year: String(row.year),
-    title: String(row.title),
-    el: Number(row.el ?? 0),
-    eli: Number(row.eli ?? 0),
-    lae: Number(row.lae ?? 0),
-    other: Number(row.other ?? 0),
-  };
-}
+type PaperMetadata = {
+  paper_id: PaperId;
+  folder_id: string | null;
+  year: string;
+  title: string;
+  ingestion_run_id: string | null;
+};
 
-function mapTrendRow(row: Record<string, unknown>): TrendRow {
+function withDiagnostics(
+  data: DashboardData,
+  diagnostics: NonNullable<DashboardData["diagnostics"]>
+): DashboardData {
   return {
-    paper_id: Number(row.paper_id),
-    folder_id: typeof row.folder_id === "string" ? row.folder_id : null,
-    year: String(row.year),
-    title: String(row.title),
-    topic: String(row.topic),
-    keyword: String(row.keyword),
-    keyword_frequency: Number(row.keyword_frequency ?? 0),
-    evidence: String(row.evidence ?? ""),
+    ...data,
+    diagnostics,
   };
 }
 
@@ -39,7 +33,18 @@ function emptyDashboardData(): DashboardData {
     tracksSingle: [],
     tracksMulti: [],
     useMock: false,
+    diagnostics: null,
   };
+}
+
+function describeScope(folderId?: string | null, projectId?: string | null): string {
+  if (folderId && folderId !== "all") {
+    return "selected folder";
+  }
+  if (projectId && projectId !== "all") {
+    return "selected project";
+  }
+  return "workspace";
 }
 
 function hasAnyDashboardRows(data: DashboardData | null): boolean {
@@ -52,6 +57,102 @@ function hasAnyDashboardRows(data: DashboardData | null): boolean {
     data.tracksSingle.length > 0 ||
     data.tracksMulti.length > 0
   );
+}
+
+function buildMetadataLookups(metadata: PaperMetadata[]) {
+  return {
+    byPaperId: new Map(metadata.map((row) => [row.paper_id, row])),
+    byLookupKey: new Map(metadata.map((row) => [paperLookupKey(row), row])),
+  };
+}
+
+function resolvePaperId(
+  value: unknown,
+  ingestionRunId?: string | null
+): PaperId {
+  return paperIdFromRunId(ingestionRunId) || normalizePaperId(value);
+}
+
+function resolveMetadataForRow(
+  row: Record<string, unknown>,
+  lookups: ReturnType<typeof buildMetadataLookups>
+): PaperMetadata | null {
+  const runId =
+    typeof row.ingestion_run_id === "string" ? row.ingestion_run_id : null;
+  const fromRun = paperIdFromRunId(runId);
+  if (fromRun && lookups.byPaperId.has(fromRun)) {
+    return lookups.byPaperId.get(fromRun) ?? null;
+  }
+
+  const lookupKey = paperLookupKey({
+    folderId: typeof row.folder_id === "string" ? row.folder_id : null,
+    year: String(row.year ?? ""),
+    title: String(row.title ?? ""),
+  });
+  if (lookups.byLookupKey.has(lookupKey)) {
+    return lookups.byLookupKey.get(lookupKey) ?? null;
+  }
+
+  const normalizedPaperId = normalizePaperId(row.paper_id);
+  if (normalizedPaperId && lookups.byPaperId.has(normalizedPaperId)) {
+    return lookups.byPaperId.get(normalizedPaperId) ?? null;
+  }
+
+  if (!normalizedPaperId) {
+    return null;
+  }
+
+  return {
+    paper_id: normalizedPaperId,
+    folder_id: typeof row.folder_id === "string" ? row.folder_id : null,
+    year: String(row.year ?? "Unknown"),
+    title: String(row.title ?? "Untitled paper"),
+    ingestion_run_id: runId,
+  };
+}
+
+function mapTrackRow(
+  row: Record<string, unknown>,
+  lookups: ReturnType<typeof buildMetadataLookups>
+): TrackRow | null {
+  const metadata = resolveMetadataForRow(row, lookups);
+  if (!metadata?.paper_id) {
+    return null;
+  }
+
+  return {
+    paper_id: metadata.paper_id,
+    folder_id:
+      typeof row.folder_id === "string" ? row.folder_id : metadata.folder_id,
+    year: metadata.year,
+    title: metadata.title,
+    el: Number(row.el ?? 0),
+    eli: Number(row.eli ?? 0),
+    lae: Number(row.lae ?? 0),
+    other: Number(row.other ?? 0),
+  };
+}
+
+function mapTrendRow(
+  row: Record<string, unknown>,
+  lookups: ReturnType<typeof buildMetadataLookups>
+): TrendRow | null {
+  const metadata = resolveMetadataForRow(row, lookups);
+  if (!metadata?.paper_id) {
+    return null;
+  }
+
+  return {
+    paper_id: metadata.paper_id,
+    folder_id:
+      typeof row.folder_id === "string" ? row.folder_id : metadata.folder_id,
+    year: metadata.year,
+    title: metadata.title,
+    topic: String(row.topic ?? "Unclassified"),
+    keyword: String(row.keyword ?? ""),
+    keyword_frequency: Number(row.keyword_frequency ?? 0),
+    evidence: String(row.evidence ?? ""),
+  };
 }
 
 async function resolveScopedFolderIds(
@@ -83,11 +184,11 @@ async function resolveScopedFolderIds(
     .filter(Boolean);
 }
 
-async function resolveScopedPaperIds(
+async function resolveScopedRunIds(
   ownerUserId: string,
   scopedFolderIds: string[] | null,
   projectId?: string | null
-): Promise<number[] | null> {
+): Promise<string[] | null> {
   if (!scopedFolderIds && !projectId) {
     return null;
   }
@@ -97,46 +198,72 @@ async function resolveScopedPaperIds(
   }
 
   const supabase = getSupabaseAdmin();
-  const { data: runs, error: runsError } = await supabase
+  const { data, error } = await supabase
     .from("ingestion_runs")
     .select("id")
     .eq("owner_user_id", ownerUserId)
     .in("folder_id", scopedFolderIds ?? []);
 
-  if (runsError) {
-    throw new Error(runsError.message);
+  if (error) {
+    throw new Error(error.message);
   }
 
-  const runIds = (runs ?? [])
+  return (data ?? [])
     .map((row) => String((row as { id?: string | null }).id ?? ""))
     .filter(Boolean);
-  if (runIds.length === 0) {
-    return [];
-  }
+}
 
-  const { data: papers, error: papersError } = await supabase
+async function loadPaperMetadata(
+  ownerUserId: string,
+  scopedRunIds: string[] | null
+): Promise<PaperMetadata[]> {
+  const supabase = getSupabaseAdmin();
+  let query = supabase
     .from("papers_full")
-    .select("paper_id")
-    .eq("owner_user_id", ownerUserId)
-    .in("ingestion_run_id", runIds);
+    .select("paper_id,folder_id,year,title,ingestion_run_id")
+    .eq("owner_user_id", ownerUserId);
 
-  if (papersError) {
-    throw new Error(papersError.message);
+  if (scopedRunIds) {
+    if (scopedRunIds.length === 0) {
+      return [];
+    }
+    query = query.in("ingestion_run_id", scopedRunIds);
   }
 
-  return [...new Set(
-    (papers ?? [])
-      .map((row) => Number((row as { paper_id?: number | null }).paper_id ?? 0))
-      .filter((paperId) => Number.isFinite(paperId) && paperId > 0)
-  )];
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const unique = new Map<PaperId, PaperMetadata>();
+  for (const row of (data ?? []) as Array<Record<string, unknown>>) {
+    const ingestionRunId =
+      typeof row.ingestion_run_id === "string" ? row.ingestion_run_id : null;
+    const paperId = resolvePaperId(row.paper_id, ingestionRunId);
+    if (!paperId) {
+      continue;
+    }
+
+    unique.set(paperId, {
+      paper_id: paperId,
+      folder_id: typeof row.folder_id === "string" ? row.folder_id : null,
+      year: String(row.year ?? "Unknown"),
+      title: String(row.title ?? "Untitled paper"),
+      ingestion_run_id: ingestionRunId,
+    });
+  }
+
+  return [...unique.values()];
 }
 
 async function loadViewData(
   ownerUserId: string,
-  scopedPaperIds: number[] | null,
-  projectId?: string | null
+  scopedPaperIds: PaperId[] | null,
+  metadata: PaperMetadata[]
 ): Promise<DashboardData | null> {
   const supabase = getSupabaseAdmin();
+  const lookups = buildMetadataLookups(metadata);
+  const scopedIdSet = scopedPaperIds ? new Set(scopedPaperIds) : null;
 
   let trendsQuery = supabase
     .from("trends_flat")
@@ -176,103 +303,85 @@ async function loadViewData(
     throw new Error(multiResult.error.message);
   }
 
+  const trends = ((trendsResult.data ?? []) as Record<string, unknown>[])
+    .map((row) => mapTrendRow(row, lookups))
+    .filter((row): row is TrendRow =>
+      Boolean(row && (!scopedIdSet || scopedIdSet.has(row.paper_id)))
+    );
+  const tracksSingle = ((singleResult.data ?? []) as Record<string, unknown>[])
+    .map((row) => mapTrackRow(row, lookups))
+    .filter((row): row is TrackRow =>
+      Boolean(row && (!scopedIdSet || scopedIdSet.has(row.paper_id)))
+    );
+  const tracksMulti = ((multiResult.data ?? []) as Record<string, unknown>[])
+    .map((row) => mapTrackRow(row, lookups))
+    .filter((row): row is TrackRow =>
+      Boolean(row && (!scopedIdSet || scopedIdSet.has(row.paper_id)))
+    );
+
   return {
-    trends: (trendsResult.data ?? []).map((row) => mapTrendRow(row as Record<string, unknown>)),
-    tracksSingle: (singleResult.data ?? []).map((row) =>
-      mapTrackRow(row as Record<string, unknown>)
-    ),
-    tracksMulti: (multiResult.data ?? []).map((row) =>
-      mapTrackRow(row as Record<string, unknown>)
-    ),
+    trends,
+    tracksSingle,
+    tracksMulti,
     useMock: false,
+    diagnostics: null,
   };
 }
 
 async function loadTableData(
   ownerUserId: string,
-  scopedPaperIds: number[] | null,
-  projectId?: string | null
+  metadata: PaperMetadata[]
 ): Promise<DashboardData> {
+  if (metadata.length === 0) {
+    return emptyDashboardData();
+  }
+
   const supabase = getSupabaseAdmin();
-  let papersQuery = supabase
-    .from("papers")
-    .select("id,folder_id,year,title")
-    .eq("owner_user_id", ownerUserId);
+  const paperPayloads = await Promise.all(
+    metadata.map(async (paper) => {
+      const [keywordsResult, singleResult, multiResult] = await Promise.all([
+        supabase
+          .from("paper_keywords")
+          .select("folder_id,topic,keyword,keyword_frequency,evidence")
+          .eq("owner_user_id", ownerUserId)
+          .eq("paper_id", paper.paper_id),
+        supabase
+          .from("paper_tracks_single")
+          .select("folder_id,el,eli,lae,other")
+          .eq("owner_user_id", ownerUserId)
+          .eq("paper_id", paper.paper_id)
+          .maybeSingle(),
+        supabase
+          .from("paper_tracks_multi")
+          .select("folder_id,el,eli,lae,other")
+          .eq("owner_user_id", ownerUserId)
+          .eq("paper_id", paper.paper_id)
+          .maybeSingle(),
+      ]);
 
-  if (scopedPaperIds) {
-    if (scopedPaperIds.length === 0) {
-      return emptyDashboardData();
-    }
-    papersQuery = papersQuery.in("id", scopedPaperIds);
-  } else if (projectId) {
-    return emptyDashboardData();
-  }
-
-  const { data: papers, error: papersError } = await papersQuery;
-  if (papersError) {
-    throw new Error(papersError.message);
-  }
-
-  const paperRows = (papers ?? []) as Array<{
-    id?: number | null;
-    folder_id?: string | null;
-    year?: string | null;
-    title?: string | null;
-  }>;
-  const paperIds = paperRows
-    .map((paper) => Number(paper.id ?? 0))
-    .filter((paperId) => Number.isFinite(paperId) && paperId > 0);
-
-  if (paperIds.length === 0) {
-    return emptyDashboardData();
-  }
-
-  const paperLookup = new Map(
-    paperRows.map((paper) => [
-      Number(paper.id ?? 0),
-      {
-        folder_id: typeof paper.folder_id === "string" ? paper.folder_id : null,
-        year: String(paper.year ?? "Unknown"),
-        title: String(paper.title ?? "Untitled paper"),
-      },
-    ])
-  );
-
-  const [keywordsResult, singleResult, multiResult] = await Promise.all([
-    supabase
-      .from("paper_keywords")
-      .select("paper_id,folder_id,topic,keyword,keyword_frequency,evidence")
-      .in("paper_id", paperIds),
-    supabase
-      .from("paper_tracks_single")
-      .select("paper_id,folder_id,el,eli,lae,other")
-      .in("paper_id", paperIds),
-    supabase
-      .from("paper_tracks_multi")
-      .select("paper_id,folder_id,el,eli,lae,other")
-      .in("paper_id", paperIds),
-  ]);
-
-  if (keywordsResult.error) {
-    throw new Error(keywordsResult.error.message);
-  }
-  if (singleResult.error) {
-    throw new Error(singleResult.error.message);
-  }
-  if (multiResult.error) {
-    throw new Error(multiResult.error.message);
-  }
-
-  const trends: TrendRow[] = ((keywordsResult.data ?? []) as Record<string, unknown>[])
-    .map<TrendRow | null>((row) => {
-      const paperId = Number(row.paper_id ?? 0);
-      const paper = paperLookup.get(paperId);
-      if (!paper) {
-        return null;
+      if (keywordsResult.error) {
+        throw new Error(keywordsResult.error.message);
+      }
+      if (singleResult.error) {
+        throw new Error(singleResult.error.message);
+      }
+      if (multiResult.error) {
+        throw new Error(multiResult.error.message);
       }
 
       return {
-        paper_id: paperId,
+        paper,
+        keywords: (keywordsResult.data ?? []) as Record<string, unknown>[],
+        trackSingle: (singleResult.data as Record<string, unknown> | null) ?? null,
+        trackMulti: (multiResult.data as Record<string, unknown> | null) ?? null,
+      };
+    })
+  );
+
+  const trends: TrendRow[] = paperPayloads.flatMap(({ paper, keywords }) =>
+    keywords
+      .map((row) => ({
+        paper_id: paper.paper_id,
         folder_id:
           typeof row.folder_id === "string" ? row.folder_id : paper.folder_id,
         year: paper.year,
@@ -281,38 +390,56 @@ async function loadTableData(
         keyword: String(row.keyword ?? ""),
         keyword_frequency: Number(row.keyword_frequency ?? 0),
         evidence: String(row.evidence ?? ""),
-      };
-    })
-    .filter((row): row is TrendRow => Boolean(row));
+      }))
+      .filter((row) => row.keyword)
+  );
 
-  const mapTrackRows = (rows: Record<string, unknown>[]) =>
-    rows
-      .map<TrackRow | null>((row) => {
-        const paperId = Number(row.paper_id ?? 0);
-        const paper = paperLookup.get(paperId);
-        if (!paper) {
-          return null;
-        }
+  const tracksSingle: TrackRow[] = paperPayloads.flatMap(({ paper, trackSingle }) =>
+    trackSingle
+      ? [
+          {
+            paper_id: paper.paper_id,
+            folder_id:
+              typeof trackSingle.folder_id === "string"
+                ? trackSingle.folder_id
+                : paper.folder_id,
+            year: paper.year,
+            title: paper.title,
+            el: Number(trackSingle.el ?? 0),
+            eli: Number(trackSingle.eli ?? 0),
+            lae: Number(trackSingle.lae ?? 0),
+            other: Number(trackSingle.other ?? 0),
+          },
+        ]
+      : []
+  );
 
-        return {
-          paper_id: paperId,
-          folder_id:
-            typeof row.folder_id === "string" ? row.folder_id : paper.folder_id,
-          year: paper.year,
-          title: paper.title,
-          el: Number(row.el ?? 0),
-          eli: Number(row.eli ?? 0),
-          lae: Number(row.lae ?? 0),
-          other: Number(row.other ?? 0),
-        };
-      })
-      .filter((row): row is TrackRow => Boolean(row));
+  const tracksMulti: TrackRow[] = paperPayloads.flatMap(({ paper, trackMulti }) =>
+    trackMulti
+      ? [
+          {
+            paper_id: paper.paper_id,
+            folder_id:
+              typeof trackMulti.folder_id === "string"
+                ? trackMulti.folder_id
+                : paper.folder_id,
+            year: paper.year,
+            title: paper.title,
+            el: Number(trackMulti.el ?? 0),
+            eli: Number(trackMulti.eli ?? 0),
+            lae: Number(trackMulti.lae ?? 0),
+            other: Number(trackMulti.other ?? 0),
+          },
+        ]
+      : []
+  );
 
   return {
     trends,
-    tracksSingle: mapTrackRows((singleResult.data ?? []) as Record<string, unknown>[]),
-    tracksMulti: mapTrackRows((multiResult.data ?? []) as Record<string, unknown>[]),
+    tracksSingle,
+    tracksMulti,
     useMock: false,
+    diagnostics: null,
   };
 }
 
@@ -333,7 +460,20 @@ function mergeDashboardSources(
     tracksMulti:
       preferred.tracksMulti.length > 0 ? preferred.tracksMulti : fallback.tracksMulti,
     useMock: false,
+    diagnostics: null,
   };
+}
+
+async function loadScopedDashboardData(
+  ownerUserId: string,
+  scopedRunIds: string[] | null
+): Promise<DashboardData> {
+  const metadata = await loadPaperMetadata(ownerUserId, scopedRunIds);
+  const scopedPaperIds =
+    scopedRunIds === null ? null : metadata.map((paper) => paper.paper_id);
+  const preferred = await loadViewData(ownerUserId, scopedPaperIds, metadata);
+  const fallback = await loadTableData(ownerUserId, metadata);
+  return mergeDashboardSources(preferred, fallback);
 }
 
 export async function loadDashboardDataServer(
@@ -343,48 +483,70 @@ export async function loadDashboardDataServer(
   mode: DashboardDataMode = "auto"
 ): Promise<DashboardData> {
   if (mode === "mock") {
-    return generateMockData();
+    return withDiagnostics(generateMockData(), {
+      dataSource: "mock",
+      recoveredFromLegacyScope: false,
+      scopeDescription: "preview data",
+    });
   }
 
   try {
     if (!ownerUserId) {
-      return generateMockData();
+      return withDiagnostics(generateMockData(), {
+        dataSource: "mock",
+        recoveredFromLegacyScope: false,
+        scopeDescription: "preview data",
+      });
     }
 
+    const scopeDescription = describeScope(folderId, projectId);
     const scopedFolderIds = await resolveScopedFolderIds(
       ownerUserId,
       folderId,
       projectId
     );
-    const scopedPaperIds = await resolveScopedPaperIds(
+    const scopedRunIds = await resolveScopedRunIds(
       ownerUserId,
       scopedFolderIds,
       projectId
     );
-    const preferred = await loadViewData(ownerUserId, scopedPaperIds, projectId);
-    const fallback = await loadTableData(ownerUserId, scopedPaperIds, projectId);
-    const merged = mergeDashboardSources(preferred, fallback);
+    const scopedData = await loadScopedDashboardData(ownerUserId, scopedRunIds);
 
-    if (
-      mode === "auto" &&
-      !folderId &&
-      projectId &&
-      !hasAnyDashboardRows(merged)
-    ) {
-      const ownerWidePreferred = await loadViewData(ownerUserId, null, null);
-      const ownerWideFallback = await loadTableData(ownerUserId, null, null);
-      const ownerWideMerged = mergeDashboardSources(
-        ownerWidePreferred,
-        ownerWideFallback
-      );
+    if (hasAnyDashboardRows(scopedData)) {
+      return withDiagnostics(scopedData, {
+        dataSource: "scoped",
+        recoveredFromLegacyScope: false,
+        scopeDescription,
+      });
+    }
 
-      if (hasAnyDashboardRows(ownerWideMerged)) {
-        return ownerWideMerged;
+    if (mode === "auto" && (folderId || projectId)) {
+      const ownerWideData = await loadScopedDashboardData(ownerUserId, null);
+      if (hasAnyDashboardRows(ownerWideData)) {
+        return withDiagnostics(ownerWideData, {
+          dataSource: "legacy_fallback",
+          recoveredFromLegacyScope: true,
+          scopeDescription,
+        });
       }
     }
 
-    return merged;
+    return withDiagnostics(scopedData, {
+      dataSource: "empty",
+      recoveredFromLegacyScope: false,
+      scopeDescription,
+    });
   } catch {
-    return mode === "live" ? emptyDashboardData() : generateMockData();
+    return mode === "live"
+      ? withDiagnostics(emptyDashboardData(), {
+          dataSource: "empty",
+          recoveredFromLegacyScope: false,
+          scopeDescription: describeScope(folderId, projectId),
+        })
+      : withDiagnostics(generateMockData(), {
+          dataSource: "mock",
+          recoveredFromLegacyScope: false,
+          scopeDescription: "preview data",
+        });
   }
 }

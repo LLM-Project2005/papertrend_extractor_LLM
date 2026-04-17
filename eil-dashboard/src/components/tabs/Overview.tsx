@@ -15,7 +15,7 @@ import {
 import MetricCard from "@/components/MetricCard";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
-import type { TrendRow, TrackRow } from "@/types/database";
+import type { PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationChartKey } from "@/types/visualization";
 
 interface Props {
@@ -55,7 +55,7 @@ export default function Overview({
     years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data";
 
   const papersByYear = Object.entries(
-    [...trends, ...tracksSingle, ...tracksMulti].reduce<Record<string, Set<number>>>(
+    [...trends, ...tracksSingle, ...tracksMulti].reduce<Record<string, Set<PaperId>>>(
       (accumulator, row) => {
         (accumulator[row.year] ??= new Set()).add(row.paper_id);
         return accumulator;

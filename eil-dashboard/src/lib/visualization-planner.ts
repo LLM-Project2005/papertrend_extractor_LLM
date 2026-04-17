@@ -6,7 +6,7 @@ import {
   createDefaultVisualizationPlan,
   sanitizeVisualizationPlan,
 } from "@/lib/visualization-plan";
-import type { DashboardData, TrackRow, TrendRow } from "@/types/database";
+import type { DashboardData, PaperId, TrackRow, TrendRow } from "@/types/database";
 import type {
   NormalizedAnalyticsPayload,
   VisualizationPlan,
@@ -64,7 +64,7 @@ export async function buildNormalizedAnalyticsPayload(
       : "No data";
 
   const yearlyPaperTrend = Object.entries(
-    filteredDashboard.trends.reduce<Record<string, Set<number>>>((accumulator, row) => {
+    filteredDashboard.trends.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
       (accumulator[row.year] ??= new Set()).add(row.paper_id);
       return accumulator;
     }, {})
@@ -79,7 +79,7 @@ export async function buildNormalizedAnalyticsPayload(
     }));
 
   const topicCounts = filteredDashboard.trends.reduce<
-    Record<string, { papers: Set<number>; yearly: Record<string, Set<number>> }>
+    Record<string, { papers: Set<PaperId>; yearly: Record<string, Set<PaperId>> }>
   >((accumulator, row) => {
     const entry = (accumulator[row.topic] ??= { papers: new Set(), yearly: {} });
     entry.papers.add(row.paper_id);
@@ -151,7 +151,7 @@ export async function buildNormalizedAnalyticsPayload(
     filteredDashboard.tracksSingle.map((row) => [row.paper_id, row])
   );
   const trackTopicSections = TRACK_COLS.map((track) => {
-    const counts: Record<string, Set<number>> = {};
+      const counts: Record<string, Set<PaperId>> = {};
     filteredDashboard.trends.forEach((row) => {
       const trackRow = singleTrackByPaper.get(row.paper_id);
       if (!trackRow || trackRow[toTrackField(track)] !== 1) {

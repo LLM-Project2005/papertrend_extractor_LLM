@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { TRACK_COLS } from "@/lib/constants";
 import { CloseIcon, PaperIcon } from "@/components/ui/Icons";
 import Modal from "@/components/ui/Modal";
-import type { TrendRow, TrackRow } from "@/types/database";
+import type { PaperId, TrendRow, TrackRow } from "@/types/database";
 
 interface Props {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
-  linkedPaperId?: number | null;
+  linkedPaperId?: string | null;
 }
 
 const trackField = (track: string) =>
@@ -20,13 +20,13 @@ export default function PaperExplorer({
   tracksSingle,
   linkedPaperId = null,
 }: Props) {
-  const [selectedPaperId, setSelectedPaperId] = useState<number | null>(null);
+  const [selectedPaperId, setSelectedPaperId] = useState<PaperId | null>(null);
 
   const papers = useMemo(() => {
     const map: Record<
-      number,
+      string,
       {
-        paper_id: number;
+        paper_id: PaperId;
         year: string;
         title: string;
         topics: Set<string>;

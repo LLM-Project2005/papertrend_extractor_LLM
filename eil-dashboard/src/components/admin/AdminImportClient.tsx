@@ -12,6 +12,7 @@ import {
 import { createPortal } from "react-dom";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
+import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import Modal from "@/components/ui/Modal";
 import {
@@ -507,6 +508,11 @@ export default function AdminImportClient() {
     return payload;
   }
 
+  async function getRunOpenUrl(run: IngestionRunRow) {
+    const payload = await postRun(run.id, "open");
+    return payload.url ?? null;
+  }
+
   async function handleCreateFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!draftFolderName.trim()) return;
@@ -530,9 +536,9 @@ export default function AdminImportClient() {
   }
 
   async function handlePreviewRun(run: IngestionRunRow) {
-    const payload = await postRun(run.id, "open");
-    if (payload.url) {
-      setPreviewUrl(payload.url);
+    const url = await getRunOpenUrl(run);
+    if (url) {
+      setPreviewUrl(url);
       setPreviewTitle(titleOf(run));
     }
   }
@@ -593,17 +599,17 @@ export default function AdminImportClient() {
   }
 
   async function handleOpenRunInNewTab(run: IngestionRunRow) {
-    const payload = await postRun(run.id, "open");
-    if (payload.url) {
-      window.open(payload.url, "_blank", "noopener,noreferrer");
+    const url = await getRunOpenUrl(run);
+    if (url) {
+      window.open(url, "_blank", "noopener,noreferrer");
     }
   }
 
   async function handleDownloadRun(run: IngestionRunRow) {
-    const payload = await postRun(run.id, "open");
-    if (!payload.url) return;
+    const url = await getRunOpenUrl(run);
+    if (!url) return;
     const anchor = document.createElement("a");
-    anchor.href = payload.url;
+    anchor.href = url;
     anchor.download = titleOf(run);
     anchor.rel = "noopener noreferrer";
     anchor.target = "_blank";
@@ -615,12 +621,24 @@ export default function AdminImportClient() {
   async function handleRenameRun(run: IngestionRunRow) {
     const nextName = window.prompt("Rename file", titleOf(run));
     if (!nextName?.trim()) return;
-    await patchRun(run.id, { action: "rename", value: nextName.trim() });
-    setMessage(`Renamed "${titleOf(run)}".`);
+    const updatedRun = await patchRun(run.id, {
+      action: "rename",
+      value: nextName.trim(),
+    });
+    if (analysisRun?.id === updatedRun.id) {
+      setAnalysisRun(updatedRun);
+    }
+    setMessage(`Renamed "${nextName.trim()}".`);
   }
 
   async function handleToggleFavorite(run: IngestionRunRow) {
-    await patchRun(run.id, { action: "favorite", value: !run.is_favorite });
+    const updatedRun = await patchRun(run.id, {
+      action: "favorite",
+      value: !run.is_favorite,
+    });
+    if (analysisRun?.id === updatedRun.id) {
+      setAnalysisRun(updatedRun);
+    }
   }
 
   async function handleCopyRun(run: IngestionRunRow) {
@@ -2086,6 +2104,30 @@ export default function AdminImportClient() {
       ) : null}
 
       {analysisRun ? (
+        <PaperAnalysisExplorerModal
+          run={analysisRun}
+          detail={analysisDetail}
+          loading={analysisLoading}
+          error={analysisError}
+          onClose={() => {
+            setAnalysisRun(null);
+            setAnalysisDetail(null);
+            setAnalysisError(null);
+          }}
+          onResolvePreviewUrl={() => getRunOpenUrl(analysisRun)}
+          onOpenInNewTab={() => handleOpenRunInNewTab(analysisRun)}
+          onDownload={() => handleDownloadRun(analysisRun)}
+          onToggleFavorite={() => handleToggleFavorite(analysisRun)}
+          onRename={() => handleRenameRun(analysisRun)}
+          onOpenDashboard={() => {
+            if (typeof window !== "undefined") {
+              window.location.assign("/workspace/dashboard");
+            }
+          }}
+        />
+      ) : null}
+
+      {false && analysisRun && analysisDetail ? (
         <Modal
           onClose={() => {
             setAnalysisRun(null);
@@ -2100,14 +2142,14 @@ export default function AdminImportClient() {
                   Pipeline analysis
                 </p>
                 <h2 className="mt-2 truncate text-xl font-semibold text-slate-900 dark:text-white">
-                  {analysisDetail?.title || titleOf(analysisRun)}
+                  {analysisDetail?.title || titleOf(analysisRun!)}
                 </h2>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
                     {analysisDetail?.year || "Year unavailable"}
                   </span>
                   <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
-                    {analysisRun.status === "succeeded" ? "Analysis ready" : analysisRun.status}
+                    {analysisRun!.status === "succeeded" ? "Analysis ready" : analysisRun!.status}
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
                     <ChartIcon className="h-3.5 w-3.5" />
@@ -2143,7 +2185,7 @@ export default function AdminImportClient() {
                   type="button"
                   onClick={async () => {
                     try {
-                      await handlePreviewRun(analysisRun);
+                      await handlePreviewRun(analysisRun!);
                     } catch (previewError) {
                       setAnalysisError(
                         previewError instanceof Error
@@ -2160,7 +2202,7 @@ export default function AdminImportClient() {
                   type="button"
                   onClick={async () => {
                     try {
-                      await handleOpenRunInNewTab(analysisRun);
+                      await handleOpenRunInNewTab(analysisRun!);
                     } catch (openError) {
                       setAnalysisError(
                         openError instanceof Error
@@ -2177,7 +2219,7 @@ export default function AdminImportClient() {
                   type="button"
                   onClick={async () => {
                     try {
-                      await handleDownloadRun(analysisRun);
+                      await handleDownloadRun(analysisRun!);
                     } catch (downloadError) {
                       setAnalysisError(
                         downloadError instanceof Error
@@ -2232,19 +2274,19 @@ export default function AdminImportClient() {
 
               {!analysisLoading && !analysisError && analysisDetail?.available ? (
                 <>
-                  {(analysisDetail.tracksSingle.length > 0 ||
-                    analysisDetail.concepts.length > 0 ||
-                    analysisDetail.facets.length > 0 ||
-                    analysisDetail.tracksMulti.length > 0 ||
-                    analysisDetail.topics.length > 0) ? (
+                  {(analysisDetail!.tracksSingle.length > 0 ||
+                    analysisDetail!.concepts.length > 0 ||
+                    analysisDetail!.facets.length > 0 ||
+                    analysisDetail!.tracksMulti.length > 0 ||
+                    analysisDetail!.topics.length > 0) ? (
                     <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
                       <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
                           Primary track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail.tracksSingle.length > 0 ? (
-                            analysisDetail.tracksSingle.map((track) => (
+                          {analysisDetail!.tracksSingle.length > 0 ? (
+                            analysisDetail!.tracksSingle.map((track) => (
                               <span
                                 key={track}
                                 className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
@@ -2265,8 +2307,8 @@ export default function AdminImportClient() {
                           Cross-track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail.tracksMulti.length > 0 ? (
-                            analysisDetail.tracksMulti.map((track) => (
+                          {analysisDetail!.tracksMulti.length > 0 ? (
+                            analysisDetail!.tracksMulti.map((track) => (
                               <span
                                 key={track}
                                 className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
@@ -2287,8 +2329,8 @@ export default function AdminImportClient() {
                           Concept clusters
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail.concepts.length > 0 ? (
-                            analysisDetail.concepts.slice(0, 6).map((concept) => (
+                          {analysisDetail!.concepts.length > 0 ? (
+                            analysisDetail!.concepts.slice(0, 6).map((concept) => (
                               <span
                                 key={concept.label}
                                 className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
@@ -2309,8 +2351,8 @@ export default function AdminImportClient() {
                           Analytical facets
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail.facets.length > 0 ? (
-                            analysisDetail.facets.slice(0, 6).map((facet, index) => (
+                          {analysisDetail!.facets.length > 0 ? (
+                            analysisDetail!.facets.slice(0, 6).map((facet, index) => (
                               <span
                                 key={`${facet.facetType}-${facet.label}-${index}`}
                                 className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
@@ -2331,8 +2373,8 @@ export default function AdminImportClient() {
                           Pipeline topics
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {analysisDetail.topics.length > 0 ? (
-                            analysisDetail.topics.slice(0, 8).map((topic) => (
+                          {analysisDetail!.topics.length > 0 ? (
+                            analysisDetail!.topics.slice(0, 8).map((topic) => (
                               <span
                                 key={topic}
                                 className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
@@ -2350,7 +2392,7 @@ export default function AdminImportClient() {
                     </section>
                   ) : null}
 
-                  {analysisDetail.concepts.length > 0 ? (
+                  {analysisDetail!.concepts.length > 0 ? (
                     <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -2362,13 +2404,13 @@ export default function AdminImportClient() {
                           </p>
                         </div>
                         <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]">
-                          {analysisDetail.concepts.length} concept
-                          {analysisDetail.concepts.length === 1 ? "" : "s"}
+                          {analysisDetail!.concepts.length} concept
+                          {analysisDetail!.concepts.length === 1 ? "" : "s"}
                         </span>
                       </div>
 
                       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                        {analysisDetail.concepts.slice(0, 8).map((concept) => (
+                        {analysisDetail!.concepts.slice(0, 8).map((concept) => (
                           <article
                             key={concept.label}
                             className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
@@ -2397,7 +2439,7 @@ export default function AdminImportClient() {
                     </section>
                   ) : null}
 
-                  {analysisDetail.facets.length > 0 ? (
+                  {analysisDetail!.facets.length > 0 ? (
                     <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
@@ -2411,7 +2453,7 @@ export default function AdminImportClient() {
                       </div>
 
                       <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                        {analysisDetail.facets.map((facet, index) => (
+                        {analysisDetail!.facets.map((facet, index) => (
                           <article
                             key={`${facet.facetType}-${facet.label}-${index}`}
                             className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
@@ -2433,10 +2475,10 @@ export default function AdminImportClient() {
 
                   <section className="grid gap-4 lg:grid-cols-2">
                     {[
-                      ["Extracted abstract claims", analysisDetail.abstract_claims],
-                      ["Extracted methods", analysisDetail.methods],
-                      ["Extracted results", analysisDetail.results],
-                      ["Extracted conclusion", analysisDetail.conclusion],
+                      ["Extracted abstract claims", analysisDetail!.abstract_claims],
+                      ["Extracted methods", analysisDetail!.methods],
+                      ["Extracted results", analysisDetail!.results],
+                      ["Extracted conclusion", analysisDetail!.conclusion],
                     ].map(([label, content]) => (
                       <article
                         key={label}
@@ -2463,14 +2505,14 @@ export default function AdminImportClient() {
                         </p>
                       </div>
                       <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]">
-                        {analysisDetail.keywords.length} keyword
-                        {analysisDetail.keywords.length === 1 ? "" : "s"}
+                        {analysisDetail!.keywords.length} keyword
+                        {analysisDetail!.keywords.length === 1 ? "" : "s"}
                       </span>
                     </div>
 
                     <div className="mt-4 grid gap-3">
-                      {analysisDetail.keywords.length > 0 ? (
-                        analysisDetail.keywords.slice(0, 10).map((keyword, index) => (
+                      {analysisDetail!.keywords.length > 0 ? (
+                        analysisDetail!.keywords.slice(0, 10).map((keyword, index) => (
                           <article
                             key={`${keyword.keyword}-${index}`}
                             className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"

@@ -341,6 +341,12 @@ export default function WorkspaceHomeClient() {
           </section>
         ) : null}
 
+        {data?.diagnostics?.recoveredFromLegacyScope ? (
+          <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+            Showing recovered historical analyses because the current project scope did not return any canonical rows yet.
+          </section>
+        ) : null}
+
           <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <MetricCard
               label="Papers"
