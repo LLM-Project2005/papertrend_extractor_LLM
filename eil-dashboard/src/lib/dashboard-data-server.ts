@@ -71,57 +71,87 @@ async function resolveScopedFolderIds(
     .filter(Boolean);
 }
 
-function applyFolderScope<T>(
-  query: T,
+async function resolveScopedPaperIds(
+  ownerUserId: string,
   scopedFolderIds: string[] | null,
   projectId?: string | null
-) {
-  if (scopedFolderIds && scopedFolderIds.length > 0) {
-    return (query as { in: (column: string, values: string[]) => T }).in(
-      "folder_id",
-      scopedFolderIds
-    );
-  }
-
-  if (projectId) {
+): Promise<number[] | null> {
+  if (!scopedFolderIds && !projectId) {
     return null;
   }
 
-  return query;
+  if (projectId && (!scopedFolderIds || scopedFolderIds.length === 0)) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data: runs, error: runsError } = await supabase
+    .from("ingestion_runs")
+    .select("id")
+    .eq("owner_user_id", ownerUserId)
+    .in("folder_id", scopedFolderIds ?? []);
+
+  if (runsError) {
+    throw new Error(runsError.message);
+  }
+
+  const runIds = (runs ?? [])
+    .map((row) => String((row as { id?: string | null }).id ?? ""))
+    .filter(Boolean);
+  if (runIds.length === 0) {
+    return [];
+  }
+
+  const { data: papers, error: papersError } = await supabase
+    .from("papers_full")
+    .select("paper_id")
+    .eq("owner_user_id", ownerUserId)
+    .in("ingestion_run_id", runIds);
+
+  if (papersError) {
+    throw new Error(papersError.message);
+  }
+
+  return [...new Set(
+    (papers ?? [])
+      .map((row) => Number((row as { paper_id?: number | null }).paper_id ?? 0))
+      .filter((paperId) => Number.isFinite(paperId) && paperId > 0)
+  )];
 }
 
 async function loadViewData(
   ownerUserId: string,
-  scopedFolderIds: string[] | null,
+  scopedPaperIds: number[] | null,
   projectId?: string | null
 ): Promise<DashboardData | null> {
   const supabase = getSupabaseAdmin();
 
-  const trendsQuery = supabase
+  let trendsQuery = supabase
     .from("trends_flat")
     .select("*")
     .eq("owner_user_id", ownerUserId);
-  const singleQuery = supabase
+  let singleQuery = supabase
     .from("tracks_single_flat")
     .select("*")
     .eq("owner_user_id", ownerUserId);
-  const multiQuery = supabase
+  let multiQuery = supabase
     .from("tracks_multi_flat")
     .select("*")
     .eq("owner_user_id", ownerUserId);
 
-  const scopedTrendsQuery = applyFolderScope(trendsQuery, scopedFolderIds, projectId);
-  const scopedSingleQuery = applyFolderScope(singleQuery, scopedFolderIds, projectId);
-  const scopedMultiQuery = applyFolderScope(multiQuery, scopedFolderIds, projectId);
-
-  if (!scopedTrendsQuery || !scopedSingleQuery || !scopedMultiQuery) {
-    return emptyDashboardData();
+  if (scopedPaperIds) {
+    if (scopedPaperIds.length === 0) {
+      return emptyDashboardData();
+    }
+    trendsQuery = trendsQuery.in("paper_id", scopedPaperIds);
+    singleQuery = singleQuery.in("paper_id", scopedPaperIds);
+    multiQuery = multiQuery.in("paper_id", scopedPaperIds);
   }
 
   const [trendsResult, singleResult, multiResult] = await Promise.all([
-    scopedTrendsQuery,
-    scopedSingleQuery,
-    scopedMultiQuery,
+    trendsQuery,
+    singleQuery,
+    multiQuery,
   ]);
 
   if (trendsResult.error) {
@@ -148,21 +178,25 @@ async function loadViewData(
 
 async function loadTableData(
   ownerUserId: string,
-  scopedFolderIds: string[] | null,
+  scopedPaperIds: number[] | null,
   projectId?: string | null
 ): Promise<DashboardData> {
   const supabase = getSupabaseAdmin();
-  const papersQuery = supabase
+  let papersQuery = supabase
     .from("papers")
     .select("id,folder_id,year,title")
     .eq("owner_user_id", ownerUserId);
 
-  const scopedPapersQuery = applyFolderScope(papersQuery, scopedFolderIds, projectId);
-  if (!scopedPapersQuery) {
+  if (scopedPaperIds) {
+    if (scopedPaperIds.length === 0) {
+      return emptyDashboardData();
+    }
+    papersQuery = papersQuery.in("id", scopedPaperIds);
+  } else if (projectId) {
     return emptyDashboardData();
   }
 
-  const { data: papers, error: papersError } = await scopedPapersQuery;
+  const { data: papers, error: papersError } = await papersQuery;
   if (papersError) {
     throw new Error(papersError.message);
   }
@@ -310,8 +344,13 @@ export async function loadDashboardDataServer(
       folderId,
       projectId
     );
-    const preferred = await loadViewData(ownerUserId, scopedFolderIds, projectId);
-    const fallback = await loadTableData(ownerUserId, scopedFolderIds, projectId);
+    const scopedPaperIds = await resolveScopedPaperIds(
+      ownerUserId,
+      scopedFolderIds,
+      projectId
+    );
+    const preferred = await loadViewData(ownerUserId, scopedPaperIds, projectId);
+    const fallback = await loadTableData(ownerUserId, scopedPaperIds, projectId);
     return mergeDashboardSources(preferred, fallback);
   } catch {
     return mode === "live" ? emptyDashboardData() : generateMockData();

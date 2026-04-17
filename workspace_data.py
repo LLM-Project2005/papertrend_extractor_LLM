@@ -293,6 +293,76 @@ def _scope_rows_to_project(
     ]
 
 
+def _resolve_scoped_folder_ids(
+    client: SupabaseQueryClient,
+    owner_user_id: str,
+    folder_id: Optional[str],
+    project_id: Optional[str],
+) -> Optional[List[str]]:
+    normalized_folder_id = folder_id if folder_id and folder_id != "all" else None
+    normalized_project_id = project_id if project_id and project_id != "all" else None
+    if normalized_folder_id:
+        return [normalized_folder_id]
+    if not normalized_project_id:
+        return None
+
+    folder_rows = client.select_rows(
+        "research_folders",
+        {
+            "owner_user_id": f"eq.{owner_user_id}",
+            "project_id": f"eq.{normalized_project_id}",
+        },
+    )
+    return [
+        str(row.get("id") or "").strip()
+        for row in folder_rows
+        if str(row.get("id") or "").strip()
+    ]
+
+
+def _resolve_scoped_paper_ids(
+    client: SupabaseQueryClient,
+    owner_user_id: str,
+    scoped_folder_ids: Optional[Sequence[str]],
+    project_id: Optional[str],
+) -> Optional[List[int]]:
+    normalized_project_id = project_id if project_id and project_id != "all" else None
+    if scoped_folder_ids is None and not normalized_project_id:
+        return None
+    if scoped_folder_ids is not None and len(scoped_folder_ids) == 0:
+        return []
+
+    run_rows = client.select_rows(
+        "ingestion_runs",
+        {
+            "owner_user_id": f"eq.{owner_user_id}",
+            "folder_id": f"in.({','.join(str(folder_id) for folder_id in scoped_folder_ids or [])})",
+        },
+    )
+    run_ids = [
+        str(row.get("id") or "").strip()
+        for row in run_rows
+        if str(row.get("id") or "").strip()
+    ]
+    if not run_ids:
+        return []
+
+    paper_rows = client.select_rows(
+        "papers_full",
+        {
+            "owner_user_id": f"eq.{owner_user_id}",
+            "ingestion_run_id": f"in.({','.join(run_ids)})",
+        },
+    )
+    return sorted(
+        {
+            int(row.get("paper_id") or 0)
+            for row in paper_rows
+            if int(row.get("paper_id") or 0) > 0
+        }
+    )
+
+
 def load_workspace_dataset(
     owner_user_id: Optional[str] = None,
     folder_id: Optional[str] = None,
@@ -326,10 +396,36 @@ def load_workspace_dataset(
 
     try:
         client = SupabaseQueryClient(url, key)
+        scoped_folder_ids = _resolve_scoped_folder_ids(
+            client,
+            owner_user_id,
+            normalized_folder_id,
+            normalized_project_id,
+        )
+        scoped_paper_ids = _resolve_scoped_paper_ids(
+            client,
+            owner_user_id,
+            scoped_folder_ids,
+            normalized_project_id,
+        )
+
         scoped_params = {"owner_user_id": f"eq.{owner_user_id}"}
-        if normalized_folder_id:
-            scoped_params["folder_id"] = f"eq.{normalized_folder_id}"
-        papers_full = client.select_rows("papers_full", scoped_params)
+        if scoped_paper_ids is not None:
+            if not scoped_paper_ids:
+                dataset = _build_mock_workspace_dataset()
+                dataset["mode"] = "live"
+                _CACHE[_cache_key(owner_user_id, normalized_folder_id, normalized_project_id)] = {
+                    "dataset": dataset,
+                    "loaded_at": now,
+                }
+                return dataset
+            scoped_params["paper_id"] = f"in.({','.join(str(paper_id) for paper_id in scoped_paper_ids)})"
+
+        papers_full_params = {"owner_user_id": f"eq.{owner_user_id}"}
+        if scoped_paper_ids is not None:
+            papers_full_params["paper_id"] = scoped_params["paper_id"]
+
+        papers_full = client.select_rows("papers_full", papers_full_params)
         trends = client.select_rows("trends_flat", scoped_params)
         tracks_single = client.select_rows("tracks_single_flat", scoped_params)
         tracks_multi = client.select_rows("tracks_multi_flat", scoped_params)
@@ -339,26 +435,6 @@ def load_workspace_dataset(
         facets = _try_load_optional(client, "paper_facets_flat", scoped_params)
         if not facets:
             facets = _try_load_optional(client, "paper_analysis_facets", scoped_params)
-
-        if normalized_project_id and not normalized_folder_id:
-            papers_full = _scope_rows_to_project(
-                client, owner_user_id, normalized_project_id, papers_full
-            )
-            trends = _scope_rows_to_project(
-                client, owner_user_id, normalized_project_id, trends
-            )
-            tracks_single = _scope_rows_to_project(
-                client, owner_user_id, normalized_project_id, tracks_single
-            )
-            tracks_multi = _scope_rows_to_project(
-                client, owner_user_id, normalized_project_id, tracks_multi
-            )
-            concepts = _scope_rows_to_project(
-                client, owner_user_id, normalized_project_id, concepts
-            )
-            facets = _scope_rows_to_project(
-                client, owner_user_id, normalized_project_id, facets
-            )
 
         dataset = {
             "mode": "live",

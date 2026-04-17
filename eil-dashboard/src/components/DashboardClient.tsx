@@ -355,29 +355,21 @@ export default function DashboardClient({
                 Classic
               </button>
             </div>
-            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
-              {(["auto", "live", "mock"] as DashboardDataMode[]).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => updateDataMode(mode)}
-                  className={`px-3 py-2 text-sm font-medium capitalize transition-colors ${
-                    dashboardDataMode === mode
-                      ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
-                      : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
-                  }`}
-                  title={
-                    mode === "auto"
-                      ? "Use live data when available and fall back gracefully."
-                      : mode === "live"
-                        ? "Force the dashboard to show only real workspace data."
-                        : "Force the dashboard to use the mock preview dataset."
-                  }
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#bdbdbd]">
+              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-[#8e8e8e]">
+                Data
+              </span>
+              <select
+                value={dashboardDataMode}
+                onChange={(event) => updateDataMode(event.target.value as DashboardDataMode)}
+                className="bg-transparent text-sm font-medium text-slate-700 outline-none dark:text-[#f2f2f2]"
+                title="Debug the dashboard with auto, live, or mock data."
+              >
+                <option value="auto">Auto</option>
+                <option value="live">Live</option>
+                <option value="mock">Mock</option>
+              </select>
+            </label>
             <button
               type="button"
               onClick={() => setFilterOpen(true)}
