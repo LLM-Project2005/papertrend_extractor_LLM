@@ -1258,7 +1258,7 @@ export default function AdminImportClient() {
             }}
             className={itemClass}
           >
-            View analysis
+            View pipeline analysis
           </button>
         ) : null}
         <button
@@ -2095,7 +2095,7 @@ export default function AdminImportClient() {
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#2f2f2f] sm:px-6">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
-                  Analysis result
+                  Pipeline analysis
                 </p>
                 <h2 className="mt-2 truncate text-xl font-semibold text-slate-900 dark:text-white">
                   {analysisDetail?.title || titleOf(analysisRun)}
@@ -2109,7 +2109,7 @@ export default function AdminImportClient() {
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
                     <ChartIcon className="h-3.5 w-3.5" />
-                    <span>{analysisDetail?.available ? "Structured result" : "Preview only"}</span>
+                    <span>{analysisDetail?.available ? "Node output" : "Preview only"}</span>
                   </span>
                 </div>
               </div>
@@ -2127,6 +2127,15 @@ export default function AdminImportClient() {
             </div>
 
             <div className="space-y-5 px-5 py-5 sm:px-6">
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                  This panel shows the fixed pipeline analysis from the workspace nodes.
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                  It is separate from deep research, which is prompt-driven and should be treated as its own workflow.
+                </p>
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -2188,7 +2197,7 @@ export default function AdminImportClient() {
                   }}
                   className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
                 >
-                  Open adaptive charts
+                  Open dashboard charts
                 </button>
               </div>
 
@@ -2227,7 +2236,7 @@ export default function AdminImportClient() {
                     <section className="grid gap-4 lg:grid-cols-3">
                       <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
-                          Single-track classification
+                          Primary track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {analysisDetail.tracksSingle.length > 0 ? (
@@ -2249,7 +2258,7 @@ export default function AdminImportClient() {
 
                       <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
-                          Multi-track classification
+                          Cross-track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {analysisDetail.tracksMulti.length > 0 ? (
@@ -2271,7 +2280,7 @@ export default function AdminImportClient() {
 
                       <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
-                          Topics
+                          Pipeline topics
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
                           {analysisDetail.topics.length > 0 ? (
@@ -2295,10 +2304,10 @@ export default function AdminImportClient() {
 
                   <section className="grid gap-4 lg:grid-cols-2">
                     {[
-                      ["Objective / Abstract", analysisDetail.abstract_claims],
-                      ["Methodology", analysisDetail.methods],
-                      ["Key Findings", analysisDetail.results],
-                      ["Conclusion", analysisDetail.conclusion],
+                      ["Extracted abstract claims", analysisDetail.abstract_claims],
+                      ["Extracted methods", analysisDetail.methods],
+                      ["Extracted results", analysisDetail.results],
+                      ["Extracted conclusion", analysisDetail.conclusion],
                     ].map(([label, content]) => (
                       <article
                         key={label}
@@ -2321,7 +2330,7 @@ export default function AdminImportClient() {
                           Grounded keywords
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
-                          Evidence-backed keyword rows that feed the dashboard and adaptive charts.
+                          Evidence-backed keyword rows that feed the dashboard and chart planner.
                         </p>
                       </div>
                       <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]">

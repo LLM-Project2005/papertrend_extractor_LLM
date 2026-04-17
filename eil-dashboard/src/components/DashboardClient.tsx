@@ -125,10 +125,25 @@ export default function DashboardClient({
   }, [searchParams]);
   const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
   useEffect(() => {
-    if (allYears.length > 0 && selectedYears.length === 0) {
-      setSelectedYears(allYears);
+    if (allYears.length === 0) {
+      return;
     }
-  }, [allYears, selectedYears.length, setSelectedYears]);
+
+    if (selectedYears.length === 0) {
+      setSelectedYears(allYears);
+      return;
+    }
+
+    const nextYears = selectedYears.filter((year) => allYears.includes(year));
+    if (nextYears.length === 0) {
+      setSelectedYears(allYears);
+      return;
+    }
+
+    if (nextYears.length !== selectedYears.length) {
+      setSelectedYears(nextYears);
+    }
+  }, [allYears, selectedYears, setSelectedYears]);
 
   useEffect(() => {
     if (plannerMode !== "agent") {
@@ -363,11 +378,11 @@ export default function DashboardClient({
                 value={dashboardDataMode}
                 onChange={(event) => updateDataMode(event.target.value as DashboardDataMode)}
                 className="bg-transparent text-sm font-medium text-slate-700 outline-none dark:text-[#f2f2f2]"
-                title="Debug the dashboard with auto, live, or mock data."
+                title="Choose whether the dashboard should recover gracefully, force workspace data, or use preview data."
               >
-                <option value="auto">Auto</option>
-                <option value="live">Live</option>
-                <option value="mock">Mock</option>
+                <option value="auto">Smart</option>
+                <option value="live">Workspace</option>
+                <option value="mock">Preview</option>
               </select>
             </label>
             <button

@@ -483,6 +483,8 @@ def filter_dashboard_data(
 
     all_years = sorted({str(row.get("year")) for row in trends})
     years = list(selected_years) or all_years
+    if years and all_years and not any(year in all_years for year in years):
+        years = all_years
     tracks = [track for track in selected_tracks if track in TRACK_COLS] or TRACK_COLS
     normalized_query = search_query.strip().lower()
 
