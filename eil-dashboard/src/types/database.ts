@@ -27,6 +27,8 @@ export interface DashboardData {
   useMock: boolean;
 }
 
+export type DashboardDataMode = "auto" | "live" | "mock";
+
 export interface DbPaper {
   id: number;
   owner_user_id?: string | null;
@@ -164,4 +166,28 @@ export interface PaperFullRow {
   source_filename?: string | null;
   source_path?: string | null;
   ingestion_run_id?: string | null;
+}
+
+export interface RunAnalysisKeyword {
+  keyword: string;
+  topic: string;
+  frequency: number;
+  evidence: string;
+}
+
+export interface RunAnalysisDetail {
+  available: boolean;
+  paper_id?: number | null;
+  title?: string | null;
+  year?: string | null;
+  abstract_claims?: string | null;
+  methods?: string | null;
+  results?: string | null;
+  conclusion?: string | null;
+  source_filename?: string | null;
+  ingestion_run_id?: string | null;
+  topics: string[];
+  keywords: RunAnalysisKeyword[];
+  tracksSingle: string[];
+  tracksMulti: string[];
 }

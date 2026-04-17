@@ -35,7 +35,8 @@ export async function buildNormalizedAnalyticsPayload(
 ): Promise<NormalizedAnalyticsPayload> {
   const data = await loadDashboardDataServer(
     ownerUserId,
-    request.folderId && request.folderId !== "all" ? request.folderId : null
+    request.folderId && request.folderId !== "all" ? request.folderId : null,
+    request.projectId && request.projectId !== "all" ? request.projectId : null
   );
   const years =
     request.selectedYears && request.selectedYears.length > 0

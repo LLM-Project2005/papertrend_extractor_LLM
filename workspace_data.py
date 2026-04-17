@@ -461,7 +461,28 @@ def filter_dashboard_data(
         and _matches_track_selection(row, tracks)
         and (search_matched_paper_ids is None or int(row.get("paper_id")) in search_matched_paper_ids)
     ]
-    allowed_paper_ids = {int(row.get("paper_id")) for row in filtered_track_rows}
+
+    filtered_multi_track_rows = [
+        row
+        for row in tracks_multi
+        if _normalize_year(row.get("year")) in years
+        and _matches_track_selection(row, tracks)
+        and (search_matched_paper_ids is None or int(row.get("paper_id")) in search_matched_paper_ids)
+    ]
+
+    fallback_paper_ids = {
+        int(row.get("paper_id") or 0)
+        for row in [*trends, *tracks_single, *tracks_multi, *concepts, *facets, *papers_full]
+        if _normalize_year(row.get("year")) in years and int(row.get("paper_id") or 0) > 0
+    }
+
+    allowed_paper_ids = (
+        {int(row.get("paper_id") or 0) for row in filtered_track_rows if int(row.get("paper_id") or 0) > 0}
+        if filtered_track_rows
+        else {int(row.get("paper_id") or 0) for row in filtered_multi_track_rows if int(row.get("paper_id") or 0) > 0}
+        if filtered_multi_track_rows
+        else fallback_paper_ids
+    )
 
     return {
         "mode": data.get("mode", "live"),

@@ -12,6 +12,7 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 export default function WorkspacePapersClient() {
   const {
     selectedFolderId,
+    selectedProjectId,
     setSelectedFolderId,
     folders,
     selectedYears,
@@ -24,7 +25,10 @@ export default function WorkspacePapersClient() {
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const { data, loading, allYears } = useDashboardData(
     selectedFolderId,
-    scopedFolderIds
+    scopedFolderIds,
+    {
+      projectId: selectedProjectId,
+    }
   );
   const searchParams = useSearchParams();
   const [filterOpen, setFilterOpen] = useState(false);

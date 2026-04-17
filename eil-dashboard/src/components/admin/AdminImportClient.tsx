@@ -16,6 +16,7 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import Modal from "@/components/ui/Modal";
 import {
   CheckIcon,
+  ChartIcon,
   ChevronDownIcon,
   DownloadIcon,
   DriveIcon,
@@ -37,6 +38,7 @@ import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
   ResearchFolderRow,
+  RunAnalysisDetail,
 } from "@/types/database";
 
 type ViewMode = "list" | "grid";
@@ -78,6 +80,12 @@ type ItemMenuState = {
   item: LibraryEntry;
   top: number;
   left: number;
+};
+
+type RunAnalysisResponse = {
+  run?: IngestionRunRow;
+  analysis?: RunAnalysisDetail;
+  error?: string;
 };
 
 const TYPE_OPTIONS: Array<{ id: TypeFilter; label: string }> = [
@@ -328,6 +336,10 @@ export default function AdminImportClient() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState("");
   const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
+  const [analysisRun, setAnalysisRun] = useState<IngestionRunRow | null>(null);
+  const [analysisDetail, setAnalysisDetail] = useState<RunAnalysisDetail | null>(null);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -353,6 +365,15 @@ export default function AdminImportClient() {
     () => new Map(folders.map((folder) => [folder.id, folder])),
     [folders]
   );
+  const succeededRunIds = useMemo(
+    () =>
+      runs
+        .filter((run) => run.status === "succeeded")
+        .map((run) => run.id)
+        .sort(),
+    [runs]
+  );
+  const visualizationWarmKeyRef = useRef("");
 
   const activeFolder =
     selectedFolderId === "all" ? null : folderById.get(selectedFolderId) ?? null;
@@ -393,6 +414,51 @@ export default function AdminImportClient() {
   useEffect(() => {
     void loadRuns();
   }, [currentProject?.id, requestHeaders, session?.access_token]);
+
+  useEffect(() => {
+    if (!currentProject?.id || !session?.access_token) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void loadRuns();
+    }, 15000);
+
+    return () => window.clearInterval(interval);
+  }, [currentProject?.id, requestHeaders, session?.access_token]);
+
+  useEffect(() => {
+    if (!currentProject?.id || !session?.access_token || succeededRunIds.length === 0) {
+      return;
+    }
+
+    const scopeKey = `${currentProject.id}:${selectedFolderId}:${succeededRunIds.join(",")}`;
+    if (visualizationWarmKeyRef.current === scopeKey) {
+      return;
+    }
+    visualizationWarmKeyRef.current = scopeKey;
+
+    void fetch("/api/visualization-plan", {
+      method: "POST",
+      headers: jsonRequestHeaders,
+      body: JSON.stringify({
+        folderId: selectedFolderId,
+        projectId: currentProject.id,
+        context: {
+          workspaceName: currentProject.name,
+        },
+      }),
+    }).catch(() => {
+      visualizationWarmKeyRef.current = "";
+    });
+  }, [
+    currentProject?.id,
+    currentProject?.name,
+    jsonRequestHeaders,
+    selectedFolderId,
+    session?.access_token,
+    succeededRunIds,
+  ]);
 
   useEffect(() => {
     if (!toolbarPopover && !itemMenuState) return;
@@ -469,6 +535,59 @@ export default function AdminImportClient() {
       setPreviewUrl(payload.url);
       setPreviewTitle(titleOf(run));
     }
+  }
+
+  async function handleViewAnalysis(run: IngestionRunRow) {
+    setAnalysisRun(run);
+    setAnalysisDetail(null);
+    setAnalysisError(null);
+    setAnalysisLoading(true);
+
+    try {
+      const response = await fetch(`/api/workspace/library/${run.id}/analysis`, {
+        headers: requestHeaders,
+      });
+      const payload = (await response.json()) as RunAnalysisResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Failed to load analysis details.");
+      }
+
+      setAnalysisDetail(
+        payload.analysis ?? {
+          available: false,
+          topics: [],
+          keywords: [],
+          tracksSingle: [],
+          tracksMulti: [],
+        }
+      );
+    } catch (analysisLoadError) {
+      setAnalysisError(
+        analysisLoadError instanceof Error
+          ? analysisLoadError.message
+          : "Failed to load analysis details."
+      );
+      throw analysisLoadError;
+    } finally {
+      setAnalysisLoading(false);
+    }
+  }
+
+  async function handleOpenPrimaryFileAction(run: IngestionRunRow) {
+    if (run.status === "succeeded") {
+      try {
+        await handleViewAnalysis(run);
+        return;
+      } catch {
+        setAnalysisRun(null);
+        setAnalysisDetail(null);
+        setAnalysisError(null);
+        // Fall back to preview if analysis details are not reachable.
+      }
+    }
+
+    await handlePreviewRun(run);
   }
 
   async function handleOpenRunInNewTab(run: IngestionRunRow) {
@@ -681,7 +800,7 @@ export default function AdminImportClient() {
     item: LibraryEntry
   ) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const position = getPopoverPosition(rect, 224, item.kind === "folder" ? 160 : 340);
+    const position = getPopoverPosition(rect, 224, item.kind === "folder" ? 160 : 390);
     setItemMenuState({
       item,
       top: position.top,
@@ -776,7 +895,7 @@ export default function AdminImportClient() {
           sourceFilter: sourceLabel === "Google Drive" ? "google-drive" : "upload",
           sourceLabel,
           subtitle,
-          statusLabel: run.status !== "succeeded" ? run.status : null,
+          statusLabel: run.status === "succeeded" ? "analysis ready" : run.status,
           favorite: Boolean(run.is_favorite),
           run,
         };
@@ -1121,6 +1240,27 @@ export default function AdminImportClient() {
         className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#2f2f2f] dark:bg-[#171717]"
         style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
       >
+        {activeMenuRun.status === "succeeded" ? (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await handleViewAnalysis(activeMenuRun);
+              } catch (analysisViewError) {
+                setError(
+                  analysisViewError instanceof Error
+                    ? analysisViewError.message
+                    : "Failed to open analysis details."
+                );
+              } finally {
+                setItemMenuState(null);
+              }
+            }}
+            className={itemClass}
+          >
+            View analysis
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={async () => {
@@ -1508,7 +1648,7 @@ export default function AdminImportClient() {
                             ) : (
                               <button
                                 type="button"
-                                onClick={() => void handlePreviewRun(item.run!)}
+                                onClick={() => void handleOpenPrimaryFileAction(item.run!)}
                                 className="truncate text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
                               >
                                 {item.name}
@@ -1760,7 +1900,7 @@ export default function AdminImportClient() {
                       >
                         <button
                           type="button"
-                          onClick={() => void handlePreviewRun(item.run!)}
+                          onClick={() => void handleOpenPrimaryFileAction(item.run!)}
                           className="flex w-full flex-col text-left"
                         >
                           <div className="relative flex h-44 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(191,219,254,0.75),rgba(255,255,255,0.95))] dark:bg-[radial-gradient(circle_at_top_left,rgba(30,64,175,0.28),rgba(23,23,23,1))]">
@@ -1939,6 +2079,290 @@ export default function AdminImportClient() {
               title={previewTitle}
               className="h-[calc(85vh-65px)] w-full bg-white"
             />
+          </div>
+        </Modal>
+      ) : null}
+
+      {analysisRun ? (
+        <Modal
+          onClose={() => {
+            setAnalysisRun(null);
+            setAnalysisDetail(null);
+            setAnalysisError(null);
+          }}
+        >
+          <div className="max-h-[90vh] w-[min(980px,92vw)] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#111111]">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#2f2f2f] sm:px-6">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                  Analysis result
+                </p>
+                <h2 className="mt-2 truncate text-xl font-semibold text-slate-900 dark:text-white">
+                  {analysisDetail?.title || titleOf(analysisRun)}
+                </h2>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                    {analysisDetail?.year || "Year unavailable"}
+                  </span>
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                    {analysisRun.status === "succeeded" ? "Analysis ready" : analysisRun.status}
+                  </span>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                    <ChartIcon className="h-3.5 w-3.5" />
+                    <span>{analysisDetail?.available ? "Structured result" : "Preview only"}</span>
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setAnalysisRun(null);
+                  setAnalysisDetail(null);
+                  setAnalysisError(null);
+                }}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="space-y-5 px-5 py-5 sm:px-6">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await handlePreviewRun(analysisRun);
+                    } catch (previewError) {
+                      setAnalysisError(
+                        previewError instanceof Error
+                          ? previewError.message
+                          : "Failed to preview file."
+                      );
+                    }
+                  }}
+                  className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-white dark:text-[#171717]"
+                >
+                  Preview PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await handleOpenRunInNewTab(analysisRun);
+                    } catch (openError) {
+                      setAnalysisError(
+                        openError instanceof Error
+                          ? openError.message
+                          : "Failed to open file."
+                      );
+                    }
+                  }}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                >
+                  Open in new tab
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await handleDownloadRun(analysisRun);
+                    } catch (downloadError) {
+                      setAnalysisError(
+                        downloadError instanceof Error
+                          ? downloadError.message
+                          : "Failed to download file."
+                      );
+                    }
+                  }}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                >
+                  Download
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.location.assign("/workspace/dashboard");
+                    }
+                  }}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                >
+                  Open adaptive charts
+                </button>
+              </div>
+
+              {analysisLoading ? (
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#2f2f2f] dark:bg-[#171717]">
+                  <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
+                  <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                    Loading the extracted analysis for this paper...
+                  </p>
+                </div>
+              ) : null}
+
+              {!analysisLoading && analysisError ? (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                  {analysisError}
+                </div>
+              ) : null}
+
+              {!analysisLoading && !analysisError && !analysisDetail?.available ? (
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                  <p className="text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
+                    Analysis details are not ready yet for this file.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                    The PDF is still available, but the extracted paper sections and chart-ready analysis
+                    have not been written back for this run yet.
+                  </p>
+                </div>
+              ) : null}
+
+              {!analysisLoading && !analysisError && analysisDetail?.available ? (
+                <>
+                  {(analysisDetail.tracksSingle.length > 0 ||
+                    analysisDetail.tracksMulti.length > 0 ||
+                    analysisDetail.topics.length > 0) ? (
+                    <section className="grid gap-4 lg:grid-cols-3">
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          Single-track classification
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {analysisDetail.tracksSingle.length > 0 ? (
+                            analysisDetail.tracksSingle.map((track) => (
+                              <span
+                                key={track}
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                              >
+                                {track}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                              No single-track label found.
+                            </span>
+                          )}
+                        </div>
+                      </article>
+
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          Multi-track classification
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {analysisDetail.tracksMulti.length > 0 ? (
+                            analysisDetail.tracksMulti.map((track) => (
+                              <span
+                                key={track}
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                              >
+                                {track}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                              No multi-track label found.
+                            </span>
+                          )}
+                        </div>
+                      </article>
+
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          Topics
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {analysisDetail.topics.length > 0 ? (
+                            analysisDetail.topics.slice(0, 8).map((topic) => (
+                              <span
+                                key={topic}
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                              >
+                                {topic}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                              No topic labels found.
+                            </span>
+                          )}
+                        </div>
+                      </article>
+                    </section>
+                  ) : null}
+
+                  <section className="grid gap-4 lg:grid-cols-2">
+                    {[
+                      ["Objective / Abstract", analysisDetail.abstract_claims],
+                      ["Methodology", analysisDetail.methods],
+                      ["Key Findings", analysisDetail.results],
+                      ["Conclusion", analysisDetail.conclusion],
+                    ].map(([label, content]) => (
+                      <article
+                        key={label}
+                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          {label}
+                        </p>
+                        <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-[#d0d0d0]">
+                          {content?.trim() || "No extracted text was available for this section."}
+                        </p>
+                      </article>
+                    ))}
+                  </section>
+
+                  <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          Grounded keywords
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
+                          Evidence-backed keyword rows that feed the dashboard and adaptive charts.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]">
+                        {analysisDetail.keywords.length} keyword
+                        {analysisDetail.keywords.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3">
+                      {analysisDetail.keywords.length > 0 ? (
+                        analysisDetail.keywords.slice(0, 10).map((keyword, index) => (
+                          <article
+                            key={`${keyword.keyword}-${index}`}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                                {keyword.keyword}
+                              </p>
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                                {keyword.frequency}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+                              {keyword.topic || "Unclassified topic"}
+                            </p>
+                            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                              {keyword.evidence || "No supporting evidence snippet was stored."}
+                            </p>
+                          </article>
+                        ))
+                      ) : (
+                        <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                          No grounded keyword rows were available for this paper.
+                        </p>
+                      )}
+                    </div>
+                  </section>
+                </>
+              ) : null}
+            </div>
           </div>
         </Modal>
       ) : null}

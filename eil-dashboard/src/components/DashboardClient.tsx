@@ -17,6 +17,7 @@ import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import type { TrackKey } from "@/lib/constants";
+import type { DashboardDataMode } from "@/types/database";
 import type { VisualizationPlan } from "@/types/visualization";
 
 const STATIC_TAB_DEFINITIONS = [
@@ -81,8 +82,11 @@ export default function DashboardClient({
 }: {
   basePath?: string;
 }) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const {
     selectedFolderId,
+    selectedProjectId,
     folders,
     setSelectedFolderId,
     selectedYears,
@@ -93,13 +97,21 @@ export default function DashboardClient({
     setSearchQuery,
   } = useWorkspaceProfile();
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const dashboardDataMode: DashboardDataMode =
+    searchParams.get("data") === "mock"
+      ? "mock"
+      : searchParams.get("data") === "live"
+        ? "live"
+        : "auto";
   const { data, loading, allYears } = useDashboardData(
     selectedFolderId,
-    scopedFolderIds
+    scopedFolderIds,
+    {
+      mode: dashboardDataMode,
+      projectId: selectedProjectId,
+    }
   );
   const { session } = useAuth();
-  const router = useRouter();
-  const searchParams = useSearchParams();
 
   const [filterOpen, setFilterOpen] = useState(false);
   const [planState, setPlanState] = useState<{
@@ -116,10 +128,15 @@ export default function DashboardClient({
     if (allYears.length > 0 && selectedYears.length === 0) {
       setSelectedYears(allYears);
     }
-  }, [allYears, selectedYears.length]);
+  }, [allYears, selectedYears.length, setSelectedYears]);
 
   useEffect(() => {
-    if (!data || selectedYears.length === 0 || plannerMode !== "agent") {
+    if (plannerMode !== "agent") {
+      setPlanState(null);
+      return;
+    }
+
+    if (!data || selectedYears.length === 0) {
       return;
     }
 
@@ -129,9 +146,13 @@ export default function DashboardClient({
       selectedTracks as TrackKey[]
     );
 
-    if (!planState) {
-      setPlanState({ plan: fallbackPlan, source: "fallback" });
-    }
+    setPlanState((current) => {
+      if (current?.plan.mode === fallbackPlan.mode) {
+        return current;
+      }
+
+      return { plan: fallbackPlan, source: "fallback" };
+    });
 
     const timer = window.setTimeout(async () => {
       try {
@@ -148,6 +169,7 @@ export default function DashboardClient({
             selectedTracks,
             searchQuery,
             folderId: selectedFolderId,
+            projectId: selectedProjectId,
           }),
         });
 
@@ -177,10 +199,10 @@ export default function DashboardClient({
     };
   }, [
     data,
-    planState,
     plannerMode,
     searchQuery,
     selectedFolderId,
+    selectedProjectId,
     selectedTracks,
     selectedYears,
     session?.access_token,
@@ -244,6 +266,20 @@ export default function DashboardClient({
       params.set("planner", "classic");
     } else {
       params.delete("planner");
+    }
+
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+      scroll: false,
+    });
+  };
+
+  const updateDataMode = (mode: DashboardDataMode) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (mode === "auto") {
+      params.delete("data");
+    } else {
+      params.set("data", mode);
     }
 
     const nextQuery = params.toString();
@@ -319,6 +355,29 @@ export default function DashboardClient({
                 Classic
               </button>
             </div>
+            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
+              {(["auto", "live", "mock"] as DashboardDataMode[]).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => updateDataMode(mode)}
+                  className={`px-3 py-2 text-sm font-medium capitalize transition-colors ${
+                    dashboardDataMode === mode
+                      ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
+                      : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
+                  }`}
+                  title={
+                    mode === "auto"
+                      ? "Use live data when available and fall back gracefully."
+                      : mode === "live"
+                        ? "Force the dashboard to show only real workspace data."
+                        : "Force the dashboard to use the mock preview dataset."
+                  }
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
             <button
               type="button"
               onClick={() => setFilterOpen(true)}
@@ -344,9 +403,14 @@ export default function DashboardClient({
                   {activePlan.summary}
                 </p>
               </div>
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
-                {planState?.source === "agent" ? "LLM plan" : "Fallback plan"}
-              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+                  {data.useMock ? "Preview data" : "Live data"}
+                </span>
+                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+                  {planState?.source === "agent" ? "LLM plan" : "Fallback plan"}
+                </span>
+              </div>
             </div>
           </section>
         ) : null}

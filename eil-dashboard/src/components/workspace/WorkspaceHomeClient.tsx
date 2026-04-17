@@ -73,6 +73,7 @@ export default function WorkspaceHomeClient() {
   const {
     profile,
     folders,
+    selectedProjectId,
     selectedFolderId,
     refreshFolders,
     analysisSession,
@@ -82,7 +83,9 @@ export default function WorkspaceHomeClient() {
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
-  const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds);
+  const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds, {
+    projectId: selectedProjectId,
+  });
   const {
     runs,
     folderJob,
@@ -114,10 +117,20 @@ export default function WorkspaceHomeClient() {
       };
     }
 
-    const papers = new Set(data.trends.map((row) => row.paper_id)).size;
+    const papers = new Set([
+      ...data.trends.map((row) => row.paper_id),
+      ...data.tracksSingle.map((row) => row.paper_id),
+      ...data.tracksMulti.map((row) => row.paper_id),
+    ]).size;
     const topics = new Set(data.trends.map((row) => row.topic)).size;
     const keywords = new Set(data.trends.map((row) => row.keyword)).size;
-    const years = [...new Set(data.trends.map((row) => row.year))].sort();
+    const years = [
+      ...new Set([
+        ...data.trends.map((row) => row.year),
+        ...data.tracksSingle.map((row) => row.year),
+        ...data.tracksMulti.map((row) => row.year),
+      ]),
+    ].sort();
 
     return {
       paperCount: papers.toLocaleString(),

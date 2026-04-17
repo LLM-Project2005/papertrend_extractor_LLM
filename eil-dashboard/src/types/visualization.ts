@@ -59,6 +59,7 @@ export interface VisualizationPlan {
 
 export interface VisualizationPlannerRequest {
   folderId?: string | "all";
+  projectId?: string | "all";
   selectedYears?: string[];
   selectedTracks?: TrackKey[];
   searchQuery?: string;
