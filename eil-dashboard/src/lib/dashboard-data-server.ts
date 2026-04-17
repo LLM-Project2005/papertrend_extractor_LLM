@@ -42,6 +42,18 @@ function emptyDashboardData(): DashboardData {
   };
 }
 
+function hasAnyDashboardRows(data: DashboardData | null): boolean {
+  if (!data) {
+    return false;
+  }
+
+  return (
+    data.trends.length > 0 ||
+    data.tracksSingle.length > 0 ||
+    data.tracksMulti.length > 0
+  );
+}
+
 async function resolveScopedFolderIds(
   ownerUserId: string,
   folderId?: string | null,
@@ -351,7 +363,27 @@ export async function loadDashboardDataServer(
     );
     const preferred = await loadViewData(ownerUserId, scopedPaperIds, projectId);
     const fallback = await loadTableData(ownerUserId, scopedPaperIds, projectId);
-    return mergeDashboardSources(preferred, fallback);
+    const merged = mergeDashboardSources(preferred, fallback);
+
+    if (
+      mode === "auto" &&
+      !folderId &&
+      projectId &&
+      !hasAnyDashboardRows(merged)
+    ) {
+      const ownerWidePreferred = await loadViewData(ownerUserId, null, null);
+      const ownerWideFallback = await loadTableData(ownerUserId, null, null);
+      const ownerWideMerged = mergeDashboardSources(
+        ownerWidePreferred,
+        ownerWideFallback
+      );
+
+      if (hasAnyDashboardRows(ownerWideMerged)) {
+        return ownerWideMerged;
+      }
+    }
+
+    return merged;
   } catch {
     return mode === "live" ? emptyDashboardData() : generateMockData();
   }

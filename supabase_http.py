@@ -83,8 +83,8 @@ class RetryingSession(requests.Session):
 def build_retrying_session(
     headers: Optional[Dict[str, str]] = None,
     *,
-    attempts: int = 4,
-    backoff_seconds: float = 0.75,
+    attempts: int = 6,
+    backoff_seconds: float = 1.0,
     retry_methods: Optional[Sequence[str]] = None,
 ) -> requests.Session:
     session = RetryingSession(
