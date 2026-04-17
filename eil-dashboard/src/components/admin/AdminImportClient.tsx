@@ -558,6 +558,8 @@ export default function AdminImportClient() {
           available: false,
           topics: [],
           keywords: [],
+          concepts: [],
+          facets: [],
           tracksSingle: [],
           tracksMulti: [],
         }
@@ -2231,9 +2233,11 @@ export default function AdminImportClient() {
               {!analysisLoading && !analysisError && analysisDetail?.available ? (
                 <>
                   {(analysisDetail.tracksSingle.length > 0 ||
+                    analysisDetail.concepts.length > 0 ||
+                    analysisDetail.facets.length > 0 ||
                     analysisDetail.tracksMulti.length > 0 ||
                     analysisDetail.topics.length > 0) ? (
-                    <section className="grid gap-4 lg:grid-cols-3">
+                    <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
                       <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
                           Primary track classification
@@ -2280,6 +2284,50 @@ export default function AdminImportClient() {
 
                       <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          Concept clusters
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {analysisDetail.concepts.length > 0 ? (
+                            analysisDetail.concepts.slice(0, 6).map((concept) => (
+                              <span
+                                key={concept.label}
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                              >
+                                {concept.label}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                              No concept clusters were stored.
+                            </span>
+                          )}
+                        </div>
+                      </article>
+
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          Analytical facets
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {analysisDetail.facets.length > 0 ? (
+                            analysisDetail.facets.slice(0, 6).map((facet, index) => (
+                              <span
+                                key={`${facet.facetType}-${facet.label}-${index}`}
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                              >
+                                {facet.label}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                              No analytical facets were stored.
+                            </span>
+                          )}
+                        </div>
+                      </article>
+
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
                           Pipeline topics
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2299,6 +2347,87 @@ export default function AdminImportClient() {
                           )}
                         </div>
                       </article>
+                    </section>
+                  ) : null}
+
+                  {analysisDetail.concepts.length > 0 ? (
+                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                            Canonical concepts
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
+                            Grouped concept families produced by the node pipeline.
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]">
+                          {analysisDetail.concepts.length} concept
+                          {analysisDetail.concepts.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                        {analysisDetail.concepts.slice(0, 8).map((concept) => (
+                          <article
+                            key={concept.label}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                              <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                                {concept.label}
+                              </p>
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                                {concept.totalFrequency}
+                              </span>
+                            </div>
+                            {concept.matchedTerms.length > 0 ? (
+                              <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+                                {concept.matchedTerms.slice(0, 5).join(" • ")}
+                              </p>
+                            ) : null}
+                            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                              {concept.firstEvidence ||
+                                concept.evidenceSnippets[0] ||
+                                "No concept evidence snippet was stored."}
+                            </p>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  {analysisDetail.facets.length > 0 ? (
+                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                            Analytical facets
+                          </p>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
+                            Higher-level labels extracted by the analysis nodes.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                        {analysisDetail.facets.map((facet, index) => (
+                          <article
+                            key={`${facet.facetType}-${facet.label}-${index}`}
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
+                          >
+                            <p className="text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+                              {facet.facetType.replace(/_/g, " ")}
+                            </p>
+                            <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                              {facet.label}
+                            </p>
+                            <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                              {facet.evidence || "No supporting facet evidence was stored."}
+                            </p>
+                          </article>
+                        ))}
+                      </div>
                     </section>
                   ) : null}
 

@@ -175,6 +175,21 @@ export interface RunAnalysisKeyword {
   evidence: string;
 }
 
+export interface RunAnalysisConcept {
+  label: string;
+  matchedTerms: string[];
+  relatedKeywords: string[];
+  totalFrequency: number;
+  firstEvidence: string;
+  evidenceSnippets: string[];
+}
+
+export interface RunAnalysisFacet {
+  facetType: string;
+  label: string;
+  evidence: string;
+}
+
 export interface RunAnalysisDetail {
   available: boolean;
   paper_id?: number | null;
@@ -188,6 +203,8 @@ export interface RunAnalysisDetail {
   ingestion_run_id?: string | null;
   topics: string[];
   keywords: RunAnalysisKeyword[];
+  concepts: RunAnalysisConcept[];
+  facets: RunAnalysisFacet[];
   tracksSingle: string[];
   tracksMulti: string[];
 }
