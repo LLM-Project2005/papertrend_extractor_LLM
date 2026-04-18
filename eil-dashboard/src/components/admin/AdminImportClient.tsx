@@ -1084,7 +1084,10 @@ export default function AdminImportClient() {
   const fileEntries = useMemo<LibraryEntry[]>(() => {
     return runs
       .filter((run) => {
-        if (selectedFolderId !== "all" && run.folder_id !== selectedFolderId) {
+        if (selectedFolderId === "all") {
+          return !run.folder_id;
+        }
+        if (run.folder_id !== selectedFolderId) {
           return false;
         }
         return !run.trashed_at;
@@ -1796,7 +1799,7 @@ export default function AdminImportClient() {
               <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
                 {activeFolder
                   ? `Showing everything inside ${activeFolder.name}.`
-                  : "Folders and files are mixed together in one library view."}
+                  : "Showing top-level folders and root files in this project."}
               </p>
             </div>
           </div>

@@ -18,6 +18,31 @@ const ADAPTIVE_CHART_KEYS: VisualizationChartKey[] = [
   "adaptive_track_topic_comparison",
 ];
 
+type AdaptiveRubricCategory = "time" | "comparison" | "structure";
+
+const ADAPTIVE_CHART_RUBRIC_CATEGORIES: Record<
+  VisualizationChartKey,
+  AdaptiveRubricCategory[]
+> = {
+  overview_metrics: [],
+  papers_per_year: [],
+  track_single_breakdown: [],
+  track_multi_breakdown: [],
+  topic_area: [],
+  emerging_topics: [],
+  declining_topics: [],
+  keyword_heatmap: [],
+  track_year_stacked: [],
+  track_cooccurrence: [],
+  topics_per_track: [],
+  paper_table: [],
+  adaptive_topic_momentum: ["time"],
+  adaptive_emerging_topics: ["structure"],
+  adaptive_folder_topic_comparison: ["comparison"],
+  adaptive_keyword_family_heatmap: ["time", "structure"],
+  adaptive_track_topic_comparison: ["comparison", "structure"],
+};
+
 function clampInteger(
   value: unknown,
   fallback: number,
@@ -74,6 +99,64 @@ function sanitizeConfig(
   }
 
   return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function getAdaptiveRubricCategories(chartKey: VisualizationChartKey) {
+  return ADAPTIVE_CHART_RUBRIC_CATEGORIES[chartKey] ?? [];
+}
+
+function dedupeChartsByKey(charts: VisualizationPlanChart[]) {
+  const seen = new Set<VisualizationChartKey>();
+  return charts.filter((chart) => {
+    if (seen.has(chart.chart_key)) {
+      return false;
+    }
+    seen.add(chart.chart_key);
+    return true;
+  });
+}
+
+function chartSatisfiesAnyCategory(
+  chart: VisualizationPlanChart,
+  categories: AdaptiveRubricCategory[]
+) {
+  const chartCategories = getAdaptiveRubricCategories(chart.chart_key);
+  return categories.some((category) => chartCategories.includes(category));
+}
+
+function enforceAdaptiveCoreRubric(
+  charts: VisualizationPlanChart[],
+  fallbackCharts: VisualizationPlanChart[]
+) {
+  const rubricOrder: AdaptiveRubricCategory[] = ["time", "comparison", "structure"];
+  const nextCharts = dedupeChartsByKey(charts);
+
+  for (const category of rubricOrder) {
+    if (nextCharts.some((chart) => getAdaptiveRubricCategories(chart.chart_key).includes(category))) {
+      continue;
+    }
+
+    const fallbackMatch = fallbackCharts.find(
+      (chart) =>
+        !nextCharts.some((entry) => entry.chart_key === chart.chart_key) &&
+        getAdaptiveRubricCategories(chart.chart_key).includes(category)
+    );
+
+    if (fallbackMatch) {
+      nextCharts.push(fallbackMatch);
+    }
+  }
+
+  const preferredOrder = fallbackCharts.map((chart) => chart.chart_key);
+  return dedupeChartsByKey(nextCharts)
+    .sort((left, right) => {
+      const leftIndex = preferredOrder.indexOf(left.chart_key);
+      const rightIndex = preferredOrder.indexOf(right.chart_key);
+      const normalizedLeft = leftIndex === -1 ? Number.MAX_SAFE_INTEGER : leftIndex;
+      const normalizedRight = rightIndex === -1 ? Number.MAX_SAFE_INTEGER : rightIndex;
+      return normalizedLeft - normalizedRight;
+    })
+    .slice(0, 5);
 }
 
 function buildAdaptiveSection(
@@ -161,6 +244,10 @@ export function sanitizeVisualizationPlan(
     selectedTracks,
     includeFolderComparison
   );
+  const fallbackAdaptiveSection = fallback.sections.find(
+    (section) => section.section_key === "adaptive"
+  );
+  const fallbackCharts = fallbackAdaptiveSection?.charts ?? [];
   if (!rawPlan || typeof rawPlan !== "object") {
     return fallback;
   }
@@ -218,7 +305,9 @@ export function sanitizeVisualizationPlan(
     .filter((chart): chart is VisualizationPlanChart => Boolean(chart))
     .slice(0, 5);
 
-  if (charts.length === 0) {
+  const rubricSafeCharts = enforceAdaptiveCoreRubric(charts, fallbackCharts);
+
+  if (rubricSafeCharts.length === 0) {
     return fallback;
   }
 
@@ -247,7 +336,7 @@ export function sanitizeVisualizationPlan(
           String((chartsInput as Record<string, unknown>).reason).trim()
             ? String((chartsInput as Record<string, unknown>).reason).trim()
             : "Adaptive charts selected from the deterministic chart catalog.",
-        charts,
+        charts: rubricSafeCharts,
       },
     ],
   };

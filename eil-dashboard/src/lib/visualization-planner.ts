@@ -318,6 +318,17 @@ If multiple folders are active, prefer at least one comparison chart.
 Prefer plan stability. If the corpus signature is broadly similar, keep the chart mix conservative instead of changing it just to be novel.
 Assume KPI cards are already shown separately, so your chart picks should complement those KPI cards rather than repeat them.
 
+Core chart selection rubric:
+- Include at least 1 time-based chart.
+- Include at least 1 relationship/comparison chart.
+- Include at least 1 distribution/structure chart.
+- Avoid redundant charts that tell the same story from nearly the same data slice.
+
+Rubric guidance for the approved chart catalog:
+- Time-based: adaptive_topic_momentum, adaptive_keyword_family_heatmap
+- Relationship/comparison: adaptive_folder_topic_comparison, adaptive_track_topic_comparison
+- Distribution/structure: adaptive_emerging_topics, adaptive_keyword_family_heatmap, adaptive_track_topic_comparison
+
 Allowed chart_key values:
 - adaptive_topic_momentum
 - adaptive_emerging_topics
