@@ -24,7 +24,8 @@ export async function runKeywordSearchFallback(
 ): Promise<KeywordSearchResponse> {
   const data = await loadDashboardDataServer(
     ownerUserId,
-    request.folderId && request.folderId !== "all" ? request.folderId : null
+    request.folderIds && request.folderIds.length > 0 ? request.folderIds : null,
+    request.projectId && request.projectId !== "all" ? request.projectId : null
   );
   const selectedYears =
     request.selectedYears && request.selectedYears.length > 0
@@ -37,16 +38,35 @@ export async function runKeywordSearchFallback(
 
   const filtered = filterDashboardData(data, selectedYears, selectedTracks, "");
   const query = request.query.trim().toLowerCase();
+  const matchedFamily =
+    filtered.topicFamilies?.find((family) =>
+      [
+        family.canonicalTopic,
+        ...family.aliases,
+        ...family.representativeKeywords,
+        ...family.relatedKeywords,
+        ...family.evidenceSnippets,
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(query)
+    ) ?? null;
   const matchedRows = filtered.trends.filter((row) =>
-    [row.keyword, row.topic, row.evidence, row.title].join(" ").toLowerCase().includes(query)
+    matchedFamily
+      ? row.topic === matchedFamily.canonicalTopic
+      : [row.keyword, row.topic, row.evidence, row.title].join(" ").toLowerCase().includes(query)
   );
 
   if (matchedRows.length === 0) {
     const suggestions = [
       ...new Set(
-        filtered.trends
-          .map((row) => row.keyword)
-          .filter((keyword) => keyword.toLowerCase().includes(query.slice(0, 4)))
+        [
+          ...filtered.trends.map((row) => row.keyword),
+          ...(filtered.topicFamilies ?? []).flatMap((family) => [
+            family.canonicalTopic,
+            ...family.aliases,
+          ]),
+        ].filter((keyword) => keyword.toLowerCase().includes(query.slice(0, 4)))
       ),
     ].slice(0, 6);
 
@@ -70,8 +90,10 @@ export async function runKeywordSearchFallback(
 
   const tracksByPaper = new Map(filtered.tracksSingle.map((row) => [row.paper_id, row]));
   const tracksMultiByPaper = new Map(filtered.tracksMulti.map((row) => [row.paper_id, row]));
-  const matchedTerms = [...new Set(matchedRows.map((row) => row.keyword))].slice(0, 12);
-  const canonicalConcept = matchedTerms[0] ?? request.query;
+  const matchedTerms =
+    matchedFamily?.aliases.slice(0, 12) ??
+    [...new Set(matchedRows.map((row) => row.keyword))].slice(0, 12);
+  const canonicalConcept = matchedFamily?.canonicalTopic ?? matchedTerms[0] ?? request.query;
 
   const timelineMap = new Map<string, { frequency: number; paperIds: Set<PaperId> }>();
   matchedRows.forEach((row) => {
@@ -111,10 +133,13 @@ export async function runKeywordSearchFallback(
 
   const cooccurringConcepts = Object.entries(
     filtered.trends.reduce<Record<string, number>>((accumulator, row) => {
-      if (!matchedRows.some((match) => match.paper_id === row.paper_id) || row.keyword === canonicalConcept) {
+      if (
+        !matchedRows.some((match) => match.paper_id === row.paper_id) ||
+        row.topic === canonicalConcept
+      ) {
         return accumulator;
       }
-      accumulator[row.keyword] = (accumulator[row.keyword] ?? 0) + row.keyword_frequency;
+      accumulator[row.topic] = (accumulator[row.topic] ?? 0) + row.keyword_frequency;
       return accumulator;
     }, {})
   )

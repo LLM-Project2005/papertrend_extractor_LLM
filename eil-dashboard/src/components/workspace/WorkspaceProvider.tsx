@@ -153,6 +153,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 "object"
                 ? authProfile.workspace_profile.analysisHistoryHiddenByProject
                 : DEFAULT_WORKSPACE_PROFILE.analysisHistoryHiddenByProject,
+            projectCorpusTopicCacheByProject:
+              authProfile.workspace_profile.projectCorpusTopicCacheByProject &&
+              typeof authProfile.workspace_profile
+                .projectCorpusTopicCacheByProject === "object"
+                ? authProfile.workspace_profile.projectCorpusTopicCacheByProject
+                : DEFAULT_WORKSPACE_PROFILE.projectCorpusTopicCacheByProject,
             desiredOutputs:
               authProfile.workspace_profile.desiredOutputs &&
               authProfile.workspace_profile.desiredOutputs.length > 0

@@ -3,29 +3,27 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import PlannedDashboardSection from "@/components/dashboard/PlannedDashboardSection";
-import { useDashboardData } from "@/hooks/useData";
-import { TRACK_COLS } from "@/lib/constants";
-import { filterDashboardData } from "@/lib/dashboard-filters";
-import { createDefaultVisualizationPlan } from "@/lib/visualization-plan";
+import AdaptiveDashboardTab from "@/components/dashboard/AdaptiveDashboardTab";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
-import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
-import type { TrackKey } from "@/lib/constants";
+import { useDashboardData } from "@/hooks/useData";
+import { TRACK_COLS, type TrackKey } from "@/lib/constants";
+import { filterDashboardData } from "@/lib/dashboard-filters";
+import { createDefaultVisualizationPlan } from "@/lib/visualization-plan";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { DashboardDataMode } from "@/types/database";
 import type { VisualizationPlan } from "@/types/visualization";
 
-const STATIC_TAB_DEFINITIONS = [
+const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
   { key: "trend_analysis", label: "Trend Analysis" },
   { key: "track_analysis", label: "Track Analysis" },
   { key: "keyword_explorer", label: "Keyword Explorer" },
-  { key: "paper_explorer", label: "Paper Explorer" },
+  { key: "adaptive", label: "Adaptive" },
 ] as const;
 
 function normalizeTabKey(value: string | null): string | null {
@@ -36,9 +34,26 @@ function normalizeTabKey(value: string | null): string | null {
   return value.replace(/-/g, "_");
 }
 
+function parseSelectedFolderIds(
+  searchParams: URLSearchParams,
+  fallbackFolderId: string
+): string[] {
+  const raw = searchParams.get("folders");
+  if (raw) {
+    return [...new Set(raw.split(",").map((value) => value.trim()).filter(Boolean))];
+  }
+
+  if (fallbackFolderId && fallbackFolderId !== "all") {
+    return [fallbackFolderId];
+  }
+
+  return [];
+}
+
 function FilterPanel({
   folders,
-  selectedFolderId,
+  selectedFolderIds,
+  allFoldersSelected,
   onFolderChange,
   allYears,
   selectedYears,
@@ -49,8 +64,9 @@ function FilterPanel({
   showHeader = true,
 }: {
   folders: ReturnType<typeof useWorkspaceProfile>["folders"];
-  selectedFolderId: string;
-  onFolderChange: (folderId: string) => void;
+  selectedFolderIds: string[];
+  allFoldersSelected: boolean;
+  onFolderChange: (folderIds: string[], allSelected: boolean) => void;
   allYears: string[];
   selectedYears: string[];
   onYearsChange: (years: string[]) => void;
@@ -62,7 +78,8 @@ function FilterPanel({
   return (
     <Sidebar
       folders={folders}
-      selectedFolderId={selectedFolderId}
+      selectedFolderIds={selectedFolderIds}
+      allFoldersSelected={allFoldersSelected}
       onFolderChange={onFolderChange}
       allYears={allYears}
       selectedYears={selectedYears}
@@ -71,7 +88,7 @@ function FilterPanel({
       onTracksChange={onTracksChange}
       useMock={useMock}
       title="Analytics filters"
-      description="Narrow the years and track categories before reading the dashboard."
+      description="Choose folders, years, and tracks before reading the dashboard."
       showHeader={showHeader}
     />
   );
@@ -88,7 +105,6 @@ export default function DashboardClient({
     selectedFolderId,
     selectedProjectId,
     folders,
-    setSelectedFolderId,
     selectedYears,
     setSelectedYears,
     selectedTracks,
@@ -96,34 +112,40 @@ export default function DashboardClient({
     searchQuery,
     setSearchQuery,
   } = useWorkspaceProfile();
+  const { session } = useAuth();
+
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const selectedFolderIds = useMemo(
+    () => parseSelectedFolderIds(searchParams, selectedFolderId),
+    [searchParams, selectedFolderId]
+  );
+  const allFoldersSelected = selectedFolderIds.length === 0;
+  const folderNamesById = useMemo(
+    () =>
+      Object.fromEntries(folders.map((folder) => [folder.id, folder.name] as const)),
+    [folders]
+  );
   const dashboardDataMode: DashboardDataMode =
     searchParams.get("data") === "mock"
       ? "mock"
       : searchParams.get("data") === "live"
         ? "live"
         : "auto";
-  const { data, loading, allYears } = useDashboardData(
-    selectedFolderId,
+  const { data, loading, refreshing, allYears, refresh } = useDashboardData(
+    allFoldersSelected ? "all" : selectedFolderIds,
     scopedFolderIds,
     {
       mode: dashboardDataMode,
       projectId: selectedProjectId,
+      refetchOnWindowFocus: true,
     }
   );
-  const { session } = useAuth();
-
   const [filterOpen, setFilterOpen] = useState(false);
   const [planState, setPlanState] = useState<{
     plan: VisualizationPlan;
     source: "agent" | "fallback";
   } | null>(null);
 
-  const linkedPaperId = useMemo(() => {
-    const value = (searchParams.get("paperId") ?? "").trim();
-    return value || null;
-  }, [searchParams]);
-  const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
   useEffect(() => {
     if (allYears.length === 0) {
       return;
@@ -145,12 +167,72 @@ export default function DashboardClient({
     }
   }, [allYears, selectedYears, setSelectedYears]);
 
+  const currentTabKey = useMemo(() => {
+    const tabParam = normalizeTabKey(searchParams.get("tab"));
+    if (tabParam && TAB_DEFINITIONS.some((tab) => tab.key === tabParam)) {
+      return tabParam;
+    }
+    return "overview";
+  }, [searchParams]);
+
   useEffect(() => {
-    if (plannerMode !== "agent") {
-      setPlanState(null);
+    const tabParam = normalizeTabKey(searchParams.get("tab"));
+    if (tabParam === currentTabKey) {
       return;
     }
 
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", currentTabKey);
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+      scroll: false,
+    });
+  }, [basePath, currentTabKey, router, searchParams]);
+
+  const updateRoute = (mutator: (params: URLSearchParams) => void) => {
+    const params = new URLSearchParams(searchParams.toString());
+    mutator(params);
+    const nextQuery = params.toString();
+    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+      scroll: false,
+    });
+  };
+
+  const updateRouteForTab = (tabKey: string) => {
+    updateRoute((params) => {
+      params.set("tab", tabKey);
+    });
+  };
+
+  const updateFolderSelection = (folderIds: string[], allSelected: boolean) => {
+    updateRoute((params) => {
+      if (allSelected || folderIds.length === 0) {
+        params.delete("folders");
+      } else {
+        params.set("folders", folderIds.join(","));
+      }
+    });
+  };
+
+  const updateDataMode = (mode: DashboardDataMode) => {
+    updateRoute((params) => {
+      if (mode === "auto") {
+        params.delete("data");
+      } else {
+        params.set("data", mode);
+      }
+    });
+  };
+
+  const filteredData = useMemo(() => {
+    if (!data) {
+      return { trends: [], tracksSingle: [], tracksMulti: [], topicFamilies: [] };
+    }
+
+    return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
+  }, [data, searchQuery, selectedTracks, selectedYears]);
+
+  useEffect(() => {
     if (!data || selectedYears.length === 0) {
       return;
     }
@@ -160,14 +242,7 @@ export default function DashboardClient({
       data.useMock ? "mock" : "live",
       selectedTracks as TrackKey[]
     );
-
-    setPlanState((current) => {
-      if (current?.plan.mode === fallbackPlan.mode) {
-        return current;
-      }
-
-      return { plan: fallbackPlan, source: "fallback" };
-    });
+    setPlanState({ plan: fallbackPlan, source: "fallback" });
 
     const timer = window.setTimeout(async () => {
       try {
@@ -183,11 +258,10 @@ export default function DashboardClient({
             selectedYears,
             selectedTracks,
             searchQuery,
-            folderId: selectedFolderId,
+            folderIds: selectedFolderIds,
             projectId: selectedProjectId,
           }),
         });
-
         const payload = (await response.json()) as {
           plan?: VisualizationPlan;
           source?: "agent" | "fallback";
@@ -214,104 +288,15 @@ export default function DashboardClient({
     };
   }, [
     data,
-    plannerMode,
     searchQuery,
-    selectedFolderId,
+    selectedFolderIds,
     selectedProjectId,
     selectedTracks,
     selectedYears,
     session?.access_token,
   ]);
 
-  const fallbackPlan = useMemo(
-    () =>
-      createDefaultVisualizationPlan(
-        data?.useMock ? "mock" : "live",
-        selectedTracks as TrackKey[]
-      ),
-    [data?.useMock, selectedTracks]
-  );
-
-  const activePlan = plannerMode === "agent" ? planState?.plan ?? fallbackPlan : null;
-  const tabDefinitions = plannerMode === "agent"
-    ? (activePlan?.sections.map((section) => ({
-        key: section.section_key,
-        label: section.title,
-      })) ?? STATIC_TAB_DEFINITIONS)
-    : STATIC_TAB_DEFINITIONS;
-
-  const currentTabKey = useMemo(() => {
-    const tabParam = normalizeTabKey(searchParams.get("tab"));
-    if (tabParam && tabDefinitions.some((tab) => tab.key === tabParam)) {
-      return tabParam;
-    }
-
-    return tabDefinitions[0]?.key ?? "overview";
-  }, [searchParams, tabDefinitions]);
-
-  useEffect(() => {
-    const tabParam = normalizeTabKey(searchParams.get("tab"));
-    if (tabParam === currentTabKey) {
-      return;
-    }
-
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", currentTabKey);
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  }, [basePath, currentTabKey, router, searchParams]);
-
-  const updateRouteForTab = (tabKey: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", tabKey);
-    if (tabKey !== "paper_explorer") {
-      params.delete("paperId");
-    }
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  };
-
-  const updatePlannerMode = (mode: "agent" | "classic") => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (mode === "classic") {
-      params.set("planner", "classic");
-    } else {
-      params.delete("planner");
-    }
-
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  };
-
-  const updateDataMode = (mode: DashboardDataMode) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (mode === "auto") {
-      params.delete("data");
-    } else {
-      params.set("data", mode);
-    }
-
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  };
-
-  const filteredData = useMemo(() => {
-    if (!data) {
-      return { trends: [], tracksSingle: [], tracksMulti: [] };
-    }
-
-    return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
-  }, [data, searchQuery, selectedTracks, selectedYears]);
-
-  if (loading || !data) {
+  if (loading && !data) {
     return (
       <div className="app-surface flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
@@ -323,6 +308,8 @@ export default function DashboardClient({
       </div>
     );
   }
+
+  const adaptiveSection = planState?.plan.sections[0] ?? null;
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -341,35 +328,18 @@ export default function DashboardClient({
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+              {allFoldersSelected
+                ? `All folders (${folders.length})`
+                : `${selectedFolderIds.length} folder${
+                    selectedFolderIds.length === 1 ? "" : "s"
+                  }`}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
               {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
               {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
             </span>
-            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
-              <button
-                type="button"
-                onClick={() => updatePlannerMode("agent")}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  plannerMode === "agent"
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
-                    : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
-                }`}
-              >
-                Adaptive
-              </button>
-              <button
-                type="button"
-                onClick={() => updatePlannerMode("classic")}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  plannerMode === "classic"
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
-                    : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
-                }`}
-              >
-                Classic
-              </button>
-            </div>
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#bdbdbd]">
               <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-[#8e8e8e]">
                 Data
@@ -387,6 +357,15 @@ export default function DashboardClient({
             </label>
             <button
               type="button"
+              onClick={() => {
+                void refresh();
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+            <button
+              type="button"
               onClick={() => setFilterOpen(true)}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
@@ -396,44 +375,47 @@ export default function DashboardClient({
           </div>
         </div>
 
-        {plannerMode === "agent" && activePlan ? (
-          <section className="app-surface px-4 py-4 sm:px-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
-                  Visualization planner
-                </p>
-                <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                  {activePlan.dashboard_title}
-                </h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                  {activePlan.summary}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
-                  {data.useMock ? "Preview data" : "Live data"}
-                </span>
-                {data.diagnostics?.recoveredFromLegacyScope ? (
-                  <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    Showing recovered legacy analyses
-                  </span>
-                ) : null}
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
-                  {planState?.source === "agent" ? "LLM plan" : "Fallback plan"}
-                </span>
-              </div>
+        <section className="app-surface px-4 py-4 sm:px-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                Visualization planner
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                {planState?.plan.dashboard_title ??
+                  (data?.useMock ? "Preview adaptive workspace" : "Adaptive analytics workspace")}
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                {planState?.plan.summary ??
+                  "Adaptive charts focus on the strongest normalized corpus signals for the current filters."}
+              </p>
             </div>
-          </section>
-        ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+                {data?.useMock ? "Preview data" : "Live data"}
+              </span>
+              {refreshing ? (
+                <span className="rounded-full bg-sky-100 px-3 py-1.5 text-xs text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                  Refreshing in background
+                </span>
+              ) : null}
+              {data?.diagnostics?.recoveredFromLegacyScope ? (
+                <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  Showing recovered legacy analyses
+                </span>
+              ) : null}
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+                {planState?.source === "agent" ? "Adaptive plan" : "Fallback plan"}
+              </span>
+            </div>
+          </div>
+        </section>
 
         <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Tabs">
-          {tabDefinitions.map((tab) => (
+          {TAB_DEFINITIONS.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => {
-                updateRouteForTab(tab.key);
-              }}
+              onClick={() => updateRouteForTab(tab.key)}
               className={`tab-btn ${
                 currentTabKey === tab.key ? "tab-btn-active" : "tab-btn-inactive"
               }`}
@@ -463,14 +445,15 @@ export default function DashboardClient({
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <FilterPanel
                   folders={folders}
-                  selectedFolderId={selectedFolderId}
-                  onFolderChange={setSelectedFolderId}
+                  selectedFolderIds={selectedFolderIds}
+                  allFoldersSelected={allFoldersSelected}
+                  onFolderChange={updateFolderSelection}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
-                  useMock={data.useMock}
+                  useMock={data?.useMock ?? true}
                   showHeader={false}
                 />
               </div>
@@ -479,7 +462,10 @@ export default function DashboardClient({
         )}
 
         {filterOpen && (
-          <div className="fixed inset-0 z-30 hidden bg-transparent xl:block" onClick={() => setFilterOpen(false)} />
+          <div
+            className="fixed inset-0 z-30 hidden bg-transparent xl:block"
+            onClick={() => setFilterOpen(false)}
+          />
         )}
 
         <div className="hidden xl:block">
@@ -504,14 +490,15 @@ export default function DashboardClient({
               <div className="max-h-[70vh] overflow-y-auto p-4">
                 <FilterPanel
                   folders={folders}
-                  selectedFolderId={selectedFolderId}
-                  onFolderChange={setSelectedFolderId}
+                  selectedFolderIds={selectedFolderIds}
+                  allFoldersSelected={allFoldersSelected}
+                  onFolderChange={updateFolderSelection}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
-                  useMock={data.useMock}
+                  useMock={data?.useMock ?? true}
                   showHeader={false}
                 />
               </div>
@@ -520,34 +507,19 @@ export default function DashboardClient({
         </div>
 
         <section className="min-w-0">
-          {plannerMode === "agent" && activePlan ? (
-            <PlannedDashboardSection
-              section={
-                activePlan.sections.find((section) => section.section_key === currentTabKey) ??
-                activePlan.sections[0]
-              }
-              data={filteredData}
-              folderId={selectedFolderId}
-              selectedYears={selectedYears}
-              selectedTracks={selectedTracks}
-              linkedPaperId={linkedPaperId}
-              useMock={data.useMock}
-            />
-          ) : null}
-
-          {plannerMode === "classic" && currentTabKey === "overview" ? (
+          {currentTabKey === "overview" ? (
             <Overview
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
-              useMock={data.useMock}
+              useMock={data?.useMock ?? true}
             />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "trend_analysis" ? (
+          {currentTabKey === "trend_analysis" ? (
             <TrendAnalysis trends={filteredData.trends} />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "track_analysis" ? (
+          {currentTabKey === "track_analysis" ? (
             <TrackAnalysis
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
@@ -555,19 +527,21 @@ export default function DashboardClient({
               selectedTracks={selectedTracks}
             />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "keyword_explorer" ? (
+          {currentTabKey === "keyword_explorer" ? (
             <KeywordExplorer
               trends={filteredData.trends}
-              folderId={selectedFolderId}
+              topicFamilies={filteredData.topicFamilies}
+              folderIds={selectedFolderIds}
+              projectId={selectedProjectId ?? undefined}
               selectedYears={selectedYears}
               selectedTracks={selectedTracks}
             />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "paper_explorer" ? (
-            <PaperExplorer
-              trends={filteredData.trends}
-              tracksSingle={filteredData.tracksSingle}
-              linkedPaperId={linkedPaperId}
+          {currentTabKey === "adaptive" && adaptiveSection ? (
+            <AdaptiveDashboardTab
+              data={filteredData}
+              adaptiveSection={adaptiveSection}
+              folderNamesById={folderNamesById}
             />
           ) : null}
         </section>

@@ -6,9 +6,24 @@ export interface TrendRow {
   year: string;
   title: string;
   topic: string;
+  raw_topic?: string;
   keyword: string;
   keyword_frequency: number;
   evidence: string;
+}
+
+export interface CorpusTopicFamily {
+  id: string;
+  canonicalTopic: string;
+  aliases: string[];
+  representativeKeywords: string[];
+  relatedKeywords: string[];
+  matchedTerms: string[];
+  evidenceSnippets: string[];
+  paperIds: PaperId[];
+  folderIds: string[];
+  years: string[];
+  totalKeywordFrequency: number;
 }
 
 export interface TrackRow {
@@ -26,6 +41,7 @@ export interface DashboardData {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
+  topicFamilies?: CorpusTopicFamily[];
   useMock: boolean;
   diagnostics?: {
     dataSource?: "scoped" | "legacy_fallback" | "mock" | "empty";

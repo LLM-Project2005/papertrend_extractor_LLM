@@ -6,6 +6,7 @@ export const VISUALIZATION_SECTION_KEYS = [
   "track_analysis",
   "keyword_explorer",
   "paper_explorer",
+  "adaptive",
 ] as const;
 
 export type VisualizationSectionKey =
@@ -24,6 +25,11 @@ export const VISUALIZATION_CHART_KEYS = [
   "track_cooccurrence",
   "topics_per_track",
   "paper_table",
+  "adaptive_topic_momentum",
+  "adaptive_emerging_topics",
+  "adaptive_folder_topic_comparison",
+  "adaptive_keyword_family_heatmap",
+  "adaptive_track_topic_comparison",
 ] as const;
 
 export type VisualizationChartKey = (typeof VISUALIZATION_CHART_KEYS)[number];
@@ -58,7 +64,7 @@ export interface VisualizationPlan {
 }
 
 export interface VisualizationPlannerRequest {
-  folderId?: string | "all";
+  folderIds?: string[];
   projectId?: string | "all";
   selectedYears?: string[];
   selectedTracks?: TrackKey[];
@@ -77,6 +83,8 @@ export interface NormalizedAnalyticsPayload {
     selected_years: string[];
     selected_tracks: TrackKey[];
     search_query: string;
+    folder_ids: string[];
+    all_folders_selected: boolean;
   };
   overview: {
     paper_count: number;
@@ -84,7 +92,15 @@ export interface NormalizedAnalyticsPayload {
     keyword_count: number;
     year_range: string;
     available_years: string[];
+    folder_count: number;
   };
+  canonical_topic_families: Array<{
+    canonical_topic: string;
+    aliases: string[];
+    representative_keywords: string[];
+    paper_count: number;
+    total_keyword_frequency: number;
+  }>;
   yearly_paper_trend: Array<{
     year: string;
     papers: number;
@@ -96,6 +112,15 @@ export interface NormalizedAnalyticsPayload {
   top_topics_over_time: Array<{
     year: string;
     topics: Array<{ topic: string; papers: number }>;
+  }>;
+  folder_topic_totals: Array<{
+    folder_id: string;
+    total_papers: number;
+    topics: Array<{ topic: string; papers: number; frequency: number }>;
+  }>;
+  yearly_topic_totals: Array<{
+    year: string;
+    topics: Array<{ topic: string; papers: number; frequency: number }>;
   }>;
   keyword_heatmap: {
     years: string[];
@@ -112,5 +137,9 @@ export interface NormalizedAnalyticsPayload {
   track_topic_sections: Array<{
     track: TrackKey;
     top_topics: Array<{ topic: string; papers: number }>;
+  }>;
+  topic_by_track_totals: Array<{
+    track: TrackKey;
+    topics: Array<{ topic: string; papers: number }>;
   }>;
 }

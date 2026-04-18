@@ -1,6 +1,10 @@
 import { generateMockData } from "@/lib/mockData";
 import { normalizePaperId, paperIdFromRunId, paperLookupKey } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  filterTopicFamiliesByPaperIds,
+  loadOrBuildProjectCorpusTopicCache,
+} from "@/lib/corpus-topic-cache";
 import type {
   DashboardData,
   DashboardDataMode,
@@ -32,14 +36,21 @@ function emptyDashboardData(): DashboardData {
     trends: [],
     tracksSingle: [],
     tracksMulti: [],
+    topicFamilies: [],
     useMock: false,
     diagnostics: null,
   };
 }
 
-function describeScope(folderId?: string | null, projectId?: string | null): string {
-  if (folderId && folderId !== "all") {
+function describeScope(
+  folderIds?: string[] | null,
+  projectId?: string | null
+): string {
+  if (folderIds && folderIds.length === 1) {
     return "selected folder";
+  }
+  if (folderIds && folderIds.length > 1) {
+    return "selected folders";
   }
   if (projectId && projectId !== "all") {
     return "selected project";
@@ -55,8 +66,28 @@ function hasAnyDashboardRows(data: DashboardData | null): boolean {
   return (
     data.trends.length > 0 ||
     data.tracksSingle.length > 0 ||
-    data.tracksMulti.length > 0
+    data.tracksMulti.length > 0 ||
+    (data.topicFamilies?.length ?? 0) > 0
   );
+}
+
+function normalizeRequestedFolderIds(
+  folderSelection?: string[] | string | null
+): string[] | null {
+  if (Array.isArray(folderSelection)) {
+    const normalized = [...new Set(folderSelection.map((value) => String(value || "").trim()).filter(Boolean))];
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof folderSelection === "string") {
+    const trimmed = folderSelection.trim();
+    if (!trimmed || trimmed === "all") {
+      return null;
+    }
+    return [trimmed];
+  }
+
+  return null;
 }
 
 function buildMetadataLookups(metadata: PaperMetadata[]) {
@@ -323,6 +354,7 @@ async function loadViewData(
     trends,
     tracksSingle,
     tracksMulti,
+    topicFamilies: [],
     useMock: false,
     diagnostics: null,
   };
@@ -438,6 +470,7 @@ async function loadTableData(
     trends,
     tracksSingle,
     tracksMulti,
+    topicFamilies: [],
     useMock: false,
     diagnostics: null,
   };
@@ -459,6 +492,10 @@ function mergeDashboardSources(
         : fallback.tracksSingle,
     tracksMulti:
       preferred.tracksMulti.length > 0 ? preferred.tracksMulti : fallback.tracksMulti,
+    topicFamilies:
+      (preferred.topicFamilies?.length ?? 0) > 0
+        ? preferred.topicFamilies
+        : fallback.topicFamilies ?? [],
     useMock: false,
     diagnostics: null,
   };
@@ -476,12 +513,135 @@ async function loadScopedDashboardData(
   return mergeDashboardSources(preferred, fallback);
 }
 
+async function loadTrackTableData(
+  ownerUserId: string,
+  metadata: PaperMetadata[]
+): Promise<Pick<DashboardData, "tracksSingle" | "tracksMulti">> {
+  if (metadata.length === 0) {
+    return { tracksSingle: [], tracksMulti: [] };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
+  const paperIds = metadata.map((paper) => paper.paper_id);
+
+  const [singleResult, multiResult] = await Promise.all([
+    supabase
+      .from("paper_tracks_single")
+      .select("paper_id,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+    supabase
+      .from("paper_tracks_multi")
+      .select("paper_id,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+  ]);
+
+  if (singleResult.error) {
+    throw new Error(singleResult.error.message);
+  }
+  if (multiResult.error) {
+    throw new Error(multiResult.error.message);
+  }
+
+  const mapRows = (rows: Record<string, unknown>[]) =>
+    rows.flatMap((row) => {
+      const paperId = normalizePaperId(row.paper_id);
+      const paper = paperId ? metadataByPaperId.get(paperId) : null;
+      if (!paper) {
+        return [];
+      }
+
+      return [
+        {
+          paper_id: paper.paper_id,
+          folder_id:
+            typeof row.folder_id === "string" ? row.folder_id : paper.folder_id,
+          year: paper.year,
+          title: paper.title,
+          el: Number(row.el ?? 0),
+          eli: Number(row.eli ?? 0),
+          lae: Number(row.lae ?? 0),
+          other: Number(row.other ?? 0),
+        },
+      ];
+    });
+
+  return {
+    tracksSingle: mapRows((singleResult.data ?? []) as Record<string, unknown>[]),
+    tracksMulti: mapRows((multiResult.data ?? []) as Record<string, unknown>[]),
+  };
+}
+
+async function loadProjectScopedDashboardData(
+  ownerUserId: string,
+  projectId: string,
+  requestedFolderIds: string[] | null
+): Promise<DashboardData> {
+  const projectCache = await loadOrBuildProjectCorpusTopicCache(ownerUserId, projectId);
+  const activeFolderIds =
+    requestedFolderIds && requestedFolderIds.length > 0
+      ? requestedFolderIds
+      : projectCache.projectFolderIds;
+  const activeFolderIdSet = new Set(activeFolderIds);
+
+  const trends = projectCache.cache.trends.filter((row) => {
+    if (activeFolderIdSet.size === 0) {
+      return true;
+    }
+    return row.folder_id ? activeFolderIdSet.has(row.folder_id) : false;
+  });
+  const allowedPaperIds = new Set(trends.map((row) => row.paper_id));
+  const topicFamilies = filterTopicFamiliesByPaperIds(
+    projectCache.topicFamilies,
+    allowedPaperIds
+  ).filter((family) =>
+    activeFolderIdSet.size === 0
+      ? true
+      : family.folderIds.some((folderId) => activeFolderIdSet.has(folderId))
+  );
+
+  const metadataMap = new Map<PaperId, PaperMetadata>();
+  trends.forEach((row) => {
+    if (!metadataMap.has(row.paper_id)) {
+      metadataMap.set(row.paper_id, {
+        paper_id: row.paper_id,
+        folder_id: row.folder_id ?? null,
+        year: row.year,
+        title: row.title,
+        ingestion_run_id: null,
+      });
+    }
+  });
+  const metadata = [...metadataMap.values()];
+  const preferredTrackData = await loadViewData(ownerUserId, [...allowedPaperIds], metadata);
+  const trackFallback = await loadTrackTableData(ownerUserId, metadata);
+
+  return {
+    trends,
+    tracksSingle:
+      preferredTrackData?.tracksSingle.length
+        ? preferredTrackData.tracksSingle
+        : trackFallback.tracksSingle,
+    tracksMulti:
+      preferredTrackData?.tracksMulti.length
+        ? preferredTrackData.tracksMulti
+        : trackFallback.tracksMulti,
+    topicFamilies,
+    useMock: false,
+    diagnostics: null,
+  };
+}
+
 export async function loadDashboardDataServer(
   ownerUserId?: string | null,
-  folderId?: string | null,
+  folderSelection?: string[] | string | null,
   projectId?: string | null,
   mode: DashboardDataMode = "auto"
 ): Promise<DashboardData> {
+  const requestedFolderIds = normalizeRequestedFolderIds(folderSelection);
+
   if (mode === "mock") {
     return withDiagnostics(generateMockData(), {
       dataSource: "mock",
@@ -499,18 +659,30 @@ export async function loadDashboardDataServer(
       });
     }
 
-    const scopeDescription = describeScope(folderId, projectId);
-    const scopedFolderIds = await resolveScopedFolderIds(
-      ownerUserId,
-      folderId,
-      projectId
-    );
-    const scopedRunIds = await resolveScopedRunIds(
-      ownerUserId,
-      scopedFolderIds,
-      projectId
-    );
-    const scopedData = await loadScopedDashboardData(ownerUserId, scopedRunIds);
+    const scopeDescription = describeScope(requestedFolderIds, projectId);
+    const scopedData =
+      projectId && projectId !== "all"
+        ? await loadProjectScopedDashboardData(
+            ownerUserId,
+            projectId,
+            requestedFolderIds
+          )
+        : await (async () => {
+            const scopedFolderIds =
+              requestedFolderIds && requestedFolderIds.length > 0
+                ? requestedFolderIds
+                : await resolveScopedFolderIds(
+                    ownerUserId,
+                    null,
+                    projectId
+                  );
+            const scopedRunIds = await resolveScopedRunIds(
+              ownerUserId,
+              scopedFolderIds,
+              projectId
+            );
+            return loadScopedDashboardData(ownerUserId, scopedRunIds);
+          })();
 
     if (hasAnyDashboardRows(scopedData)) {
       return withDiagnostics(scopedData, {
@@ -520,7 +692,7 @@ export async function loadDashboardDataServer(
       });
     }
 
-    if (mode === "auto" && (folderId || projectId)) {
+    if (mode === "auto" && ((requestedFolderIds?.length ?? 0) > 0 || projectId)) {
       const ownerWideData = await loadScopedDashboardData(ownerUserId, null);
       if (hasAnyDashboardRows(ownerWideData)) {
         return withDiagnostics(ownerWideData, {
@@ -541,7 +713,7 @@ export async function loadDashboardDataServer(
       ? withDiagnostics(emptyDashboardData(), {
           dataSource: "empty",
           recoveredFromLegacyScope: false,
-          scopeDescription: describeScope(folderId, projectId),
+          scopeDescription: describeScope(requestedFolderIds, projectId),
         })
       : withDiagnostics(generateMockData(), {
           dataSource: "mock",

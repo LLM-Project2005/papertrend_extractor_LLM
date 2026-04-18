@@ -18,15 +18,17 @@ import {
 } from "recharts";
 import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
-import type { PaperId, TrendRow } from "@/types/database";
+import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
+  topicFamilies?: CorpusTopicFamily[];
   selectedYears?: string[];
   selectedTracks?: string[];
-  folderId?: string | "all";
+  folderIds?: string[];
+  projectId?: string | "all";
   planCharts?: VisualizationPlanChart[];
 }
 
@@ -82,9 +84,11 @@ const TreemapCell = (props: {
 
 export default function KeywordExplorer({
   trends,
+  topicFamilies = [],
   selectedYears = [],
   selectedTracks = [],
-  folderId = "all",
+  folderIds = [],
+  projectId = "all",
   planCharts,
 }: Props) {
   const { session } = useAuth();
@@ -123,13 +127,14 @@ export default function KeywordExplorer({
               ? { Authorization: `Bearer ${session.access_token}` }
               : {}),
           },
-          body: JSON.stringify({
-            query: trimmed,
-            selectedYears,
-            selectedTracks,
-            folderId,
-          }),
-        });
+            body: JSON.stringify({
+              query: trimmed,
+              selectedYears,
+              selectedTracks,
+              folderIds,
+              projectId,
+            }),
+          });
 
         const payload = (await response.json()) as KeywordSearchResponse & {
           error?: string;
@@ -160,34 +165,66 @@ export default function KeywordExplorer({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [folderId, query, selectedTracks, selectedYears, session?.access_token]);
+  }, [folderIds, projectId, query, selectedTracks, selectedYears, session?.access_token]);
 
   const keywordAggregate = useMemo(() => {
-    const map: Record<
-      string,
-      { total: number; papers: Set<PaperId>; years: Set<string>; topics: Set<string> }
-    > = {};
+    const families =
+      topicFamilies.length > 0
+        ? topicFamilies
+        : Object.entries(
+            trends.reduce<
+              Record<
+                string,
+                {
+                  paperIds: Set<PaperId>;
+                  years: Set<string>;
+                  aliases: Set<string>;
+                  keywords: Map<string, number>;
+                }
+              >
+            >((accumulator, row) => {
+              const entry = (accumulator[row.topic] ??= {
+                paperIds: new Set<PaperId>(),
+                years: new Set<string>(),
+                aliases: new Set<string>([row.topic, row.raw_topic ?? row.topic]),
+                keywords: new Map<string, number>(),
+              });
+              entry.paperIds.add(row.paper_id);
+              entry.years.add(row.year);
+              entry.keywords.set(
+                row.keyword,
+                (entry.keywords.get(row.keyword) ?? 0) + row.keyword_frequency
+              );
+              return accumulator;
+            }, {})
+          ).map(([canonicalTopic, entry], index) => ({
+            id: `topic-family-${index + 1}`,
+            canonicalTopic,
+            aliases: [...entry.aliases],
+            representativeKeywords: [...entry.keywords.entries()]
+              .sort((left, right) => right[1] - left[1])
+              .slice(0, 6)
+              .map(([keyword]) => keyword),
+            relatedKeywords: [...entry.keywords.keys()],
+            matchedTerms: [...entry.aliases],
+            evidenceSnippets: [],
+            paperIds: [...entry.paperIds],
+            folderIds: [],
+            years: [...entry.years].sort(),
+            totalKeywordFrequency: [...entry.keywords.values()].reduce(
+              (sum, value) => sum + value,
+              0
+            ),
+          }));
 
-    trends.forEach((row) => {
-      const entry = (map[row.keyword] ??= {
-        total: 0,
-        papers: new Set(),
-        years: new Set(),
-        topics: new Set(),
-      });
-      entry.total += row.keyword_frequency;
-      entry.papers.add(row.paper_id);
-      entry.years.add(row.year);
-      entry.topics.add(row.topic);
-    });
-
-    let results = Object.entries(map)
-      .map(([keyword, entry]) => ({
-        keyword,
-        totalFreq: entry.total,
-        papers: entry.papers.size,
-        years: Array.from(entry.years).sort().join(", "),
-        topics: Array.from(entry.topics).join(", "),
+    let results = families
+      .map((family) => ({
+        keyword: family.canonicalTopic,
+        totalFreq: family.totalKeywordFrequency,
+        papers: family.paperIds.length,
+        years: family.years.join(", "),
+        topics: family.aliases.join(", "),
+        representativeKeywords: family.representativeKeywords,
       }))
       .sort((left, right) => right.totalFreq - left.totalFreq);
 
@@ -196,12 +233,13 @@ export default function KeywordExplorer({
       results = results.filter(
         (row) =>
           row.keyword.toLowerCase().includes(normalized) ||
-          row.topics.toLowerCase().includes(normalized)
+          row.topics.toLowerCase().includes(normalized) ||
+          row.representativeKeywords.join(" ").toLowerCase().includes(normalized)
       );
     }
 
     return results;
-  }, [query, trends]);
+  }, [query, topicFamilies, trends]);
 
   const heatmapData = useMemo(() => {
     const years = [...new Set(trends.map((row) => row.year))].sort();
@@ -211,12 +249,12 @@ export default function KeywordExplorer({
 
     const grid: Record<string, Record<string, number>> = {};
     trends.forEach((row) => {
-      if (!topKeywords.includes(row.keyword)) {
+      if (!topKeywords.includes(row.topic)) {
         return;
       }
-      grid[row.keyword] ??= {};
-      grid[row.keyword][row.year] =
-        (grid[row.keyword][row.year] ?? 0) + row.keyword_frequency;
+      grid[row.topic] ??= {};
+      grid[row.topic][row.year] =
+        (grid[row.topic][row.year] ?? 0) + row.keyword_frequency;
     });
 
     return {
@@ -245,14 +283,14 @@ export default function KeywordExplorer({
   const timelineData = useMemo(() => {
     const years = [...new Set(trends.map((row) => row.year))].sort();
     return years.map((year) => {
-      const entry: Record<string, string | number> = { year };
-      comparisonKeywords.forEach((keyword) => {
-        entry[keyword] = trends
-          .filter((row) => row.year === year && row.keyword === keyword)
-          .reduce((sum, row) => sum + row.keyword_frequency, 0);
+        const entry: Record<string, string | number> = { year };
+        comparisonKeywords.forEach((keyword) => {
+          entry[keyword] = trends
+            .filter((row) => row.year === year && row.topic === keyword)
+            .reduce((sum, row) => sum + row.keyword_frequency, 0);
+        });
+        return entry;
       });
-      return entry;
-    });
   }, [comparisonKeywords, trends]);
 
   if (trends.length === 0) {
@@ -625,7 +663,7 @@ export default function KeywordExplorer({
             Keyword atlas
           </h3>
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            Ranked and filterable corpus keywords
+            Ranked canonical topic families across the current corpus
           </span>
         </div>
       </section>
@@ -633,11 +671,11 @@ export default function KeywordExplorer({
       <section className="app-surface px-5 py-5">
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Keyword heatmap
-          </h3>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            Top keywords: {plannerHeatN}
-          </span>
+              Keyword heatmap
+            </h3>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Top topic families: {plannerHeatN}
+            </span>
         </div>
 
         <div className="mt-4">
@@ -653,11 +691,11 @@ export default function KeywordExplorer({
       <section className="app-surface px-5 py-5">
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Keyword treemap
-          </h3>
-          <label className="text-xs text-slate-500 dark:text-slate-400">
-            Top keywords: {treeN}
-          </label>
+              Keyword treemap
+            </h3>
+            <label className="text-xs text-slate-500 dark:text-slate-400">
+              Top topic families: {treeN}
+            </label>
           <input
             type="range"
             min={10}
@@ -689,11 +727,11 @@ export default function KeywordExplorer({
           <table className="min-w-full text-xs">
             <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold">Keyword</th>
+                <th className="px-3 py-2 text-left font-semibold">Canonical topic</th>
                 <th className="px-3 py-2 text-right font-semibold">Total Freq</th>
                 <th className="px-3 py-2 text-right font-semibold">Papers</th>
                 <th className="px-3 py-2 text-left font-semibold">Years Active</th>
-                <th className="px-3 py-2 text-left font-semibold">Associated Topics</th>
+                <th className="px-3 py-2 text-left font-semibold">Aliases and keywords</th>
               </tr>
             </thead>
             <tbody>
@@ -707,14 +745,16 @@ export default function KeywordExplorer({
                   </td>
                   <td className="px-3 py-2 text-right">{row.totalFreq}</td>
                   <td className="px-3 py-2 text-right">{row.papers}</td>
-                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
-                    {row.years}
-                  </td>
-                  <td className="max-w-xs truncate px-3 py-2 text-slate-500 dark:text-slate-400">
-                    {row.topics}
-                  </td>
-                </tr>
-              ))}
+                    <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                      {row.years}
+                    </td>
+                    <td className="max-w-xs truncate px-3 py-2 text-slate-500 dark:text-slate-400">
+                      {[row.topics, row.representativeKeywords.join(", ")]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -722,10 +762,10 @@ export default function KeywordExplorer({
 
       <section className="app-surface px-5 py-5">
         <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-          Keyword timeline
+          Topic family timeline
         </h3>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Select keywords to compare across the selected years.
+          Select canonical topic families to compare across the selected years.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {keywordAggregate.slice(0, 20).map((row) => (

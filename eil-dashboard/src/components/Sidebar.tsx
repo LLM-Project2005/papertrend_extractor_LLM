@@ -10,8 +10,9 @@ interface Props {
   selectedTracks: string[];
   onTracksChange: (t: string[]) => void;
   folders?: ResearchFolderRow[];
-  selectedFolderId?: string;
-  onFolderChange?: (folderId: string) => void;
+  selectedFolderIds?: string[];
+  allFoldersSelected?: boolean;
+  onFolderChange?: (folderIds: string[], allSelected: boolean) => void;
   useMock: boolean;
   title?: string;
   description?: string;
@@ -25,13 +26,16 @@ export default function Sidebar({
   selectedTracks,
   onTracksChange,
   folders = [],
-  selectedFolderId = "all",
+  selectedFolderIds = [],
+  allFoldersSelected = true,
   onFolderChange,
   useMock,
   title = "Filters",
   description = "Narrow the dataset before exploring the analytics.",
   showHeader = true,
 }: Props) {
+  const normalizedSelectedFolderIds = [...new Set(selectedFolderIds.filter(Boolean))];
+
   const toggleYear = (year: string) => {
     onYearsChange(
       selectedYears.includes(year)
@@ -46,6 +50,18 @@ export default function Sidebar({
         ? selectedTracks.filter((value) => value !== track)
         : [...selectedTracks, track]
     );
+  };
+
+  const toggleFolder = (folderId: string) => {
+    if (!onFolderChange) {
+      return;
+    }
+
+    const nextFolderIds = normalizedSelectedFolderIds.includes(folderId)
+      ? normalizedSelectedFolderIds.filter((value) => value !== folderId)
+      : [...normalizedSelectedFolderIds, folderId];
+
+    onFolderChange(nextFolderIds, nextFolderIds.length === 0);
   };
 
   return (
@@ -73,35 +89,45 @@ export default function Sidebar({
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
               Folders
             </h3>
-            <div className="flex flex-wrap gap-2">
+            <div className="space-y-3">
               <button
                 type="button"
-                onClick={() => onFolderChange("all")}
+                onClick={() => onFolderChange([], true)}
                 className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                  selectedFolderId === "all"
+                  allFoldersSelected
                     ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
                     : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
                 }`}
               >
                 All folders
               </button>
-              {folders.map((folder) => {
-                const active = folder.id === selectedFolderId;
-                return (
-                  <button
-                    key={folder.id}
-                    type="button"
-                    onClick={() => onFolderChange(folder.id)}
-                    className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                      active
-                        ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
-                    }`}
-                  >
-                    {folder.name}
-                  </button>
-                );
-              })}
+              <div className="flex flex-wrap gap-2">
+                {folders.map((folder) => {
+                  const active =
+                    !allFoldersSelected && normalizedSelectedFolderIds.includes(folder.id);
+                  return (
+                    <button
+                      key={folder.id}
+                      type="button"
+                      onClick={() => toggleFolder(folder.id)}
+                      className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
+                        active
+                          ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+                      }`}
+                    >
+                      {folder.name}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-xs leading-6 text-slate-400 dark:text-[#7d7d7d]">
+                {allFoldersSelected
+                  ? "Showing every folder in this project."
+                  : `Showing ${normalizedSelectedFolderIds.length} selected folder${
+                      normalizedSelectedFolderIds.length === 1 ? "" : "s"
+                    }.`}
+              </p>
             </div>
           </section>
         ) : null}

@@ -116,8 +116,17 @@ export default function WorkspacePapersClient() {
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <Sidebar
                   folders={folders}
-                  selectedFolderId={selectedFolderId}
-                  onFolderChange={setSelectedFolderId}
+                  selectedFolderIds={
+                    selectedFolderId && selectedFolderId !== "all"
+                      ? [selectedFolderId]
+                      : []
+                  }
+                  allFoldersSelected={selectedFolderId === "all"}
+                  onFolderChange={(folderIds, allSelected) =>
+                    setSelectedFolderId(
+                      allSelected || folderIds.length === 0 ? "all" : folderIds[0]
+                    )
+                  }
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}

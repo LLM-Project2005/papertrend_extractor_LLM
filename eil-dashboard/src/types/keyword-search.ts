@@ -3,7 +3,8 @@ import type { PaperId } from "@/types/database";
 
 export interface KeywordSearchRequest {
   query: string;
-  folderId?: string | "all";
+  folderIds?: string[];
+  projectId?: string | "all";
   selectedYears?: string[];
   selectedTracks?: TrackKey[];
   queryLanguage?: string;

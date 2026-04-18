@@ -140,10 +140,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const existingWorkspaceProfile = profile?.workspace_profile ?? null;
+      const mergedWorkspaceProfile: WorkspaceProfile = {
+        ...workspaceProfile,
+        analysisHistoryHiddenByProject:
+          workspaceProfile.analysisHistoryHiddenByProject &&
+          typeof workspaceProfile.analysisHistoryHiddenByProject === "object"
+            ? workspaceProfile.analysisHistoryHiddenByProject
+            : existingWorkspaceProfile?.analysisHistoryHiddenByProject ?? {},
+        projectCorpusTopicCacheByProject:
+          existingWorkspaceProfile?.projectCorpusTopicCacheByProject &&
+          typeof existingWorkspaceProfile.projectCorpusTopicCacheByProject === "object"
+            ? existingWorkspaceProfile.projectCorpusTopicCacheByProject
+            : workspaceProfile.projectCorpusTopicCacheByProject,
+      };
+
       const { error } = await supabase
         .from("user_profiles")
         .update({
-          workspace_profile: workspaceProfile,
+          workspace_profile: mergedWorkspaceProfile,
         })
         .eq("id", user.id);
 
@@ -151,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    [user]
+    [profile?.workspace_profile, user]
   );
 
   const saveUserProfile = useCallback(

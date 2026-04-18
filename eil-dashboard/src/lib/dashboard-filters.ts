@@ -31,7 +31,7 @@ export function filterDashboardData(
   selectedYears: string[],
   selectedTracks: string[],
   searchQuery = ""
-): Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti"> {
+): Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies"> {
   const availableYears = [
     ...new Set([
       ...data.trends.map((row) => row.year),
@@ -105,24 +105,71 @@ export function filterDashboardData(
         ? new Set(multiTrackRows.map((row) => row.paper_id))
         : fallbackPaperIds;
 
+  const filteredTrends = data.trends.filter(
+    (row) =>
+      years.includes(row.year) &&
+      allowedPaperIds.has(row.paper_id) &&
+      (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+  );
+  const filteredTracksSingle = data.tracksSingle.filter(
+    (row) =>
+      years.includes(row.year) &&
+      allowedPaperIds.has(row.paper_id) &&
+      (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+  );
+  const filteredTracksMulti = data.tracksMulti.filter(
+    (row) =>
+      years.includes(row.year) &&
+      allowedPaperIds.has(row.paper_id) &&
+      (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+  );
+  const trendRowsByTopic = filteredTrends.reduce<Record<string, typeof filteredTrends>>(
+    (accumulator, row) => {
+      (accumulator[row.topic] ??= []).push(row);
+      return accumulator;
+    },
+    {}
+  );
+
   return {
-    trends: data.trends.filter(
-      (row) =>
-        years.includes(row.year) &&
-        allowedPaperIds.has(row.paper_id) &&
-        (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
-    ),
-    tracksSingle: data.tracksSingle.filter(
-      (row) =>
-        years.includes(row.year) &&
-        allowedPaperIds.has(row.paper_id) &&
-        (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
-    ),
-    tracksMulti: data.tracksMulti.filter(
-      (row) =>
-        years.includes(row.year) &&
-        allowedPaperIds.has(row.paper_id) &&
-        (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
-    ),
+    trends: filteredTrends,
+    tracksSingle: filteredTracksSingle,
+    tracksMulti: filteredTracksMulti,
+    topicFamilies: (data.topicFamilies ?? [])
+      .map((family) => {
+        const scopedTrendRows = trendRowsByTopic[family.canonicalTopic] ?? [];
+        const scopedPaperIds = [...new Set(scopedTrendRows.map((row) => row.paper_id))];
+        if (scopedPaperIds.length === 0) {
+          return null;
+        }
+
+        return {
+          ...family,
+          paperIds: scopedPaperIds,
+          folderIds: [
+            ...new Set(
+              scopedTrendRows
+                .map((row) => row.folder_id)
+                .filter((value): value is string => Boolean(value))
+            ),
+          ],
+          years: [...new Set(scopedTrendRows.map((row) => row.year))].sort(),
+          totalKeywordFrequency: scopedTrendRows.reduce(
+            (sum, row) => sum + row.keyword_frequency,
+            0
+          ),
+          representativeKeywords: Object.entries(
+            scopedTrendRows.reduce<Record<string, number>>((accumulator, row) => {
+              accumulator[row.keyword] =
+                (accumulator[row.keyword] ?? 0) + row.keyword_frequency;
+              return accumulator;
+            }, {})
+          )
+            .sort((left, right) => right[1] - left[1])
+            .slice(0, 8)
+            .map(([keyword]) => keyword),
+        };
+      })
+      .filter((family): family is NonNullable<typeof family> => Boolean(family)),
   };
 }

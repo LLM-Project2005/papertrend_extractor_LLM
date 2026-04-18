@@ -15,6 +15,7 @@ export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
   primarySource: "pdf-upload",
   desiredOutputs: ["dashboard", "chat", "paper-library"],
   analysisHistoryHiddenByProject: {},
+  projectCorpusTopicCacheByProject: {},
   onboardingComplete: false,
   updatedAt: null,
 };
@@ -136,6 +137,8 @@ export function loadWorkspaceProfile(): WorkspaceProfile {
         typeof parsed.analysisHistoryHiddenByProject === "object"
           ? parsed.analysisHistoryHiddenByProject
           : DEFAULT_WORKSPACE_PROFILE.analysisHistoryHiddenByProject,
+      projectCorpusTopicCacheByProject:
+        DEFAULT_WORKSPACE_PROFILE.projectCorpusTopicCacheByProject,
       desiredOutputs:
         parsed.desiredOutputs && parsed.desiredOutputs.length > 0
           ? parsed.desiredOutputs
@@ -153,6 +156,9 @@ export function saveWorkspaceProfile(profile: WorkspaceProfile): void {
 
   window.localStorage.setItem(
     WORKSPACE_PROFILE_STORAGE_KEY,
-    JSON.stringify(profile)
+    JSON.stringify({
+      ...profile,
+      projectCorpusTopicCacheByProject: {},
+    })
   );
 }

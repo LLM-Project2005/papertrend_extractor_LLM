@@ -122,7 +122,10 @@ export default function WorkspaceHomeClient() {
       ...data.tracksSingle.map((row) => row.paper_id),
       ...data.tracksMulti.map((row) => row.paper_id),
     ]).size;
-    const topics = new Set(data.trends.map((row) => row.topic)).size;
+    const topics =
+      data.topicFamilies && data.topicFamilies.length > 0
+        ? data.topicFamilies.length
+        : new Set(data.trends.map((row) => row.topic)).size;
     const keywords = new Set(data.trends.map((row) => row.keyword)).size;
     const years = [
       ...new Set([

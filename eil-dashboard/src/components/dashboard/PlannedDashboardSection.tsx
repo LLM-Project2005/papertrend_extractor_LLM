@@ -67,7 +67,7 @@ export default function PlannedDashboardSection({
       {section.section_key === "keyword_explorer" ? (
         <KeywordExplorer
           trends={data.trends}
-          folderId={folderId}
+          folderIds={folderId && folderId !== "all" ? [folderId] : []}
           selectedYears={selectedYears}
           selectedTracks={selectedTracks}
           planCharts={section.charts}
