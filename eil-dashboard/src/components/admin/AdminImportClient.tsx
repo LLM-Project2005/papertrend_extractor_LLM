@@ -10,6 +10,7 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
@@ -309,6 +310,8 @@ function defaultDirectionForSort(sortKey: SortKey): SortDirection {
 }
 
 export default function AdminImportClient() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { session } = useAuth();
   const {
     currentProject,
@@ -345,6 +348,8 @@ export default function AdminImportClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const autoOpenedRunIdRef = useRef<string | null>(null);
+  const requestedRunId = searchParams.get("runId");
 
   const requestHeaders = useMemo<Record<string, string>>(() => {
     const headers: Record<string, string> = {};
@@ -597,6 +602,27 @@ export default function AdminImportClient() {
 
     await handlePreviewRun(run);
   }
+
+  useEffect(() => {
+    if (!requestedRunId) {
+      autoOpenedRunIdRef.current = null;
+      return;
+    }
+
+    if (autoOpenedRunIdRef.current === requestedRunId) {
+      return;
+    }
+
+    const matchingRun = runs.find((run) => run.id === requestedRunId);
+    if (!matchingRun) {
+      return;
+    }
+
+    autoOpenedRunIdRef.current = requestedRunId;
+    void handleOpenPrimaryFileAction(matchingRun).finally(() => {
+      router.replace("/workspace/library", { scroll: false });
+    });
+  }, [requestedRunId, router, runs]);
 
   async function handleOpenRunInNewTab(run: IngestionRunRow) {
     const url = await getRunOpenUrl(run);
