@@ -314,7 +314,7 @@ export default function WorkspaceLogsPage() {
         ) : null}
       </div>
 
-      <section className="rounded-[28px] border border-slate-200/80 bg-white/85 p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.32)] backdrop-blur dark:border-[#2f2f2f] dark:bg-[#171717]/88">
+      <section className="rounded-[28px] border border-slate-200/80 bg-white/85 p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.32)] backdrop-blur dark:border-[#2f2f2f] dark:bg-[#1a1a1a]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <label className="relative block flex-1">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#7a7a7a]">
@@ -367,7 +367,7 @@ export default function WorkspaceLogsPage() {
                   return (
                     <article
                       key={run.id}
-                      className="rounded-[24px] border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.35)] transition hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717]/92 dark:hover:border-[#3a3a3a]"
+                      className="rounded-[24px] border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.35)] transition hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#202020] dark:hover:border-[#3a3a3a]"
                     >
                       <div className="flex flex-col gap-4 md:flex-row md:items-center">
                         <div className="flex min-w-0 flex-1 items-start gap-4">
