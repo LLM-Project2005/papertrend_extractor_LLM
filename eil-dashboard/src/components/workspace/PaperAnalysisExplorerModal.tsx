@@ -22,6 +22,7 @@ type Props = {
   onResolvePreviewUrl: () => Promise<string | null>;
   onOpenInNewTab: () => Promise<void>;
   onDownload: () => Promise<void>;
+  onDownloadReport: () => Promise<void>;
   onToggleFavorite: () => Promise<void>;
   onRename: () => Promise<void>;
   onOpenDashboard: () => void;
@@ -141,6 +142,7 @@ export default function PaperAnalysisExplorerModal({
   onResolvePreviewUrl,
   onOpenInNewTab,
   onDownload,
+  onDownloadReport,
   onToggleFavorite,
   onRename,
   onOpenDashboard,
@@ -256,11 +258,19 @@ export default function PaperAnalysisExplorerModal({
           <div className="mt-5 flex flex-wrap items-center gap-2">
             <button
               type="button"
+              onClick={onDownloadReport}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+            >
+              <DownloadIcon className="h-4 w-4" />
+              <span>Download report</span>
+            </button>
+            <button
+              type="button"
               onClick={onDownload}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
             >
               <DownloadIcon className="h-4 w-4" />
-              <span>Download</span>
+              <span>Download PDF</span>
             </button>
             <button
               type="button"

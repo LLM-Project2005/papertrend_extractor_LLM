@@ -309,6 +309,150 @@ function defaultDirectionForSort(sortKey: SortKey): SortDirection {
   return sortKey === "name" ? "asc" : "desc";
 }
 
+function sanitizeFilenamePart(value: string) {
+  return value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/\.+$/g, "")
+    .slice(0, 120);
+}
+
+function cleanReportText(value: string | null | undefined) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function quoteMarkdown(value: string | null | undefined) {
+  const cleaned = cleanReportText(value);
+  if (!cleaned) {
+    return "_No evidence stored._";
+  }
+  return cleaned
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
+function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) {
+  const title = cleanReportText(detail.title || titleOf(run)) || titleOf(run);
+  const lines: string[] = [
+    `# ${title}`,
+    "",
+    "## Report Metadata",
+    `- Source file: ${detail.source_filename || run.source_filename || titleOf(run)}`,
+    `- Year: ${detail.year || "Unknown"}`,
+    `- Run ID: ${run.id}`,
+    `- Paper ID: ${detail.paper_id || "Unavailable"}`,
+    `- Status: ${run.status}`,
+    `- Analysis source: ${detail.diagnostics?.dataSource || (detail.available ? "pipeline" : "unavailable")}`,
+    "",
+    "## Track Classification",
+  ];
+
+  if (detail.tracksSingle.length > 0) {
+    lines.push(...detail.tracksSingle.map((track) => `- Primary track: ${track}`));
+  } else {
+    lines.push("- Primary track: Not stored");
+  }
+
+  if (detail.tracksMulti.length > 0) {
+    lines.push(...detail.tracksMulti.map((track) => `- Cross-track: ${track}`));
+  } else {
+    lines.push("- Cross-track: None stored");
+  }
+
+  lines.push("", "## Topics");
+  if (detail.topics.length > 0) {
+    lines.push(...detail.topics.map((topic) => `- ${topic}`));
+  } else {
+    lines.push("- No topic labels were stored.");
+  }
+
+  lines.push("", "## Canonical Concepts");
+  if (detail.concepts.length > 0) {
+    for (const concept of detail.concepts) {
+      lines.push(`### ${concept.label}`);
+      lines.push(`- Total frequency: ${concept.totalFrequency}`);
+      if (concept.matchedTerms.length > 0) {
+        lines.push(`- Matched terms: ${concept.matchedTerms.join(", ")}`);
+      }
+      if (concept.relatedKeywords.length > 0) {
+        lines.push(`- Related keywords: ${concept.relatedKeywords.join(", ")}`);
+      }
+      lines.push("- Evidence:");
+      lines.push(quoteMarkdown(concept.firstEvidence || concept.evidenceSnippets[0] || null));
+      lines.push("");
+    }
+  } else {
+    lines.push("- No canonical concepts were stored.");
+  }
+
+  lines.push("## Analytical Facets");
+  if (detail.facets.length > 0) {
+    for (const facet of detail.facets) {
+      lines.push(`- **${facet.facetType.replace(/_/g, " ")}**: ${facet.label}`);
+      if (cleanReportText(facet.evidence)) {
+        lines.push(`  - Evidence: ${cleanReportText(facet.evidence)}`);
+      }
+    }
+  } else {
+    lines.push("- No analytical facets were stored.");
+  }
+
+  lines.push("", "## Grounded Keywords");
+  if (detail.keywords.length > 0) {
+    for (const keyword of detail.keywords) {
+      lines.push(`- **${keyword.keyword}**`);
+      lines.push(`  - Topic: ${keyword.topic || "Unclassified topic"}`);
+      lines.push(`  - Frequency: ${keyword.frequency}`);
+      lines.push(`  - Evidence: ${cleanReportText(keyword.evidence) || "No supporting evidence stored."}`);
+    }
+  } else {
+    lines.push("- No grounded keyword rows were available for this paper.");
+  }
+
+  for (const [label, value] of [
+    ["Extracted Abstract Claims", detail.abstract_claims],
+    ["Extracted Methods", detail.methods],
+    ["Extracted Results", detail.results],
+    ["Extracted Conclusion", detail.conclusion],
+  ] as const) {
+    lines.push("", `## ${label}`, "", cleanReportText(value) || "_No extracted text was available for this section._");
+  }
+
+  if (detail.warnings && detail.warnings.length > 0) {
+    lines.push("", "## Warnings", ...detail.warnings.map((warning) => `- ${warning}`));
+  }
+
+  if (detail.diagnostics?.missingOutputs && detail.diagnostics.missingOutputs.length > 0) {
+    lines.push(
+      "",
+      "## Diagnostics",
+      ...detail.diagnostics.missingOutputs.map((item) => `- Missing output: ${item}`)
+    );
+  }
+
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
+}
+
+function triggerTextDownload(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function AdminImportClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -555,26 +699,8 @@ export default function AdminImportClient() {
     setAnalysisLoading(true);
 
     try {
-      const response = await fetch(`/api/workspace/library/${run.id}/analysis`, {
-        headers: requestHeaders,
-      });
-      const payload = (await response.json()) as RunAnalysisResponse;
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load analysis details.");
-      }
-
-      setAnalysisDetail(
-        payload.analysis ?? {
-          available: false,
-          topics: [],
-          keywords: [],
-          concepts: [],
-          facets: [],
-          tracksSingle: [],
-          tracksMulti: [],
-        }
-      );
+      const detail = await fetchAnalysisDetail(run.id);
+      setAnalysisDetail(detail);
     } catch (analysisLoadError) {
       setAnalysisError(
         analysisLoadError instanceof Error
@@ -585,6 +711,29 @@ export default function AdminImportClient() {
     } finally {
       setAnalysisLoading(false);
     }
+  }
+
+  async function fetchAnalysisDetail(runId: string) {
+    const response = await fetch(`/api/workspace/library/${runId}/analysis`, {
+      headers: requestHeaders,
+    });
+    const payload = (await response.json()) as RunAnalysisResponse;
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load analysis details.");
+    }
+
+    return (
+      payload.analysis ?? {
+        available: false,
+        topics: [],
+        keywords: [],
+        concepts: [],
+        facets: [],
+        tracksSingle: [],
+        tracksMulti: [],
+      }
+    );
   }
 
   async function handleOpenPrimaryFileAction(run: IngestionRunRow) {
@@ -642,6 +791,27 @@ export default function AdminImportClient() {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
+  }
+
+  async function handleDownloadAnalysisReport(
+    run: IngestionRunRow,
+    suppliedDetail?: RunAnalysisDetail | null
+  ) {
+    const detail =
+      suppliedDetail && suppliedDetail.available
+        ? suppliedDetail
+        : await fetchAnalysisDetail(run.id);
+
+    if (!detail.available) {
+      throw new Error("Pipeline analysis is not ready yet for this file.");
+    }
+
+    const markdown = buildAnalysisMarkdown(run, detail);
+    const baseName = sanitizeFilenamePart(
+      detail.title || run.display_name || run.source_filename || run.id
+    );
+    const filename = `${baseName || "analysis-report"} - pipeline-analysis.md`;
+    triggerTextDownload(filename, markdown, "text/markdown;charset=utf-8");
   }
 
   async function handleRenameRun(run: IngestionRunRow) {
@@ -1305,6 +1475,29 @@ export default function AdminImportClient() {
             className={itemClass}
           >
             View pipeline analysis
+          </button>
+        ) : null}
+        {activeMenuRun.status === "succeeded" ? (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await handleDownloadAnalysisReport(activeMenuRun);
+                setMessage(`Downloaded the analysis report for "${titleOf(activeMenuRun)}".`);
+                setError(null);
+              } catch (downloadError) {
+                setError(
+                  downloadError instanceof Error
+                    ? downloadError.message
+                    : "Failed to download the analysis report."
+                );
+              } finally {
+                setItemMenuState(null);
+              }
+            }}
+            className={itemClass}
+          >
+            Download analysis report
           </button>
         ) : null}
         <button
@@ -2143,6 +2336,19 @@ export default function AdminImportClient() {
           onResolvePreviewUrl={() => getRunOpenUrl(analysisRun)}
           onOpenInNewTab={() => handleOpenRunInNewTab(analysisRun)}
           onDownload={() => handleDownloadRun(analysisRun)}
+          onDownloadReport={async () => {
+            try {
+              await handleDownloadAnalysisReport(analysisRun, analysisDetail);
+              setMessage(`Downloaded the analysis report for "${titleOf(analysisRun)}".`);
+              setError(null);
+            } catch (downloadError) {
+              setError(
+                downloadError instanceof Error
+                  ? downloadError.message
+                  : "Failed to download the analysis report."
+              );
+            }
+          }}
           onToggleFavorite={() => handleToggleFavorite(analysisRun)}
           onRename={() => handleRenameRun(analysisRun)}
           onOpenDashboard={() => {
