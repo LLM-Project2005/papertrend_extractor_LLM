@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AdaptiveDashboardTab from "@/components/dashboard/AdaptiveDashboardTab";
@@ -25,6 +25,21 @@ const TAB_DEFINITIONS = [
   { key: "keyword_explorer", label: "Keyword Explorer" },
   { key: "adaptive", label: "Adaptive" },
 ] as const;
+
+const ADAPTIVE_PLAN_CACHE_PREFIX = "adaptive-plan-cache:v1";
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 function normalizeTabKey(value: string | null): string | null {
   if (!value) {
@@ -137,7 +152,7 @@ export default function DashboardClient({
     {
       mode: dashboardDataMode,
       projectId: selectedProjectId,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false,
     }
   );
   const [filterOpen, setFilterOpen] = useState(false);
@@ -145,6 +160,7 @@ export default function DashboardClient({
     plan: VisualizationPlan;
     source: "agent" | "fallback";
   } | null>(null);
+  const lastPlanSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (allYears.length === 0) {
@@ -232,17 +248,98 @@ export default function DashboardClient({
     return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
   }, [data, searchQuery, selectedTracks, selectedYears]);
 
+  const adaptivePlanSignature = useMemo(() => {
+    if (!data) {
+      return null;
+    }
+
+    return stableSerialize({
+      projectId: selectedProjectId ?? "all",
+      mode: data.useMock ? "mock" : "live",
+      diagnostics: data.diagnostics?.dataSource ?? null,
+      folders: [...selectedFolderIds].sort(),
+      selectedYears: [...selectedYears].sort(),
+      selectedTracks: [...selectedTracks].sort(),
+      searchQuery: searchQuery.trim(),
+      trendRows: filteredData.trends.map((row) => ({
+        paper_id: row.paper_id,
+        folder_id: row.folder_id ?? null,
+        year: row.year,
+        topic: row.topic,
+        keyword: row.keyword,
+        keyword_frequency: row.keyword_frequency,
+      })),
+      topicFamilies: (filteredData.topicFamilies ?? []).map((family) => ({
+        id: family.id,
+        canonicalTopic: family.canonicalTopic,
+        aliases: [...family.aliases].sort(),
+        totalKeywordFrequency: family.totalKeywordFrequency,
+        paperIds: [...family.paperIds].sort(),
+      })),
+      tracksSingle: filteredData.tracksSingle.map((row) => ({
+        paper_id: row.paper_id,
+        year: row.year,
+        el: row.el,
+        eli: row.eli,
+        lae: row.lae,
+        other: row.other,
+      })),
+    });
+  }, [
+    data,
+    filteredData.topicFamilies,
+    filteredData.tracksSingle,
+    filteredData.trends,
+    searchQuery,
+    selectedFolderIds,
+    selectedProjectId,
+    selectedTracks,
+    selectedYears,
+  ]);
+
   useEffect(() => {
-    if (!data || selectedYears.length === 0) {
+    if (!data || selectedYears.length === 0 || !adaptivePlanSignature) {
       return;
     }
 
     let cancelled = false;
+    const includeFolderComparison =
+      selectedFolderIds.length > 1 || (selectedFolderIds.length === 0 && folders.length > 1);
     const fallbackPlan = createDefaultVisualizationPlan(
       data.useMock ? "mock" : "live",
-      selectedTracks as TrackKey[]
+      selectedTracks as TrackKey[],
+      includeFolderComparison
     );
-    setPlanState({ plan: fallbackPlan, source: "fallback" });
+    const cacheKey = [
+      ADAPTIVE_PLAN_CACHE_PREFIX,
+      session?.user?.id ?? "anonymous",
+      selectedProjectId ?? "all",
+      adaptivePlanSignature,
+    ].join(":");
+
+    try {
+      const cachedValue = window.sessionStorage.getItem(cacheKey);
+      if (cachedValue) {
+        const parsed = JSON.parse(cachedValue) as {
+          plan?: VisualizationPlan;
+          source?: "agent" | "fallback";
+        };
+        if (parsed.plan) {
+          setPlanState({
+            plan: parsed.plan,
+            source: parsed.source ?? "agent",
+          });
+          lastPlanSignatureRef.current = adaptivePlanSignature;
+          return;
+        }
+      }
+    } catch {
+      // Ignore cache parsing issues and rebuild below.
+    }
+
+    if (lastPlanSignatureRef.current !== adaptivePlanSignature || !planState) {
+      setPlanState((current) => current ?? { plan: fallbackPlan, source: "fallback" });
+    }
 
     const timer = window.setTimeout(async () => {
       try {
@@ -271,12 +368,20 @@ export default function DashboardClient({
           return;
         }
 
-        setPlanState({
+        const nextState = {
           plan: payload.plan,
           source: payload.source ?? "fallback",
-        });
+        } as const;
+        lastPlanSignatureRef.current = adaptivePlanSignature;
+        setPlanState(nextState);
+        try {
+          window.sessionStorage.setItem(cacheKey, JSON.stringify(nextState));
+        } catch {
+          // Ignore cache write failures.
+        }
       } catch {
         if (!cancelled) {
+          lastPlanSignatureRef.current = adaptivePlanSignature;
           setPlanState({ plan: fallbackPlan, source: "fallback" });
         }
       }
@@ -288,6 +393,9 @@ export default function DashboardClient({
     };
   }, [
     data,
+    adaptivePlanSignature,
+    folders.length,
+    planState,
     searchQuery,
     selectedFolderIds,
     selectedProjectId,

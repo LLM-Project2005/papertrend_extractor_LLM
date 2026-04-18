@@ -51,6 +51,14 @@ export default function AdaptiveDashboardTab({
 }) {
   const years = [...new Set(data.trends.map((row) => row.year))].sort();
   const singleTrackByPaper = new Map(data.tracksSingle.map((row) => [row.paper_id, row]));
+  const totalPapers = new Set([
+    ...data.trends.map((row) => row.paper_id),
+    ...data.tracksSingle.map((row) => row.paper_id),
+    ...data.tracksMulti.map((row) => row.paper_id),
+  ]).size;
+  const totalTopics = new Set(data.trends.map((row) => row.topic)).size;
+  const totalKeywords = new Set(data.trends.map((row) => row.keyword)).size;
+  const totalFolders = new Set(data.trends.map((row) => row.folder_id).filter(Boolean)).size;
 
   function renderChart(
     chart: VisualizationPlanSection["charts"][number]
@@ -344,6 +352,22 @@ export default function AdaptiveDashboardTab({
         <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
           {adaptiveSection.reason}
         </p>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {[
+          { label: "Papers", value: totalPapers, tone: "text-slate-900 dark:text-white" },
+          { label: "Canonical topics", value: totalTopics, tone: "text-slate-900 dark:text-white" },
+          { label: "Grounded keywords", value: totalKeywords, tone: "text-slate-900 dark:text-white" },
+          { label: "Folders in view", value: totalFolders || 1, tone: "text-slate-900 dark:text-white" },
+        ].map((card) => (
+          <section key={card.label} className="app-surface px-5 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+              {card.label}
+            </p>
+            <p className={`mt-3 text-3xl font-semibold ${card.tone}`}>{card.value}</p>
+          </section>
+        ))}
       </section>
 
       {renderedCharts.length > 0 ? (

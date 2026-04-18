@@ -309,12 +309,14 @@ function buildPlannerPrompt(
 You are an adaptive chart planning agent for a research analytics dashboard.
 Return JSON only.
 
-Your job is to pick 2 to 4 charts for the Adaptive tab.
+Your job is to pick 4 to 5 charts for the Adaptive tab.
 The charts must come only from the approved chart catalog below.
 Do not invent new chart types, layouts, or code.
 Prefer a compact set of charts that together tell the strongest story in the current filtered corpus.
 Use normalized canonical topics, not raw per-paper topic labels.
 If multiple folders are active, prefer at least one comparison chart.
+Prefer plan stability. If the corpus signature is broadly similar, keep the chart mix conservative instead of changing it just to be novel.
+Assume KPI cards are already shown separately, so your chart picks should complement those KPI cards rather than repeat them.
 
 Allowed chart_key values:
 - adaptive_topic_momentum
@@ -373,9 +375,13 @@ export async function planVisualization(
   source: "agent" | "fallback";
 }> {
   const analytics = await buildNormalizedAnalyticsPayload(request, ownerUserId);
+  const includeFolderComparison =
+    analytics.filters.folder_ids.length > 1 ||
+    (analytics.filters.all_folders_selected && analytics.overview.folder_count > 1);
   const fallback = createDefaultVisualizationPlan(
     analytics.mode,
-    analytics.filters.selected_tracks
+    analytics.filters.selected_tracks,
+    includeFolderComparison
   );
 
   try {
@@ -405,7 +411,8 @@ export async function planVisualization(
       plan: sanitizeVisualizationPlan(
         rawPlan,
         analytics.mode,
-        analytics.filters.selected_tracks
+        analytics.filters.selected_tracks,
+        includeFolderComparison
       ),
       analytics,
       source: "agent",

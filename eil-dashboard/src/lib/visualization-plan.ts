@@ -78,7 +78,8 @@ function sanitizeConfig(
 
 function buildAdaptiveSection(
   mode: "mock" | "live",
-  selectedTracks: TrackKey[] = DEFAULT_TRACKS
+  selectedTracks: TrackKey[] = DEFAULT_TRACKS,
+  includeFolderComparison = false
 ): VisualizationPlanSection {
   const charts: VisualizationPlanChart[] = [
     {
@@ -94,12 +95,27 @@ function buildAdaptiveSection(
       config: { top_n: 8 },
     },
     {
+      chart_key: "adaptive_keyword_family_heatmap",
+      title: "Keyword family heatmap",
+      reason: "Shows where the strongest normalized topic families actually concentrate over time.",
+      config: { heat_n: 10 },
+    },
+    {
       chart_key: "adaptive_track_topic_comparison",
       title: "Track-to-topic comparison",
       reason: "Connects the strongest normalized topics back to the current track mix.",
       config: { top_n: 6, selected_tracks: selectedTracks },
     },
   ];
+
+  if (includeFolderComparison) {
+    charts.push({
+      chart_key: "adaptive_folder_topic_comparison",
+      title: "Cross-folder topic comparison",
+      reason: "Highlights how the selected folders diverge or align on normalized topic families.",
+      config: { top_n: 6 },
+    });
+  }
 
   return {
     section_key: "adaptive",
@@ -118,7 +134,8 @@ function buildAdaptiveSection(
 
 export function createDefaultVisualizationPlan(
   mode: "mock" | "live",
-  selectedTracks: TrackKey[] = DEFAULT_TRACKS
+  selectedTracks: TrackKey[] = DEFAULT_TRACKS,
+  includeFolderComparison = false
 ): VisualizationPlan {
   return {
     version: "v1",
@@ -129,16 +146,21 @@ export function createDefaultVisualizationPlan(
       mode === "mock"
         ? "Preview data is active, so the adaptive tab is using a safe default chart mix."
         : "The adaptive tab is focusing on normalized corpus topics, their movement over time, and how they interact with track structure.",
-    sections: [buildAdaptiveSection(mode, selectedTracks)],
+    sections: [buildAdaptiveSection(mode, selectedTracks, includeFolderComparison)],
   };
 }
 
 export function sanitizeVisualizationPlan(
   rawPlan: unknown,
   fallbackMode: "mock" | "live",
-  selectedTracks: TrackKey[] = DEFAULT_TRACKS
+  selectedTracks: TrackKey[] = DEFAULT_TRACKS,
+  includeFolderComparison = false
 ): VisualizationPlan {
-  const fallback = createDefaultVisualizationPlan(fallbackMode, selectedTracks);
+  const fallback = createDefaultVisualizationPlan(
+    fallbackMode,
+    selectedTracks,
+    includeFolderComparison
+  );
   if (!rawPlan || typeof rawPlan !== "object") {
     return fallback;
   }
@@ -194,7 +216,7 @@ export function sanitizeVisualizationPlan(
       };
     })
     .filter((chart): chart is VisualizationPlanChart => Boolean(chart))
-    .slice(0, 4);
+    .slice(0, 5);
 
   if (charts.length === 0) {
     return fallback;
