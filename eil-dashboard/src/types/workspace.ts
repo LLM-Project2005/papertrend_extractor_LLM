@@ -25,6 +25,7 @@ export interface WorkspaceProfile {
   goal: WorkspaceGoal;
   primarySource: WorkspaceSource;
   desiredOutputs: WorkspaceOutput[];
+  analysisHistoryHiddenByProject: Record<string, string[]>;
   onboardingComplete: boolean;
   updatedAt: string | null;
 }

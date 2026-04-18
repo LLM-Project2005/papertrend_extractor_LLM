@@ -147,6 +147,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ? {
             ...DEFAULT_WORKSPACE_PROFILE,
             ...authProfile.workspace_profile,
+            analysisHistoryHiddenByProject:
+              authProfile.workspace_profile.analysisHistoryHiddenByProject &&
+              typeof authProfile.workspace_profile.analysisHistoryHiddenByProject ===
+                "object"
+                ? authProfile.workspace_profile.analysisHistoryHiddenByProject
+                : DEFAULT_WORKSPACE_PROFILE.analysisHistoryHiddenByProject,
             desiredOutputs:
               authProfile.workspace_profile.desiredOutputs &&
               authProfile.workspace_profile.desiredOutputs.length > 0

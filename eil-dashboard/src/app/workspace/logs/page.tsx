@@ -18,6 +18,8 @@ type HistoryGroup = {
   runs: IngestionRunRow[];
 };
 
+const MAX_HIDDEN_HISTORY_ITEMS_PER_PROJECT = 500;
+
 function formatDateTime(value?: string | null) {
   if (!value) return "Not available";
   const parsed = new Date(value);
@@ -65,6 +67,14 @@ function readHiddenHistoryIds(storageKey: string) {
 function writeHiddenHistoryIds(storageKey: string, ids: Set<string>) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(storageKey, JSON.stringify(Array.from(ids)));
+}
+
+function normalizeHiddenHistoryIds(ids: Iterable<string>) {
+  const unique = Array.from(new Set(Array.from(ids).filter(Boolean)));
+  if (unique.length <= MAX_HIDDEN_HISTORY_ITEMS_PER_PROJECT) {
+    return unique;
+  }
+  return unique.slice(unique.length - MAX_HIDDEN_HISTORY_ITEMS_PER_PROJECT);
 }
 
 function statusTone(status: IngestionRunRow["status"]) {
@@ -153,7 +163,7 @@ function subtitleOf(run: IngestionRunRow) {
 
 export default function WorkspaceLogsPage() {
   const { session } = useAuth();
-  const { currentProject } = useWorkspaceProfile();
+  const { currentProject, profile, updateProfile } = useWorkspaceProfile();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -164,10 +174,37 @@ export default function WorkspaceLogsPage() {
     () => getHistoryStorageKey(session?.user?.id, currentProject?.id),
     [currentProject?.id, session?.user?.id]
   );
+  const syncedHiddenIds = useMemo(() => {
+    if (!currentProject?.id) return [];
+    return profile.analysisHistoryHiddenByProject[currentProject.id] ?? [];
+  }, [currentProject?.id, profile.analysisHistoryHiddenByProject]);
 
   useEffect(() => {
-    setHiddenIds(readHiddenHistoryIds(storageKey));
-  }, [storageKey]);
+    const localIds = readHiddenHistoryIds(storageKey);
+    const merged = normalizeHiddenHistoryIds([...syncedHiddenIds, ...localIds]);
+    const nextSet = new Set(merged);
+    setHiddenIds(nextSet);
+
+    if (merged.length !== syncedHiddenIds.length) {
+      if (!currentProject?.id) return;
+      updateProfile({
+        analysisHistoryHiddenByProject: {
+          ...profile.analysisHistoryHiddenByProject,
+          [currentProject.id]: merged,
+        },
+      });
+    }
+
+    if (merged.length !== localIds.size) {
+      writeHiddenHistoryIds(storageKey, nextSet);
+    }
+  }, [
+    currentProject?.id,
+    profile.analysisHistoryHiddenByProject,
+    storageKey,
+    syncedHiddenIds,
+    updateProfile,
+  ]);
 
   useEffect(() => {
     async function load() {
@@ -220,9 +257,17 @@ export default function WorkspaceLogsPage() {
 
   function dismissRun(runId: string) {
     setHiddenIds((current) => {
-      const next = new Set(current);
+      const next = new Set(normalizeHiddenHistoryIds([...current, runId]));
       next.add(runId);
       writeHiddenHistoryIds(storageKey, next);
+      if (currentProject?.id) {
+        updateProfile({
+          analysisHistoryHiddenByProject: {
+            ...profile.analysisHistoryHiddenByProject,
+            [currentProject.id]: Array.from(next),
+          },
+        });
+      }
       return next;
     });
   }
@@ -230,6 +275,13 @@ export default function WorkspaceLogsPage() {
   function resetHiddenHistory() {
     const next = new Set<string>();
     writeHiddenHistoryIds(storageKey, next);
+    if (currentProject?.id) {
+      const remaining = { ...profile.analysisHistoryHiddenByProject };
+      delete remaining[currentProject.id];
+      updateProfile({
+        analysisHistoryHiddenByProject: remaining,
+      });
+    }
     setHiddenIds(next);
   }
 
