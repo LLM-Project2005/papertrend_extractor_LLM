@@ -4,6 +4,7 @@ import Link from "next/link";
 import {
   FormEvent,
   KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
@@ -108,6 +109,274 @@ const localMessage = (
   kind: "chat",
   metadata: metadata ?? null,
 });
+
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-white">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
+      const parts = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
+      if (parts) {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={parts[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-sky-300 underline underline-offset-4 transition-colors hover:text-sky-200"
+          >
+            {parts[1]}
+          </a>
+        );
+      } else {
+        nodes.push(token);
+      }
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      nodes.push(
+        <code
+          key={`${keyPrefix}-code-${match.index}`}
+          className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[0.95em] text-[#f3f3f3]"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function isMarkdownTable(lines: string[]) {
+  if (lines.length < 2) {
+    return false;
+  }
+  const separator = lines[1].trim();
+  return (
+    lines[0].includes("|") &&
+    /^\|?[\s:-]+(\|[\s:-]+)+\|?$/.test(separator)
+  );
+}
+
+function parseMarkdownTableRow(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function renderRichMessage(content: string, keyPrefix: string, tone: "assistant" | "user" = "assistant") {
+  const normalized = content.replace(/\r\n/g, "\n");
+  const blocks: string[] = [];
+  const lines = normalized.split("\n");
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    if (line.trim().startsWith("```")) {
+      const codeLines = [line];
+      index += 1;
+      while (index < lines.length) {
+        codeLines.push(lines[index]);
+        if (lines[index].trim().startsWith("```")) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      blocks.push(codeLines.join("\n"));
+      continue;
+    }
+
+    const chunk = [line];
+    index += 1;
+    while (index < lines.length && lines[index].trim()) {
+      if (lines[index].trim().startsWith("```")) {
+        break;
+      }
+      chunk.push(lines[index]);
+      index += 1;
+    }
+    blocks.push(chunk.join("\n"));
+  }
+
+  const headingClass =
+    tone === "assistant"
+      ? "text-lg font-semibold text-white"
+      : "text-base font-semibold text-[#f3f3f3]";
+  const paragraphClass =
+    tone === "assistant"
+      ? "text-[15px] leading-7 text-[#ececec]"
+      : "text-[15px] leading-7 text-[#f3f3f3]";
+
+  return (
+    <div className="space-y-4">
+      {blocks.map((block, blockIndex) => {
+        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (lines.length === 0) {
+          return null;
+        }
+
+        if (block.trim().startsWith("```")) {
+          const rawLines = block.split("\n");
+          const fence = rawLines[0].trim();
+          const language = fence.replace(/^```/, "").trim();
+          const code = rawLines
+            .slice(1, rawLines[rawLines.length - 1]?.trim().startsWith("```") ? -1 : undefined)
+            .join("\n");
+          return (
+            <div
+              key={`${keyPrefix}-codeblock-${blockIndex}`}
+              className="overflow-hidden rounded-2xl border border-white/10 bg-[#181818]"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs uppercase tracking-[0.16em] text-[#8e8e8e]">
+                <span>{language || "Code"}</span>
+              </div>
+              <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-[#e6e6e6]">
+                <code>{code}</code>
+              </pre>
+            </div>
+          );
+        }
+
+        if (isMarkdownTable(lines)) {
+          const header = parseMarkdownTableRow(lines[0]);
+          const rows = lines.slice(2).map(parseMarkdownTableRow).filter((row) => row.length > 0);
+          return (
+            <div
+              key={`${keyPrefix}-table-${blockIndex}`}
+              className="overflow-x-auto rounded-2xl border border-white/10 bg-[#222222]"
+            >
+              <table className="min-w-full border-collapse text-left text-sm text-[#ececec]">
+                <thead className="bg-white/5">
+                  <tr>
+                    {header.map((cell, cellIndex) => (
+                      <th
+                        key={`${keyPrefix}-th-${blockIndex}-${cellIndex}`}
+                        className="border-b border-white/10 px-4 py-3 font-semibold"
+                      >
+                        {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${cellIndex}`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((row, rowIndex) => (
+                    <tr key={`${keyPrefix}-tr-${blockIndex}-${rowIndex}`} className="border-t border-white/10">
+                      {row.map((cell, cellIndex) => (
+                        <td
+                          key={`${keyPrefix}-td-${blockIndex}-${rowIndex}-${cellIndex}`}
+                          className="px-4 py-3 align-top text-[#d8d8d8]"
+                        >
+                          {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${rowIndex}-${cellIndex}`)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
+
+        const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
+        if (bulletLines.length === lines.length) {
+          return (
+            <ul
+              key={`${keyPrefix}-list-${blockIndex}`}
+              className={`space-y-2 ${paragraphClass}`}
+            >
+              {bulletLines.map((line, lineIndex) => (
+                <li key={`${keyPrefix}-item-${blockIndex}-${lineIndex}`} className="flex gap-3">
+                  <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-white/60" />
+                  <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${lineIndex}`)}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        const numberedLines = lines.filter((line) => /^\d+\.\s+/.test(line));
+        if (numberedLines.length === lines.length) {
+          return (
+            <ol
+              key={`${keyPrefix}-ordered-${blockIndex}`}
+              className={`space-y-2 ${paragraphClass}`}
+            >
+              {numberedLines.map((line, lineIndex) => (
+                <li key={`${keyPrefix}-ordered-item-${blockIndex}-${lineIndex}`} className="flex gap-3">
+                  <span className="min-w-[1.5rem] flex-none font-semibold text-white/75">
+                    {line.match(/^(\d+)\./)?.[1]}.
+                  </span>
+                  <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${lineIndex}`)}</span>
+                </li>
+              ))}
+            </ol>
+          );
+        }
+
+        const quoteLines = lines.filter((line) => /^>\s?/.test(line));
+        if (quoteLines.length === lines.length) {
+          return (
+            <blockquote
+              key={`${keyPrefix}-quote-${blockIndex}`}
+              className="rounded-r-2xl border-l-4 border-sky-400/70 bg-white/5 px-4 py-3 text-[15px] leading-7 text-[#d9e9ff]"
+            >
+              <div className="space-y-2">
+                {quoteLines.map((line, lineIndex) => (
+                  <p key={`${keyPrefix}-quote-line-${blockIndex}-${lineIndex}`}>
+                    {renderInlineMarkdown(line.replace(/^>\s?/, ""), `${keyPrefix}-quote-${blockIndex}-${lineIndex}`)}
+                  </p>
+                ))}
+              </div>
+            </blockquote>
+          );
+        }
+
+        if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+          const headingText = lines[0].replace(/^#{1,3}\s+/, "");
+          return (
+            <h3 key={`${keyPrefix}-heading-${blockIndex}`} className={headingClass}>
+              {renderInlineMarkdown(headingText, `${keyPrefix}-heading-${blockIndex}`)}
+            </h3>
+          );
+        }
+
+        return (
+          <p key={`${keyPrefix}-paragraph-${blockIndex}`} className={paragraphClass}>
+            {renderInlineMarkdown(lines.join(" "), `${keyPrefix}-paragraph-${blockIndex}`)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
 
 function sortThreads(
   threads: WorkspaceThreadSummary[],
@@ -688,9 +957,8 @@ export default function ChatClient() {
     setMenuOpen(false);
 
     const nextMessages = [...messages, localMessage("user", prompt)];
-    if (!canPersist) {
-      setMessages(nextMessages);
-    }
+    setMessages(nextMessages);
+    setDraft("");
 
     try {
       const payload = await sendRequest({
@@ -711,7 +979,6 @@ export default function ChatClient() {
         chatMode: "normal",
         action: "message",
       });
-      setDraft("");
       setSelectedLibraryRuns([]);
       if (payload.thread && payload.messages) {
         applyPayload(payload);
@@ -748,6 +1015,9 @@ export default function ChatClient() {
     setLoading(true);
     setError(null);
     setMenuOpen(false);
+    const optimisticMessages = [...messages, localMessage("user", prompt)];
+    setMessages(optimisticMessages);
+    setDraft("");
 
     try {
       const payload = await sendRequest({
@@ -762,7 +1032,6 @@ export default function ChatClient() {
         chatMode: "deep_research",
         action: "plan",
       });
-      setDraft("");
       applyPayload(payload);
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
@@ -1348,14 +1617,12 @@ export default function ChatClient() {
                       {isUser ? (
                         <div className="flex justify-end">
                           <div className="max-w-[72%] rounded-[18px] bg-[#2a2a2a] px-5 py-3 text-[15px] leading-7 text-[#f3f3f3]">
-                            <div className="whitespace-pre-wrap">{message.content}</div>
+                            {renderRichMessage(message.content, message.id, "user")}
                           </div>
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          <div className="whitespace-pre-wrap text-[15px] leading-7 text-[#ececec]">
-                            {message.content}
-                          </div>
+                          {renderRichMessage(message.content, message.id, "assistant")}
                           {message.citations.length > 0 ? (
                             <div className="space-y-2">
                               {message.citations.map((citation) => (
