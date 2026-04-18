@@ -186,6 +186,90 @@ function parseMarkdownTableRow(line: string) {
     .map((cell) => cell.trim());
 }
 
+function groupMarkdownLines(lines: string[]) {
+  const groups: string[][] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (/^#{1,3}\s+/.test(line)) {
+      groups.push([line]);
+      index += 1;
+      continue;
+    }
+
+    if (line.includes("|") && index + 1 < lines.length) {
+      const tableCandidate = [line, lines[index + 1]];
+      let cursor = index + 2;
+      while (cursor < lines.length && lines[cursor].includes("|")) {
+        tableCandidate.push(lines[cursor]);
+        cursor += 1;
+      }
+      if (isMarkdownTable(tableCandidate)) {
+        groups.push(tableCandidate);
+        index = cursor;
+        continue;
+      }
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      const listGroup = [line];
+      index += 1;
+      while (index < lines.length && /^[-*]\s+/.test(lines[index])) {
+        listGroup.push(lines[index]);
+        index += 1;
+      }
+      groups.push(listGroup);
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const listGroup = [line];
+      index += 1;
+      while (index < lines.length && /^\d+\.\s+/.test(lines[index])) {
+        listGroup.push(lines[index]);
+        index += 1;
+      }
+      groups.push(listGroup);
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      const quoteGroup = [line];
+      index += 1;
+      while (index < lines.length && /^>\s?/.test(lines[index])) {
+        quoteGroup.push(lines[index]);
+        index += 1;
+      }
+      groups.push(quoteGroup);
+      continue;
+    }
+
+    const paragraphGroup = [line];
+    index += 1;
+    while (
+      index < lines.length &&
+      !/^#{1,3}\s+/.test(lines[index]) &&
+      !/^[-*]\s+/.test(lines[index]) &&
+      !/^\d+\.\s+/.test(lines[index]) &&
+      !/^>\s?/.test(lines[index])
+    ) {
+      if (lines[index].includes("|") && index + 1 < lines.length) {
+        const candidate = [lines[index], lines[index + 1]];
+        if (isMarkdownTable(candidate)) {
+          break;
+        }
+      }
+      paragraphGroup.push(lines[index]);
+      index += 1;
+    }
+    groups.push(paragraphGroup);
+  }
+
+  return groups;
+}
+
 function renderRichMessage(content: string, keyPrefix: string, tone: "assistant" | "user" = "assistant") {
   const normalized = content.replace(/\r\n/g, "\n");
   const blocks: string[] = [];
@@ -238,8 +322,8 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
   return (
     <div className="space-y-4">
       {blocks.map((block, blockIndex) => {
-        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-        if (lines.length === 0) {
+        const rawLines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (rawLines.length === 0) {
           return null;
         }
 
@@ -265,113 +349,119 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
           );
         }
 
-        if (isMarkdownTable(lines)) {
-          const header = parseMarkdownTableRow(lines[0]);
-          const rows = lines.slice(2).map(parseMarkdownTableRow).filter((row) => row.length > 0);
-          return (
-            <div
-              key={`${keyPrefix}-table-${blockIndex}`}
-              className="overflow-x-auto rounded-2xl border border-white/10 bg-[#222222]"
-            >
-              <table className="min-w-full border-collapse text-left text-sm text-[#ececec]">
-                <thead className="bg-white/5">
-                  <tr>
-                    {header.map((cell, cellIndex) => (
-                      <th
-                        key={`${keyPrefix}-th-${blockIndex}-${cellIndex}`}
-                        className="border-b border-white/10 px-4 py-3 font-semibold"
-                      >
-                        {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${cellIndex}`)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, rowIndex) => (
-                    <tr key={`${keyPrefix}-tr-${blockIndex}-${rowIndex}`} className="border-t border-white/10">
-                      {row.map((cell, cellIndex) => (
-                        <td
-                          key={`${keyPrefix}-td-${blockIndex}-${rowIndex}-${cellIndex}`}
-                          className="px-4 py-3 align-top text-[#d8d8d8]"
-                        >
-                          {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${rowIndex}-${cellIndex}`)}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        }
-
-        const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
-        if (bulletLines.length === lines.length) {
-          return (
-            <ul
-              key={`${keyPrefix}-list-${blockIndex}`}
-              className={`space-y-2 ${paragraphClass}`}
-            >
-              {bulletLines.map((line, lineIndex) => (
-                <li key={`${keyPrefix}-item-${blockIndex}-${lineIndex}`} className="flex gap-3">
-                  <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-white/60" />
-                  <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${lineIndex}`)}</span>
-                </li>
-              ))}
-            </ul>
-          );
-        }
-
-        const numberedLines = lines.filter((line) => /^\d+\.\s+/.test(line));
-        if (numberedLines.length === lines.length) {
-          return (
-            <ol
-              key={`${keyPrefix}-ordered-${blockIndex}`}
-              className={`space-y-2 ${paragraphClass}`}
-            >
-              {numberedLines.map((line, lineIndex) => (
-                <li key={`${keyPrefix}-ordered-item-${blockIndex}-${lineIndex}`} className="flex gap-3">
-                  <span className="min-w-[1.5rem] flex-none font-semibold text-white/75">
-                    {line.match(/^(\d+)\./)?.[1]}.
-                  </span>
-                  <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${lineIndex}`)}</span>
-                </li>
-              ))}
-            </ol>
-          );
-        }
-
-        const quoteLines = lines.filter((line) => /^>\s?/.test(line));
-        if (quoteLines.length === lines.length) {
-          return (
-            <blockquote
-              key={`${keyPrefix}-quote-${blockIndex}`}
-              className="rounded-r-2xl border-l-4 border-sky-400/70 bg-white/5 px-4 py-3 text-[15px] leading-7 text-[#d9e9ff]"
-            >
-              <div className="space-y-2">
-                {quoteLines.map((line, lineIndex) => (
-                  <p key={`${keyPrefix}-quote-line-${blockIndex}-${lineIndex}`}>
-                    {renderInlineMarkdown(line.replace(/^>\s?/, ""), `${keyPrefix}-quote-${blockIndex}-${lineIndex}`)}
-                  </p>
-                ))}
-              </div>
-            </blockquote>
-          );
-        }
-
-        if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
-          const headingText = lines[0].replace(/^#{1,3}\s+/, "");
-          return (
-            <h3 key={`${keyPrefix}-heading-${blockIndex}`} className={headingClass}>
-              {renderInlineMarkdown(headingText, `${keyPrefix}-heading-${blockIndex}`)}
-            </h3>
-          );
-        }
-
         return (
-          <p key={`${keyPrefix}-paragraph-${blockIndex}`} className={paragraphClass}>
-            {renderInlineMarkdown(lines.join(" "), `${keyPrefix}-paragraph-${blockIndex}`)}
-          </p>
+          <div key={`${keyPrefix}-block-${blockIndex}`} className="space-y-4">
+            {groupMarkdownLines(rawLines).map((lines, groupIndex) => {
+              if (isMarkdownTable(lines)) {
+                const header = parseMarkdownTableRow(lines[0]);
+                const rows = lines.slice(2).map(parseMarkdownTableRow).filter((row) => row.length > 0);
+                return (
+                  <div
+                    key={`${keyPrefix}-table-${blockIndex}-${groupIndex}`}
+                    className="overflow-x-auto rounded-2xl border border-white/10 bg-[#222222]"
+                  >
+                    <table className="min-w-full border-collapse text-left text-sm text-[#ececec]">
+                      <thead className="bg-white/5">
+                        <tr>
+                          {header.map((cell, cellIndex) => (
+                            <th
+                              key={`${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`}
+                              className="border-b border-white/10 px-4 py-3 font-semibold"
+                            >
+                              {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row, rowIndex) => (
+                          <tr key={`${keyPrefix}-tr-${blockIndex}-${groupIndex}-${rowIndex}`} className="border-t border-white/10">
+                            {row.map((cell, cellIndex) => (
+                              <td
+                                key={`${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`}
+                                className="px-4 py-3 align-top text-[#d8d8d8]"
+                              >
+                                {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              }
+
+              const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
+              if (bulletLines.length === lines.length) {
+                return (
+                  <ul
+                    key={`${keyPrefix}-list-${blockIndex}-${groupIndex}`}
+                    className={`space-y-2 ${paragraphClass}`}
+                  >
+                    {bulletLines.map((line, lineIndex) => (
+                      <li key={`${keyPrefix}-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
+                        <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-white/60" />
+                        <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              }
+
+              const numberedLines = lines.filter((line) => /^\d+\.\s+/.test(line));
+              if (numberedLines.length === lines.length) {
+                return (
+                  <ol
+                    key={`${keyPrefix}-ordered-${blockIndex}-${groupIndex}`}
+                    className={`space-y-2 ${paragraphClass}`}
+                  >
+                    {numberedLines.map((line, lineIndex) => (
+                      <li key={`${keyPrefix}-ordered-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
+                        <span className="min-w-[1.5rem] flex-none font-semibold text-white/75">
+                          {line.match(/^(\d+)\./)?.[1]}.
+                        </span>
+                        <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
+                      </li>
+                    ))}
+                  </ol>
+                );
+              }
+
+              const quoteLines = lines.filter((line) => /^>\s?/.test(line));
+              if (quoteLines.length === lines.length) {
+                return (
+                  <blockquote
+                    key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
+                    className="rounded-r-2xl border-l-4 border-sky-400/70 bg-white/5 px-4 py-3 text-[15px] leading-7 text-[#d9e9ff]"
+                  >
+                    <div className="space-y-2">
+                      {quoteLines.map((line, lineIndex) => (
+                        <p key={`${keyPrefix}-quote-line-${blockIndex}-${groupIndex}-${lineIndex}`}>
+                          {renderInlineMarkdown(line.replace(/^>\s?/, ""), `${keyPrefix}-quote-${blockIndex}-${groupIndex}-${lineIndex}`)}
+                        </p>
+                      ))}
+                    </div>
+                  </blockquote>
+                );
+              }
+
+              if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+                const headingText = lines[0].replace(/^#{1,3}\s+/, "");
+                return (
+                  <h3 key={`${keyPrefix}-heading-${blockIndex}-${groupIndex}`} className={headingClass}>
+                    {renderInlineMarkdown(headingText, `${keyPrefix}-heading-${blockIndex}-${groupIndex}`)}
+                  </h3>
+                );
+              }
+
+              return (
+                <p key={`${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`} className={paragraphClass}>
+                  {renderInlineMarkdown(lines.join(" "), `${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`)}
+                </p>
+              );
+            })}
+          </div>
         );
       })}
     </div>
