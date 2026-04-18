@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
-import type { TrendRow } from "@/types/database";
+import type { PaperId, TrendRow } from "@/types/database";
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 
@@ -165,7 +165,7 @@ export default function KeywordExplorer({
   const keywordAggregate = useMemo(() => {
     const map: Record<
       string,
-      { total: number; papers: Set<number>; years: Set<string>; topics: Set<string> }
+      { total: number; papers: Set<PaperId>; years: Set<string>; topics: Set<string> }
     > = {};
 
     trends.forEach((row) => {

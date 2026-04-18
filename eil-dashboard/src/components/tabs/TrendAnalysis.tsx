@@ -15,7 +15,7 @@ import {
 } from "recharts";
 import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
-import type { TrendRow } from "@/types/database";
+import type { PaperId, TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
@@ -43,7 +43,7 @@ export default function TrendAnalysis({ trends, planCharts }: Props) {
     Math.max(emergingConfig?.top_n ?? 8, decliningConfig?.top_n ?? 8) || 8;
 
   const topTopics = useMemo(() => {
-    const counts: Record<string, Set<number>> = {};
+    const counts: Record<string, Set<PaperId>> = {};
     trends.forEach((row) => {
       (counts[row.topic] ??= new Set()).add(row.paper_id);
     });
@@ -80,7 +80,7 @@ export default function TrendAnalysis({ trends, planCharts }: Props) {
     const late = new Set(years.slice(midpoint));
 
     const countIn = (yearSet: Set<string>) => {
-      const counts: Record<string, Set<number>> = {};
+      const counts: Record<string, Set<PaperId>> = {};
       trends
         .filter((row) => yearSet.has(row.year))
         .forEach((row) => (counts[row.topic] ??= new Set()).add(row.paper_id));

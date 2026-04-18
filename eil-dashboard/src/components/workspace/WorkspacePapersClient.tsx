@@ -12,6 +12,7 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 export default function WorkspacePapersClient() {
   const {
     selectedFolderId,
+    selectedProjectId,
     setSelectedFolderId,
     folders,
     selectedYears,
@@ -24,14 +25,17 @@ export default function WorkspacePapersClient() {
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const { data, loading, allYears } = useDashboardData(
     selectedFolderId,
-    scopedFolderIds
+    scopedFolderIds,
+    {
+      projectId: selectedProjectId,
+    }
   );
   const searchParams = useSearchParams();
   const [filterOpen, setFilterOpen] = useState(false);
 
   const linkedPaperId = useMemo(() => {
-    const value = Number.parseInt(searchParams.get("paperId") ?? "", 10);
-    return Number.isFinite(value) ? value : null;
+    const value = (searchParams.get("paperId") ?? "").trim();
+    return value || null;
   }, [searchParams]);
 
   useEffect(() => {

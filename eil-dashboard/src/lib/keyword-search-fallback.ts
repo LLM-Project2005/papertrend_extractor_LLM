@@ -1,7 +1,7 @@
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { loadDashboardDataServer } from "@/lib/dashboard-data-server";
-import type { TrackRow } from "@/types/database";
+import type { PaperId, TrackRow } from "@/types/database";
 import type { KeywordSearchRequest, KeywordSearchResponse } from "@/types/keyword-search";
 
 function toTrackField(track: TrackKey) {
@@ -73,9 +73,9 @@ export async function runKeywordSearchFallback(
   const matchedTerms = [...new Set(matchedRows.map((row) => row.keyword))].slice(0, 12);
   const canonicalConcept = matchedTerms[0] ?? request.query;
 
-  const timelineMap = new Map<string, { frequency: number; paperIds: Set<number> }>();
+  const timelineMap = new Map<string, { frequency: number; paperIds: Set<PaperId> }>();
   matchedRows.forEach((row) => {
-    const entry = timelineMap.get(row.year) ?? { frequency: 0, paperIds: new Set<number>() };
+    const entry = timelineMap.get(row.year) ?? { frequency: 0, paperIds: new Set<PaperId>() };
     entry.frequency += row.keyword_frequency;
     entry.paperIds.add(row.paper_id);
     timelineMap.set(row.year, entry);

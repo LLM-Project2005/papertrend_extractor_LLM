@@ -18,7 +18,7 @@ import {
   TRACK_NAMES,
   type TrackKey,
 } from "@/lib/constants";
-import type { TrendRow, TrackRow } from "@/types/database";
+import type { PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
@@ -90,7 +90,7 @@ export default function TrackAnalysis({
     const result: Record<string, { topic: string; papers: number }[]> = {};
 
     TRACK_COLS.filter((track) => topicTracks.includes(track)).forEach((track) => {
-      const counts: Record<string, Set<number>> = {};
+      const counts: Record<string, Set<PaperId>> = {};
       trends.forEach((row) => {
         const trackRow = trackMap.get(row.paper_id);
         if (trackRow && trackRow[trackField(track)] === 1) {

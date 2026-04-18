@@ -14,6 +14,7 @@ export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
   goal: "trend-mapping",
   primarySource: "pdf-upload",
   desiredOutputs: ["dashboard", "chat", "paper-library"],
+  analysisHistoryHiddenByProject: {},
   onboardingComplete: false,
   updatedAt: null,
 };
@@ -130,6 +131,11 @@ export function loadWorkspaceProfile(): WorkspaceProfile {
     return {
       ...DEFAULT_WORKSPACE_PROFILE,
       ...parsed,
+      analysisHistoryHiddenByProject:
+        parsed.analysisHistoryHiddenByProject &&
+        typeof parsed.analysisHistoryHiddenByProject === "object"
+          ? parsed.analysisHistoryHiddenByProject
+          : DEFAULT_WORKSPACE_PROFILE.analysisHistoryHiddenByProject,
       desiredOutputs:
         parsed.desiredOutputs && parsed.desiredOutputs.length > 0
           ? parsed.desiredOutputs

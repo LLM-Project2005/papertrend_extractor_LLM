@@ -1,4 +1,5 @@
 import type { TrackKey } from "@/lib/constants";
+import type { PaperId } from "@/types/database";
 
 export interface KeywordSearchRequest {
   query: string;
@@ -9,7 +10,7 @@ export interface KeywordSearchRequest {
 }
 
 export interface KeywordSearchEvidence {
-  paperId: number;
+  paperId: PaperId;
   year: string;
   title: string;
   section: string;
@@ -17,7 +18,7 @@ export interface KeywordSearchEvidence {
 }
 
 export interface KeywordSearchPaperSummary {
-  paperId: number;
+  paperId: PaperId;
   title: string;
   year: string;
   tracksSingle: string[];
@@ -30,7 +31,7 @@ export interface KeywordSearchResponse {
   canonicalConcept: string;
   matchedTerms: string[];
   firstAppearance: {
-    paperId: number;
+    paperId: PaperId;
     title: string;
     year: string;
     tracksSingle: string[];

@@ -6,10 +6,10 @@ Analyze the provided text and return the START and END character indices for eac
 
 ### SECTIONS ###
 1. title: The paper's full title.
-2. abstract: From the 'Abstract' heading to the start of the Introduction.
+2. abstract_claims: From the 'Abstract' heading to the start of the Introduction.
 3. methods: The research design, participants, and procedure.
 4. results: Data analysis and findings.
-5. discussion_conclusion: Final synthesis and implications.
+5. conclusion: Final synthesis and implications.
 6. bibliography: The complete list of references at the end.
 
 ### RULES ###

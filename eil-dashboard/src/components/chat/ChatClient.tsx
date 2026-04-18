@@ -301,7 +301,9 @@ export default function ChatClient() {
     () => folders.map((folder) => folder.id),
     [folders]
   );
-  const { allYears } = useDashboardData(chatScopeFolderId, projectFolderIds);
+  const { allYears } = useDashboardData(chatScopeFolderId, projectFolderIds, {
+    projectId: selectedProjectId,
+  });
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);

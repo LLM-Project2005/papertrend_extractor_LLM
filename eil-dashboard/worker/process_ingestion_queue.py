@@ -945,38 +945,60 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
             logger.info("run completed", extra={"run_id": run_id})
         except Exception as error:  # pragma: no cover - integration path
             message = str(error)
-            latest_run = client.get_run(run_id)
+            latest_run: Optional[Dict[str, Any]] = None
+            try:
+                latest_run = client.get_run(run_id)
+            except Exception as lookup_error:
+                logger.warning(
+                    "failed to refresh run state after processing error",
+                    extra={
+                        "run_id": run_id,
+                        "error_message": str(lookup_error),
+                    },
+                )
+
             if latest_run and latest_run.get("status") != "processing":
                 logger.info(
                     "run ended outside worker completion path",
                     extra={"run_id": run_id, "status": latest_run.get("status")},
                 )
                 return True
-            client.update_run(
-                run_id,
-                {
-                    "status": "failed",
-                    "completed_at": now_iso(),
-                    "error_message": message[:2000],
-                    "provider": str(claimed.get("provider") or AUTO_ANALYSIS_PROVIDER),
-                    "model": str(claimed.get("model") or AUTO_ANALYSIS_MODEL),
-                    "input_payload": merge_input_payload(
-                        claimed,
-                        {
-                            "analysis_mode": "automatic",
-                            "analysis_label": AUTO_ANALYSIS_LABEL,
-                            "pipeline": PIPELINE_NAME,
-                            "last_error_stage": "processing",
-                            "progress_stage": "failed",
-                            "progress_message": "Analysis failed",
-                            "progress_detail": message[:400],
-                            "progress_updated_at": now_iso(),
-                        },
-                    ),
-                },
-            )
-            sync_folder_analysis_job(client, claimed)
-            resume_waiting_research_sessions_for_folder(client, claimed)
+
+            try:
+                client.update_run(
+                    run_id,
+                    {
+                        "status": "failed",
+                        "completed_at": now_iso(),
+                        "error_message": message[:2000],
+                        "provider": str(claimed.get("provider") or AUTO_ANALYSIS_PROVIDER),
+                        "model": str(claimed.get("model") or AUTO_ANALYSIS_MODEL),
+                        "input_payload": merge_input_payload(
+                            claimed,
+                            {
+                                "analysis_mode": "automatic",
+                                "analysis_label": AUTO_ANALYSIS_LABEL,
+                                "pipeline": PIPELINE_NAME,
+                                "last_error_stage": "processing",
+                                "progress_stage": "failed",
+                                "progress_message": "Analysis failed",
+                                "progress_detail": message[:400],
+                                "progress_updated_at": now_iso(),
+                            },
+                        ),
+                    },
+                )
+                sync_folder_analysis_job(client, claimed)
+                resume_waiting_research_sessions_for_folder(client, claimed)
+            except Exception as update_error:
+                logger.error(
+                    "failed to persist run failure state",
+                    extra={
+                        "run_id": run_id,
+                        "original_error_message": message,
+                        "update_error_message": str(update_error),
+                    },
+                )
             logger.exception("run failed", extra={"run_id": run_id, "error_message": message})
         return True
 

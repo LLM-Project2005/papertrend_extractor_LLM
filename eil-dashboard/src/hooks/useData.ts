@@ -3,16 +3,26 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { generateMockData } from "@/lib/mockData";
-import { supabase } from "@/lib/supabase";
-import type { DashboardData, TrackRow, TrendRow } from "@/types/database";
+import type { DashboardData, DashboardDataMode } from "@/types/database";
+
+interface UseDashboardDataOptions {
+  mode?: DashboardDataMode;
+  pollIntervalMs?: number;
+  projectId?: string | null;
+}
 
 export function useDashboardData(
   folderId: string = "all",
-  projectFolderIds: string[] = []
+  projectFolderIds: string[] = [],
+  options: UseDashboardDataOptions = {}
 ) {
-  const { hydrated, user } = useAuth();
+  const { hydrated, session, user } = useAuth();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const mode = options.mode ?? "auto";
+  const pollIntervalMs = options.pollIntervalMs ?? 15000;
+  const projectId = options.projectId ?? null;
 
   useEffect(() => {
     let cancelled = false;
@@ -22,7 +32,7 @@ export function useDashboardData(
         return;
       }
 
-      if (!user) {
+      if (mode === "mock") {
         if (!cancelled) {
           setData(generateMockData());
           setLoading(false);
@@ -30,87 +40,84 @@ export function useDashboardData(
         return;
       }
 
-      if (supabase) {
-        try {
-          let trendsQuery = supabase
-            .from("trends_flat")
-            .select("*")
-            .eq("owner_user_id", user.id);
-          let tracksSingleQuery = supabase
-            .from("tracks_single_flat")
-            .select("*")
-            .eq("owner_user_id", user.id);
-          let tracksMultiQuery = supabase
-            .from("tracks_multi_flat")
-            .select("*")
-            .eq("owner_user_id", user.id);
-
-          if (folderId && folderId !== "all") {
-            trendsQuery = trendsQuery.eq("folder_id", folderId);
-            tracksSingleQuery = tracksSingleQuery.eq("folder_id", folderId);
-            tracksMultiQuery = tracksMultiQuery.eq("folder_id", folderId);
-          } else if (projectFolderIds.length > 0) {
-            trendsQuery = trendsQuery.in("folder_id", projectFolderIds);
-            tracksSingleQuery = tracksSingleQuery.in("folder_id", projectFolderIds);
-            tracksMultiQuery = tracksMultiQuery.in("folder_id", projectFolderIds);
-          }
-
-          const [tRes, sRes, mRes] = await Promise.all([
-            trendsQuery,
-            tracksSingleQuery,
-            tracksMultiQuery,
-          ]);
-
-          const trendRows = (tRes.data ?? []) as Record<string, unknown>[];
-          const singleTrackRows = (sRes.data ?? []) as Record<string, unknown>[];
-          const multiTrackRows = (mRes.data ?? []) as Record<string, unknown>[];
-
-          const trends: TrendRow[] = trendRows.map((r) => ({
-            paper_id: Number(r.paper_id),
-            folder_id: typeof r.folder_id === "string" ? r.folder_id : null,
-            year: String(r.year),
-            title: String(r.title),
-            topic: String(r.topic),
-            keyword: String(r.keyword),
-            keyword_frequency: Number(r.keyword_frequency),
-            evidence: String(r.evidence ?? ""),
-          }));
-
-          const mapTrack = (r: Record<string, unknown>): TrackRow => ({
-            paper_id: Number(r.paper_id),
-            folder_id: typeof r.folder_id === "string" ? r.folder_id : null,
-            year: String(r.year),
-            title: String(r.title),
-            el: Number(r.el),
-            eli: Number(r.eli),
-            lae: Number(r.lae),
-            other: Number(r.other),
-          });
-
-          const tracksSingle = singleTrackRows.map(mapTrack);
-          const tracksMulti = multiTrackRows.map(mapTrack);
-
-          if (!cancelled) {
-            setData({ trends, tracksSingle, tracksMulti, useMock: false });
-            setLoading(false);
-            return;
-          }
-        } catch {
-          // Fall through to preview data.
+      if (!user || !session?.access_token) {
+        if (!cancelled) {
+          setData(generateMockData());
+          setLoading(false);
         }
+        return;
       }
 
-      if (!cancelled) {
-        setData(generateMockData());
-        setLoading(false);
+      setLoading(true);
+
+      try {
+        const params = new URLSearchParams();
+        params.set("folderId", folderId || "all");
+        params.set("mode", mode);
+        if (projectId) {
+          params.set("projectId", projectId);
+        }
+
+        const response = await fetch(
+          `/api/workspace/dashboard-data?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          }
+        );
+
+        const payload = (await response.json()) as {
+          data?: DashboardData;
+          error?: string;
+        };
+
+        if (!response.ok || !payload.data) {
+          throw new Error(payload.error ?? "Failed to load dashboard data.");
+        }
+
+        if (!cancelled) {
+          setData(payload.data);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setData(
+            mode === "live"
+              ? { trends: [], tracksSingle: [], tracksMulti: [], useMock: false }
+              : generateMockData()
+          );
+          setLoading(false);
+        }
       }
     }
 
     void load();
+
+    if (mode === "mock" || !hydrated || !user || !session?.access_token) {
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const interval = window.setInterval(() => {
+      void load();
+    }, pollIntervalMs);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
-  }, [folderId, hydrated, projectFolderIds, user]);
+  }, [
+    folderId,
+    hydrated,
+    mode,
+    pollIntervalMs,
+    projectFolderIds,
+    projectId,
+    session?.access_token,
+    user,
+  ]);
 
   const allYears = useMemo(() => {
     if (!data) return [];

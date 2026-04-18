@@ -22,7 +22,7 @@ export default function PlannedDashboardSection({
   folderId?: string | "all";
   selectedYears: string[];
   selectedTracks: string[];
-  linkedPaperId?: number | null;
+  linkedPaperId?: string | null;
   useMock: boolean;
 }) {
   return (

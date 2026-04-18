@@ -15,7 +15,7 @@ import {
 import MetricCard from "@/components/MetricCard";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
-import type { TrendRow, TrackRow } from "@/types/database";
+import type { PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationChartKey } from "@/types/visualization";
 
 interface Props {
@@ -37,18 +37,31 @@ export default function Overview({
 }: Props) {
   const { theme, hydrated } = useTheme();
   const isDark = hydrated && theme === "dark";
-  const nPapers = new Set(trends.map((row) => row.paper_id)).size;
+  const nPapers = new Set([
+    ...trends.map((row) => row.paper_id),
+    ...tracksSingle.map((row) => row.paper_id),
+    ...tracksMulti.map((row) => row.paper_id),
+  ]).size;
   const nTopics = new Set(trends.map((row) => row.topic)).size;
   const nKeywords = new Set(trends.map((row) => row.keyword)).size;
-  const years = [...new Set(trends.map((row) => row.year))].sort();
+  const years = [
+    ...new Set([
+      ...trends.map((row) => row.year),
+      ...tracksSingle.map((row) => row.year),
+      ...tracksMulti.map((row) => row.year),
+    ]),
+  ].sort();
   const yearSpan =
     years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data";
 
   const papersByYear = Object.entries(
-    trends.reduce<Record<string, Set<number>>>((accumulator, row) => {
-      (accumulator[row.year] ??= new Set()).add(row.paper_id);
-      return accumulator;
-    }, {})
+    [...trends, ...tracksSingle, ...tracksMulti].reduce<Record<string, Set<PaperId>>>(
+      (accumulator, row) => {
+        (accumulator[row.year] ??= new Set()).add(row.paper_id);
+        return accumulator;
+      },
+      {}
+    )
   )
     .map(([year, ids]) => ({ year, papers: ids.size }))
     .sort((left, right) => left.year.localeCompare(right.year));

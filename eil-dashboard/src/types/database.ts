@@ -1,5 +1,7 @@
+export type PaperId = string;
+
 export interface TrendRow {
-  paper_id: number;
+  paper_id: PaperId;
   folder_id?: string | null;
   year: string;
   title: string;
@@ -10,7 +12,7 @@ export interface TrendRow {
 }
 
 export interface TrackRow {
-  paper_id: number;
+  paper_id: PaperId;
   folder_id?: string | null;
   year: string;
   title: string;
@@ -25,7 +27,14 @@ export interface DashboardData {
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
   useMock: boolean;
+  diagnostics?: {
+    dataSource?: "scoped" | "legacy_fallback" | "mock" | "empty";
+    recoveredFromLegacyScope?: boolean;
+    scopeDescription?: string;
+  } | null;
 }
+
+export type DashboardDataMode = "auto" | "live" | "mock";
 
 export interface DbPaper {
   id: number;
@@ -86,7 +95,7 @@ export interface FolderAnalysisJobRow {
 
 export interface DbPaperKeyword {
   id?: number;
-  paper_id: number;
+  paper_id: PaperId;
   owner_user_id?: string | null;
   folder_id?: string | null;
   topic: string;
@@ -97,7 +106,7 @@ export interface DbPaperKeyword {
 }
 
 export interface DbPaperTrack {
-  paper_id: number;
+  paper_id: PaperId;
   owner_user_id?: string | null;
   folder_id?: string | null;
   el: number;
@@ -108,7 +117,7 @@ export interface DbPaperTrack {
 }
 
 export interface DbPaperContent {
-  paper_id: number;
+  paper_id: PaperId;
   owner_user_id?: string | null;
   folder_id?: string | null;
   raw_text?: string | null;
@@ -150,7 +159,7 @@ export interface IngestionRunRow {
 }
 
 export interface PaperFullRow {
-  paper_id: number;
+  paper_id: PaperId;
   folder_id?: string | null;
   year: string;
   title: string;
@@ -164,4 +173,52 @@ export interface PaperFullRow {
   source_filename?: string | null;
   source_path?: string | null;
   ingestion_run_id?: string | null;
+}
+
+export interface RunAnalysisKeyword {
+  keyword: string;
+  topic: string;
+  frequency: number;
+  evidence: string;
+}
+
+export interface RunAnalysisConcept {
+  label: string;
+  matchedTerms: string[];
+  relatedKeywords: string[];
+  totalFrequency: number;
+  firstEvidence: string;
+  evidenceSnippets: string[];
+}
+
+export interface RunAnalysisFacet {
+  facetType: string;
+  label: string;
+  evidence: string;
+}
+
+export interface RunAnalysisDetail {
+  available: boolean;
+  paper_id?: PaperId | null;
+  title?: string | null;
+  year?: string | null;
+  raw_text?: string | null;
+  abstract_claims?: string | null;
+  methods?: string | null;
+  results?: string | null;
+  conclusion?: string | null;
+  source_filename?: string | null;
+  ingestion_run_id?: string | null;
+  topics: string[];
+  keywords: RunAnalysisKeyword[];
+  concepts: RunAnalysisConcept[];
+  facets: RunAnalysisFacet[];
+  tracksSingle: string[];
+  tracksMulti: string[];
+  warnings?: string[];
+  diagnostics?: {
+    dataSource?: string;
+    recoveredFromLegacyScope?: boolean;
+    missingOutputs?: string[];
+  } | null;
 }

@@ -8,17 +8,39 @@ export interface DeepResearchCitationRef {
   confidence?: "high" | "medium" | "low";
 }
 
+export interface DeepResearchQueryBundle {
+  primary_query?: string;
+  supporting_queries?: string[];
+  exact_title_query?: string | null;
+  section_query?: string | null;
+  author_hint?: string | null;
+  requested_sections?: string[];
+  exclusion_ids?: Array<number | string>;
+}
+
+export interface DeepResearchEvidenceItem {
+  paperId: number | string;
+  title: string;
+  section: string;
+  requested_section: string;
+  snippet: string;
+  relevance_score: number;
+  noise_score: number;
+  supports_section: boolean;
+}
+
 export interface DeepResearchStepInputPayload {
   payload_version?: number;
   planner_version?: string;
   projectId?: string;
   selectedRunIds?: string[];
   promptAnalysis?: Record<string, unknown>;
-  normalizedQuery?: Record<string, unknown>;
+  queryBundle?: DeepResearchQueryBundle;
+  normalizedQuery?: DeepResearchQueryBundle;
   targetTitle?: string;
   targetPaperId?: number | string;
   requestedSections?: string[];
-  exclusionIds?: number[] | string[];
+  exclusionIds?: Array<number | string>;
   phaseClass?: "research" | "verification" | "synthesis";
   requiredClass?:
     | "required_before_verification"
@@ -51,7 +73,14 @@ export interface DeepResearchStepOutputPayload {
     | "blocked"
     | "conflicting_evidence";
   diagnostics?: Record<string, unknown>;
-  raw?: unknown;
+  raw?:
+    | {
+        queryBundle?: DeepResearchQueryBundle;
+        rankedMatches?: Record<string, unknown>[];
+        evidenceItems?: DeepResearchEvidenceItem[];
+        diagnostics?: Record<string, unknown>;
+      }
+    | unknown;
   status_reason?: string | null;
   completion_kind?: "full" | "partial";
 }

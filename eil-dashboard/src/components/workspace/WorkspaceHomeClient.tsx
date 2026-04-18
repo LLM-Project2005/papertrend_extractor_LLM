@@ -73,6 +73,7 @@ export default function WorkspaceHomeClient() {
   const {
     profile,
     folders,
+    selectedProjectId,
     selectedFolderId,
     refreshFolders,
     analysisSession,
@@ -82,7 +83,9 @@ export default function WorkspaceHomeClient() {
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
-  const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds);
+  const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds, {
+    projectId: selectedProjectId,
+  });
   const {
     runs,
     folderJob,
@@ -114,10 +117,20 @@ export default function WorkspaceHomeClient() {
       };
     }
 
-    const papers = new Set(data.trends.map((row) => row.paper_id)).size;
+    const papers = new Set([
+      ...data.trends.map((row) => row.paper_id),
+      ...data.tracksSingle.map((row) => row.paper_id),
+      ...data.tracksMulti.map((row) => row.paper_id),
+    ]).size;
     const topics = new Set(data.trends.map((row) => row.topic)).size;
     const keywords = new Set(data.trends.map((row) => row.keyword)).size;
-    const years = [...new Set(data.trends.map((row) => row.year))].sort();
+    const years = [
+      ...new Set([
+        ...data.trends.map((row) => row.year),
+        ...data.tracksSingle.map((row) => row.year),
+        ...data.tracksMulti.map((row) => row.year),
+      ]),
+    ].sort();
 
     return {
       paperCount: papers.toLocaleString(),
@@ -325,6 +338,12 @@ export default function WorkspaceHomeClient() {
         {isPreviewMode ? (
           <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
             Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
+          </section>
+        ) : null}
+
+        {data?.diagnostics?.recoveredFromLegacyScope ? (
+          <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+            Showing recovered historical analyses because the current project scope did not return any canonical rows yet.
           </section>
         ) : null}
 

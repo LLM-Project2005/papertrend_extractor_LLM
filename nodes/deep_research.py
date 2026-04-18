@@ -62,8 +62,8 @@ STOPWORDS = {
 }
 INTERNAL_VERIFY_TOOL = "verify_research"
 INTERNAL_SYNTHESIZE_TOOL = "synthesize_report"
-PAYLOAD_VERSION = 2
-PLANNER_VERSION = "hybrid-v1"
+PAYLOAD_VERSION = 3
+PLANNER_VERSION = "hybrid-v2"
 MAX_VERIFICATION_REPLAN_ROUNDS = 1
 REQUIRED_PRIORITY = {
     "required_before_verification": 0,
@@ -79,6 +79,53 @@ SECTION_TO_QUERY = {
     "key_findings": "results findings outcomes",
     "limitations": "limitations weaknesses constraints",
     "implications": "implications significance practice",
+}
+TEXT_FIELDS = ("abstract_claims", "methods", "results", "conclusion")
+SECTION_EVIDENCE_RULES: Dict[str, Dict[str, Any]] = {
+    "objective": {
+        "fields": ("abstract_claims", "conclusion"),
+        "keywords": ("objective", "objectives", "aim", "aims", "purpose", "investigate", "examine", "analyze"),
+        "field_bonus": {"abstract_claims": 2, "conclusion": 1},
+    },
+    "theoretical_background": {
+        "fields": ("abstract_claims", "conclusion"),
+        "keywords": ("theory", "theoretical", "framework", "background", "literature", "prior work", "centering"),
+        "field_bonus": {"abstract_claims": 2, "conclusion": 1},
+    },
+    "methodology": {
+        "fields": ("methods", "abstract_claims"),
+        "keywords": ("method", "methods", "methodology", "procedure", "design", "data", "analyze", "analysis", "texts", "translation", "covers"),
+        "field_bonus": {"methods": 3, "abstract_claims": 1},
+    },
+    "participants": {
+        "fields": ("methods", "abstract_claims"),
+        "keywords": ("participant", "participants", "learner", "learners", "student", "students", "teacher", "teachers", "subject", "subjects", "sample", "respondent"),
+        "field_bonus": {"methods": 2, "abstract_claims": 1},
+    },
+    "key_findings": {
+        "fields": ("results", "conclusion", "abstract_claims"),
+        "keywords": ("result", "results", "finding", "findings", "show", "shows", "indicate", "indicates", "reveal", "reveals"),
+        "field_bonus": {"results": 3, "conclusion": 2, "abstract_claims": 1},
+    },
+    "limitations": {
+        "fields": ("conclusion", "results", "abstract_claims"),
+        "keywords": ("limitation", "limitations", "constraint", "constraints", "weakness", "weaknesses", "caution", "future work"),
+        "field_bonus": {"conclusion": 2, "results": 1, "abstract_claims": 1},
+    },
+    "implications": {
+        "fields": ("conclusion", "abstract_claims"),
+        "keywords": ("implication", "implications", "suggest", "suggests", "significance", "practice", "pedagog", "teaching"),
+        "field_bonus": {"conclusion": 3, "abstract_claims": 1},
+    },
+}
+UNRESOLVED_SECTION_MESSAGES = {
+    "objective": "The extracted sections do not provide clean grounded evidence for the paper's objective.",
+    "theoretical_background": "The extracted sections do not provide clean grounded evidence for the paper's theoretical background.",
+    "methodology": "The extracted sections do not provide clean grounded evidence for the paper's methodology.",
+    "participants": "The extracted sections do not provide clean grounded evidence about participants or sample characteristics.",
+    "key_findings": "The extracted sections do not provide clean grounded evidence for the paper's key findings.",
+    "limitations": "The extracted sections do not state explicit limitations clearly.",
+    "implications": "The extracted sections do not provide clean grounded evidence for the paper's implications.",
 }
 
 
@@ -348,6 +395,7 @@ def _build_query_bundle(
     target_title: str = "",
     exclusion_ids: Optional[Sequence[int]] = None,
     supporting_queries: Optional[Sequence[str]] = None,
+    author_hint: str = "",
 ) -> Dict[str, Any]:
     normalized_supporting = [
         _normalize_space(query)
@@ -364,8 +412,79 @@ def _build_query_bundle(
         "supporting_queries": normalized_supporting,
         "exact_title_query": _normalize_space(target_title) or None,
         "section_query": section_query or None,
+        "author_hint": _normalize_space(author_hint) or None,
+        "requested_sections": list(requested_sections or []),
         "exclusion_ids": [int(item) for item in (exclusion_ids or []) if str(item).strip().isdigit()],
     }
+
+
+def _normalize_query_bundle(
+    query_bundle: Optional[Dict[str, Any]],
+    prompt_analysis: Optional[Dict[str, Any]] = None,
+    fallback_query: str = "",
+    target_title: str = "",
+) -> Dict[str, Any]:
+    prompt_analysis = prompt_analysis if isinstance(prompt_analysis, dict) else {}
+    bundle = query_bundle if isinstance(query_bundle, dict) else {}
+    requested_sections = [
+        str(section).strip()
+        for section in list(bundle.get("requested_sections") or prompt_analysis.get("requested_sections") or [])
+        if str(section).strip()
+    ]
+    exclusion_ids = [
+        int(item)
+        for item in list(bundle.get("exclusion_ids") or prompt_analysis.get("exclusion_ids") or [])
+        if str(item).strip().isdigit()
+    ]
+    section_query = str(bundle.get("section_query") or "").strip()
+    if not section_query:
+        for section in requested_sections:
+            if section in SECTION_TO_QUERY:
+                section_query = SECTION_TO_QUERY[section]
+                break
+    supporting_queries = [
+        _normalize_space(item)
+        for item in list(bundle.get("supporting_queries") or [])
+        if _normalize_space(item)
+    ][:3]
+    return {
+        "primary_query": _normalize_space(
+            str(bundle.get("primary_query") or fallback_query or prompt_analysis.get("normalized_query") or "")
+        ),
+        "supporting_queries": supporting_queries,
+        "exact_title_query": _normalize_space(
+            str(bundle.get("exact_title_query") or target_title or prompt_analysis.get("candidate_title") or "")
+        )
+        or None,
+        "section_query": section_query or None,
+        "author_hint": _normalize_space(str(bundle.get("author_hint") or prompt_analysis.get("author_hint") or ""))
+        or None,
+        "requested_sections": requested_sections,
+        "exclusion_ids": exclusion_ids,
+    }
+
+
+def _selected_query_bundle(
+    state: DeepResearchState,
+    tool_input: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    prompt_analysis = _selected_prompt_analysis(state, tool_input)
+    bundle = {}
+    if tool_input and isinstance(tool_input.get("queryBundle"), dict):
+        bundle = dict(tool_input.get("queryBundle") or {})
+    elif tool_input and isinstance(tool_input.get("normalizedQuery"), dict):
+        bundle = dict(tool_input.get("normalizedQuery") or {})
+    return _normalize_query_bundle(
+        bundle,
+        prompt_analysis=prompt_analysis,
+        fallback_query=str((tool_input or {}).get("query") or state.get("prompt") or ""),
+        target_title=str(
+            (tool_input or {}).get("targetTitle")
+            or prompt_analysis.get("candidate_title")
+            or prompt_analysis.get("quoted_title")
+            or ""
+        ),
+    )
 
 
 def _citation_ref(
@@ -462,39 +581,81 @@ def _title_match_strength(target_title: str, paper_title: str) -> Tuple[bool, fl
     return strong, max(ratio, overlap)
 
 
+def _paper_text_haystack(paper: Dict[str, Any]) -> str:
+    return " ".join(
+        [str(paper.get("title") or ""), *[str(paper.get(field) or "") for field in TEXT_FIELDS]]
+    ).lower()
+
+
+def _paper_noise_penalty(paper: Dict[str, Any]) -> int:
+    haystack = _paper_text_haystack(paper)
+    penalty = 0
+    if len(re.findall(r"[^\x00-\x7F]", haystack)) > 200:
+        penalty += 10
+    if haystack.count("tt:") + haystack.count("st:") >= 4:
+        penalty += 6
+    if "word-by-word translation" in haystack:
+        penalty += 8
+    return penalty
+
+
+def _token_overlap_count(left: str, right: str) -> int:
+    left_tokens = set(_tokenize(left))
+    right_tokens = set(_tokenize(right))
+    return len(left_tokens & right_tokens)
+
+
 def _score_paper_match(
     paper: Dict[str, Any],
     normalized_query: str,
     candidate_title: str,
+    author_hint: str = "",
+    requested_sections: Optional[Sequence[str]] = None,
+    selected_scope_anchor: bool = False,
 ) -> Dict[str, Any]:
     paper_title = str(paper.get("title") or "")
     title_match, title_strength = _title_match_strength(candidate_title, paper_title)
-    haystack = " ".join(
-        [
-            paper_title,
-            str(paper.get("abstract_claims") or ""),
-            str(paper.get("methods") or ""),
-            str(paper.get("results") or ""),
-            str(paper.get("conclusion") or ""),
-        ]
-    ).lower()
-    score = int(title_strength * 120)
+    exact_normalized_title_match = bool(
+        candidate_title
+        and _normalize_title(candidate_title)
+        and _normalize_title(candidate_title) == _normalize_title(paper_title)
+    )
+    haystack = _paper_text_haystack(paper)
+    title_component = 1000 if exact_normalized_title_match else int(title_strength * 160)
+    selected_scope_anchor_bonus = 60 if selected_scope_anchor else 0
+    author_component = _token_overlap_count(author_hint, str(paper.get("authors") or paper_title)) * 12
+    section_component = 0
+    requested_sections = list(requested_sections or [])
+    for requested_section in requested_sections:
+        section_component += sum(
+            6
+            for keyword in SECTION_EVIDENCE_RULES.get(requested_section, {}).get("keywords", ())
+            if keyword.lower() in haystack
+        )
+    general_component = 0
     for token in _tokenize(normalized_query):
         if token in _normalize_title(paper_title):
-            score += 8
+            general_component += 8
         elif token in haystack:
-            score += 3
+            general_component += 3
+    noise_penalty = _paper_noise_penalty(paper)
+    score = title_component + selected_scope_anchor_bonus + author_component + section_component + general_component - noise_penalty
     return {
         "paperId": _json_safe_id(int(paper.get("paper_id") or 0)),
         "title": paper_title,
         "year": str(paper.get("year") or "Unknown"),
         "score": score,
         "strong_title_match": title_match,
-        "exact_normalized_title_match": bool(
-            candidate_title
-            and _normalize_title(candidate_title)
-            and _normalize_title(candidate_title) == _normalize_title(paper_title)
-        ),
+        "exact_normalized_title_match": exact_normalized_title_match,
+        "selected_scope_anchor": selected_scope_anchor,
+        "score_components": {
+            "title": title_component,
+            "selected_scope_anchor": selected_scope_anchor_bonus,
+            "author_hint": author_component,
+            "requested_sections": section_component,
+            "general_content": general_component,
+            "noise_penalty": -noise_penalty,
+        },
     }
 
 
@@ -505,6 +666,7 @@ def _analyze_prompt(
 ) -> Dict[str, Any]:
     candidate_title = _extract_candidate_title(prompt)
     quoted_title = _extract_quoted_title(prompt)
+    author_hint = _extract_author_hint(prompt)
     requested_sections = _detect_requested_sections(prompt)
     normalized_query = _normalize_search_query(prompt, candidate_title)
     lowered = prompt.lower()
@@ -533,7 +695,7 @@ def _analyze_prompt(
         "evidence_extraction": evidence_extraction,
         "quoted_title": quoted_title,
         "candidate_title": candidate_title,
-        "author_hint": _extract_author_hint(prompt),
+        "author_hint": author_hint,
         "normalized_query": normalized_query[:180],
         "requested_sections": requested_sections,
         "normalized_topic_terms": _tokenize(normalized_query)[:10],
@@ -548,15 +710,39 @@ def _analyze_prompt(
     )
     ranked_matches = sorted(
         [
-            _score_paper_match(paper, analysis["normalized_query"], analysis["candidate_title"])
+            _score_paper_match(
+                paper,
+                analysis["normalized_query"],
+                analysis["candidate_title"],
+                author_hint=author_hint,
+                requested_sections=requested_sections,
+                selected_scope_anchor=str(paper.get("ingestion_run_id") or "").strip()
+                in {
+                    str(run_id).strip()
+                    for run_id in list(selected_run_ids or [])
+                    if str(run_id).strip()
+                },
+            )
             for paper in papers
         ],
-        key=lambda row: (int(row.get("score") or 0), bool(row.get("strong_title_match"))),
+        key=lambda row: (
+            bool(row.get("exact_normalized_title_match")),
+            bool(row.get("selected_scope_anchor")),
+            bool(row.get("strong_title_match")),
+            int(row.get("score") or 0),
+        ),
         reverse=True,
     )[:5]
     normalized_candidate_title = _normalize_title(analysis["candidate_title"])
     target_paper = next(
         (match for match in ranked_matches if bool(match.get("exact_normalized_title_match"))),
+        None,
+    ) or next(
+        (
+            match
+            for match in ranked_matches
+            if bool(match.get("selected_scope_anchor")) and match.get("strong_title_match")
+        ),
         None,
     ) or next((match for match in ranked_matches if match.get("strong_title_match")), None)
     if (
@@ -565,7 +751,14 @@ def _analyze_prompt(
         and explicit_selected_scope
     ):
         selected_scope_matches = [
-            _score_paper_match(paper, analysis["normalized_query"], analysis["candidate_title"])
+            _score_paper_match(
+                paper,
+                analysis["normalized_query"],
+                analysis["candidate_title"],
+                author_hint=author_hint,
+                requested_sections=requested_sections,
+                selected_scope_anchor=True,
+            )
             for paper in papers
             if str(paper.get("ingestion_run_id") or "").strip()
             in {
@@ -746,6 +939,13 @@ def _todo_input(
     requested = list(requested_sections or prompt_analysis.get("requested_sections") or [])
     exclusions = [int(item) for item in (exclusion_ids or []) if str(item).strip().isdigit()]
     primary_query = tool_query or str(prompt_analysis.get("normalized_query") or snapshot.get("prompt") or "")
+    query_bundle = _build_query_bundle(
+        primary_query,
+        requested,
+        target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
+        exclusion_ids=exclusions,
+        author_hint=str(prompt_analysis.get("author_hint") or ""),
+    )
     payload: Dict[str, Any] = {
         "payload_version": PAYLOAD_VERSION,
         "planner_version": PLANNER_VERSION,
@@ -760,12 +960,8 @@ def _todo_input(
         "projectId": snapshot.get("project_id") or "",
         "selectedRunIds": list(snapshot.get("selected_run_ids") or []),
         "promptAnalysis": safe_prompt_analysis,
-        "normalizedQuery": _build_query_bundle(
-            primary_query,
-            requested,
-            target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
-            exclusion_ids=exclusions,
-        ),
+        "queryBundle": query_bundle,
+        "normalizedQuery": query_bundle,
         "requestedSections": requested,
         "exclusionIds": exclusions,
     }
@@ -1148,7 +1344,7 @@ def generate_deep_research_plan(
 
 def _paper_payload(paper: Dict[str, Any], abstract_limit: int = 1200) -> Dict[str, Any]:
     return {
-        "paperId": int(paper.get("paper_id") or paper.get("paperId") or 0),
+        "paperId": _json_safe_id(int(paper.get("paper_id") or paper.get("paperId") or 0)),
         "title": str(paper.get("title") or ""),
         "year": str(paper.get("year") or "Unknown"),
         "abstract_claims": str(paper.get("abstract_claims") or "")[:abstract_limit],
@@ -1171,14 +1367,34 @@ def _rank_papers(
     state: DeepResearchState,
     query: str,
     target_title: str = "",
+    query_bundle: Optional[Dict[str, Any]] = None,
     exclude_paper_ids: Optional[Sequence[int]] = None,
 ) -> List[Dict[str, Any]]:
     papers = list(state.get("papers_full") or [])
     excluded = {int(item) for item in (exclude_paper_ids or []) if str(item).strip().isdigit()}
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    resolved_bundle = _normalize_query_bundle(
+        query_bundle,
+        prompt_analysis=prompt_analysis,
+        fallback_query=query,
+        target_title=target_title,
+    )
+    selected_run_ids = {
+        str(run_id).strip()
+        for run_id in list(state.get("selected_run_ids") or [])
+        if str(run_id).strip()
+    }
     ranked = [
         {
             "paper": paper,
-            "match": _score_paper_match(paper, query, target_title),
+            "match": _score_paper_match(
+                paper,
+                str(resolved_bundle.get("primary_query") or query),
+                str(resolved_bundle.get("exact_title_query") or target_title),
+                author_hint=str(resolved_bundle.get("author_hint") or ""),
+                requested_sections=list(resolved_bundle.get("requested_sections") or []),
+                selected_scope_anchor=str(paper.get("ingestion_run_id") or "").strip() in selected_run_ids,
+            ),
         }
         for paper in papers
         if int(paper.get("paper_id") or 0) not in excluded
@@ -1190,6 +1406,8 @@ def _rank_papers(
     ]
     ranked.sort(
         key=lambda row: (
+            bool(row["match"].get("exact_normalized_title_match")),
+            bool(row["match"].get("selected_scope_anchor")),
             bool(row["match"].get("strong_title_match")),
             int(row["match"].get("score") or 0),
         ),
@@ -1202,16 +1420,28 @@ def _list_folder_papers_tool(
     state: DeepResearchState,
     limit: int = 12,
     target_title: str = "",
+    query_bundle: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     papers = list(state.get("papers_full") or [])
     ranked_matches = [
         row["match"]
-        for row in _rank_papers(state, target_title or str(state.get("prompt") or ""), target_title)
+        for row in _rank_papers(
+            state,
+            query=target_title or str(state.get("prompt") or ""),
+            target_title=target_title,
+            query_bundle=query_bundle,
+        )
     ][:3]
     return {
         "paperCount": len(papers),
         "targetTitle": target_title,
         "targetFound": any(bool(match.get("strong_title_match")) for match in ranked_matches),
+        "queryBundle": _normalize_query_bundle(
+            query_bundle,
+            prompt_analysis=_selected_prompt_analysis(state, {}),
+            fallback_query=target_title or str(state.get("prompt") or ""),
+            target_title=target_title,
+        ),
         "rankedMatches": ranked_matches,
         "papers": [
             {
@@ -1221,6 +1451,10 @@ def _list_folder_papers_tool(
             }
             for paper in papers[: max(1, min(limit, 20))]
         ],
+        "diagnostics": {
+            "target_resolution": "matched" if any(bool(match.get("strong_title_match")) for match in ranked_matches) else "unresolved",
+            "top_ranked_candidates": ranked_matches,
+        },
     }
 
 
@@ -1270,19 +1504,30 @@ def _fetch_papers_tool(
     limit: int = 5,
     target_title: str = "",
     exclude_paper_ids: Optional[Sequence[int]] = None,
+    query_bundle: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     ranked = _rank_papers(
         state,
         query=query,
         target_title=target_title,
+        query_bundle=query_bundle,
         exclude_paper_ids=exclude_paper_ids,
     )
     selected = [row["paper"] for row in ranked[: max(1, min(limit, 8))]]
     return {
         "query": query,
         "targetTitle": target_title,
+        "queryBundle": _normalize_query_bundle(
+            query_bundle,
+            prompt_analysis=_selected_prompt_analysis(state, {}),
+            fallback_query=query,
+            target_title=target_title,
+        ),
         "papers": [_paper_payload(paper) for paper in selected],
         "rankedMatches": [row["match"] for row in ranked[: max(1, min(limit, 8))]],
+        "diagnostics": {
+            "top_ranked_candidates": [row["match"] for row in ranked[: min(limit + 2, 6)]],
+        },
     }
 
 
@@ -1293,6 +1538,8 @@ def _read_paper_sections_tool(
     limit: int = 3,
     target_title: str = "",
     exclude_paper_ids: Optional[Sequence[int]] = None,
+    requested_sections: Optional[Sequence[str]] = None,
+    query_bundle: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     papers = list(state.get("papers_full") or [])
     requested_ids = {int(pid) for pid in (paper_ids or []) if str(pid).strip().isdigit()}
@@ -1305,9 +1552,24 @@ def _read_paper_sections_tool(
             limit=limit,
             target_title=target_title,
             exclude_paper_ids=exclude_paper_ids,
+            query_bundle=query_bundle,
         ).get("papers", [])
 
     material = []
+    evidence_items: List[Dict[str, Any]] = []
+    section_counts: Dict[str, int] = {}
+    discarded_noisy: Dict[str, int] = {}
+    normalized_sections = [
+        str(section).strip()
+        for section in list(requested_sections or _normalize_query_bundle(query_bundle).get("requested_sections") or [])
+        if str(section).strip()
+    ] or [
+        "objective",
+        "methodology",
+        "key_findings",
+        "limitations",
+        "implications",
+    ]
     for paper in selected[: max(1, min(limit, 5))]:
         if isinstance(paper, dict) and "paper_id" in paper:
             source = paper
@@ -1316,14 +1578,38 @@ def _read_paper_sections_tool(
                 (item for item in papers if int(item.get("paper_id") or 0) == int(paper.get("paperId") or 0)),
                 {},
             )
-        material.append(_paper_payload(source or paper, abstract_limit=1800))
-    return {"query": query, "targetTitle": target_title, "papers": material}
+        source_paper = source or paper
+        material.append(_paper_payload(source_paper, abstract_limit=1800))
+        paper_evidence, paper_diagnostics = _build_paper_evidence_items(source_paper, normalized_sections)
+        evidence_items.extend(paper_evidence)
+        for section, count in dict(paper_diagnostics.get("supported_counts") or {}).items():
+            section_counts[section] = section_counts.get(section, 0) + int(count or 0)
+        for section, count in dict(paper_diagnostics.get("discarded_noisy_counts") or {}).items():
+            discarded_noisy[section] = discarded_noisy.get(section, 0) + int(count or 0)
+    return {
+        "query": query,
+        "targetTitle": target_title,
+        "queryBundle": _normalize_query_bundle(
+            query_bundle,
+            prompt_analysis=_selected_prompt_analysis(state, {}),
+            fallback_query=query,
+            target_title=target_title,
+        ),
+        "papers": material,
+        "evidenceItems": evidence_items,
+        "diagnostics": {
+            "supported_counts": section_counts,
+            "discarded_noisy_counts": discarded_noisy,
+            "evidence_item_count": len(evidence_items),
+        },
+    }
 
 
 def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, Any]:
     tool_name = str(step.get("tool_name") or "")
     tool_input = step.get("tool_input") if isinstance(step.get("tool_input"), dict) else {}
     prompt_analysis = _selected_prompt_analysis(state, tool_input)
+    query_bundle = _selected_query_bundle(state, tool_input)
     target_title = str(
         tool_input.get("targetTitle")
         or prompt_analysis.get("candidate_title")
@@ -1332,6 +1618,7 @@ def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, A
     )
     normalized_query = str(
         tool_input.get("query")
+        or query_bundle.get("primary_query")
         or prompt_analysis.get("normalized_query")
         or state.get("prompt")
         or ""
@@ -1343,6 +1630,7 @@ def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, A
             state,
             limit=int(tool_input.get("limit") or 12),
             target_title=target_title,
+            query_bundle=query_bundle,
         )
     if tool_name == "get_dashboard_summary":
         return _get_dashboard_summary_tool(state, focus=str(tool_input.get("focus") or "overview"))
@@ -1355,6 +1643,7 @@ def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, A
             limit=int(tool_input.get("limit") or 5),
             target_title=target_title,
             exclude_paper_ids=exclude_paper_ids,
+            query_bundle=query_bundle,
         )
     if tool_name == "read_paper_sections":
         raw_ids = tool_input.get("paperIds") or tool_input.get("paper_ids") or []
@@ -1366,6 +1655,8 @@ def _execute_tool(step: Dict[str, Any], state: DeepResearchState) -> Dict[str, A
             limit=int(tool_input.get("limit") or 3),
             target_title=target_title,
             exclude_paper_ids=exclude_paper_ids,
+            requested_sections=list(tool_input.get("requestedSections") or query_bundle.get("requested_sections") or []),
+            query_bundle=query_bundle,
         )
     if tool_name == INTERNAL_VERIFY_TOOL:
         verification_result = _build_verification_result(
@@ -1571,6 +1862,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
     citations = [_citation_ref(paper) for paper in papers if isinstance(paper, dict)]
     retrieval_count = len(citations)
     prompt_analysis = _selected_prompt_analysis({}, _step_input_payload(step))
+    raw_diagnostics = raw_output.get("diagnostics") if isinstance(raw_output.get("diagnostics"), dict) else {}
 
     if tool_name == "list_folder_papers":
         paper_count = int(raw_output.get("paperCount") or len(papers))
@@ -1581,7 +1873,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
                 "The selected scope does not contain any analyzed papers yet.",
                 "Deep research cannot ground the answer until the selected workspace contains analyzed papers.",
                 result_kind="scope_gap",
-                diagnostics={"confidence": "low", "retrieval_count": 0, "thin_evidence": True},
+                diagnostics={"confidence": "low", "retrieval_count": 0, "thin_evidence": True, **raw_diagnostics},
                 raw=raw_output,
             )
         if target_title and raw_output.get("targetFound"):
@@ -1591,7 +1883,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
                 detail,
                 citations=citations[:5],
                 result_kind="document_hit",
-                diagnostics={"confidence": "high", "retrieval_count": retrieval_count},
+                diagnostics={"confidence": "high", "retrieval_count": retrieval_count, **raw_diagnostics},
                 raw=raw_output,
             )
         if target_title and ranked_matches:
@@ -1615,6 +1907,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
                     "retrieval_count": retrieval_count,
                     "ambiguity_flag": True,
                     "thin_evidence": True,
+                    **raw_diagnostics,
                 },
                 raw=raw_output,
             )
@@ -1623,7 +1916,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
             f"The current workspace scope contains {paper_count} analyzed papers that can be used for this run.",
             citations=citations[:5],
             result_kind="document_hit",
-            diagnostics={"confidence": "medium", "retrieval_count": retrieval_count},
+            diagnostics={"confidence": "medium", "retrieval_count": retrieval_count, **raw_diagnostics},
             raw=raw_output,
         )
 
@@ -1647,7 +1940,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
                 f'No in-scope papers strongly matched "{query}".',
                 "The current scope did not return enough grounded paper evidence for this step.",
                 result_kind="document_miss",
-                diagnostics={"confidence": "low", "retrieval_count": 0, "thin_evidence": True},
+                diagnostics={"confidence": "low", "retrieval_count": 0, "thin_evidence": True, **raw_diagnostics},
                 raw=raw_output,
             )
         result_kind = "comparison" if bool(prompt_analysis.get("compare")) else "document_hit"
@@ -1655,6 +1948,18 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
             f"Grounded evidence was pulled from {retrieval_count} paper(s): "
             f"{_format_paper_labels(papers)}."
         )
+        evidence_items = raw_output.get("evidenceItems") if isinstance(raw_output.get("evidenceItems"), list) else []
+        if tool_name == "read_paper_sections":
+            supported_counts = dict(raw_diagnostics.get("supported_counts") or {})
+            supported_label = ", ".join(
+                f"{section.replace('_', ' ')} ({count})"
+                for section, count in supported_counts.items()
+                if int(count or 0) > 0
+            )
+            if supported_label:
+                detail = f"{detail} Supported sections: {supported_label}."
+            elif evidence_items:
+                detail = f"{detail} The retrieved papers did not yield clean section evidence for the requested headings."
         contradiction_flag = False
         conflict_notes: List[str] = []
         if bool(prompt_analysis.get("compare")) and retrieval_count >= 2:
@@ -1673,6 +1978,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
                 "thin_evidence": retrieval_count < (2 if bool(prompt_analysis.get("compare") or prompt_analysis.get("survey")) else 1),
                 "contradiction_flag": contradiction_flag,
                 "conflict_notes": conflict_notes,
+                **raw_diagnostics,
             },
             raw=raw_output,
         )
@@ -1932,26 +2238,252 @@ def _sentences(text: str) -> List[str]:
     ]
 
 
+def _sentence_noise_score(sentence: str) -> int:
+    score = 0
+    if len(sentence) < 40:
+        score += 2
+    if len(re.findall(r"[A-Za-z]{1,3}\d", sentence)) > 2:
+        score += 2
+    if sentence.count("[") + sentence.count("]") > 2:
+        score += 2
+    if re.search(r"\b(ST|TT)\s*:", sentence):
+        score += 4
+    if re.search(r"\([A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}", sentence):
+        score += 2
+    if len(re.findall(r"[^\x00-\x7F]", sentence)) > 12:
+        score += 4
+    if any(token in sentence for token in ("Example (", "Examples (", "Word-by-word translation")):
+        score += 5
+    return score
+
+
+def _sentence_relevance_score(sentence: str, keywords: Sequence[str]) -> int:
+    lowered = sentence.lower()
+    score = 0
+    for keyword in keywords:
+        if keyword.lower() in lowered:
+            score += 4
+    if any(token in lowered for token in ("we aim", "this study", "this paper", "the study", "our aims")):
+        score += 2
+    if any(token in lowered for token in ("participants", "sample", "texts", "data", "translated", "analyzed", "collected")):
+        score += 1
+    score -= _sentence_noise_score(sentence)
+    return score
+
+
 def _pick_evidence(text: str, keywords: Sequence[str], fallback_count: int = 2) -> str:
     sentences = _sentences(text)
     if not sentences:
         return ""
-    lowered_keywords = [keyword.lower() for keyword in keywords]
-    matches = [
-        sentence
-        for sentence in sentences
-        if any(keyword in sentence.lower() for keyword in lowered_keywords)
-    ]
-    selected = matches or sentences
+    scored = sorted(
+        (
+            (sentence, _sentence_relevance_score(sentence, keywords))
+            for sentence in sentences
+        ),
+        key=lambda item: item[1],
+        reverse=True,
+    )
+    strong = [sentence for sentence, score in scored if score >= 3]
+    usable = [sentence for sentence, score in scored if score >= 0]
+    selected = strong or usable or [sentence for sentence, _ in scored]
     return " ".join(selected[:fallback_count]).strip()
+
+
+def _pick_section_evidence(paper: Dict[str, Any], section: str) -> str:
+    sources: List[Tuple[str, Sequence[str], int]] = []
+    if section == "objective":
+        sources = [
+            (str(paper.get("abstract_claims") or ""), ["aim", "purpose", "investig", "exam", "explor", "objective"], 2),
+            (str(paper.get("conclusion") or ""), ["aim", "purpose", "study"], 1),
+        ]
+    elif section == "theoretical_background":
+        sources = [
+            (" ".join([str(paper.get("abstract_claims") or ""), str(paper.get("conclusion") or "")]), ["background", "literature", "framework", "previous", "prior", "theory"], 2),
+        ]
+    elif section == "methodology":
+        sources = [
+            (str(paper.get("methods") or ""), ["method", "procedure", "design", "data", "analy", "texts", "translation"], 2),
+            (str(paper.get("abstract_claims") or ""), ["data", "analy", "texts", "translation"], 1),
+        ]
+    elif section == "participants":
+        sources = [
+            (str(paper.get("methods") or ""), ["participant", "learner", "student", "sample", "subject", "text", "informative texts", "data set"], 2),
+            (str(paper.get("abstract_claims") or ""), ["participant", "sample", "text", "informative texts"], 1),
+        ]
+    elif section == "key_findings":
+        sources = [
+            (" ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]), ["find", "result", "show", "indicat", "revea"], 2),
+            (str(paper.get("abstract_claims") or ""), ["find", "result", "show"], 1),
+        ]
+    elif section == "limitations":
+        sources = [
+            (" ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]), ["limit", "constraint", "future", "caution", "weakness"], 2),
+        ]
+    elif section == "implications":
+        sources = [
+            (str(paper.get("conclusion") or ""), ["impli", "suggest", "pedagog", "teaching", "practice"], 2),
+            (str(paper.get("abstract_claims") or ""), ["impli", "suggest"], 1),
+        ]
+
+    for text, keywords, fallback_count in sources:
+        evidence = _pick_evidence(text, keywords, fallback_count=fallback_count)
+        if evidence:
+            return evidence
+    return ""
+
+
+def _section_rule(section: str) -> Dict[str, Any]:
+    return dict(SECTION_EVIDENCE_RULES.get(section) or {})
+
+
+def _section_sentence_candidates(
+    paper: Dict[str, Any],
+    requested_section: str,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    rule = _section_rule(requested_section)
+    fields = [field for field in list(rule.get("fields") or []) if field in TEXT_FIELDS]
+    keywords = list(rule.get("keywords") or [])
+    field_bonus = dict(rule.get("field_bonus") or {})
+    candidates: List[Dict[str, Any]] = []
+    diagnostics = {"discarded_noisy": 0}
+    paper_id = _json_safe_id(int(paper.get("paper_id") or paper.get("paperId") or 0))
+    paper_title = str(paper.get("title") or "Untitled")
+    seen_snippets: set[str] = set()
+
+    for field in fields:
+        text = str(paper.get(field) or "")
+        if not text.strip():
+            continue
+        for sentence in _sentences(text):
+            normalized_sentence = _normalize_space(sentence)
+            if not normalized_sentence:
+                continue
+            noise_score = _sentence_noise_score(normalized_sentence)
+            relevance_score = _sentence_relevance_score(normalized_sentence, keywords) + int(
+                field_bonus.get(field) or 0
+            )
+            if noise_score >= 7:
+                diagnostics["discarded_noisy"] += 1
+                continue
+            key = normalized_sentence.lower()
+            if key in seen_snippets:
+                continue
+            seen_snippets.add(key)
+            supports_section = relevance_score >= 4 and noise_score <= 4
+            candidates.append(
+                {
+                    "paperId": paper_id,
+                    "title": paper_title,
+                    "section": field,
+                    "requested_section": requested_section,
+                    "snippet": normalized_sentence,
+                    "relevance_score": relevance_score,
+                    "noise_score": noise_score,
+                    "supports_section": supports_section,
+                }
+            )
+
+    candidates.sort(
+        key=lambda item: (
+            bool(item.get("supports_section")),
+            int(item.get("relevance_score") or 0),
+            -int(item.get("noise_score") or 0),
+            len(str(item.get("snippet") or "")),
+        ),
+        reverse=True,
+    )
+    return candidates, diagnostics
+
+
+def _build_paper_evidence_items(
+    paper: Dict[str, Any],
+    requested_sections: Sequence[str],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, int]]]:
+    normalized_sections = [
+        str(section).strip()
+        for section in list(requested_sections or [])
+        if str(section).strip()
+    ]
+    evidence_items: List[Dict[str, Any]] = []
+    supported_counts: Dict[str, int] = {}
+    discarded_noisy_counts: Dict[str, int] = {}
+
+    for requested_section in normalized_sections:
+        candidates, diagnostics = _section_sentence_candidates(paper, requested_section)
+        supported = [item for item in candidates if bool(item.get("supports_section"))][:2]
+        supported_counts[requested_section] = len(supported)
+        discarded_noisy_counts[requested_section] = int(diagnostics.get("discarded_noisy") or 0)
+        if supported:
+            evidence_items.extend(supported)
+            continue
+        evidence_items.append(
+            {
+                "paperId": _json_safe_id(int(paper.get("paper_id") or paper.get("paperId") or 0)),
+                "title": str(paper.get("title") or "Untitled"),
+                "section": "unresolved",
+                "requested_section": requested_section,
+                "snippet": UNRESOLVED_SECTION_MESSAGES.get(
+                    requested_section,
+                    "The extracted sections do not provide clean grounded evidence for this section.",
+                ),
+                "relevance_score": 0,
+                "noise_score": 0,
+                "supports_section": False,
+            }
+        )
+
+    return evidence_items, {
+        "supported_counts": supported_counts,
+        "discarded_noisy_counts": discarded_noisy_counts,
+    }
+
+
+def _step_evidence_items(step_results: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = []
+    for step in step_results:
+        raw = step.get("raw") if isinstance(step.get("raw"), dict) else {}
+        raw_items = raw.get("evidenceItems") or raw.get("evidence_items") or []
+        if not isinstance(raw_items, list):
+            continue
+        for item in raw_items:
+            if isinstance(item, dict):
+                items.append(dict(item))
+    return items
+
+
+def _supported_section_evidence_items(
+    step_results: Sequence[Dict[str, Any]],
+    requested_section: str,
+    paper_id: Optional[int] = None,
+) -> List[Dict[str, Any]]:
+    items = []
+    for item in _step_evidence_items(step_results):
+        if str(item.get("requested_section") or "") != requested_section:
+            continue
+        if not bool(item.get("supports_section")):
+            continue
+        item_paper_id = int(item.get("paperId") or 0)
+        if paper_id is not None and item_paper_id != paper_id:
+            continue
+        items.append(item)
+    items.sort(
+        key=lambda item: (
+            int(item.get("relevance_score") or 0),
+            -int(item.get("noise_score") or 0),
+            len(str(item.get("snippet") or "")),
+        ),
+        reverse=True,
+    )
+    return items
 
 
 def _paper_has_section_evidence(paper: Dict[str, Any], section: str) -> bool:
     evidence = _section_report(paper, section)
     lowered = evidence.lower()
+    unresolved_text = UNRESOLVED_SECTION_MESSAGES.get(section, "").lower()
     return not (
         lowered.startswith("no grounded evidence")
-        or "do not state explicit limitations clearly" in lowered
+        or (unresolved_text and unresolved_text in lowered)
     )
 
 
@@ -1963,9 +2495,18 @@ def _requested_section_coverage(
     requested_sections = list(prompt_analysis.get("requested_sections") or [])
     if not requested_sections:
         return {}
-    papers = _step_papers(step_results)
+    supported_items = _step_evidence_items(step_results)
     coverage: Dict[str, bool] = {}
     for section in requested_sections:
+        section_supported = any(
+            bool(item.get("supports_section"))
+            and str(item.get("requested_section") or "") == section
+            for item in supported_items
+        )
+        if section_supported:
+            coverage[section] = True
+            continue
+        papers = _step_papers(step_results)
         coverage[section] = any(_paper_has_section_evidence(paper, section) for paper in papers)
     return coverage
 
@@ -2003,6 +2544,10 @@ def _build_verification_result(
         target_resolved = _target_in_scope_effective(state, step_results)
 
     section_coverage = _requested_section_coverage(state, step_results)
+    section_evidence_counts = {
+        section: len(_supported_section_evidence_items(step_results, section))
+        for section in requested_sections
+    }
     unresolved_sections = [section for section, covered in section_coverage.items() if not covered]
     distinct_hits = _distinct_source_hits(step_results)
     broad_or_compare = bool(prompt_analysis.get("compare") or prompt_analysis.get("survey"))
@@ -2061,6 +2606,8 @@ def _build_verification_result(
         "warnings": warnings,
         "unresolved_sections": unresolved_sections,
         "distinct_source_hits": distinct_hits,
+        "section_coverage_map": section_coverage,
+        "section_evidence_counts": section_evidence_counts,
         "thin_evidence": thin_evidence,
     }
 
@@ -2366,44 +2913,31 @@ def _section_report(
     paper: Dict[str, Any],
     section: str,
 ) -> str:
-    if section == "objective":
-        evidence = _pick_evidence(str(paper.get("abstract_claims") or ""), ["aim", "purpose", "investig", "exam", "explor"])
-    elif section == "theoretical_background":
-        evidence = _pick_evidence(
-            " ".join([str(paper.get("abstract_claims") or ""), str(paper.get("conclusion") or "")]),
-            ["background", "literature", "framework", "previous", "prior"],
+    evidence = _pick_section_evidence(paper, section)
+    if not evidence:
+        evidence = UNRESOLVED_SECTION_MESSAGES.get(
+            section,
+            "No grounded evidence was extracted for this section.",
         )
-    elif section == "methodology":
-        evidence = _pick_evidence(str(paper.get("methods") or ""), ["method", "procedure", "design", "data"], fallback_count=3)
-    elif section == "participants":
-        evidence = _pick_evidence(str(paper.get("methods") or ""), ["participant", "learner", "student", "sample", "subject", "n=", "n ="], fallback_count=2)
-    elif section == "key_findings":
-        evidence = _pick_evidence(
-            " ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]),
-            ["find", "result", "show", "indicat", "revea"],
-            fallback_count=3,
-        )
-    elif section == "limitations":
-        evidence = _pick_evidence(
-            " ".join([str(paper.get("results") or ""), str(paper.get("conclusion") or "")]),
-            ["limit", "constraint", "future", "caution", "weakness"],
-            fallback_count=2,
-        )
-        if not evidence:
-            evidence = "The extracted sections do not state explicit limitations clearly."
-    elif section == "implications":
-        evidence = _pick_evidence(
-            str(paper.get("conclusion") or ""),
-            ["impli", "suggest", "pedagog", "teaching", "practice"],
-            fallback_count=2,
-        )
-    else:
-        evidence = ""
 
     paper_id = int(paper.get("paper_id") or paper.get("paperId") or 0)
-    if not evidence:
-        evidence = "No grounded evidence was extracted for this section."
     return f"{evidence} [Paper {paper_id}]"
+
+
+def _section_report_from_evidence_items(
+    paper: Dict[str, Any],
+    step_results: Sequence[Dict[str, Any]],
+    section: str,
+) -> str:
+    paper_id = int(paper.get("paper_id") or paper.get("paperId") or 0)
+    evidence_items = _supported_section_evidence_items(step_results, section, paper_id=paper_id)
+    if evidence_items:
+        snippets = [str(item.get("snippet") or "").strip() for item in evidence_items[:2] if str(item.get("snippet") or "").strip()]
+        if snippets:
+            return f'{" ".join(snippets)} [Paper {paper_id}]'
+    if _step_evidence_items(step_results):
+        return f'{UNRESOLVED_SECTION_MESSAGES.get(section, "The extracted sections do not provide clean grounded evidence for this section.")} [Paper {paper_id}]'
+    return _section_report(paper, section)
 
 
 def _missing_target_report(state: DeepResearchState) -> str:
@@ -2452,7 +2986,7 @@ def _single_paper_report(state: DeepResearchState, step_results: Sequence[Dict[s
     lines = [f'Focused report on "{title}" [Paper {paper_id}].']
     for section in requested_sections:
         lines.append(f"## {labels.get(section, section.title())}")
-        lines.append(_section_report(paper, section))
+        lines.append(_section_report_from_evidence_items(paper, step_results, section))
 
     supporting = [
         paper_item
@@ -2503,20 +3037,79 @@ def _general_report(state: DeepResearchState, step_results: Sequence[Dict[str, A
         }
         for section in requested_sections:
             lines.extend(["", f"## {labels.get(section, section.replace('_', ' ').title())}"])
-            section_lines = [
-                observation
-                for observation in observations
-                if any(token in observation.lower() for token in SECTION_ALIASES.get(section, (section,)))
-            ]
-            lines.append(
-                section_lines[0]
-                if section_lines
-                else "The available step evidence did not isolate this section cleanly, so the report should treat it as unresolved in scope."
-            )
+            section_items = _supported_section_evidence_items(step_results, section)
+            if section_items:
+                lines.append(
+                    " ".join(
+                        f"{str(item.get('snippet') or '').strip()} [Paper {int(item.get('paperId') or 0)}]"
+                        for item in section_items[:3]
+                        if str(item.get("snippet") or "").strip()
+                    )
+                )
+            else:
+                lines.append(
+                    UNRESOLVED_SECTION_MESSAGES.get(
+                        section,
+                        "The available step evidence did not isolate this section cleanly, so the report should treat it as unresolved in scope.",
+                    )
+                )
     else:
         lines.extend(["", "## Grounded Findings"])
         lines.extend(f"- {observation}" for observation in observations[:6])
     return "\n".join(lines)
+
+
+def _compact_evidence_pack(
+    state: DeepResearchState,
+    step_results: Sequence[Dict[str, Any]],
+) -> Dict[str, Any]:
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    requested_sections = list(prompt_analysis.get("requested_sections") or [])
+    evidence_items = _step_evidence_items(step_results)
+    grouped_sections = []
+    for section in requested_sections:
+        grouped_sections.append(
+            {
+                "requested_section": section,
+                "supported_items": [
+                    {
+                        "paperId": item.get("paperId"),
+                        "title": item.get("title"),
+                        "section": item.get("section"),
+                        "snippet": item.get("snippet"),
+                        "relevance_score": item.get("relevance_score"),
+                    }
+                    for item in _supported_section_evidence_items(step_results, section)[:4]
+                ],
+                "unresolved": not bool(_supported_section_evidence_items(step_results, section)),
+            }
+        )
+
+    return {
+        "requested_sections": requested_sections,
+        "papers": [
+            {
+                "paperId": paper.get("paperId") or paper.get("paper_id"),
+                "title": paper.get("title"),
+                "year": paper.get("year"),
+            }
+            for paper in _step_papers(step_results)[:8]
+        ],
+        "section_findings": grouped_sections,
+        "supporting_snippets": [
+            {
+                "paperId": item.get("paperId"),
+                "title": item.get("title"),
+                "requested_section": item.get("requested_section"),
+                "section": item.get("section"),
+                "snippet": item.get("snippet"),
+                "relevance_score": item.get("relevance_score"),
+            }
+            for item in evidence_items
+            if bool(item.get("supports_section"))
+        ][:20],
+        "verification_warnings": list((state.get("verification_result") or {}).get("warnings") or []),
+    }
 
 
 def _compact_step_findings(step_results: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -2583,18 +3176,21 @@ def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
     else:
         final_report = ""
         step_findings = _compact_step_findings(step_results)
+        evidence_pack = _compact_evidence_pack(state, step_results)
         try:
             response = research_synthesis_llm.invoke(
                 (
                     "You are synthesizing a deep research report from a workspace-scoped research corpus.\n"
-                    "Use only the supplied step findings.\n"
+                    "Use only the supplied evidence pack.\n"
                     "Return prose only.\n"
+                    "Every paragraph must be grounded in the supplied evidence snippets.\n"
+                    "If a requested section is unsupported, say so narrowly instead of filling with generic prose.\n"
                     "Do not echo raw JSON, do not invent papers, and say plainly when evidence is thin.\n"
                     "Mention paper IDs inline as [Paper <id>] when available.\n"
                     f"User request:\n{prompt}\n\n"
                     f"Plan summary:\n{plan_summary}\n\n"
                     f"Prompt analysis:\n{json.dumps(prompt_analysis, ensure_ascii=False)}\n\n"
-                    f"Step findings:\n{json.dumps(step_findings, ensure_ascii=False)}"
+                    f"Evidence pack:\n{json.dumps(evidence_pack, ensure_ascii=False)}"
                 )
             )
             final_report = str(getattr(response, "content", "") or "").strip()
@@ -2606,7 +3202,8 @@ def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
                 response = research_synthesis_llm.invoke(
                     (
                         "Write a strict prose-only deep research report.\n"
-                        "Use only the supplied summaries, details, and citations.\n"
+                        "Use only the supplied evidence snippets, section findings, and verification warnings.\n"
+                        "Ground each paragraph in the evidence pack and abstain narrowly when support is missing.\n"
                         "Exclude all raw data.\n"
                         "Follow the requested headings when present.\n"
                         "Use paragraphs and flat bullets only.\n"
@@ -2614,7 +3211,7 @@ def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
                         f"User request:\n{prompt}\n\n"
                         f"Requested sections:\n{json.dumps(requested_sections, ensure_ascii=False)}\n\n"
                         f"Verification:\n{json.dumps(state.get('verification_result') or {}, ensure_ascii=False)}\n\n"
-                        f"Findings:\n{json.dumps(step_findings, ensure_ascii=False)}"
+                        f"Evidence pack:\n{json.dumps(evidence_pack, ensure_ascii=False)}"
                     )
                 )
                 final_report = str(getattr(response, "content", "") or "").strip()

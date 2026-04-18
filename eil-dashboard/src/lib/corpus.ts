@@ -1,10 +1,11 @@
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { generateMockData } from "@/lib/mockData";
-import type { PaperFullRow, TrackRow, TrendRow } from "@/types/database";
+import type { PaperFullRow, PaperId, TrackRow, TrendRow } from "@/types/database";
 
 export interface CorpusCitation {
-  paperId: number;
+  paperId: PaperId;
   title: string;
   year: string;
   href: string;
@@ -12,7 +13,7 @@ export interface CorpusCitation {
 }
 
 export interface CorpusPaper {
-  paper_id: number;
+  paper_id: PaperId;
   year: string;
   title: string;
   abstract_claims: string;
@@ -46,7 +47,7 @@ function extractTracks(row: TrackRow | undefined): string[] {
   }).map((track) => `${track} - ${TRACK_NAMES[track as TrackKey]}`);
 }
 
-function buildPaperHref(paperId: number): string {
+function buildPaperHref(paperId: PaperId): string {
   return `/workspace/papers?paperId=${paperId}`;
 }
 
@@ -60,14 +61,14 @@ function buildCorpusResponse(
   papers: CorpusPaper[];
   citations: CorpusCitation[];
 } {
-  const tracksSingle = new Map<number, TrackRow>(
+  const tracksSingle = new Map<PaperId, TrackRow>(
     singleRows.map((row) => [row.paper_id, row])
   );
-  const tracksMulti = new Map<number, TrackRow>(
+  const tracksMulti = new Map<PaperId, TrackRow>(
     multiRows.map((row) => [row.paper_id, row])
   );
 
-  const trendGroups = new Map<number, { topics: Set<string>; keywords: Set<string> }>();
+  const trendGroups = new Map<PaperId, { topics: Set<string>; keywords: Set<string> }>();
   trends.forEach((row) => {
     const entry = trendGroups.get(row.paper_id) ?? {
       topics: new Set<string>(),
@@ -261,7 +262,11 @@ export async function retrieveCorpusPapers(
       throw new Error(`Failed to load papers_full: ${papersResult.error.message}`);
     }
 
-    const papersData = (papersResult.data ?? []) as PaperFullRow[];
+    const papersData = ((papersResult.data ?? []) as PaperFullRow[]).map((paper) => ({
+      ...paper,
+      paper_id:
+        paperIdFromRunId(paper.ingestion_run_id) || normalizePaperId(paper.paper_id),
+    }));
     const paperIds = papersData.map((paper) => paper.paper_id).filter(Boolean);
     if (paperIds.length === 0) {
       return { papers: [], citations: [] };

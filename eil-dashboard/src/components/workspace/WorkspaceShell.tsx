@@ -50,7 +50,7 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
       { href: "/workspace/library", label: "Library", icon: FolderIcon },
-      { href: "/workspace/logs", label: "Logs", icon: FileIcon },
+      { href: "/workspace/logs", label: "History", icon: FileIcon },
     ],
   },
   {
@@ -108,11 +108,11 @@ const SEARCH_PAGE_ITEMS = [
   },
   {
     id: "logs",
-    label: "Logs",
-    description: "Review processing history and failures",
+    label: "Analysis History",
+    description: "Browse previous analysis runs and revisit files",
     href: "/workspace/logs",
     icon: FileIcon,
-    keywords: ["history", "jobs", "processing"],
+    keywords: ["history", "analysis", "jobs", "processing"],
     featured: true,
   },
   {
@@ -466,7 +466,7 @@ export default function WorkspaceShell({
                 </h1>
                 <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
                   Projects sit inside organizations. Pick one to continue into the
-                  overview, dashboard, chat, library, and logs workspace.
+                  overview, dashboard, chat, library, and analysis history.
                 </p>
                 <Link
                   href="/organizations"
