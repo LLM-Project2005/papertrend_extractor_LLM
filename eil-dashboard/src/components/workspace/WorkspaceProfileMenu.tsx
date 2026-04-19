@@ -147,6 +147,7 @@ export default function WorkspaceProfileMenu() {
           <div className="mt-2 space-y-1">
             <Link
               href={profileHref}
+              prefetch={false}
               onClick={() => setOpen(false)}
               className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#202020] dark:hover:text-white"
             >
@@ -155,6 +156,7 @@ export default function WorkspaceProfileMenu() {
             </Link>
             <Link
               href={settingsHref}
+              prefetch={false}
               onClick={() => setOpen(false)}
               className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#202020] dark:hover:text-white"
             >

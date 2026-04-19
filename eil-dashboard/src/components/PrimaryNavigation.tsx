@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const NAV_ITEMS = [
   { href: "/", label: "Landing" },
   { href: "/start", label: "Start" },
-  { href: "/workspace/home", label: "Workspace" },
+  { href: "/organizations", label: "Workspace" },
 ];
 
 interface Props {
