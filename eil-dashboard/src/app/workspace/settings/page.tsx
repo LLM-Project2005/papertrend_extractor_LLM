@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import WorkspaceSettingsClient from "@/components/workspace/WorkspaceSettingsClient";
 
 export default function WorkspaceSettingsPage() {
-  redirect("/organizations");
+  return <WorkspaceSettingsClient />;
 }

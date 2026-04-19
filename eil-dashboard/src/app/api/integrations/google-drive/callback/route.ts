@@ -16,13 +16,13 @@ export async function GET(request: Request) {
 
   if (error) {
     return NextResponse.redirect(
-      new URL(`/organizations?drive_error=${encodeURIComponent(error)}&source=google-drive`, url.origin)
+      new URL(`/workspace/home?analyze=1&source=google-drive&drive_error=${encodeURIComponent(error)}`, url.origin)
     );
   }
 
   if (!code || !state) {
     return NextResponse.redirect(
-      new URL("/organizations?drive_error=missing_code&source=google-drive", url.origin)
+      new URL("/workspace/home?analyze=1&source=google-drive&drive_error=missing_code", url.origin)
     );
   }
 
@@ -36,10 +36,12 @@ export async function GET(request: Request) {
     const googleProfile = await fetchGoogleUserInfo(tokens.access_token);
     await upsertGoogleDriveConnection(payload.userId, tokens, googleProfile);
 
-    const returnPath = payload.returnTo || "/organizations";
+    const returnPath =
+      payload.returnTo || "/workspace/home?analyze=1&source=google-drive&drive_connected=1";
     const redirectUrl = new URL(returnPath, url.origin);
     redirectUrl.searchParams.set("drive_connected", "1");
     redirectUrl.searchParams.set("source", "google-drive");
+    redirectUrl.searchParams.set("analyze", "1");
 
     return NextResponse.redirect(redirectUrl);
   } catch (callbackError) {
@@ -47,7 +49,7 @@ export async function GET(request: Request) {
       callbackError instanceof Error ? callbackError.message : "google_drive_callback_failed";
     return NextResponse.redirect(
       new URL(
-        `/organizations?source=google-drive&drive_error=${encodeURIComponent(message)}`,
+        `/workspace/home?analyze=1&source=google-drive&drive_error=${encodeURIComponent(message)}`,
         url.origin
       )
     );

@@ -48,7 +48,7 @@ function extractTracks(row: TrackRow | undefined): string[] {
 }
 
 function buildPaperHref(paperId: PaperId): string {
-  return `/organizations?paperId=${paperId}`;
+  return `/workspace/papers?paperId=${paperId}`;
 }
 
 function buildCorpusResponse(

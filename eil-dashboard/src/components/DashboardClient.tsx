@@ -110,7 +110,7 @@ function FilterPanel({
 }
 
 export default function DashboardClient({
-  basePath = "/organizations",
+  basePath = "/workspace/dashboard",
 }: {
   basePath?: string;
 }) {

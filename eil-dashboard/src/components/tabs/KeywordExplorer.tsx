@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
   Bar,
   BarChart,
@@ -19,7 +18,6 @@ import {
 } from "recharts";
 import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
-import { buildWorkspacePath } from "@/lib/workspace-routes";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
@@ -94,8 +92,6 @@ export default function KeywordExplorer({
   planCharts,
 }: Props) {
   const { session } = useAuth();
-  const { currentOrganization, currentProject, selectedOrganizationId, selectedProjectId } =
-    useWorkspaceProfile();
   const [query, setQuery] = useState("");
   const [treeN, setTreeN] = useState(30);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
@@ -107,14 +103,6 @@ export default function KeywordExplorer({
     (chart) => chart.chart_key === "keyword_heatmap"
   )?.config;
   const plannerHeatN = heatmapConfig?.heat_n ?? 15;
-  const buildPaperHref = (paperId: PaperId) =>
-    buildWorkspacePath({
-      organizationId: selectedOrganizationId ?? currentOrganization?.id ?? null,
-      projectId: selectedProjectId ?? currentProject?.id ?? null,
-      projectName: currentProject?.name ?? null,
-      section: "library",
-      query: { paperId },
-    });
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -434,8 +422,7 @@ export default function KeywordExplorer({
                       ))}
                     </div>
                     <Link
-                      href={buildPaperHref(conceptResult.firstAppearance.paperId)}
-                      prefetch={false}
+                      href={`/workspace/papers?paperId=${conceptResult.firstAppearance.paperId}`}
                       className="mt-4 inline-flex text-sm font-medium text-slate-900 underline dark:text-white"
                     >
                       Open paper
@@ -622,8 +609,7 @@ export default function KeywordExplorer({
                             </p>
                           </div>
                           <Link
-                            href={buildPaperHref(paper.paperId)}
-                            prefetch={false}
+                            href={`/workspace/papers?paperId=${paper.paperId}`}
                             className="text-sm font-medium text-slate-900 underline dark:text-white"
                           >
                             Open
