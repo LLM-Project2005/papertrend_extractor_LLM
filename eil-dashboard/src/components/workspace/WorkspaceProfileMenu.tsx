@@ -28,23 +28,18 @@ function getInitials(value: string) {
 
 export default function WorkspaceProfileMenu() {
   const { hydrated, user, profile, isAdmin, signOut } = useAuth();
-  const {
-    currentOrganization,
-    currentProject,
-    selectedOrganizationId,
-    selectedProjectId,
-  } = useWorkspaceProfile();
+  const { currentOrganization, currentProject } = useWorkspaceProfile();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const profileHref = buildWorkspacePath({
-    organizationId: selectedOrganizationId ?? currentOrganization?.id ?? null,
-    projectId: selectedProjectId ?? currentProject?.id ?? null,
+    organizationId: currentOrganization?.id ?? null,
+    projectId: currentProject?.id ?? null,
     projectName: currentProject?.name ?? null,
     section: "profile",
   });
   const settingsHref = buildWorkspacePath({
-    organizationId: selectedOrganizationId ?? currentOrganization?.id ?? null,
-    projectId: selectedProjectId ?? currentProject?.id ?? null,
+    organizationId: currentOrganization?.id ?? null,
+    projectId: currentProject?.id ?? null,
     projectName: currentProject?.name ?? null,
     section: "settings",
   });
