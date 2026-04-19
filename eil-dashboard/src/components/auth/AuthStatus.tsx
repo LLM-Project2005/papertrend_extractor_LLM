@@ -2,20 +2,10 @@
 
 import Link from "next/link";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { LogoutIcon, UserIcon } from "@/components/ui/Icons";
-import { buildWorkspacePath } from "@/lib/workspace-routes";
 
 export default function AuthStatus() {
   const { hydrated, user, profile, isAdmin, signOut } = useAuth();
-  const { currentOrganization, currentProject, selectedOrganizationId, selectedProjectId } =
-    useWorkspaceProfile();
-  const profileHref = buildWorkspacePath({
-    organizationId: selectedOrganizationId ?? currentOrganization?.id ?? null,
-    projectId: selectedProjectId ?? currentProject?.id ?? null,
-    projectName: currentProject?.name ?? null,
-    section: "profile",
-  });
 
   if (!hydrated) {
     return (
@@ -40,8 +30,7 @@ export default function AuthStatus() {
   return (
     <div className="flex items-center gap-2">
       <Link
-        href={profileHref}
-        prefetch={false}
+        href="/workspace/profile"
         className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-slate-300 dark:border-[#353535] dark:bg-[#171717] dark:hover:border-[#3a3a3a] sm:flex"
       >
         <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-[#2a2a2a] dark:text-[#d0d0d0]">

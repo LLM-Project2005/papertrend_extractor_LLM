@@ -203,7 +203,6 @@ function DesktopSidebar({
                     <Link
                       key={item.section}
                       href={href}
-                      prefetch={false}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
                           ? "bg-[#2b2b2b] text-white"
@@ -287,7 +286,6 @@ function MobileSidebar({
                   <Link
                     key={item.section}
                     href={href}
-                    prefetch={false}
                     onClick={onClose}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
