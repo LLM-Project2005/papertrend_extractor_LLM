@@ -27,7 +27,7 @@ export function getStoredWorkspaceRoute(): string | null {
   }
 
   const route = window.localStorage.getItem(WORKSPACE_LAST_ROUTE_STORAGE_KEY);
-  if (route && route.includes("/workspace")) {
+  if (route && route.includes("/workspace/") && !route.startsWith("/workspace")) {
     return route;
   }
 

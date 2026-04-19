@@ -1,5 +1,5 @@
-import WorkspaceProfileClient from "@/components/workspace/WorkspaceProfileClient";
+import { redirect } from "next/navigation";
 
 export default function WorkspaceProfilePage() {
-  return <WorkspaceProfileClient />;
+  redirect("/organizations");
 }

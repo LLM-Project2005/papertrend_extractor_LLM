@@ -117,7 +117,7 @@ export function buildGoogleDriveAuthorizationUrl(
   const { clientId, redirectUri } = getOAuthConfig(request);
   const state = encodeState({
     userId,
-    returnTo: returnTo || "/workspace/home?analyze=1&source=google-drive",
+    returnTo: returnTo || "/organizations",
     exp: Date.now() + 10 * 60 * 1000,
   });
 

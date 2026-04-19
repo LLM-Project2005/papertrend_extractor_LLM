@@ -3,10 +3,10 @@ import { redirect, notFound } from "next/navigation";
 import DashboardClient from "@/components/DashboardClient";
 import WorkspaceChatClient from "@/components/workspace/WorkspaceChatClient";
 import WorkspaceHomeClient from "@/components/workspace/WorkspaceHomeClient";
+import WorkspaceLogsPage from "@/components/workspace/WorkspaceLogsPage";
+import WorkspaceProfileClient from "@/components/workspace/WorkspaceProfileClient";
 import WorkspaceSettingsClient from "@/components/workspace/WorkspaceSettingsClient";
 import AdminImportClient from "@/components/admin/AdminImportClient";
-import WorkspaceLogsPage from "@/app/workspace/logs/page";
-import WorkspaceProfilePage from "@/app/workspace/profile/page";
 import { WORKSPACE_SECTIONS, buildWorkspacePathFromSlug, type WorkspaceSection } from "@/lib/workspace-routes";
 
 function DashboardFallback() {
@@ -64,7 +64,7 @@ export default function ProjectWorkspaceSectionPage({
     case "settings":
       return <WorkspaceSettingsClient />;
     case "profile":
-      return <WorkspaceProfilePage />;
+      return <WorkspaceProfileClient />;
     default:
       return notFound();
   }

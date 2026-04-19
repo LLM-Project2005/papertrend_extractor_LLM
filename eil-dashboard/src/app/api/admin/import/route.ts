@@ -132,7 +132,7 @@ export async function POST(request: Request) {
           provider: AUTO_ANALYSIS_PROVIDER,
           model: AUTO_ANALYSIS_MODEL,
           input_payload: {
-            uploaded_from: "/workspace/imports",
+            uploaded_from: "/organizations",
             folder_name: folder,
             source_kind: sourceKind,
             original_size: file.size,

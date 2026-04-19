@@ -116,7 +116,7 @@ export async function POST(request: Request) {
             drive_web_view_link: file.webViewLink ?? null,
             mime_type: file.mimeType ?? "application/pdf",
             original_size: file.size ? Number(file.size) : null,
-            uploaded_from: "/workspace/home",
+            uploaded_from: "/organizations",
             analysis_mode: "automatic",
             analysis_label: AUTO_ANALYSIS_LABEL,
             progress_stage: "queued",
