@@ -728,114 +728,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     allProjects.find((project) => project.id === selectedProjectIdState) ??
     null;
 
-  const setSelectedOrganizationId = useCallback(
-    (organizationId: string | null) => {
-      const projectSource = allProjects.length > 0 ? allProjects : projects;
-      const nextProjects = organizationId
-        ? sortByName(
-            projectSource.filter(
-              (project) => project.organization_id === organizationId
-            )
-          )
-        : [];
-
-      if (typeof window !== "undefined") {
-        if (organizationId) {
-          window.localStorage.setItem(
-            WORKSPACE_ORGANIZATION_STORAGE_KEY,
-            organizationId
-          );
-        } else {
-          window.localStorage.removeItem(WORKSPACE_ORGANIZATION_STORAGE_KEY);
-        }
-      }
-
-      setProjects(nextProjects);
-      setSelectedOrganizationIdState(organizationId);
-      setSelectedProjectIdState((currentProjectId) =>
-        currentProjectId && nextProjects.some((project) => project.id === currentProjectId)
-          ? currentProjectId
-          : null
-      );
-      setSelectedFolderIdState("all");
-    },
-    [allProjects, projects]
-  );
-
-  const setSelectedProjectId = useCallback(
-    (projectId: string | null) => {
-      const matchingProject =
-        allProjects.find((project) => project.id === projectId) ??
-        projects.find((project) => project.id === projectId) ??
-        null;
-
-      if (matchingProject) {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem(
-            WORKSPACE_ORGANIZATION_STORAGE_KEY,
-            matchingProject.organization_id
-          );
-        }
-
-        const projectSource = allProjects.length > 0 ? allProjects : projects;
-        const folderSource = allFolders.length > 0 ? allFolders : folders;
-
-        setSelectedOrganizationIdState(matchingProject.organization_id);
-        setProjects(
-          sortByName(
-            projectSource.filter(
-              (project) =>
-                project.organization_id === matchingProject.organization_id
-            )
-          )
-        );
-        setFolders(
-          sortByName(
-            folderSource.filter((folder) => folder.project_id === matchingProject.id)
-          )
-        );
-      } else if (!projectId) {
-        setFolders([]);
-      }
-
-      if (typeof window !== "undefined") {
-        if (projectId) {
-          window.localStorage.setItem(WORKSPACE_PROJECT_STORAGE_KEY, projectId);
-        } else {
-          window.localStorage.removeItem(WORKSPACE_PROJECT_STORAGE_KEY);
-        }
-      }
-
-      setSelectedProjectIdState(projectId);
-      setSelectedFolderIdState("all");
-    },
-    [allFolders, allProjects, folders, projects]
-  );
-
-  const setSelectedFolderId = useCallback((folderId: string) => {
-    setSelectedFolderIdState(folderId || "all");
-  }, []);
-
-  const setSelectedYears = useCallback((years: string[]) => {
-    setSelectedYearsState([...new Set(years.filter(Boolean))].sort());
-  }, []);
-
-  const setSelectedTracks = useCallback((tracks: string[]) => {
-    const nextTracks = [...new Set(tracks.filter(Boolean))];
-    setSelectedTracksState(nextTracks.length > 0 ? nextTracks : [...TRACK_COLS]);
-  }, []);
-
-  const setSearchQuery = useCallback((nextSearchQuery: string) => {
-    setSearchQueryState(nextSearchQuery);
-  }, []);
-
-  const resetWorkspaceFilters = useCallback(() => {
-    setSelectedFolderIdState("all");
-    setSelectedYearsState([]);
-    setSelectedTracksState([...TRACK_COLS]);
-    setSearchQueryState("");
-  }, []);
-
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       profile,
@@ -914,13 +806,101 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       clearAnalysisSession: () => {
         setAnalysisSession(null);
       },
-      setSelectedOrganizationId,
-      setSelectedProjectId,
-      setSelectedFolderId,
-      setSelectedYears,
-      setSelectedTracks,
-      setSearchQuery,
-      resetWorkspaceFilters,
+      setSelectedOrganizationId: (organizationId) => {
+        const projectSource = allProjects.length > 0 ? allProjects : projects;
+        const nextProjects = organizationId
+          ? sortByName(
+              projectSource.filter(
+                (project) => project.organization_id === organizationId
+              )
+            )
+          : [];
+
+        if (typeof window !== "undefined") {
+          if (organizationId) {
+            window.localStorage.setItem(
+              WORKSPACE_ORGANIZATION_STORAGE_KEY,
+              organizationId
+            );
+          } else {
+            window.localStorage.removeItem(WORKSPACE_ORGANIZATION_STORAGE_KEY);
+          }
+        }
+
+        setProjects(nextProjects);
+        setSelectedOrganizationIdState(organizationId);
+        setSelectedProjectIdState((currentProjectId) =>
+          currentProjectId && nextProjects.some((project) => project.id === currentProjectId)
+            ? currentProjectId
+            : null
+        );
+        setSelectedFolderIdState("all");
+      },
+      setSelectedProjectId: (projectId) => {
+        const matchingProject =
+          allProjects.find((project) => project.id === projectId) ??
+          projects.find((project) => project.id === projectId) ??
+          null;
+
+        if (matchingProject) {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem(
+              WORKSPACE_ORGANIZATION_STORAGE_KEY,
+              matchingProject.organization_id
+            );
+          }
+
+          const projectSource = allProjects.length > 0 ? allProjects : projects;
+          const folderSource = allFolders.length > 0 ? allFolders : folders;
+
+          setSelectedOrganizationIdState(matchingProject.organization_id);
+          setProjects(
+            sortByName(
+              projectSource.filter(
+                (project) =>
+                  project.organization_id === matchingProject.organization_id
+              )
+            )
+          );
+          setFolders(
+            sortByName(
+              folderSource.filter((folder) => folder.project_id === matchingProject.id)
+            )
+          );
+        } else if (!projectId) {
+          setFolders([]);
+        }
+
+        if (typeof window !== "undefined") {
+          if (projectId) {
+            window.localStorage.setItem(WORKSPACE_PROJECT_STORAGE_KEY, projectId);
+          } else {
+            window.localStorage.removeItem(WORKSPACE_PROJECT_STORAGE_KEY);
+          }
+        }
+
+        setSelectedProjectIdState(projectId);
+        setSelectedFolderIdState("all");
+      },
+      setSelectedFolderId: (folderId) => {
+        setSelectedFolderIdState(folderId || "all");
+      },
+      setSelectedYears: (years) => {
+        setSelectedYearsState([...new Set(years.filter(Boolean))].sort());
+      },
+      setSelectedTracks: (tracks) => {
+        const nextTracks = [...new Set(tracks.filter(Boolean))];
+        setSelectedTracksState(nextTracks.length > 0 ? nextTracks : [...TRACK_COLS]);
+      },
+      setSearchQuery: (nextSearchQuery) => {
+        setSearchQueryState(nextSearchQuery);
+      },
+      resetWorkspaceFilters: () => {
+        setSelectedFolderIdState("all");
+        setSelectedYearsState([]);
+        setSelectedTracksState([...TRACK_COLS]);
+        setSearchQueryState("");
+      },
       refreshOrganizations,
       refreshProjects,
       refreshFolders,
@@ -945,19 +925,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshFolders,
       refreshOrganizations,
       refreshProjects,
-      resetWorkspaceFilters,
       searchQuery,
-      setSearchQuery,
       selectedFolderId,
       selectedOrganizationIdState,
       selectedProjectIdState,
       selectedTracks,
       selectedYears,
-      setSelectedFolderId,
-      setSelectedOrganizationId,
-      setSelectedProjectId,
-      setSelectedTracks,
-      setSelectedYears,
     ]
   );
 
