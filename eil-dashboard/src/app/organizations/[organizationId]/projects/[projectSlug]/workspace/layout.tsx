@@ -13,11 +13,7 @@ export default function ProjectWorkspaceLayout({
 
   return (
     <>
-      <WorkspaceRouteSync
-        organizationId={params.organizationId}
-        projectId={projectId}
-        projectSlug={params.projectSlug}
-      />
+      <WorkspaceRouteSync organizationId={params.organizationId} projectId={projectId} />
       <WorkspaceShell>{children}</WorkspaceShell>
     </>
   );
