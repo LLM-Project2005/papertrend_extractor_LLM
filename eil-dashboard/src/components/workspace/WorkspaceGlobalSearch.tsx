@@ -11,7 +11,6 @@ import {
 import { useRouter } from "next/navigation";
 import { SearchIcon } from "@/components/ui/Icons";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import { buildWorkspacePath } from "@/lib/workspace-routes";
 
 interface SearchPageItem {
   id: string;
@@ -141,21 +140,14 @@ export default function WorkspaceGlobalSearch({
             : "Open this project workspace",
           category: "Projects" as const,
           icon: projectIcon,
-        featured: currentProject?.id === project.id,
-        searchText: `${project.name} ${project.description ?? ""} ${organization?.name ?? ""}`,
-        onSelect: () => {
-          setSelectedProjectId(project.id);
-          setSelectedFolderId("all");
-          router.push(
-            buildWorkspacePath({
-              organizationId: project.organization_id,
-              projectId: project.id,
-              projectName: project.name,
-              section: "home",
-            })
-          );
-        },
-      };
+          featured: currentProject?.id === project.id,
+          searchText: `${project.name} ${project.description ?? ""} ${organization?.name ?? ""}`,
+          onSelect: () => {
+            setSelectedProjectId(project.id);
+            setSelectedFolderId("all");
+            router.push("/workspace/home");
+          },
+        };
       }),
       ...allFolders
         .filter((folder) => folder.project_id)
@@ -179,14 +171,7 @@ export default function WorkspaceGlobalSearch({
                 setSelectedProjectId(folder.project_id);
               }
               setSelectedFolderId(folder.id);
-              router.push(
-                buildWorkspacePath({
-                  organizationId: project?.organization_id ?? currentOrganization?.id ?? null,
-                  projectId: folder.project_id,
-                  projectName: project?.name ?? null,
-                  section: "library",
-                })
-              );
+              router.push("/workspace/library");
             },
           };
         }),

@@ -746,28 +746,7 @@ async function loadDashboardDataServerUncached(
       });
     }
 
-    if (mode === "auto" && projectId && (requestedFolderIds?.length ?? 0) > 0) {
-      const projectWideData = await (async () => {
-        try {
-          return await loadProjectScopedDashboardData(
-            ownerUserId,
-            projectId,
-            null
-          );
-        } catch {
-          return loadProjectScopedDashboardFallbackData(ownerUserId, projectId, null);
-        }
-      })();
-      if (hasAnyDashboardRows(projectWideData)) {
-        return withDiagnostics(projectWideData, {
-          dataSource: "scoped",
-          recoveredFromLegacyScope: false,
-          scopeDescription: "selected project",
-        });
-      }
-    }
-
-    if (mode === "auto" && !projectId && (requestedFolderIds?.length ?? 0) > 0) {
+    if (mode === "auto" && ((requestedFolderIds?.length ?? 0) > 0 || projectId)) {
       const ownerWideData = await loadScopedDashboardData(ownerUserId, null);
       if (hasAnyDashboardRows(ownerWideData)) {
         return withDiagnostics(ownerWideData, {

@@ -8,7 +8,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { LogoMarkIcon, MoreHorizontalIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
-import { buildWorkspacePath } from "@/lib/workspace-routes";
 
 export default function ProjectsPage() {
   const params = useParams<{ organizationId: string }>();
@@ -84,14 +83,7 @@ export default function ProjectsPage() {
       });
       setDraftName("");
       setShowCreateModal(false);
-      router.push(
-        buildWorkspacePath({
-          organizationId,
-          projectId: project.id,
-          projectName: project.name,
-          section: "home",
-        })
-      );
+      router.push("/workspace/home");
     } catch (createError) {
       setError(
         createError instanceof Error ? createError.message : "Failed to create project."
@@ -179,14 +171,7 @@ export default function ProjectsPage() {
                 flushSync(() => {
                   setSelectedProjectId(project.id);
                 });
-                router.push(
-                  buildWorkspacePath({
-                    organizationId,
-                    projectId: project.id,
-                    projectName: project.name,
-                    section: "home",
-                  })
-                );
+                router.push("/workspace/home");
               }}
               className="rounded-2xl border border-white/10 bg-[#171717] p-6 text-left transition-colors hover:border-white/20 hover:bg-[#1b1b1b]"
             >

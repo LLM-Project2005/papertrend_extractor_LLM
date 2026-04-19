@@ -18,18 +18,13 @@ import {
 } from "@/components/ui/Icons";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
 import { persistWorkspaceRoute } from "@/lib/workspace-session";
-import {
-  buildWorkspacePath,
-  getWorkspaceSectionFromPathname,
-  type WorkspaceSection,
-} from "@/lib/workspace-routes";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
 import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 
 type WorkspaceNavItem = {
-  section: WorkspaceSection;
+  href: string;
   label: string;
   icon: (props: { className?: string }) => JSX.Element;
 };
@@ -45,27 +40,27 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     id: "overview",
     label: "Overview",
     items: [
-      { section: "home", label: "Project Overview", icon: HomeIcon },
-      { section: "dashboard", label: "Dashboard", icon: ChartIcon },
+      { href: "/workspace/home", label: "Project Overview", icon: HomeIcon },
+      { href: "/workspace/dashboard", label: "Dashboard", icon: ChartIcon },
     ],
   },
   {
     id: "workspace",
     label: "Workspace",
     items: [
-      { section: "chat", label: "Chat", icon: ChatIcon },
-      { section: "library", label: "Library", icon: FolderIcon },
-      { section: "logs", label: "History", icon: FileIcon },
+      { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
+      { href: "/workspace/library", label: "Library", icon: FolderIcon },
+      { href: "/workspace/logs", label: "History", icon: FileIcon },
     ],
   },
   {
     id: "settings",
     label: "Settings",
-    items: [{ section: "settings", label: "Settings", icon: SettingsIcon }],
+    items: [{ href: "/workspace/settings", label: "Settings", icon: SettingsIcon }],
   },
 ];
 
-const SEARCH_PAGE_ITEM_TEMPLATES = [
+const SEARCH_PAGE_ITEMS = [
   {
     id: "organizations",
     label: "Start page",
@@ -79,7 +74,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "project-overview",
     label: "Project Overview",
     description: "Open the project home and status view",
-    section: "home" as const,
+    href: "/workspace/home",
     icon: HomeIcon,
     keywords: ["overview", "home", "project"],
     featured: true,
@@ -88,7 +83,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "dashboard",
     label: "Dashboard",
     description: "Open research trends and analytics",
-    section: "dashboard" as const,
+    href: "/workspace/dashboard",
     icon: ChartIcon,
     keywords: ["analytics", "trends", "insights"],
     featured: true,
@@ -97,7 +92,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "chat",
     label: "Chat",
     description: "Open grounded research chat",
-    section: "chat" as const,
+    href: "/workspace/chat",
     icon: ChatIcon,
     keywords: ["assistant", "conversation", "qa"],
     featured: true,
@@ -106,7 +101,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "library",
     label: "Library",
     description: "Manage files, imports, and analyzed papers",
-    section: "library" as const,
+    href: "/workspace/library",
     icon: FolderIcon,
     keywords: ["papers", "files", "imports", "documents"],
     featured: true,
@@ -115,7 +110,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "logs",
     label: "Analysis History",
     description: "Browse previous analysis runs and revisit files",
-    section: "logs" as const,
+    href: "/workspace/logs",
     icon: FileIcon,
     keywords: ["history", "analysis", "jobs", "processing"],
     featured: true,
@@ -124,7 +119,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "settings",
     label: "Settings",
     description: "Adjust workspace preferences and identity",
-    section: "settings" as const,
+    href: "/workspace/settings",
     icon: SettingsIcon,
     keywords: ["preferences", "configuration"],
   },
@@ -132,11 +127,13 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "profile",
     label: "Profile",
     description: "Manage your account details",
-    section: "profile" as const,
+    href: "/workspace/profile",
     icon: UserIcon,
     keywords: ["account", "user"],
   },
 ];
+
+const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 
 function WorkspaceBreadcrumb({
   organizationName,
@@ -165,17 +162,7 @@ function WorkspaceBreadcrumb({
   );
 }
 
-function DesktopSidebar({
-  currentSection,
-  organizationId,
-  projectId,
-  projectName,
-}: {
-  currentSection: WorkspaceSection;
-  organizationId: string | null;
-  projectId: string | null;
-  projectName: string | null;
-}) {
+function DesktopSidebar({ pathname }: { pathname: string }) {
   return (
     <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-[#262626] bg-[#111111] transition-[width] duration-200 ease-out hover:w-[220px] lg:block">
       <div className="flex h-full flex-col py-3">
@@ -190,19 +177,13 @@ function DesktopSidebar({
               </p>
               <div className="mt-2 space-y-1">
                 {section.items.map((item) => {
-                  const href = buildWorkspacePath({
-                    organizationId,
-                    projectId,
-                    projectName,
-                    section: item.section,
-                  });
-                  const isActive = currentSection === item.section;
+                  const isActive = pathname.startsWith(item.href);
                   const Icon = item.icon;
 
                   return (
                     <Link
-                      key={item.section}
-                      href={href}
+                      key={item.href}
+                      href={item.href}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
                           ? "bg-[#2b2b2b] text-white"
@@ -226,18 +207,16 @@ function DesktopSidebar({
 }
 
 function MobileSidebar({
-  currentSection,
+  pathname,
   organizationName,
   organizationId,
   projectName,
-  projectId,
   onClose,
 }: {
-  currentSection: WorkspaceSection;
+  pathname: string;
   organizationName: string;
   organizationId: string | null;
   projectName: string;
-  projectId: string | null;
   onClose: () => void;
 }) {
   return (
@@ -273,19 +252,13 @@ function MobileSidebar({
             </p>
             <div className="mt-2 space-y-1">
               {section.items.map((item) => {
-                const href = buildWorkspacePath({
-                  organizationId,
-                  projectId,
-                  projectName,
-                  section: item.section,
-                });
-                const isActive = currentSection === item.section;
+                const isActive = pathname.startsWith(item.href);
                 const Icon = item.icon;
 
                 return (
                   <Link
-                    key={item.section}
-                    href={href}
+                    key={item.href}
+                    href={item.href}
                     onClick={onClose}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
@@ -321,22 +294,8 @@ export default function WorkspaceShell({
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const currentSection = getWorkspaceSectionFromPathname(pathname);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const isChatPage = currentSection === "chat";
-  const searchPageItems = SEARCH_PAGE_ITEM_TEMPLATES.map((item) => ({
-    ...item,
-    href:
-      "section" in item
-        ? buildWorkspacePath({
-            organizationId: currentOrganization?.id ?? null,
-            projectId: currentProject?.id ?? null,
-            projectName: currentProject?.name ?? null,
-            section: item.section,
-          })
-        : item.href,
-  }));
-  const allNavSections = NAV_SECTIONS.flatMap((section) => section.items);
+  const isChatPage = pathname.startsWith("/workspace/chat");
   const {
     runs,
     folderJob,
@@ -442,21 +401,15 @@ export default function WorkspaceShell({
 
   return (
     <div className="min-h-screen bg-[#171717] text-slate-100">
-      <DesktopSidebar
-        currentSection={currentSection}
-        organizationId={currentOrganization?.id ?? null}
-        projectId={currentProject?.id ?? null}
-        projectName={currentProject?.name ?? null}
-      />
+      <DesktopSidebar pathname={pathname} />
 
       {sidebarOpen ? (
         <div className="fixed inset-0 z-50 bg-black/45 lg:hidden">
           <MobileSidebar
-            currentSection={currentSection}
+            pathname={pathname}
             organizationName={currentOrganization?.name ?? ""}
             organizationId={currentOrganization?.id ?? null}
             projectName={currentProject?.name ?? ""}
-            projectId={currentProject?.id ?? null}
             onClose={() => setSidebarOpen(false)}
           />
         </div>
@@ -491,7 +444,7 @@ export default function WorkspaceShell({
             </div>
 
             <div className="order-3 w-full min-w-0 lg:order-2 lg:max-w-[560px] lg:flex-1">
-              <WorkspaceGlobalSearch pageItems={searchPageItems} />
+              <WorkspaceGlobalSearch pageItems={SEARCH_PAGE_ITEMS} />
             </div>
 
             <div className="ml-auto flex items-center gap-2 lg:order-3">
@@ -528,8 +481,8 @@ export default function WorkspaceShell({
 
         {analysisSession &&
         (analysisSession.minimized ||
-          !allNavSections.some((item) => currentSection === item.section) ||
-          currentSection !== "home") ? (
+          !ALL_NAV_ITEMS.some((item) => pathname.startsWith(item.href)) ||
+          pathname !== "/workspace/home") ? (
           <div className="fixed bottom-4 right-4 z-40 w-[min(360px,calc(100vw-2rem))]">
             <AnalysisStatusCard
               runs={activeRuns}

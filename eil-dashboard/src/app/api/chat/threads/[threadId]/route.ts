@@ -21,14 +21,7 @@ export async function GET(
   try {
     const { threadId } = context.params;
     const supabase = getSupabaseAdmin();
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get("projectId");
-    const detail = await getWorkspaceThreadDetail(
-      supabase,
-      user.id,
-      threadId,
-      projectId
-    );
+    const detail = await getWorkspaceThreadDetail(supabase, user.id, threadId);
     return NextResponse.json(detail);
   } catch (error) {
     return NextResponse.json(
@@ -63,14 +56,7 @@ export async function PATCH(
       title,
       summary: body.summary ?? null,
     });
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get("projectId");
-    const detail = await getWorkspaceThreadDetail(
-      supabase,
-      user.id,
-      threadId,
-      projectId
-    );
+    const detail = await getWorkspaceThreadDetail(supabase, user.id, threadId);
     return NextResponse.json(detail);
   } catch (error) {
     return NextResponse.json(
