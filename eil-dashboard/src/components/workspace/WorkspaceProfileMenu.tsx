@@ -3,12 +3,14 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
   ChevronDownIcon,
   LogoutIcon,
   SettingsIcon,
   UserIcon,
 } from "@/components/ui/Icons";
+import { buildWorkspacePath } from "@/lib/workspace-routes";
 
 function getInitials(value: string) {
   const parts = value
@@ -26,8 +28,21 @@ function getInitials(value: string) {
 
 export default function WorkspaceProfileMenu() {
   const { hydrated, user, profile, isAdmin, signOut } = useAuth();
+  const { currentOrganization, currentProject } = useWorkspaceProfile();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const profileHref = buildWorkspacePath({
+    organizationId: currentOrganization?.id ?? null,
+    projectId: currentProject?.id ?? null,
+    projectName: currentProject?.name ?? null,
+    section: "profile",
+  });
+  const settingsHref = buildWorkspacePath({
+    organizationId: currentOrganization?.id ?? null,
+    projectId: currentProject?.id ?? null,
+    projectName: currentProject?.name ?? null,
+    section: "settings",
+  });
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -126,7 +141,7 @@ export default function WorkspaceProfileMenu() {
 
           <div className="mt-2 space-y-1">
             <Link
-              href="/workspace/profile"
+              href={profileHref}
               onClick={() => setOpen(false)}
               className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#202020] dark:hover:text-white"
             >
@@ -134,7 +149,7 @@ export default function WorkspaceProfileMenu() {
               <span>Profile settings</span>
             </Link>
             <Link
-              href="/workspace/settings"
+              href={settingsHref}
               onClick={() => setOpen(false)}
               className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#202020] dark:hover:text-white"
             >

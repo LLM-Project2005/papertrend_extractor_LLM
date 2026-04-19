@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useDashboardData } from "@/hooks/useData";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
+import { buildWorkspacePath } from "@/lib/workspace-routes";
 import { WORKSPACE_GOALS, WORKSPACE_SOURCES } from "@/lib/workspace-profile";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
@@ -72,6 +73,8 @@ function QuickLink({
 export default function WorkspaceHomeClient() {
   const {
     profile,
+    currentOrganization,
+    currentProject,
     folders,
     selectedProjectId,
     selectedFolderId,
@@ -106,6 +109,56 @@ export default function WorkspaceHomeClient() {
     selectedFolderId === "all"
       ? "All folders"
       : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
+  const homePath = useMemo(
+    () =>
+      buildWorkspacePath({
+        organizationId: currentOrganization?.id ?? null,
+        projectId: currentProject?.id ?? selectedProjectId,
+        projectName: currentProject?.name ?? null,
+        section: "home",
+      }),
+    [currentOrganization?.id, currentProject?.id, currentProject?.name, selectedProjectId]
+  );
+  const libraryPath = useMemo(
+    () =>
+      buildWorkspacePath({
+        organizationId: currentOrganization?.id ?? null,
+        projectId: currentProject?.id ?? selectedProjectId,
+        projectName: currentProject?.name ?? null,
+        section: "library",
+      }),
+    [currentOrganization?.id, currentProject?.id, currentProject?.name, selectedProjectId]
+  );
+  const dashboardPath = useMemo(
+    () =>
+      buildWorkspacePath({
+        organizationId: currentOrganization?.id ?? null,
+        projectId: currentProject?.id ?? selectedProjectId,
+        projectName: currentProject?.name ?? null,
+        section: "dashboard",
+      }),
+    [currentOrganization?.id, currentProject?.id, currentProject?.name, selectedProjectId]
+  );
+  const chatPath = useMemo(
+    () =>
+      buildWorkspacePath({
+        organizationId: currentOrganization?.id ?? null,
+        projectId: currentProject?.id ?? selectedProjectId,
+        projectName: currentProject?.name ?? null,
+        section: "chat",
+      }),
+    [currentOrganization?.id, currentProject?.id, currentProject?.name, selectedProjectId]
+  );
+  const settingsPath = useMemo(
+    () =>
+      buildWorkspacePath({
+        organizationId: currentOrganization?.id ?? null,
+        projectId: currentProject?.id ?? selectedProjectId,
+        projectName: currentProject?.name ?? null,
+        section: "settings",
+      }),
+    [currentOrganization?.id, currentProject?.id, currentProject?.name, selectedProjectId]
+  );
 
   const summary = useMemo(() => {
     if (!data) {
@@ -166,7 +219,7 @@ export default function WorkspaceHomeClient() {
     if (searchParams.get("analyze") === "1") {
       setShowAnalyzeModal(true);
     }
-  }, []);
+  }, [homePath]);
 
   const checklist = [
     {
@@ -313,7 +366,7 @@ export default function WorkspaceHomeClient() {
               Analyze
             </button>
             <Link
-              href="/workspace/library"
+              href={libraryPath}
               className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
               Open library
@@ -385,7 +438,7 @@ export default function WorkspaceHomeClient() {
                   </p>
                 </div>
                 <Link
-                  href="/workspace/settings"
+                  href={settingsPath}
                   className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-[#bdbdbd] dark:hover:text-white"
                 >
                   Edit settings
@@ -416,13 +469,13 @@ export default function WorkspaceHomeClient() {
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">Quick access</h2>
                 <div className="mt-4 space-y-3">
                   <QuickLink
-                    href="/workspace/dashboard"
+                    href={dashboardPath}
                     title="Dashboard"
                     description="Trends, tracks, keywords, and the current research picture."
                     icon={<ChartIcon className="h-5 w-5" />}
                   />
                 <QuickLink
-                  href="/workspace/chat"
+                  href={chatPath}
                   title="Chat"
                   description={
                     isPreviewMode
@@ -432,7 +485,7 @@ export default function WorkspaceHomeClient() {
                   icon={<ChatIcon className="h-5 w-5" />}
                 />
                 <QuickLink
-                  href="/workspace/papers"
+                  href={libraryPath}
                     title="Library"
                     description={
                       isPreviewMode

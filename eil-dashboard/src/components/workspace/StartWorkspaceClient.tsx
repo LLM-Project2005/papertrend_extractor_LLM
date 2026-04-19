@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { buildWorkspacePath } from "@/lib/workspace-routes";
 import {
   WORKSPACE_GOALS,
   WORKSPACE_OUTPUTS,
@@ -45,7 +46,8 @@ function SectionHeader({
 
 export default function StartWorkspaceClient() {
   const router = useRouter();
-  const { profile, hydrated, updateProfile } = useWorkspaceProfile();
+  const { profile, hydrated, updateProfile, currentOrganization, currentProject } =
+    useWorkspaceProfile();
   const [name, setName] = useState(profile.name);
   const [organization, setOrganization] = useState(profile.organization);
   const [domain, setDomain] = useState(profile.domain);
@@ -101,7 +103,14 @@ export default function StartWorkspaceClient() {
       onboardingComplete: true,
     });
 
-    router.push("/workspace/home");
+    router.push(
+      buildWorkspacePath({
+        organizationId: currentOrganization?.id ?? null,
+        projectId: currentProject?.id ?? null,
+        projectName: currentProject?.name ?? null,
+        section: "home",
+      })
+    );
   }
 
   const checklist = [

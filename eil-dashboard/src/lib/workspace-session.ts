@@ -6,7 +6,10 @@ export const WORKSPACE_PROJECT_STORAGE_KEY = "papertrend_workspace_project_v1";
 export const WORKSPACE_LAST_ROUTE_STORAGE_KEY = "papertrend_workspace_last_route_v1";
 
 export function persistWorkspaceRoute(route: string) {
-  if (typeof window === "undefined" || !route.startsWith("/workspace")) {
+  if (
+    typeof window === "undefined" ||
+    (!route.startsWith("/workspace") && !route.includes("/workspace/"))
+  ) {
     return;
   }
 
@@ -24,7 +27,7 @@ export function getStoredWorkspaceRoute(): string | null {
   }
 
   const route = window.localStorage.getItem(WORKSPACE_LAST_ROUTE_STORAGE_KEY);
-  if (route && route.startsWith("/workspace")) {
+  if (route && (route.startsWith("/workspace") || route.includes("/workspace/"))) {
     return route;
   }
 

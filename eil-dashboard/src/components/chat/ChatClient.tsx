@@ -861,7 +861,10 @@ export default function ChatClient() {
       }
       setThreadsLoading(true);
       try {
-        const response = await fetch("/api/chat/threads", {
+        const query = selectedProjectId
+          ? `?projectId=${encodeURIComponent(selectedProjectId)}`
+          : "";
+        const response = await fetch(`/api/chat/threads${query}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const payload = (await response.json()) as {
@@ -887,7 +890,7 @@ export default function ChatClient() {
         setThreadsLoading(false);
       }
     },
-    [canPersist, session?.access_token]
+    [canPersist, selectedProjectId, session?.access_token]
   );
 
   const loadThreadDetail = useCallback(
@@ -895,7 +898,10 @@ export default function ChatClient() {
       if (!canPersist || !session?.access_token) return;
       setDetailLoading(true);
       try {
-        const response = await fetch(`/api/chat/threads/${threadId}`, {
+        const query = selectedProjectId
+          ? `?projectId=${encodeURIComponent(selectedProjectId)}`
+          : "";
+        const response = await fetch(`/api/chat/threads/${threadId}${query}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const payload = (await response.json()) as ChatThreadDetail & {
@@ -923,7 +929,7 @@ export default function ChatClient() {
         setDetailLoading(false);
       }
     },
-    [canPersist, session?.access_token]
+    [canPersist, selectedProjectId, session?.access_token]
   );
 
   const loadLibraryRuns = useCallback(async () => {
@@ -993,6 +999,10 @@ export default function ChatClient() {
     setSelectedLibraryRuns([]);
     setLibraryRuns([]);
     setLibraryQuery("");
+    setActiveThreadId(null);
+    setActiveThread(null);
+    setMessages([]);
+    setDeepSession(null);
   }, [selectedProjectId]);
 
   async function sendRequest(body: Record<string, unknown>) {

@@ -15,6 +15,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { buildWorkspacePath } from "@/lib/workspace-routes";
 import Modal from "@/components/ui/Modal";
 import {
   CheckIcon,
@@ -494,6 +495,18 @@ export default function AdminImportClient() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const requestedRunId = searchParams.get("runId");
+  const libraryPath = buildWorkspacePath({
+    organizationId: currentProject?.organization_id ?? null,
+    projectId: currentProject?.id ?? null,
+    projectName: currentProject?.name ?? null,
+    section: "library",
+  });
+  const dashboardPath = buildWorkspacePath({
+    organizationId: currentProject?.organization_id ?? null,
+    projectId: currentProject?.id ?? null,
+    projectName: currentProject?.name ?? null,
+    section: "dashboard",
+  });
 
   const requestHeaders = useMemo<Record<string, string>>(() => {
     const headers: Record<string, string> = {};
@@ -769,7 +782,7 @@ export default function AdminImportClient() {
 
     autoOpenedRunIdRef.current = requestedRunId;
     void handleOpenPrimaryFileAction(matchingRun).finally(() => {
-      router.replace("/workspace/library", { scroll: false });
+      router.replace(libraryPath, { scroll: false });
     });
   }, [requestedRunId, router, runs]);
 
@@ -2360,7 +2373,7 @@ export default function AdminImportClient() {
           onRename={() => handleRenameRun(analysisRun)}
           onOpenDashboard={() => {
             if (typeof window !== "undefined") {
-              window.location.assign("/workspace/dashboard");
+              window.location.assign(dashboardPath);
             }
           }}
         />
@@ -2475,7 +2488,7 @@ export default function AdminImportClient() {
                   type="button"
                   onClick={() => {
                     if (typeof window !== "undefined") {
-                      window.location.assign("/workspace/dashboard");
+                      window.location.assign(dashboardPath);
                     }
                   }}
                   className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"

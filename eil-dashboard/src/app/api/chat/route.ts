@@ -1068,7 +1068,12 @@ async function planDeepResearch(
   );
   const thread =
     body.threadId
-      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
+      ? (await getWorkspaceThreadDetail(
+          supabase,
+          ownerUserId,
+          body.threadId,
+          body.projectId ?? null
+        )).thread
       : await createWorkspaceThread(supabase, {
           ownerUserId,
           mode: "deep_research",
@@ -1084,7 +1089,10 @@ async function planDeepResearch(
       role: "user",
       content: prompt,
       messageKind: "chat",
-      metadata: { chatMode: "deep_research" },
+      metadata: {
+        chatMode: "deep_research",
+        projectId: body.projectId ?? null,
+      },
     });
   }
 
@@ -1172,7 +1180,12 @@ async function planDeepResearch(
     })),
   });
 
-  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+  const detail = await getWorkspaceThreadDetail(
+    supabase,
+    ownerUserId,
+    thread.id,
+    body.projectId ?? null
+  );
   return NextResponse.json({
     mode: "deep_research",
     action: "plan",
@@ -1231,7 +1244,12 @@ async function continueDeepResearch(
     }).catch(() => null);
   }
 
-  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId);
+  const detail = await getWorkspaceThreadDetail(
+    supabase,
+    ownerUserId,
+    body.threadId,
+    body.projectId ?? null
+  );
   return NextResponse.json({
     mode: "deep_research",
     action: "continue",
@@ -1272,7 +1290,12 @@ async function normalChat(
   let thread: ChatThreadDetail["thread"] | null = null;
   if (ownerUserId && supabase) {
     thread = body.threadId
-      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
+      ? (await getWorkspaceThreadDetail(
+          supabase,
+          ownerUserId,
+          body.threadId,
+          body.projectId ?? null
+        )).thread
       : await createWorkspaceThread(supabase, {
           ownerUserId,
           mode: "normal",
@@ -1287,7 +1310,10 @@ async function normalChat(
       role: "user",
       content: currentMessage,
       messageKind: "chat",
-      metadata: { attachments: body.attachments ?? [] },
+      metadata: {
+        attachments: body.attachments ?? [],
+        projectId: body.projectId ?? null,
+      },
     });
   }
 
@@ -1382,14 +1408,22 @@ async function normalChat(
       content: answer,
       messageKind: "chat",
       citations,
-      metadata: { mode },
+      metadata: {
+        mode,
+        projectId: body.projectId ?? null,
+      },
     });
     await updateWorkspaceThread(supabase, thread.id, {
       summary: answer.slice(0, 240),
       title: thread.title || buildThreadTitle(currentMessage),
     });
 
-    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+    const detail = await getWorkspaceThreadDetail(
+      supabase,
+      ownerUserId,
+      thread.id,
+      body.projectId ?? null
+    );
     return NextResponse.json({
       mode,
       answer,

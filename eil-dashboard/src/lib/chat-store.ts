@@ -21,8 +21,48 @@ export function buildThreadTitle(prompt: string): string {
 
 export async function listWorkspaceThreads(
   supabase: SupabaseClient,
-  ownerUserId: string
+  ownerUserId: string,
+  projectId?: string | null
 ): Promise<WorkspaceThreadSummary[]> {
+  const normalizedProjectId =
+    typeof projectId === "string" && projectId.trim() ? projectId.trim() : null;
+
+  if (normalizedProjectId) {
+    const { data: scopedMessages, error: scopedMessagesError } = await supabase
+      .from("workspace_messages")
+      .select("thread_id, created_at")
+      .eq("owner_user_id", ownerUserId)
+      .contains("metadata", { projectId: normalizedProjectId });
+
+    if (scopedMessagesError) {
+      throw new Error(scopedMessagesError.message);
+    }
+
+    const threadIds = [
+      ...new Set(
+        (scopedMessages ?? [])
+          .map((row) => String((row as { thread_id?: string | null }).thread_id ?? ""))
+          .filter(Boolean)
+      ),
+    ];
+
+    if (threadIds.length === 0) {
+      return [];
+    }
+
+    const { data, error } = await supabase
+      .from("workspace_threads")
+      .select("*")
+      .eq("owner_user_id", ownerUserId)
+      .in("id", threadIds)
+      .order("updated_at", { ascending: false });
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data ?? []) as WorkspaceThreadSummary[];
+  }
+
   const { data, error } = await supabase
     .from("workspace_threads")
     .select("*")
@@ -298,8 +338,30 @@ export async function getDeepResearchSession(
 export async function getWorkspaceThreadDetail(
   supabase: SupabaseClient,
   ownerUserId: string,
-  threadId: string
+  threadId: string,
+  projectId?: string | null
 ): Promise<ChatThreadDetail> {
+  const normalizedProjectId =
+    typeof projectId === "string" && projectId.trim() ? projectId.trim() : null;
+
+  if (normalizedProjectId) {
+    const { data: scopedMessages, error: scopedMessagesError } = await supabase
+      .from("workspace_messages")
+      .select("id")
+      .eq("thread_id", threadId)
+      .eq("owner_user_id", ownerUserId)
+      .contains("metadata", { projectId: normalizedProjectId })
+      .limit(1);
+
+    if (scopedMessagesError) {
+      throw new Error(scopedMessagesError.message);
+    }
+
+    if (!scopedMessages || scopedMessages.length === 0) {
+      throw new Error("Failed to load workspace thread.");
+    }
+  }
+
   const { data: thread, error: threadError } = await supabase
     .from("workspace_threads")
     .select("*")
