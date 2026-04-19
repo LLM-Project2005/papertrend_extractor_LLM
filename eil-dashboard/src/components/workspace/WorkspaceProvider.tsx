@@ -746,7 +746,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedYears,
       selectedTracks,
       searchQuery,
-      hasActiveProject: Boolean(selectedProjectIdState),
+      hasActiveProject: Boolean(currentProject),
       updateProfile: (updates) => {
         setProfile((current) => ({
           ...current,
