@@ -106,6 +106,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth
       .getSession()
+      .then((result) => withTimeout(Promise.resolve(result), 8000))
       .then(({ data }) => {
         if (!mounted) {
           return;
@@ -127,6 +128,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (mounted) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
           setHydrated(true);
         }
       });

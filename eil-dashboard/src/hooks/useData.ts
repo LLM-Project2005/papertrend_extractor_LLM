@@ -12,6 +12,88 @@ interface UseDashboardDataOptions {
   refetchOnWindowFocus?: boolean;
 }
 
+const DASHBOARD_REQUEST_TTL_MS = 30_000;
+const DASHBOARD_FETCH_TIMEOUT_MS = 20_000;
+
+type DashboardResponsePayload = {
+  data?: DashboardData;
+  error?: string;
+};
+
+type DashboardCacheEntry = {
+  data: DashboardData;
+  timestamp: number;
+};
+
+const dashboardDataCache = new Map<string, DashboardCacheEntry>();
+const dashboardInFlightRequests = new Map<string, Promise<DashboardData>>();
+
+function buildEmptyLiveData(projectId: string | null): DashboardData {
+  return {
+    trends: [],
+    tracksSingle: [],
+    tracksMulti: [],
+    topicFamilies: [],
+    useMock: false,
+    diagnostics: {
+      dataSource: "empty",
+      recoveredFromLegacyScope: false,
+      scopeDescription: projectId ? "selected project" : "workspace",
+      errorMessage: "Failed to load live dashboard data.",
+    },
+  };
+}
+
+async function fetchDashboardData(
+  requestKey: string,
+  params: URLSearchParams,
+  accessToken: string
+): Promise<DashboardData> {
+  const cachedEntry = dashboardDataCache.get(requestKey);
+  if (cachedEntry && Date.now() - cachedEntry.timestamp < DASHBOARD_REQUEST_TTL_MS) {
+    return cachedEntry.data;
+  }
+
+  const inFlight = dashboardInFlightRequests.get(requestKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = (async () => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(
+      () => controller.abort("dashboard-data-timeout"),
+      DASHBOARD_FETCH_TIMEOUT_MS
+    );
+
+    try {
+      const response = await fetch(`/api/workspace/dashboard-data?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        signal: controller.signal,
+      });
+
+      const payload = (await response.json()) as DashboardResponsePayload;
+      if (!response.ok || !payload.data) {
+        throw new Error(payload.error ?? "Failed to load dashboard data.");
+      }
+
+      dashboardDataCache.set(requestKey, {
+        data: payload.data,
+        timestamp: Date.now(),
+      });
+      return payload.data;
+    } finally {
+      window.clearTimeout(timeoutId);
+      dashboardInFlightRequests.delete(requestKey);
+    }
+  })();
+
+  dashboardInFlightRequests.set(requestKey, request);
+  return request;
+}
+
 export function useDashboardData(
   folderSelection: string | string[] = "all",
   projectFolderIds: string[] = [],
@@ -26,7 +108,7 @@ export function useDashboardData(
   const mode = options.mode ?? "auto";
   const pollIntervalMs = options.pollIntervalMs ?? 0;
   const projectId = options.projectId ?? null;
-  const refetchOnWindowFocus = options.refetchOnWindowFocus ?? true;
+  const refetchOnWindowFocus = options.refetchOnWindowFocus ?? false;
   const normalizedFolderIds = useMemo(() => {
     if (Array.isArray(folderSelection)) {
       return [...new Set(folderSelection.map((value) => String(value || "").trim()).filter(Boolean))];
@@ -37,6 +119,13 @@ export function useDashboardData(
   }, [folderSelection]);
   const folderSelectionKey =
     normalizedFolderIds.length > 0 ? normalizedFolderIds.join(",") : "all";
+  const requestKey = useMemo(() => {
+    return JSON.stringify({
+      mode,
+      projectId: projectId ?? null,
+      folderIds: normalizedFolderIds,
+    });
+  }, [mode, normalizedFolderIds, projectId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,27 +172,14 @@ export function useDashboardData(
         if (projectId) {
           params.set("projectId", projectId);
         }
-
-        const response = await fetch(
-          `/api/workspace/dashboard-data?${params.toString()}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          }
+        const nextData = await fetchDashboardData(
+          requestKey,
+          params,
+          session.access_token
         );
 
-        const payload = (await response.json()) as {
-          data?: DashboardData;
-          error?: string;
-        };
-
-        if (!response.ok || !payload.data) {
-          throw new Error(payload.error ?? "Failed to load dashboard data.");
-        }
-
         if (!cancelled) {
-          setData(payload.data);
+          setData(nextData);
           setLoading(false);
           setRefreshing(false);
           hasLoadedRef.current = true;
@@ -112,19 +188,7 @@ export function useDashboardData(
         if (!cancelled) {
           setData(
             mode === "live" || Boolean(user && session?.access_token)
-              ? {
-                  trends: [],
-                  tracksSingle: [],
-                  tracksMulti: [],
-                  topicFamilies: [],
-                  useMock: false,
-                  diagnostics: {
-                    dataSource: "empty",
-                    recoveredFromLegacyScope: false,
-                    scopeDescription: projectId ? "selected project" : "workspace",
-                    errorMessage: "Failed to load live dashboard data.",
-                  },
-                }
+              ? buildEmptyLiveData(projectId)
               : generateMockData()
           );
           setLoading(false);
@@ -177,8 +241,8 @@ export function useDashboardData(
     hydrated,
     mode,
     pollIntervalMs,
-    projectFolderIds,
     projectId,
+    requestKey,
     refetchOnWindowFocus,
     session?.access_token,
     user,
@@ -223,35 +287,15 @@ export function useDashboardData(
       if (projectId) {
         params.set("projectId", projectId);
       }
-
-      const response = await fetch(`/api/workspace/dashboard-data?${params.toString()}`, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-      const payload = (await response.json()) as { data?: DashboardData; error?: string };
-      if (!response.ok || !payload.data) {
-        throw new Error(payload.error ?? "Failed to load dashboard data.");
-      }
-      setData(payload.data);
+      dashboardDataCache.delete(requestKey);
+      const nextData = await fetchDashboardData(requestKey, params, session.access_token);
+      setData(nextData);
       hasLoadedRef.current = true;
     } catch {
       setData((current) =>
         current ??
         (mode === "live" || Boolean(user && session?.access_token)
-          ? {
-              trends: [],
-              tracksSingle: [],
-              tracksMulti: [],
-              topicFamilies: [],
-              useMock: false,
-              diagnostics: {
-                dataSource: "empty",
-                recoveredFromLegacyScope: false,
-                scopeDescription: projectId ? "selected project" : "workspace",
-                errorMessage: "Failed to load live dashboard data.",
-              },
-            }
+          ? buildEmptyLiveData(projectId)
           : generateMockData())
       );
     } finally {
