@@ -36,8 +36,11 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
 }
 
 function getRedirectTo(): string | undefined {
+  const configuredSiteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") || null;
+
   if (typeof window === "undefined") {
-    return undefined;
+    return configuredSiteUrl ? `${configuredSiteUrl}/organizations` : undefined;
   }
 
   return `${window.location.origin}/organizations`;
@@ -239,15 +242,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("Supabase auth is not configured.");
         }
 
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider,
-          options: {
-            redirectTo: getRedirectTo(),
-          },
-        });
+        const { data, error } = await withTimeout(
+          supabase.auth.signInWithOAuth({
+            provider,
+            options: {
+              redirectTo: getRedirectTo(),
+              skipBrowserRedirect: true,
+            },
+          }),
+          10000
+        );
 
         if (error) {
           throw error;
+        }
+
+        const redirectUrl = data?.url?.trim();
+        if (!redirectUrl) {
+          throw new Error("Supabase did not return an OAuth redirect URL.");
+        }
+
+        if (typeof window !== "undefined") {
+          window.location.assign(redirectUrl);
         }
       },
       signInWithPassword: async (email, password) => {
