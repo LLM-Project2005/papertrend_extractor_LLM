@@ -16,6 +16,25 @@ import type { WorkspaceProfile } from "@/types/workspace";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error("Auth profile request timed out."));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 function getRedirectTo(): string | undefined {
   if (typeof window === "undefined") {
     return undefined;
@@ -58,11 +77,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       avatar_url: metadata.avatar_url,
     };
 
-    const { data, error } = await supabase
-      .from("user_profiles")
-      .upsert(fallbackPayload, { onConflict: "id" })
-      .select("*")
-      .single();
+    const profileResult = await withTimeout(
+      Promise.resolve(
+        supabase
+          .from("user_profiles")
+          .upsert(fallbackPayload, { onConflict: "id" })
+          .select("*")
+          .single()
+      ) as Promise<{ data: UserProfileRecord | null; error: Error | null }>,
+      8000
+    );
+    const { data, error } = profileResult;
 
     if (error) {
       throw error;
@@ -81,26 +106,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     supabase.auth
       .getSession()
-      .then(async ({ data }) => {
+      .then(({ data }) => {
         if (!mounted) {
           return;
         }
 
         setSession(data.session);
         setUser(data.session?.user ?? null);
+        setHydrated(true);
 
         if (data.session?.user) {
-          try {
-            await loadProfile(data.session.user);
-          } catch {
-            setProfile(null);
-          }
+          loadProfile(data.session.user).catch(() => {
+            if (mounted) {
+              setProfile(null);
+            }
+          });
         } else {
           setProfile(null);
-        }
-
-        if (mounted) {
-          setHydrated(true);
         }
       })
       .catch(() => {
@@ -114,6 +136,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_, nextSession) => {
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      setHydrated(true);
 
       if (nextSession?.user) {
         loadProfile(nextSession.user).catch(() => {
