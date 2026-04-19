@@ -104,9 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true;
 
-    supabase.auth
-      .getSession()
-      .then((result) => withTimeout(Promise.resolve(result), 8000))
+    withTimeout(supabase.auth.getSession(), 8000)
       .then(({ data }) => {
         if (!mounted) {
           return;
