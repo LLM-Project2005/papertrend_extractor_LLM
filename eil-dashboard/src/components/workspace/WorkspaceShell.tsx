@@ -315,8 +315,6 @@ export default function WorkspaceShell({
   const {
     currentOrganization,
     currentProject,
-    selectedOrganizationId,
-    selectedProjectId,
     hasActiveProject,
     analysisSession,
     setAnalysisMinimized,
@@ -331,9 +329,8 @@ export default function WorkspaceShell({
     href:
       "section" in item
         ? buildWorkspacePath({
-            organizationId:
-              selectedOrganizationId ?? currentOrganization?.id ?? null,
-            projectId: selectedProjectId ?? currentProject?.id ?? null,
+            organizationId: currentOrganization?.id ?? null,
+            projectId: currentProject?.id ?? null,
             projectName: currentProject?.name ?? null,
             section: item.section,
           })
@@ -447,8 +444,8 @@ export default function WorkspaceShell({
     <div className="min-h-screen bg-[#171717] text-slate-100">
       <DesktopSidebar
         currentSection={currentSection}
-        organizationId={selectedOrganizationId ?? currentOrganization?.id ?? null}
-        projectId={selectedProjectId ?? currentProject?.id ?? null}
+        organizationId={currentOrganization?.id ?? null}
+        projectId={currentProject?.id ?? null}
         projectName={currentProject?.name ?? null}
       />
 
@@ -457,9 +454,9 @@ export default function WorkspaceShell({
           <MobileSidebar
             currentSection={currentSection}
             organizationName={currentOrganization?.name ?? ""}
-            organizationId={selectedOrganizationId ?? currentOrganization?.id ?? null}
+            organizationId={currentOrganization?.id ?? null}
             projectName={currentProject?.name ?? ""}
-            projectId={selectedProjectId ?? currentProject?.id ?? null}
+            projectId={currentProject?.id ?? null}
             onClose={() => setSidebarOpen(false)}
           />
         </div>
@@ -488,7 +485,7 @@ export default function WorkspaceShell({
 
               <WorkspaceBreadcrumb
                 organizationName={currentOrganization?.name ?? ""}
-                organizationId={selectedOrganizationId ?? currentOrganization?.id ?? null}
+                organizationId={currentOrganization?.id ?? null}
                 projectName={currentProject?.name ?? ""}
               />
             </div>
