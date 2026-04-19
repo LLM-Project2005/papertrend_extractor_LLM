@@ -78,7 +78,7 @@ const SOURCE_OPTIONS = [
 ] as const;
 
 const MAX_UPLOAD_BATCH_FILES = 8;
-const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
+const MAX_UPLOAD_BATCH_BYTES = 6 * 1024 * 1024;
 
 function splitIntoUploadBatches(files: File[]) {
   const batches: File[][] = [];
@@ -347,7 +347,7 @@ export default function AnalyzeFlowModal({
           if (!response.ok) {
             if (response.status === 413) {
               throw new Error(
-                "This upload batch is too large for the server. Try fewer or smaller PDFs at a time."
+                "This upload batch is too large for the app server. Try fewer PDFs per batch or smaller files."
               );
             }
             throw new Error(payload?.error ?? `Failed to queue analysis (status ${response.status}).`);

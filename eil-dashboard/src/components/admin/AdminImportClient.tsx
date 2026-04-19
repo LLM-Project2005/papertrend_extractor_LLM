@@ -235,7 +235,7 @@ function getFolderUploadName(files: File[]) {
 }
 
 const MAX_UPLOAD_BATCH_FILES = 8;
-const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
+const MAX_UPLOAD_BATCH_BYTES = 6 * 1024 * 1024;
 
 function splitIntoUploadBatches(files: File[]) {
   const batches: File[][] = [];
@@ -922,7 +922,7 @@ export default function AdminImportClient() {
         if (!response.ok) {
           const fallbackMessage =
             response.status === 413
-              ? "This upload batch is too large for the server. Try fewer or smaller PDFs at a time."
+              ? "This upload batch is too large for the app server. The files were not rejected by your Library folder logic, but the request payload was too large. Try smaller PDFs or fewer files per batch."
               : `Upload request failed with status ${response.status}.`;
           throw new Error(buildUploadErrorMessage(fallbackMessage, payload));
         }
@@ -950,9 +950,13 @@ export default function AdminImportClient() {
         setSelectedFolderId(nextFolderId);
       }
       setMessage(
-        ignoredCount > 0
-          ? `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"}. Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-          : `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} for analysis.`
+        mode === "folder"
+          ? ignoredCount > 0
+            ? `Created Library folder "${targetFolderName}" and queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} inside it. Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+            : `Created Library folder "${targetFolderName}" and queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} inside it.`
+          : ignoredCount > 0
+            ? `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"}. Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+            : `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} for analysis.`
       );
       setError(queueWarning);
     } catch (uploadError) {
