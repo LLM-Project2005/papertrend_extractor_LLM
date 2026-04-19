@@ -161,6 +161,7 @@ export default function DashboardClient({
     source: "agent" | "fallback";
   } | null>(null);
   const lastPlanSignatureRef = useRef<string | null>(null);
+  const liveDataError = data?.diagnostics?.errorMessage ?? null;
 
   useEffect(() => {
     if (allYears.length === 0) {
@@ -484,6 +485,11 @@ export default function DashboardClient({
         </div>
 
         <section className="app-surface px-4 py-4 sm:px-5">
+          {liveDataError ? (
+            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+              Live dashboard data could not be loaded for this scope. {liveDataError}
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">

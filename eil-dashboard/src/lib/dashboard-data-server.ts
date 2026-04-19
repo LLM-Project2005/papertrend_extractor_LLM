@@ -641,6 +641,7 @@ export async function loadDashboardDataServer(
   mode: DashboardDataMode = "auto"
 ): Promise<DashboardData> {
   const requestedFolderIds = normalizeRequestedFolderIds(folderSelection);
+  const scopeDescription = describeScope(requestedFolderIds, projectId);
 
   if (mode === "mock") {
     return withDiagnostics(generateMockData(), {
@@ -659,7 +660,6 @@ export async function loadDashboardDataServer(
       });
     }
 
-    const scopeDescription = describeScope(requestedFolderIds, projectId);
     const scopedData =
       projectId && projectId !== "all"
         ? await loadProjectScopedDashboardData(
@@ -723,17 +723,21 @@ export async function loadDashboardDataServer(
       recoveredFromLegacyScope: false,
       scopeDescription,
     });
-  } catch {
-    return mode === "live"
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to assemble live dashboard data.";
+    return mode === "live" || Boolean(ownerUserId)
       ? withDiagnostics(emptyDashboardData(), {
           dataSource: "empty",
           recoveredFromLegacyScope: false,
-          scopeDescription: describeScope(requestedFolderIds, projectId),
+          scopeDescription,
+          errorMessage,
         })
       : withDiagnostics(generateMockData(), {
           dataSource: "mock",
           recoveredFromLegacyScope: false,
           scopeDescription: "preview data",
+          errorMessage,
         });
   }
 }

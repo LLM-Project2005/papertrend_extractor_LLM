@@ -47,6 +47,7 @@ export interface DashboardData {
     dataSource?: "scoped" | "legacy_fallback" | "mock" | "empty";
     recoveredFromLegacyScope?: boolean;
     scopeDescription?: string;
+    errorMessage?: string;
   } | null;
 }
 

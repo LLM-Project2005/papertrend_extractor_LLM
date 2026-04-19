@@ -111,13 +111,19 @@ export function useDashboardData(
       } catch {
         if (!cancelled) {
           setData(
-            mode === "live"
+            mode === "live" || Boolean(user && session?.access_token)
               ? {
                   trends: [],
                   tracksSingle: [],
                   tracksMulti: [],
                   topicFamilies: [],
                   useMock: false,
+                  diagnostics: {
+                    dataSource: "empty",
+                    recoveredFromLegacyScope: false,
+                    scopeDescription: projectId ? "selected project" : "workspace",
+                    errorMessage: "Failed to load live dashboard data.",
+                  },
                 }
               : generateMockData()
           );
@@ -232,13 +238,19 @@ export function useDashboardData(
     } catch {
       setData((current) =>
         current ??
-        (mode === "live"
+        (mode === "live" || Boolean(user && session?.access_token)
           ? {
               trends: [],
               tracksSingle: [],
               tracksMulti: [],
               topicFamilies: [],
               useMock: false,
+              diagnostics: {
+                dataSource: "empty",
+                recoveredFromLegacyScope: false,
+                scopeDescription: projectId ? "selected project" : "workspace",
+                errorMessage: "Failed to load live dashboard data.",
+              },
             }
           : generateMockData())
       );

@@ -3,6 +3,13 @@ import { getAdminImportSecret } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { User } from "@supabase/supabase-js";
 
+export class RequestAuthTimeoutError extends Error {
+  constructor(message = "Authentication provider timed out.") {
+    super(message);
+    this.name = "RequestAuthTimeoutError";
+  }
+}
+
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
@@ -17,8 +24,28 @@ function getBearerToken(request: Request): string {
   return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
 }
 
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new RequestAuthTimeoutError());
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 export async function getAuthenticatedUserFromRequest(
-  request: Request
+  request: Request,
+  options?: { timeoutMs?: number; throwOnTimeout?: boolean }
 ): Promise<User | null> {
   const accessToken = getBearerToken(request);
   if (!accessToken) {
@@ -30,14 +57,20 @@ export async function getAuthenticatedUserFromRequest(
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(accessToken);
+    } = await withTimeout(
+      supabase.auth.getUser(accessToken),
+      options?.timeoutMs ?? 8000
+    );
 
     if (userError || !user) {
       return null;
     }
 
     return user;
-  } catch {
+  } catch (error) {
+    if (options?.throwOnTimeout && error instanceof RequestAuthTimeoutError) {
+      throw error;
+    }
     return null;
   }
 }

@@ -206,6 +206,7 @@ export default function WorkspaceHomeClient() {
   );
   const activeGoal = WORKSPACE_GOALS.find((goal) => goal.id === profile.goal);
   const isPreviewMode = data?.useMock ?? true;
+  const liveDataError = data?.diagnostics?.errorMessage ?? null;
   const hasLiveAnalysisSession =
     Boolean(analysisSession?.runIds.length) && !analysisSession?.minimized;
   const hasCompletedRealData = !isPreviewMode;
@@ -391,6 +392,12 @@ export default function WorkspaceHomeClient() {
       ) : null}
 
       <>
+        {liveDataError ? (
+          <section className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            Live dashboard data could not be loaded right now. The backend returned an error while assembling this project&apos;s analytics: {liveDataError}
+          </section>
+        ) : null}
+
         {isPreviewMode ? (
           <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
             Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
