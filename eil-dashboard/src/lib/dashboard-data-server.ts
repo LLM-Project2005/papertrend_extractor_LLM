@@ -13,6 +13,16 @@ import type {
   TrendRow,
 } from "@/types/database";
 
+const DASHBOARD_SERVER_CACHE_TTL_MS = 15_000;
+
+type DashboardServerCacheEntry = {
+  timestamp: number;
+  data: DashboardData;
+};
+
+const dashboardServerCache = new Map<string, DashboardServerCacheEntry>();
+const dashboardServerInFlight = new Map<string, Promise<DashboardData>>();
+
 type PaperMetadata = {
   paper_id: PaperId;
   folder_id: string | null;
@@ -369,49 +379,66 @@ async function loadTableData(
   }
 
   const supabase = getSupabaseAdmin();
-  const paperPayloads = await Promise.all(
-    metadata.map(async (paper) => {
-      const [keywordsResult, singleResult, multiResult] = await Promise.all([
-        supabase
-          .from("paper_keywords")
-          .select("folder_id,topic,keyword,keyword_frequency,evidence")
-          .eq("owner_user_id", ownerUserId)
-          .eq("paper_id", paper.paper_id),
-        supabase
-          .from("paper_tracks_single")
-          .select("folder_id,el,eli,lae,other")
-          .eq("owner_user_id", ownerUserId)
-          .eq("paper_id", paper.paper_id)
-          .maybeSingle(),
-        supabase
-          .from("paper_tracks_multi")
-          .select("folder_id,el,eli,lae,other")
-          .eq("owner_user_id", ownerUserId)
-          .eq("paper_id", paper.paper_id)
-          .maybeSingle(),
-      ]);
+  const paperIds = metadata.map((paper) => paper.paper_id);
+  const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
 
-      if (keywordsResult.error) {
-        throw new Error(keywordsResult.error.message);
-      }
-      if (singleResult.error) {
-        throw new Error(singleResult.error.message);
-      }
-      if (multiResult.error) {
-        throw new Error(multiResult.error.message);
-      }
+  const [keywordsResult, singleResult, multiResult] = await Promise.all([
+    supabase
+      .from("paper_keywords")
+      .select("paper_id,folder_id,topic,keyword,keyword_frequency,evidence")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+    supabase
+      .from("paper_tracks_single")
+      .select("paper_id,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+    supabase
+      .from("paper_tracks_multi")
+      .select("paper_id,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+  ]);
 
-      return {
-        paper,
-        keywords: (keywordsResult.data ?? []) as Record<string, unknown>[],
-        trackSingle: (singleResult.data as Record<string, unknown> | null) ?? null,
-        trackMulti: (multiResult.data as Record<string, unknown> | null) ?? null,
-      };
-    })
-  );
+  if (keywordsResult.error) {
+    throw new Error(keywordsResult.error.message);
+  }
+  if (singleResult.error) {
+    throw new Error(singleResult.error.message);
+  }
+  if (multiResult.error) {
+    throw new Error(multiResult.error.message);
+  }
 
-  const trends: TrendRow[] = paperPayloads.flatMap(({ paper, keywords }) =>
-    keywords
+  const keywordsByPaperId = new Map<PaperId, Record<string, unknown>[]>();
+  ((keywordsResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+    const paperId = normalizePaperId(row.paper_id);
+    if (!paperId) {
+      return;
+    }
+    const list = keywordsByPaperId.get(paperId) ?? [];
+    list.push(row);
+    keywordsByPaperId.set(paperId, list);
+  });
+
+  const singleByPaperId = new Map<PaperId, Record<string, unknown>>();
+  ((singleResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+    const paperId = normalizePaperId(row.paper_id);
+    if (paperId && !singleByPaperId.has(paperId)) {
+      singleByPaperId.set(paperId, row);
+    }
+  });
+
+  const multiByPaperId = new Map<PaperId, Record<string, unknown>>();
+  ((multiResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+    const paperId = normalizePaperId(row.paper_id);
+    if (paperId && !multiByPaperId.has(paperId)) {
+      multiByPaperId.set(paperId, row);
+    }
+  });
+
+  const trends: TrendRow[] = metadata.flatMap((paper) =>
+    (keywordsByPaperId.get(paper.paper_id) ?? [])
       .map((row) => ({
         paper_id: paper.paper_id,
         folder_id:
@@ -426,41 +453,41 @@ async function loadTableData(
       .filter((row) => row.keyword)
   );
 
-  const tracksSingle: TrackRow[] = paperPayloads.flatMap(({ paper, trackSingle }) =>
-    trackSingle
+  const tracksSingle: TrackRow[] = metadata.flatMap((paper) =>
+    singleByPaperId.get(paper.paper_id)
       ? [
           {
             paper_id: paper.paper_id,
             folder_id:
-              typeof trackSingle.folder_id === "string"
-                ? trackSingle.folder_id
+              typeof singleByPaperId.get(paper.paper_id)?.folder_id === "string"
+                ? (singleByPaperId.get(paper.paper_id)?.folder_id as string)
                 : paper.folder_id,
             year: paper.year,
             title: paper.title,
-            el: Number(trackSingle.el ?? 0),
-            eli: Number(trackSingle.eli ?? 0),
-            lae: Number(trackSingle.lae ?? 0),
-            other: Number(trackSingle.other ?? 0),
+            el: Number(singleByPaperId.get(paper.paper_id)?.el ?? 0),
+            eli: Number(singleByPaperId.get(paper.paper_id)?.eli ?? 0),
+            lae: Number(singleByPaperId.get(paper.paper_id)?.lae ?? 0),
+            other: Number(singleByPaperId.get(paper.paper_id)?.other ?? 0),
           },
         ]
       : []
   );
 
-  const tracksMulti: TrackRow[] = paperPayloads.flatMap(({ paper, trackMulti }) =>
-    trackMulti
+  const tracksMulti: TrackRow[] = metadata.flatMap((paper) =>
+    multiByPaperId.get(paper.paper_id)
       ? [
           {
             paper_id: paper.paper_id,
             folder_id:
-              typeof trackMulti.folder_id === "string"
-                ? trackMulti.folder_id
+              typeof multiByPaperId.get(paper.paper_id)?.folder_id === "string"
+                ? (multiByPaperId.get(paper.paper_id)?.folder_id as string)
                 : paper.folder_id,
             year: paper.year,
             title: paper.title,
-            el: Number(trackMulti.el ?? 0),
-            eli: Number(trackMulti.eli ?? 0),
-            lae: Number(trackMulti.lae ?? 0),
-            other: Number(trackMulti.other ?? 0),
+            el: Number(multiByPaperId.get(paper.paper_id)?.el ?? 0),
+            eli: Number(multiByPaperId.get(paper.paper_id)?.eli ?? 0),
+            lae: Number(multiByPaperId.get(paper.paper_id)?.lae ?? 0),
+            other: Number(multiByPaperId.get(paper.paper_id)?.other ?? 0),
           },
         ]
       : []
@@ -634,7 +661,24 @@ async function loadProjectScopedDashboardData(
   };
 }
 
-export async function loadDashboardDataServer(
+async function loadProjectScopedDashboardFallbackData(
+  ownerUserId: string,
+  projectId: string,
+  requestedFolderIds: string[] | null
+): Promise<DashboardData> {
+  const scopedFolderIds =
+    requestedFolderIds && requestedFolderIds.length > 0
+      ? requestedFolderIds
+      : await resolveScopedFolderIds(ownerUserId, null, projectId);
+  const scopedRunIds = await resolveScopedRunIds(
+    ownerUserId,
+    scopedFolderIds,
+    projectId
+  );
+  return loadScopedDashboardData(ownerUserId, scopedRunIds);
+}
+
+async function loadDashboardDataServerUncached(
   ownerUserId?: string | null,
   folderSelection?: string[] | string | null,
   projectId?: string | null,
@@ -662,11 +706,21 @@ export async function loadDashboardDataServer(
 
     const scopedData =
       projectId && projectId !== "all"
-        ? await loadProjectScopedDashboardData(
-            ownerUserId,
-            projectId,
-            requestedFolderIds
-          )
+        ? await (async () => {
+            try {
+              return await loadProjectScopedDashboardData(
+                ownerUserId,
+                projectId,
+                requestedFolderIds
+              );
+            } catch {
+              return loadProjectScopedDashboardFallbackData(
+                ownerUserId,
+                projectId,
+                requestedFolderIds
+              );
+            }
+          })()
         : await (async () => {
             const scopedFolderIds =
               requestedFolderIds && requestedFolderIds.length > 0
@@ -693,11 +747,17 @@ export async function loadDashboardDataServer(
     }
 
     if (mode === "auto" && projectId && (requestedFolderIds?.length ?? 0) > 0) {
-      const projectWideData = await loadProjectScopedDashboardData(
-        ownerUserId,
-        projectId,
-        null
-      );
+      const projectWideData = await (async () => {
+        try {
+          return await loadProjectScopedDashboardData(
+            ownerUserId,
+            projectId,
+            null
+          );
+        } catch {
+          return loadProjectScopedDashboardFallbackData(ownerUserId, projectId, null);
+        }
+      })();
       if (hasAnyDashboardRows(projectWideData)) {
         return withDiagnostics(projectWideData, {
           dataSource: "scoped",
@@ -740,4 +800,49 @@ export async function loadDashboardDataServer(
           errorMessage,
         });
   }
+}
+
+export async function loadDashboardDataServer(
+  ownerUserId?: string | null,
+  folderSelection?: string[] | string | null,
+  projectId?: string | null,
+  mode: DashboardDataMode = "auto"
+): Promise<DashboardData> {
+  const normalizedFolderIds = normalizeRequestedFolderIds(folderSelection) ?? [];
+  const cacheKey = JSON.stringify({
+    ownerUserId: ownerUserId ?? null,
+    projectId: projectId ?? null,
+    mode,
+    folderIds: normalizedFolderIds,
+  });
+
+  const cached = dashboardServerCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < DASHBOARD_SERVER_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const inFlight = dashboardServerInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const work = loadDashboardDataServerUncached(
+    ownerUserId,
+    normalizedFolderIds,
+    projectId,
+    mode
+  )
+    .then((data) => {
+      dashboardServerCache.set(cacheKey, {
+        timestamp: Date.now(),
+        data,
+      });
+      return data;
+    })
+    .finally(() => {
+      dashboardServerInFlight.delete(cacheKey);
+    });
+
+  dashboardServerInFlight.set(cacheKey, work);
+  return work;
 }
