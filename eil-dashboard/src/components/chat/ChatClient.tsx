@@ -124,7 +124,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
     const token = match[0];
     if (token.startsWith("**") && token.endsWith("**")) {
       nodes.push(
-        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-white">
+        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-slate-900 dark:text-white">
           {token.slice(2, -2)}
         </strong>
       );
@@ -137,7 +137,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
             href={parts[2]}
             target="_blank"
             rel="noopener noreferrer"
-            className="font-medium text-sky-300 underline underline-offset-4 transition-colors hover:text-sky-200"
+            className="font-medium text-sky-700 underline underline-offset-4 transition-colors hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-200"
           >
             {parts[1]}
           </a>
@@ -149,7 +149,7 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
       nodes.push(
         <code
           key={`${keyPrefix}-code-${match.index}`}
-          className="rounded bg-white/10 px-1.5 py-0.5 font-mono text-[0.95em] text-[#f3f3f3]"
+          className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.95em] text-slate-800 dark:bg-white/10 dark:text-[#f3f3f3]"
         >
           {token.slice(1, -1)}
         </code>
@@ -312,12 +312,12 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
 
   const headingClass =
     tone === "assistant"
-      ? "text-lg font-semibold text-white"
-      : "text-base font-semibold text-[#f3f3f3]";
+      ? "text-lg font-semibold text-slate-900 dark:text-white"
+      : "text-base font-semibold text-slate-900 dark:text-[#f3f3f3]";
   const paragraphClass =
     tone === "assistant"
-      ? "text-[15px] leading-7 text-[#ececec]"
-      : "text-[15px] leading-7 text-[#f3f3f3]";
+      ? "text-[15px] leading-7 text-slate-700 dark:text-[#ececec]"
+      : "text-[15px] leading-7 text-slate-800 dark:text-[#f3f3f3]";
 
   return (
     <div className="space-y-4">
@@ -337,12 +337,12 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
           return (
             <div
               key={`${keyPrefix}-codeblock-${blockIndex}`}
-              className="overflow-hidden rounded-2xl border border-white/10 bg-[#181818]"
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-[#181818]"
             >
-              <div className="flex items-center justify-between border-b border-white/10 px-4 py-2 text-xs uppercase tracking-[0.16em] text-[#8e8e8e]">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs uppercase tracking-[0.16em] text-slate-500 dark:border-white/10 dark:text-[#8e8e8e]">
                 <span>{language || "Code"}</span>
               </div>
-              <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-[#e6e6e6]">
+              <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#e6e6e6]">
                 <code>{code}</code>
               </pre>
             </div>
@@ -358,15 +358,15 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 return (
                   <div
                     key={`${keyPrefix}-table-${blockIndex}-${groupIndex}`}
-                    className="overflow-x-auto rounded-2xl border border-white/10 bg-[#222222]"
+                    className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-[#222222]"
                   >
-                    <table className="min-w-full border-collapse text-left text-sm text-[#ececec]">
-                      <thead className="bg-white/5">
+                    <table className="min-w-full border-collapse text-left text-sm text-slate-700 dark:text-[#ececec]">
+                      <thead className="bg-slate-100 dark:bg-white/5">
                         <tr>
                           {header.map((cell, cellIndex) => (
                             <th
                               key={`${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`}
-                              className="border-b border-white/10 px-4 py-3 font-semibold"
+                              className="border-b border-slate-200 px-4 py-3 font-semibold dark:border-white/10"
                             >
                               {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`)}
                             </th>
@@ -375,11 +375,11 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                       </thead>
                       <tbody>
                         {rows.map((row, rowIndex) => (
-                          <tr key={`${keyPrefix}-tr-${blockIndex}-${groupIndex}-${rowIndex}`} className="border-t border-white/10">
+                          <tr key={`${keyPrefix}-tr-${blockIndex}-${groupIndex}-${rowIndex}`} className="border-t border-slate-200 dark:border-white/10">
                             {row.map((cell, cellIndex) => (
                               <td
                                 key={`${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`}
-                                className="px-4 py-3 align-top text-[#d8d8d8]"
+                                className="px-4 py-3 align-top text-slate-600 dark:text-[#d8d8d8]"
                               >
                                 {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`)}
                               </td>
@@ -401,7 +401,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                   >
                     {bulletLines.map((line, lineIndex) => (
                       <li key={`${keyPrefix}-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
-                        <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-white/60" />
+                        <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-400 dark:bg-white/60" />
                         <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
                       </li>
                     ))}
@@ -418,7 +418,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                   >
                     {numberedLines.map((line, lineIndex) => (
                       <li key={`${keyPrefix}-ordered-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
-                        <span className="min-w-[1.5rem] flex-none font-semibold text-white/75">
+                        <span className="min-w-[1.5rem] flex-none font-semibold text-slate-500 dark:text-white/75">
                           {line.match(/^(\d+)\./)?.[1]}.
                         </span>
                         <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
@@ -433,7 +433,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 return (
                   <blockquote
                     key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
-                    className="rounded-r-2xl border-l-4 border-sky-400/70 bg-white/5 px-4 py-3 text-[15px] leading-7 text-[#d9e9ff]"
+                    className="rounded-r-2xl border-l-4 border-sky-500/70 bg-sky-50 px-4 py-3 text-[15px] leading-7 text-sky-900 dark:border-sky-400/70 dark:bg-white/5 dark:text-[#d9e9ff]"
                   >
                     <div className="space-y-2">
                       {quoteLines.map((line, lineIndex) => (
@@ -1284,12 +1284,12 @@ export default function ChatClient() {
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-5rem)] w-full overflow-hidden bg-[#212121] text-[#ececec]">
-        <aside className="hidden w-[288px] flex-none border-r border-white/10 bg-[#171717] p-3 lg:flex lg:flex-col">
+      <div className="flex min-h-[calc(100vh-5rem)] w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-[#161719] dark:text-[#ececec]">
+        <aside className="hidden w-[288px] flex-none border-r border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-[#121214] lg:flex lg:flex-col">
           <button
             type="button"
             onClick={() => resetChat("normal")}
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#212121]"
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:border-white/10 dark:text-[#ececec] dark:hover:bg-[#212121]"
           >
             <PencilSquareIcon className="h-4 w-4" />
             <span>New chat</span>
@@ -1297,17 +1297,17 @@ export default function ChatClient() {
 
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
-              <p className="text-sm font-medium text-[#ececec]">Your chats</p>
+              <p className="text-sm font-medium text-slate-800 dark:text-[#ececec]">Your chats</p>
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {threadsLoading ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
                   Loading...
                 </div>
               ) : null}
 
               {!threadsLoading && sortedThreads.length === 0 ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
                   {canPersist ? "No chats yet." : "Sign in to save chats."}
                 </div>
               ) : null}
@@ -1319,7 +1319,9 @@ export default function ChatClient() {
                   <div
                     key={thread.id}
                     className={`group relative rounded-xl px-2 py-1 ${
-                      active ? "bg-[#2a2a2a]" : "hover:bg-[#212121]"
+                      active
+                        ? "bg-slate-200 dark:bg-[#2a2a2a]"
+                        : "hover:bg-slate-100 dark:hover:bg-[#212121]"
                     }`}
                   >
                     <button
@@ -1332,9 +1334,9 @@ export default function ChatClient() {
                     >
                       <div className="flex items-center gap-2">
                         {pinned ? (
-                          <PinIcon className="h-3.5 w-3.5 flex-none text-[#8e8e8e]" />
+                          <PinIcon className="h-3.5 w-3.5 flex-none text-slate-500 dark:text-[#8e8e8e]" />
                         ) : null}
-                        <span className="truncate text-[13px] font-medium text-[#ececec]">
+                        <span className="truncate text-[13px] font-medium text-slate-800 dark:text-[#ececec]">
                           {thread.title}
                         </span>
                       </div>
@@ -1347,7 +1349,7 @@ export default function ChatClient() {
                           current === thread.id ? null : thread.id
                         )
                       }
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-[#8e8e8e] opacity-0 transition-opacity hover:bg-[#303030] hover:text-white group-hover:opacity-100"
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#303030] dark:hover:text-white group-hover:opacity-100"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
@@ -1396,17 +1398,17 @@ export default function ChatClient() {
           </div>
         </aside>
 
-        <section className="relative flex min-w-0 flex-1 flex-col bg-[#212121]">
-          <header className="flex h-14 items-center justify-between border-b border-white/8 px-4 sm:px-6">
+        <section className="relative flex min-w-0 flex-1 flex-col bg-slate-100 dark:bg-[#161719]">
+          <header className="flex h-14 items-center justify-between border-b border-slate-200 px-4 dark:border-white/8 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-[#ececec] lg:hidden"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-white/10 dark:text-[#ececec] lg:hidden"
               >
                 <PencilSquareIcon className="h-4 w-4" />
               </button>
-              <p className="truncate text-lg font-semibold text-[#ececec]">
+              <p className="truncate text-lg font-semibold text-slate-900 dark:text-[#ececec]">
                 {pageTitle}
               </p>
             </div>
@@ -1420,7 +1422,7 @@ export default function ChatClient() {
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-48 pt-8 sm:px-6 xl:px-8">
             {deepSession ? (
-              <section className="mb-6 w-full max-w-[1040px]">
+              <section className="mx-auto mb-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#b4b4b4]">
@@ -1694,12 +1696,12 @@ export default function ChatClient() {
 
             {!hasContent && !loading ? (
               <div className="flex min-h-[52vh] items-center justify-center">
-                <h1 className="text-center text-[2rem] font-semibold tracking-tight text-[#ececec] sm:text-[2.5rem]">
+                <h1 className="text-center text-[2rem] font-semibold tracking-tight text-slate-900 dark:text-[#ececec] sm:text-[2.5rem]">
                   Where should we begin?
                 </h1>
               </div>
             ) : (
-              <div className="flex w-full max-w-[1040px] flex-col gap-7">
+              <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
                   return (
@@ -1747,8 +1749,8 @@ export default function ChatClient() {
 
                 {loading ? (
                   <div className="flex items-start gap-3">
-                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                    <div className="rounded-2xl border border-white/10 bg-[#2a2a2a] px-4 py-3 text-sm text-[#b4b4b4]">
+                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-white/20 dark:border-t-white" />
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-[#2a2a2a] dark:text-[#b4b4b4]">
                       {renderLoadingLabel(deepResearchEnabled, deepSession)}
                     </div>
                   </div>
@@ -1757,7 +1759,7 @@ export default function ChatClient() {
             )}
 
             {detailLoading ? (
-              <div className="mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-[#8e8e8e]">
+              <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
                 <span>Loading chat...</span>
               </div>
@@ -1766,8 +1768,8 @@ export default function ChatClient() {
           </div>
 
           <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-6 sm:px-6 xl:px-8">
-            <form onSubmit={handleSubmit} className="pointer-events-auto w-full max-w-[1040px]">
-              <div className="rounded-[28px] border border-white/10 bg-[#2a2a2a] px-4 pb-3 pt-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <form onSubmit={handleSubmit} className="pointer-events-auto mx-auto w-full max-w-[1040px]">
+              <div className="rounded-[28px] border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-white/10 dark:bg-[#2a2a2a] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                 {error ? (
                   <div className="mb-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
                     {error}
@@ -1816,7 +1818,7 @@ export default function ChatClient() {
                   onKeyDown={handleComposerKeyDown}
                   placeholder="Ask anything"
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-[#ececec] outline-none placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

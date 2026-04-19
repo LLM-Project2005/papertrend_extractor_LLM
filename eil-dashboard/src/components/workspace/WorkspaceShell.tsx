@@ -164,15 +164,15 @@ function WorkspaceBreadcrumb({
 
 function DesktopSidebar({ pathname }: { pathname: string }) {
   return (
-    <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-[#262626] bg-[#111111] transition-[width] duration-200 ease-out hover:w-[220px] lg:block">
+    <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[220px] dark:border-[#222222] dark:bg-[#0f0f10] lg:block">
       <div className="flex h-full flex-col py-3">
         <nav className="flex-1 overflow-y-auto px-2">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.id}
-              className={sectionIndex === 0 ? "" : "mt-4 border-t border-[#222222] pt-4"}
+              className={sectionIndex === 0 ? "" : "mt-4 border-t border-slate-200 pt-4 dark:border-[#222222]"}
             >
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#5f5f5f] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
@@ -186,8 +186,8 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
                       href={item.href}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
-                          ? "bg-[#2b2b2b] text-white"
-                          : "text-[#8e8e8e] hover:bg-[#1a1a1a] hover:text-white"
+                          ? "bg-slate-900 text-white dark:bg-[#262626]"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
                       }`}
                     >
                       <Icon className="h-[18px] w-[18px] flex-none" />
@@ -220,8 +220,8 @@ function MobileSidebar({
   onClose: () => void;
 }) {
   return (
-    <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-[#262626] bg-[#111111]">
-      <div className="sticky top-0 border-b border-[#262626] bg-[#111111] px-4 py-4">
+    <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#222222] dark:bg-[#0f0f10]">
+      <div className="sticky top-0 border-b border-slate-200 bg-white px-4 py-4 dark:border-[#222222] dark:bg-[#0f0f10]">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white">
@@ -236,7 +236,7 @@ function MobileSidebar({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#303030] bg-[#181818] text-[#d0d0d0]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#303030] dark:bg-[#181818] dark:text-[#d0d0d0]"
             aria-label="Close workspace navigation"
           >
             <CloseIcon className="h-4 w-4" />
@@ -247,7 +247,7 @@ function MobileSidebar({
       <nav className="space-y-4 px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.id}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#5f5f5f]">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#5f5f5f]">
               {section.label}
             </p>
             <div className="mt-2 space-y-1">
@@ -262,8 +262,8 @@ function MobileSidebar({
                     onClick={onClose}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        ? "bg-[#2b2b2b] text-white"
-                        : "text-[#c7c7c7] hover:bg-[#1a1a1a] hover:text-white"
+                        ? "bg-slate-900 text-white dark:bg-[#262626]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
                     }`}
                   >
                     <Icon className="h-4 w-4 flex-none" />
@@ -400,7 +400,7 @@ export default function WorkspaceShell({
   }
 
   return (
-    <div className="min-h-screen bg-[#171717] text-slate-100">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#111214] dark:text-slate-100">
       <DesktopSidebar pathname={pathname} />
 
       {sidebarOpen ? (
@@ -416,13 +416,13 @@ export default function WorkspaceShell({
       ) : null}
 
       <div className="min-h-screen lg:pl-[60px]">
-        <header className="sticky top-0 z-40 border-b border-[#262626] bg-[#111111]/95 backdrop-blur">
+        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#222222] dark:bg-[#0f0f10]/95">
           <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#303030] bg-[#181818] text-[#d0d0d0] lg:hidden"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#303030] dark:bg-[#181818] dark:text-[#d0d0d0] lg:hidden"
                 aria-label="Open workspace navigation"
               >
                 <MenuIcon className="h-4 w-4" />
@@ -459,12 +459,12 @@ export default function WorkspaceShell({
             children
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
-              <div className="w-full rounded-[28px] border border-[#2c2c2c] bg-[#1b1b1b] px-8 py-10 text-center">
-                <p className="text-sm font-medium text-[#8f8f8f]">Workspace setup</p>
-                <h1 className="mt-3 text-3xl font-semibold text-white">
+              <div className="w-full rounded-[28px] border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#2c2c2c] dark:bg-[#1b1b1b]">
+                <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Workspace setup</p>
+                <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">
                   Select a project to open the workspace
                 </h1>
-                <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+                <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
                   Projects sit inside organizations. Pick one to continue into the
                   overview, dashboard, chat, library, and analysis history.
                 </p>
