@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function AdminImportPage() {
-  redirect("/organizations");
+  redirect("/workspace/imports");
 }

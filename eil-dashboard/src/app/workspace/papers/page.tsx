@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
 
 export default function WorkspacePapersPage() {
-  redirect("/organizations");
+  redirect("/workspace/library");
 }

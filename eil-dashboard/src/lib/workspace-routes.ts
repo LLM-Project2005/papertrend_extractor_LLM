@@ -92,7 +92,7 @@ export function buildWorkspacePath({
   hash,
 }: WorkspaceRouteParams) {
   if (!organizationId || !projectId) {
-    return appendQueryAndHash("/organizations", query, hash);
+    return appendQueryAndHash(`/workspace/${section}`, query, hash);
   }
 
   const projectSlug = buildProjectSlug(projectName, projectId);
