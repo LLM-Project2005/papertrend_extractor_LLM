@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
@@ -176,8 +176,6 @@ function DesktopSidebar({
   projectId: string | null;
   projectName: string | null;
 }) {
-  const router = useRouter();
-
   return (
     <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-[#262626] bg-[#111111] transition-[width] duration-200 ease-out hover:w-[220px] lg:block">
       <div className="flex h-full flex-col py-3">
@@ -202,10 +200,10 @@ function DesktopSidebar({
                   const Icon = item.icon;
 
                   return (
-                    <button
-                      type="button"
+                    <Link
                       key={item.section}
-                      onClick={() => router.push(href)}
+                      href={href}
+                      prefetch={false}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
                           ? "bg-[#2b2b2b] text-white"
@@ -216,7 +214,7 @@ function DesktopSidebar({
                       <span className="ml-3 hidden whitespace-nowrap text-sm font-medium group-hover:block">
                         {item.label}
                       </span>
-                    </button>
+                    </Link>
                   );
                 })}
               </div>
@@ -243,8 +241,6 @@ function MobileSidebar({
   projectId: string | null;
   onClose: () => void;
 }) {
-  const router = useRouter();
-
   return (
     <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-[#262626] bg-[#111111]">
       <div className="sticky top-0 border-b border-[#262626] bg-[#111111] px-4 py-4">
@@ -288,13 +284,11 @@ function MobileSidebar({
                 const Icon = item.icon;
 
                 return (
-                  <button
-                    type="button"
+                  <Link
                     key={item.section}
-                    onClick={() => {
-                      onClose();
-                      router.push(href);
-                    }}
+                    href={href}
+                    prefetch={false}
+                    onClick={onClose}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
                         ? "bg-[#2b2b2b] text-white"
@@ -303,7 +297,7 @@ function MobileSidebar({
                   >
                     <Icon className="h-4 w-4 flex-none" />
                     <span className="font-medium">{item.label}</span>
-                  </button>
+                  </Link>
                 );
               })}
             </div>
