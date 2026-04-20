@@ -124,7 +124,7 @@ export default function WorkspaceGlobalSearch({
         searchText: `${organization.name} ${organization.type.replace(/_/g, " ")}`,
         onSelect: () => {
           setSelectedOrganizationId(organization.id);
-          router.push(`/organizations/${organization.id}/projects`);
+          router.push("/organizations");
         },
       })),
       ...allProjects.map((project) => {

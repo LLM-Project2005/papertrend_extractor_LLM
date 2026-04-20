@@ -137,18 +137,17 @@ const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 
 function WorkspaceBreadcrumb({
   organizationName,
-  organizationId,
   projectName,
 }: {
   organizationName: string;
-  organizationId: string | null;
   projectName: string;
 }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
-          href={organizationId ? `/organizations/${organizationId}/projects` : "/organizations"}
+          href="/organizations"
+          prefetch={false}
           className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
           {organizationName || "Organizations"}
@@ -209,13 +208,11 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
 function MobileSidebar({
   pathname,
   organizationName,
-  organizationId,
   projectName,
   onClose,
 }: {
   pathname: string;
   organizationName: string;
-  organizationId: string | null;
   projectName: string;
   onClose: () => void;
 }) {
@@ -229,7 +226,6 @@ function MobileSidebar({
             </span>
             <WorkspaceBreadcrumb
               organizationName={organizationName}
-              organizationId={organizationId}
               projectName={projectName}
             />
           </div>
@@ -408,7 +404,6 @@ export default function WorkspaceShell({
           <MobileSidebar
             pathname={pathname}
             organizationName={currentOrganization?.name ?? ""}
-            organizationId={currentOrganization?.id ?? null}
             projectName={currentProject?.name ?? ""}
             onClose={() => setSidebarOpen(false)}
           />
@@ -438,7 +433,6 @@ export default function WorkspaceShell({
 
               <WorkspaceBreadcrumb
                 organizationName={currentOrganization?.name ?? ""}
-                organizationId={currentOrganization?.id ?? null}
                 projectName={currentProject?.name ?? ""}
               />
             </div>
