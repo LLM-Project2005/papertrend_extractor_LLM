@@ -105,11 +105,18 @@ class SupabaseRestClient:
     def __init__(self, url: str, service_key: str) -> None:
         self.url = url.rstrip("/")
         self.service_key = service_key
-        self.session = build_retrying_session(
-            {
-                "apikey": service_key,
-                "Authorization": f"Bearer {service_key}",
-            }
+        base_headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        }
+        self.session = build_retrying_session(base_headers)
+        # requests.Session is not guaranteed to be thread-safe. Heartbeat runs on a
+        # background thread, so it uses an isolated session with PATCH retries.
+        self.heartbeat_session = build_retrying_session(
+            base_headers,
+            attempts=5,
+            backoff_seconds=0.6,
+            retry_methods=("PATCH",),
         )
 
     def _rest_url(self, table: str) -> str:
@@ -258,7 +265,7 @@ class SupabaseRestClient:
         response.raise_for_status()
 
     def touch_run(self, run_id: str) -> None:
-        response = self.session.patch(
+        response = self.heartbeat_session.patch(
             self._rest_url("ingestion_runs"),
             params={"id": f"eq.{run_id}", "status": "eq.processing"},
             json={"updated_at": now_iso()},
@@ -592,15 +599,21 @@ def processing_heartbeat(
     interval_seconds: int,
 ):
     stop_event = threading.Event()
+    consecutive_failures = 0
 
     def _worker() -> None:
+        nonlocal consecutive_failures
         while not stop_event.wait(interval_seconds):
             try:
                 client.touch_run(run_id)
+                consecutive_failures = 0
             except Exception as error:  # pragma: no cover - best-effort heartbeat
+                consecutive_failures += 1
                 logger.warning(
-                    "run heartbeat failed",
-                    extra={"run_id": run_id, "error_message": str(error)},
+                    "run heartbeat failed (%s consecutive): %s",
+                    consecutive_failures,
+                    str(error),
+                    extra={"run_id": run_id},
                 )
 
     thread = threading.Thread(target=_worker, name=f"run-heartbeat-{run_id}", daemon=True)
