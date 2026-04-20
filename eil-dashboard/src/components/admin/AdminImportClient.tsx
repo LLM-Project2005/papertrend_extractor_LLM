@@ -15,6 +15,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { supabase } from "@/lib/supabase";
 import Modal from "@/components/ui/Modal";
 import {
   CheckIcon,
@@ -234,35 +235,7 @@ function getFolderUploadName(files: File[]) {
   return "Uploaded folder";
 }
 
-const MAX_UPLOAD_BATCH_FILES = 8;
-const MAX_UPLOAD_BATCH_BYTES = 6 * 1024 * 1024;
-
-function splitIntoUploadBatches(files: File[]) {
-  const batches: File[][] = [];
-  let currentBatch: File[] = [];
-  let currentBytes = 0;
-
-  for (const file of files) {
-    const wouldOverflowCount = currentBatch.length >= MAX_UPLOAD_BATCH_FILES;
-    const wouldOverflowBytes =
-      currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES;
-
-    if (wouldOverflowCount || wouldOverflowBytes) {
-      batches.push(currentBatch);
-      currentBatch = [];
-      currentBytes = 0;
-    }
-
-    currentBatch.push(file);
-    currentBytes += file.size;
-  }
-
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
-
-  return batches;
-}
+const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
 
 async function readJsonPayload<T>(response: Response): Promise<T | null> {
   const text = await response.text();
@@ -880,9 +853,27 @@ export default function AdminImportClient() {
       file.name.toLowerCase().endsWith(".pdf")
     );
     const ignoredCount = selectedFiles.length - pdfFiles.length;
+    const oversizedFiles = pdfFiles.filter((file) => file.size > MAX_UPLOAD_FILE_BYTES);
 
     if (pdfFiles.length === 0) {
       setError("Only PDF uploads are supported right now.");
+      return;
+    }
+
+    if (oversizedFiles.length > 0) {
+      const names = oversizedFiles
+        .slice(0, 3)
+        .map((file) => `${file.name} (${formatBytes(file.size)})`)
+        .join(", ");
+      const extra = oversizedFiles.length > 3 ? ` and ${oversizedFiles.length - 3} more` : "";
+      setError(
+        `Each PDF must be 20 MB or smaller. Oversized file(s): ${names}${extra}.`
+      );
+      return;
+    }
+
+    if (!supabase) {
+      setError("Supabase browser client is not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
       return;
     }
 
@@ -891,74 +882,172 @@ export default function AdminImportClient() {
 
     setLoading(true);
     try {
-      const batches = splitIntoUploadBatches(pdfFiles);
-      const createdRuns: IngestionRunRow[] = [];
-      let nextFolderId: string | null = null;
-      let nextFolderJob: FolderAnalysisJobRow | null = null;
-      let queueWarning: string | null = null;
+      const prepared = await fetch("/api/admin/import/prepare", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          folder: targetFolderName,
+          source_kind: "pdf-upload",
+          project_id: currentProject.id,
+          files: pdfFiles.map((file, fileIndex) => ({
+            fileIndex,
+            name: file.name,
+            size: file.size,
+            type: file.type || "application/pdf",
+          })),
+        }),
+      });
 
-      for (const batch of batches) {
-        const formData = new FormData();
-        batch.forEach((file) => formData.append("files", file));
-        formData.append("folder", targetFolderName);
-        formData.append("source_kind", "pdf-upload");
-        formData.append("project_id", currentProject.id);
+      const preparePayload = await readJsonPayload<{
+        runs?: IngestionRunRow[];
+        folderJob?: FolderAnalysisJobRow | null;
+        folderId?: string | null;
+        uploads?: Array<{
+          fileIndex: number;
+          runId: string;
+          storagePath: string;
+          token: string;
+          signedUrl: string;
+          fileName: string;
+        }>;
+        error?: string;
+      }>(prepared);
 
-        const response = await fetch("/api/admin/import", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: formData,
-        });
+      if (!prepared.ok || !preparePayload?.folderJob || !preparePayload.uploads) {
+        throw new Error(
+          buildUploadErrorMessage(
+            `Upload preparation failed with status ${prepared.status}.`,
+            preparePayload
+          )
+        );
+      }
 
-        const payload = await readJsonPayload<{
-          runs?: IngestionRunRow[];
-          folderJob?: FolderAnalysisJobRow | null;
-          warning?: string | null;
-          error?: string;
-        }>(response);
+      const uploaded: Array<{
+        runId: string;
+        storagePath: string;
+        fileName: string;
+      }> = [];
+      const failed: Array<{
+        runId: string;
+        storagePath: string;
+        fileName: string;
+        errorMessage: string;
+      }> = [];
 
-        if (!response.ok) {
-          const fallbackMessage =
-            response.status === 413
-              ? "This upload batch is too large for the app server. The files were not rejected by your Library folder logic, but the request payload was too large. Try smaller PDFs or fewer files per batch."
-              : `Upload request failed with status ${response.status}.`;
-          throw new Error(buildUploadErrorMessage(fallbackMessage, payload));
+      for (const uploadTarget of preparePayload.uploads) {
+        const file = pdfFiles[uploadTarget.fileIndex];
+        if (!file) {
+          failed.push({
+            runId: uploadTarget.runId,
+            storagePath: uploadTarget.storagePath,
+            fileName: uploadTarget.fileName,
+            errorMessage: "Local file mapping failed during upload.",
+          });
+          continue;
         }
 
-        createdRuns.push(...(payload?.runs ?? []));
-        nextFolderId = payload?.folderJob?.folder_id ?? nextFolderId;
-        nextFolderJob = payload?.folderJob ?? nextFolderJob;
-        if (payload?.warning) {
-          queueWarning = payload.warning;
+        try {
+          const response = await fetch(uploadTarget.signedUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": file.type || "application/pdf",
+              "x-upsert": "false",
+            },
+            body: file,
+          });
+
+          if (!response.ok) {
+            const body = await response.text();
+            throw new Error(body || `Storage upload failed with status ${response.status}.`);
+          }
+
+          uploaded.push({
+            runId: uploadTarget.runId,
+            storagePath: uploadTarget.storagePath,
+            fileName: uploadTarget.fileName,
+          });
+        } catch (uploadError) {
+          failed.push({
+            runId: uploadTarget.runId,
+            storagePath: uploadTarget.storagePath,
+            fileName: uploadTarget.fileName,
+            errorMessage:
+              uploadError instanceof Error
+                ? uploadError.message
+                : "Failed to upload file to storage.",
+          });
         }
       }
+
+      const finalizeResponse = await fetch("/api/admin/import/finalize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          folderJobId: preparePayload.folderJob.id,
+          uploaded,
+          failed,
+        }),
+      });
+
+      const finalizePayload = await readJsonPayload<{
+        runs?: IngestionRunRow[];
+        folderJob?: FolderAnalysisJobRow | null;
+        warning?: string | null;
+        error?: string;
+      }>(finalizeResponse);
+
+      if (!finalizeResponse.ok) {
+        throw new Error(
+          buildUploadErrorMessage(
+            `Upload finalize failed with status ${finalizeResponse.status}.`,
+            finalizePayload
+          )
+        );
+      }
+
+      const createdRuns = finalizePayload?.runs ?? [];
+      const successfulRuns = createdRuns.filter((run) => run.status !== "failed");
+      const nextFolderId = finalizePayload?.folderJob?.folder_id ?? preparePayload.folderId ?? null;
+      const nextFolderJob = finalizePayload?.folderJob ?? preparePayload.folderJob;
+      const queueWarning = finalizePayload?.warning ?? null;
 
       setRuns((current) => {
         const createdIds = new Set(createdRuns.map((run) => run.id));
         return [...createdRuns, ...current.filter((run) => !createdIds.has(run.id))];
       });
       await refreshFolders();
-      startAnalysisSession(createdRuns, {
-        sourceKind: "pdf-upload",
-        folder: targetFolderName,
-        folderId: nextFolderId,
-        folderJob: nextFolderJob,
-      });
+      if (successfulRuns.length > 0) {
+        startAnalysisSession(successfulRuns, {
+          sourceKind: "pdf-upload",
+          folder: targetFolderName,
+          folderId: nextFolderId,
+          folderJob: nextFolderJob,
+        });
+      }
       if (nextFolderId && (mode === "folder" || selectedFolderId !== "all")) {
         setSelectedFolderId(nextFolderId);
       }
+      const failedUploadCount = failed.length;
       setMessage(
         mode === "folder"
           ? ignoredCount > 0
-            ? `Created Library folder "${targetFolderName}" and queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} inside it. Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-            : `Created Library folder "${targetFolderName}" and queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} inside it.`
+            ? `Created Library folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+            : `Created Library folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
           : ignoredCount > 0
-            ? `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"}. Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-            : `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} for analysis.`
+            ? `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"}.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+            : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
       );
-      setError(queueWarning);
+      if (failedUploadCount > 0 && !queueWarning) {
+        setError(`${failedUploadCount} file${failedUploadCount === 1 ? "" : "s"} failed to upload. Check internet connection and retry.`);
+      } else {
+        setError(queueWarning);
+      }
     } catch (uploadError) {
       setError(
         uploadError instanceof Error ? uploadError.message : "Failed to queue uploads."
