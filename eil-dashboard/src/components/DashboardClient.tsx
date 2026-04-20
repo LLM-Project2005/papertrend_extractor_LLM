@@ -274,7 +274,7 @@ export default function DashboardClient({
       searchQuery: searchQuery.trim(),
       trendRowCount: filteredData.trends.length,
       tracksSingleRowCount: filteredData.tracksSingle.length,
-      topicFamilyCount: filteredData.topicFamilies.length,
+      topicFamilyCount: filteredData.topicFamilies?.length ?? 0,
       trendRows: sampledTrends.map((row) => ({
         paper_id: row.paper_id,
         folder_id: row.folder_id ?? null,
