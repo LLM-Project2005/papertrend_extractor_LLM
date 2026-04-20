@@ -439,7 +439,7 @@ export default function DashboardClient({
       trends: filteredData.trends.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
       tracksSingle: filteredData.tracksSingle.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
       tracksMulti: filteredData.tracksMulti.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
-      topicFamilies: filteredData.topicFamilies.slice(0, 300),
+      topicFamilies: (filteredData.topicFamilies ?? []).slice(0, 300),
     }),
     [
       filteredData.topicFamilies,
