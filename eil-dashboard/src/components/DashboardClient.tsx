@@ -420,20 +420,6 @@ export default function DashboardClient({
     session?.access_token,
   ]);
 
-  if (loading && !data) {
-    return (
-      <div className="app-surface flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-500 border-t-transparent dark:border-[#8e8e8e]" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Loading dashboard data...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  const adaptiveSection = planState?.plan.sections[0] ?? null;
   const adaptiveRenderData = useMemo(
     () => ({
       trends: filteredData.trends.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
@@ -448,6 +434,20 @@ export default function DashboardClient({
       filteredData.trends,
     ]
   );
+  const adaptiveSection = planState?.plan.sections[0] ?? null;
+
+  if (loading && !data) {
+    return (
+      <div className="app-surface flex min-h-[60vh] items-center justify-center">
+        <div className="text-center">
+          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-500 border-t-transparent dark:border-[#8e8e8e]" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Loading dashboard data...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
