@@ -162,28 +162,49 @@ export default function DashboardClient({
     plan: VisualizationPlan;
     source: "agent" | "fallback";
   } | null>(null);
+  const previousAllYearsRef = useRef<string[]>([]);
   const lastPlanSignatureRef = useRef<string | null>(null);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
 
   useEffect(() => {
+    const previousAllYears = previousAllYearsRef.current;
+    const previousAllYearSet = new Set(previousAllYears);
+    const hadAllYearsSelectedPreviously =
+      previousAllYears.length > 0 &&
+      selectedYears.length === previousAllYears.length &&
+      selectedYears.every((year) => previousAllYearSet.has(year));
+
     if (allYears.length === 0) {
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     if (selectedYears.length === 0) {
       setSelectedYears(allYears);
+      previousAllYearsRef.current = allYears;
+      return;
+    }
+
+    if (hadAllYearsSelectedPreviously) {
+      setSelectedYears(allYears);
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     const nextYears = selectedYears.filter((year) => allYears.includes(year));
     if (nextYears.length === 0) {
       setSelectedYears(allYears);
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     if (nextYears.length !== selectedYears.length) {
       setSelectedYears(nextYears);
+      previousAllYearsRef.current = allYears;
+      return;
     }
+
+    previousAllYearsRef.current = allYears;
   }, [allYears, selectedYears, setSelectedYears]);
 
   const currentTabKey = useMemo(() => {
