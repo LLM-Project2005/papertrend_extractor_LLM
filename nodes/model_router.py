@@ -145,6 +145,28 @@ def _parse_csv_env(name: str) -> Tuple[str, ...]:
     return tuple(part.strip() for part in value.split(",") if part.strip())
 
 
+def _parse_float_env(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except Exception:
+        return default
+    return value if value > 0 else default
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except Exception:
+        return default
+    return value if value >= 0 else default
+
+
 def _resolve_profile(task: ModelTask) -> TaskProfile:
     profile = PRESETS[_current_preset_name()].get(task) or CONSERVATIVE_PRESET[ModelTask.DEFAULT_TEXT]
     env_key = task.value
@@ -195,11 +217,18 @@ def _create_chat_openai(model_name: str, config: TaskRoutingConfig, **overrides:
     extra_body_override = overrides.pop("extra_body", None)
     if isinstance(extra_body_override, Mapping):
         extra_body.update(extra_body_override)
+
+    # Guard against long-hanging provider calls. This timeout applies per model attempt.
+    request_timeout_seconds = _parse_float_env("MODEL_REQUEST_TIMEOUT_SECONDS", 180.0)
+    max_retries = _parse_int_env("MODEL_REQUEST_MAX_RETRIES", 1)
+
     init_kwargs = {
         "model": model_name,
         "temperature": overrides.pop("temperature", config.temperature),
         "api_key": config.api_key,
         "base_url": config.base_url,
+        "timeout": overrides.pop("timeout", request_timeout_seconds),
+        "max_retries": overrides.pop("max_retries", max_retries),
         "reasoning_effort": overrides.pop("reasoning_effort", config.reasoning_effort),
         "extra_body": extra_body or None,
         "max_completion_tokens": overrides.pop("max_completion_tokens", None),
