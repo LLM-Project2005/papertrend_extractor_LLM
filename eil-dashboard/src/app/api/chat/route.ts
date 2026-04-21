@@ -204,7 +204,7 @@ function extractCandidateTitle(prompt: string) {
   for (const pattern of patterns) {
     const match = truncated.match(pattern);
     const candidate = (match?.[1] ?? "").trim().replace(/[.,:;]+$/, "");
-    if (candidate.length >= 12) {
+    if (candidate.length >= 12 && !isPlaceholderTitle(candidate)) {
       return candidate;
     }
   }
@@ -287,6 +287,8 @@ function normalizeSearchQuery(prompt: string, candidateTitle: string) {
     .replace(/\b(do|please|can you|could you|run|perform)\b/gi, " ")
     .split(/\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b/i)[0]
     .replace(/\b(deep research|analysis|structured report|report)\b/gi, " ")
+    .replace(/\b(this|that)\s+(file|paper|document)(\s+here)?\b/gi, " ")
+    .replace(/\battached\s+(file|paper|document)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.,:;]+$/, "");
@@ -438,17 +440,25 @@ function buildLocalPromptAnalysis(
   const quotedTitle = extractQuotedTitle(prompt);
   const authorHint = extractAuthorHint(prompt);
   const attachmentTitles = extractAttachmentTitles(attachmentNames);
-  const selectedScopePapers = papers.filter((paper) =>
+  let selectedScopePapers = papers.filter((paper) =>
     selectedRunIds.includes(String(paper.ingestion_run_id ?? ""))
   );
+  if (selectedRunIds.length > 0 && selectedScopePapers.length === 0) {
+    selectedScopePapers = [...papers];
+  }
   if (!candidateTitle && attachmentTitles.length === 1) {
     candidateTitle = attachmentTitles[0];
+  }
+  if (!candidateTitle && selectedScopePapers.length === 1) {
+    candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
   }
   if (isPlaceholderTitle(candidateTitle)) {
     if (selectedScopePapers.length === 1) {
       candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
     } else if (attachmentTitles.length === 1) {
       candidateTitle = attachmentTitles[0];
+    } else {
+      candidateTitle = "";
     }
   }
   const normalizedQuery = normalizeSearchQuery(prompt, candidateTitle);

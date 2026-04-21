@@ -410,7 +410,7 @@ def _extract_candidate_title(prompt: str) -> str:
         if not match:
             continue
         candidate = _normalize_space(match.group(1)).strip(" .,:;")
-        if len(candidate) >= 12:
+        if len(candidate) >= 12 and not _is_placeholder_title(candidate):
             return candidate
     return ""
 
@@ -486,6 +486,16 @@ def _normalize_search_query(prompt: str, candidate_title: str) -> str:
     )[0]
     normalized = re.sub(
         r"(?i)\b(deep research|analysis|structured report|report)\b",
+        " ",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?i)\b(this|that)\s+(file|paper|document)(\s+here)?\b",
+        " ",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?i)\battached\s+(file|paper|document)\b",
         " ",
         normalized,
     )
@@ -774,6 +784,12 @@ def _analyze_prompt(
     selected_run_ids: Optional[Sequence[str]] = None,
     attachment_names: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
+    selected_scope_ids = {
+        str(run_id).strip()
+        for run_id in list(selected_run_ids or [])
+        if str(run_id).strip()
+    }
+    explicit_selected_scope = bool(selected_scope_ids)
     candidate_title = _extract_candidate_title(prompt)
     quoted_title = _extract_quoted_title(prompt)
     author_hint = _extract_author_hint(prompt)
@@ -781,20 +797,21 @@ def _analyze_prompt(
     selected_scope_papers = [
         paper
         for paper in papers
-        if str(paper.get("ingestion_run_id") or "").strip()
-        in {
-            str(run_id).strip()
-            for run_id in list(selected_run_ids or [])
-            if str(run_id).strip()
-        }
+        if str(paper.get("ingestion_run_id") or "").strip() in selected_scope_ids
     ]
+    if explicit_selected_scope and not selected_scope_papers:
+        selected_scope_papers = list(papers)
     if not candidate_title and len(attachment_titles) == 1:
         candidate_title = attachment_titles[0]
+    if not candidate_title and len(selected_scope_papers) == 1:
+        candidate_title = _normalize_space(str(selected_scope_papers[0].get("title") or ""))
     if _is_placeholder_title(candidate_title):
         if len(selected_scope_papers) == 1:
             candidate_title = _normalize_space(str(selected_scope_papers[0].get("title") or ""))
         elif len(attachment_titles) == 1:
             candidate_title = attachment_titles[0]
+        else:
+            candidate_title = ""
     requested_sections = _detect_requested_sections(prompt)
     normalized_query = _normalize_search_query(prompt, candidate_title)
     lowered = prompt.lower()
@@ -830,13 +847,6 @@ def _analyze_prompt(
         "exclusion_ids": [],
         "attachment_titles": attachment_titles,
     }
-    explicit_selected_scope = bool(
-        {
-            str(run_id).strip()
-            for run_id in list(selected_run_ids or [])
-            if str(run_id).strip()
-        }
-    )
     ranked_matches = sorted(
         [
             _score_paper_match(
@@ -845,12 +855,7 @@ def _analyze_prompt(
                 analysis["candidate_title"],
                 author_hint=author_hint,
                 requested_sections=requested_sections,
-                selected_scope_anchor=str(paper.get("ingestion_run_id") or "").strip()
-                in {
-                    str(run_id).strip()
-                    for run_id in list(selected_run_ids or [])
-                    if str(run_id).strip()
-                },
+                selected_scope_anchor=str(paper.get("ingestion_run_id") or "").strip() in selected_scope_ids,
             )
             for paper in papers
         ],
