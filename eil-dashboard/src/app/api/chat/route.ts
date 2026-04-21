@@ -1131,6 +1131,10 @@ async function planDeepResearch(
   ownerUserId: string
 ): Promise<NextResponse> {
   const prompt = body.message?.trim();
+  const attachmentNames = (body.attachments ?? [])
+    .map((attachment) => String(attachment?.name ?? "").trim())
+    .filter(Boolean);
+  const selectedRunIds = body.selectedRunIds ?? [];
   if (!prompt) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
@@ -1199,7 +1203,7 @@ async function planDeepResearch(
       ownerUserId,
       folderId: body.folderId,
       projectId: body.projectId,
-      selectedRunIds: body.selectedRunIds ?? [],
+      selectedRunIds,
       attachmentNames,
       message: prompt,
     });
@@ -1221,8 +1225,8 @@ async function planDeepResearch(
       ownerUserId,
       body.folderId,
       body.projectId,
-      body.selectedRunIds ?? [],
-      (body.attachments ?? []).map((attachment) => String(attachment?.name ?? "")).filter(Boolean)
+      selectedRunIds,
+      attachmentNames
     ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,

@@ -3,7 +3,9 @@ import logging
 import os
 import re
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+
+from pydantic import BaseModel, Field
 
 from nodes import ModelTask, get_task_llm
 from nodes.keyword_search import keyword_search_node
@@ -66,6 +68,7 @@ PAYLOAD_VERSION = 3
 PLANNER_VERSION = "hybrid-v3"
 MIN_ACCEPTABLE_PLAN_SCORE = 72
 MAX_PLANNING_STEPS = 10
+MIN_INTENT_CONFIDENCE = 0.55
 PLANNING_TOOL_ALLOWLIST = {
     "list_folder_papers",
     "get_dashboard_summary",
@@ -189,6 +192,20 @@ UNRESOLVED_SECTION_MESSAGES = {
     "limitations": "The extracted sections do not state explicit limitations clearly.",
     "implications": "The extracted sections do not provide clean grounded evidence for the paper's implications.",
 }
+
+
+class DeepResearchIntentResolutionSchema(BaseModel):
+    rewritten_prompt: str = Field(default="", description="Prompt rewritten to resolve deictic references to concrete titles.")
+    intent_label: Literal["single_paper", "comparison", "survey", "topic_review", "evidence_audit"] = Field(
+        default="topic_review",
+        description="Primary request intent class.",
+    )
+    candidate_title: str = Field(default="", description="Resolved primary paper title if the request targets one paper.")
+    target_paper_id: int = Field(default=0, ge=0, description="Resolved target paper id from the provided scoped catalog only.")
+    requested_sections: List[str] = Field(default_factory=list, description="Requested report sections when explicitly implied.")
+    compare: bool = Field(default=False, description="Whether the request is comparative across papers.")
+    survey: bool = Field(default=False, description="Whether the request is broad survey/review style.")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Resolver confidence score.")
 
 
 def _get_supabase_url() -> str:
@@ -989,6 +1006,200 @@ def _analyze_prompt(
     return analysis
 
 
+def _build_intent_resolution_prompt(
+    prompt: str,
+    papers: Sequence[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]] = None,
+    attachment_names: Optional[Sequence[str]] = None,
+    heuristic_analysis: Optional[Dict[str, Any]] = None,
+) -> str:
+    scoped_catalog = [
+        f"- paper_id={int(paper.get('paper_id') or 0)} | title={_normalize_space(str(paper.get('title') or ''))} | year={_normalize_space(str(paper.get('year') or 'Unknown'))} | run_id={_normalize_space(str(paper.get('ingestion_run_id') or ''))}"
+        for paper in list(papers or [])[:40]
+        if _normalize_space(str(paper.get("title") or ""))
+    ]
+    selected_ids = [str(run_id).strip() for run_id in list(selected_run_ids or []) if str(run_id).strip()]
+    attachment_list = [
+        _normalize_space(str(name or ""))
+        for name in list(attachment_names or [])
+        if _normalize_space(str(name or ""))
+    ]
+    heuristic = heuristic_analysis if isinstance(heuristic_analysis, dict) else {}
+    return (
+        "You resolve user intent for a corpus-grounded deep-research planner.\n"
+        "Return only a JSON object that matches DeepResearchIntentResolutionSchema.\n"
+        "Never invent paper ids or titles not present in the scoped catalog.\n"
+        "If the prompt uses deictic references like 'this file here', map to a concrete scoped title only when justified.\n"
+        "\n"
+        "Rules:\n"
+        "- target_paper_id must be one of the provided paper_id values or 0.\n"
+        "- candidate_title must be empty when unresolved.\n"
+        "- requested_sections should only include known section keys.\n"
+        "- rewritten_prompt should preserve the user's intent while replacing ambiguous references.\n"
+        "\n"
+        f"User prompt: {prompt}\n"
+        f"Selected run ids: {selected_ids}\n"
+        f"Attachment names: {attachment_list}\n"
+        f"Heuristic analysis snapshot: {json.dumps(_json_safe_prompt_analysis(heuristic), ensure_ascii=True)}\n"
+        "Scoped paper catalog:\n"
+        + ("\n".join(scoped_catalog) if scoped_catalog else "- (no scoped papers available)")
+    )
+
+
+def _resolve_prompt_intent_with_llm(
+    prompt: str,
+    papers: Sequence[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]] = None,
+    attachment_names: Optional[Sequence[str]] = None,
+    heuristic_analysis: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    structured_llm = research_planning_llm.with_structured_output(
+        DeepResearchIntentResolutionSchema,
+        method="json_schema",
+    )
+    prompt_text = _build_intent_resolution_prompt(
+        prompt,
+        papers,
+        selected_run_ids=selected_run_ids,
+        attachment_names=attachment_names,
+        heuristic_analysis=heuristic_analysis,
+    )
+    try:
+        result = structured_llm.invoke(prompt_text)
+        payload = result.model_dump() if hasattr(result, "model_dump") else dict(result or {})
+    except Exception as error:
+        logger.warning("deep research intent resolver failed: %s", error)
+        return None
+
+    confidence = float(payload.get("confidence") or 0.0)
+    if confidence < MIN_INTENT_CONFIDENCE:
+        return None
+
+    allowed_sections = set(SECTION_ALIASES.keys())
+    requested_sections = [
+        _normalize_space(str(section)).lower()
+        for section in list(payload.get("requested_sections") or [])
+        if _normalize_space(str(section)).lower() in allowed_sections
+    ]
+    target_paper_id = int(payload.get("target_paper_id") or 0)
+    paper_ids = {int(paper.get("paper_id") or 0) for paper in list(papers or [])}
+    if target_paper_id not in paper_ids:
+        target_paper_id = 0
+
+    candidate_title = _normalize_space(str(payload.get("candidate_title") or ""))
+    if _is_placeholder_title(candidate_title):
+        candidate_title = ""
+
+    rewritten_prompt = _normalize_space(str(payload.get("rewritten_prompt") or ""))
+    if rewritten_prompt and _is_placeholder_title(rewritten_prompt):
+        rewritten_prompt = ""
+
+    return {
+        "rewritten_prompt": rewritten_prompt,
+        "intent_label": str(payload.get("intent_label") or "topic_review"),
+        "candidate_title": candidate_title,
+        "target_paper_id": target_paper_id,
+        "requested_sections": requested_sections,
+        "compare": bool(payload.get("compare")),
+        "survey": bool(payload.get("survey")),
+        "confidence": confidence,
+    }
+
+
+def _merge_prompt_intent(
+    prompt: str,
+    papers: Sequence[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]],
+    attachment_names: Optional[Sequence[str]],
+    heuristic_analysis: Dict[str, Any],
+    resolved_intent: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not resolved_intent:
+        return heuristic_analysis
+
+    candidate_title = _normalize_space(str(resolved_intent.get("candidate_title") or ""))
+    rewritten_prompt = _normalize_space(str(resolved_intent.get("rewritten_prompt") or ""))
+    if not rewritten_prompt and candidate_title:
+        rewritten_prompt = re.sub(
+            r"(?i)\b(this|that)\s+(file|paper|document)(\s+here)?\b",
+            candidate_title,
+            prompt,
+        )
+        rewritten_prompt = re.sub(
+            r"(?i)\battached\s+(file|paper|document)\b",
+            candidate_title,
+            rewritten_prompt,
+        )
+
+    next_analysis = _analyze_prompt(
+        rewritten_prompt or prompt,
+        papers,
+        selected_run_ids=selected_run_ids,
+        attachment_names=attachment_names,
+    )
+
+    intent_sections = [
+        _normalize_space(str(section)).lower()
+        for section in list(resolved_intent.get("requested_sections") or [])
+        if _normalize_space(str(section)).lower() in SECTION_ALIASES
+    ]
+    if intent_sections:
+        next_analysis["requested_sections"] = intent_sections
+        next_analysis["evidence_extraction"] = True
+        next_analysis["requested_output_mode"] = "structured_sections"
+
+    next_analysis["compare"] = bool(resolved_intent.get("compare", next_analysis.get("compare")))
+    next_analysis["survey"] = bool(resolved_intent.get("survey", next_analysis.get("survey")))
+
+    target_paper_id = int(resolved_intent.get("target_paper_id") or 0)
+    by_id = {
+        int(paper.get("paper_id") or 0): paper
+        for paper in list(papers or [])
+        if int(paper.get("paper_id") or 0) > 0
+    }
+    if target_paper_id in by_id:
+        resolved_paper = by_id[target_paper_id]
+        resolved_title = _normalize_space(str(resolved_paper.get("title") or ""))
+        next_analysis["single_paper"] = True
+        next_analysis["candidate_title"] = resolved_title
+        next_analysis["target_in_scope"] = True
+        next_analysis["target_paper_id"] = target_paper_id
+        next_analysis["target_paper_title"] = resolved_title
+        next_analysis["target_resolution_status"] = "exact_match"
+        next_analysis["primary_intent"] = "paper_lookup"
+        next_analysis["target_entity_type"] = "paper"
+        next_analysis["normalized_query"] = _normalize_search_query(prompt, resolved_title)[:180]
+        target_match = {
+            **_score_paper_match(
+                resolved_paper,
+                str(next_analysis.get("normalized_query") or ""),
+                resolved_title,
+                author_hint=str(next_analysis.get("author_hint") or ""),
+                requested_sections=list(next_analysis.get("requested_sections") or []),
+                selected_scope_anchor=True,
+            ),
+            "selected_scope_anchor": True,
+        }
+        ranked_matches = [
+            target_match,
+            *[
+                row
+                for row in list(next_analysis.get("ranked_matches") or [])
+                if int(row.get("paperId") or 0) != target_paper_id
+            ],
+        ]
+        next_analysis["ranked_matches"] = ranked_matches[:5]
+
+    next_analysis["llm_intent_resolution"] = {
+        "intent_label": str(resolved_intent.get("intent_label") or "topic_review"),
+        "confidence": float(resolved_intent.get("confidence") or 0.0),
+        "rewritten_prompt": rewritten_prompt,
+        "candidate_title": candidate_title,
+        "target_paper_id": target_paper_id,
+    }
+    return next_analysis
+
+
 def _build_planning_snapshot(
     owner_user_id: str,
     folder_id: Optional[str],
@@ -1000,7 +1211,22 @@ def _build_planning_snapshot(
     dataset, filtered = _scope_dataset(owner_user_id, folder_id, project_id, selected_run_ids)
     analytics = build_visualization_analytics(filtered)
     papers = list(filtered.get("papers_full") or [])
-    prompt_analysis = _analyze_prompt(prompt, papers, selected_run_ids, attachment_names)
+    heuristic_analysis = _analyze_prompt(prompt, papers, selected_run_ids, attachment_names)
+    resolved_intent = _resolve_prompt_intent_with_llm(
+        prompt,
+        papers,
+        selected_run_ids=selected_run_ids,
+        attachment_names=attachment_names,
+        heuristic_analysis=heuristic_analysis,
+    )
+    prompt_analysis = _merge_prompt_intent(
+        prompt,
+        papers,
+        selected_run_ids,
+        attachment_names,
+        heuristic_analysis,
+        resolved_intent,
+    )
     filtered = _ensure_target_paper_in_filtered_scope(owner_user_id, filtered, prompt_analysis)
     papers = list(filtered.get("papers_full") or [])
     logger.info(
