@@ -211,6 +211,54 @@ function extractCandidateTitle(prompt: string) {
   return "";
 }
 
+function isPlaceholderTitle(value: string) {
+  const normalized = normalizeTitle(value);
+  if (!normalized) return false;
+  const placeholderPhrases = new Set([
+    "this file",
+    "this file here",
+    "that file",
+    "the file",
+    "file here",
+    "this paper",
+    "that paper",
+    "the paper",
+    "paper here",
+    "attached file",
+    "attached paper",
+    "attached document",
+    "this document",
+    "that document",
+    "the document",
+  ]);
+  if (placeholderPhrases.has(normalized)) {
+    return true;
+  }
+  const tokens = new Set(tokenize(normalized));
+  const placeholderTokens = new Set(["this", "that", "here", "attached", "file", "paper", "document"]);
+  if (tokens.size === 0) return false;
+  for (const token of tokens) {
+    if (!placeholderTokens.has(token)) return false;
+  }
+  return true;
+}
+
+function extractAttachmentTitles(attachmentNames: string[] = []) {
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const name of attachmentNames) {
+    const trimmed = String(name ?? "").trim();
+    if (!trimmed) continue;
+    const withoutExt = trimmed.replace(/\.[a-z0-9]{1,6}$/i, "").trim();
+    if (withoutExt.length < 4 || isPlaceholderTitle(withoutExt)) continue;
+    const normalized = normalizeTitle(withoutExt);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    titles.push(withoutExt);
+  }
+  return titles;
+}
+
 function extractAuthorHint(prompt: string) {
   const match = prompt.match(/(?:^|["'])[^"']+(?:["'])?\s+by\s+([^.,;\n]+)/i);
   return (match?.[1] ?? "").trim();
@@ -383,11 +431,26 @@ function scorePaperMatch(
 function buildLocalPromptAnalysis(
   prompt: string,
   papers: LocalPlanPaper[],
-  selectedRunIds: string[] = []
+  selectedRunIds: string[] = [],
+  attachmentNames: string[] = []
 ) {
-  const candidateTitle = extractCandidateTitle(prompt);
+  let candidateTitle = extractCandidateTitle(prompt);
   const quotedTitle = extractQuotedTitle(prompt);
   const authorHint = extractAuthorHint(prompt);
+  const attachmentTitles = extractAttachmentTitles(attachmentNames);
+  const selectedScopePapers = papers.filter((paper) =>
+    selectedRunIds.includes(String(paper.ingestion_run_id ?? ""))
+  );
+  if (!candidateTitle && attachmentTitles.length === 1) {
+    candidateTitle = attachmentTitles[0];
+  }
+  if (isPlaceholderTitle(candidateTitle)) {
+    if (selectedScopePapers.length === 1) {
+      candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
+    } else if (attachmentTitles.length === 1) {
+      candidateTitle = attachmentTitles[0];
+    }
+  }
   const normalizedQuery = normalizeSearchQuery(prompt, candidateTitle);
   const lowered = prompt.toLowerCase();
   const requestedSections = detectRequestedSections(prompt);
@@ -469,6 +532,7 @@ function buildLocalPromptAnalysis(
     author_hint: authorHint,
     normalized_query: normalizedQuery || prompt.trim(),
     requested_sections: requestedSections,
+    attachment_titles: attachmentTitles,
     target_in_scope: Boolean(target),
     target_paper_id: target?.paperId ?? 0,
     ranked_matches: rankedMatches,
@@ -721,10 +785,11 @@ async function buildLocalResearchPlan(
   ownerUserId: string,
   folderId: string | "all" | undefined,
   projectId: string | undefined,
-  selectedRunIds: string[] = []
+  selectedRunIds: string[] = [],
+  attachmentNames: string[] = []
 ) {
   const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId, selectedRunIds);
-  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds);
+  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds, attachmentNames);
   const needsAnalysis = pendingRunCount > 0;
   const requestedSections = Array.isArray(promptAnalysis.requested_sections)
     ? promptAnalysis.requested_sections
@@ -1105,6 +1170,9 @@ async function planDeepResearch(
     | null = null;
 
   try {
+    const attachmentNames = (body.attachments ?? [])
+      .map((attachment) => String(attachment?.name ?? "").trim())
+      .filter(Boolean);
     rawPlan = await callPythonNodeService<{
       title?: string;
       summary?: string;
@@ -1122,6 +1190,7 @@ async function planDeepResearch(
       folderId: body.folderId,
       projectId: body.projectId,
       selectedRunIds: body.selectedRunIds ?? [],
+      attachmentNames,
       message: prompt,
     });
   } catch {
@@ -1142,7 +1211,8 @@ async function planDeepResearch(
       ownerUserId,
       body.folderId,
       body.projectId,
-      body.selectedRunIds ?? []
+      body.selectedRunIds ?? [],
+      (body.attachments ?? []).map((attachment) => String(attachment?.name ?? "")).filter(Boolean)
     ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,

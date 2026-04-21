@@ -407,6 +407,7 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     project_id=str(body.get("projectId") or "") or None,
                     prompt=str(body.get("message") or ""),
                     selected_run_ids=list(body.get("selectedRunIds") or []),
+                    attachment_names=list(body.get("attachmentNames") or []),
                 )
                 logger.info("workspace usage summary %s", consume_usage_summary())
                 _json_response(self, 200, plan)
