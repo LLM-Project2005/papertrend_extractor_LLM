@@ -10,6 +10,7 @@ import {
   updateWorkspaceThread,
 } from "@/lib/chat-store";
 import { createChatCompletion } from "@/lib/openai";
+import { callPythonNodeService } from "@/lib/python-node-service";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { triggerResearchQueue, triggerWorkerQueue } from "@/lib/worker-trigger";
 import type {
