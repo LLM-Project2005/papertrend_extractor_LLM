@@ -16,12 +16,8 @@ import type {
   ChatThreadDetail,
   DeepResearchSessionRecord,
 } from "@/types/research";
-
-export const runtime = "nodejs";
-
 interface Citation {
   paperId: number | string;
-  title: string;
   title: string;
   year: string;
   href: string;
@@ -65,6 +61,17 @@ interface ChatRequestBody {
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
+}
+
+function normalizeIdList(values: string[] = []) {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort();
+}
+
+function normalizeOptionalScopeId(value?: string | null) {
+  if (!value || value === "all") {
+    return "";
+  }
+  return value.trim();
 }
 
 function clampValue(value: number, min: number, max: number) {
@@ -148,6 +155,39 @@ async function resolveReusableDeepResearchSessionId(
   const nextPrompt = String(body.message ?? "").trim();
   const previousFolderId = normalizeOptionalScopeId(existing.folder_id ?? null);
   const nextFolderId = normalizeOptionalScopeId(body.folderId);
+  const previousProjectId =
+    inputPayload && typeof inputPayload.projectId === "string"
+      ? normalizeOptionalScopeId(inputPayload.projectId)
+      : "";
+  const nextProjectId = normalizeOptionalScopeId(body.projectId);
+  const previousRunIds =
+    inputPayload && Array.isArray(inputPayload.selectedRunIds)
+      ? normalizeIdList(inputPayload.selectedRunIds.map((value) => String(value)))
+      : [];
+  const nextRunIds = normalizeIdList(body.selectedRunIds ?? []);
+
+  const samePrompt = previousPrompt === nextPrompt;
+  const sameFolder = previousFolderId === nextFolderId;
+  const sameProject = previousProjectId === nextProjectId;
+  const sameRuns =
+    previousRunIds.length === nextRunIds.length &&
+    previousRunIds.every((value, index) => value === nextRunIds[index]);
+
+  return samePrompt && sameFolder && sameProject && sameRuns ? sessionId : undefined;
+}
+
+function buildFallbackAnswer(question: string, modelError?: string): string {
+  const lines = [
+    `I could not generate a full response right now for: "${question}".`,
+    "Please try again in a moment.",
+  ];
+
+  if (modelError) {
+    lines.push(`Model note: ${modelError}`);
+  }
+
+  return lines.join("\n");
+}
   const previousProjectId =
     inputPayload && typeof inputPayload.projectId === "string"
       ? normalizeOptionalScopeId(inputPayload.projectId)
