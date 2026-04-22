@@ -22,18 +22,50 @@ export const runtime = "nodejs";
 interface Citation {
   paperId: number | string;
   title: string;
-  results?: string | null;
-  conclusion?: string | null;
-};
+  title: string;
   year: string;
   href: string;
   reason: string;
+}
+
+interface ChatGenerationOptions {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxTokens?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
 }
 
 interface ChatRequestBody {
   message?: string;
   messages?: Array<{ role: "user" | "assistant"; content: string }>;
   model?: string;
+  attachments?: Array<{
+    name: string;
+    type?: string;
+    size?: number;
+  }>;
+  generationParameters?: {
+    temperature?: number;
+    topP?: number;
+    topK?: number;
+    maxTokens?: number;
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+  };
+  selectedYears?: string[];
+  selectedTracks?: string[];
+  searchQuery?: string;
+  queryLanguage?: string;
+  selectedRunIds?: string[];
+  threadId?: string;
+  folderId?: string | "all";
+  projectId?: string;
+  chatMode?: "normal" | "deep_research";
+  action?: "message" | "plan" | "continue";
+  sessionId?: string;
+}
 
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -84,6 +116,23 @@ function resolveGenerationOptions(body: ChatRequestBody): ChatGenerationOptions 
   }
   return options;
 }
+
+async function resolveReusableDeepResearchSessionId(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  ownerUserId: string,
+  body: ChatRequestBody,
+): Promise<string | undefined> {
+  const sessionId = body.sessionId?.trim();
+  if (!sessionId) {
+    return undefined;
+  }
+
+  let existing: DeepResearchSessionRecord;
+  try {
+    existing = await getDeepResearchSession(supabase, sessionId);
+  } catch {
+    return undefined;
+  }
 
   if (String(existing.owner_user_id ?? "") !== ownerUserId) {
     return undefined;
