@@ -229,65 +229,6 @@ type LocalPlanPaper = {
   ingestion_run_id?: string | null;
   abstract_claims?: string | null;
   methods?: string | null;
-
-interface ChatGenerationOptions {
-  temperature?: number;
-  topP?: number;
-  topK?: number;
-  maxTokens?: number;
-  frequencyPenalty?: number;
-  presencePenalty?: number;
-}
-
-  function clampValue(value: number, min: number, max: number) {
-    return Math.min(max, Math.max(min, value));
-  }
-
-  function toFiniteNumber(value: unknown): number | undefined {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      return value;
-    }
-    if (typeof value === "string" && value.trim()) {
-      const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : undefined;
-    }
-    return undefined;
-  }
-
-  function resolveGenerationOptions(body: ChatRequestBody): ChatGenerationOptions {
-    const params =
-      body.generationParameters && typeof body.generationParameters === "object"
-        ? body.generationParameters
-        : {};
-
-    const temperature = toFiniteNumber(params.temperature);
-    const topP = toFiniteNumber(params.topP);
-    const topK = toFiniteNumber(params.topK);
-    const maxTokens = toFiniteNumber(params.maxTokens);
-    const frequencyPenalty = toFiniteNumber(params.frequencyPenalty);
-    const presencePenalty = toFiniteNumber(params.presencePenalty);
-
-    const options: ChatGenerationOptions = {};
-    if (temperature !== undefined) {
-      options.temperature = clampValue(temperature, 0, 2);
-    }
-    if (topP !== undefined) {
-      options.topP = clampValue(topP, 0, 1);
-    }
-    if (topK !== undefined) {
-      options.topK = Math.round(clampValue(topK, 0, 200));
-    }
-    if (maxTokens !== undefined) {
-      options.maxTokens = Math.round(clampValue(maxTokens, 64, 8192));
-    }
-    if (frequencyPenalty !== undefined) {
-      options.frequencyPenalty = clampValue(frequencyPenalty, -2, 2);
-    }
-    if (presencePenalty !== undefined) {
-      options.presencePenalty = clampValue(presencePenalty, -2, 2);
-    }
-    return options;
-  }
   results?: string | null;
   conclusion?: string | null;
 };
