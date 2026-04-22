@@ -85,6 +85,7 @@ const MODEL_OPTIONS = [
   { value: "openai/gpt-4.1-mini", label: "GPT-4.1 mini" },
   { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { value: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  { value: "google/gemma-4-31b-it:free", label: "Gemma 4 31B (Free)" },
 ] as const;
 
 const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
