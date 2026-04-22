@@ -188,39 +188,6 @@ function buildFallbackAnswer(question: string, modelError?: string): string {
 
   return lines.join("\n");
 }
-  const previousProjectId =
-    inputPayload && typeof inputPayload.projectId === "string"
-      ? normalizeOptionalScopeId(inputPayload.projectId)
-      : "";
-  const nextProjectId = normalizeOptionalScopeId(body.projectId);
-  const previousRunIds =
-    inputPayload && Array.isArray(inputPayload.selectedRunIds)
-      ? normalizeIdList(inputPayload.selectedRunIds.map((value) => String(value)))
-      : [];
-  const nextRunIds = normalizeIdList(body.selectedRunIds ?? []);
-
-  const samePrompt = previousPrompt === nextPrompt;
-  const sameFolder = previousFolderId === nextFolderId;
-  const sameProject = previousProjectId === nextProjectId;
-  const sameRuns =
-    previousRunIds.length === nextRunIds.length &&
-    previousRunIds.every((value, index) => value === nextRunIds[index]);
-
-  return samePrompt && sameFolder && sameProject && sameRuns ? sessionId : undefined;
-}
-
-function buildFallbackAnswer(question: string, modelError?: string): string {
-  const lines = [
-    `I could not generate a full response right now for: "${question}".`,
-    "Please try again in a moment.",
-  ];
-
-  if (modelError) {
-    lines.push(`Model note: ${modelError}`);
-  }
-
-  return lines.join("\n");
-}
 
 type LocalPlanPaper = {
   paper_id: number | string;
