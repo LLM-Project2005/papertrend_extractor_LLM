@@ -22,6 +22,7 @@ import {
   CircleIcon,
   CloseIcon,
   DriveIcon,
+  EqualizerIcon,
   FileIcon,
   FolderIcon,
   MoreHorizontalIcon,
@@ -78,6 +79,25 @@ interface ChatPayload {
 
 const PINNED_THREADS_STORAGE_KEY = "papertrend_pinned_chat_threads_v1";
 const CHAT_MODEL_STORAGE_KEY = "papertrend_chat_model_v1";
+const CHAT_PARAMETERS_STORAGE_KEY = "papertrend_chat_parameters_v1";
+
+type ChatGenerationParameters = {
+  temperature: number;
+  topP: number;
+  topK: number;
+  maxTokens: number;
+  frequencyPenalty: number;
+  presencePenalty: number;
+};
+
+const DEFAULT_CHAT_PARAMETERS: ChatGenerationParameters = {
+  temperature: 0.4,
+  topP: 0.95,
+  topK: 0,
+  maxTokens: 1200,
+  frequencyPenalty: 0,
+  presencePenalty: 0,
+};
 
 const MODEL_OPTIONS = [
   { value: "", label: "Auto" },
@@ -85,6 +105,7 @@ const MODEL_OPTIONS = [
   { value: "openai/gpt-4.1-mini", label: "GPT-4.1 mini" },
   { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
   { value: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  { value: "google/gemma-4-31b-it", label: "Gemma 4 31B" },
 ] as const;
 
 const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
@@ -656,6 +677,10 @@ export default function ChatClient() {
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
   const [selectedModel, setSelectedModel] = useState("");
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
+  const [parameterMenuOpen, setParameterMenuOpen] = useState(false);
+  const [chatParameters, setChatParameters] = useState<ChatGenerationParameters>(
+    DEFAULT_CHAT_PARAMETERS
+  );
   const projectFolderIds = useMemo(
     () => folders.map((folder) => folder.id),
     [folders]
@@ -686,6 +711,7 @@ export default function ChatClient() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const parameterMenuRef = useRef<HTMLDivElement | null>(null);
 
   const canPersist = Boolean(user && session?.access_token);
   const effectiveSelectedYears = selectedYears.length > 0 ? selectedYears : allYears;
@@ -783,6 +809,14 @@ export default function ChatClient() {
         if (Array.isArray(parsed)) setPinnedThreadIds(parsed.filter(Boolean));
       }
       setSelectedModel(window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY) ?? "");
+      const rawParams = window.localStorage.getItem(CHAT_PARAMETERS_STORAGE_KEY);
+      if (rawParams) {
+        const parsed = JSON.parse(rawParams) as Partial<ChatGenerationParameters>;
+        setChatParameters({
+          ...DEFAULT_CHAT_PARAMETERS,
+          ...parsed,
+        });
+      }
     } catch {
       setPinnedThreadIds([]);
     }
@@ -800,6 +834,32 @@ export default function ChatClient() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      CHAT_PARAMETERS_STORAGE_KEY,
+      JSON.stringify(chatParameters)
+    );
+  }, [chatParameters]);
+
+  useEffect(() => {
+    if (!parameterMenuOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (!parameterMenuRef.current?.contains(target)) {
+        setParameterMenuOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => window.removeEventListener("mousedown", handlePointerDown);
+  }, [parameterMenuOpen]);
+
+  useEffect(() => {
+    if (deepResearchEnabled) {
+      setParameterMenuOpen(false);
+    }
+  }, [deepResearchEnabled]);
 
   useEffect(() => {
     resizeComposer();
@@ -1054,6 +1114,14 @@ export default function ChatClient() {
       const payload = await sendRequest({
         message: prompt,
         model: selectedModel || undefined,
+        generationParameters: {
+          temperature: chatParameters.temperature,
+          topP: chatParameters.topP,
+          topK: chatParameters.topK,
+          maxTokens: chatParameters.maxTokens,
+          frequencyPenalty: chatParameters.frequencyPenalty,
+          presencePenalty: chatParameters.presencePenalty,
+        },
         attachments: selectedAttachments,
         messages: nextMessages.map((message) => ({
           role: message.role,
@@ -1092,6 +1160,16 @@ export default function ChatClient() {
       abortControllerRef.current = null;
       setLoading(false);
     }
+  }
+
+  function handleParameterChange<K extends keyof ChatGenerationParameters>(
+    key: K,
+    value: ChatGenerationParameters[K]
+  ) {
+    setChatParameters((current) => ({
+      ...current,
+      [key]: value,
+    }));
   }
 
   async function handlePlanResearch() {
@@ -1985,27 +2063,170 @@ export default function ChatClient() {
                     ) : null}
                   </div>
 
-                  <button
-                    type="submit"
-                    disabled={
-                      (!loading && draft.trim().length === 0) ||
-                      (deepResearchEnabled && !canPersist)
-                    }
-                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
-                      loading
-                        ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
-                        : draft.trim().length > 0
+                  <div className="relative flex items-center gap-2" ref={parameterMenuRef}>
+                    {!deepResearchEnabled ? (
+                      <button
+                        type="button"
+                        onClick={() => setParameterMenuOpen((current) => !current)}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+                          parameterMenuOpen
+                            ? "border-white/30 bg-[#2a2a2a] text-white"
+                            : "border-white/10 bg-[#212121] text-[#b4b4b4] hover:bg-[#2a2a2a]"
+                        }`}
+                        aria-label="Open generation parameters"
+                        title="Generation parameters"
+                      >
+                        <EqualizerIcon className="h-4 w-4" />
+                      </button>
+                    ) : null}
+
+                    {parameterMenuOpen && !deepResearchEnabled ? (
+                      <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-2xl border border-white/10 bg-[#1b1b1b] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+                        <div className="mb-3 flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9b9b9b]">
+                            Generation
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setChatParameters(DEFAULT_CHAT_PARAMETERS)}
+                            className="text-xs font-medium text-[#9cc8ff] hover:text-[#c9e2ff]"
+                          >
+                            Reset
+                          </button>
+                        </div>
+
+                        <div className="space-y-3 text-xs text-[#d8d8d8]">
+                          <label className="block">
+                            <div className="mb-1 flex items-center justify-between">
+                              <span>Temperature</span>
+                              <span className="text-[#9b9b9b]">{chatParameters.temperature.toFixed(2)}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={2}
+                              step={0.05}
+                              value={chatParameters.temperature}
+                              onChange={(event) =>
+                                handleParameterChange("temperature", Number(event.target.value))
+                              }
+                              className="w-full accent-[#9cc8ff]"
+                            />
+                          </label>
+
+                          <label className="block">
+                            <div className="mb-1 flex items-center justify-between">
+                              <span>Top P</span>
+                              <span className="text-[#9b9b9b]">{chatParameters.topP.toFixed(2)}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              value={chatParameters.topP}
+                              onChange={(event) =>
+                                handleParameterChange("topP", Number(event.target.value))
+                              }
+                              className="w-full accent-[#9cc8ff]"
+                            />
+                          </label>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className="mb-1 block">Top K</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={200}
+                                step={1}
+                                value={chatParameters.topK}
+                                onChange={(event) =>
+                                  handleParameterChange("topK", Number(event.target.value || 0))
+                                }
+                                className="w-full rounded-lg border border-white/10 bg-[#242424] px-2 py-1.5 text-sm text-[#ececec] outline-none focus:border-[#9cc8ff]"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="mb-1 block">Max Tokens</span>
+                              <input
+                                type="number"
+                                min={64}
+                                max={8192}
+                                step={1}
+                                value={chatParameters.maxTokens}
+                                onChange={(event) =>
+                                  handleParameterChange("maxTokens", Number(event.target.value || 0))
+                                }
+                                className="w-full rounded-lg border border-white/10 bg-[#242424] px-2 py-1.5 text-sm text-[#ececec] outline-none focus:border-[#9cc8ff]"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className="mb-1 block">Frequency Penalty</span>
+                              <input
+                                type="number"
+                                min={-2}
+                                max={2}
+                                step={0.1}
+                                value={chatParameters.frequencyPenalty}
+                                onChange={(event) =>
+                                  handleParameterChange(
+                                    "frequencyPenalty",
+                                    Number(event.target.value || 0)
+                                  )
+                                }
+                                className="w-full rounded-lg border border-white/10 bg-[#242424] px-2 py-1.5 text-sm text-[#ececec] outline-none focus:border-[#9cc8ff]"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="mb-1 block">Presence Penalty</span>
+                              <input
+                                type="number"
+                                min={-2}
+                                max={2}
+                                step={0.1}
+                                value={chatParameters.presencePenalty}
+                                onChange={(event) =>
+                                  handleParameterChange(
+                                    "presencePenalty",
+                                    Number(event.target.value || 0)
+                                  )
+                                }
+                                className="w-full rounded-lg border border-white/10 bg-[#242424] px-2 py-1.5 text-sm text-[#ececec] outline-none focus:border-[#9cc8ff]"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="submit"
+                      disabled={
+                        (!loading && draft.trim().length === 0) ||
+                        (deepResearchEnabled && !canPersist)
+                      }
+                      className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                        loading
                           ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
-                          : "bg-[#3a3a3a] text-[#8e8e8e]"
-                    } disabled:cursor-not-allowed`}
-                    aria-label={loading ? "Stop generating" : "Send message"}
-                  >
-                    {loading ? (
-                      <StopIcon className="h-4 w-4" />
-                    ) : (
-                      <SendIcon className="h-4 w-4" />
-                    )}
-                  </button>
+                          : draft.trim().length > 0
+                            ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
+                            : "bg-[#3a3a3a] text-[#8e8e8e]"
+                      } disabled:cursor-not-allowed`}
+                      aria-label={loading ? "Stop generating" : "Send message"}
+                    >
+                      {loading ? (
+                        <StopIcon className="h-4 w-4" />
+                      ) : (
+                        <SendIcon className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </form>

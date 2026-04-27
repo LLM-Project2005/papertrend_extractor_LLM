@@ -5,15 +5,47 @@ export interface ChatMessage {
   content: string;
 }
 
+export interface ChatCompletionParameters {
+  topP?: number;
+  topK?: number;
+  maxTokens?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
+}
+
 export async function createChatCompletion(
   messages: ChatMessage[],
   temperature = 0.2,
   modelOverride?: string,
-  taskName?: string
+  taskName?: string,
+  parameters: ChatCompletionParameters = {}
 ): Promise<string | null> {
   const config = getOpenAIConfig(taskName);
   if (!config) {
     return null;
+  }
+
+  const usesOpenRouter = config.baseUrl.includes("openrouter.ai");
+  const requestBody: Record<string, unknown> = {
+    model: modelOverride?.trim() || config.model,
+    temperature,
+    messages,
+  };
+
+  if (typeof parameters.topP === "number") {
+    requestBody.top_p = parameters.topP;
+  }
+  if (typeof parameters.maxTokens === "number") {
+    requestBody.max_tokens = parameters.maxTokens;
+  }
+  if (typeof parameters.frequencyPenalty === "number") {
+    requestBody.frequency_penalty = parameters.frequencyPenalty;
+  }
+  if (typeof parameters.presencePenalty === "number") {
+    requestBody.presence_penalty = parameters.presencePenalty;
+  }
+  if (usesOpenRouter && typeof parameters.topK === "number") {
+    requestBody.top_k = parameters.topK;
   }
 
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -22,11 +54,7 @@ export async function createChatCompletion(
       "Content-Type": "application/json",
       Authorization: `Bearer ${config.apiKey}`,
     },
-    body: JSON.stringify({
-      model: modelOverride?.trim() || config.model,
-      temperature,
-      messages,
-    }),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
