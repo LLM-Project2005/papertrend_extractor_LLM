@@ -148,6 +148,37 @@ class DeepResearchPlanSchema(BaseModel):
     steps: List[DeepResearchPlanStep] = Field(description="Ordered deep research steps.")
 
 
+class DeepResearchQueryBundleSchema(BaseModel):
+    primary_query: str = ""
+    supporting_queries: List[str] = Field(default_factory=list)
+    exact_title_query: str = ""
+    section_query: str = ""
+    author_hint: str = ""
+    requested_sections: List[str] = Field(default_factory=list)
+    exclusion_ids: List[str] = Field(default_factory=list)
+
+
+class DeepResearchEvidenceItemSchema(BaseModel):
+    paperId: str
+    title: str
+    section: str
+    requested_section: str
+    snippet: str
+    relevance_score: int
+    noise_score: int
+    supports_section: bool
+
+
+class DeepResearchStepDiagnosticsSchema(BaseModel):
+    target_resolution: str = ""
+    top_ranked_candidates: List[Dict[str, Any]] = Field(default_factory=list)
+    evidence_item_count: int = 0
+    selected_evidence_counts: Dict[str, int] = Field(default_factory=dict)
+    discarded_noisy_snippet_counts: Dict[str, int] = Field(default_factory=dict)
+    unresolved_sections: List[str] = Field(default_factory=list)
+    verification_warnings: List[str] = Field(default_factory=list)
+
+
 class IngestionState(TypedDict, total=False):
     messages: Annotated[List[BaseMessage], operator.add]
     pdf_path: str
@@ -216,6 +247,7 @@ class DeepResearchState(TypedDict, total=False):
     session_id: str
     prompt: str
     prompt_analysis: Dict[str, Any]
+    query_bundle: Dict[str, Any]
     title: str
     plan_summary: str
     requires_analysis: bool
@@ -227,6 +259,8 @@ class DeepResearchState(TypedDict, total=False):
     verification_result: Dict[str, Any]
     final_report: str
     final_citations: List[Dict[str, Any]]
+    evidence_items: List[Dict[str, Any]]
+    research_diagnostics: Dict[str, Any]
     completion_kind: str
     synthesis_step_position: int
     errors: List[str]

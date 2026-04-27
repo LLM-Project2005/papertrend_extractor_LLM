@@ -86,6 +86,10 @@ export interface NormalizedAnalyticsPayload {
     folder_ids: string[];
     all_folders_selected: boolean;
   };
+  diagnostics?: {
+    canonical_topic_families_available: boolean;
+    degraded_reason?: string;
+  };
   overview: {
     paper_count: number;
     topic_count: number;

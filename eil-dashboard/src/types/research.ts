@@ -29,6 +29,35 @@ export interface DeepResearchEvidenceItem {
   supports_section: boolean;
 }
 
+export interface DeepResearchRankedMatch {
+  paperId: number | string;
+  title: string;
+  year: string;
+  score: number;
+  strong_title_match?: boolean;
+  exact_normalized_title_match?: boolean;
+  selected_scope_anchor?: boolean;
+  score_components?: {
+    title?: number;
+    selected_scope_anchor?: number;
+    author_hint?: number;
+    requested_sections?: number;
+    general_content?: number;
+    noise_penalty?: number;
+    duplicate_penalty?: number;
+  };
+}
+
+export interface DeepResearchStepDiagnostics {
+  target_resolution?: string;
+  top_ranked_candidates?: DeepResearchRankedMatch[];
+  evidence_item_count?: number;
+  selected_evidence_counts?: Record<string, number>;
+  discarded_noisy_snippet_counts?: Record<string, number>;
+  unresolved_sections?: string[];
+  verification_warnings?: string[];
+}
+
 export interface DeepResearchStepInputPayload {
   payload_version?: number;
   planner_version?: string;
@@ -76,9 +105,9 @@ export interface DeepResearchStepOutputPayload {
   raw?:
     | {
         queryBundle?: DeepResearchQueryBundle;
-        rankedMatches?: Record<string, unknown>[];
+        rankedMatches?: DeepResearchRankedMatch[];
         evidenceItems?: DeepResearchEvidenceItem[];
-        diagnostics?: Record<string, unknown>;
+        diagnostics?: DeepResearchStepDiagnostics;
       }
     | unknown;
   status_reason?: string | null;

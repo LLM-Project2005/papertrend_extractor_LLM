@@ -182,6 +182,10 @@ def visualization_node(state: WorkspaceQueryState) -> Dict[str, Any]:
     prompt = (
         "You are a visualization planning agent for a research analytics dashboard.\n"
         "Return JSON only.\n\n"
+        "Prefer normalized canonical topics over raw per-paper labels.\n"
+        "Choose a compact non-redundant set of charts.\n"
+        "At minimum, include one time-based view, one comparison view, and one structure/distribution view when the data supports them.\n"
+        "Every chart reason should explain why the chart helps a decision, not only what it displays.\n\n"
         "Choose only from this chart catalog:\n- "
         + "\n- ".join(VISUALIZATION_CHART_KEYS)
         + "\n\nAllowed section_key values:\n- "

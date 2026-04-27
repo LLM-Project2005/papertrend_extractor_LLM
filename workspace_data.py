@@ -19,6 +19,22 @@ TRACK_NAMES = {
 
 _CACHE: Dict[str, Dict[str, Any]] = {}
 logger = logging.getLogger("papertrend.workspace_data")
+TOPIC_NORMALIZATION_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "as",
+    "at",
+    "by",
+    "for",
+    "from",
+    "in",
+    "of",
+    "on",
+    "the",
+    "to",
+    "with",
+}
 
 
 def _get_supabase_url() -> str:
@@ -80,6 +96,181 @@ def _coerce_json_list(value: Any) -> List[str]:
             pass
         return [value]
     return []
+
+
+def _normalize_topic_text(value: Any) -> str:
+    normalized = "".join(ch.lower() if ch.isalnum() or ch.isspace() else " " for ch in str(value or ""))
+    tokens = []
+    for token in normalized.split():
+        if token.endswith("s") and len(token) > 4 and not token.endswith("ss"):
+            token = token[:-1]
+        tokens.append(token)
+    return " ".join(tokens).strip()
+
+
+def _topic_acronym(value: Any) -> str:
+    tokens = [
+        token
+        for token in _normalize_topic_text(value).split()
+        if token and token not in TOPIC_NORMALIZATION_STOPWORDS
+    ]
+    if len(tokens) < 2:
+        return ""
+    acronym = "".join(token[0] for token in tokens)
+    return acronym if len(acronym) >= 2 else ""
+
+
+def _choose_canonical_topic_label(values: Sequence[str]) -> str:
+    cleaned = [str(value or "").strip() for value in values if str(value or "").strip()]
+    if not cleaned:
+        return "Unclassified"
+    non_acronyms = [value for value in cleaned if " " in value]
+    pool = non_acronyms or cleaned
+    pool.sort(key=lambda value: (-len(_normalize_topic_text(value)), value.lower()))
+    return pool[0]
+
+
+def _build_python_topic_families(
+    concepts: Sequence[Dict[str, Any]],
+    trends: Sequence[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], Dict[str, Any]]:
+    if not concepts:
+        fallback_trends = []
+        for row in trends:
+            next_row = dict(row)
+            next_row["raw_topic"] = str(row.get("topic") or "")
+            fallback_trends.append(next_row)
+        return [], fallback_trends, {"degraded": True, "reason": "no_concept_rows"}
+
+    families: List[Dict[str, Any]] = []
+
+    def _matches_family(family: Dict[str, Any], aliases: Sequence[str]) -> bool:
+        family_aliases = set(family.get("normalized_aliases") or [])
+        family_acronyms = set(family.get("acronyms") or [])
+        alias_set = {_normalize_topic_text(alias) for alias in aliases if _normalize_topic_text(alias)}
+        acronym_set = {_topic_acronym(alias) for alias in aliases if _topic_acronym(alias)}
+        return bool(family_aliases & alias_set) or bool(family_acronyms & acronym_set)
+
+    for row in concepts:
+        aliases = [
+            str(row.get("concept_label") or ""),
+            *[str(value or "") for value in _coerce_json_list(row.get("matched_terms"))],
+            *[str(value or "") for value in _coerce_json_list(row.get("related_keywords"))],
+        ]
+        target = next((family for family in families if _matches_family(family, aliases)), None)
+        if not target:
+            target = {
+                "canonicalTopic": str(row.get("concept_label") or "Unclassified").strip() or "Unclassified",
+                "aliases": [],
+                "normalized_aliases": set(),
+                "acronyms": set(),
+                "representativeKeywords": [],
+                "relatedKeywords": [],
+                "matchedTerms": [],
+                "evidenceSnippets": [],
+                "paperIds": set(),
+                "folderIds": set(),
+                "years": set(),
+                "totalKeywordFrequency": 0,
+            }
+            families.append(target)
+
+        target["aliases"].extend([alias for alias in aliases if alias.strip()])
+        target["normalized_aliases"].update(
+            {_normalize_topic_text(alias) for alias in aliases if _normalize_topic_text(alias)}
+        )
+        target["acronyms"].update({_topic_acronym(alias) for alias in aliases if _topic_acronym(alias)})
+        target["representativeKeywords"].extend(_coerce_json_list(row.get("related_keywords")))
+        target["relatedKeywords"].extend(_coerce_json_list(row.get("related_keywords")))
+        target["matchedTerms"].extend(_coerce_json_list(row.get("matched_terms")))
+        target["evidenceSnippets"].extend(_coerce_json_list(row.get("evidence_snippets")))
+        if int(row.get("paper_id") or 0) > 0:
+            target["paperIds"].add(int(row.get("paper_id") or 0))
+        if str(row.get("folder_id") or "").strip():
+            target["folderIds"].add(str(row.get("folder_id") or "").strip())
+        if str(row.get("year") or "").strip():
+            target["years"].add(_normalize_year(row.get("year")))
+        target["totalKeywordFrequency"] += max(int(row.get("total_frequency") or 0), 0)
+        target["canonicalTopic"] = _choose_canonical_topic_label(target["aliases"])
+
+    alias_to_canonical: Dict[str, str] = {}
+    for family in families:
+        canonical = str(family.get("canonicalTopic") or "Unclassified")
+        for alias in list(family.get("normalized_aliases") or []):
+            alias_to_canonical[alias] = canonical
+        for acronym in list(family.get("acronyms") or []):
+            alias_to_canonical[acronym] = canonical
+
+    remapped_trends: List[Dict[str, Any]] = []
+    for row in trends:
+        next_row = dict(row)
+        raw_topic = str(row.get("topic") or "Unclassified")
+        normalized_topic = _normalize_topic_text(raw_topic)
+        normalized_keyword = _normalize_topic_text(row.get("keyword"))
+        canonical = (
+            alias_to_canonical.get(normalized_topic)
+            or alias_to_canonical.get(normalized_keyword)
+            or raw_topic
+        )
+        next_row["raw_topic"] = raw_topic
+        next_row["topic"] = canonical
+        remapped_trends.append(next_row)
+
+    finalized_families: List[Dict[str, Any]] = []
+    for index, family in enumerate(families, start=1):
+        canonical = str(family.get("canonicalTopic") or "Unclassified")
+        scoped_rows = [row for row in remapped_trends if str(row.get("topic") or "") == canonical]
+        finalized_families.append(
+            {
+                "id": f"py-family-{index}",
+                "canonicalTopic": canonical,
+                "aliases": sorted({canonical, *[str(value) for value in family.get("aliases") or []]}),
+                "representativeKeywords": sorted(
+                    {
+                        str(value)
+                        for value in list(family.get("representativeKeywords") or [])
+                        if str(value).strip()
+                    }
+                )[:8],
+                "relatedKeywords": sorted(
+                    {
+                        str(value)
+                        for value in list(family.get("relatedKeywords") or [])
+                        if str(value).strip()
+                    }
+                )[:12],
+                "matchedTerms": sorted(
+                    {
+                        str(value)
+                        for value in list(family.get("matchedTerms") or [])
+                        if str(value).strip()
+                    }
+                )[:16],
+                "evidenceSnippets": sorted(
+                    {
+                        str(value)
+                        for value in list(family.get("evidenceSnippets") or [])
+                        if str(value).strip()
+                    }
+                )[:6],
+                "paperIds": sorted({int(row.get("paper_id") or 0) for row in scoped_rows if int(row.get("paper_id") or 0) > 0}),
+                "folderIds": sorted(
+                    {
+                        str(row.get("folder_id") or "").strip()
+                        for row in scoped_rows
+                        if str(row.get("folder_id") or "").strip()
+                    }
+                ),
+                "years": sorted({_normalize_year(row.get("year")) for row in scoped_rows}),
+                "totalKeywordFrequency": sum(int(row.get("keyword_frequency") or 0) for row in scoped_rows),
+            }
+        )
+
+    return finalized_families, remapped_trends, {
+        "degraded": False,
+        "reason": "",
+        "family_count": len(finalized_families),
+    }
 
 
 def scope_filtered_data_to_runs(
@@ -612,8 +803,11 @@ def build_visualization_analytics(filtered: Dict[str, Any]) -> Dict[str, Any]:
     trends = filtered.get("trends") or []
     tracks_single = filtered.get("tracksSingle") or []
     tracks_multi = filtered.get("tracksMulti") or []
+    concepts = filtered.get("concepts") or []
     selected_years = filtered.get("selectedYears") or []
     selected_tracks = filtered.get("selectedTracks") or TRACK_COLS
+    topic_families, normalized_trends, topic_diagnostics = _build_python_topic_families(concepts, trends)
+    trends = normalized_trends
 
     paper_count = len({int(row.get("paper_id")) for row in trends})
     topic_count = len({str(row.get("topic")) for row in trends})
@@ -754,6 +948,8 @@ def build_visualization_analytics(filtered: Dict[str, Any]) -> Dict[str, Any]:
             "selected_tracks": list(selected_tracks),
             "search_query": filtered.get("searchQuery", ""),
         },
+        "topicFamilies": topic_families,
+        "canonical_topic_families": topic_families,
         "overview": {
             "paper_count": paper_count,
             "topic_count": topic_count,
@@ -773,4 +969,9 @@ def build_visualization_analytics(filtered: Dict[str, Any]) -> Dict[str, Any]:
             "declining": [item for item in topic_shifts if item["change"] < 0][-8:][::-1],
         },
         "track_topic_sections": track_topic_sections,
+        "diagnostics": {
+            "canonical_topic_families_available": not bool(topic_diagnostics.get("degraded")),
+            "canonical_topic_family_count": int(topic_diagnostics.get("family_count") or 0),
+            "degraded_reason": str(topic_diagnostics.get("reason") or ""),
+        },
     }

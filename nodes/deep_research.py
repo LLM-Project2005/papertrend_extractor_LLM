@@ -610,6 +610,8 @@ def _selected_query_bundle(
         bundle = dict(tool_input.get("queryBundle") or {})
     elif tool_input and isinstance(tool_input.get("normalizedQuery"), dict):
         bundle = dict(tool_input.get("normalizedQuery") or {})
+    elif isinstance(state.get("query_bundle"), dict):
+        bundle = dict(state.get("query_bundle") or {})
     return _normalize_query_bundle(
         bundle,
         prompt_analysis=prompt_analysis,
@@ -741,6 +743,26 @@ def _token_overlap_count(left: str, right: str) -> int:
     return len(left_tokens & right_tokens)
 
 
+def _paper_section_keyword_hits(
+    paper: Dict[str, Any],
+    requested_sections: Sequence[str],
+) -> int:
+    score = 0
+    for requested_section in requested_sections:
+        rule = _section_rule(requested_section)
+        keywords = [str(keyword).lower() for keyword in list(rule.get("keywords") or [])]
+        fields = [field for field in list(rule.get("fields") or []) if field in TEXT_FIELDS]
+        field_bonus = dict(rule.get("field_bonus") or {})
+        for field in fields:
+            text = str(paper.get(field) or "").lower()
+            if not text:
+                continue
+            field_hits = sum(1 for keyword in keywords if keyword in text)
+            if field_hits:
+                score += field_hits * (2 + int(field_bonus.get(field) or 0))
+    return score
+
+
 def _score_paper_match(
     paper: Dict[str, Any],
     normalized_query: str,
@@ -758,16 +780,10 @@ def _score_paper_match(
     )
     haystack = _paper_text_haystack(paper)
     title_component = 1000 if exact_normalized_title_match else int(title_strength * 160)
-    selected_scope_anchor_bonus = 60 if selected_scope_anchor else 0
+    selected_scope_anchor_bonus = 80 if selected_scope_anchor else 0
     author_component = _token_overlap_count(author_hint, str(paper.get("authors") or paper_title)) * 12
-    section_component = 0
     requested_sections = list(requested_sections or [])
-    for requested_section in requested_sections:
-        section_component += sum(
-            6
-            for keyword in SECTION_EVIDENCE_RULES.get(requested_section, {}).get("keywords", ())
-            if keyword.lower() in haystack
-        )
+    section_component = _paper_section_keyword_hits(paper, requested_sections)
     general_component = 0
     for token in _tokenize(normalized_query):
         if token in _normalize_title(paper_title):
@@ -775,7 +791,24 @@ def _score_paper_match(
         elif token in haystack:
             general_component += 3
     noise_penalty = _paper_noise_penalty(paper)
-    score = title_component + selected_scope_anchor_bonus + author_component + section_component + general_component - noise_penalty
+    duplicate_penalty = 0
+    if (
+        candidate_title
+        and not exact_normalized_title_match
+        and _normalize_title(candidate_title)
+        and _normalize_title(candidate_title) in _normalize_title(paper_title)
+        and title_strength < 0.82
+    ):
+        duplicate_penalty += 12
+    score = (
+        title_component
+        + selected_scope_anchor_bonus
+        + author_component
+        + section_component
+        + general_component
+        - noise_penalty
+        - duplicate_penalty
+    )
     return {
         "paperId": _json_safe_id(int(paper.get("paper_id") or 0)),
         "title": paper_title,
@@ -791,6 +824,7 @@ def _score_paper_match(
             "requested_sections": section_component,
             "general_content": general_component,
             "noise_penalty": -noise_penalty,
+            "duplicate_penalty": -duplicate_penalty,
         },
     }
 
@@ -1251,6 +1285,12 @@ def _build_planning_snapshot(
         }
     )
     safe_prompt_analysis = _json_safe_prompt_analysis(prompt_analysis)
+    resolved_query_bundle = _normalize_query_bundle(
+        {},
+        prompt_analysis=safe_prompt_analysis,
+        fallback_query=prompt,
+        target_title=str(safe_prompt_analysis.get("candidate_title") or ""),
+    )
     return {
         "prompt": prompt,
         "folder_id": folder_id,
@@ -1268,6 +1308,7 @@ def _build_planning_snapshot(
         "top_papers": _safe_papers(filtered),
         "filters": analytics.get("filters", {}),
         "prompt_analysis": safe_prompt_analysis,
+        "query_bundle": resolved_query_bundle,
         "ranked_matches": safe_prompt_analysis.get("ranked_matches", []),
         "available_sections": available_sections,
         "keyword_coverage": keyword_coverage,
@@ -1299,12 +1340,17 @@ def _todo_input(
     requested = list(requested_sections or prompt_analysis.get("requested_sections") or [])
     exclusions = [int(item) for item in (exclusion_ids or []) if str(item).strip().isdigit()]
     primary_query = tool_query or str(prompt_analysis.get("normalized_query") or snapshot.get("prompt") or "")
-    query_bundle = _build_query_bundle(
-        primary_query,
-        requested,
+    query_bundle = _normalize_query_bundle(
+        _build_query_bundle(
+            primary_query,
+            requested,
+            target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
+            exclusion_ids=exclusions,
+            author_hint=str(prompt_analysis.get("author_hint") or ""),
+        ),
+        prompt_analysis=safe_prompt_analysis,
+        fallback_query=primary_query,
         target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
-        exclusion_ids=exclusions,
-        author_hint=str(prompt_analysis.get("author_hint") or ""),
     )
     payload: Dict[str, Any] = {
         "payload_version": PAYLOAD_VERSION,
@@ -2185,6 +2231,18 @@ def _rank_papers(
         for row in ranked
         if int(row["match"].get("score") or 0) > 0 or bool(row["match"].get("strong_title_match"))
     ]
+    seen_titles: set[str] = set()
+    for row in ranked:
+        normalized_title = _normalize_title(str(row["match"].get("title") or ""))
+        if not normalized_title:
+            continue
+        if normalized_title in seen_titles:
+            row["match"]["score"] = int(row["match"].get("score") or 0) - 18
+            components = dict(row["match"].get("score_components") or {})
+            components["duplicate_penalty"] = int(components.get("duplicate_penalty") or 0) - 18
+            row["match"]["score_components"] = components
+            continue
+        seen_titles.add(normalized_title)
     ranked.sort(
         key=lambda row: (
             bool(row["match"].get("exact_normalized_title_match")),
@@ -2340,6 +2398,7 @@ def _read_paper_sections_tool(
     evidence_items: List[Dict[str, Any]] = []
     section_counts: Dict[str, int] = {}
     discarded_noisy: Dict[str, int] = {}
+    unresolved_sections: List[str] = []
     normalized_sections = [
         str(section).strip()
         for section in list(requested_sections or _normalize_query_bundle(query_bundle).get("requested_sections") or [])
@@ -2367,6 +2426,13 @@ def _read_paper_sections_tool(
             section_counts[section] = section_counts.get(section, 0) + int(count or 0)
         for section, count in dict(paper_diagnostics.get("discarded_noisy_counts") or {}).items():
             discarded_noisy[section] = discarded_noisy.get(section, 0) + int(count or 0)
+        unresolved_sections.extend(
+            [
+                str(item.get("requested_section") or "")
+                for item in paper_evidence
+                if not bool(item.get("supports_section")) and str(item.get("requested_section") or "").strip()
+            ]
+        )
     return {
         "query": query,
         "targetTitle": target_title,
@@ -2379,9 +2445,10 @@ def _read_paper_sections_tool(
         "papers": material,
         "evidenceItems": evidence_items,
         "diagnostics": {
-            "supported_counts": section_counts,
-            "discarded_noisy_counts": discarded_noisy,
+            "selected_evidence_counts": section_counts,
+            "discarded_noisy_snippet_counts": discarded_noisy,
             "evidence_item_count": len(evidence_items),
+            "unresolved_sections": sorted({section for section in unresolved_sections if section}),
         },
     }
 
@@ -2731,7 +2798,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
         )
         evidence_items = raw_output.get("evidenceItems") if isinstance(raw_output.get("evidenceItems"), list) else []
         if tool_name == "read_paper_sections":
-            supported_counts = dict(raw_diagnostics.get("supported_counts") or {})
+            supported_counts = dict(raw_diagnostics.get("selected_evidence_counts") or {})
             supported_label = ", ".join(
                 f"{section.replace('_', ' ')} ({count})"
                 for section, count in supported_counts.items()
@@ -3023,18 +3090,26 @@ def _sentence_noise_score(sentence: str) -> int:
     score = 0
     if len(sentence) < 40:
         score += 2
+    if len(re.findall(r"\b[A-Za-z]{1,2}\b", sentence)) >= 6:
+        score += 1
     if len(re.findall(r"[A-Za-z]{1,3}\d", sentence)) > 2:
         score += 2
     if sentence.count("[") + sentence.count("]") > 2:
         score += 2
+    if sentence.count("(") + sentence.count(")") > 6:
+        score += 2
     if re.search(r"\b(ST|TT)\s*:", sentence):
         score += 4
+    if re.search(r"\[[A-Za-z0-9' -]{20,}\]", sentence):
+        score += 3
     if re.search(r"\([A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}", sentence):
         score += 2
     if len(re.findall(r"[^\x00-\x7F]", sentence)) > 12:
         score += 4
     if any(token in sentence for token in ("Example (", "Examples (", "Word-by-word translation")):
         score += 5
+    if sentence.count("/") >= 4:
+        score += 2
     return score
 
 
@@ -3138,6 +3213,13 @@ def _section_sentence_candidates(
         for sentence in _sentences(text):
             normalized_sentence = _normalize_space(sentence)
             if not normalized_sentence:
+                continue
+            word_count = len(re.findall(r"[A-Za-z0-9]+", normalized_sentence))
+            if word_count < 7:
+                diagnostics["discarded_noisy"] += 1
+                continue
+            if normalized_sentence.count(":") >= 2:
+                diagnostics["discarded_noisy"] += 1
                 continue
             noise_score = _sentence_noise_score(normalized_sentence)
             relevance_score = _sentence_relevance_score(normalized_sentence, keywords) + int(
@@ -3279,16 +3361,11 @@ def _requested_section_coverage(
     supported_items = _step_evidence_items(step_results)
     coverage: Dict[str, bool] = {}
     for section in requested_sections:
-        section_supported = any(
+        coverage[section] = any(
             bool(item.get("supports_section"))
             and str(item.get("requested_section") or "") == section
             for item in supported_items
         )
-        if section_supported:
-            coverage[section] = True
-            continue
-        papers = _step_papers(step_results)
-        coverage[section] = any(_paper_has_section_evidence(paper, section) for paper in papers)
     return coverage
 
 
@@ -3390,6 +3467,12 @@ def _build_verification_result(
         "section_coverage_map": section_coverage,
         "section_evidence_counts": section_evidence_counts,
         "thin_evidence": thin_evidence,
+        "diagnostics": {
+            "target_resolution": "matched" if target_resolved else "unresolved",
+            "selected_evidence_counts": section_evidence_counts,
+            "unresolved_sections": unresolved_sections,
+            "verification_warnings": warnings,
+        },
     }
 
 

@@ -148,7 +148,19 @@ function enforceAdaptiveCoreRubric(
   }
 
   const preferredOrder = fallbackCharts.map((chart) => chart.chart_key);
-  return dedupeChartsByKey(nextCharts)
+  const completedCharts = dedupeChartsByKey(nextCharts);
+  if (completedCharts.length < 4) {
+    for (const fallbackChart of fallbackCharts) {
+      if (completedCharts.some((entry) => entry.chart_key === fallbackChart.chart_key)) {
+        continue;
+      }
+      completedCharts.push(fallbackChart);
+      if (completedCharts.length >= 4) {
+        break;
+      }
+    }
+  }
+  return completedCharts
     .sort((left, right) => {
       const leftIndex = preferredOrder.indexOf(left.chart_key);
       const rightIndex = preferredOrder.indexOf(right.chart_key);
