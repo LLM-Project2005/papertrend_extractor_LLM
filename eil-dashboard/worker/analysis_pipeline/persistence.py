@@ -36,3 +36,15 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     except Exception as error:
         if not _is_missing_optional_relation(error):
             raise
+    try:
+        client.delete_rows_for_paper("paper_author_keywords", paper_id)
+        client.upsert_rows("paper_author_keywords", dataset.get("author_keywords", []))
+    except Exception as error:
+        if not _is_missing_optional_relation(error):
+            raise
+    try:
+        client.delete_rows_for_paper("paper_research_typologies", paper_id)
+        client.upsert_rows("paper_research_typologies", dataset.get("research_typologies", []))
+    except Exception as error:
+        if not _is_missing_optional_relation(error):
+            raise

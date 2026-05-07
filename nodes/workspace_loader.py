@@ -23,6 +23,8 @@ def load_workspace_data_node(state: WorkspaceQueryState) -> Dict[str, Any]:
         "papers_full": filtered.get("papers_full", []),
         "concept_rows": filtered.get("concepts", []),
         "facet_rows": filtered.get("facets", []),
+        "author_keyword_rows": filtered.get("authorKeywords", []),
+        "typology_rows": filtered.get("typologies", []),
         "errors": [],
         "status": "workspace_loaded",
     }

@@ -68,6 +68,11 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
         "message": "Inferring title and publication metadata",
         "detail": "Resolving the paper title, year, and key document metadata from the extracted content.",
     },
+    "author_keywords": {
+        "stage": "extracting_author_keywords",
+        "message": "Extracting author-provided keywords",
+        "detail": "Looking for explicit keyword lists supplied by the paper authors.",
+    },
     "mine_keywords": {
         "stage": "extracting_keywords",
         "message": "Extracting grounded keywords",
@@ -87,6 +92,11 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
         "stage": "classifying_tracks",
         "message": "Classifying research tracks",
         "detail": "Assigning the paper to the most relevant EL, ELI, LAE, or Other tracks.",
+    },
+    "classify_typology": {
+        "stage": "classifying_typology",
+        "message": "Classifying research typology",
+        "detail": "Assigning the paper to the EIL research typology groups.",
     },
     "extract_facets": {
         "stage": "extracting_facets",

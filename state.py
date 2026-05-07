@@ -85,6 +85,43 @@ class PaperFacetSchema(BaseModel):
     facets: List[PaperFacet]
 
 
+class AuthorProvidedKeyword(BaseModel):
+    keyword: str = Field(description="One keyword exactly from the author-provided keyword list.")
+    evidence: str = Field(description="Verbatim labeled keyword-list text that supports the extraction.")
+    source_section: str = Field(description="Where the labeled keyword list appears.")
+
+
+class AuthorProvidedKeywordSchema(BaseModel):
+    has_author_keywords: bool = Field(
+        description="True only when the paper contains an explicit author-provided keyword list."
+    )
+    keywords: List[AuthorProvidedKeyword] = Field(default_factory=list)
+
+
+class ResearchTypologySchema(BaseModel):
+    primary_group_number: Literal[1, 2, 3, 4]
+    primary_group_name: Literal[
+        "Descriptive & Explanatory",
+        "Pedagogical & Intervention",
+        "Assessment & Measurement",
+        "Policy, Sociolinguistic & Critical",
+    ]
+    secondary_group_number: Optional[Literal[1, 2, 3, 4]] = None
+    secondary_group_name: Optional[
+        Literal[
+            "Descriptive & Explanatory",
+            "Pedagogical & Intervention",
+            "Assessment & Measurement",
+            "Policy, Sociolinguistic & Critical",
+        ]
+    ] = None
+    stated_purpose: str = Field(description="Direct quote or close paraphrase of the stated aim.")
+    primary_contribution: str = Field(description="What the paper primarily adds to the field.")
+    group_match: str = Field(description="Why the primary group fits and any secondary group touched.")
+    boundary_rule: str = Field(description="Whether the Group 2/3 boundary rule was applied.")
+    verdict: str = Field(description="Final assignment and concise justification.")
+
+
 class QueryExpansionSchema(BaseModel):
     canonical_concept: str = Field(description="Best canonical concept label for the user query.")
     matched_terms: List[str] = Field(
@@ -171,6 +208,8 @@ class IngestionState(TypedDict, total=False):
     track_single: Dict[str, Any]
     track_multi: Dict[str, Any]
     analysis_facets: List[Dict[str, Any]]
+    author_keywords: List[Dict[str, Any]]
+    research_typology: Dict[str, Any]
     concept_rows: List[Dict[str, Any]]
     dataset: Dict[str, Any]
     errors: List[str]
@@ -199,6 +238,8 @@ class WorkspaceQueryState(TypedDict, total=False):
     papers_full: List[Dict[str, Any]]
     concept_rows: List[Dict[str, Any]]
     facet_rows: List[Dict[str, Any]]
+    author_keyword_rows: List[Dict[str, Any]]
+    typology_rows: List[Dict[str, Any]]
     keyword_search_result: Dict[str, Any]
     chat_result: Dict[str, Any]
     visualization_result: Dict[str, Any]

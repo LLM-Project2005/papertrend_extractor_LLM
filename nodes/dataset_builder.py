@@ -143,6 +143,52 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         if facet.get("label")
     ]
 
+    author_keywords = []
+    seen_author_keywords = set()
+    for index, keyword in enumerate(state.get("author_keywords") or [], start=1):
+        label = str(keyword.get("keyword") or "").strip()[:200]
+        if not label or label.lower() in seen_author_keywords:
+            continue
+        seen_author_keywords.add(label.lower())
+        author_keywords.append(
+            {
+                "paper_id": paper_id,
+                "owner_user_id": owner_user_id,
+                "folder_id": folder_id,
+                "keyword": label,
+                "normalized_keyword": label.lower(),
+                "evidence": str(keyword.get("evidence") or "")[:5000],
+                "source_section": str(keyword.get("source_section") or "unknown")[:100],
+                "position": index,
+            }
+        )
+
+    typology = state.get("research_typology") or {}
+    typology_rows = []
+    if typology.get("primary_group_number") and typology.get("primary_group_name"):
+        secondary_group_number = typology.get("secondary_group_number")
+        typology_rows.append(
+            {
+                "paper_id": paper_id,
+                "owner_user_id": owner_user_id,
+                "folder_id": folder_id,
+                "primary_group_number": int(typology.get("primary_group_number") or 0),
+                "primary_group_name": str(typology.get("primary_group_name") or "")[:120],
+                "secondary_group_number": int(secondary_group_number) if secondary_group_number else None,
+                "secondary_group_name": (
+                    str(typology.get("secondary_group_name") or "")[:120]
+                    if typology.get("secondary_group_name")
+                    else None
+                ),
+                "stated_purpose": str(typology.get("stated_purpose") or "")[:5000],
+                "primary_contribution": str(typology.get("primary_contribution") or "")[:5000],
+                "group_match": str(typology.get("group_match") or "")[:5000],
+                "boundary_rule": str(typology.get("boundary_rule") or "")[:5000],
+                "verdict": str(typology.get("verdict") or "")[:5000],
+                "classifier_source": str(typology.get("classifier_source") or "unknown")[:80],
+            }
+        )
+
     dataset = {
         "paper_id": paper_id,
         "papers": [{"id": paper_id, "year": year[:100], "title": title, "owner_user_id": owner_user_id, "folder_id": folder_id}],
@@ -168,11 +214,15 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         ],
         "keyword_concepts": concept_rows,
         "paper_facets": facets,
+        "author_keywords": author_keywords,
+        "research_typologies": typology_rows,
     }
 
     return {
         "paper_id": paper_id,
         "concept_rows": concept_rows,
+        "author_keywords": author_keywords,
+        "research_typology": typology,
         "dataset": dataset,
         "errors": [],
         "status": "dataset_ready",

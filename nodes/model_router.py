@@ -21,10 +21,12 @@ class ModelTask(str, Enum):
     SEGMENTATION = "SEGMENTATION"
     TRANSLATION = "TRANSLATION"
     METADATA = "METADATA"
+    AUTHOR_KEYWORD_EXTRACTION = "AUTHOR_KEYWORD_EXTRACTION"
     KEYWORD_EXTRACTION = "KEYWORD_EXTRACTION"
     KEYWORD_GROUPING = "KEYWORD_GROUPING"
     TOPIC_LABELING = "TOPIC_LABELING"
     TRACK_CLASSIFICATION = "TRACK_CLASSIFICATION"
+    RESEARCH_TYPOLOGY = "RESEARCH_TYPOLOGY"
     FACET_EXTRACTION = "FACET_EXTRACTION"
     QUERY_EXPANSION = "QUERY_EXPANSION"
     CHAT_SYNTHESIS = "CHAT_SYNTHESIS"
@@ -71,10 +73,12 @@ CONSERVATIVE_PRESET: Dict[ModelTask, TaskProfile] = {
     ModelTask.SEGMENTATION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.TRANSLATION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.METADATA: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
+    ModelTask.AUTHOR_KEYWORD_EXTRACTION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
     ModelTask.KEYWORD_EXTRACTION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.KEYWORD_GROUPING: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.TOPIC_LABELING: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.TRACK_CLASSIFICATION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
+    ModelTask.RESEARCH_TYPOLOGY: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.FACET_EXTRACTION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash-lite"),
     ModelTask.QUERY_EXPANSION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
     ModelTask.CHAT_SYNTHESIS: TaskProfile(primary="google/gemini-2.5-flash", fallback="openai/gpt-4.1-mini"),

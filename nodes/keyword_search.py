@@ -13,7 +13,11 @@ def _paper_lookup(rows: Sequence[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
     return {int(row.get("paper_id") or row.get("id")): row for row in rows if row.get("paper_id") or row.get("id")}
 
 
-def _build_catalog(concept_rows: Sequence[Dict[str, Any]], trends: Sequence[Dict[str, Any]]) -> List[str]:
+def _build_catalog(
+    concept_rows: Sequence[Dict[str, Any]],
+    trends: Sequence[Dict[str, Any]],
+    author_keyword_rows: Sequence[Dict[str, Any]] = (),
+) -> List[str]:
     terms = []
     for row in concept_rows:
         if row.get("concept_label"):
@@ -25,6 +29,9 @@ def _build_catalog(concept_rows: Sequence[Dict[str, Any]], trends: Sequence[Dict
             terms.append(str(row.get("keyword")))
         if row.get("topic"):
             terms.append(str(row.get("topic")))
+    for row in author_keyword_rows:
+        if row.get("keyword"):
+            terms.append(str(row.get("keyword")))
     deduped = []
     seen = set()
     for term in terms:
@@ -54,9 +61,12 @@ def _lexical_matches(query: str, catalog: Sequence[str]) -> List[str]:
 
 
 def _resolve_query_family(
-    query: str, concept_rows: Sequence[Dict[str, Any]], trends: Sequence[Dict[str, Any]]
+    query: str,
+    concept_rows: Sequence[Dict[str, Any]],
+    trends: Sequence[Dict[str, Any]],
+    author_keyword_rows: Sequence[Dict[str, Any]] = (),
 ) -> Dict[str, Any]:
-    catalog = _build_catalog(concept_rows, trends)
+    catalog = _build_catalog(concept_rows, trends, author_keyword_rows)
     lexical = _lexical_matches(query, catalog)
     if lexical:
         canonical = lexical[0]
@@ -132,10 +142,27 @@ def _collect_matching_trends(
     return results
 
 
+def _collect_matching_author_keywords(
+    resolved: Dict[str, Any], author_keyword_rows: Sequence[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    terms = {str(term).lower() for term in resolved.get("matched_terms") or []}
+    canonical = str(resolved.get("canonical_concept") or "").lower()
+    results = []
+    for row in author_keyword_rows:
+        haystack = {
+            str(row.get("keyword") or "").lower(),
+            str(row.get("normalized_keyword") or "").lower(),
+        }
+        if canonical in haystack or terms.intersection(haystack):
+            results.append(row)
+    return results
+
+
 def keyword_search_node(state: WorkspaceQueryState) -> Dict[str, Any]:
     query = (state.get("message") or state.get("search_query") or "").strip()
     filtered = state.get("filtered_data") or {}
     concept_rows = list(state.get("concept_rows") or [])
+    author_keyword_rows = list(filtered.get("authorKeywords") or state.get("author_keyword_rows") or [])
     trends = list(filtered.get("trends") or [])
     tracks_single = {
         int(row.get("paper_id")): row for row in (filtered.get("tracksSingle") or [])
@@ -168,11 +195,12 @@ def keyword_search_node(state: WorkspaceQueryState) -> Dict[str, Any]:
             "status": "keyword_search_ready",
         }
 
-    resolved = _resolve_query_family(query, concept_rows, trends)
+    resolved = _resolve_query_family(query, concept_rows, trends, author_keyword_rows)
     matched_concepts = _collect_matching_concepts(resolved, concept_rows)
     matched_trends = _collect_matching_trends(resolved, trends)
+    matched_author_keywords = _collect_matching_author_keywords(resolved, author_keyword_rows)
 
-    if not matched_concepts and not matched_trends:
+    if not matched_concepts and not matched_trends and not matched_author_keywords:
         return {
             "keyword_search_result": {
                 "canonicalConcept": resolved.get("canonical_concept") or query,
@@ -200,12 +228,15 @@ def keyword_search_node(state: WorkspaceQueryState) -> Dict[str, Any]:
         if row.get("paper_id")
     }
     paper_ids.update(int(row.get("paper_id")) for row in matched_trends if row.get("paper_id"))
+    paper_ids.update(int(row.get("paper_id")) for row in matched_author_keywords if row.get("paper_id"))
 
     paper_terms: Dict[int, set] = defaultdict(set)
     for row in matched_concepts:
         paper_terms[int(row.get("paper_id"))].add(str(row.get("concept_label") or ""))
         paper_terms[int(row.get("paper_id"))].update(str(term) for term in row.get("matched_terms") or [])
     for row in matched_trends:
+        paper_terms[int(row.get("paper_id"))].add(str(row.get("keyword") or ""))
+    for row in matched_author_keywords:
         paper_terms[int(row.get("paper_id"))].add(str(row.get("keyword") or ""))
 
     timeline_counter: Dict[str, Dict[str, Any]] = defaultdict(lambda: {"frequency": 0, "paper_ids": set()})
@@ -234,6 +265,20 @@ def keyword_search_node(state: WorkspaceQueryState) -> Dict[str, Any]:
                 "year": year,
                 "title": row.get("title", ""),
                 "section": "legacy",
+                "snippet": row.get("evidence", ""),
+            }
+        )
+    for row in matched_author_keywords:
+        paper_id = int(row.get("paper_id"))
+        year = str(row.get("year") or papers_lookup.get(paper_id, {}).get("year") or "Unknown")
+        timeline_counter[year]["frequency"] += 1
+        timeline_counter[year]["paper_ids"].add(paper_id)
+        evidence_rows.append(
+            {
+                "paperId": paper_id,
+                "year": year,
+                "title": row.get("title") or papers_lookup.get(paper_id, {}).get("title", ""),
+                "section": row.get("source_section") or "author_keywords",
                 "snippet": row.get("evidence", ""),
             }
         )

@@ -262,6 +262,42 @@ CREATE TABLE IF NOT EXISTS paper_analysis_facets (
 );
 
 -- ------------------------------------------------------------------
+-- 8b. Author-provided keywords
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_author_keywords (
+  id                 BIGSERIAL PRIMARY KEY,
+  paper_id           BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id      UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  folder_id          UUID,
+  keyword            TEXT NOT NULL,
+  normalized_keyword TEXT NOT NULL,
+  evidence           TEXT,
+  source_section     TEXT,
+  position           INT NOT NULL DEFAULT 1,
+  created_at         TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 8c. Research typology classification
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_research_typologies (
+  paper_id              BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id         UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  folder_id             UUID,
+  primary_group_number  SMALLINT NOT NULL CHECK (primary_group_number BETWEEN 1 AND 4),
+  primary_group_name    TEXT NOT NULL,
+  secondary_group_number SMALLINT CHECK (secondary_group_number BETWEEN 1 AND 4),
+  secondary_group_name  TEXT,
+  stated_purpose        TEXT,
+  primary_contribution  TEXT,
+  group_match           TEXT,
+  boundary_rule         TEXT,
+  verdict               TEXT,
+  classifier_source     TEXT,
+  created_at            TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
 -- 9. Workspace threads and research sessions
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS workspace_threads (
@@ -366,6 +402,26 @@ ALTER TABLE paper_analysis_facets
   ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   ADD COLUMN IF NOT EXISTS folder_id UUID;
 
+ALTER TABLE paper_author_keywords
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS normalized_keyword TEXT,
+  ADD COLUMN IF NOT EXISTS evidence TEXT,
+  ADD COLUMN IF NOT EXISTS source_section TEXT,
+  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1;
+
+ALTER TABLE paper_research_typologies
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS secondary_group_number SMALLINT,
+  ADD COLUMN IF NOT EXISTS secondary_group_name TEXT,
+  ADD COLUMN IF NOT EXISTS stated_purpose TEXT,
+  ADD COLUMN IF NOT EXISTS primary_contribution TEXT,
+  ADD COLUMN IF NOT EXISTS group_match TEXT,
+  ADD COLUMN IF NOT EXISTS boundary_rule TEXT,
+  ADD COLUMN IF NOT EXISTS verdict TEXT,
+  ADD COLUMN IF NOT EXISTS classifier_source TEXT;
+
 DO $$
 BEGIN
   ALTER TABLE papers
@@ -466,6 +522,26 @@ EXCEPTION
     NULL;
 END $$;
 
+DO $$
+BEGIN
+  ALTER TABLE paper_author_keywords
+    ADD CONSTRAINT paper_author_keywords_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_research_typologies
+    ADD CONSTRAINT paper_research_typologies_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
 -- ------------------------------------------------------------------
 -- INDEXES
 -- ------------------------------------------------------------------
@@ -506,6 +582,13 @@ CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_paper_id ON paper_analysis_
 CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_owner_user_id ON paper_analysis_facets(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_folder_id ON paper_analysis_facets(folder_id);
 CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_type ON paper_analysis_facets(facet_type);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_paper_id ON paper_author_keywords(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_owner_user_id ON paper_author_keywords(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_folder_id ON paper_author_keywords(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_keyword ON paper_author_keywords(normalized_keyword);
+CREATE INDEX IF NOT EXISTS idx_paper_research_typologies_owner_user_id ON paper_research_typologies(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_research_typologies_folder_id ON paper_research_typologies(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_research_typologies_primary ON paper_research_typologies(primary_group_number);
 CREATE INDEX IF NOT EXISTS idx_workspace_threads_owner_user_id ON workspace_threads(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_threads_folder_id ON workspace_threads(folder_id);
 CREATE INDEX IF NOT EXISTS idx_workspace_messages_thread_id ON workspace_messages(thread_id);
@@ -543,6 +626,8 @@ ALTER TABLE ingestion_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE folder_analysis_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_keyword_concepts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_analysis_facets ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_author_keywords ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_research_typologies ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_threads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workspace_messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE deep_research_sessions ENABLE ROW LEVEL SECURITY;
@@ -555,6 +640,8 @@ DROP POLICY IF EXISTS "anon_read" ON paper_tracks_multi;
 DROP POLICY IF EXISTS "anon_read" ON paper_content;
 DROP POLICY IF EXISTS "anon_read" ON paper_keyword_concepts;
 DROP POLICY IF EXISTS "anon_read" ON paper_analysis_facets;
+DROP POLICY IF EXISTS "anon_read" ON paper_author_keywords;
+DROP POLICY IF EXISTS "anon_read" ON paper_research_typologies;
 
 DO $$
 BEGIN
@@ -711,6 +798,24 @@ END $$;
 DO $$
 BEGIN
   CREATE POLICY "paper_analysis_facets_select_own" ON paper_analysis_facets
+  FOR SELECT USING (auth.uid() = owner_user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "paper_author_keywords_select_own" ON paper_author_keywords
+  FOR SELECT USING (auth.uid() = owner_user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "paper_research_typologies_select_own" ON paper_research_typologies
   FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN
@@ -1015,3 +1120,45 @@ SELECT
   paf.evidence
 FROM papers p
 JOIN paper_analysis_facets paf ON paf.paper_id = p.id;
+
+DROP VIEW IF EXISTS author_keywords_flat;
+CREATE VIEW author_keywords_flat WITH (security_invoker = true) AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.title,
+  pak.keyword,
+  pak.normalized_keyword,
+  pak.evidence,
+  pak.source_section,
+  pak.position,
+  ts.el,
+  ts.eli,
+  ts.lae,
+  ts.other
+FROM papers p
+JOIN paper_author_keywords pak ON pak.paper_id = p.id
+LEFT JOIN paper_tracks_single ts ON ts.paper_id = p.id;
+
+DROP VIEW IF EXISTS research_typologies_flat;
+CREATE VIEW research_typologies_flat WITH (security_invoker = true) AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.title,
+  prt.primary_group_number,
+  prt.primary_group_name,
+  prt.secondary_group_number,
+  prt.secondary_group_name,
+  prt.stated_purpose,
+  prt.primary_contribution,
+  prt.group_match,
+  prt.boundary_rule,
+  prt.verdict,
+  prt.classifier_source
+FROM papers p
+JOIN paper_research_typologies prt ON prt.paper_id = p.id;

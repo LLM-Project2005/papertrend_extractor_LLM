@@ -71,6 +71,8 @@ export function getRunStageMessage(run: RunLike): string {
       return "Structuring paper sections";
     case "inferring_metadata":
       return "Inferring title and publication metadata";
+    case "extracting_author_keywords":
+      return "Extracting author-provided keywords";
     case "extracting_keywords":
       return "Extracting grounded keywords";
     case "grouping_topics":
@@ -79,6 +81,8 @@ export function getRunStageMessage(run: RunLike): string {
       return "Labeling topic trends";
     case "classifying_tracks":
       return "Classifying research tracks";
+    case "classifying_typology":
+      return "Classifying research typology";
     case "extracting_facets":
       return "Extracting research facets";
     case "building_dataset":
