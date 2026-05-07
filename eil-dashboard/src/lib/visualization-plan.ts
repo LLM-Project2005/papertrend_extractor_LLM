@@ -148,7 +148,19 @@ function enforceAdaptiveCoreRubric(
   }
 
   const preferredOrder = fallbackCharts.map((chart) => chart.chart_key);
-  return dedupeChartsByKey(nextCharts)
+  const completedCharts = dedupeChartsByKey(nextCharts);
+  if (completedCharts.length < 4) {
+    for (const fallbackChart of fallbackCharts) {
+      if (completedCharts.some((entry) => entry.chart_key === fallbackChart.chart_key)) {
+        continue;
+      }
+      completedCharts.push(fallbackChart);
+      if (completedCharts.length >= 4) {
+        break;
+      }
+    }
+  }
+  return completedCharts
     .sort((left, right) => {
       const leftIndex = preferredOrder.indexOf(left.chart_key);
       const rightIndex = preferredOrder.indexOf(right.chart_key);
@@ -168,25 +180,29 @@ function buildAdaptiveSection(
     {
       chart_key: "adaptive_topic_momentum",
       title: "Canonical topic momentum",
-      reason: "Shows which normalized topics actually carry the corpus over time.",
+      reason:
+        "Selected to answer the time-evolution question: which canonical topics sustain or lose momentum across publication years under the current filters.",
       config: { top_n: 6 },
     },
     {
       chart_key: "adaptive_emerging_topics",
       title: "Emerging and declining canonical topics",
-      reason: "Makes directional change easier to read than a flat topic table.",
+      reason:
+        "Selected to prioritize directional signal over volume: highlights topics with the clearest positive or negative shift between earlier and later periods.",
       config: { top_n: 8 },
     },
     {
       chart_key: "adaptive_keyword_family_heatmap",
       title: "Keyword family heatmap",
-      reason: "Shows where the strongest normalized topic families actually concentrate over time.",
+      reason:
+        "Selected for density inspection: reveals when high-frequency keyword families concentrate or fragment, which is hard to see in line/bar views.",
       config: { heat_n: 10 },
     },
     {
       chart_key: "adaptive_track_topic_comparison",
       title: "Track-to-topic comparison",
-      reason: "Connects the strongest normalized topics back to the current track mix.",
+      reason:
+        "Selected to answer alignment questions: compares how leading topics distribute across tracks so program-level emphasis differences are visible.",
       config: { top_n: 6, selected_tracks: selectedTracks },
     },
   ];
@@ -195,7 +211,8 @@ function buildAdaptiveSection(
     charts.push({
       chart_key: "adaptive_folder_topic_comparison",
       title: "Cross-folder topic comparison",
-      reason: "Highlights how the selected folders diverge or align on normalized topic families.",
+      reason:
+        "Selected for scope comparison: tests whether folder-level corpora converge on the same themes or diverge in research focus.",
       config: { top_n: 6 },
     });
   }

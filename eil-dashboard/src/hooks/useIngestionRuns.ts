@@ -21,6 +21,7 @@ export function useIngestionRuns({
   const [loading, setLoading] = useState(enabled);
   const [error, setError] = useState<string | null>(null);
   const [adminSecret, setAdminSecret] = useState("");
+  const [pollingPausedForAuth, setPollingPausedForAuth] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -51,6 +52,11 @@ export function useIngestionRuns({
       return;
     }
 
+    if (pollingPausedForAuth) {
+      setLoading(false);
+      return;
+    }
+
     if (!requestHeaders) {
       setRuns([]);
       setFolderJob(null);
@@ -74,6 +80,9 @@ export function useIngestionRuns({
       };
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          setPollingPausedForAuth(true);
+        }
         throw new Error(payload.error ?? "Failed to load ingestion runs.");
       }
 
@@ -89,7 +98,12 @@ export function useIngestionRuns({
     } finally {
       setLoading(false);
     }
-  }, [enabled, folderJobId, requestHeaders]);
+  }, [enabled, folderJobId, pollingPausedForAuth, requestHeaders]);
+
+  useEffect(() => {
+    // Resume polling after credentials rotate (e.g. session refresh / login).
+    setPollingPausedForAuth(false);
+  }, [requestHeaders]);
 
   const cancelRuns = useCallback(
     async (runIds: string[]) => {
@@ -308,7 +322,7 @@ export function useIngestionRuns({
   }, [refresh]);
 
   useEffect(() => {
-    if (!enabled || !requestHeaders) {
+    if (!enabled || !requestHeaders || pollingPausedForAuth) {
       return;
     }
 
@@ -317,7 +331,7 @@ export function useIngestionRuns({
     }, pollIntervalMs);
 
     return () => window.clearInterval(interval);
-  }, [enabled, pollIntervalMs, refresh, requestHeaders]);
+  }, [enabled, pollIntervalMs, pollingPausedForAuth, refresh, requestHeaders]);
 
   return {
     runs,

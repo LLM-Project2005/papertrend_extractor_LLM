@@ -27,6 +27,8 @@ const TAB_DEFINITIONS = [
 ] as const;
 
 const ADAPTIVE_PLAN_CACHE_PREFIX = "adaptive-plan-cache:v1";
+const ADAPTIVE_SIGNATURE_SAMPLE_SIZE = 1200;
+const ADAPTIVE_RENDER_ROW_LIMIT = 10000;
 
 function stableSerialize(value: unknown): string {
   if (Array.isArray(value)) {
@@ -160,28 +162,49 @@ export default function DashboardClient({
     plan: VisualizationPlan;
     source: "agent" | "fallback";
   } | null>(null);
+  const previousAllYearsRef = useRef<string[]>([]);
   const lastPlanSignatureRef = useRef<string | null>(null);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
 
   useEffect(() => {
+    const previousAllYears = previousAllYearsRef.current;
+    const previousAllYearSet = new Set(previousAllYears);
+    const hadAllYearsSelectedPreviously =
+      previousAllYears.length > 0 &&
+      selectedYears.length === previousAllYears.length &&
+      selectedYears.every((year) => previousAllYearSet.has(year));
+
     if (allYears.length === 0) {
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     if (selectedYears.length === 0) {
       setSelectedYears(allYears);
+      previousAllYearsRef.current = allYears;
+      return;
+    }
+
+    if (hadAllYearsSelectedPreviously) {
+      setSelectedYears(allYears);
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     const nextYears = selectedYears.filter((year) => allYears.includes(year));
     if (nextYears.length === 0) {
       setSelectedYears(allYears);
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     if (nextYears.length !== selectedYears.length) {
       setSelectedYears(nextYears);
+      previousAllYearsRef.current = allYears;
+      return;
     }
+
+    previousAllYearsRef.current = allYears;
   }, [allYears, selectedYears, setSelectedYears]);
 
   const currentTabKey = useMemo(() => {
@@ -191,6 +214,7 @@ export default function DashboardClient({
     }
     return "overview";
   }, [searchParams]);
+  const isAdaptiveTab = currentTabKey === "adaptive";
 
   useEffect(() => {
     const tabParam = normalizeTabKey(searchParams.get("tab"));
@@ -250,9 +274,16 @@ export default function DashboardClient({
   }, [data, searchQuery, selectedTracks, selectedYears]);
 
   const adaptivePlanSignature = useMemo(() => {
-    if (!data) {
+    if (!data || !isAdaptiveTab) {
       return null;
     }
+
+    const sampledTrends = filteredData.trends.slice(0, ADAPTIVE_SIGNATURE_SAMPLE_SIZE);
+    const sampledTracksSingle = filteredData.tracksSingle.slice(
+      0,
+      ADAPTIVE_SIGNATURE_SAMPLE_SIZE
+    );
+    const sampledTopicFamilies = (filteredData.topicFamilies ?? []).slice(0, 200);
 
     return stableSerialize({
       projectId: selectedProjectId ?? "all",
@@ -262,7 +293,10 @@ export default function DashboardClient({
       selectedYears: [...selectedYears].sort(),
       selectedTracks: [...selectedTracks].sort(),
       searchQuery: searchQuery.trim(),
-      trendRows: filteredData.trends.map((row) => ({
+      trendRowCount: filteredData.trends.length,
+      tracksSingleRowCount: filteredData.tracksSingle.length,
+      topicFamilyCount: filteredData.topicFamilies?.length ?? 0,
+      trendRows: sampledTrends.map((row) => ({
         paper_id: row.paper_id,
         folder_id: row.folder_id ?? null,
         year: row.year,
@@ -270,14 +304,14 @@ export default function DashboardClient({
         keyword: row.keyword,
         keyword_frequency: row.keyword_frequency,
       })),
-      topicFamilies: (filteredData.topicFamilies ?? []).map((family) => ({
+      topicFamilies: sampledTopicFamilies.map((family) => ({
         id: family.id,
         canonicalTopic: family.canonicalTopic,
         aliases: [...family.aliases].sort(),
         totalKeywordFrequency: family.totalKeywordFrequency,
         paperIds: [...family.paperIds].sort(),
       })),
-      tracksSingle: filteredData.tracksSingle.map((row) => ({
+      tracksSingle: sampledTracksSingle.map((row) => ({
         paper_id: row.paper_id,
         year: row.year,
         el: row.el,
@@ -292,6 +326,7 @@ export default function DashboardClient({
     filteredData.tracksSingle,
     filteredData.trends,
     searchQuery,
+    isAdaptiveTab,
     selectedFolderIds,
     selectedProjectId,
     selectedTracks,
@@ -299,7 +334,7 @@ export default function DashboardClient({
   ]);
 
   useEffect(() => {
-    if (!data || selectedYears.length === 0 || !adaptivePlanSignature) {
+    if (!isAdaptiveTab || !data || selectedYears.length === 0 || !adaptivePlanSignature) {
       return;
     }
 
@@ -325,7 +360,7 @@ export default function DashboardClient({
           plan?: VisualizationPlan;
           source?: "agent" | "fallback";
         };
-        if (parsed.plan) {
+        if (parsed.plan && lastPlanSignatureRef.current !== adaptivePlanSignature) {
           setPlanState({
             plan: parsed.plan,
             source: parsed.source ?? "agent",
@@ -338,8 +373,9 @@ export default function DashboardClient({
       // Ignore cache parsing issues and rebuild below.
     }
 
-    if (lastPlanSignatureRef.current !== adaptivePlanSignature || !planState) {
-      setPlanState((current) => current ?? { plan: fallbackPlan, source: "fallback" });
+    if (lastPlanSignatureRef.current !== adaptivePlanSignature) {
+      lastPlanSignatureRef.current = adaptivePlanSignature;
+      setPlanState({ plan: fallbackPlan, source: "fallback" });
     }
 
     const timer = window.setTimeout(async () => {
@@ -393,10 +429,10 @@ export default function DashboardClient({
       window.clearTimeout(timer);
     };
   }, [
+    isAdaptiveTab,
     data,
     adaptivePlanSignature,
     folders.length,
-    planState,
     searchQuery,
     selectedFolderIds,
     selectedProjectId,
@@ -404,6 +440,22 @@ export default function DashboardClient({
     selectedYears,
     session?.access_token,
   ]);
+
+  const adaptiveRenderData = useMemo(
+    () => ({
+      trends: filteredData.trends.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
+      tracksSingle: filteredData.tracksSingle.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
+      tracksMulti: filteredData.tracksMulti.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
+      topicFamilies: (filteredData.topicFamilies ?? []).slice(0, 300),
+    }),
+    [
+      filteredData.topicFamilies,
+      filteredData.tracksMulti,
+      filteredData.tracksSingle,
+      filteredData.trends,
+    ]
+  );
+  const adaptiveSection = planState?.plan.sections[0] ?? null;
 
   if (loading && !data) {
     return (
@@ -417,8 +469,6 @@ export default function DashboardClient({
       </div>
     );
   }
-
-  const adaptiveSection = planState?.plan.sections[0] ?? null;
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
@@ -651,12 +701,20 @@ export default function DashboardClient({
               selectedTracks={selectedTracks}
             />
           ) : null}
-          {currentTabKey === "adaptive" && adaptiveSection ? (
-            <AdaptiveDashboardTab
-              data={filteredData}
-              adaptiveSection={adaptiveSection}
-              folderNamesById={folderNamesById}
-            />
+          {currentTabKey === "adaptive" ? (
+            adaptiveSection ? (
+              <AdaptiveDashboardTab
+                data={adaptiveRenderData}
+                adaptiveSection={adaptiveSection}
+                folderNamesById={folderNamesById}
+              />
+            ) : (
+              <section className="app-surface px-5 py-5">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Preparing adaptive charts for the current scope...
+                </p>
+              </section>
+            )
           ) : null}
         </section>
       </div>

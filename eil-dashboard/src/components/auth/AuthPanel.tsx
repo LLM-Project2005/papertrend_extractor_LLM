@@ -50,7 +50,13 @@ export default function AuthPanel({
     try {
       await signInWithProvider(provider);
     } catch (signInError) {
-      setError(signInError instanceof Error ? signInError.message : "Sign-in failed.");
+      const message =
+        signInError instanceof Error ? signInError.message : "Sign-in failed.";
+      setError(
+        /timed out/i.test(message)
+          ? "Sign-in timed out while contacting Supabase. Please retry. If this keeps happening, the Supabase auth service or redirect configuration needs attention."
+          : message
+      );
       setBusy(false);
     }
   }

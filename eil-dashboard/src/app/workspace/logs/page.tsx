@@ -4,7 +4,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import { buildWorkspacePath } from "@/lib/workspace-routes";
 import {
   AttachmentIcon,
   CloseIcon,
@@ -164,7 +163,7 @@ function subtitleOf(run: IngestionRunRow) {
 
 export default function WorkspaceLogsPage() {
   const { session } = useAuth();
-  const { currentOrganization, currentProject, profile, updateProfile } = useWorkspaceProfile();
+  const { currentProject, profile, updateProfile } = useWorkspaceProfile();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -255,16 +254,6 @@ export default function WorkspaceLogsPage() {
   );
   const groups = useMemo(() => buildHistoryGroups(visibleRuns), [visibleRuns]);
   const hiddenCount = hiddenIds.size;
-  const libraryPathBase = useMemo(
-    () =>
-      buildWorkspacePath({
-        organizationId: currentOrganization?.id ?? null,
-        projectId: currentProject?.id ?? null,
-        projectName: currentProject?.name ?? null,
-        section: "library",
-      }),
-    [currentOrganization?.id, currentProject?.id, currentProject?.name]
-  );
 
   function dismissRun(runId: string) {
     setHiddenIds((current) => {
@@ -420,7 +409,7 @@ export default function WorkspaceLogsPage() {
                             </span>
                           ) : (
                             <Link
-                              href={`${libraryPathBase}?runId=${encodeURIComponent(run.id)}`}
+                              href={`/workspace/library?runId=${encodeURIComponent(run.id)}`}
                               className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:text-[#d6d6d6] dark:hover:border-[#3a3a3a] dark:hover:text-[#f2f2f2]"
                             >
                               <AttachmentIcon className="h-4 w-4" />

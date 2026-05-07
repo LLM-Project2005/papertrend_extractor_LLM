@@ -18,18 +18,13 @@ import {
 } from "@/components/ui/Icons";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
 import { persistWorkspaceRoute } from "@/lib/workspace-session";
-import {
-  buildWorkspacePath,
-  getWorkspaceSectionFromPathname,
-  type WorkspaceSection,
-} from "@/lib/workspace-routes";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
 import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 
 type WorkspaceNavItem = {
-  section: WorkspaceSection;
+  href: string;
   label: string;
   icon: (props: { className?: string }) => JSX.Element;
 };
@@ -45,27 +40,27 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     id: "overview",
     label: "Overview",
     items: [
-      { section: "home", label: "Project Overview", icon: HomeIcon },
-      { section: "dashboard", label: "Dashboard", icon: ChartIcon },
+      { href: "/workspace/home", label: "Project Overview", icon: HomeIcon },
+      { href: "/workspace/dashboard", label: "Dashboard", icon: ChartIcon },
     ],
   },
   {
     id: "workspace",
     label: "Workspace",
     items: [
-      { section: "chat", label: "Chat", icon: ChatIcon },
-      { section: "library", label: "Library", icon: FolderIcon },
-      { section: "logs", label: "History", icon: FileIcon },
+      { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
+      { href: "/workspace/library", label: "Library", icon: FolderIcon },
+      { href: "/workspace/logs", label: "History", icon: FileIcon },
     ],
   },
   {
     id: "settings",
     label: "Settings",
-    items: [{ section: "settings", label: "Settings", icon: SettingsIcon }],
+    items: [{ href: "/workspace/settings", label: "Settings", icon: SettingsIcon }],
   },
 ];
 
-const SEARCH_PAGE_ITEM_TEMPLATES = [
+const SEARCH_PAGE_ITEMS = [
   {
     id: "organizations",
     label: "Start page",
@@ -79,7 +74,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "project-overview",
     label: "Project Overview",
     description: "Open the project home and status view",
-    section: "home" as const,
+    href: "/workspace/home",
     icon: HomeIcon,
     keywords: ["overview", "home", "project"],
     featured: true,
@@ -88,7 +83,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "dashboard",
     label: "Dashboard",
     description: "Open research trends and analytics",
-    section: "dashboard" as const,
+    href: "/workspace/dashboard",
     icon: ChartIcon,
     keywords: ["analytics", "trends", "insights"],
     featured: true,
@@ -97,7 +92,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "chat",
     label: "Chat",
     description: "Open grounded research chat",
-    section: "chat" as const,
+    href: "/workspace/chat",
     icon: ChatIcon,
     keywords: ["assistant", "conversation", "qa"],
     featured: true,
@@ -106,7 +101,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "library",
     label: "Library",
     description: "Manage files, imports, and analyzed papers",
-    section: "library" as const,
+    href: "/workspace/library",
     icon: FolderIcon,
     keywords: ["papers", "files", "imports", "documents"],
     featured: true,
@@ -115,7 +110,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "logs",
     label: "Analysis History",
     description: "Browse previous analysis runs and revisit files",
-    section: "logs" as const,
+    href: "/workspace/logs",
     icon: FileIcon,
     keywords: ["history", "analysis", "jobs", "processing"],
     featured: true,
@@ -124,7 +119,7 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "settings",
     label: "Settings",
     description: "Adjust workspace preferences and identity",
-    section: "settings" as const,
+    href: "/workspace/settings",
     icon: SettingsIcon,
     keywords: ["preferences", "configuration"],
   },
@@ -132,26 +127,27 @@ const SEARCH_PAGE_ITEM_TEMPLATES = [
     id: "profile",
     label: "Profile",
     description: "Manage your account details",
-    section: "profile" as const,
+    href: "/workspace/profile",
     icon: UserIcon,
     keywords: ["account", "user"],
   },
 ];
 
+const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
+
 function WorkspaceBreadcrumb({
   organizationName,
-  organizationId,
   projectName,
 }: {
   organizationName: string;
-  organizationId: string | null;
   projectName: string;
 }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
-          href={organizationId ? `/organizations/${organizationId}/projects` : "/organizations"}
+          href="/organizations"
+          prefetch={false}
           className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
           {organizationName || "Organizations"}
@@ -165,48 +161,32 @@ function WorkspaceBreadcrumb({
   );
 }
 
-function DesktopSidebar({
-  currentSection,
-  organizationId,
-  projectId,
-  projectName,
-}: {
-  currentSection: WorkspaceSection;
-  organizationId: string | null;
-  projectId: string | null;
-  projectName: string | null;
-}) {
+function DesktopSidebar({ pathname }: { pathname: string }) {
   return (
-    <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-[#262626] bg-[#111111] transition-[width] duration-200 ease-out hover:w-[220px] lg:block">
+    <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[220px] dark:border-[#222222] dark:bg-[#0f0f10] lg:block">
       <div className="flex h-full flex-col py-3">
         <nav className="flex-1 overflow-y-auto px-2">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.id}
-              className={sectionIndex === 0 ? "" : "mt-4 border-t border-[#222222] pt-4"}
+              className={sectionIndex === 0 ? "" : "mt-4 border-t border-slate-200 pt-4 dark:border-[#222222]"}
             >
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#5f5f5f] opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
                 {section.items.map((item) => {
-                  const href = buildWorkspacePath({
-                    organizationId,
-                    projectId,
-                    projectName,
-                    section: item.section,
-                  });
-                  const isActive = currentSection === item.section;
+                  const isActive = pathname.startsWith(item.href);
                   const Icon = item.icon;
 
                   return (
                     <Link
-                      key={item.section}
-                      href={href}
+                      key={item.href}
+                      href={item.href}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
-                          ? "bg-[#2b2b2b] text-white"
-                          : "text-[#8e8e8e] hover:bg-[#1a1a1a] hover:text-white"
+                          ? "bg-slate-900 text-white dark:bg-[#262626]"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
                       }`}
                     >
                       <Icon className="h-[18px] w-[18px] flex-none" />
@@ -226,23 +206,19 @@ function DesktopSidebar({
 }
 
 function MobileSidebar({
-  currentSection,
+  pathname,
   organizationName,
-  organizationId,
   projectName,
-  projectId,
   onClose,
 }: {
-  currentSection: WorkspaceSection;
+  pathname: string;
   organizationName: string;
-  organizationId: string | null;
   projectName: string;
-  projectId: string | null;
   onClose: () => void;
 }) {
   return (
-    <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-[#262626] bg-[#111111]">
-      <div className="sticky top-0 border-b border-[#262626] bg-[#111111] px-4 py-4">
+    <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#222222] dark:bg-[#0f0f10]">
+      <div className="sticky top-0 border-b border-slate-200 bg-white px-4 py-4 dark:border-[#222222] dark:bg-[#0f0f10]">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white">
@@ -250,14 +226,13 @@ function MobileSidebar({
             </span>
             <WorkspaceBreadcrumb
               organizationName={organizationName}
-              organizationId={organizationId}
               projectName={projectName}
             />
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#303030] bg-[#181818] text-[#d0d0d0]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#303030] dark:bg-[#181818] dark:text-[#d0d0d0]"
             aria-label="Close workspace navigation"
           >
             <CloseIcon className="h-4 w-4" />
@@ -268,29 +243,23 @@ function MobileSidebar({
       <nav className="space-y-4 px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.id}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#5f5f5f]">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#5f5f5f]">
               {section.label}
             </p>
             <div className="mt-2 space-y-1">
               {section.items.map((item) => {
-                const href = buildWorkspacePath({
-                  organizationId,
-                  projectId,
-                  projectName,
-                  section: item.section,
-                });
-                const isActive = currentSection === item.section;
+                const isActive = pathname.startsWith(item.href);
                 const Icon = item.icon;
 
                 return (
                   <Link
-                    key={item.section}
-                    href={href}
+                    key={item.href}
+                    href={item.href}
                     onClick={onClose}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        ? "bg-[#2b2b2b] text-white"
-                        : "text-[#c7c7c7] hover:bg-[#1a1a1a] hover:text-white"
+                        ? "bg-slate-900 text-white dark:bg-[#262626]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
                     }`}
                   >
                     <Icon className="h-4 w-4 flex-none" />
@@ -321,22 +290,8 @@ export default function WorkspaceShell({
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const currentSection = getWorkspaceSectionFromPathname(pathname);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const isChatPage = currentSection === "chat";
-  const searchPageItems = SEARCH_PAGE_ITEM_TEMPLATES.map((item) => ({
-    ...item,
-    href:
-      "section" in item
-        ? buildWorkspacePath({
-            organizationId: currentOrganization?.id ?? null,
-            projectId: currentProject?.id ?? null,
-            projectName: currentProject?.name ?? null,
-            section: item.section,
-          })
-        : item.href,
-  }));
-  const allNavSections = NAV_SECTIONS.flatMap((section) => section.items);
+  const isChatPage = pathname.startsWith("/workspace/chat");
   const {
     runs,
     folderJob,
@@ -441,35 +396,28 @@ export default function WorkspaceShell({
   }
 
   return (
-    <div className="min-h-screen bg-[#171717] text-slate-100">
-      <DesktopSidebar
-        currentSection={currentSection}
-        organizationId={currentOrganization?.id ?? null}
-        projectId={currentProject?.id ?? null}
-        projectName={currentProject?.name ?? null}
-      />
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#111214] dark:text-slate-100">
+      <DesktopSidebar pathname={pathname} />
 
       {sidebarOpen ? (
         <div className="fixed inset-0 z-50 bg-black/45 lg:hidden">
           <MobileSidebar
-            currentSection={currentSection}
+            pathname={pathname}
             organizationName={currentOrganization?.name ?? ""}
-            organizationId={currentOrganization?.id ?? null}
             projectName={currentProject?.name ?? ""}
-            projectId={currentProject?.id ?? null}
             onClose={() => setSidebarOpen(false)}
           />
         </div>
       ) : null}
 
       <div className="min-h-screen lg:pl-[60px]">
-        <header className="sticky top-0 z-40 border-b border-[#262626] bg-[#111111]/95 backdrop-blur">
+        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#222222] dark:bg-[#0f0f10]/95">
           <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#303030] bg-[#181818] text-[#d0d0d0] lg:hidden"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#303030] dark:bg-[#181818] dark:text-[#d0d0d0] lg:hidden"
                 aria-label="Open workspace navigation"
               >
                 <MenuIcon className="h-4 w-4" />
@@ -485,13 +433,12 @@ export default function WorkspaceShell({
 
               <WorkspaceBreadcrumb
                 organizationName={currentOrganization?.name ?? ""}
-                organizationId={currentOrganization?.id ?? null}
                 projectName={currentProject?.name ?? ""}
               />
             </div>
 
             <div className="order-3 w-full min-w-0 lg:order-2 lg:max-w-[560px] lg:flex-1">
-              <WorkspaceGlobalSearch pageItems={searchPageItems} />
+              <WorkspaceGlobalSearch pageItems={SEARCH_PAGE_ITEMS} />
             </div>
 
             <div className="ml-auto flex items-center gap-2 lg:order-3">
@@ -506,12 +453,12 @@ export default function WorkspaceShell({
             children
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
-              <div className="w-full rounded-[28px] border border-[#2c2c2c] bg-[#1b1b1b] px-8 py-10 text-center">
-                <p className="text-sm font-medium text-[#8f8f8f]">Workspace setup</p>
-                <h1 className="mt-3 text-3xl font-semibold text-white">
+              <div className="w-full rounded-[28px] border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#2c2c2c] dark:bg-[#1b1b1b]">
+                <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Workspace setup</p>
+                <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">
                   Select a project to open the workspace
                 </h1>
-                <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+                <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
                   Projects sit inside organizations. Pick one to continue into the
                   overview, dashboard, chat, library, and analysis history.
                 </p>
@@ -528,8 +475,8 @@ export default function WorkspaceShell({
 
         {analysisSession &&
         (analysisSession.minimized ||
-          !allNavSections.some((item) => currentSection === item.section) ||
-          currentSection !== "home") ? (
+          !ALL_NAV_ITEMS.some((item) => pathname.startsWith(item.href)) ||
+          pathname !== "/workspace/home") ? (
           <div className="fixed bottom-4 right-4 z-40 w-[min(360px,calc(100vw-2rem))]">
             <AnalysisStatusCard
               runs={activeRuns}

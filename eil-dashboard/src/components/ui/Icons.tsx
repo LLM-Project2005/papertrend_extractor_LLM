@@ -179,6 +179,19 @@ export function FilterIcon({ className }: IconProps) {
   );
 }
 
+export function EqualizerIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M6 5.5v13" />
+      <path d="M12 5.5v13" />
+      <path d="M18 5.5v13" />
+      <circle cx="6" cy="9" r="1.6" />
+      <circle cx="12" cy="14" r="1.6" />
+      <circle cx="18" cy="10.5" r="1.6" />
+    </BaseIcon>
+  );
+}
+
 export function SearchIcon({ className }: IconProps) {
   return (
     <BaseIcon className={className}>

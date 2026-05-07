@@ -13,9 +13,7 @@ export async function GET(request: Request) {
 
   try {
     const supabase = getSupabaseAdmin();
-    const { searchParams } = new URL(request.url);
-    const projectId = searchParams.get("projectId");
-    const threads = await listWorkspaceThreads(supabase, user.id, projectId);
+    const threads = await listWorkspaceThreads(supabase, user.id);
     return NextResponse.json({ threads });
   } catch (error) {
     return NextResponse.json(

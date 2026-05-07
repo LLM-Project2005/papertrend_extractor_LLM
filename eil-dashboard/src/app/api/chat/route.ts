@@ -9,11 +9,6 @@ import {
   replaceDeepResearchPlan,
   updateWorkspaceThread,
 } from "@/lib/chat-store";
-import {
-  buildDeterministicGroundedAnswer,
-  buildGroundedContext,
-  retrieveCorpusPapers,
-} from "@/lib/corpus";
 import { createChatCompletion } from "@/lib/openai";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -22,15 +17,21 @@ import type {
   ChatThreadDetail,
   DeepResearchSessionRecord,
 } from "@/types/research";
-
-export const runtime = "nodejs";
-
 interface Citation {
   paperId: number | string;
   title: string;
   year: string;
   href: string;
   reason: string;
+}
+
+interface ChatGenerationOptions {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxTokens?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
 }
 
 interface ChatRequestBody {
@@ -42,6 +43,14 @@ interface ChatRequestBody {
     type?: string;
     size?: number;
   }>;
+  generationParameters?: {
+    temperature?: number;
+    topP?: number;
+    topK?: number;
+    maxTokens?: number;
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+  };
   selectedYears?: string[];
   selectedTracks?: string[];
   searchQuery?: string;
@@ -64,6 +73,56 @@ function normalizeOptionalScopeId(value?: string | null) {
     return "";
   }
   return value.trim();
+}
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function resolveGenerationOptions(body: ChatRequestBody): ChatGenerationOptions {
+  const params =
+    body.generationParameters && typeof body.generationParameters === "object"
+      ? body.generationParameters
+      : {};
+
+  const temperature = toFiniteNumber(params.temperature);
+  const topP = toFiniteNumber(params.topP);
+  const topK = toFiniteNumber(params.topK);
+  const maxTokens = toFiniteNumber(params.maxTokens);
+  const frequencyPenalty = toFiniteNumber(params.frequencyPenalty);
+  const presencePenalty = toFiniteNumber(params.presencePenalty);
+
+  const options: ChatGenerationOptions = {};
+  if (temperature !== undefined) {
+    options.temperature = clampValue(temperature, 0, 2);
+  }
+  if (topP !== undefined) {
+    options.topP = clampValue(topP, 0, 1);
+  }
+  if (topK !== undefined) {
+    options.topK = Math.round(clampValue(topK, 0, 200));
+  }
+  if (maxTokens !== undefined) {
+    options.maxTokens = Math.round(clampValue(maxTokens, 64, 8192));
+  }
+  if (frequencyPenalty !== undefined) {
+    options.frequencyPenalty = clampValue(frequencyPenalty, -2, 2);
+  }
+  if (presencePenalty !== undefined) {
+    options.presencePenalty = clampValue(presencePenalty, -2, 2);
+  }
+  return options;
 }
 
 async function resolveReusableDeepResearchSessionId(
@@ -118,15 +177,14 @@ async function resolveReusableDeepResearchSessionId(
   return samePrompt && sameFolder && sameProject && sameRuns ? sessionId : undefined;
 }
 
-function buildFallbackAnswer(question: string, corpusError?: string): string {
+function buildFallbackAnswer(question: string, modelError?: string): string {
   const lines = [
-    "Broader guidance beyond the corpus:",
-    `I could not find a direct answer to "${question}" in the stored workspace paper data.`,
-    "A useful next step is to narrow the question by topic, year, track, folder, or a specific paper title so the answer can be grounded in the dataset.",
+    `I could not generate a full response right now for: "${question}".`,
+    "Please try again in a moment.",
   ];
 
-  if (corpusError) {
-    lines.push(`Corpus note: ${corpusError}`);
+  if (modelError) {
+    lines.push(`Model note: ${modelError}`);
   }
 
   return lines.join("\n");
@@ -204,11 +262,59 @@ function extractCandidateTitle(prompt: string) {
   for (const pattern of patterns) {
     const match = truncated.match(pattern);
     const candidate = (match?.[1] ?? "").trim().replace(/[.,:;]+$/, "");
-    if (candidate.length >= 12) {
+    if (candidate.length >= 12 && !isPlaceholderTitle(candidate)) {
       return candidate;
     }
   }
   return "";
+}
+
+function isPlaceholderTitle(value: string) {
+  const normalized = normalizeTitle(value);
+  if (!normalized) return false;
+  const placeholderPhrases = new Set([
+    "this file",
+    "this file here",
+    "that file",
+    "the file",
+    "file here",
+    "this paper",
+    "that paper",
+    "the paper",
+    "paper here",
+    "attached file",
+    "attached paper",
+    "attached document",
+    "this document",
+    "that document",
+    "the document",
+  ]);
+  if (placeholderPhrases.has(normalized)) {
+    return true;
+  }
+  const tokens = new Set(tokenize(normalized));
+  const placeholderTokens = new Set(["this", "that", "here", "attached", "file", "paper", "document"]);
+  if (tokens.size === 0) return false;
+  for (const token of tokens) {
+    if (!placeholderTokens.has(token)) return false;
+  }
+  return true;
+}
+
+function extractAttachmentTitles(attachmentNames: string[] = []) {
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const name of attachmentNames) {
+    const trimmed = String(name ?? "").trim();
+    if (!trimmed) continue;
+    const withoutExt = trimmed.replace(/\.[a-z0-9]{1,6}$/i, "").trim();
+    if (withoutExt.length < 4 || isPlaceholderTitle(withoutExt)) continue;
+    const normalized = normalizeTitle(withoutExt);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    titles.push(withoutExt);
+  }
+  return titles;
 }
 
 function extractAuthorHint(prompt: string) {
@@ -239,6 +345,8 @@ function normalizeSearchQuery(prompt: string, candidateTitle: string) {
     .replace(/\b(do|please|can you|could you|run|perform)\b/gi, " ")
     .split(/\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b/i)[0]
     .replace(/\b(deep research|analysis|structured report|report)\b/gi, " ")
+    .replace(/\b(this|that)\s+(file|paper|document)(\s+here)?\b/gi, " ")
+    .replace(/\battached\s+(file|paper|document)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.,:;]+$/, "");
@@ -383,11 +491,34 @@ function scorePaperMatch(
 function buildLocalPromptAnalysis(
   prompt: string,
   papers: LocalPlanPaper[],
-  selectedRunIds: string[] = []
+  selectedRunIds: string[] = [],
+  attachmentNames: string[] = []
 ) {
-  const candidateTitle = extractCandidateTitle(prompt);
+  let candidateTitle = extractCandidateTitle(prompt);
   const quotedTitle = extractQuotedTitle(prompt);
   const authorHint = extractAuthorHint(prompt);
+  const attachmentTitles = extractAttachmentTitles(attachmentNames);
+  let selectedScopePapers = papers.filter((paper) =>
+    selectedRunIds.includes(String(paper.ingestion_run_id ?? ""))
+  );
+  if (selectedRunIds.length > 0 && selectedScopePapers.length === 0) {
+    selectedScopePapers = [...papers];
+  }
+  if (!candidateTitle && attachmentTitles.length === 1) {
+    candidateTitle = attachmentTitles[0];
+  }
+  if (!candidateTitle && selectedScopePapers.length === 1) {
+    candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
+  }
+  if (isPlaceholderTitle(candidateTitle)) {
+    if (selectedScopePapers.length === 1) {
+      candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
+    } else if (attachmentTitles.length === 1) {
+      candidateTitle = attachmentTitles[0];
+    } else {
+      candidateTitle = "";
+    }
+  }
   const normalizedQuery = normalizeSearchQuery(prompt, candidateTitle);
   const lowered = prompt.toLowerCase();
   const requestedSections = detectRequestedSections(prompt);
@@ -469,6 +600,7 @@ function buildLocalPromptAnalysis(
     author_hint: authorHint,
     normalized_query: normalizedQuery || prompt.trim(),
     requested_sections: requestedSections,
+    attachment_titles: attachmentTitles,
     target_in_scope: Boolean(target),
     target_paper_id: target?.paperId ?? 0,
     ranked_matches: rankedMatches,
@@ -721,10 +853,11 @@ async function buildLocalResearchPlan(
   ownerUserId: string,
   folderId: string | "all" | undefined,
   projectId: string | undefined,
-  selectedRunIds: string[] = []
+  selectedRunIds: string[] = [],
+  attachmentNames: string[] = []
 ) {
   const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId, selectedRunIds);
-  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds);
+  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds, attachmentNames);
   const needsAnalysis = pendingRunCount > 0;
   const requestedSections = Array.isArray(promptAnalysis.requested_sections)
     ? promptAnalysis.requested_sections
@@ -1056,6 +1189,10 @@ async function planDeepResearch(
   ownerUserId: string
 ): Promise<NextResponse> {
   const prompt = body.message?.trim();
+  const attachmentNames = (body.attachments ?? [])
+    .map((attachment) => String(attachment?.name ?? "").trim())
+    .filter(Boolean);
+  const selectedRunIds = body.selectedRunIds ?? [];
   if (!prompt) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
@@ -1068,12 +1205,7 @@ async function planDeepResearch(
   );
   const thread =
     body.threadId
-      ? (await getWorkspaceThreadDetail(
-          supabase,
-          ownerUserId,
-          body.threadId,
-          body.projectId ?? null
-        )).thread
+      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
       : await createWorkspaceThread(supabase, {
           ownerUserId,
           mode: "deep_research",
@@ -1089,10 +1221,7 @@ async function planDeepResearch(
       role: "user",
       content: prompt,
       messageKind: "chat",
-      metadata: {
-        chatMode: "deep_research",
-        projectId: body.projectId ?? null,
-      },
+      metadata: { chatMode: "deep_research" },
     });
   }
 
@@ -1113,6 +1242,9 @@ async function planDeepResearch(
     | null = null;
 
   try {
+    const attachmentNames = (body.attachments ?? [])
+      .map((attachment) => String(attachment?.name ?? "").trim())
+      .filter(Boolean);
     rawPlan = await callPythonNodeService<{
       title?: string;
       summary?: string;
@@ -1129,7 +1261,8 @@ async function planDeepResearch(
       ownerUserId,
       folderId: body.folderId,
       projectId: body.projectId,
-      selectedRunIds: body.selectedRunIds ?? [],
+      selectedRunIds,
+      attachmentNames,
       message: prompt,
     });
   } catch {
@@ -1150,7 +1283,8 @@ async function planDeepResearch(
       ownerUserId,
       body.folderId,
       body.projectId,
-      body.selectedRunIds ?? []
+      selectedRunIds,
+      attachmentNames
     ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,
@@ -1180,12 +1314,7 @@ async function planDeepResearch(
     })),
   });
 
-  const detail = await getWorkspaceThreadDetail(
-    supabase,
-    ownerUserId,
-    thread.id,
-    body.projectId ?? null
-  );
+  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
   return NextResponse.json({
     mode: "deep_research",
     action: "plan",
@@ -1244,12 +1373,7 @@ async function continueDeepResearch(
     }).catch(() => null);
   }
 
-  const detail = await getWorkspaceThreadDetail(
-    supabase,
-    ownerUserId,
-    body.threadId,
-    body.projectId ?? null
-  );
+  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId);
   return NextResponse.json({
     mode: "deep_research",
     action: "continue",
@@ -1290,12 +1414,7 @@ async function normalChat(
   let thread: ChatThreadDetail["thread"] | null = null;
   if (ownerUserId && supabase) {
     thread = body.threadId
-      ? (await getWorkspaceThreadDetail(
-          supabase,
-          ownerUserId,
-          body.threadId,
-          body.projectId ?? null
-        )).thread
+      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
       : await createWorkspaceThread(supabase, {
           ownerUserId,
           mode: "normal",
@@ -1310,93 +1429,72 @@ async function normalChat(
       role: "user",
       content: currentMessage,
       messageKind: "chat",
-      metadata: {
-        attachments: body.attachments ?? [],
-        projectId: body.projectId ?? null,
-      },
+      metadata: { attachments: body.attachments ?? [] },
     });
   }
 
-  let proxied:
-    | {
-        answer?: string;
-        mode?: "grounded" | "fallback";
-        citations?: Citation[];
-        suggestedConcepts?: string[];
-      }
-    | null = null;
+  const citations: Citation[] = [];
+  let mode: "grounded" | "fallback" = "fallback";
+  const generationOptions = resolveGenerationOptions(body);
 
-  try {
-    proxied = await callPythonNodeService<{
-      answer?: string;
-      mode?: "grounded" | "fallback";
-      citations?: Citation[];
-      suggestedConcepts?: string[];
-    }>("/chat", { ...body, ownerUserId });
-  } catch {
-    proxied = null;
+  const history = (body.messages ?? [])
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content ?? "").trim(),
+    }))
+    .filter((message) => Boolean(message.content))
+    .slice(-16);
+
+  const chatMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    {
+      role: "system",
+      content:
+        "You are a helpful, general-purpose assistant. Respond conversationally and clearly. " +
+        "Do not assume access to workspace databases, filters, or paper corpora unless the user explicitly provides that context in the chat.",
+    },
+  ];
+
+  if (history.length > 0) {
+    chatMessages.push(...history);
+  } else {
+    chatMessages.push({ role: "user", content: currentMessage });
   }
 
-  let answer = proxied?.answer ?? "";
-  let mode = proxied?.mode ?? "fallback";
-  let citations = proxied?.citations ?? [];
+  if (attachmentContext) {
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      if (chatMessages[index].role === "user") {
+        chatMessages[index] = {
+          ...chatMessages[index],
+          content: `${chatMessages[index].content}${attachmentContext}`,
+        };
+        break;
+      }
+    }
+  }
+
+  let answer = "";
+  let modelError: string | undefined;
+  try {
+    answer =
+      (await createChatCompletion(
+        chatMessages,
+        generationOptions.temperature ?? 0.4,
+        body.model,
+        "CHAT_SYNTHESIS",
+        {
+          topP: generationOptions.topP,
+          topK: generationOptions.topK,
+          maxTokens: generationOptions.maxTokens,
+          frequencyPenalty: generationOptions.frequencyPenalty,
+          presencePenalty: generationOptions.presencePenalty,
+        }
+      )) ?? "";
+  } catch (error) {
+    modelError = error instanceof Error ? error.message : "Model request failed.";
+  }
 
   if (!answer) {
-    let papers: Awaited<ReturnType<typeof retrieveCorpusPapers>>["papers"] = [];
-    let corpusError: string | undefined;
-
-    try {
-      const corpus = await retrieveCorpusPapers(
-        currentMessage,
-        ownerUserId,
-        body.folderId && body.folderId !== "all" ? body.folderId : null,
-        body.projectId ?? null,
-        body.selectedRunIds ?? []
-      );
-      papers = corpus.papers;
-      citations = corpus.citations;
-    } catch (error) {
-      corpusError = error instanceof Error ? error.message : "Corpus retrieval failed.";
-    }
-
-    if (papers.length > 0) {
-      const context = buildGroundedContext(papers);
-      const llmAnswer = await createChatCompletion(
-        [
-          {
-            role: "system",
-            content:
-              "You are the chat assistant for a research workspace. Answer from the supplied corpus context first. Cite papers inline as [Paper <id>]. If the corpus is insufficient, add a final section titled 'Broader guidance beyond the corpus'. Do not invent citations.",
-          },
-          {
-            role: "user",
-            content: `Question:\n${currentMessage}${attachmentContext}\n\nCorpus context:\n${context}`,
-          },
-        ],
-        0.2,
-        body.model,
-        "CHAT_SYNTHESIS"
-      );
-      answer = llmAnswer ?? buildDeterministicGroundedAnswer(currentMessage, papers);
-      mode = "grounded";
-    } else {
-      const fallbackPrompt = [
-        {
-          role: "system" as const,
-          content:
-            "You are the chat assistant for a research workspace. The stored corpus does not directly answer the user's request. Provide careful broader guidance, and begin the answer with the heading 'Broader guidance beyond the corpus:'.",
-        },
-        {
-          role: "user" as const,
-          content: `${currentMessage}${attachmentContext}`,
-        },
-      ];
-
-      answer =
-        (await createChatCompletion(fallbackPrompt, 0.4, body.model, "CHAT_SYNTHESIS")) ??
-        buildFallbackAnswer(currentMessage, corpusError);
-      mode = "fallback";
-    }
+    answer = buildFallbackAnswer(currentMessage, modelError);
   }
 
   if (ownerUserId && supabase && thread) {
@@ -1408,22 +1506,14 @@ async function normalChat(
       content: answer,
       messageKind: "chat",
       citations,
-      metadata: {
-        mode,
-        projectId: body.projectId ?? null,
-      },
+      metadata: { mode },
     });
     await updateWorkspaceThread(supabase, thread.id, {
       summary: answer.slice(0, 240),
       title: thread.title || buildThreadTitle(currentMessage),
     });
 
-    const detail = await getWorkspaceThreadDetail(
-      supabase,
-      ownerUserId,
-      thread.id,
-      body.projectId ?? null
-    );
+    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
     return NextResponse.json({
       mode,
       answer,

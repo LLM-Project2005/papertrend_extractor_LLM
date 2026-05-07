@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
-import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import { buildWorkspacePath } from "@/lib/workspace-routes";
 import {
   getRunModelLabel,
   getRunStageCaption,
@@ -103,13 +101,6 @@ export default function AnalysisStatusCard({
   onStartProcessing?: () => void | Promise<void>;
   onDebugClearQueue?: () => void | Promise<void>;
 }) {
-  const { currentOrganization, currentProject } = useWorkspaceProfile();
-  const importsPath = buildWorkspacePath({
-    organizationId: currentOrganization?.id ?? null,
-    projectId: currentProject?.id ?? null,
-    projectName: currentProject?.name ?? null,
-    section: "imports",
-  });
   const summary = summarizeRuns(runs);
   const allTerminal =
     runs.length > 0 &&
@@ -307,7 +298,7 @@ export default function AnalysisStatusCard({
             Minimize
           </button>
           <Link
-            href={importsPath}
+            href="/workspace/imports"
             className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
           >
             Open imports

@@ -36,6 +36,55 @@ function countTopicPapers(rows: DashboardData["trends"]) {
   }, {});
 }
 
+function normalizeTopicText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((token) =>
+      token.endsWith("s") && token.length > 4 && !token.endsWith("ss")
+        ? token.slice(0, -1)
+        : token
+    )
+    .join(" ")
+    .trim();
+}
+
+function canonicalizeTrendTopics(data: DashboardData): DashboardData["trends"] {
+  const aliasToCanonical = new Map<string, string>();
+  for (const family of data.topicFamilies ?? []) {
+    const canonical = family.canonicalTopic;
+    const aliases = [
+      canonical,
+      ...family.aliases,
+      ...family.matchedTerms,
+      ...family.relatedKeywords,
+      ...family.representativeKeywords,
+    ];
+    for (const alias of aliases) {
+      const normalized = normalizeTopicText(alias);
+      if (normalized) {
+        aliasToCanonical.set(normalized, canonical);
+      }
+    }
+  }
+
+  return data.trends.map((row) => {
+    const normalizedTopic = normalizeTopicText(row.topic);
+    const normalizedKeyword = normalizeTopicText(row.keyword);
+    const canonical =
+      aliasToCanonical.get(normalizedTopic) ??
+      aliasToCanonical.get(normalizedKeyword) ??
+      row.topic;
+    return {
+      ...row,
+      raw_topic: row.raw_topic ?? row.topic,
+      topic: canonical,
+    };
+  });
+}
+
 export async function buildNormalizedAnalyticsPayload(
   request: VisualizationPlannerRequest = {},
   ownerUserId?: string | null
@@ -49,17 +98,21 @@ export async function buildNormalizedAnalyticsPayload(
     folderIds,
     request.projectId && request.projectId !== "all" ? request.projectId : null
   );
+  const normalizedData: DashboardData = {
+    ...data,
+    trends: canonicalizeTrendTopics(data),
+  };
   const years =
     request.selectedYears && request.selectedYears.length > 0
       ? request.selectedYears
-      : [...new Set(data.trends.map((row) => row.year))].sort();
+      : [...new Set(normalizedData.trends.map((row) => row.year))].sort();
   const tracks =
     request.selectedTracks && request.selectedTracks.length > 0
       ? request.selectedTracks
       : ([...TRACK_COLS] as TrackKey[]);
   const searchQuery = request.searchQuery?.trim() ?? "";
 
-  const filtered = filterDashboardData(data, years, tracks, searchQuery);
+  const filtered = filterDashboardData(normalizedData, years, tracks, searchQuery);
   const filteredDashboard: DashboardData = {
     ...filtered,
     useMock: data.useMock,
@@ -266,6 +319,13 @@ export async function buildNormalizedAnalyticsPayload(
       folder_ids: folderIds,
       all_folders_selected: folderIds.length === 0,
     },
+    diagnostics: {
+      canonical_topic_families_available: (filteredDashboard.topicFamilies?.length ?? 0) > 0,
+      degraded_reason:
+        (filteredDashboard.topicFamilies?.length ?? 0) > 0
+          ? undefined
+          : "canonical_topic_families_unavailable",
+    },
     overview: {
       paper_count: paperCount,
       topic_count: topicCount,
@@ -317,12 +377,14 @@ Use normalized canonical topics, not raw per-paper topic labels.
 If multiple folders are active, prefer at least one comparison chart.
 Prefer plan stability. If the corpus signature is broadly similar, keep the chart mix conservative instead of changing it just to be novel.
 Assume KPI cards are already shown separately, so your chart picks should complement those KPI cards rather than repeat them.
+Every chart reason must explain the decision value of the chart, not just restate what the axes show.
 
 Core chart selection rubric:
 - Include at least 1 time-based chart.
 - Include at least 1 relationship/comparison chart.
 - Include at least 1 distribution/structure chart.
 - Avoid redundant charts that tell the same story from nearly the same data slice.
+- Reject plans where two charts use nearly the same grouping and answer the same question.
 
 Rubric guidance for the approved chart catalog:
 - Time-based: adaptive_topic_momentum, adaptive_keyword_family_heatmap

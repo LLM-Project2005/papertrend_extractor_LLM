@@ -1,4 +1,5 @@
 import { createHash } from "crypto";
+import { createChatCompletion } from "@/lib/openai";
 import { normalizePaperId } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
@@ -64,6 +65,20 @@ type UnionFind = {
   union: (left: number, right: number) => void;
 };
 
+type FamilyPairCandidate = {
+  left: WorkspaceCorpusTopicFamilyCache;
+  right: WorkspaceCorpusTopicFamilyCache;
+  score: number;
+  reasons: string[];
+};
+
+type FamilyMergeDecision = {
+  merge: boolean;
+  confidence: number;
+  canonicalTopic?: string;
+  reason?: string;
+};
+
 const TOPIC_STOPWORDS = new Set([
   "a",
   "an",
@@ -82,6 +97,390 @@ const TOPIC_STOPWORDS = new Set([
   "to",
   "with",
 ]);
+
+const LLM_TOPIC_MERGE_MIN_SCORE = 0.38;
+const LLM_TOPIC_MERGE_MAX_SCORE = 0.82;
+const LLM_TOPIC_MERGE_APPROVAL_CONFIDENCE = 0.82;
+const LLM_TOPIC_MERGE_MAX_CANDIDATES = 10;
+const LLM_TOPIC_MERGE_PRIMARY_TRUST_CONFIDENCE = 0.88;
+const LLM_TOPIC_MERGE_PRIMARY_TRUST_CONFIDENCE_WHEN_MERGING = 0.9;
+const LLM_TOPIC_MERGE_BORDERLINE_SCORE_MIN = 0.5;
+const LLM_TOPIC_MERGE_BORDERLINE_SCORE_MAX = 0.72;
+const LLM_TOPIC_MERGE_BORDERLINE_TRUST_CONFIDENCE = 0.94;
+
+function llmTopicMergeEnabled(): boolean {
+  const value = (process.env.ENABLE_TOPIC_CACHE_LLM_MERGE ?? "true").trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(value);
+}
+
+function topicMergePrimaryModel(): string | undefined {
+  const value =
+    process.env.TOPIC_CACHE_LLM_PRIMARY_MODEL ??
+    process.env.MODEL_TASK_TOPIC_GROUPING_PRIMARY ??
+    process.env.MODEL_TASK_TOPIC_GROUPING_SMALL;
+  const model = value?.trim();
+  return model ? model : undefined;
+}
+
+function topicMergeSecondaryModel(primaryModel?: string): string | undefined {
+  const enabledValue = (process.env.ENABLE_TOPIC_CACHE_LLM_SECONDARY ?? "true")
+    .trim()
+    .toLowerCase();
+  const enabled = ["1", "true", "yes", "on"].includes(enabledValue);
+  if (!enabled) {
+    return undefined;
+  }
+
+  const value =
+    process.env.TOPIC_CACHE_LLM_SECONDARY_MODEL ??
+    process.env.MODEL_TASK_TOPIC_GROUPING_SECONDARY ??
+    process.env.MODEL_TASK_TOPIC_GROUPING_LARGE ??
+    process.env.MODEL_TASK_TOPIC_GROUPING_FALLBACK;
+  const model = value?.trim();
+  if (!model) {
+    return undefined;
+  }
+  if (primaryModel && model === primaryModel) {
+    return undefined;
+  }
+  return model;
+}
+
+function isGenericTopicLabel(value: string): boolean {
+  const normalized = normalizeTopicText(value);
+  return !normalized || normalized === "unclassified" || normalized === "other";
+}
+
+function normalizeValueSet(values: string[]): Set<string> {
+  return new Set(values.map((value) => normalizeTopicText(value)).filter(Boolean));
+}
+
+function jaccard(left: Set<string>, right: Set<string>): number {
+  if (left.size === 0 || right.size === 0) {
+    return 0;
+  }
+  let intersection = 0;
+  left.forEach((value) => {
+    if (right.has(value)) {
+      intersection += 1;
+    }
+  });
+  if (intersection === 0) {
+    return 0;
+  }
+  return intersection / (left.size + right.size - intersection);
+}
+
+function familyPairScore(
+  left: WorkspaceCorpusTopicFamilyCache,
+  right: WorkspaceCorpusTopicFamilyCache
+): FamilyPairCandidate {
+  const aliasScore = jaccard(normalizeValueSet(left.aliases), normalizeValueSet(right.aliases));
+  const keywordScore = jaccard(
+    normalizeValueSet([...left.representativeKeywords, ...left.relatedKeywords]),
+    normalizeValueSet([...right.representativeKeywords, ...right.relatedKeywords])
+  );
+  const matchedTermsScore = jaccard(
+    normalizeValueSet(left.matchedTerms),
+    normalizeValueSet(right.matchedTerms)
+  );
+  const acronymLeft = new Set(
+    [...left.aliases, left.canonicalTopic]
+      .map((alias) => normalizeTopicText(alias).replace(/\s+/g, ""))
+      .filter((alias) => /^[a-z]{2,8}$/.test(alias))
+  );
+  const acronymRight = new Set(
+    [...right.aliases, right.canonicalTopic]
+      .map((alias) => normalizeTopicText(alias).replace(/\s+/g, ""))
+      .filter((alias) => /^[a-z]{2,8}$/.test(alias))
+  );
+  const acronymScore = jaccard(acronymLeft, acronymRight);
+  const paperScore = jaccard(new Set(left.paperIds), new Set(right.paperIds));
+
+  let score =
+    aliasScore * 0.42 +
+    keywordScore * 0.24 +
+    matchedTermsScore * 0.18 +
+    acronymScore * 0.10 +
+    paperScore * 0.06;
+
+  if (isGenericTopicLabel(left.canonicalTopic) || isGenericTopicLabel(right.canonicalTopic)) {
+    score -= 0.08;
+  }
+
+  const reasons: string[] = [];
+  if (aliasScore > 0.3) reasons.push(`alias_overlap=${aliasScore.toFixed(2)}`);
+  if (keywordScore > 0.3) reasons.push(`keyword_overlap=${keywordScore.toFixed(2)}`);
+  if (matchedTermsScore > 0.25) reasons.push(`matched_terms_overlap=${matchedTermsScore.toFixed(2)}`);
+  if (acronymScore > 0) reasons.push(`acronym_overlap=${acronymScore.toFixed(2)}`);
+  if (paperScore > 0) reasons.push(`paper_overlap=${paperScore.toFixed(2)}`);
+
+  return {
+    left,
+    right,
+    score: Math.max(0, Math.min(1, score)),
+    reasons,
+  };
+}
+
+function safeParseJsonObject(text: string): Record<string, unknown> | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (!fenced?.[1]) return null;
+    try {
+      const parsed = JSON.parse(fenced[1].trim());
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function adjudicateFamilyMergeWithLlm(
+  candidate: FamilyPairCandidate
+): Promise<FamilyMergeDecision | null> {
+  const systemPrompt = [
+    "You are a strict ontology merge adjudicator for research-topic families.",
+    "Goal: prevent incorrect merges.",
+    "Rules:",
+    "1) Only merge if both families clearly refer to the same underlying concept.",
+    "2) Reject merge if similarity is generic, contextual, or only weakly related.",
+    "3) Acronym-only evidence is insufficient unless expanded aliases strongly align.",
+    "4) Prefer false-negative over false-positive (when uncertain, do NOT merge).",
+    "5) Return only valid JSON and no extra text.",
+    "JSON schema:",
+    '{"merge": boolean, "confidence": number, "canonicalTopic": string, "reason": string}',
+  ].join("\n");
+
+  const userPrompt = JSON.stringify(
+    {
+      deterministicScore: Number(candidate.score.toFixed(3)),
+      deterministicSignals: candidate.reasons,
+      familyA: {
+        canonicalTopic: candidate.left.canonicalTopic,
+        aliases: candidate.left.aliases.slice(0, 14),
+        representativeKeywords: candidate.left.representativeKeywords.slice(0, 12),
+        matchedTerms: candidate.left.matchedTerms.slice(0, 12),
+        paperCount: candidate.left.paperIds.length,
+        years: candidate.left.years,
+      },
+      familyB: {
+        canonicalTopic: candidate.right.canonicalTopic,
+        aliases: candidate.right.aliases.slice(0, 14),
+        representativeKeywords: candidate.right.representativeKeywords.slice(0, 12),
+        matchedTerms: candidate.right.matchedTerms.slice(0, 12),
+        paperCount: candidate.right.paperIds.length,
+        years: candidate.right.years,
+      },
+    },
+    null,
+    2
+  );
+
+  const promptMessages = [
+    { role: "system" as const, content: systemPrompt },
+    { role: "user" as const, content: userPrompt },
+  ];
+
+  const parseDecision = (rawText: string | null): FamilyMergeDecision | null => {
+    if (!rawText) return null;
+    const parsed = safeParseJsonObject(rawText);
+    if (!parsed) return null;
+
+    const confidence = Number(parsed.confidence ?? 0);
+    if (!Number.isFinite(confidence)) {
+      return null;
+    }
+
+    const canonicalTopic =
+      typeof parsed.canonicalTopic === "string" ? parsed.canonicalTopic.trim() : undefined;
+    const reason = typeof parsed.reason === "string" ? parsed.reason.trim() : undefined;
+    return {
+      merge: Boolean(parsed.merge),
+      confidence: Math.max(0, Math.min(1, confidence)),
+      canonicalTopic,
+      reason,
+    };
+  };
+
+  const shouldEscalateToSecondary = (decision: FamilyMergeDecision | null): boolean => {
+    if (!decision) {
+      return true;
+    }
+
+    if (
+      candidate.score >= LLM_TOPIC_MERGE_BORDERLINE_SCORE_MIN &&
+      candidate.score <= LLM_TOPIC_MERGE_BORDERLINE_SCORE_MAX &&
+      decision.confidence < LLM_TOPIC_MERGE_BORDERLINE_TRUST_CONFIDENCE
+    ) {
+      return true;
+    }
+
+    if (
+      decision.merge &&
+      decision.confidence < LLM_TOPIC_MERGE_PRIMARY_TRUST_CONFIDENCE_WHEN_MERGING
+    ) {
+      return true;
+    }
+
+    return decision.confidence < LLM_TOPIC_MERGE_PRIMARY_TRUST_CONFIDENCE;
+  };
+
+  const primaryModel = topicMergePrimaryModel();
+  const secondaryModel = topicMergeSecondaryModel(primaryModel);
+
+  const primaryRaw = await createChatCompletion(
+    promptMessages,
+    0,
+    primaryModel,
+    "TOPIC_GROUPING"
+  );
+  const primaryDecision = parseDecision(primaryRaw);
+  if (!secondaryModel || !shouldEscalateToSecondary(primaryDecision)) {
+    return primaryDecision;
+  }
+
+  const secondaryRaw = await createChatCompletion(
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    0,
+    secondaryModel,
+    "TOPIC_GROUPING"
+  );
+  return parseDecision(secondaryRaw) ?? primaryDecision;
+}
+
+function mergeFamilyGroup(
+  families: WorkspaceCorpusTopicFamilyCache[],
+  canonicalOverride?: string
+): WorkspaceCorpusTopicFamilyCache {
+  const aliases = [...new Set(families.flatMap((family) => family.aliases).filter(Boolean))];
+  const canonicalTopic =
+    canonicalOverride?.trim() || chooseCanonicalTopicLabel(aliases.length ? aliases : families.map((family) => family.canonicalTopic));
+  return {
+    id: families[0]?.id || `corpus-topic-${Date.now()}`,
+    canonicalTopic,
+    aliases: [...new Set([canonicalTopic, ...aliases])],
+    representativeKeywords: [
+      ...new Set(families.flatMap((family) => family.representativeKeywords).filter(Boolean)),
+    ].slice(0, 16),
+    relatedKeywords: [
+      ...new Set(families.flatMap((family) => family.relatedKeywords).filter(Boolean)),
+    ].slice(0, 24),
+    matchedTerms: [
+      ...new Set(families.flatMap((family) => family.matchedTerms).filter(Boolean)),
+    ].slice(0, 24),
+    evidenceSnippets: [
+      ...new Set(families.flatMap((family) => family.evidenceSnippets).filter(Boolean)),
+    ].slice(0, 8),
+    paperIds: [...new Set(families.flatMap((family) => family.paperIds))],
+    folderIds: [...new Set(families.flatMap((family) => family.folderIds))],
+    years: [...new Set(families.flatMap((family) => family.years))].sort(),
+    totalKeywordFrequency: families.reduce(
+      (sum, family) => sum + Number(family.totalKeywordFrequency || 0),
+      0
+    ),
+  };
+}
+
+async function applyLlmFamilyMerges(
+  families: WorkspaceCorpusTopicFamilyCache[]
+): Promise<{
+  families: WorkspaceCorpusTopicFamilyCache[];
+  familyIdRemap: Map<string, string>;
+}> {
+  const familyIdRemap = new Map<string, string>();
+  families.forEach((family) => familyIdRemap.set(family.id, family.id));
+
+  if (!llmTopicMergeEnabled() || families.length < 2) {
+    return { families, familyIdRemap };
+  }
+
+  const pairCandidates: FamilyPairCandidate[] = [];
+  for (let leftIndex = 0; leftIndex < families.length; leftIndex += 1) {
+    for (let rightIndex = leftIndex + 1; rightIndex < families.length; rightIndex += 1) {
+      const candidate = familyPairScore(families[leftIndex], families[rightIndex]);
+      if (
+        candidate.score >= LLM_TOPIC_MERGE_MIN_SCORE &&
+        candidate.score <= LLM_TOPIC_MERGE_MAX_SCORE
+      ) {
+        pairCandidates.push(candidate);
+      }
+    }
+  }
+
+  const adjudicationQueue = pairCandidates
+    .sort((left, right) => right.score - left.score)
+    .slice(0, LLM_TOPIC_MERGE_MAX_CANDIDATES);
+
+  if (adjudicationQueue.length === 0) {
+    return { families, familyIdRemap };
+  }
+
+  const familyUnion = createUnionFind(families.length);
+  const familyIndexById = new Map(families.map((family, index) => [family.id, index]));
+  const canonicalOverrides = new Map<string, string>();
+
+  for (const candidate of adjudicationQueue) {
+    try {
+      const decision = await adjudicateFamilyMergeWithLlm(candidate);
+      if (
+        !decision?.merge ||
+        !Number.isFinite(decision.confidence) ||
+        decision.confidence < LLM_TOPIC_MERGE_APPROVAL_CONFIDENCE
+      ) {
+        continue;
+      }
+
+      const leftIndex = familyIndexById.get(candidate.left.id);
+      const rightIndex = familyIndexById.get(candidate.right.id);
+      if (typeof leftIndex !== "number" || typeof rightIndex !== "number") {
+        continue;
+      }
+      familyUnion.union(leftIndex, rightIndex);
+      const root = familyUnion.find(leftIndex);
+      if (decision.canonicalTopic) {
+        canonicalOverrides.set(String(root), decision.canonicalTopic);
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  const groups = new Map<number, WorkspaceCorpusTopicFamilyCache[]>();
+  families.forEach((family, index) => {
+    const root = familyUnion.find(index);
+    const list = groups.get(root) ?? [];
+    list.push(family);
+    groups.set(root, list);
+  });
+
+  if (groups.size === families.length) {
+    return { families, familyIdRemap };
+  }
+
+  const mergedFamilies: WorkspaceCorpusTopicFamilyCache[] = [];
+  groups.forEach((groupFamilies, root) => {
+    const merged = mergeFamilyGroup(groupFamilies, canonicalOverrides.get(String(root)));
+    mergedFamilies.push(merged);
+    groupFamilies.forEach((family) => {
+      familyIdRemap.set(family.id, merged.id);
+    });
+  });
+
+  return { families: mergedFamilies, familyIdRemap };
+}
 
 function coerceString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -513,11 +912,11 @@ function rehydrateTopicFamilies(
   }));
 }
 
-function buildCorpusTopicCache(
+async function buildCorpusTopicCache(
   papers: PaperMetadata[],
   concepts: ConceptSourceRow[],
   keywords: KeywordSourceRow[]
-): WorkspaceProjectCorpusTopicCache {
+): Promise<WorkspaceProjectCorpusTopicCache> {
   const metadataByPaperId = new Map(papers.map((paper) => [paper.paperId, paper]));
   const conceptEntries = concepts
     .map((row, index) => buildConceptEntry(row, index, metadataByPaperId))
@@ -648,7 +1047,7 @@ function buildCorpusTopicCache(
     [...familyByRoot.values()].map((family) => [family.id, { ...family }])
   );
   const keywordTotalsByFamily = new Map<string, Map<string, number>>();
-  const trends: TrendRow[] = [];
+  const trendRows: Array<{ familyId: string; row: TrendRow }> = [];
 
   keywords.forEach((row) => {
     const paperId = normalizePaperId(row.paper_id);
@@ -710,20 +1109,23 @@ function buildCorpusTopicCache(
     );
     keywordTotalsByFamily.set(familyId, keywordTotals);
 
-    trends.push({
-      paper_id: paperId,
-      folder_id: metadata.folderId,
-      year: metadata.year,
-      title: metadata.title,
-      topic: family.canonicalTopic,
-      raw_topic: rawTopic,
-      keyword,
-      keyword_frequency: Number(row.keyword_frequency ?? 0),
-      evidence: coerceString(row.evidence),
+    trendRows.push({
+      familyId,
+      row: {
+        paper_id: paperId,
+        folder_id: metadata.folderId,
+        year: metadata.year,
+        title: metadata.title,
+        topic: family.canonicalTopic,
+        raw_topic: rawTopic,
+        keyword,
+        keyword_frequency: Number(row.keyword_frequency ?? 0),
+        evidence: coerceString(row.evidence),
+      },
     });
   });
 
-  const families = [...familyById.values()]
+  const normalizedFamilies = [...familyById.values()]
     .map((family) => {
       const keywordTotals = keywordTotalsByFamily.get(family.id) ?? new Map<string, number>();
       const representativeKeywords = [...keywordTotals.entries()]
@@ -748,6 +1150,47 @@ function buildCorpusTopicCache(
       }
       return right.totalKeywordFrequency - left.totalKeywordFrequency;
     });
+
+  const llmMerged = await applyLlmFamilyMerges(normalizedFamilies);
+  const familyByMergedId = new Map(llmMerged.families.map((family) => [family.id, family]));
+  const mergedKeywordTotals = new Map<string, Map<string, number>>();
+
+  keywordTotalsByFamily.forEach((totals, oldFamilyId) => {
+    const mergedFamilyId = llmMerged.familyIdRemap.get(oldFamilyId) ?? oldFamilyId;
+    const mergedTotals = mergedKeywordTotals.get(mergedFamilyId) ?? new Map<string, number>();
+    totals.forEach((value, keyword) => {
+      mergedTotals.set(keyword, (mergedTotals.get(keyword) ?? 0) + value);
+    });
+    mergedKeywordTotals.set(mergedFamilyId, mergedTotals);
+  });
+
+  const families = [...familyByMergedId.values()]
+    .map((family) => {
+      const keywordTotals = mergedKeywordTotals.get(family.id) ?? new Map<string, number>();
+      const representativeKeywords = [...keywordTotals.entries()]
+        .sort((left, right) => right[1] - left[1])
+        .slice(0, 8)
+        .map(([keyword]) => keyword);
+      return {
+        ...family,
+        representativeKeywords,
+      };
+    })
+    .sort((left, right) => {
+      if (right.paperIds.length !== left.paperIds.length) {
+        return right.paperIds.length - left.paperIds.length;
+      }
+      return right.totalKeywordFrequency - left.totalKeywordFrequency;
+    });
+
+  const trends: TrendRow[] = trendRows.map(({ familyId, row }) => {
+    const mergedFamilyId = llmMerged.familyIdRemap.get(familyId) ?? familyId;
+    const family = familyByMergedId.get(mergedFamilyId);
+    return {
+      ...row,
+      topic: family?.canonicalTopic || row.topic,
+    };
+  });
 
   return {
     sourceSignature: buildSourceSignature(papers, concepts, keywords),
@@ -797,7 +1240,7 @@ export async function loadOrBuildProjectCorpusTopicCache(
   const cache =
     persistedCache && persistedCache.sourceSignature === nextSignature
       ? persistedCache
-      : buildCorpusTopicCache(papers, concepts, keywords);
+      : await buildCorpusTopicCache(papers, concepts, keywords);
 
   if (!persistedCache || persistedCache.sourceSignature !== cache.sourceSignature) {
     await persistProjectCorpusTopicCache(ownerUserId, projectId, cache);

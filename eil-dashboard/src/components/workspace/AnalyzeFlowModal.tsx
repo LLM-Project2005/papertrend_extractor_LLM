@@ -77,35 +77,7 @@ const SOURCE_OPTIONS = [
   },
 ] as const;
 
-const MAX_UPLOAD_BATCH_FILES = 8;
-const MAX_UPLOAD_BATCH_BYTES = 6 * 1024 * 1024;
-
-function splitIntoUploadBatches(files: File[]) {
-  const batches: File[][] = [];
-  let currentBatch: File[] = [];
-  let currentBytes = 0;
-
-  for (const file of files) {
-    const wouldOverflowCount = currentBatch.length >= MAX_UPLOAD_BATCH_FILES;
-    const wouldOverflowBytes =
-      currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES;
-
-    if (wouldOverflowCount || wouldOverflowBytes) {
-      batches.push(currentBatch);
-      currentBatch = [];
-      currentBytes = 0;
-    }
-
-    currentBatch.push(file);
-    currentBytes += file.size;
-  }
-
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
-
-  return batches;
-}
+const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
 
 async function readJsonPayload<T>(response: Response): Promise<T | null> {
   const text = await response.text();
@@ -312,6 +284,20 @@ export default function AnalyzeFlowModal({
           throw new Error("Choose at least one PDF file.");
         }
 
+        const invalidFiles = files.filter(
+          (file) => !file.name.toLowerCase().endsWith(".pdf")
+        );
+        if (invalidFiles.length > 0) {
+          throw new Error("Only PDF files are supported for direct upload.");
+        }
+
+        const oversizedFiles = files.filter((file) => file.size > MAX_UPLOAD_FILE_BYTES);
+        if (oversizedFiles.length > 0) {
+          throw new Error(
+            `Each PDF must be 20 MB or smaller. Oversized count: ${oversizedFiles.length}.`
+          );
+        }
+
         const headers: Record<string, string> = {};
         if (session?.access_token && user) {
           headers.Authorization = `Bearer ${session.access_token}`;
@@ -319,45 +305,137 @@ export default function AnalyzeFlowModal({
           headers["x-admin-secret"] = adminSecret.trim();
         }
 
-        const batches = splitIntoUploadBatches(files);
-        const queuedRuns: IngestionRunRow[] = [];
-        let folderJob: FolderAnalysisJobRow | null = null;
-        let queueWarning: string | null = null;
+        const prepareResponse = await fetch("/api/admin/import/prepare", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...headers,
+          },
+          body: JSON.stringify({
+            folder: folder.trim() || defaultFolder,
+            source_kind: selectedSource,
+            project_id: selectedProjectId,
+            files: files.map((file, fileIndex) => ({
+              fileIndex,
+              name: file.name,
+              size: file.size,
+              type: file.type || "application/pdf",
+            })),
+          }),
+        });
 
-        for (const batch of batches) {
-          const formData = new FormData();
-          batch.forEach((file) => formData.append("files", file));
-          formData.append("folder", folder.trim() || defaultFolder);
-          formData.append("source_kind", selectedSource);
-          formData.append("project_id", selectedProjectId);
+        const preparePayload = await readJsonPayload<{
+          runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
+          uploads?: Array<{
+            fileIndex: number;
+            runId: string;
+            storagePath: string;
+            signedUrl: string;
+            fileName: string;
+          }>;
+          error?: string;
+        }>(prepareResponse);
 
-          const response = await fetch("/api/admin/import", {
-            method: "POST",
-            headers,
-            body: formData,
-          });
+        if (!prepareResponse.ok || !preparePayload?.folderJob || !preparePayload.uploads) {
+          throw new Error(
+            preparePayload?.error ??
+              `Failed to prepare direct upload (status ${prepareResponse.status}).`
+          );
+        }
 
-          const payload = await readJsonPayload<{
-            runs?: IngestionRunRow[];
-            folderJob?: FolderAnalysisJobRow | null;
-            warning?: string | null;
-            error?: string;
-          }>(response);
+        const uploaded: Array<{
+          runId: string;
+          storagePath: string;
+          fileName: string;
+        }> = [];
+        const failed: Array<{
+          runId: string;
+          storagePath: string;
+          fileName: string;
+          errorMessage: string;
+        }> = [];
 
-          if (!response.ok) {
-            if (response.status === 413) {
-              throw new Error(
-                "This upload batch is too large for the app server. Try fewer PDFs per batch or smaller files."
-              );
+        for (const uploadTarget of preparePayload.uploads) {
+          const file = files[uploadTarget.fileIndex];
+          if (!file) {
+            failed.push({
+              runId: uploadTarget.runId,
+              storagePath: uploadTarget.storagePath,
+              fileName: uploadTarget.fileName,
+              errorMessage: "Local file mapping failed during upload.",
+            });
+            continue;
+          }
+
+          try {
+            const uploadResponse = await fetch(uploadTarget.signedUrl, {
+              method: "PUT",
+              headers: {
+                "Content-Type": file.type || "application/pdf",
+                "x-upsert": "false",
+              },
+              body: file,
+            });
+
+            if (!uploadResponse.ok) {
+              const body = await uploadResponse.text();
+              throw new Error(body || `Storage upload failed with status ${uploadResponse.status}.`);
             }
-            throw new Error(payload?.error ?? `Failed to queue analysis (status ${response.status}).`);
-          }
 
-          queuedRuns.push(...(payload?.runs ?? []));
-          folderJob = payload?.folderJob ?? folderJob;
-          if (payload?.warning) {
-            queueWarning = payload.warning;
+            uploaded.push({
+              runId: uploadTarget.runId,
+              storagePath: uploadTarget.storagePath,
+              fileName: uploadTarget.fileName,
+            });
+          } catch (uploadError) {
+            failed.push({
+              runId: uploadTarget.runId,
+              storagePath: uploadTarget.storagePath,
+              fileName: uploadTarget.fileName,
+              errorMessage:
+                uploadError instanceof Error
+                  ? uploadError.message
+                  : "Failed to upload file to storage.",
+            });
           }
+        }
+
+        const finalizeResponse = await fetch("/api/admin/import/finalize", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...headers,
+          },
+          body: JSON.stringify({
+            folderJobId: preparePayload.folderJob.id,
+            uploaded,
+            failed,
+          }),
+        });
+
+        const finalizePayload = await readJsonPayload<{
+          runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
+          warning?: string | null;
+          error?: string;
+        }>(finalizeResponse);
+
+        if (!finalizeResponse.ok) {
+          throw new Error(
+            finalizePayload?.error ??
+              `Failed to finalize direct upload (status ${finalizeResponse.status}).`
+          );
+        }
+
+        const queuedRuns = (finalizePayload?.runs ?? []).filter(
+          (run) => run.status !== "failed"
+        );
+        const folderJob = finalizePayload?.folderJob ?? null;
+        const queueWarning = finalizePayload?.warning ?? null;
+
+        if (queuedRuns.length === 0) {
+          throw new Error("All selected files failed during upload.");
         }
 
         if (adminSecret.trim() && typeof window !== "undefined") {

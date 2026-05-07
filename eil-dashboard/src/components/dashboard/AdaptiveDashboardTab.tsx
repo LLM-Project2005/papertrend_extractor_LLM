@@ -18,6 +18,19 @@ import { TOPIC_PALETTE, TRACK_COLORS, TRACK_NAMES, type TrackKey } from "@/lib/c
 import type { DashboardData, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationPlanSection } from "@/types/visualization";
 
+const STRICT_MIN_TOPIC_PAPER_SUPPORT = 2;
+const STRICT_MIN_TOPIC_TRACK_SUPPORT = 2;
+const STRICT_MIN_TOPIC_FOLDER_SUPPORT = 2;
+const STRICT_MIN_TOPIC_YEAR_SUPPORT = 2;
+
+function truncateLabel(value: string, max = 34) {
+  const text = value.trim();
+  if (text.length <= max) {
+    return text;
+  }
+  return `${text.slice(0, max - 1)}...`;
+}
+
 function toTrackField(track: string) {
   return track.toLowerCase() as keyof TrackRow;
 }
@@ -59,6 +72,28 @@ export default function AdaptiveDashboardTab({
   const totalTopics = new Set(data.trends.map((row) => row.topic)).size;
   const totalKeywords = new Set(data.trends.map((row) => row.keyword)).size;
   const totalFolders = new Set(data.trends.map((row) => row.folder_id).filter(Boolean)).size;
+  const sparseDataMode = totalPapers < 12 || years.length < 3;
+  const minTopicPaperSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_PAPER_SUPPORT;
+  const minTopicTrackSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_TRACK_SUPPORT;
+  const minTopicFolderSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_FOLDER_SUPPORT;
+  const minTopicYearSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_YEAR_SUPPORT;
+
+  const topicPaperSupport = new Map<string, Set<PaperId>>();
+  for (const row of data.trends) {
+    const topic = String(row.topic || "").trim();
+    if (!topic) {
+      continue;
+    }
+    const bucket = topicPaperSupport.get(topic) ?? new Set<PaperId>();
+    bucket.add(row.paper_id);
+    topicPaperSupport.set(topic, bucket);
+  }
+
+  const eligibleTopics = new Set(
+    [...topicPaperSupport.entries()]
+      .filter(([, papers]) => papers.size >= minTopicPaperSupport)
+      .map(([topic]) => topic)
+  );
 
   function renderChart(
     chart: VisualizationPlanSection["charts"][number]
@@ -67,6 +102,9 @@ export default function AdaptiveDashboardTab({
       const topicLimit = chart.config?.top_n ?? 6;
       const topTopics = Object.entries(
         data.trends.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+          if (!eligibleTopics.has(row.topic)) {
+            return accumulator;
+          }
           (accumulator[row.topic] ??= new Set()).add(row.paper_id);
           return accumulator;
         }, {})
@@ -90,11 +128,18 @@ export default function AdaptiveDashboardTab({
         return entry;
       });
 
+      const nonFlatChartData = chartData.filter((entry) =>
+        topTopics.some((topic) => Number(entry[topic] ?? 0) > 0)
+      );
+      if (nonFlatChartData.length < minTopicYearSupport) {
+        return null;
+      }
+
       return (
         <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
           <div className="h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={chartData}>
+              <LineChart data={nonFlatChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
                 <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
@@ -119,7 +164,7 @@ export default function AdaptiveDashboardTab({
 
     if (chart.chart_key === "adaptive_emerging_topics") {
       const topicLimit = chart.config?.top_n ?? 8;
-      if (years.length < 2) {
+      if (years.length < 3 && !sparseDataMode) {
         return null;
       }
 
@@ -147,8 +192,9 @@ export default function AdaptiveDashboardTab({
         .map(([topic, value]) => ({
           topic,
           change: value.late.size - value.early.size,
+          support: value.late.size + value.early.size,
         }))
-        .filter((row) => row.change !== 0)
+        .filter((row) => row.change !== 0 && row.support >= minTopicPaperSupport)
         .sort((left, right) => Math.abs(right.change) - Math.abs(left.change))
         .slice(0, topicLimit);
 
@@ -185,13 +231,17 @@ export default function AdaptiveDashboardTab({
 
     if (chart.chart_key === "adaptive_folder_topic_comparison") {
       const topicLimit = chart.config?.top_n ?? 6;
-      const folders = [...new Set(data.trends.map((row) => row.folder_id).filter(Boolean))];
+      const trendsWithFolder = data.trends.filter((row) => Boolean(row.folder_id));
+      const folders = [...new Set(trendsWithFolder.map((row) => row.folder_id).filter(Boolean))];
       if (folders.length < 2) {
         return null;
       }
 
       const topTopics = Object.entries(
-        data.trends.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+        trendsWithFolder.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+          if (!eligibleTopics.has(row.topic)) {
+            return accumulator;
+          }
           (accumulator[row.topic] ??= new Set()).add(row.paper_id);
           return accumulator;
         }, {})
@@ -205,24 +255,41 @@ export default function AdaptiveDashboardTab({
 
       const chartData = topTopics.map((topic) => {
         const entry: Record<string, string | number> = { topic };
+        let nonZeroFolders = 0;
         folders.forEach((folderId) => {
           const label = folderNamesById[folderId as string] ?? "Unsorted";
-          entry[label] = new Set(
-            data.trends
+          const value = new Set(
+            trendsWithFolder
               .filter((row) => row.folder_id === folderId && row.topic === topic)
               .map((row) => row.paper_id)
           ).size;
+          if (value > 0) {
+            nonZeroFolders += 1;
+          }
+          entry[label] = value;
         });
-        return entry;
+        return nonZeroFolders >= minTopicFolderSupport ? entry : null;
       });
+
+      const filteredChartData = chartData.filter(
+        (entry): entry is Record<string, string | number> => Boolean(entry)
+      );
+      if (filteredChartData.length === 0) {
+        return null;
+      }
 
       return (
         <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
           <div className="h-[360px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
+              <BarChart data={filteredChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey="topic" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                <XAxis
+                  dataKey="topic"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(value) => truncateLabel(String(value))}
+                  stroke="#94a3b8"
+                />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -283,6 +350,9 @@ export default function AdaptiveDashboardTab({
           : (["EL", "ELI", "LAE", "Other"] as TrackKey[]);
       const topTopics = Object.entries(
         data.trends.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+          if (!eligibleTopics.has(row.topic)) {
+            return accumulator;
+          }
           (accumulator[row.topic] ??= new Set()).add(row.paper_id);
           return accumulator;
         }, {})
@@ -296,24 +366,39 @@ export default function AdaptiveDashboardTab({
 
       const chartData = topTopics.map((topic) => {
         const entry: Record<string, string | number> = { topic };
+        let totalSupport = 0;
         selectedTracks.forEach((track) => {
-          entry[track] = new Set(
+          const value = new Set(
             data.trends
               .filter((row) => row.topic === topic)
               .filter((row) => Number(singleTrackByPaper.get(row.paper_id)?.[toTrackField(track)] ?? 0) === 1)
               .map((row) => row.paper_id)
           ).size;
+          totalSupport += value;
+          entry[track] = value;
         });
-        return entry;
+        return totalSupport >= minTopicTrackSupport ? entry : null;
       });
+
+      const filteredChartData = chartData.filter(
+        (entry): entry is Record<string, string | number> => Boolean(entry)
+      );
+      if (filteredChartData.length === 0) {
+        return null;
+      }
 
       return (
         <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
           <div className="h-[360px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData}>
+              <BarChart data={filteredChartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey="topic" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                <XAxis
+                  dataKey="topic"
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(value) => truncateLabel(String(value))}
+                  stroke="#94a3b8"
+                />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
@@ -339,6 +424,28 @@ export default function AdaptiveDashboardTab({
   const renderedCharts = adaptiveSection.charts
     .map((chart) => renderChart(chart))
     .filter((chart): chart is ReactNode => Boolean(chart));
+
+  const fallbackTopicChartData = Object.entries(
+    data.trends.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+      const topic = String(row.topic || "").trim();
+      if (!topic) {
+        return accumulator;
+      }
+      (accumulator[topic] ??= new Set()).add(row.paper_id);
+      return accumulator;
+    }, {})
+  )
+    .map(([topic, papers]) => ({ topic, papers: papers.size }))
+    .sort((left, right) => right.papers - left.papers)
+    .slice(0, 8);
+
+  const fallbackTrackChartData = (Object.keys(TRACK_NAMES) as TrackKey[]).map((track) => ({
+    track,
+    value: data.tracksSingle.reduce(
+      (sum, row) => sum + Number(row[toTrackField(track)] || 0),
+      0
+    ),
+  })).filter((row) => row.value > 0);
 
   return (
     <div className="space-y-5">
@@ -370,15 +477,60 @@ export default function AdaptiveDashboardTab({
         ))}
       </section>
 
-      {renderedCharts.length > 0 ? (
-        renderedCharts
-      ) : (
+      {renderedCharts.length > 0 ? renderedCharts : null}
+
+      {renderedCharts.length === 0 && fallbackTopicChartData.length > 0 ? (
+        <ChartShell
+          title="Top topics in current scope"
+          reason="Auto-selected fallback for sparse data: this view is the most reliable way to compare signal strength when trend continuity is limited."
+        >
+          <div className="h-[360px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={fallbackTopicChartData} layout="vertical" margin={{ left: 10, right: 16 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis
+                  type="category"
+                  dataKey="topic"
+                  width={190}
+                  tick={{ fontSize: 11 }}
+                  tickFormatter={(value) => truncateLabel(String(value))}
+                  stroke="#94a3b8"
+                />
+                <Tooltip />
+                <Bar dataKey="papers" fill="#2563eb" radius={[0, 8, 8, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartShell>
+      ) : null}
+
+      {renderedCharts.length === 0 && fallbackTopicChartData.length === 0 && fallbackTrackChartData.length > 0 ? (
+        <ChartShell
+          title="Track distribution in current scope"
+          reason="Auto-selected fallback for sparse data: topic-level coverage is too thin, so a track-level view gives a more stable summary."
+        >
+          <div className="h-[320px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={fallbackTrackChartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                <XAxis dataKey="track" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip />
+                <Bar dataKey="value" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </ChartShell>
+      ) : null}
+
+      {renderedCharts.length === 0 && fallbackTopicChartData.length === 0 && fallbackTrackChartData.length === 0 ? (
         <section className="app-surface px-5 py-5">
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Adaptive charts need more normalized topic coverage before they can say something useful for the current filter set.
+            Not enough scoped rows to render adaptive charts yet. Try broadening filters or adding more analyzed papers.
           </p>
         </section>
-      )}
+      ) : null}
     </div>
   );
 }
