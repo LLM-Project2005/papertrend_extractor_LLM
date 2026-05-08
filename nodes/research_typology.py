@@ -1,3 +1,4 @@
+import json
 import re
 from typing import Any, Dict, Optional, Tuple
 
@@ -26,6 +27,35 @@ def _first_sentence(value: str) -> str:
         return ""
     parts = re.split(r"(?<=[.!?])\s+", text)
     return parts[0][:500] if parts else text[:500]
+
+
+def _response_text(payload: Any) -> str:
+    content = getattr(payload, "content", payload)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+            else:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content or "")
+
+
+def _parse_json_object(text: str) -> Dict[str, Any]:
+    cleaned = normalize_whitespace(text)
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        payload = json.loads(cleaned)
+    except Exception:
+        match = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
+        if not match:
+            raise
+        payload = json.loads(match.group(0))
+    return ResearchTypologySchema.model_validate(payload).model_dump()
 
 
 def _heuristic_group(text: str) -> Tuple[int, Optional[int], str]:
@@ -152,26 +182,29 @@ def classify_research_typology_node(state: IngestionState) -> Dict[str, Any]:
         conclusion=str(sections.get("conclusion", ""))[:3500],
         concepts=concepts or "None",
     )
-    structured_llm = research_typology_llm.with_structured_output(
-        ResearchTypologySchema,
-        method="json_schema",
+    json_prompt = (
+        f"{prompt}\n\n"
+        "Return ONLY a valid JSON object with exactly these keys: "
+        "primary_group_number, primary_group_name, secondary_group_number, secondary_group_name, "
+        "stated_purpose, primary_contribution, group_match, boundary_rule, verdict. "
+        "Use null for secondary_group_number and secondary_group_name when there is no secondary group."
     )
 
     try:
-        result = structured_llm.invoke(prompt)
+        result = _parse_json_object(_response_text(research_typology_llm.invoke(json_prompt)))
         return {
             "research_typology": _normal_typology_payload(
-                primary_group_number=int(result.primary_group_number),
-                primary_group_name=result.primary_group_name,
+                primary_group_number=int(result["primary_group_number"]),
+                primary_group_name=result["primary_group_name"],
                 secondary_group_number=(
-                    int(result.secondary_group_number) if result.secondary_group_number else None
+                    int(result["secondary_group_number"]) if result.get("secondary_group_number") else None
                 ),
-                secondary_group_name=result.secondary_group_name,
-                stated_purpose=result.stated_purpose,
-                primary_contribution=result.primary_contribution,
-                group_match=result.group_match,
-                boundary_rule=result.boundary_rule,
-                verdict=result.verdict,
+                secondary_group_name=result.get("secondary_group_name"),
+                stated_purpose=result["stated_purpose"],
+                primary_contribution=result["primary_contribution"],
+                group_match=result["group_match"],
+                boundary_rule=result["boundary_rule"],
+                verdict=result["verdict"],
                 classifier_source="llm",
             ),
             "errors": [],

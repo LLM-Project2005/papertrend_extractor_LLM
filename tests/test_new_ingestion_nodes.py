@@ -32,9 +32,25 @@ from nodes.author_keywords import extract_author_keywords_node
 from nodes.dataset_builder import build_dataset_node
 from nodes.keyword_search import keyword_search_node
 from nodes.research_typology import classify_research_typology_node
+from nodes.segmentation import _slice_span
+from graphs import build_ingestion_graph
 
 
 class NewIngestionNodeTests(unittest.TestCase):
+    def test_ingestion_graph_compiles_with_author_keyword_node(self) -> None:
+        build_ingestion_graph.cache_clear()
+        self.assertIsNotNone(build_ingestion_graph())
+
+    def test_segmentation_slice_expands_mid_word_offsets(self) -> None:
+        text = "Research Method The three selected variables were measured."
+        start = text.index("ee selected")
+        end = text.index(" measured")
+
+        self.assertEqual(
+            _slice_span(text, start, end),
+            "three selected variables were",
+        )
+
     def test_author_keyword_node_extracts_labeled_keywords_with_fallback(self) -> None:
         runnable = Mock()
         runnable.invoke.side_effect = RuntimeError("offline")
@@ -72,11 +88,8 @@ class NewIngestionNodeTests(unittest.TestCase):
         self.assertEqual(result["author_keywords"], [])
 
     def test_research_typology_uses_boundary_fallback_for_intervention_measurement_overlap(self) -> None:
-        runnable = Mock()
-        runnable.invoke.side_effect = RuntimeError("offline")
-
         with patch("nodes.research_typology.research_typology_llm") as llm:
-            llm.with_structured_output.return_value = runnable
+            llm.invoke.side_effect = RuntimeError("offline")
             result = classify_research_typology_node(
                 {
                     "final_json": {
@@ -96,6 +109,41 @@ class NewIngestionNodeTests(unittest.TestCase):
         typology = result["research_typology"]
         self.assertEqual(typology["primary_group_number"], 2)
         self.assertEqual(typology["secondary_group_number"], 3)
+
+    def test_research_typology_parses_json_llm_response(self) -> None:
+        response = Mock()
+        response.content = """
+        {
+          "primary_group_number": 3,
+          "primary_group_name": "Assessment & Measurement",
+          "secondary_group_number": null,
+          "secondary_group_name": null,
+          "stated_purpose": "The paper validates a test.",
+          "primary_contribution": "A validated assessment instrument.",
+          "group_match": "The instrument is the primary contribution.",
+          "boundary_rule": "Not needed.",
+          "verdict": "Group 3 - Assessment & Measurement."
+        }
+        """
+
+        with patch("nodes.research_typology.research_typology_llm") as llm:
+            llm.invoke.return_value = response
+            result = classify_research_typology_node(
+                {
+                    "final_json": {
+                        "title": "Validation paper",
+                        "abstract_claims": "The paper validates a test.",
+                        "methods": "Rasch analysis was used.",
+                        "results": "The test was valid.",
+                        "conclusion": "The assessment can be used.",
+                    },
+                    "final_labeled_topics": [],
+                }
+            )
+
+        typology = result["research_typology"]
+        self.assertEqual(typology["primary_group_number"], 3)
+        self.assertEqual(typology["classifier_source"], "llm")
 
     def test_dataset_builder_persists_author_keywords_and_typology_rows(self) -> None:
         result = build_dataset_node(
