@@ -57,3 +57,10 @@ __pycache__/
 
 cloudrun.env.yaml
 .gcloud/
+
+# Private professor/local batch export artifacts
+Progress status _ EIL papers - *.csv
+data/cache/professor_export/
+data/output/eil_professor*
+data/output/*professor*
+papers-*.zip
