@@ -172,6 +172,7 @@ After manual staging is stable, add a Cloud Build trigger:
 - Branch: `test`
 - Deploy target: `papertrend-node-service-staging`
 - Region: `asia-southeast1`
+- Build config: `cloudbuild.staging.yaml`
 - Build mode: Cloud Run source deploy / buildpacks
 
 Target flow:
@@ -179,6 +180,21 @@ Target flow:
 ```text
 push to test branch -> Cloud Build -> Cloud Run staging revision
 ```
+
+The trigger should be scoped to backend-related files only:
+
+- `.gcloudignore`
+- `cloudbuild.staging.yaml`
+- `Procfile`
+- `requirements.txt`
+- `node_service.py`
+- `graphs.py`
+- `workspace_data.py`
+- `state.py`
+- `supabase_http.py`
+- `nodes/**`
+- `prompts/**`
+- `eil-dashboard/worker/**`
 
 Production can later use:
 
