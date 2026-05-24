@@ -29,6 +29,7 @@ This documentation covers:
 7. [Testing and Quality](07-testing-and-quality.md)
 8. [Deployment and Operations Runbook](08-deployment-and-operations-runbook.md)
 9. [Module Catalog](09-module-catalog.md)
+10. [Google Cloud Migration Plan](10-google-cloud-migration.md)
 
 ## Reading Order
 

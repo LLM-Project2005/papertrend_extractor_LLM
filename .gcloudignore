@@ -1,0 +1,60 @@
+# Cloud Run source deploy upload filter.
+# Keep this stricter than .gitignore because Cloud Build should never receive
+# local papers, professor exports, credentials, or frontend build artifacts.
+
+.git/
+.gcloud/
+.venv/
+.venv311/
+.venv_win/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Secrets and local environment files
+.env
+.env.*
+.env.local
+cloudrun.env.yaml
+
+# Private paper data and generated outputs
+data/
+papers/
+input/
+output/
+10_years_test/
+Test_batch/
+papers-*.zip
+Progress status _ EIL papers - *.csv
+Master_Trends_Archive.csv
+Master_Trends_Archive.json
+EIL_Track_OneHot_Final.csv
+EIL_Track_10years1.csv
+
+# Frontend dependency/build artifacts; the backend deploy only needs source.
+node_modules/
+eil-dashboard/node_modules/
+eil-dashboard/.next/
+eil-dashboard/out/
+eil-dashboard/.vercel/
+eil-dashboard/tsconfig.tsbuildinfo
+
+# Local/prototype artifacts not needed by the Cloud Run node service.
+.ipynb_checkpoints/
+EIL_jupyter_ver3.ipynb
+*.log
+pip_install.log
+tmp*/
+tmp9y41dmti/
+
+# IDE/OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
