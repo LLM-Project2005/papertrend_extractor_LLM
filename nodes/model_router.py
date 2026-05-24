@@ -65,6 +65,7 @@ MODEL_PRICE_USD_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
     "openai/gpt-4.1-nano": {"input": 0.10, "output": 0.40},
     "google/gemini-2.5-flash": {"input": 0.30, "output": 2.50},
     "google/gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
+    "google/gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
 }
 
 CONSERVATIVE_PRESET: Dict[ModelTask, TaskProfile] = {
@@ -110,10 +111,22 @@ QUALITY_FIRST_PRESET: Dict[ModelTask, TaskProfile] = {
     ),
 }
 
+GEMINI_25_FLASH_LITE_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemini-2.5-flash-lite")
+    for task in ModelTask
+}
+
+GEMINI_31_FLASH_LITE_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemini-3.1-flash-lite")
+    for task in ModelTask
+}
+
 PRESETS: Dict[str, Dict[ModelTask, TaskProfile]] = {
     "conservative": CONSERVATIVE_PRESET,
     "aggressive-cost": AGGRESSIVE_COST_PRESET,
     "quality-first": QUALITY_FIRST_PRESET,
+    "gemini-2.5-flash-lite": GEMINI_25_FLASH_LITE_PRESET,
+    "gemini-3.1-flash-lite": GEMINI_31_FLASH_LITE_PRESET,
 }
 
 _SESSION_LABEL = contextvars.ContextVar("papertrend_model_router_label", default="")

@@ -75,6 +75,9 @@ Use placeholders and secure secret management. Do not copy live credentials into
 
 - MODEL_GATEWAY
 - MODEL_POLICY_PRESET
+  - `conservative`: balanced default routing with stronger models for extraction/grouping tasks
+  - `gemini-2.5-flash-lite`: route every task to `google/gemini-2.5-flash-lite`
+  - `gemini-3.1-flash-lite`: route every task to `google/gemini-3.1-flash-lite`
 - MODEL_TASK_<TASK_NAME>
 - MODEL_TASK_<TASK_NAME>_FALLBACK
 - ENABLE_CHAT_TOOL_CALLING
