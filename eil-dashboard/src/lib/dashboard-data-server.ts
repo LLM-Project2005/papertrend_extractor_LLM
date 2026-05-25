@@ -261,7 +261,7 @@ async function loadPaperMetadata(
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("papers_full")
-    .select("paper_id,folder_id,year,title,ingestion_run_id")
+    .select("paper_id::text,folder_id,year,title,ingestion_run_id")
     .eq("owner_user_id", ownerUserId);
 
   if (scopedRunIds) {
@@ -308,15 +308,15 @@ async function loadViewData(
 
   let trendsQuery = supabase
     .from("trends_flat")
-    .select("*")
+    .select("paper_id::text,folder_id,year,title,topic,keyword,keyword_frequency,evidence")
     .eq("owner_user_id", ownerUserId);
   let singleQuery = supabase
     .from("tracks_single_flat")
-    .select("*")
+    .select("paper_id::text,folder_id,year,title,el,eli,lae,other")
     .eq("owner_user_id", ownerUserId);
   let multiQuery = supabase
     .from("tracks_multi_flat")
-    .select("*")
+    .select("paper_id::text,folder_id,year,title,el,eli,lae,other")
     .eq("owner_user_id", ownerUserId);
 
   if (scopedPaperIds) {
@@ -385,17 +385,17 @@ async function loadTableData(
   const [keywordsResult, singleResult, multiResult] = await Promise.all([
     supabase
       .from("paper_keywords")
-      .select("paper_id,folder_id,topic,keyword,keyword_frequency,evidence")
+      .select("paper_id::text,folder_id,topic,keyword,keyword_frequency,evidence")
       .eq("owner_user_id", ownerUserId)
       .in("paper_id", paperIds),
     supabase
       .from("paper_tracks_single")
-      .select("paper_id,folder_id,el,eli,lae,other")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
       .eq("owner_user_id", ownerUserId)
       .in("paper_id", paperIds),
     supabase
       .from("paper_tracks_multi")
-      .select("paper_id,folder_id,el,eli,lae,other")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
       .eq("owner_user_id", ownerUserId)
       .in("paper_id", paperIds),
   ]);
@@ -568,12 +568,12 @@ async function loadTrackTableData(
   const [singleResult, multiResult] = await Promise.all([
     supabase
       .from("paper_tracks_single")
-      .select("paper_id,folder_id,el,eli,lae,other")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
       .eq("owner_user_id", ownerUserId)
       .in("paper_id", paperIds),
     supabase
       .from("paper_tracks_multi")
-      .select("paper_id,folder_id,el,eli,lae,other")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
       .eq("owner_user_id", ownerUserId)
       .in("paper_id", paperIds),
   ]);

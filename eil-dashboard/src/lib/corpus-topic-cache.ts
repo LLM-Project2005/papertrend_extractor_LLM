@@ -767,7 +767,7 @@ async function loadProjectPapers(
 
   const { data: paperRows, error: paperError } = await supabase
     .from("papers_full")
-    .select("paper_id,folder_id,year,title,ingestion_run_id")
+    .select("paper_id::text,folder_id,year,title,ingestion_run_id")
     .eq("owner_user_id", ownerUserId)
     .in("ingestion_run_id", runIds);
 
@@ -808,7 +808,7 @@ async function loadProjectConceptSourceRows(
   const { data, error } = await supabase
     .from("paper_keyword_concepts")
     .select(
-      "paper_id,folder_id,concept_label,matched_terms,related_keywords,total_frequency,first_evidence,evidence_snippets"
+      "paper_id::text,folder_id,concept_label,matched_terms,related_keywords,total_frequency,first_evidence,evidence_snippets"
     )
     .eq("owner_user_id", ownerUserId)
     .in("paper_id", paperIds);
@@ -831,7 +831,7 @@ async function loadProjectKeywordSourceRows(
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("paper_keywords")
-    .select("paper_id,folder_id,topic,keyword,keyword_frequency,evidence")
+    .select("paper_id::text,folder_id,topic,keyword,keyword_frequency,evidence")
     .eq("owner_user_id", ownerUserId)
     .in("paper_id", paperIds);
 

@@ -194,7 +194,7 @@ export async function GET(
     const { data: papers, error: papersError } = await supabase
       .from("papers_full")
       .select(
-        "paper_id,title,year,abstract_claims,methods,results,conclusion,raw_text,source_filename,ingestion_run_id"
+        "paper_id::text,title,year,abstract_claims,methods,results,conclusion,raw_text,source_filename,ingestion_run_id"
       )
       .eq("owner_user_id", user.id)
       .in("ingestion_run_id", relatedRunIds);
