@@ -80,6 +80,7 @@ Use placeholders and secure secret management. Do not copy live credentials into
   - `gemini-3.1-flash-lite`: route every task to `google/gemini-3.1-flash-lite`
 - MODEL_TASK_<TASK_NAME>
 - MODEL_TASK_<TASK_NAME>_FALLBACK
+- NODE_SERVICE_ASYNC_MAX_RUNS
 - WORKER_HEARTBEAT_INTERVAL_SECONDS
 - WORKER_HEARTBEAT_TIMEOUT_SECONDS
 - WORKER_HEARTBEAT_ATTEMPTS

@@ -41,6 +41,14 @@ def _batch_stale_after_seconds(env_name: str, default_seconds: int) -> float:
         return float(default_seconds)
 
 
+def _int_env(name: str, default_value: int, minimum: int = 1) -> int:
+    try:
+        value = int(os.getenv(name, str(default_value)))
+    except Exception:
+        value = default_value
+    return max(value, minimum)
+
+
 def _active_thread_state(
     thread: Optional[threading.Thread],
     started_at: float,
@@ -334,8 +342,12 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 run_async = bool(body.get("async", True))
                 force_start = bool(body.get("force", False))
                 if run_async:
+                    async_max_runs = min(
+                        max_runs,
+                        _int_env("NODE_SERVICE_ASYNC_MAX_RUNS", 1, 1),
+                    )
                     start_result = _run_queue_batch_background(
-                        max_runs=max_runs,
+                        max_runs=async_max_runs,
                         force=force_start,
                     )
                     _json_response(
@@ -345,7 +357,8 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                             "ok": True,
                             "queued": bool(start_result["started"]),
                             "already_running": bool(start_result["already_running"]),
-                            "max_runs": max_runs,
+                            "max_runs": async_max_runs,
+                            "requested_max_runs": max_runs,
                             "force": force_start,
                             "stale_lock_recovered": bool(start_result["stale_lock_recovered"]),
                             "active_batch_age_seconds": start_result["active_batch_age_seconds"],
