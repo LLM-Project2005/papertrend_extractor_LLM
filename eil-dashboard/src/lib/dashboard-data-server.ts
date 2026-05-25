@@ -453,45 +453,54 @@ async function loadTableData(
       .filter((row) => row.keyword)
   );
 
-  const tracksSingle: TrackRow[] = metadata.flatMap((paper) =>
-    singleByPaperId.get(paper.paper_id)
-      ? [
-          {
-            paper_id: paper.paper_id,
-            folder_id:
-              typeof singleByPaperId.get(paper.paper_id)?.folder_id === "string"
-                ? (singleByPaperId.get(paper.paper_id)?.folder_id as string)
-                : paper.folder_id,
-            year: paper.year,
-            title: paper.title,
-            el: Number(singleByPaperId.get(paper.paper_id)?.el ?? 0),
-            eli: Number(singleByPaperId.get(paper.paper_id)?.eli ?? 0),
-            lae: Number(singleByPaperId.get(paper.paper_id)?.lae ?? 0),
-            other: Number(singleByPaperId.get(paper.paper_id)?.other ?? 0),
-          },
-        ]
-      : []
-  );
+  const buildDefaultTrackRow = (paper: PaperMetadata): TrackRow => ({
+    paper_id: paper.paper_id,
+    folder_id: paper.folder_id,
+    year: paper.year,
+    title: paper.title,
+    el: 0,
+    eli: 0,
+    lae: 0,
+    other: 1,
+  });
 
-  const tracksMulti: TrackRow[] = metadata.flatMap((paper) =>
-    multiByPaperId.get(paper.paper_id)
-      ? [
-          {
-            paper_id: paper.paper_id,
-            folder_id:
-              typeof multiByPaperId.get(paper.paper_id)?.folder_id === "string"
-                ? (multiByPaperId.get(paper.paper_id)?.folder_id as string)
-                : paper.folder_id,
-            year: paper.year,
-            title: paper.title,
-            el: Number(multiByPaperId.get(paper.paper_id)?.el ?? 0),
-            eli: Number(multiByPaperId.get(paper.paper_id)?.eli ?? 0),
-            lae: Number(multiByPaperId.get(paper.paper_id)?.lae ?? 0),
-            other: Number(multiByPaperId.get(paper.paper_id)?.other ?? 0),
-          },
-        ]
-      : []
-  );
+  const tracksSingle: TrackRow[] = metadata.map((paper) => {
+    const trackRow = singleByPaperId.get(paper.paper_id);
+    if (!trackRow) {
+      return buildDefaultTrackRow(paper);
+    }
+
+    return {
+      paper_id: paper.paper_id,
+      folder_id:
+        typeof trackRow.folder_id === "string" ? trackRow.folder_id : paper.folder_id,
+      year: paper.year,
+      title: paper.title,
+      el: Number(trackRow.el ?? 0),
+      eli: Number(trackRow.eli ?? 0),
+      lae: Number(trackRow.lae ?? 0),
+      other: Number(trackRow.other ?? 0),
+    };
+  });
+
+  const tracksMulti: TrackRow[] = metadata.map((paper) => {
+    const trackRow = multiByPaperId.get(paper.paper_id);
+    if (!trackRow) {
+      return buildDefaultTrackRow(paper);
+    }
+
+    return {
+      paper_id: paper.paper_id,
+      folder_id:
+        typeof trackRow.folder_id === "string" ? trackRow.folder_id : paper.folder_id,
+      year: paper.year,
+      title: paper.title,
+      el: Number(trackRow.el ?? 0),
+      eli: Number(trackRow.eli ?? 0),
+      lae: Number(trackRow.lae ?? 0),
+      other: Number(trackRow.other ?? 0),
+    };
+  });
 
   return {
     trends,
@@ -511,14 +520,18 @@ function mergeDashboardSources(
     return fallback;
   }
 
+  const mergeTrackRows = (primary: TrackRow[], secondary: TrackRow[]) => {
+    const seen = new Set(primary.map((row) => row.paper_id));
+    return [
+      ...primary,
+      ...secondary.filter((row) => !seen.has(row.paper_id)),
+    ];
+  };
+
   return {
     trends: preferred.trends.length > 0 ? preferred.trends : fallback.trends,
-    tracksSingle:
-      preferred.tracksSingle.length > 0
-        ? preferred.tracksSingle
-        : fallback.tracksSingle,
-    tracksMulti:
-      preferred.tracksMulti.length > 0 ? preferred.tracksMulti : fallback.tracksMulti,
+    tracksSingle: mergeTrackRows(preferred.tracksSingle, fallback.tracksSingle),
+    tracksMulti: mergeTrackRows(preferred.tracksMulti, fallback.tracksMulti),
     topicFamilies:
       (preferred.topicFamilies?.length ?? 0) > 0
         ? preferred.topicFamilies
@@ -572,8 +585,20 @@ async function loadTrackTableData(
     throw new Error(multiResult.error.message);
   }
 
-  const mapRows = (rows: Record<string, unknown>[]) =>
-    rows.flatMap((row) => {
+  const defaultRows = () =>
+    metadata.map((paper) => ({
+      paper_id: paper.paper_id,
+      folder_id: paper.folder_id,
+      year: paper.year,
+      title: paper.title,
+      el: 0,
+      eli: 0,
+      lae: 0,
+      other: 1,
+    }));
+
+  const mapRows = (rows: Record<string, unknown>[]) => {
+    const mappedRows = rows.flatMap((row) => {
       const paperId = normalizePaperId(row.paper_id);
       const paper = paperId ? metadataByPaperId.get(paperId) : null;
       if (!paper) {
@@ -594,6 +619,13 @@ async function loadTrackTableData(
         },
       ];
     });
+
+    const seen = new Set(mappedRows.map((row) => row.paper_id));
+    return [
+      ...mappedRows,
+      ...defaultRows().filter((row) => !seen.has(row.paper_id)),
+    ];
+  };
 
   return {
     tracksSingle: mapRows((singleResult.data ?? []) as Record<string, unknown>[]),
