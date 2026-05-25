@@ -818,7 +818,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
 
     with processing_heartbeat(client, run_id, config.heartbeat_interval_seconds):
         with tempfile.TemporaryDirectory(prefix="papertrend-run-") as temp_dir:
-            local_pdf = Path(temp_dir) / (str(run.get("source_filename") or "paper.pdf"))
+            local_pdf = Path(temp_dir) / f"{run_id}.pdf"
             update_run_progress(
                 client,
                 run,

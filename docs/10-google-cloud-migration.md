@@ -213,7 +213,41 @@ Production can later use:
 push to main branch -> Cloud Build -> papertrend-node-service
 ```
 
-## 10. Rollback Plan
+## 10. Google Cloud Queue Trigger
+
+Staging uses Cloud Scheduler to keep the Supabase queue moving without relying
+on Vercel preview cron behavior.
+
+- Scheduler job: `papertrend-process-queue-staging`
+- Region: `asia-southeast1`
+- Schedule: every minute, Asia/Bangkok time
+- Target: `POST <Cloud Run staging URL>/process-queue`
+- Body: `{"async":true,"maxRuns":1,"reason":"cloud-scheduler-staging"}`
+- Auth: `Authorization: Bearer <WORKER_WEBHOOK_SECRET>`
+
+This works together with `NODE_SERVICE_ASYNC_MAX_RUNS=1`: each trigger starts at
+most one queued paper, then the next minute's trigger picks up the next queued
+paper. If a paper is already processing, the worker lock prevents duplicate
+processing.
+
+Useful checks:
+
+```powershell
+& 'C:\Users\pchan\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' scheduler jobs describe papertrend-process-queue-staging `
+  --project research-trend-analysis `
+  --location asia-southeast1 `
+  --format "json(name,state,schedule,timeZone,httpTarget.uri,httpTarget.httpMethod)"
+
+& 'C:\Users\pchan\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' scheduler jobs run papertrend-process-queue-staging `
+  --project research-trend-analysis `
+  --location asia-southeast1
+```
+
+Cloud Tasks is the next upgrade if the app needs one task per uploaded paper,
+stronger retry control, or finer scheduling than the current once-per-minute
+queue poll.
+
+## 11. Rollback Plan
 
 If Cloud Run staging fails:
 
@@ -230,12 +264,12 @@ If production is ever switched and fails:
 2. Redeploy Vercel production or trigger an env refresh.
 3. Confirm queued runs continue from Supabase.
 
-## 11. Later Cleanup
+## 12. Later Cleanup
 
 After staging works:
 
 - Split queue processing into a Cloud Run Job.
-- Use Cloud Scheduler to trigger the job.
+- Consider Cloud Tasks if queue polling is not precise enough.
 - Disable duplicate Vercel cron sources.
 - Add shared-secret protection for non-worker Python service POST endpoints.
 - Decide later whether storage should remain Supabase Storage or move to
