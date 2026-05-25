@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import tempfile
 import threading
 import time
@@ -41,6 +42,22 @@ AUTO_ANALYSIS_PROVIDER = "Automatic task routing"
 AUTO_ANALYSIS_MODEL = "automatic-task-routing"
 AUTO_ANALYSIS_LABEL = "Automatic per-task model routing"
 USER_STALE_REQUEUE_AFTER_SECONDS = 180
+
+
+def _int_env(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except Exception:
+        value = default
+    return max(value, minimum)
+
+
+def _float_env(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except Exception:
+        value = default
+    return max(value, minimum)
 
 INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
     "extract": {
@@ -120,12 +137,13 @@ class SupabaseRestClient:
             "Authorization": f"Bearer {service_key}",
         }
         self.session = build_retrying_session(base_headers)
+        self.heartbeat_timeout_seconds = _float_env("WORKER_HEARTBEAT_TIMEOUT_SECONDS", 10.0, 1.0)
         # requests.Session is not guaranteed to be thread-safe. Heartbeat runs on a
-        # background thread, so it uses an isolated session with PATCH retries.
+        # background thread, so it uses an isolated short-lived PATCH retry policy.
         self.heartbeat_session = build_retrying_session(
-            base_headers,
-            attempts=5,
-            backoff_seconds=0.6,
+            {**base_headers, "Connection": "close"},
+            attempts=_int_env("WORKER_HEARTBEAT_ATTEMPTS", 2, 1),
+            backoff_seconds=_float_env("WORKER_HEARTBEAT_BACKOFF_SECONDS", 0.5, 0.0),
             retry_methods=("PATCH",),
         )
 
@@ -279,7 +297,7 @@ class SupabaseRestClient:
             self._rest_url("ingestion_runs"),
             params={"id": f"eq.{run_id}", "status": "eq.processing"},
             json={"updated_at": now_iso()},
-            timeout=60,
+            timeout=self.heartbeat_timeout_seconds,
         )
         response.raise_for_status()
 

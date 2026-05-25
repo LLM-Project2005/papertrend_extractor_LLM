@@ -45,6 +45,7 @@ class RetryingSession(requests.Session):
             except TRANSIENT_EXCEPTIONS as error:
                 if attempt >= self.attempts:
                     raise
+                self.close()
                 self._sleep_before_retry(
                     method_upper,
                     url,

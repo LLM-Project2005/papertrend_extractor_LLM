@@ -94,7 +94,7 @@ Run from the repository root:
   --min-instances 0 `
   --max-instances 2 `
   --set-build-env-vars GOOGLE_RUNTIME_VERSION=3.13,GOOGLE_ENTRYPOINT="python node_service.py --host 0.0.0.0 --port 8080" `
-  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=gemini-2.5-flash-lite `
+  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=gemini-2.5-flash-lite,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2 `
   --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,SUPABASE_URL=SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
 ```
 
@@ -109,6 +109,9 @@ Notes:
 - The staging deploy currently uses `MODEL_POLICY_PRESET=gemini-2.5-flash-lite`
   so every routed model task uses `google/gemini-2.5-flash-lite`. To return to
   the prior mixed model routing, change only this value back to `conservative`.
+- Staging uses lighter heartbeat settings to reduce Supabase retry noise during
+  long extraction steps: `WORKER_HEARTBEAT_INTERVAL_SECONDS=60`,
+  `WORKER_HEARTBEAT_TIMEOUT_SECONDS=10`, and `WORKER_HEARTBEAT_ATTEMPTS=2`.
 
 ## 6. Health Check
 
