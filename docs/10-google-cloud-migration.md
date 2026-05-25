@@ -262,7 +262,7 @@ callback cannot leave queued papers stuck forever.
 
 - Scheduler job: `papertrend-process-queue-staging`
 - Region: `asia-southeast1`
-- Schedule: every minute during staging, Asia/Bangkok time
+- Schedule: every 5 minutes during staging, Asia/Bangkok time
 - Target: `POST <Cloud Run staging URL>/process-queue`
 - Body: `{"async":true,"maxRuns":1,"reason":"cloud-scheduler-staging"}`
 - Auth: `Authorization: Bearer <WORKER_WEBHOOK_SECRET>`
@@ -285,8 +285,8 @@ Useful checks:
   --location asia-southeast1
 ```
 
-After Cloud Tasks is stable, Scheduler can be slowed to every 5 or 10 minutes
-to reduce idle polling while keeping the recovery behavior.
+Scheduler can be slowed further to every 10 minutes later if Cloud Tasks remains
+stable and idle polling needs to be reduced again.
 
 ## 11. Rollback Plan
 
@@ -310,8 +310,8 @@ If production is ever switched and fails:
 After staging works:
 
 - Split queue processing into a Cloud Run Job.
-- Slow the staging Scheduler backup to every 5 or 10 minutes once Cloud Tasks
-  proves stable.
+- Slow the staging Scheduler backup to every 10 minutes if Cloud Tasks proves
+  stable and idle polling should be reduced further.
 - Disable duplicate Vercel cron sources.
 - Add shared-secret protection for non-worker Python service POST endpoints.
 - Decide later whether storage should remain Supabase Storage or move to
