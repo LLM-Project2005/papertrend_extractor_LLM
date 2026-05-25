@@ -11,12 +11,27 @@ import {
   useRef,
   useState,
 } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
-import { TRACK_COLS } from "@/lib/constants";
+import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
+  ChartIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   CircleIcon,
@@ -56,6 +71,41 @@ interface Citation {
   year: string;
   href: string;
   reason: string;
+  sourceType?: "paper" | "web";
+}
+
+type ChartScope = "selected_files" | "workspace";
+type ChartType = "auto" | "bar" | "line" | "pie" | "table";
+type ChartMetric = "papers_per_year" | "top_topics" | "top_keywords" | "track_distribution";
+type ChartGroupBy = "year" | "topic" | "keyword" | "track";
+
+interface ChartRequest {
+  scope: ChartScope;
+  chartType: ChartType;
+  metric: ChartMetric;
+  groupBy: ChartGroupBy;
+  topN: number;
+}
+
+interface ChatChartPayload {
+  chartType: Exclude<ChartType, "auto">;
+  title: string;
+  scopeLabel: string;
+  metric: ChartMetric;
+  xKey: "label";
+  yKeys: ["value"];
+  data: Array<{
+    label: string;
+    value: number;
+  }>;
+}
+
+interface ChatToolResult {
+  type: "web_search" | "chart";
+  status: "succeeded" | "failed" | "skipped";
+  data?: unknown;
+  citations?: Citation[];
+  error?: string;
 }
 
 interface MessageView {
@@ -71,6 +121,8 @@ interface ChatPayload {
   answer?: string;
   mode?: "grounded" | "fallback";
   citations?: Citation[];
+  toolResults?: ChatToolResult[];
+  chart?: ChatChartPayload | null;
   error?: string;
   thread?: WorkspaceThreadSummary;
   messages?: WorkspaceMessageRecord[];
@@ -80,6 +132,7 @@ interface ChatPayload {
 const PINNED_THREADS_STORAGE_KEY = "papertrend_pinned_chat_threads_v1";
 const CHAT_MODEL_STORAGE_KEY = "papertrend_chat_model_v1";
 const CHAT_PARAMETERS_STORAGE_KEY = "papertrend_chat_parameters_v1";
+const DEFAULT_CHAT_MODEL = "google/gemini-3.1-flash-lite";
 
 type ChatGenerationParameters = {
   temperature: number;
@@ -100,13 +153,47 @@ const DEFAULT_CHAT_PARAMETERS: ChatGenerationParameters = {
 };
 
 const MODEL_OPTIONS = [
-  { value: "", label: "Auto" },
-  { value: "openai/gpt-4o-mini", label: "GPT-4o mini" },
-  { value: "openai/gpt-4.1-mini", label: "GPT-4.1 mini" },
-  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { value: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  { value: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
   { value: "google/gemma-4-31b-it", label: "Gemma 4 31B" },
+  { value: "openai/gpt-4.1-mini", label: "GPT-4.1 mini" },
+  { value: "openai/gpt-4o-mini", label: "GPT-4o mini" },
 ] as const;
+
+const CHART_INTENT_PATTERN =
+  /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
+
+const DEFAULT_CHART_REQUEST: ChartRequest = {
+  scope: "workspace",
+  chartType: "auto",
+  metric: "papers_per_year",
+  groupBy: "year",
+  topN: 10,
+};
+
+function normalizeStoredModel(value: string | null) {
+  return MODEL_OPTIONS.some((option) => option.value === value)
+    ? String(value)
+    : DEFAULT_CHAT_MODEL;
+}
+
+function groupByForMetric(metric: ChartMetric): ChartGroupBy {
+  if (metric === "top_topics") return "topic";
+  if (metric === "top_keywords") return "keyword";
+  if (metric === "track_distribution") return "track";
+  return "year";
+}
+
+function chartFromMetadata(metadata?: Record<string, unknown> | null): ChatChartPayload | null {
+  const chart = metadata?.chart;
+  if (!chart || typeof chart !== "object") {
+    return null;
+  }
+  const value = chart as Partial<ChatChartPayload>;
+  if (!Array.isArray(value.data) || !value.title || !value.chartType) {
+    return null;
+  }
+  return value as ChatChartPayload;
+}
 
 const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
   id: message.id,
@@ -489,6 +576,124 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
   );
 }
 
+function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
+  const chartData = chart.data ?? [];
+  const maxValue = Math.max(...chartData.map((row) => Number(row.value) || 0), 0);
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#202020]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-white/10">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+            Chart
+          </p>
+          <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
+            {chart.title}
+          </h3>
+          <p className="mt-1 text-xs text-slate-500 dark:text-[#a3a3a3]">
+            {chart.scopeLabel}
+          </p>
+        </div>
+        <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:text-[#d8d8d8]">
+          {chart.chartType}
+        </span>
+      </div>
+
+      {chart.chartType === "table" ? (
+        <div className="max-h-[360px] overflow-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="sticky top-0 bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-[#b4b4b4]">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Label</th>
+                <th className="px-4 py-3 text-right font-semibold">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {chartData.map((row) => (
+                <tr key={row.label} className="border-t border-slate-200 dark:border-white/10">
+                  <td className="px-4 py-3 text-slate-700 dark:text-[#ececec]">{row.label}</td>
+                  <td className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white">
+                    {row.value}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="h-[320px] px-3 py-4">
+          <ResponsiveContainer width="100%" height="100%">
+            {chart.chartType === "line" ? (
+              <LineChart data={chartData} margin={{ left: 6, right: 18, top: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
+                <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fill: "#9ca3af", fontSize: 12 }} />
+                <Tooltip />
+                <Line
+                  type="monotone"
+                  dataKey="value"
+                  stroke="#4a7fe5"
+                  strokeWidth={2.4}
+                  dot={{ r: 3 }}
+                  activeDot={{ r: 5 }}
+                />
+              </LineChart>
+            ) : chart.chartType === "pie" ? (
+              <PieChart>
+                <Tooltip />
+                <Pie
+                  data={chartData}
+                  dataKey="value"
+                  nameKey="label"
+                  outerRadius={105}
+                  label={(entry) => entry.label}
+                >
+                  {chartData.map((row, index) => (
+                    <Cell
+                      key={`${row.label}-${index}`}
+                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                    />
+                  ))}
+                </Pie>
+              </PieChart>
+            ) : (
+              <BarChart
+                data={chartData}
+                layout={chartData.length > 6 ? "vertical" : "horizontal"}
+                margin={{ left: chartData.length > 6 ? 30 : 6, right: 18, top: 8, bottom: 8 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
+                <XAxis
+                  type={chartData.length > 6 ? "number" : "category"}
+                  dataKey={chartData.length > 6 ? undefined : "label"}
+                  tick={{ fill: "#9ca3af", fontSize: 12 }}
+                  domain={chartData.length > 6 ? [0, Math.ceil(maxValue)] : undefined}
+                />
+                <YAxis
+                  type={chartData.length > 6 ? "category" : "number"}
+                  dataKey={chartData.length > 6 ? "label" : undefined}
+                  width={chartData.length > 6 ? 120 : undefined}
+                  allowDecimals={false}
+                  tick={{ fill: "#9ca3af", fontSize: 12 }}
+                />
+                <Tooltip />
+                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                  {chartData.map((row, index) => (
+                    <Cell
+                      key={`${row.label}-${index}`}
+                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function sortThreads(
   threads: WorkspaceThreadSummary[],
   pinnedIds: string[]
@@ -675,8 +880,14 @@ export default function ChatClient() {
     refreshFolders,
   } = useWorkspaceProfile();
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [chartPanelOpen, setChartPanelOpen] = useState(false);
+  const [chartPromptDismissedFor, setChartPromptDismissedFor] = useState("");
+  const [chartRequest, setChartRequest] = useState<ChartRequest>(
+    DEFAULT_CHART_REQUEST
+  );
   const [parameterMenuOpen, setParameterMenuOpen] = useState(false);
   const [chatParameters, setChatParameters] = useState<ChatGenerationParameters>(
     DEFAULT_CHAT_PARAMETERS
@@ -808,7 +1019,9 @@ export default function ChatClient() {
         const parsed = JSON.parse(rawPinned) as string[];
         if (Array.isArray(parsed)) setPinnedThreadIds(parsed.filter(Boolean));
       }
-      setSelectedModel(window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY) ?? "");
+      setSelectedModel(
+        normalizeStoredModel(window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY))
+      );
       const rawParams = window.localStorage.getItem(CHAT_PARAMETERS_STORAGE_KEY);
       if (rawParams) {
         const parsed = JSON.parse(rawParams) as Partial<ChatGenerationParameters>;
@@ -834,6 +1047,25 @@ export default function ChatClient() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    setChartRequest((current) => ({
+      ...current,
+      scope: selectedRunIds.length > 0 ? "selected_files" : "workspace",
+    }));
+  }, [selectedRunIds.length]);
+
+  useEffect(() => {
+    const prompt = draft.trim();
+    if (
+      prompt &&
+      CHART_INTENT_PATTERN.test(prompt) &&
+      chartPromptDismissedFor !== prompt &&
+      !deepResearchEnabled
+    ) {
+      setChartPanelOpen(true);
+    }
+  }, [chartPromptDismissedFor, deepResearchEnabled, draft]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1113,7 +1345,7 @@ export default function ChatClient() {
     try {
       const payload = await sendRequest({
         message: prompt,
-        model: selectedModel || undefined,
+        model: selectedModel,
         generationParameters: {
           temperature: chatParameters.temperature,
           topP: chatParameters.topP,
@@ -1133,6 +1365,8 @@ export default function ChatClient() {
         folderId: chatScopeFolderId,
         projectId: selectedProjectId ?? undefined,
         selectedRunIds,
+        toolMode: webSearchEnabled ? "web_search" : "auto",
+        webSearchEnabled,
         threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
         chatMode: "normal",
         action: "message",
@@ -1155,6 +1389,96 @@ export default function ChatClient() {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
       setError(
         nextError instanceof Error ? nextError.message : "Chat request failed."
+      );
+    } finally {
+      abortControllerRef.current = null;
+      setLoading(false);
+    }
+  }
+
+  function buildChartPrompt() {
+    const metricLabel =
+      chartRequest.metric === "top_topics"
+        ? "top topics"
+        : chartRequest.metric === "top_keywords"
+          ? "top keywords"
+          : chartRequest.metric === "track_distribution"
+            ? "track distribution"
+            : "papers per year";
+    return `Build a ${metricLabel} chart.`;
+  }
+
+  async function handleChartSend() {
+    const prompt = draft.trim() || buildChartPrompt();
+    if (!canPersist) {
+      setError("Sign in to build charts from workspace data.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setMenuOpen(false);
+    setChartPanelOpen(false);
+
+    const normalizedChartRequest: ChartRequest = {
+      ...chartRequest,
+      scope:
+        chartRequest.scope === "selected_files" && selectedRunIds.length > 0
+          ? "selected_files"
+          : "workspace",
+    };
+    const nextMessages = [
+      ...messages,
+      localMessage("user", prompt, [], {
+        toolMode: "chart",
+        chartRequest: normalizedChartRequest,
+      }),
+    ];
+    setMessages(nextMessages);
+    setDraft("");
+
+    try {
+      const payload = await sendRequest({
+        message: prompt,
+        model: selectedModel,
+        attachments: selectedAttachments,
+        messages: nextMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        selectedYears: effectiveSelectedYears,
+        selectedTracks: effectiveSelectedTracks,
+        searchQuery,
+        folderId: chatScopeFolderId,
+        projectId: selectedProjectId ?? undefined,
+        selectedRunIds,
+        toolMode: "chart",
+        chartRequest: normalizedChartRequest,
+        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        chatMode: "normal",
+        action: "message",
+      });
+      if (payload.thread && payload.messages) {
+        applyPayload(payload);
+      } else {
+        setMessages([
+          ...nextMessages,
+          localMessage(
+            "assistant",
+            payload.answer ?? "No chart returned.",
+            payload.citations ?? [],
+            {
+              mode: payload.mode ?? "fallback",
+              toolResults: payload.toolResults ?? [],
+              chart: payload.chart ?? null,
+            }
+          ),
+        ]);
+      }
+    } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === "AbortError") return;
+      setError(
+        nextError instanceof Error ? nextError.message : "Chart request failed."
       );
     } finally {
       abortControllerRef.current = null;
@@ -1256,6 +1580,10 @@ export default function ChatClient() {
     }
     if (deepResearchEnabled) {
       await handlePlanResearch();
+      return;
+    }
+    if (chartPanelOpen || CHART_INTENT_PATTERN.test(draft.trim())) {
+      await handleChartSend();
       return;
     }
     await handleNormalSend();
@@ -1782,6 +2110,7 @@ export default function ChatClient() {
               <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
+                  const chart = chartFromMetadata(message.metadata);
                   return (
                     <section key={message.id}>
                       {isUser ? (
@@ -1793,6 +2122,7 @@ export default function ChatClient() {
                       ) : (
                         <div className="space-y-4">
                           {renderRichMessage(message.content, message.id, "assistant")}
+                          {chart ? <ChatChartCard chart={chart} /> : null}
                           {message.citations.length > 0 ? (
                             <div className="space-y-2">
                               {message.citations.map((citation) => (
@@ -1801,10 +2131,17 @@ export default function ChatClient() {
                                   href={citation.href}
                                   className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[#2a2a2a] px-4 py-3 text-sm transition-colors hover:bg-[#303030]"
                                 >
-                                  <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-[#8e8e8e]" />
+                                  {citation.sourceType === "web" ? (
+                                    <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-[#8e8e8e]" />
+                                  ) : (
+                                    <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-[#8e8e8e]" />
+                                  )}
                                   <span className="min-w-0">
                                     <span className="font-medium text-[#ececec]">
-                                      [Paper {citation.paperId}] {citation.title}
+                                      {citation.sourceType === "web"
+                                        ? `[${citation.paperId}]`
+                                        : `[Paper ${citation.paperId}]`}{" "}
+                                      {citation.title}
                                     </span>
                                     <span className="ml-2 text-[#8e8e8e]">
                                       ({citation.year})
@@ -1934,6 +2271,18 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={() => {
+                              setChartPanelOpen(true);
+                              setMenuOpen(false);
+                            }}
+                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
+                          >
+                            <ChartIcon className="h-4 w-4" />
+                            <span>Build chart</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
                               setShowAnalyzeModal(true);
                               setMenuOpen(false);
                             }}
@@ -1941,6 +2290,29 @@ export default function ChatClient() {
                           >
                             <PaperIcon className="h-4 w-4" />
                             <span>Upload files</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setWebSearchEnabled((current) => !current);
+                              setMenuOpen(false);
+                            }}
+                            className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+                              webSearchEnabled
+                                ? "bg-[#173868] text-[#9cc8ff]"
+                                : "text-[#ececec] hover:bg-[#303030]"
+                            }`}
+                          >
+                            <span className="flex items-center gap-3">
+                              <SearchIcon className="h-4 w-4" />
+                              <span>Web search</span>
+                            </span>
+                            {webSearchEnabled ? (
+                              <span className="rounded-full bg-[#2b5da8] px-2 py-0.5 text-[11px] font-medium text-white">
+                                Active
+                              </span>
+                            ) : null}
                           </button>
 
                           <button
@@ -2021,6 +2393,129 @@ export default function ChatClient() {
                           </div>
                         </div>
                       ) : null}
+
+                      {chartPanelOpen ? (
+                        <div className="absolute bottom-12 left-0 z-40 w-[340px] rounded-2xl border border-white/10 bg-[#1b1b1b] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.5)]">
+                          <div className="mb-4 flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8e8e8e]">
+                                Chart builder
+                              </p>
+                              <p className="mt-1 text-sm text-[#ececec]">
+                                Build from analyzed workspace data.
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChartPromptDismissedFor(draft.trim());
+                                setChartPanelOpen(false);
+                              }}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#8e8e8e] hover:bg-white/10 hover:text-white"
+                              aria-label="Close chart builder"
+                            >
+                              <CloseIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+
+                          <div className="space-y-3 text-xs text-[#d8d8d8]">
+                            <label className="block">
+                              <span className="mb-1.5 block text-[#9b9b9b]">Data scope</span>
+                              <select
+                                value={chartRequest.scope}
+                                onChange={(event) =>
+                                  setChartRequest((current) => ({
+                                    ...current,
+                                    scope: event.target.value as ChartScope,
+                                  }))
+                                }
+                                className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
+                              >
+                                <option value="workspace">Current workspace/project</option>
+                                <option value="selected_files" disabled={selectedRunIds.length === 0}>
+                                  Selected library files
+                                </option>
+                              </select>
+                            </label>
+
+                            <label className="block">
+                              <span className="mb-1.5 block text-[#9b9b9b]">Metric</span>
+                              <select
+                                value={chartRequest.metric}
+                                onChange={(event) => {
+                                  const metric = event.target.value as ChartMetric;
+                                  setChartRequest((current) => ({
+                                    ...current,
+                                    metric,
+                                    groupBy: groupByForMetric(metric),
+                                  }));
+                                }}
+                                className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
+                              >
+                                <option value="papers_per_year">Papers per year</option>
+                                <option value="top_topics">Top topics</option>
+                                <option value="top_keywords">Top keywords</option>
+                                <option value="track_distribution">Track distribution</option>
+                              </select>
+                            </label>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <label className="block">
+                                <span className="mb-1.5 block text-[#9b9b9b]">Chart type</span>
+                                <select
+                                  value={chartRequest.chartType}
+                                  onChange={(event) =>
+                                    setChartRequest((current) => ({
+                                      ...current,
+                                      chartType: event.target.value as ChartType,
+                                    }))
+                                  }
+                                  className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
+                                >
+                                  <option value="auto">Auto</option>
+                                  <option value="bar">Bar</option>
+                                  <option value="line">Line</option>
+                                  <option value="pie">Pie</option>
+                                  <option value="table">Table</option>
+                                </select>
+                              </label>
+
+                              <label className="block">
+                                <span className="mb-1.5 block text-[#9b9b9b]">Top N</span>
+                                <input
+                                  type="number"
+                                  min={3}
+                                  max={25}
+                                  value={chartRequest.topN}
+                                  onChange={(event) =>
+                                    setChartRequest((current) => ({
+                                      ...current,
+                                      topN: Number(event.target.value) || 10,
+                                    }))
+                                  }
+                                  className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
+                                />
+                              </label>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 flex items-center justify-between gap-3">
+                            <span className="text-xs text-[#8e8e8e]">
+                              {selectedRunIds.length > 0
+                                ? `${selectedRunIds.length} file${selectedRunIds.length === 1 ? "" : "s"} selected`
+                                : activeFolderLabel}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void handleChartSend()}
+                              className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-[#1b1b1b] transition-colors hover:bg-[#e8e8e8]"
+                            >
+                              <ChartIcon className="h-4 w-4" />
+                              Build
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     {!deepResearchEnabled ? (
@@ -2029,10 +2524,14 @@ export default function ChatClient() {
                         <select
                           value={selectedModel}
                           onChange={(event) => setSelectedModel(event.target.value)}
-                          className="bg-transparent text-xs font-medium text-[#ececec] outline-none"
+                          className="rounded-md bg-[#212121] text-xs font-medium text-[#ececec] outline-none"
                         >
                           {MODEL_OPTIONS.map((option) => (
-                            <option key={option.value || "auto"} value={option.value}>
+                            <option
+                              key={option.value}
+                              value={option.value}
+                              className="bg-[#212121] text-[#ececec]"
+                            >
                               {option.label}
                             </option>
                           ))}
@@ -2049,6 +2548,21 @@ export default function ChatClient() {
                           onClick={() => setDeepResearchEnabled(false)}
                           className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9cc8ff] opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
                           aria-label="Disable deep research"
+                        >
+                          <CloseIcon className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : null}
+
+                    {webSearchEnabled && !deepResearchEnabled ? (
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-[#2b5da8] bg-[#173868] px-3 text-xs font-medium text-[#9cc8ff]">
+                        <SearchIcon className="h-3.5 w-3.5" />
+                        Web search
+                        <button
+                          type="button"
+                          onClick={() => setWebSearchEnabled(false)}
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9cc8ff] opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
+                          aria-label="Disable web search"
                         >
                           <CloseIcon className="h-3 w-3" />
                         </button>

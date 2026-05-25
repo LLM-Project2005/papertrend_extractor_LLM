@@ -139,6 +139,7 @@ export interface WorkspaceMessageRecord {
     year: string;
     href: string;
     reason: string;
+    sourceType?: "paper" | "web";
   }>;
   metadata?: Record<string, unknown> | null;
   created_at?: string;

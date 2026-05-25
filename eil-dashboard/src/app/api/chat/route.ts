@@ -9,10 +9,16 @@ import {
   replaceDeepResearchPlan,
   updateWorkspaceThread,
 } from "@/lib/chat-store";
-import { createChatCompletion } from "@/lib/openai";
+import { TRACK_COLS, type TrackKey } from "@/lib/constants";
+import {
+  loadDashboardDataServer,
+  loadScopedDashboardData,
+} from "@/lib/dashboard-data-server";
+import { createChatCompletionResult } from "@/lib/openai";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { triggerResearchQueue, triggerWorkerQueue } from "@/lib/worker-trigger";
+import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
   DeepResearchSessionRecord,
@@ -23,6 +29,42 @@ interface Citation {
   year: string;
   href: string;
   reason: string;
+  sourceType?: "paper" | "web";
+}
+
+type ChatToolMode = "auto" | "web_search" | "chart" | "none";
+type ChartScope = "selected_files" | "workspace";
+type ChartType = "auto" | "bar" | "line" | "pie" | "table";
+type ChartMetric = "papers_per_year" | "top_topics" | "top_keywords" | "track_distribution";
+type ChartGroupBy = "year" | "topic" | "keyword" | "track";
+
+interface ChartRequest {
+  scope?: ChartScope;
+  chartType?: ChartType;
+  metric?: ChartMetric;
+  groupBy?: ChartGroupBy;
+  topN?: number;
+}
+
+interface ChatChartPayload {
+  chartType: Exclude<ChartType, "auto">;
+  title: string;
+  scopeLabel: string;
+  metric: ChartMetric;
+  xKey: "label";
+  yKeys: ["value"];
+  data: Array<{
+    label: string;
+    value: number;
+  }>;
+}
+
+interface ChatToolResult {
+  type: "web_search" | "chart";
+  status: "succeeded" | "failed" | "skipped";
+  data?: unknown;
+  citations?: Citation[];
+  error?: string;
 }
 
 interface ChatGenerationOptions {
@@ -59,6 +101,9 @@ interface ChatRequestBody {
   threadId?: string;
   folderId?: string | "all";
   projectId?: string;
+  toolMode?: ChatToolMode;
+  chartRequest?: ChartRequest;
+  webSearchEnabled?: boolean;
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
@@ -123,6 +168,344 @@ function resolveGenerationOptions(body: ChatRequestBody): ChatGenerationOptions 
     options.presencePenalty = clampValue(presencePenalty, -2, 2);
   }
   return options;
+}
+
+const DEFAULT_CHAT_MODEL = "google/gemini-3.1-flash-lite";
+const TOOL_CAPABLE_CHAT_MODELS = [
+  "google/gemini-3.1-flash-lite",
+  "google/gemma-4-31b-it",
+  "openai/gpt-4.1-mini",
+  "openai/gpt-4o-mini",
+] as const;
+
+const CHART_INTENT_PATTERN =
+  /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
+const WEB_SEARCH_INTENT_PATTERN =
+  /\b(web search|search the web|internet|online|latest|recent|today|news)\b|ค้นหาเว็บ|เว็บ|ล่าสุด|ข่าว/i;
+
+function resolveChatModel(model?: string | null) {
+  const normalized = String(model ?? "").trim();
+  return TOOL_CAPABLE_CHAT_MODELS.includes(
+    normalized as (typeof TOOL_CAPABLE_CHAT_MODELS)[number]
+  )
+    ? normalized
+    : DEFAULT_CHAT_MODEL;
+}
+
+function hasChartIntent(message: string) {
+  return CHART_INTENT_PATTERN.test(message);
+}
+
+function hasWebSearchIntent(message: string) {
+  return WEB_SEARCH_INTENT_PATTERN.test(message);
+}
+
+function clampInteger(value: unknown, min: number, max: number, fallback: number) {
+  const parsed = toFiniteNumber(value);
+  if (parsed === undefined) {
+    return fallback;
+  }
+  return Math.round(clampValue(parsed, min, max));
+}
+
+function normalizeChartRequest(
+  request: ChartRequest | undefined,
+  selectedRunIds: string[]
+): Required<ChartRequest> {
+  const scope =
+    request?.scope === "selected_files" && selectedRunIds.length > 0
+      ? "selected_files"
+      : "workspace";
+  const metric: ChartMetric =
+    request?.metric === "top_topics" ||
+    request?.metric === "top_keywords" ||
+    request?.metric === "track_distribution" ||
+    request?.metric === "papers_per_year"
+      ? request.metric
+      : "papers_per_year";
+  const groupBy: ChartGroupBy =
+    request?.groupBy === "topic" ||
+    request?.groupBy === "keyword" ||
+    request?.groupBy === "track" ||
+    request?.groupBy === "year"
+      ? request.groupBy
+      : metric === "top_topics"
+        ? "topic"
+        : metric === "top_keywords"
+          ? "keyword"
+          : metric === "track_distribution"
+            ? "track"
+            : "year";
+  const chartType: ChartType =
+    request?.chartType === "bar" ||
+    request?.chartType === "line" ||
+    request?.chartType === "pie" ||
+    request?.chartType === "table" ||
+    request?.chartType === "auto"
+      ? request.chartType
+      : "auto";
+
+  return {
+    scope,
+    metric,
+    groupBy,
+    chartType,
+    topN: clampInteger(request?.topN, 3, 25, 10),
+  };
+}
+
+function chartTypeForMetric(
+  requestedType: ChartType,
+  metric: ChartMetric
+): Exclude<ChartType, "auto"> {
+  if (requestedType && requestedType !== "auto") {
+    return requestedType;
+  }
+  if (metric === "papers_per_year") {
+    return "line";
+  }
+  if (metric === "track_distribution") {
+    return "pie";
+  }
+  return "bar";
+}
+
+function addUniquePaperYear(
+  rows: Array<{ paper_id: string | number; year?: string | null }>,
+  byYear: Map<string, Set<string>>
+) {
+  rows.forEach((row) => {
+    const year = String(row.year ?? "Unknown").trim() || "Unknown";
+    const paperId = String(row.paper_id ?? "").trim();
+    if (!paperId) {
+      return;
+    }
+    if (!byYear.has(year)) {
+      byYear.set(year, new Set());
+    }
+    byYear.get(year)?.add(paperId);
+  });
+}
+
+function trackValue(row: TrackRow, track: TrackKey) {
+  if (track === "Other") {
+    return row.other;
+  }
+  return row[track.toLowerCase() as "el" | "eli" | "lae"];
+}
+
+function topEntries(
+  counts: Map<string, number>,
+  topN: number,
+  sortLabels = false
+) {
+  const rows = [...counts.entries()]
+    .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
+    .filter((row) => row.label && row.value > 0);
+
+  rows.sort((left, right) => {
+    if (sortLabels) {
+      const leftNumber = Number(left.label);
+      const rightNumber = Number(right.label);
+      if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+        return leftNumber - rightNumber;
+      }
+      return left.label.localeCompare(right.label);
+    }
+    return right.value - left.value || left.label.localeCompare(right.label);
+  });
+
+  return rows.slice(0, topN);
+}
+
+function buildChartFromData(
+  data: DashboardData,
+  request: Required<ChartRequest>,
+  scopeLabel: string
+): ChatChartPayload | null {
+  const chartType = chartTypeForMetric(request.chartType, request.metric);
+
+  if (request.metric === "papers_per_year") {
+    const byYear = new Map<string, Set<string>>();
+    addUniquePaperYear(data.trends, byYear);
+    addUniquePaperYear(data.tracksSingle, byYear);
+    addUniquePaperYear(data.tracksMulti, byYear);
+    const rows = topEntries(
+      new Map([...byYear.entries()].map(([year, paperIds]) => [year, paperIds.size])),
+      100,
+      true
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: "Analyzed papers per year",
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: ["value"],
+      data: rows,
+    };
+  }
+
+  if (request.metric === "top_topics") {
+    const counts = new Map<string, number>();
+    data.trends.forEach((row) => {
+      const label = String(row.topic || row.raw_topic || "Unclassified").trim();
+      counts.set(label, (counts.get(label) ?? 0) + Math.max(1, row.keyword_frequency || 0));
+    });
+    const rows = topEntries(counts, request.topN);
+    if (rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: "Top topics by keyword frequency",
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: ["value"],
+      data: rows,
+    };
+  }
+
+  if (request.metric === "top_keywords") {
+    const counts = new Map<string, number>();
+    data.trends.forEach((row) => {
+      const label = String(row.keyword || "").trim();
+      counts.set(label, (counts.get(label) ?? 0) + Math.max(1, row.keyword_frequency || 0));
+    });
+    const rows = topEntries(counts, request.topN);
+    if (rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: "Top keywords by frequency",
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: ["value"],
+      data: rows,
+    };
+  }
+
+  const counts = new Map<string, number>();
+  const trackRows = data.tracksSingle.length > 0 ? data.tracksSingle : data.tracksMulti;
+  trackRows.forEach((row) => {
+    TRACK_COLS.forEach((track) => {
+      if (trackValue(row, track) > 0) {
+        counts.set(track, (counts.get(track) ?? 0) + 1);
+      }
+    });
+  });
+  const rows = topEntries(counts, TRACK_COLS.length);
+  if (rows.length === 0) {
+    return null;
+  }
+  return {
+    chartType,
+    title: "Track distribution",
+    scopeLabel,
+    metric: request.metric,
+    xKey: "label",
+    yKeys: ["value"],
+    data: rows,
+  };
+}
+
+async function loadChartDashboardData(
+  ownerUserId: string,
+  request: Required<ChartRequest>,
+  folderId: string | "all" | undefined,
+  projectId: string | undefined,
+  selectedRunIds: string[]
+) {
+  const supabase = getSupabaseAdmin();
+  if (request.scope === "selected_files" && selectedRunIds.length > 0) {
+    const scopedRunIds = await resolveScopedRunIds(
+      supabase,
+      ownerUserId,
+      selectedRunIds
+    );
+    return {
+      data: await loadScopedDashboardData(ownerUserId, scopedRunIds),
+      scopeLabel: `${selectedRunIds.length} selected file${
+        selectedRunIds.length === 1 ? "" : "s"
+      }`,
+    };
+  }
+
+  return {
+    data: await loadDashboardDataServer(
+      ownerUserId,
+      folderId && folderId !== "all" ? [folderId] : null,
+      projectId && projectId !== "all" ? projectId : null,
+      "live"
+    ),
+    scopeLabel: folderId && folderId !== "all" ? "selected folder" : "workspace",
+  };
+}
+
+async function buildChatChart(
+  ownerUserId: string,
+  body: ChatRequestBody
+): Promise<{ chart: ChatChartPayload | null; error?: string; request: Required<ChartRequest> }> {
+  const request = normalizeChartRequest(body.chartRequest, body.selectedRunIds ?? []);
+  const { data, scopeLabel } = await loadChartDashboardData(
+    ownerUserId,
+    request,
+    body.folderId,
+    body.projectId,
+    body.selectedRunIds ?? []
+  );
+  const chart = buildChartFromData(data, request, scopeLabel);
+  return {
+    request,
+    chart,
+    error: chart
+      ? undefined
+      : "No analyzed data was found for that chart scope yet.",
+  };
+}
+
+function extractWebCitations(annotations: unknown): Citation[] {
+  if (!Array.isArray(annotations)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const citations: Citation[] = [];
+  annotations.forEach((annotation) => {
+    if (!annotation || typeof annotation !== "object") {
+      return;
+    }
+    const citation = (annotation as { url_citation?: Record<string, unknown> })
+      .url_citation;
+    const url = String(citation?.url ?? "").trim();
+    if (!url || seen.has(url)) {
+      return;
+    }
+    seen.add(url);
+    let host = "web";
+    try {
+      host = new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      host = "web";
+    }
+    const title = String(citation?.title ?? host).trim() || host;
+    const content = String(citation?.content ?? "").trim();
+    citations.push({
+      paperId: `Web ${citations.length + 1}`,
+      title,
+      year: "Web",
+      href: url,
+      reason: content ? content.slice(0, 220) : host,
+      sourceType: "web",
+    });
+  });
+  return citations;
 }
 
 async function resolveReusableDeepResearchSessionId(
@@ -1433,9 +1816,97 @@ async function normalChat(
     });
   }
 
+  const requestedToolMode: ChatToolMode = body.toolMode ?? "auto";
+  const chartRequested =
+    requestedToolMode === "chart" ||
+    Boolean(body.chartRequest) ||
+    (requestedToolMode === "auto" && hasChartIntent(currentMessage));
+
+  if (chartRequested) {
+    if (!ownerUserId || !supabase || !thread) {
+      return NextResponse.json(
+        { error: "Sign in to build charts from workspace data." },
+        { status: 401 }
+      );
+    }
+
+    let chart: ChatChartPayload | null = null;
+    let chartError: string | undefined;
+    let normalizedChartRequest: Required<ChartRequest> | null = null;
+    try {
+      const result = await buildChatChart(ownerUserId, body);
+      chart = result.chart;
+      chartError = result.error;
+      normalizedChartRequest = result.request;
+    } catch (error) {
+      chartError =
+        error instanceof Error ? error.message : "Failed to build chart.";
+    }
+
+    const toolResults: ChatToolResult[] = [
+      chart
+        ? { type: "chart", status: "succeeded", data: chart }
+        : { type: "chart", status: "failed", error: chartError },
+    ];
+    const answer = chart
+      ? `I built **${chart.title}** from ${chart.scopeLabel}.`
+      : `I could not build that chart yet. ${chartError ?? "No analyzed data was found."}`;
+    const metadata = {
+      mode: chart ? "grounded" : "fallback",
+      toolResults,
+      chart,
+      chartRequest: normalizedChartRequest,
+    };
+
+    await appendWorkspaceMessage(supabase, {
+      threadId: thread.id,
+      ownerUserId,
+      folderId: body.folderId,
+      role: "assistant",
+      content: answer,
+      messageKind: "chat",
+      citations: [],
+      metadata,
+    });
+    await updateWorkspaceThread(supabase, thread.id, {
+      summary: answer.slice(0, 240),
+      title: thread.title || buildThreadTitle(currentMessage),
+    });
+
+    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+    return NextResponse.json({
+      mode: chart ? "grounded" : "fallback",
+      answer,
+      citations: [],
+      toolResults,
+      chart,
+      thread: detail.thread,
+      messages: detail.messages,
+      deepResearchSession: detail.deepResearchSession,
+    });
+  }
+
   const citations: Citation[] = [];
   let mode: "grounded" | "fallback" = "fallback";
   const generationOptions = resolveGenerationOptions(body);
+  const selectedModel = resolveChatModel(body.model);
+  const webSearchRequested =
+    requestedToolMode === "web_search" ||
+    Boolean(body.webSearchEnabled) ||
+    (requestedToolMode === "auto" && hasWebSearchIntent(currentMessage));
+  const webSearchTools = webSearchRequested
+    ? [
+        {
+          type: "openrouter:web_search",
+          parameters: {
+            max_results: 5,
+            max_total_results: 8,
+            search_context_size: "medium",
+          },
+        },
+      ]
+    : undefined;
+  const toolResults: ChatToolResult[] = [];
 
   const history = (body.messages ?? [])
     .map((message) => ({
@@ -1475,26 +1946,47 @@ async function normalChat(
   let answer = "";
   let modelError: string | undefined;
   try {
-    answer =
-      (await createChatCompletion(
-        chatMessages,
-        generationOptions.temperature ?? 0.4,
-        body.model,
-        "CHAT_SYNTHESIS",
-        {
-          topP: generationOptions.topP,
-          topK: generationOptions.topK,
-          maxTokens: generationOptions.maxTokens,
-          frequencyPenalty: generationOptions.frequencyPenalty,
-          presencePenalty: generationOptions.presencePenalty,
-        }
-      )) ?? "";
+    const completion = await createChatCompletionResult(
+      chatMessages,
+      generationOptions.temperature ?? 0.4,
+      selectedModel,
+      "CHAT_SYNTHESIS",
+      {
+        topP: generationOptions.topP,
+        topK: generationOptions.topK,
+        maxTokens: generationOptions.maxTokens,
+        frequencyPenalty: generationOptions.frequencyPenalty,
+        presencePenalty: generationOptions.presencePenalty,
+        tools: webSearchTools,
+        toolChoice: webSearchRequested ? "auto" : undefined,
+      }
+    );
+    answer = completion?.content ?? "";
+    const webCitations = extractWebCitations(completion?.annotations ?? []);
+    citations.push(...webCitations);
+    if (webSearchRequested) {
+      toolResults.push({
+        type: "web_search",
+        status: webCitations.length > 0 ? "succeeded" : "skipped",
+        citations: webCitations,
+      });
+    }
   } catch (error) {
     modelError = error instanceof Error ? error.message : "Model request failed.";
+    if (webSearchRequested) {
+      toolResults.push({
+        type: "web_search",
+        status: "failed",
+        error: modelError,
+      });
+    }
   }
 
   if (!answer) {
     answer = buildFallbackAnswer(currentMessage, modelError);
+  }
+  if (citations.length > 0 || webSearchRequested) {
+    mode = "grounded";
   }
 
   if (ownerUserId && supabase && thread) {
@@ -1506,7 +1998,12 @@ async function normalChat(
       content: answer,
       messageKind: "chat",
       citations,
-      metadata: { mode },
+      metadata: {
+        mode,
+        model: selectedModel,
+        toolResults,
+        webSearchEnabled: webSearchRequested,
+      },
     });
     await updateWorkspaceThread(supabase, thread.id, {
       summary: answer.slice(0, 240),
@@ -1518,6 +2015,7 @@ async function normalChat(
       mode,
       answer,
       citations,
+      toolResults,
       thread: detail.thread,
       messages: detail.messages,
       deepResearchSession: detail.deepResearchSession,
@@ -1528,6 +2026,7 @@ async function normalChat(
     mode,
     answer,
     citations,
+    toolResults,
   });
 }
 

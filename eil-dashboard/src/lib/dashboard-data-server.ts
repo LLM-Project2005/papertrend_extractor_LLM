@@ -541,7 +541,7 @@ function mergeDashboardSources(
   };
 }
 
-async function loadScopedDashboardData(
+export async function loadScopedDashboardData(
   ownerUserId: string,
   scopedRunIds: string[] | null
 ): Promise<DashboardData> {
