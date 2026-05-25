@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
@@ -8,12 +8,14 @@ interface UseIngestionRunsOptions {
   enabled?: boolean;
   pollIntervalMs?: number;
   folderJobId?: string;
+  onUnauthorized?: () => void;
 }
 
 export function useIngestionRuns({
   enabled = true,
   pollIntervalMs = 12000,
   folderJobId,
+  onUnauthorized,
 }: UseIngestionRunsOptions = {}) {
   const { session, user } = useAuth();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
@@ -22,6 +24,12 @@ export function useIngestionRuns({
   const [error, setError] = useState<string | null>(null);
   const [adminSecret, setAdminSecret] = useState("");
   const [pollingPausedForAuth, setPollingPausedForAuth] = useState(false);
+  const [authRejected, setAuthRejected] = useState(false);
+  const onUnauthorizedRef = useRef(onUnauthorized);
+
+  useEffect(() => {
+    onUnauthorizedRef.current = onUnauthorized;
+  }, [onUnauthorized]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -82,6 +90,8 @@ export function useIngestionRuns({
       if (!response.ok) {
         if (response.status === 401 || response.status === 403) {
           setPollingPausedForAuth(true);
+          setAuthRejected(true);
+          onUnauthorizedRef.current?.();
         }
         throw new Error(payload.error ?? "Failed to load ingestion runs.");
       }
@@ -89,6 +99,7 @@ export function useIngestionRuns({
       setRuns(payload.runs ?? []);
       setFolderJob((payload.jobs ?? [])[0] ?? null);
       setError(null);
+      setAuthRejected(false);
     } catch (refreshError) {
       setError(
         refreshError instanceof Error
@@ -103,6 +114,7 @@ export function useIngestionRuns({
   useEffect(() => {
     // Resume polling after credentials rotate (e.g. session refresh / login).
     setPollingPausedForAuth(false);
+    setAuthRejected(false);
   }, [requestHeaders]);
 
   const cancelRuns = useCallback(
@@ -338,6 +350,7 @@ export function useIngestionRuns({
     folderJob,
     loading,
     error,
+    authRejected,
     refresh,
     cancelRuns,
     cancelAllActiveRuns,

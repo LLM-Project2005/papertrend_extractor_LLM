@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AdaptiveDashboardTab from "@/components/dashboard/AdaptiveDashboardTab";
@@ -207,39 +207,51 @@ export default function DashboardClient({
     previousAllYearsRef.current = allYears;
   }, [allYears, selectedYears, setSelectedYears]);
 
-  const currentTabKey = useMemo(() => {
+  const [isRoutePending, startRouteTransition] = useTransition();
+  const routeTabKey = useMemo(() => {
     const tabParam = normalizeTabKey(searchParams.get("tab"));
     if (tabParam && TAB_DEFINITIONS.some((tab) => tab.key === tabParam)) {
       return tabParam;
     }
     return "overview";
   }, [searchParams]);
+  const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
+  const currentTabKey = optimisticTabKey;
   const isAdaptiveTab = currentTabKey === "adaptive";
 
   useEffect(() => {
+    setOptimisticTabKey(routeTabKey);
+  }, [routeTabKey]);
+
+  useEffect(() => {
     const tabParam = normalizeTabKey(searchParams.get("tab"));
-    if (tabParam === currentTabKey) {
+    if (tabParam === routeTabKey) {
       return;
     }
 
     const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", currentTabKey);
+    params.set("tab", routeTabKey);
     const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
+    startRouteTransition(() => {
+      router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+        scroll: false,
+      });
     });
-  }, [basePath, currentTabKey, router, searchParams]);
+  }, [basePath, routeTabKey, router, searchParams, startRouteTransition]);
 
   const updateRoute = (mutator: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(searchParams.toString());
     mutator(params);
     const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
+    startRouteTransition(() => {
+      router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+        scroll: false,
+      });
     });
   };
 
   const updateRouteForTab = (tabKey: string) => {
+    setOptimisticTabKey(tabKey);
     updateRoute((params) => {
       params.set("tab", tabKey);
     });
@@ -575,7 +587,11 @@ export default function DashboardClient({
           </div>
         </section>
 
-        <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Tabs">
+        <nav
+          className="flex gap-2 overflow-x-auto pb-1"
+          aria-label="Tabs"
+          aria-busy={isRoutePending}
+        >
           {TAB_DEFINITIONS.map((tab) => (
             <button
               key={tab.key}
@@ -587,6 +603,12 @@ export default function DashboardClient({
               {tab.label}
             </button>
           ))}
+          {isRoutePending ? (
+            <span
+              className="my-auto h-2 w-2 flex-none animate-pulse rounded-full bg-emerald-500"
+              title="Changing view"
+            />
+          ) : null}
         </nav>
       </div>
 

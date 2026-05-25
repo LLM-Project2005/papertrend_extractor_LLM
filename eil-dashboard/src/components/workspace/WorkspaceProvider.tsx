@@ -219,6 +219,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setAllProjects([]);
     setFolders([]);
     setAllFolders([]);
+    setAnalysisSession(null);
     setSelectedOrganizationIdState(null);
     setSelectedProjectIdState(null);
     setSelectedFolderIdState("all");

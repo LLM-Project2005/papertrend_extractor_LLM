@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
   ChartIcon,
@@ -17,7 +17,11 @@ import {
   UserIcon,
 } from "@/components/ui/Icons";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
-import { persistWorkspaceRoute } from "@/lib/workspace-session";
+import { useLongTaskLogger } from "@/hooks/useLongTaskLogger";
+import {
+  ANALYSIS_SESSION_STORAGE_KEY,
+  persistWorkspaceRoute,
+} from "@/lib/workspace-session";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
 import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
@@ -161,7 +165,13 @@ function WorkspaceBreadcrumb({
   );
 }
 
-function DesktopSidebar({ pathname }: { pathname: string }) {
+function DesktopSidebar({
+  pathname,
+  onNavigate,
+}: {
+  pathname: string;
+  onNavigate: (href: string) => void;
+}) {
   return (
     <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[220px] dark:border-[#222222] dark:bg-[#0f0f10] lg:block">
       <div className="flex h-full flex-col py-3">
@@ -183,6 +193,7 @@ function DesktopSidebar({ pathname }: { pathname: string }) {
                     <Link
                       key={item.href}
                       href={item.href}
+                      onClick={() => onNavigate(item.href)}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
                           ? "bg-slate-900 text-white dark:bg-[#262626]"
@@ -210,11 +221,13 @@ function MobileSidebar({
   organizationName,
   projectName,
   onClose,
+  onNavigate,
 }: {
   pathname: string;
   organizationName: string;
   projectName: string;
   onClose: () => void;
+  onNavigate: (href: string) => void;
 }) {
   return (
     <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#222222] dark:bg-[#0f0f10]">
@@ -255,7 +268,10 @@ function MobileSidebar({
                   <Link
                     key={item.href}
                     href={item.href}
-                    onClick={onClose}
+                    onClick={() => {
+                      onNavigate(item.href);
+                      onClose();
+                    }}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
                         ? "bg-slate-900 text-white dark:bg-[#262626]"
@@ -280,6 +296,7 @@ export default function WorkspaceShell({
 }: {
   children: React.ReactNode;
 }) {
+  useLongTaskLogger("workspace");
   const pathname = usePathname();
   const {
     currentOrganization,
@@ -291,7 +308,23 @@ export default function WorkspaceShell({
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [navigating, setNavigating] = useState(false);
   const isChatPage = pathname.startsWith("/workspace/chat");
+  const handleAnalysisUnauthorized = useCallback(() => {
+    console.warn("[workspace] clearing stale analysis session after auth rejection");
+    clearAnalysisSession();
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem(ANALYSIS_SESSION_STORAGE_KEY);
+    }
+  }, [clearAnalysisSession]);
+  const handleNavigate = useCallback(
+    (href: string) => {
+      if (href !== pathname) {
+        setNavigating(true);
+      }
+    },
+    [pathname]
+  );
   const {
     runs,
     folderJob,
@@ -306,11 +339,25 @@ export default function WorkspaceShell({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
+    onUnauthorized: handleAnalysisUnauthorized,
   });
 
   useEffect(() => {
     persistWorkspaceRoute(pathname);
+    setNavigating(false);
   }, [pathname]);
+
+  useEffect(() => {
+    if (!navigating) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setNavigating(false);
+    }, 10000);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [navigating]);
 
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
@@ -397,7 +444,7 @@ export default function WorkspaceShell({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#111214] dark:text-slate-100">
-      <DesktopSidebar pathname={pathname} />
+      <DesktopSidebar pathname={pathname} onNavigate={handleNavigate} />
 
       {sidebarOpen ? (
         <div className="fixed inset-0 z-50 bg-black/45 lg:hidden">
@@ -406,12 +453,13 @@ export default function WorkspaceShell({
             organizationName={currentOrganization?.name ?? ""}
             projectName={currentProject?.name ?? ""}
             onClose={() => setSidebarOpen(false)}
+            onNavigate={handleNavigate}
           />
         </div>
       ) : null}
 
       <div className="min-h-screen lg:pl-[60px]">
-        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#222222] dark:bg-[#0f0f10]/95">
+        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#222222] dark:bg-[#0f0f10]/95 relative">
           <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
@@ -425,6 +473,7 @@ export default function WorkspaceShell({
 
               <Link
                 href="/organizations"
+                onClick={() => handleNavigate("/organizations")}
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white transition-transform hover:scale-[1.02]"
                 aria-label="Go to start page"
               >
@@ -446,6 +495,11 @@ export default function WorkspaceShell({
               <WorkspaceProfileMenu />
             </div>
           </div>
+          {navigating ? (
+            <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-emerald-500/15">
+              <div className="h-full w-1/2 animate-pulse bg-emerald-500" />
+            </div>
+          ) : null}
         </header>
 
         <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
