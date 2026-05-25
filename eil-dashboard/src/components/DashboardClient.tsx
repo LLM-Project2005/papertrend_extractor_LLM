@@ -132,10 +132,12 @@ export default function DashboardClient({
   const { session } = useAuth();
 
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
-  const selectedFolderIds = useMemo(
+  const routeSelectedFolderIds = useMemo(
     () => parseSelectedFolderIds(searchParams, selectedFolderId),
     [searchParams, selectedFolderId]
   );
+  const [optimisticFolderIds, setOptimisticFolderIds] = useState(routeSelectedFolderIds);
+  const selectedFolderIds = optimisticFolderIds;
   const allFoldersSelected = selectedFolderIds.length === 0;
   const folderNamesById = useMemo(
     () =>
@@ -165,6 +167,10 @@ export default function DashboardClient({
   const previousAllYearsRef = useRef<string[]>([]);
   const lastPlanSignatureRef = useRef<string | null>(null);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
+
+  useEffect(() => {
+    setOptimisticFolderIds(routeSelectedFolderIds);
+  }, [routeSelectedFolderIds]);
 
   useEffect(() => {
     const previousAllYears = previousAllYearsRef.current;
@@ -258,11 +264,13 @@ export default function DashboardClient({
   };
 
   const updateFolderSelection = (folderIds: string[], allSelected: boolean) => {
+    const nextFolderIds = allSelected || folderIds.length === 0 ? [] : [...folderIds];
+    setOptimisticFolderIds(nextFolderIds);
     updateRoute((params) => {
-      if (allSelected || folderIds.length === 0) {
+      if (nextFolderIds.length === 0) {
         params.delete("folders");
       } else {
-        params.set("folders", folderIds.join(","));
+        params.set("folders", nextFolderIds.join(","));
       }
     });
   };

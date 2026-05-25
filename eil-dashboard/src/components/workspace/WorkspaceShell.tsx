@@ -142,15 +142,18 @@ const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 function WorkspaceBreadcrumb({
   organizationName,
   projectName,
+  onNavigate,
 }: {
   organizationName: string;
   projectName: string;
+  onNavigate?: (href: string) => void;
 }) {
   return (
     <div className="min-w-0">
       <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
           href="/organizations"
+          onClick={() => onNavigate?.("/organizations")}
           prefetch={false}
           className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
@@ -193,6 +196,7 @@ function DesktopSidebar({
                     <Link
                       key={item.href}
                       href={item.href}
+                      prefetch={false}
                       onClick={() => onNavigate(item.href)}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
@@ -268,6 +272,7 @@ function MobileSidebar({
                   <Link
                     key={item.href}
                     href={item.href}
+                    prefetch={false}
                     onClick={() => {
                       onNavigate(item.href);
                       onClose();
@@ -309,6 +314,7 @@ export default function WorkspaceShell({
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
   const isChatPage = pathname.startsWith("/workspace/chat");
   const handleAnalysisUnauthorized = useCallback(() => {
     console.warn("[workspace] clearing stale analysis session after auth rejection");
@@ -321,6 +327,7 @@ export default function WorkspaceShell({
     (href: string) => {
       if (href !== pathname) {
         setNavigating(true);
+        setPendingHref(href);
       }
     },
     [pathname]
@@ -345,19 +352,31 @@ export default function WorkspaceShell({
   useEffect(() => {
     persistWorkspaceRoute(pathname);
     setNavigating(false);
+    setPendingHref(null);
   }, [pathname]);
 
   useEffect(() => {
-    if (!navigating) {
+    if (!navigating || !pendingHref) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
+      const targetUrl = new URL(pendingHref, window.location.origin);
+      if (window.location.pathname !== targetUrl.pathname) {
+        console.warn("[workspace] client navigation did not commit; falling back to document navigation", {
+          from: window.location.pathname,
+          to: targetUrl.pathname,
+        });
+        window.location.assign(targetUrl.toString());
+        return;
+      }
+
       setNavigating(false);
-    }, 10000);
+      setPendingHref(null);
+    }, 1500);
 
     return () => window.clearTimeout(timeoutId);
-  }, [navigating]);
+  }, [navigating, pendingHref]);
 
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
@@ -473,6 +492,7 @@ export default function WorkspaceShell({
 
               <Link
                 href="/organizations"
+                prefetch={false}
                 onClick={() => handleNavigate("/organizations")}
                 className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white transition-transform hover:scale-[1.02]"
                 aria-label="Go to start page"
@@ -483,6 +503,7 @@ export default function WorkspaceShell({
               <WorkspaceBreadcrumb
                 organizationName={currentOrganization?.name ?? ""}
                 projectName={currentProject?.name ?? ""}
+                onNavigate={handleNavigate}
               />
             </div>
 
