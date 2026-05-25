@@ -153,6 +153,7 @@ export async function POST(request: Request) {
     try {
       queueStart = await triggerWorkerQueueWithRetries({
         maxRuns: Math.min(createdRuns.length, 5),
+        taskCount: createdRuns.length,
         reason: "google-drive-queue",
       });
     } catch (triggerError) {

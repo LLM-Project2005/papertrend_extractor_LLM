@@ -12,6 +12,7 @@ numpy>=1.24.0
 requests>=2.31.0
 python-dotenv>=1.0.0
 tiktoken>=0.7.0
+google-cloud-tasks>=2.16.0
 ipykernel>=7.0.0
 
 # Dashboard

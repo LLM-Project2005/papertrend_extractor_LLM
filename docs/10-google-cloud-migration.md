@@ -95,7 +95,7 @@ Run from the repository root:
   --min-instances 0 `
   --max-instances 2 `
   --set-build-env-vars GOOGLE_RUNTIME_VERSION=3.13,GOOGLE_ENTRYPOINT="python node_service.py --host 0.0.0.0 --port 8080" `
-  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=budget-structured,NODE_SERVICE_ASYNC_MAX_RUNS=1,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2 `
+  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=budget-structured,NODE_SERVICE_ASYNC_MAX_RUNS=1,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2,CLOUD_TASKS_PROJECT_ID=research-trend-analysis,CLOUD_TASKS_LOCATION=asia-southeast1,CLOUD_TASKS_QUEUE=papertrend-ingestion-staging,CLOUD_TASKS_MAX_TASKS_PER_REQUEST=50,CLOUD_TASKS_TASK_SPACING_SECONDS=15 `
   --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,SUPABASE_URL=SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
 ```
 
@@ -208,6 +208,15 @@ The trigger should be scoped to backend-related files only:
 - `prompts/**`
 - `eil-dashboard/worker/**`
 
+Current staging trigger:
+
+- Name: `papertrend-node-service-staging-test`
+- Branch: `test`
+- Included files: the backend/worker paths above
+
+Frontend-only changes should continue to deploy through Vercel and should not
+redeploy the Cloud Run worker.
+
 Production can later use:
 
 ```text
@@ -216,12 +225,44 @@ push to main branch -> Cloud Build -> papertrend-node-service
 
 ## 10. Google Cloud Queue Trigger
 
-Staging uses Cloud Scheduler to keep the Supabase queue moving without relying
-on Vercel preview cron behavior.
+Staging uses Cloud Tasks for upload-triggered queue starts and Cloud Scheduler
+as a slower safety net. Supabase remains the source-of-truth queue; Cloud Tasks
+only delivers "please process the next queued paper" HTTP requests.
+
+Cloud Tasks staging setup:
+
+- Queue: `papertrend-ingestion-staging`
+- Region: `asia-southeast1`
+- Target: `POST <Cloud Run staging URL>/process-queue`
+- Dispatch limit: one concurrent HTTP dispatch
+- Retry behavior: if the worker is busy, `/process-queue` returns `429` for
+  Cloud Task requests, and Cloud Tasks retries later.
+- Enqueue endpoint: `POST <Cloud Run staging URL>/enqueue-ingestion-tasks`
+- Auth: `Authorization: Bearer <WORKER_WEBHOOK_SECRET>`
+
+The Vercel app calls `/enqueue-ingestion-tasks` after upload finalization. That
+keeps Google credentials inside Google Cloud; Vercel only needs the existing
+worker URL and worker secret.
+
+Useful Cloud Tasks checks:
+
+```powershell
+& 'C:\Users\pchan\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' tasks queues describe papertrend-ingestion-staging `
+  --project research-trend-analysis `
+  --location asia-southeast1
+
+& 'C:\Users\pchan\AppData\Local\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd' tasks list `
+  --project research-trend-analysis `
+  --location asia-southeast1 `
+  --queue papertrend-ingestion-staging
+```
+
+Cloud Scheduler is still useful as a backup so a missed task or failed upload
+callback cannot leave queued papers stuck forever.
 
 - Scheduler job: `papertrend-process-queue-staging`
 - Region: `asia-southeast1`
-- Schedule: every minute, Asia/Bangkok time
+- Schedule: every minute during staging, Asia/Bangkok time
 - Target: `POST <Cloud Run staging URL>/process-queue`
 - Body: `{"async":true,"maxRuns":1,"reason":"cloud-scheduler-staging"}`
 - Auth: `Authorization: Bearer <WORKER_WEBHOOK_SECRET>`
@@ -244,9 +285,8 @@ Useful checks:
   --location asia-southeast1
 ```
 
-Cloud Tasks is the next upgrade if the app needs one task per uploaded paper,
-stronger retry control, or finer scheduling than the current once-per-minute
-queue poll.
+After Cloud Tasks is stable, Scheduler can be slowed to every 5 or 10 minutes
+to reduce idle polling while keeping the recovery behavior.
 
 ## 11. Rollback Plan
 
@@ -270,7 +310,8 @@ If production is ever switched and fails:
 After staging works:
 
 - Split queue processing into a Cloud Run Job.
-- Consider Cloud Tasks if queue polling is not precise enough.
+- Slow the staging Scheduler backup to every 5 or 10 minutes once Cloud Tasks
+  proves stable.
 - Disable duplicate Vercel cron sources.
 - Add shared-secret protection for non-worker Python service POST endpoints.
 - Decide later whether storage should remain Supabase Storage or move to

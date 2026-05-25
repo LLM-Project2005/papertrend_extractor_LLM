@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { triggerWorkerQueue } from "@/lib/worker-trigger";
+import { enqueueWorkerQueueTasks, triggerWorkerQueue } from "@/lib/worker-trigger";
 
 export type WorkerQueueStartResult = {
   started: boolean;
@@ -24,6 +24,11 @@ function buildWorkerQueueStartResult(args: {
   attempts: number;
 }): WorkerQueueStartResult {
   const alreadyRunning = Boolean(args.trigger.payload?.already_running);
+  const cloudTaskCount =
+    args.trigger.payload?.trigger_kind === "cloud_tasks" &&
+    typeof args.trigger.payload?.task_count === "number"
+      ? args.trigger.payload.task_count
+      : null;
   if (args.trigger.started) {
     return {
       started: true,
@@ -33,7 +38,9 @@ function buildWorkerQueueStartResult(args: {
       progressStage: "queued",
       progressMessage: "Queued",
       progressDetail:
-        args.attempts > 1
+        cloudTaskCount
+          ? `${cloudTaskCount} Cloud Task${cloudTaskCount === 1 ? "" : "s"} queued the analysis worker and processing should begin shortly.`
+          : args.attempts > 1
           ? "The analysis worker was started after a retry and should begin claiming queued files shortly."
           : "The files were queued successfully and the analysis worker was asked to start immediately.",
     };
@@ -74,13 +81,41 @@ function buildWorkerQueueStartResult(args: {
 
 export async function triggerWorkerQueueWithRetries(options?: {
   maxRuns?: number;
+  taskCount?: number;
   reason?: string;
   attempts?: number;
   retryDelayMs?: number;
   force?: boolean;
+  preferCloudTasks?: boolean;
 }): Promise<WorkerQueueStartResult> {
   const maxAttempts = Math.min(Math.max(options?.attempts ?? 3, 1), 4);
   const retryDelayMs = Math.max(options?.retryDelayMs ?? 900, 100);
+  const preferCloudTasks = options?.preferCloudTasks ?? !options?.force;
+
+  if (preferCloudTasks) {
+    try {
+      const taskTrigger = await enqueueWorkerQueueTasks({
+        taskCount: options?.taskCount ?? options?.maxRuns ?? 1,
+        maxRuns: 1,
+        reason: options?.reason,
+        force: options?.force,
+      });
+      if (taskTrigger.started) {
+        return buildWorkerQueueStartResult({
+          trigger: taskTrigger,
+          attempts: 1,
+        });
+      }
+      console.warn("[worker-queue-start] Cloud Tasks enqueue skipped or failed; falling back to direct worker trigger", {
+        status: taskTrigger.status,
+        payload: taskTrigger.payload,
+      });
+    } catch (taskError) {
+      console.warn("[worker-queue-start] Cloud Tasks enqueue threw; falling back to direct worker trigger", {
+        message: taskError instanceof Error ? taskError.message : "unknown_error",
+      });
+    }
+  }
 
   let lastTrigger = await triggerWorkerQueue({
     maxRuns: options?.maxRuns,

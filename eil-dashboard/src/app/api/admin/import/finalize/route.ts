@@ -186,6 +186,7 @@ export async function POST(request: Request) {
       try {
         queueStart = await triggerWorkerQueueWithRetries({
           maxRuns: Math.min(queuedCount, 5),
+          taskCount: queuedCount,
           reason: "admin-import-direct-upload",
         });
       } catch (triggerError) {
