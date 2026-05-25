@@ -76,8 +76,10 @@ Use placeholders and secure secret management. Do not copy live credentials into
 - MODEL_GATEWAY
 - MODEL_POLICY_PRESET
   - `conservative`: balanced default routing with stronger models for extraction/grouping tasks
+  - `budget-structured`: routes JSON-heavy extraction tasks to `google/gemini-3.1-flash-lite` and simpler metadata/classification tasks to `google/gemini-2.5-flash-lite`
   - `gemini-2.5-flash-lite`: route every task to `google/gemini-2.5-flash-lite`
   - `gemini-3.1-flash-lite`: route every task to `google/gemini-3.1-flash-lite`
+  - `gemma-4-31b`: route every task to `google/gemma-4-31b-it` for low-cost comparison testing
 - MODEL_TASK_<TASK_NAME>
 - MODEL_TASK_<TASK_NAME>_FALLBACK
 - NODE_SERVICE_ASYNC_MAX_RUNS

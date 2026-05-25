@@ -66,6 +66,7 @@ MODEL_PRICE_USD_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
     "google/gemini-2.5-flash": {"input": 0.30, "output": 2.50},
     "google/gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
     "google/gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
+    "google/gemma-4-31b-it": {"input": 0.12, "output": 0.37},
 }
 
 CONSERVATIVE_PRESET: Dict[ModelTask, TaskProfile] = {
@@ -97,6 +98,20 @@ AGGRESSIVE_COST_PRESET: Dict[ModelTask, TaskProfile] = {
     ModelTask.TOPIC_LABELING: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-mini"),
 }
 
+BUDGET_STRUCTURED_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemini-3.1-flash-lite")
+    for task in ModelTask
+}
+BUDGET_STRUCTURED_PRESET.update(
+    {
+        ModelTask.METADATA: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.AUTHOR_KEYWORD_EXTRACTION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.TRACK_CLASSIFICATION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.QUERY_EXPANSION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.RESEARCH_SUMMARIZATION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+    }
+)
+
 QUALITY_FIRST_PRESET: Dict[ModelTask, TaskProfile] = {
     **CONSERVATIVE_PRESET,
     ModelTask.SEGMENTATION: TaskProfile(
@@ -121,12 +136,20 @@ GEMINI_31_FLASH_LITE_PRESET: Dict[ModelTask, TaskProfile] = {
     for task in ModelTask
 }
 
+GEMMA_4_31B_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemma-4-31b-it")
+    for task in ModelTask
+}
+
 PRESETS: Dict[str, Dict[ModelTask, TaskProfile]] = {
     "conservative": CONSERVATIVE_PRESET,
     "aggressive-cost": AGGRESSIVE_COST_PRESET,
+    "budget-structured": BUDGET_STRUCTURED_PRESET,
     "quality-first": QUALITY_FIRST_PRESET,
     "gemini-2.5-flash-lite": GEMINI_25_FLASH_LITE_PRESET,
     "gemini-3.1-flash-lite": GEMINI_31_FLASH_LITE_PRESET,
+    "gemma-4-31b": GEMMA_4_31B_PRESET,
+    "gemma-4-31b-it": GEMMA_4_31B_PRESET,
 }
 
 _SESSION_LABEL = contextvars.ContextVar("papertrend_model_router_label", default="")

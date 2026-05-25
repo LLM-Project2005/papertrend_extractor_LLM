@@ -95,7 +95,7 @@ Run from the repository root:
   --min-instances 0 `
   --max-instances 2 `
   --set-build-env-vars GOOGLE_RUNTIME_VERSION=3.13,GOOGLE_ENTRYPOINT="python node_service.py --host 0.0.0.0 --port 8080" `
-  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=conservative,NODE_SERVICE_ASYNC_MAX_RUNS=1,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2 `
+  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=budget-structured,NODE_SERVICE_ASYNC_MAX_RUNS=1,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2 `
   --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,SUPABASE_URL=SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
 ```
 
@@ -107,10 +107,11 @@ Notes:
 - Keep the staging URL private while the service is being tested.
 - The current worker is still triggered through `node_service.py`. A dedicated
   Cloud Run Job can be added after staging is stable.
-- The staging deploy currently uses `MODEL_POLICY_PRESET=conservative`, which
-  keeps cheaper `google/gemini-2.5-flash-lite` routing for simple metadata and
-  classification tasks, but uses stronger structured-output models for fragile
-  segmentation, keyword extraction, grouping, and topic labeling steps.
+- The staging deploy currently uses `MODEL_POLICY_PRESET=budget-structured`,
+  which keeps cheaper `google/gemini-2.5-flash-lite` routing for simple metadata
+  and classification tasks, but uses `google/gemini-3.1-flash-lite` for fragile
+  segmentation, keyword extraction, grouping, topic labeling, typology, and
+  facet extraction steps.
 - Staging caps async queue batches with `NODE_SERVICE_ASYNC_MAX_RUNS=1`. This
   still supports multi-paper queues; queued papers are processed by repeated
   trigger/cron invocations instead of one long background thread.
