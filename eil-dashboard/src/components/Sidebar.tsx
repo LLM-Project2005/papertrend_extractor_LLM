@@ -35,13 +35,22 @@ export default function Sidebar({
   showHeader = true,
 }: Props) {
   const normalizedSelectedFolderIds = [...new Set(selectedFolderIds.filter(Boolean))];
+  const allYearsSelected =
+    selectedYears.length === 0 || selectedYears.length === allYears.length;
 
   const toggleYear = (year: string) => {
-    onYearsChange(
-      selectedYears.includes(year)
-        ? selectedYears.filter((value) => value !== year)
-        : [...selectedYears, year].sort()
-    );
+    if (allYearsSelected) {
+      onYearsChange([year]);
+      return;
+    }
+
+    if (selectedYears.includes(year)) {
+      const nextYears = selectedYears.filter((value) => value !== year);
+      onYearsChange(nextYears.length > 0 ? nextYears : []);
+      return;
+    }
+
+    onYearsChange([...selectedYears, year].sort());
   };
 
   const toggleTrack = (track: string) => {
@@ -140,21 +149,15 @@ export default function Sidebar({
             <button
               type="button"
               className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
-              onClick={() =>
-                onYearsChange(
-                  selectedYears.length === allYears.length ? [] : [...allYears]
-                )
-              }
+              onClick={() => onYearsChange([])}
             >
-              {selectedYears.length === allYears.length
-                ? "Clear all"
-                : "Select all"}
+              Show all
             </button>
           </div>
 
           <div className="flex flex-wrap gap-2">
             {allYears.map((year) => {
-              const active = selectedYears.includes(year);
+              const active = allYearsSelected || selectedYears.includes(year);
               return (
                 <button
                   key={year}

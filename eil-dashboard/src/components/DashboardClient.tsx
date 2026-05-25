@@ -186,7 +186,6 @@ export default function DashboardClient({
     }
 
     if (selectedYears.length === 0) {
-      setSelectedYears(allYears);
       previousAllYearsRef.current = allYears;
       return;
     }
@@ -199,7 +198,7 @@ export default function DashboardClient({
 
     const nextYears = selectedYears.filter((year) => allYears.includes(year));
     if (nextYears.length === 0) {
-      setSelectedYears(allYears);
+      setSelectedYears([]);
       previousAllYearsRef.current = allYears;
       return;
     }

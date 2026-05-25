@@ -607,14 +607,12 @@ async function loadProjectScopedDashboardData(
   requestedFolderIds: string[] | null
 ): Promise<DashboardData> {
   const projectCache = await loadOrBuildProjectCorpusTopicCache(ownerUserId, projectId);
-  const activeFolderIds =
-    requestedFolderIds && requestedFolderIds.length > 0
-      ? requestedFolderIds
-      : projectCache.projectFolderIds;
+  const hasFolderSelection = Boolean(requestedFolderIds && requestedFolderIds.length > 0);
+  const activeFolderIds = hasFolderSelection ? requestedFolderIds ?? [] : [];
   const activeFolderIdSet = new Set(activeFolderIds);
 
   const trends = projectCache.cache.trends.filter((row) => {
-    if (activeFolderIdSet.size === 0) {
+    if (!hasFolderSelection) {
       return true;
     }
     return row.folder_id ? activeFolderIdSet.has(row.folder_id) : false;
@@ -624,7 +622,7 @@ async function loadProjectScopedDashboardData(
     projectCache.topicFamilies,
     allowedPaperIds
   ).filter((family) =>
-    activeFolderIdSet.size === 0
+    !hasFolderSelection
       ? true
       : family.folderIds.some((folderId) => activeFolderIdSet.has(folderId))
   );
@@ -746,7 +744,8 @@ async function loadDashboardDataServerUncached(
       });
     }
 
-    if (mode === "auto" && ((requestedFolderIds?.length ?? 0) > 0 || projectId)) {
+    const hasExplicitFolderSelection = (requestedFolderIds?.length ?? 0) > 0;
+    if (mode === "auto" && projectId && !hasExplicitFolderSelection) {
       const ownerWideData = await loadScopedDashboardData(ownerUserId, null);
       if (hasAnyDashboardRows(ownerWideData)) {
         return withDiagnostics(ownerWideData, {
