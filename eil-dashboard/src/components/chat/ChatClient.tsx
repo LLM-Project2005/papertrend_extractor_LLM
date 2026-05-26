@@ -74,18 +74,8 @@ interface Citation {
   sourceType?: "paper" | "web";
 }
 
-type ChartScope = "selected_files" | "workspace";
 type ChartType = "auto" | "bar" | "line" | "pie" | "table";
 type ChartMetric = "papers_per_year" | "top_topics" | "top_keywords" | "track_distribution";
-type ChartGroupBy = "year" | "topic" | "keyword" | "track";
-
-interface ChartRequest {
-  scope: ChartScope;
-  chartType: ChartType;
-  metric: ChartMetric;
-  groupBy: ChartGroupBy;
-  topN: number;
-}
 
 interface ChatChartPayload {
   chartType: Exclude<ChartType, "auto">;
@@ -162,25 +152,10 @@ const MODEL_OPTIONS = [
 const CHART_INTENT_PATTERN =
   /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
 
-const DEFAULT_CHART_REQUEST: ChartRequest = {
-  scope: "workspace",
-  chartType: "auto",
-  metric: "papers_per_year",
-  groupBy: "year",
-  topN: 10,
-};
-
 function normalizeStoredModel(value: string | null) {
   return MODEL_OPTIONS.some((option) => option.value === value)
     ? String(value)
     : DEFAULT_CHAT_MODEL;
-}
-
-function groupByForMetric(metric: ChartMetric): ChartGroupBy {
-  if (metric === "top_topics") return "topic";
-  if (metric === "top_keywords") return "keyword";
-  if (metric === "track_distribution") return "track";
-  return "year";
 }
 
 function chartFromMetadata(metadata?: Record<string, unknown> | null): ChatChartPayload | null {
@@ -773,8 +748,10 @@ function runGlyphTone(run: IngestionRunRow) {
 
 function renderLoadingLabel(
   deepResearchEnabled: boolean,
+  chartModeEnabled: boolean,
   activeSession?: DeepResearchSessionRecord | null
 ) {
+  if (chartModeEnabled) return "Building chart...";
   if (!deepResearchEnabled) return "Generating answer...";
   if (activeSession?.status === "planned") return "Planning deep research...";
   if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis...";
@@ -883,11 +860,8 @@ export default function ChatClient() {
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-  const [chartPanelOpen, setChartPanelOpen] = useState(false);
-  const [chartPromptDismissedFor, setChartPromptDismissedFor] = useState("");
-  const [chartRequest, setChartRequest] = useState<ChartRequest>(
-    DEFAULT_CHART_REQUEST
-  );
+  const [chartModeEnabled, setChartModeEnabled] = useState(false);
+  const [chartSuggestionDismissedFor, setChartSuggestionDismissedFor] = useState("");
   const [parameterMenuOpen, setParameterMenuOpen] = useState(false);
   const [chatParameters, setChatParameters] = useState<ChatGenerationParameters>(
     DEFAULT_CHAT_PARAMETERS
@@ -1003,6 +977,14 @@ export default function ChatClient() {
     [deepSession]
   );
   const hasContent = visibleMessages.length > 0 || Boolean(deepSession);
+  const trimmedDraft = draft.trim();
+  const chartSuggestionVisible = Boolean(
+    trimmedDraft &&
+      CHART_INTENT_PATTERN.test(trimmedDraft) &&
+      !chartModeEnabled &&
+      !deepResearchEnabled &&
+      chartSuggestionDismissedFor !== trimmedDraft
+  );
 
   const resizeComposer = useCallback(() => {
     const node = composerRef.current;
@@ -1049,25 +1031,6 @@ export default function ChatClient() {
   }, [selectedModel]);
 
   useEffect(() => {
-    setChartRequest((current) => ({
-      ...current,
-      scope: selectedRunIds.length > 0 ? "selected_files" : "workspace",
-    }));
-  }, [selectedRunIds.length]);
-
-  useEffect(() => {
-    const prompt = draft.trim();
-    if (
-      prompt &&
-      CHART_INTENT_PATTERN.test(prompt) &&
-      chartPromptDismissedFor !== prompt &&
-      !deepResearchEnabled
-    ) {
-      setChartPanelOpen(true);
-    }
-  }, [chartPromptDismissedFor, deepResearchEnabled, draft]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(
       CHAT_PARAMETERS_STORAGE_KEY,
@@ -1090,8 +1053,15 @@ export default function ChatClient() {
   useEffect(() => {
     if (deepResearchEnabled) {
       setParameterMenuOpen(false);
+      setChartModeEnabled(false);
     }
   }, [deepResearchEnabled]);
+
+  useEffect(() => {
+    if (chartModeEnabled) {
+      setParameterMenuOpen(false);
+    }
+  }, [chartModeEnabled]);
 
   useEffect(() => {
     resizeComposer();
@@ -1118,6 +1088,7 @@ export default function ChatClient() {
       setThreadMenuId(null);
       setReportFullViewOpen(false);
       setDeepResearchEnabled(mode === "deep_research");
+      setChartModeEnabled(false);
     },
     [deepResearchEnabled]
   );
@@ -1127,6 +1098,9 @@ export default function ChatClient() {
       setActiveThread(payload.thread);
       setActiveThreadId(payload.thread.id);
       setDeepResearchEnabled(payload.thread.mode === "deep_research");
+      if (payload.thread.mode === "deep_research") {
+        setChartModeEnabled(false);
+      }
       setThreads((current) => [
         payload.thread!,
         ...current.filter((item) => item.id !== payload.thread!.id),
@@ -1396,20 +1370,9 @@ export default function ChatClient() {
     }
   }
 
-  function buildChartPrompt() {
-    const metricLabel =
-      chartRequest.metric === "top_topics"
-        ? "top topics"
-        : chartRequest.metric === "top_keywords"
-          ? "top keywords"
-          : chartRequest.metric === "track_distribution"
-            ? "track distribution"
-            : "papers per year";
-    return `Build a ${metricLabel} chart.`;
-  }
-
-  async function handleChartSend() {
-    const prompt = draft.trim() || buildChartPrompt();
+  async function handleChartModeSend() {
+    const prompt =
+      draft.trim() || "Create the most useful chart from my analyzed papers.";
     if (!canPersist) {
       setError("Sign in to build charts from workspace data.");
       return;
@@ -1418,20 +1381,12 @@ export default function ChatClient() {
     setLoading(true);
     setError(null);
     setMenuOpen(false);
-    setChartPanelOpen(false);
+    setParameterMenuOpen(false);
 
-    const normalizedChartRequest: ChartRequest = {
-      ...chartRequest,
-      scope:
-        chartRequest.scope === "selected_files" && selectedRunIds.length > 0
-          ? "selected_files"
-          : "workspace",
-    };
     const nextMessages = [
       ...messages,
       localMessage("user", prompt, [], {
         toolMode: "chart",
-        chartRequest: normalizedChartRequest,
       }),
     ];
     setMessages(nextMessages);
@@ -1453,7 +1408,6 @@ export default function ChatClient() {
         projectId: selectedProjectId ?? undefined,
         selectedRunIds,
         toolMode: "chart",
-        chartRequest: normalizedChartRequest,
         threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
         chatMode: "normal",
         action: "message",
@@ -1582,8 +1536,8 @@ export default function ChatClient() {
       await handlePlanResearch();
       return;
     }
-    if (chartPanelOpen || CHART_INTENT_PATTERN.test(draft.trim())) {
-      await handleChartSend();
+    if (chartModeEnabled) {
+      await handleChartModeSend();
       return;
     }
     await handleNormalSend();
@@ -2166,7 +2120,11 @@ export default function ChatClient() {
                   <div className="flex items-start gap-3">
                     <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-white/20 dark:border-t-white" />
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-white/10 dark:bg-[#2a2a2a] dark:text-[#b4b4b4]">
-                      {renderLoadingLabel(deepResearchEnabled, deepSession)}
+                      {renderLoadingLabel(
+                        deepResearchEnabled,
+                        chartModeEnabled,
+                        deepSession
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -2226,12 +2184,45 @@ export default function ChatClient() {
                   </div>
                 ) : null}
 
+                {chartSuggestionVisible ? (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-400/20 bg-sky-500/10 px-3 py-2 text-sm text-sky-100">
+                    <span className="inline-flex items-center gap-2">
+                      <ChartIcon className="h-4 w-4" />
+                      Use Chart mode for this request.
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setChartModeEnabled(true);
+                          setDeepResearchEnabled(false);
+                        }}
+                        className="rounded-full bg-sky-200 px-3 py-1 text-xs font-semibold text-sky-950 transition-colors hover:bg-white"
+                      >
+                        Use Chart mode
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChartSuggestionDismissedFor(trimmedDraft)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sky-100 hover:bg-white/10"
+                        aria-label="Dismiss chart mode suggestion"
+                      >
+                        <CloseIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  </div>
+                ) : null}
+
                 <textarea
                   ref={composerRef}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
-                  placeholder="Ask anything"
+                  placeholder={
+                    chartModeEnabled
+                      ? "Ask for a chart, or leave blank for the best chart"
+                      : "Ask anything"
+                  }
                   rows={1}
                   className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
@@ -2271,13 +2262,25 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={() => {
-                              setChartPanelOpen(true);
+                              setChartModeEnabled((current) => !current);
+                              setDeepResearchEnabled(false);
                               setMenuOpen(false);
                             }}
-                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
+                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+                              chartModeEnabled
+                                ? "bg-[#173868] text-[#9cc8ff]"
+                                : "text-[#ececec] hover:bg-[#303030]"
+                            }`}
                           >
-                            <ChartIcon className="h-4 w-4" />
-                            <span>Build chart</span>
+                            <span className="flex items-center gap-3">
+                              <ChartIcon className="h-4 w-4" />
+                              <span>Chart mode</span>
+                            </span>
+                            {chartModeEnabled ? (
+                              <span className="rounded-full bg-[#2b5da8] px-2 py-0.5 text-[11px] font-medium text-white">
+                                Active
+                              </span>
+                            ) : null}
                           </button>
 
                           <button
@@ -2319,6 +2322,7 @@ export default function ChatClient() {
                             type="button"
                             onClick={() => {
                               setDeepResearchEnabled((current) => !current);
+                              setChartModeEnabled(false);
                               setMenuOpen(false);
                             }}
                             className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
@@ -2394,131 +2398,9 @@ export default function ChatClient() {
                         </div>
                       ) : null}
 
-                      {chartPanelOpen ? (
-                        <div className="absolute bottom-12 left-0 z-40 w-[340px] rounded-2xl border border-white/10 bg-[#1b1b1b] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.5)]">
-                          <div className="mb-4 flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#8e8e8e]">
-                                Chart builder
-                              </p>
-                              <p className="mt-1 text-sm text-[#ececec]">
-                                Build from analyzed workspace data.
-                              </p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setChartPromptDismissedFor(draft.trim());
-                                setChartPanelOpen(false);
-                              }}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[#8e8e8e] hover:bg-white/10 hover:text-white"
-                              aria-label="Close chart builder"
-                            >
-                              <CloseIcon className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-
-                          <div className="space-y-3 text-xs text-[#d8d8d8]">
-                            <label className="block">
-                              <span className="mb-1.5 block text-[#9b9b9b]">Data scope</span>
-                              <select
-                                value={chartRequest.scope}
-                                onChange={(event) =>
-                                  setChartRequest((current) => ({
-                                    ...current,
-                                    scope: event.target.value as ChartScope,
-                                  }))
-                                }
-                                className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
-                              >
-                                <option value="workspace">Current workspace/project</option>
-                                <option value="selected_files" disabled={selectedRunIds.length === 0}>
-                                  Selected library files
-                                </option>
-                              </select>
-                            </label>
-
-                            <label className="block">
-                              <span className="mb-1.5 block text-[#9b9b9b]">Metric</span>
-                              <select
-                                value={chartRequest.metric}
-                                onChange={(event) => {
-                                  const metric = event.target.value as ChartMetric;
-                                  setChartRequest((current) => ({
-                                    ...current,
-                                    metric,
-                                    groupBy: groupByForMetric(metric),
-                                  }));
-                                }}
-                                className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
-                              >
-                                <option value="papers_per_year">Papers per year</option>
-                                <option value="top_topics">Top topics</option>
-                                <option value="top_keywords">Top keywords</option>
-                                <option value="track_distribution">Track distribution</option>
-                              </select>
-                            </label>
-
-                            <div className="grid grid-cols-2 gap-3">
-                              <label className="block">
-                                <span className="mb-1.5 block text-[#9b9b9b]">Chart type</span>
-                                <select
-                                  value={chartRequest.chartType}
-                                  onChange={(event) =>
-                                    setChartRequest((current) => ({
-                                      ...current,
-                                      chartType: event.target.value as ChartType,
-                                    }))
-                                  }
-                                  className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
-                                >
-                                  <option value="auto">Auto</option>
-                                  <option value="bar">Bar</option>
-                                  <option value="line">Line</option>
-                                  <option value="pie">Pie</option>
-                                  <option value="table">Table</option>
-                                </select>
-                              </label>
-
-                              <label className="block">
-                                <span className="mb-1.5 block text-[#9b9b9b]">Top N</span>
-                                <input
-                                  type="number"
-                                  min={3}
-                                  max={25}
-                                  value={chartRequest.topN}
-                                  onChange={(event) =>
-                                    setChartRequest((current) => ({
-                                      ...current,
-                                      topN: Number(event.target.value) || 10,
-                                    }))
-                                  }
-                                  className="h-9 w-full rounded-xl border border-white/10 bg-[#242424] px-3 text-sm text-[#ececec] outline-none"
-                                />
-                              </label>
-                            </div>
-                          </div>
-
-                          <div className="mt-4 flex items-center justify-between gap-3">
-                            <span className="text-xs text-[#8e8e8e]">
-                              {selectedRunIds.length > 0
-                                ? `${selectedRunIds.length} file${selectedRunIds.length === 1 ? "" : "s"} selected`
-                                : activeFolderLabel}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => void handleChartSend()}
-                              className="inline-flex h-9 items-center gap-2 rounded-full bg-white px-4 text-sm font-medium text-[#1b1b1b] transition-colors hover:bg-[#e8e8e8]"
-                            >
-                              <ChartIcon className="h-4 w-4" />
-                              Build
-                            </button>
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
 
-                    {!deepResearchEnabled ? (
+                    {!deepResearchEnabled && !chartModeEnabled ? (
                       <label className="inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#b4b4b4]">
                         <span>Model</span>
                         <select
@@ -2554,6 +2436,21 @@ export default function ChatClient() {
                       </span>
                     ) : null}
 
+                    {chartModeEnabled && !deepResearchEnabled ? (
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-[#2b5da8] bg-[#173868] px-3 text-xs font-medium text-[#9cc8ff]">
+                        <ChartIcon className="h-3.5 w-3.5" />
+                        Chart mode
+                        <button
+                          type="button"
+                          onClick={() => setChartModeEnabled(false)}
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9cc8ff] opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
+                          aria-label="Disable chart mode"
+                        >
+                          <CloseIcon className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : null}
+
                     {webSearchEnabled && !deepResearchEnabled ? (
                       <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-[#2b5da8] bg-[#173868] px-3 text-xs font-medium text-[#9cc8ff]">
                         <SearchIcon className="h-3.5 w-3.5" />
@@ -2578,7 +2475,7 @@ export default function ChatClient() {
                   </div>
 
                   <div className="relative flex items-center gap-2" ref={parameterMenuRef}>
-                    {!deepResearchEnabled ? (
+                    {!deepResearchEnabled && !chartModeEnabled ? (
                       <button
                         type="button"
                         onClick={() => setParameterMenuOpen((current) => !current)}
@@ -2594,7 +2491,7 @@ export default function ChatClient() {
                       </button>
                     ) : null}
 
-                    {parameterMenuOpen && !deepResearchEnabled ? (
+                    {parameterMenuOpen && !deepResearchEnabled && !chartModeEnabled ? (
                       <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-2xl border border-white/10 bg-[#1b1b1b] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
                         <div className="mb-3 flex items-center justify-between">
                           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#9b9b9b]">
@@ -2722,13 +2619,13 @@ export default function ChatClient() {
                     <button
                       type="submit"
                       disabled={
-                        (!loading && draft.trim().length === 0) ||
+                        (!loading && draft.trim().length === 0 && !chartModeEnabled) ||
                         (deepResearchEnabled && !canPersist)
                       }
                       className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
                         loading
                           ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
-                          : draft.trim().length > 0
+                          : draft.trim().length > 0 || chartModeEnabled
                             ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
                             : "bg-[#3a3a3a] text-[#8e8e8e]"
                       } disabled:cursor-not-allowed`}

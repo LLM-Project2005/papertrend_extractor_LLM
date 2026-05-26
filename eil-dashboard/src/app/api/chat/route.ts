@@ -192,10 +192,6 @@ function resolveChatModel(model?: string | null) {
     : DEFAULT_CHAT_MODEL;
 }
 
-function hasChartIntent(message: string) {
-  return CHART_INTENT_PATTERN.test(message);
-}
-
 function hasWebSearchIntent(message: string) {
   return WEB_SEARCH_INTENT_PATTERN.test(message);
 }
@@ -208,7 +204,72 @@ function clampInteger(value: unknown, min: number, max: number, fallback: number
   return Math.round(clampValue(parsed, min, max));
 }
 
+function groupByForMetric(metric: ChartMetric): ChartGroupBy {
+  if (metric === "top_topics") return "topic";
+  if (metric === "top_keywords") return "keyword";
+  if (metric === "track_distribution") return "track";
+  return "year";
+}
+
+function normalizeMetric(value: unknown): ChartMetric | null {
+  return value === "top_topics" ||
+    value === "top_keywords" ||
+    value === "track_distribution" ||
+    value === "papers_per_year"
+    ? value
+    : null;
+}
+
+function normalizeChartType(value: unknown): ChartType | null {
+  return value === "bar" ||
+    value === "line" ||
+    value === "pie" ||
+    value === "table" ||
+    value === "auto"
+    ? value
+    : null;
+}
+
+function inferMetricFromPrompt(message: string): ChartMetric | null {
+  const text = message.toLowerCase();
+  if (/\b(keyword|keywords|key word|key words)\b|คีย์เวิร์ด|คำสำคัญ/i.test(text)) {
+    return "top_keywords";
+  }
+  if (/\b(topic|topics|theme|themes|concept|concepts)\b|หัวข้อ|ประเด็น/i.test(text)) {
+    return "top_topics";
+  }
+  if (/\b(track|tracks|classification|classifications|el\b|eli\b|lae\b)\b/i.test(text)) {
+    return "track_distribution";
+  }
+  if (/\b(year|years|trend|timeline|time series|over time|annual)\b|ปี|แนวโน้ม/i.test(text)) {
+    return "papers_per_year";
+  }
+  return null;
+}
+
+function inferChartTypeFromPrompt(message: string, metric: ChartMetric): ChartType {
+  const text = message.toLowerCase();
+  if (/\b(table|list|ranking)\b|ตาราง|รายการ/i.test(text)) {
+    return "table";
+  }
+  if (/\b(pie|donut|doughnut|share|distribution)\b/i.test(text)) {
+    return "pie";
+  }
+  if (/\b(line|trend|timeline|time series|over time)\b/i.test(text)) {
+    return metric === "papers_per_year" ? "line" : "bar";
+  }
+  if (/\b(bar|column)\b/i.test(text)) {
+    return "bar";
+  }
+  return "auto";
+}
+
+function hasSpecificChartMetric(message: string, request?: ChartRequest) {
+  return Boolean(normalizeMetric(request?.metric) || inferMetricFromPrompt(message));
+}
+
 function normalizeChartRequest(
+  message: string,
   request: ChartRequest | undefined,
   selectedRunIds: string[]
 ): Required<ChartRequest> {
@@ -216,34 +277,17 @@ function normalizeChartRequest(
     request?.scope === "selected_files" && selectedRunIds.length > 0
       ? "selected_files"
       : "workspace";
-  const metric: ChartMetric =
-    request?.metric === "top_topics" ||
-    request?.metric === "top_keywords" ||
-    request?.metric === "track_distribution" ||
-    request?.metric === "papers_per_year"
-      ? request.metric
-      : "papers_per_year";
+  const metric = normalizeMetric(request?.metric) ?? inferMetricFromPrompt(message) ?? "papers_per_year";
   const groupBy: ChartGroupBy =
     request?.groupBy === "topic" ||
     request?.groupBy === "keyword" ||
     request?.groupBy === "track" ||
     request?.groupBy === "year"
       ? request.groupBy
-      : metric === "top_topics"
-        ? "topic"
-        : metric === "top_keywords"
-          ? "keyword"
-          : metric === "track_distribution"
-            ? "track"
-            : "year";
-  const chartType: ChartType =
-    request?.chartType === "bar" ||
-    request?.chartType === "line" ||
-    request?.chartType === "pie" ||
-    request?.chartType === "table" ||
-    request?.chartType === "auto"
-      ? request.chartType
-      : "auto";
+      : groupByForMetric(metric);
+  const chartType =
+    normalizeChartType(request?.chartType) ??
+    inferChartTypeFromPrompt(message, metric);
 
   return {
     scope,
@@ -415,6 +459,39 @@ function buildChartFromData(
   };
 }
 
+function buildBestAvailableChartFromData(
+  data: DashboardData,
+  request: Required<ChartRequest>,
+  scopeLabel: string
+): ChatChartPayload | null {
+  const candidateMetrics: ChartMetric[] = [];
+  if (data.trends.length > 0) {
+    candidateMetrics.push("top_topics", "top_keywords");
+  }
+  if (data.tracksSingle.length > 0 || data.tracksMulti.length > 0) {
+    candidateMetrics.push("track_distribution");
+  }
+  candidateMetrics.push("papers_per_year");
+
+  for (const metric of [...new Set(candidateMetrics)]) {
+    const chart = buildChartFromData(
+      data,
+      {
+        ...request,
+        metric,
+        groupBy: groupByForMetric(metric),
+        chartType: "auto",
+      },
+      scopeLabel
+    );
+    if (chart) {
+      return chart;
+    }
+  }
+
+  return null;
+}
+
 async function loadChartDashboardData(
   ownerUserId: string,
   request: Required<ChartRequest>,
@@ -452,7 +529,12 @@ async function buildChatChart(
   ownerUserId: string,
   body: ChatRequestBody
 ): Promise<{ chart: ChatChartPayload | null; error?: string; request: Required<ChartRequest> }> {
-  const request = normalizeChartRequest(body.chartRequest, body.selectedRunIds ?? []);
+  const prompt = String(body.message ?? "");
+  const request = normalizeChartRequest(
+    prompt,
+    body.chartRequest,
+    body.selectedRunIds ?? []
+  );
   const { data, scopeLabel } = await loadChartDashboardData(
     ownerUserId,
     request,
@@ -460,7 +542,9 @@ async function buildChatChart(
     body.projectId,
     body.selectedRunIds ?? []
   );
-  const chart = buildChartFromData(data, request, scopeLabel);
+  const chart = hasSpecificChartMetric(prompt, body.chartRequest)
+    ? buildChartFromData(data, request, scopeLabel)
+    : buildBestAvailableChartFromData(data, request, scopeLabel);
   return {
     request,
     chart,
@@ -1819,8 +1903,7 @@ async function normalChat(
   const requestedToolMode: ChatToolMode = body.toolMode ?? "auto";
   const chartRequested =
     requestedToolMode === "chart" ||
-    Boolean(body.chartRequest) ||
-    (requestedToolMode === "auto" && hasChartIntent(currentMessage));
+    Boolean(body.chartRequest);
 
   if (chartRequested) {
     if (!ownerUserId || !supabase || !thread) {
