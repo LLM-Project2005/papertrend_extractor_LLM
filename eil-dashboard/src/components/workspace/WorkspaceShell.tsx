@@ -24,6 +24,7 @@ import {
 } from "@/lib/workspace-session";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
 import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch";
+import WorkspaceLoadingState from "@/components/workspace/WorkspaceLoadingState";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 
@@ -307,6 +308,7 @@ export default function WorkspaceShell({
     currentOrganization,
     currentProject,
     hasActiveProject,
+    workspaceLoading,
     analysisSession,
     setAnalysisMinimized,
     removeAnalysisRunIds,
@@ -524,7 +526,9 @@ export default function WorkspaceShell({
         </header>
 
         <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
-          {hasActiveProject ? (
+          {workspaceLoading ? (
+            <WorkspaceLoadingState />
+          ) : hasActiveProject ? (
             children
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">

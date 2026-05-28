@@ -46,6 +46,7 @@ interface AnalysisSession {
 interface WorkspaceContextValue {
   profile: WorkspaceProfile;
   hydrated: boolean;
+  workspaceLoading: boolean;
   analysisSession: AnalysisSession | null;
   organizations: WorkspaceOrganizationRow[];
   projects: WorkspaceProjectRow[];
@@ -120,6 +121,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [organizations, setOrganizations] = useState<WorkspaceOrganizationRow[]>([]);
   const [projects, setProjects] = useState<WorkspaceProjectRow[]>([]);
   const [allProjects, setAllProjects] = useState<WorkspaceProjectRow[]>([]);
+  const [allProjectsLoading, setAllProjectsLoading] = useState(false);
+  const [allProjectsLoadAttempted, setAllProjectsLoadAttempted] = useState(false);
   const [folders, setFolders] = useState<ResearchFolderRow[]>([]);
   const [allFolders, setAllFolders] = useState<ResearchFolderRow[]>([]);
   const [selectedOrganizationIdState, setSelectedOrganizationIdState] =
@@ -225,6 +228,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setSelectedFolderIdState("all");
     setHydrated(true);
   }, [authHydrated, authProfile, user]);
+
+  useEffect(() => {
+    setAllProjectsLoadAttempted(false);
+    setAllProjectsLoading(false);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!hydrated) {
@@ -481,6 +489,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const refreshAllProjects = useCallback(async () => {
     if (!user || !session?.access_token) {
       setAllProjects([]);
+      setAllProjectsLoading(false);
+      setAllProjectsLoadAttempted(true);
       return;
     }
 
@@ -511,6 +521,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setAllProjects(sortByName(payload.projects ?? []));
     })();
 
+    setAllProjectsLoading(true);
     allProjectsRequestRef.current = {
       startedAt: now,
       promise: request,
@@ -520,6 +531,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       await request;
     } finally {
       allProjectsRequestRef.current.promise = null;
+      setAllProjectsLoading(false);
+      setAllProjectsLoadAttempted(true);
     }
   }, [session?.access_token, user]);
 
@@ -878,11 +891,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     projects.find((project) => project.id === selectedProjectIdState) ??
     allProjects.find((project) => project.id === selectedProjectIdState) ??
     null;
+  const workspaceLoading =
+    !hydrated || Boolean(user && (!allProjectsLoadAttempted || allProjectsLoading));
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
       profile,
       hydrated,
+      workspaceLoading,
       analysisSession,
       organizations,
       projects,
@@ -1082,6 +1098,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedProjectIdState,
       selectedTracks,
       selectedYears,
+      workspaceLoading,
     ]
   );
 
