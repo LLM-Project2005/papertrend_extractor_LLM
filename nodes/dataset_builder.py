@@ -4,10 +4,10 @@ from typing import Any, Dict, List, Sequence
 from nodes.common import (
     choose_first_span,
     infer_paper_id,
-    normalize_year,
     pick_title,
     safe_json_list,
 )
+from nodes.year_resolver import normalize_publication_year
 from state import IngestionState
 
 
@@ -33,7 +33,11 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
     folder_id = str(state.get("folder_id") or "").strip() or None
     paper_id = int(state.get("paper_id") or infer_paper_id(source_path, ingestion_run_id))
     title = (metadata.get("title") or final_json.get("title") or pick_title(raw_text, source_filename)).strip()[:500]
-    year = normalize_year(str(metadata.get("year") or "Unknown"))
+    year = normalize_publication_year(metadata.get("year") or "Unknown")
+    year_resolution = state.get("year_resolution") or {}
+    year_confidence = float(year_resolution.get("year_confidence") or 0.0)
+    year_source = str(year_resolution.get("year_source") or "unresolved")[:120]
+    year_evidence = str(year_resolution.get("year_evidence") or "")[:1000]
 
     keyword_candidates = state.get("keyword_candidates") or []
     semantic_topics = state.get("semantic_topics") or []
@@ -191,7 +195,21 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
 
     dataset = {
         "paper_id": paper_id,
-        "papers": [{"id": paper_id, "year": year[:100], "title": title, "owner_user_id": owner_user_id, "folder_id": folder_id}],
+        "year": year,
+        "year_resolution": year_resolution,
+        "papers": [
+            {
+                "id": paper_id,
+                "year": year[:100],
+                "title": title,
+                "owner_user_id": owner_user_id,
+                "folder_id": folder_id,
+                "year_confidence": year_confidence,
+                "year_source": year_source,
+                "year_evidence": year_evidence,
+                "year_candidates": year_resolution.get("year_candidates") or [],
+            }
+        ],
         "keywords": keyword_rows,
         "tracks_single": [{"paper_id": paper_id, "owner_user_id": owner_user_id, "folder_id": folder_id, **(state.get("track_single") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],
         "tracks_multi": [{"paper_id": paper_id, "owner_user_id": owner_user_id, "folder_id": folder_id, **(state.get("track_multi") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],

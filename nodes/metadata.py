@@ -1,8 +1,12 @@
-import re
 from typing import Any, Dict
 
 from nodes import ModelTask, get_task_llm
-from nodes.common import load_prompt, maybe_parse_year_from_path, normalize_year, pick_title
+from nodes.common import load_prompt, pick_title
+from nodes.year_resolver import (
+    collect_year_candidates,
+    format_year_candidates_for_prompt,
+    resolve_publication_year,
+)
 from state import IngestionState, PaperMetadataSchema
 
 metadata_llm = get_task_llm(ModelTask.METADATA)
@@ -12,17 +16,20 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
     sections = state.get("final_json") or {}
     raw_text = state.get("cleaned_english_text") or state.get("raw_text", "")
     fallback_title = pick_title(raw_text, state.get("source_filename") or state.get("pdf_path", "paper"))
-    path_year = maybe_parse_year_from_path(state.get("source_path") or state.get("pdf_path", ""))
-
-    if path_year:
-        fallback_year = path_year
-    else:
-        year_match = re.search(r"\b(19|20)\d{2}\b", raw_text[:6000])
-        fallback_year = year_match.group(0) if year_match else "Unknown"
+    year_candidates = collect_year_candidates(
+        source_path=state.get("source_path") or state.get("pdf_path", ""),
+        source_filename=state.get("source_filename") or state.get("pdf_path", ""),
+        raw_text=raw_text,
+        sections=sections,
+        pdf_metadata=state.get("pdf_metadata") or {},
+        input_payload=state.get("input_payload") or {},
+    )
+    fallback_year = year_candidates[0].year if year_candidates and year_candidates[0].confidence >= 0.65 else "Unknown"
 
     prompt = load_prompt("metadata_extractor.txt").format(
         title_hint=sections.get("title") or fallback_title,
         fallback_year=fallback_year,
+        year_candidates=format_year_candidates_for_prompt(year_candidates),
         content_preview="\n\n".join(
             [
                 f"TITLE:\n{sections.get('title', '')}",
@@ -36,20 +43,46 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
 
     try:
         metadata = structured_llm.invoke(prompt)
+        year_resolution = resolve_publication_year(
+            source_path=state.get("source_path") or state.get("pdf_path", ""),
+            source_filename=state.get("source_filename") or state.get("pdf_path", ""),
+            raw_text=raw_text,
+            sections=sections,
+            pdf_metadata=state.get("pdf_metadata") or {},
+            input_payload=state.get("input_payload") or {},
+            llm_year=metadata.year or fallback_year,
+        )
         return {
             "paper_metadata": {
                 "title": metadata.title.strip() or fallback_title,
-                "year": normalize_year(metadata.year or fallback_year),
+                "year": year_resolution["year"],
+                "year_source": year_resolution["year_source"],
+                "year_confidence": year_resolution["year_confidence"],
+                "year_evidence": year_resolution["year_evidence"],
             },
+            "year_resolution": year_resolution,
             "errors": [],
             "status": "metadata_ready",
         }
     except Exception:
+        year_resolution = resolve_publication_year(
+            source_path=state.get("source_path") or state.get("pdf_path", ""),
+            source_filename=state.get("source_filename") or state.get("pdf_path", ""),
+            raw_text=raw_text,
+            sections=sections,
+            pdf_metadata=state.get("pdf_metadata") or {},
+            input_payload=state.get("input_payload") or {},
+            llm_year=fallback_year,
+        )
         return {
             "paper_metadata": {
                 "title": sections.get("title") or fallback_title,
-                "year": normalize_year(fallback_year),
+                "year": year_resolution["year"],
+                "year_source": year_resolution["year_source"],
+                "year_confidence": year_resolution["year_confidence"],
+                "year_evidence": year_resolution["year_evidence"],
             },
+            "year_resolution": year_resolution,
             "errors": [],
             "status": "metadata_ready",
         }

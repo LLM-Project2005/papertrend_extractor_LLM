@@ -87,6 +87,8 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
     try:
         logger.info("starting extraction", extra={"pdf_path": pdf_path})
         document = fitz.open(pdf_path)
+        document_metadata = getattr(document, "metadata", {}) or {}
+        pdf_metadata = dict(document_metadata) if isinstance(document_metadata, dict) else {}
         try:
             md_text = _extract_with_fitz(document)
             if not md_text.strip() or _looks_like_garbage(md_text):
@@ -107,6 +109,7 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
 
         return {
             "raw_text": md_text,
+            "pdf_metadata": pdf_metadata,
             "extraction_method": extraction_method,
             "status": "extracted",
             "errors": [],

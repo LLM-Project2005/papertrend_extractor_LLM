@@ -225,6 +225,8 @@ class IngestionState(TypedDict, total=False):
     owner_user_id: str
     folder_id: str
     paper_id: int
+    input_payload: Dict[str, Any]
+    pdf_metadata: Dict[str, Any]
     extraction_method: str
     raw_text: str
     cleaned_text: str
@@ -233,6 +235,7 @@ class IngestionState(TypedDict, total=False):
     semantic_map: Optional[Dict[str, Any]]
     final_json: Optional[Dict[str, Any]]
     paper_metadata: Optional[Dict[str, Any]]
+    year_resolution: Optional[Dict[str, Any]]
     keyword_candidates: List[Dict[str, Any]]
     semantic_topics: List[Dict[str, Any]]
     final_labeled_topics: List[Dict[str, Any]]

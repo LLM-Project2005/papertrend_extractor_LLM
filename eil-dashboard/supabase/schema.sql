@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS papers (
   owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   folder_id   UUID,
   year        TEXT NOT NULL,
+  year_confidence NUMERIC,
+  year_source TEXT,
+  year_evidence TEXT,
+  year_candidates JSONB NOT NULL DEFAULT '[]'::jsonb,
   title       TEXT NOT NULL,
   created_at  TIMESTAMPTZ DEFAULT now()
 );
@@ -364,7 +368,11 @@ CREATE TABLE IF NOT EXISTS deep_research_steps (
 
 ALTER TABLE papers
   ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-  ADD COLUMN IF NOT EXISTS folder_id UUID;
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS year_confidence NUMERIC,
+  ADD COLUMN IF NOT EXISTS year_source TEXT,
+  ADD COLUMN IF NOT EXISTS year_evidence TEXT,
+  ADD COLUMN IF NOT EXISTS year_candidates JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 ALTER TABLE paper_keywords
   ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -1028,6 +1036,10 @@ SELECT
   p.owner_user_id,
   p.folder_id,
   p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
   p.title,
   pk.topic,
   pk.keyword,
@@ -1043,6 +1055,10 @@ SELECT
   p.owner_user_id,
   p.folder_id,
   p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
   p.title,
   ts.el,
   ts.eli,
@@ -1058,6 +1074,10 @@ SELECT
   p.owner_user_id,
   p.folder_id,
   p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
   p.title,
   tm.el,
   tm.eli,
@@ -1073,6 +1093,10 @@ SELECT
   p.owner_user_id,
   p.folder_id,
   p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
   p.title,
   pc.abstract,
   COALESCE(pc.abstract_claims, pc.abstract) AS abstract_claims,

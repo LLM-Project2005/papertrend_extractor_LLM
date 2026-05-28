@@ -21,6 +21,41 @@ def _is_missing_optional_relation(error: Exception) -> bool:
     return "Could not find the table" in body or "schema cache" in body
 
 
+def _is_missing_optional_paper_year_column(error: Exception) -> bool:
+    response = getattr(error, "response", None)
+    if response is None:
+        return False
+    if getattr(response, "status_code", None) not in {400, 404}:
+        return False
+    try:
+        body = response.text or ""
+    except Exception:
+        body = ""
+    return (
+        "schema cache" in body
+        and "year_" in body
+        and "papers" in body
+    )
+
+
+def _upsert_papers_with_optional_year_audit(client: Any, rows: Any) -> None:
+    try:
+        client.upsert_rows("papers", rows)
+    except Exception as error:
+        if not _is_missing_optional_paper_year_column(error):
+            raise
+        logger.warning(
+            "paper year audit columns missing; retrying papers.upsert without audit fields"
+        )
+        stripped_rows = []
+        for row in list(rows or []):
+            stripped = dict(row)
+            for key in ("year_confidence", "year_source", "year_evidence", "year_candidates"):
+                stripped.pop(key, None)
+            stripped_rows.append(stripped)
+        client.upsert_rows("papers", stripped_rows)
+
+
 def _row_count(rows: Any) -> int:
     if rows is None:
         return 0
@@ -94,7 +129,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     _persist_step(
         "papers.upsert",
         _row_count(dataset.get("papers")),
-        lambda: client.upsert_rows("papers", dataset["papers"]),
+        lambda: _upsert_papers_with_optional_year_audit(client, dataset["papers"]),
     )
     _persist_step(
         "paper_keywords.delete",
