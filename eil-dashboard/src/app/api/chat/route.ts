@@ -1043,6 +1043,44 @@ function fallbackChartPlansFromPrompt(
   }));
 }
 
+function mergeExplicitChartPlans(
+  plannerPlans: ResolvedChartPlan[],
+  promptFallbackPlans: ResolvedChartPlan[]
+) {
+  const merged: ResolvedChartPlan[] = [];
+  const seenMetrics = new Set<ChartMetric>();
+
+  for (const plan of plannerPlans) {
+    if (seenMetrics.has(plan.metric)) {
+      continue;
+    }
+    seenMetrics.add(plan.metric);
+    merged.push(plan);
+  }
+
+  if (promptFallbackPlans.length > 1) {
+    for (const plan of promptFallbackPlans) {
+      if (seenMetrics.has(plan.metric)) {
+        continue;
+      }
+      seenMetrics.add(plan.metric);
+      merged.push({
+        ...plan,
+        reason:
+          plan.reason ??
+          "Added because the user explicitly requested this chart angle.",
+        confidence: plan.confidence ?? "medium",
+        warnings: [
+          ...(plan.warnings ?? []),
+          "Added by prompt parsing because the chart planner omitted this requested metric.",
+        ],
+      });
+    }
+  }
+
+  return merged.slice(0, 4);
+}
+
 function sanitizePlannerBundle(
   rawPlan: Record<string, unknown> | null,
   fallbackRequest: Required<ChartRequest>,
@@ -1067,11 +1105,17 @@ function sanitizePlannerBundle(
       )
     );
   const validPlans = plans.filter((plan) => availableMetrics.includes(plan.metric));
+  const promptFallbackPlans = fallbackChartPlansFromPrompt(
+    prompt,
+    fallbackRequest,
+    availableMetrics
+  );
+  const mergedPlans = mergeExplicitChartPlans(validPlans, promptFallbackPlans);
   return {
     plans:
-      validPlans.length > 0
-        ? validPlans
-        : fallbackChartPlansFromPrompt(prompt, fallbackRequest, availableMetrics),
+      mergedPlans.length > 0
+        ? mergedPlans
+        : promptFallbackPlans,
     notes: String(rawPlan?.notes ?? "").trim().slice(0, 400) || undefined,
   };
 }

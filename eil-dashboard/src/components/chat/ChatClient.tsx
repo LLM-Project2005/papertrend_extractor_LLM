@@ -1720,8 +1720,8 @@ export default function ChatClient() {
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-5rem)] w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-[#161719] dark:text-[#ececec]">
-        <aside className="hidden w-[288px] flex-none border-r border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-[#121214] lg:flex lg:flex-col">
+      <div className="flex h-[calc(100vh-5rem)] min-h-0 w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-[#161719] dark:text-[#ececec]">
+        <aside className="hidden h-full min-h-0 w-[288px] flex-none border-r border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-[#121214] lg:flex lg:flex-col">
           <button
             type="button"
             onClick={() => resetChat("normal")}
@@ -1834,8 +1834,8 @@ export default function ChatClient() {
           </div>
         </aside>
 
-        <section className="relative flex min-w-0 flex-1 flex-col bg-slate-100 dark:bg-[#161719]">
-          <header className="flex h-14 items-center justify-between border-b border-slate-200 px-4 dark:border-white/8 sm:px-6">
+        <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-100 dark:bg-[#161719]">
+          <header className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-white/8 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -1856,7 +1856,7 @@ export default function ChatClient() {
             ) : null}
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-48 pt-8 sm:px-6 xl:px-8">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-48 pt-8 sm:px-6 xl:px-8">
             {deepSession ? (
               <section className="mx-auto mb-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
