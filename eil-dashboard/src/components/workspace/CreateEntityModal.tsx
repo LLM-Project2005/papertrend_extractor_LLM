@@ -45,23 +45,23 @@ export default function CreateEntityModal({
     <Modal onClose={onClose}>
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-lg rounded-[28px] border border-white/10 bg-[#171717] text-white shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+        className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:border-white/10 dark:bg-[#171717] dark:text-white dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5 sm:px-7">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-white/10 sm:px-7">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6f6f6f]">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
               Create
             </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">
+            <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
               {title}
             </h2>
-            <p className="mt-2 text-sm leading-7 text-[#9b9b9b]">{description}</p>
+            <p className="mt-2 text-sm leading-7 text-slate-500 dark:text-[#9b9b9b]">{description}</p>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-[#111111] text-[#c8c8c8] transition-colors hover:bg-[#1a1a1a] hover:text-white"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-[#111111] dark:text-[#c8c8c8] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
             aria-label={`Close ${title}`}
           >
             <CloseIcon className="h-4 w-4" />
@@ -70,30 +70,30 @@ export default function CreateEntityModal({
 
         <div className="space-y-5 px-6 py-6 sm:px-7">
           <label className="grid gap-3">
-            <span className="text-sm font-medium text-white">{fieldLabel}</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-white">{fieldLabel}</span>
             <input
               value={value}
               onChange={(event) => onValueChange(event.target.value)}
               placeholder={fieldPlaceholder}
               autoFocus
-              className="rounded-2xl border border-white/10 bg-[#111111] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#666666] focus:border-[#1f9d63]"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-[#1f9d63] dark:border-white/10 dark:bg-[#111111] dark:text-white dark:placeholder:text-[#666666]"
             />
           </label>
 
           {children}
 
           {error ? (
-            <div className="rounded-2xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
               {error}
             </div>
           ) : null}
         </div>
 
-        <div className="flex items-center justify-between gap-3 border-t border-white/10 px-6 py-5 sm:px-7">
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-5 dark:border-white/10 sm:px-7">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-white/10 bg-[#141414] px-4 py-2.5 text-sm font-medium text-[#d0d0d0] transition-colors hover:bg-[#1b1b1b]"
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-[#141414] dark:text-[#d0d0d0] dark:hover:bg-[#1b1b1b]"
           >
             Cancel
           </button>

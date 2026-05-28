@@ -2320,7 +2320,7 @@ export default function ChatClient() {
                       {isUser ? (
                         <div className="flex justify-end">
                           <div className="max-w-[78%] space-y-2">
-                            <div className="rounded-[18px] bg-slate-900 px-5 py-3 text-[15px] leading-7 text-white shadow-sm dark:bg-[#2a2a2a] dark:text-[#f3f3f3]">
+                            <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-7 text-slate-900 shadow-sm dark:border-white/10 dark:bg-[#2a2a2a] dark:text-[#f3f3f3]">
                               {renderRichMessage(message.content, message.id, "user")}
                             </div>
                             <MessageAttachmentList attachments={attachments} />
