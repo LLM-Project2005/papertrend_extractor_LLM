@@ -119,10 +119,11 @@ interface MessageView {
 
 interface ChatPayload {
   answer?: string;
-  mode?: "grounded" | "fallback";
+  mode?: "grounded" | "fallback" | "analysis_queued";
   citations?: Citation[];
   toolResults?: ChatToolResult[];
   chart?: ChatChartPayload | null;
+  charts?: ChatChartPayload[];
   error?: string;
   thread?: WorkspaceThreadSummary;
   messages?: WorkspaceMessageRecord[];
@@ -178,6 +179,22 @@ function chartFromMetadata(metadata?: Record<string, unknown> | null): ChatChart
     return null;
   }
   return value as ChatChartPayload;
+}
+
+function chartsFromMetadata(metadata?: Record<string, unknown> | null): ChatChartPayload[] {
+  const charts = metadata?.charts;
+  if (Array.isArray(charts)) {
+    return charts
+      .map((chart) =>
+        chart && typeof chart === "object" ? (chart as Partial<ChatChartPayload>) : null
+      )
+      .filter(
+        (chart): chart is ChatChartPayload =>
+          Boolean(chart?.title && chart.chartType && Array.isArray(chart.data))
+      );
+  }
+  const chart = chartFromMetadata(metadata);
+  return chart ? [chart] : [];
 }
 
 const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
@@ -561,6 +578,27 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
   );
 }
 
+const chatChartTooltipTheme = {
+  contentStyle: {
+    backgroundColor: "#111827",
+    border: "1px solid rgba(148, 163, 184, 0.35)",
+    borderRadius: "12px",
+    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.32)",
+    color: "#f8fafc",
+  },
+  labelStyle: {
+    color: "#f8fafc",
+    fontWeight: 600,
+  },
+  itemStyle: {
+    color: "#e5e7eb",
+  },
+  cursor: {
+    fill: "rgba(148, 163, 184, 0.14)",
+    stroke: "rgba(148, 163, 184, 0.25)",
+  },
+};
+
 function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   const chartData = chart.data ?? [];
   const yKeys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
@@ -630,7 +668,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
                 <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 12 }} />
                 <YAxis allowDecimals={false} tick={{ fill: "#9ca3af", fontSize: 12 }} />
-                <Tooltip />
+                <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, index) => (
                   <Line
                     key={key}
@@ -645,7 +683,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
               </LineChart>
             ) : chart.chartType === "pie" ? (
               <PieChart>
-                <Tooltip />
+                <Tooltip {...chatChartTooltipTheme} />
                 <Pie
                   data={chartData}
                   dataKey={primaryKey}
@@ -681,7 +719,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                   allowDecimals={false}
                   tick={{ fill: "#9ca3af", fontSize: 12 }}
                 />
-                <Tooltip />
+                <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, keyIndex) => (
                   <Bar key={key} dataKey={key} radius={[4, 4, 0, 0]}>
                     {chartData.map((row, index) => (
@@ -1461,6 +1499,7 @@ export default function ChatClient() {
               mode: payload.mode ?? "fallback",
               toolResults: payload.toolResults ?? [],
               chart: payload.chart ?? null,
+              charts: payload.charts ?? (payload.chart ? [payload.chart] : []),
             }
           ),
         ]);
@@ -2101,7 +2140,7 @@ export default function ChatClient() {
               <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
-                  const chart = chartFromMetadata(message.metadata);
+                  const charts = chartsFromMetadata(message.metadata);
                   return (
                     <section key={message.id}>
                       {isUser ? (
@@ -2113,7 +2152,12 @@ export default function ChatClient() {
                       ) : (
                         <div className="space-y-4">
                           {renderRichMessage(message.content, message.id, "assistant")}
-                          {chart ? <ChatChartCard chart={chart} /> : null}
+                          {charts.map((chart, chartIndex) => (
+                            <ChatChartCard
+                              key={`${message.id}-chart-${chartIndex}-${chart.title}`}
+                              chart={chart}
+                            />
+                          ))}
                           {message.citations.length > 0 ? (
                             <div className="space-y-2">
                               {message.citations.map((citation) => (

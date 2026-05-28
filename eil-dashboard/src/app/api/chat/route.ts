@@ -87,6 +87,11 @@ interface ChartAnalysisDeferred {
   };
 }
 
+interface ChartBundlePlan {
+  plans: ResolvedChartPlan[];
+  notes?: string;
+}
+
 type ResolvedChartPlan = Required<ChartRequest> & {
   source: "llm" | "fallback";
   focusTerms: string[];
@@ -986,15 +991,107 @@ function sanitizePlannerPlan(
   };
 }
 
-async function planChartWithLlm(
+function fallbackChartPlansFromPrompt(
+  prompt: string,
+  fallbackRequest: Required<ChartRequest>,
+  availableMetrics: ChartMetric[]
+): ResolvedChartPlan[] {
+  const text = prompt.toLowerCase();
+  const requestedMetrics: ChartMetric[] = [];
+  const addMetric = (metric: ChartMetric) => {
+    if (availableMetrics.includes(metric) && !requestedMetrics.includes(metric)) {
+      requestedMetrics.push(metric);
+    }
+  };
+  const trendIntent =
+    /\b(trend|timeline|time series|over time|change|growth|decline|year by year|yearly|annual)\b/i.test(
+      text
+    );
+
+  if (/\b(topic|topics|theme|themes|concept|concepts)\b/i.test(text)) {
+    addMetric(trendIntent ? "topic_trend" : "top_topics");
+  }
+  if (/\b(keyword|keywords|key word|key words)\b/i.test(text)) {
+    addMetric(trendIntent ? "keyword_trend" : "top_keywords");
+  }
+  if (/\b(track|tracks|classification|classifications|el\b|eli\b|lae\b)\b/i.test(text)) {
+    addMetric(trendIntent ? "track_trend" : "track_distribution");
+  }
+  if (/\b(year|years|papers per year|paper count|timeline)\b/i.test(text)) {
+    addMetric("papers_per_year");
+  }
+
+  if (requestedMetrics.length === 0) {
+    requestedMetrics.push(
+      availableMetrics.includes(fallbackRequest.metric)
+        ? fallbackRequest.metric
+        : availableMetrics[0] ?? fallbackRequest.metric
+    );
+  }
+
+  return requestedMetrics.slice(0, 4).map((metric) => ({
+    ...buildFallbackChartPlan(
+      {
+        ...fallbackRequest,
+        metric,
+        groupBy: groupByForMetric(metric),
+        chartType: inferChartTypeFromPrompt(prompt, metric),
+      },
+      "Used deterministic multi-chart inference."
+    ),
+    title: undefined,
+  }));
+}
+
+function sanitizePlannerBundle(
+  rawPlan: Record<string, unknown> | null,
+  fallbackRequest: Required<ChartRequest>,
+  availableMetrics: ChartMetric[],
+  prompt: string
+): ChartBundlePlan {
+  const rawCharts = Array.isArray(rawPlan?.charts)
+    ? rawPlan.charts
+    : rawPlan
+      ? [rawPlan]
+      : [];
+  const plans = rawCharts
+    .slice(0, 4)
+    .map((chartPlan) =>
+      sanitizePlannerPlan(
+        chartPlan && typeof chartPlan === "object"
+          ? (chartPlan as Record<string, unknown>)
+          : null,
+        fallbackRequest,
+        availableMetrics,
+        prompt
+      )
+    );
+  const validPlans = plans.filter((plan) => availableMetrics.includes(plan.metric));
+  return {
+    plans:
+      validPlans.length > 0
+        ? validPlans
+        : fallbackChartPlansFromPrompt(prompt, fallbackRequest, availableMetrics),
+    notes: String(rawPlan?.notes ?? "").trim().slice(0, 400) || undefined,
+  };
+}
+
+async function planChartBundleWithLlm(
   body: ChatRequestBody,
   data: DashboardData,
   fallbackRequest: Required<ChartRequest>,
   scopeLabel: string
-): Promise<ResolvedChartPlan> {
+): Promise<ChartBundlePlan> {
   const profile = chartDataProfile(data, scopeLabel);
   if (profile.availableMetrics.length === 0) {
-    return buildFallbackChartPlan(fallbackRequest, "No chartable analyzed data is available.");
+    return {
+      plans: [
+        buildFallbackChartPlan(
+          fallbackRequest,
+          "No chartable analyzed data is available."
+        ),
+      ],
+    };
   }
 
   const recentMessages = (body.messages ?? [])
@@ -1012,7 +1109,8 @@ async function planChartWithLlm(
           role: "system",
           content:
             "You are a production chart planner for a research-paper analytics app. " +
-            "Choose the most useful chart from the available analyzed data. " +
+            "Choose one or more useful charts from the available analyzed data. " +
+            "If the user asks for multiple charts, comparisons, a dashboard, a report, or several angles, return multiple chart specs. " +
             "Return strict JSON only. Do not include markdown. Do not invent metrics, columns, or data.",
         },
         {
@@ -1025,6 +1123,7 @@ async function planChartWithLlm(
             availableMetrics: profile.availableMetrics,
             dataProfile: profile,
             allowedOutput: {
+              charts: "array of 1-4 chart specs",
               metric: CHART_METRIC_VALUES,
               chartType: ["auto", "bar", "line", "pie", "table"],
               groupBy: ["year", "topic", "keyword", "track"],
@@ -1033,6 +1132,7 @@ async function planChartWithLlm(
               title: "short human-readable chart title",
               reason: "one sentence explaining why this chart answers the request",
               confidence: ["high", "medium", "low"],
+              notes: "optional short planning note",
             },
           }),
         },
@@ -1040,9 +1140,9 @@ async function planChartWithLlm(
       0.1,
       resolveChatModel(body.model),
       "CHART_PLANNER",
-      { maxTokens: 700 }
+      { maxTokens: 1200 }
     );
-    return sanitizePlannerPlan(
+    return sanitizePlannerBundle(
       extractJsonObject(completion?.content),
       fallbackRequest,
       profile.availableMetrics,
@@ -1050,14 +1150,16 @@ async function planChartWithLlm(
     );
   } catch (error) {
     return {
-      ...buildFallbackChartPlan(
-        fallbackRequest,
-        "The LLM chart planner failed, so deterministic inference was used."
+      plans: fallbackChartPlansFromPrompt(prompt, fallbackRequest, profile.availableMetrics).map(
+        (plan) => ({
+          ...plan,
+          confidence: "low",
+          warnings: [
+            ...(plan.warnings ?? []),
+            error instanceof Error ? error.message : "Chart planner request failed.",
+          ],
+        })
       ),
-      confidence: "low",
-      warnings: [
-        error instanceof Error ? error.message : "Chart planner request failed.",
-      ],
     };
   }
 }
@@ -1522,8 +1624,10 @@ async function buildChatChart(
   threadDetail?: ChatThreadDetail | null
 ): Promise<{
   chart: ChatChartPayload | null;
+  charts: ChatChartPayload[];
   error?: string;
   request: ResolvedChartPlan;
+  requests: ResolvedChartPlan[];
   deferred?: ChartAnalysisDeferred;
 }> {
   const prompt = String(body.message ?? "");
@@ -1561,6 +1665,8 @@ async function buildChatChart(
         ],
       },
       chart: null,
+      charts: [],
+      requests: [fallbackPlan],
       error:
         "I could not tell which analyzed paper you meant. Attach or select the paper from the library, or mention the exact paper title.",
     };
@@ -1582,6 +1688,8 @@ async function buildChatChart(
           ],
         },
         chart: null,
+        charts: [],
+        requests: [fallbackPlan],
         deferred,
         error: `${deferred.message} ${deferred.detail}`,
       };
@@ -1597,30 +1705,136 @@ async function buildChatChart(
     sessionScope.selectedPaperIds,
     sessionScope.scopeLabel
   );
-  const plannedRequest = await planChartWithLlm(body, data, request, scopeLabel);
-  const primaryChart = buildChartFromData(data, plannedRequest, scopeLabel);
-  const chart =
-    primaryChart ??
-    buildBestAvailableChartFromData(
+  const chartBundle = await planChartBundleWithLlm(body, data, request, scopeLabel);
+  const plannedRequests = chartBundle.plans.length > 0
+    ? chartBundle.plans
+    : [buildFallbackChartPlan(request)];
+  const charts = plannedRequests
+    .map((plannedRequest) => buildChartFromData(data, plannedRequest, scopeLabel))
+    .filter((chart): chart is ChatChartPayload => Boolean(chart));
+  const fallbackChart =
+    charts.length === 0
+      ? buildBestAvailableChartFromData(
       data,
       {
-        ...plannedRequest,
+        ...plannedRequests[0],
         source: "fallback",
         confidence: "low",
         warnings: [
-          ...(plannedRequest.warnings ?? []),
+          ...(plannedRequests[0]?.warnings ?? []),
           "The planned chart had no rows, so a backup chart was selected.",
         ],
       },
       scopeLabel
-    );
+        )
+      : null;
+  const finalCharts = fallbackChart ? [fallbackChart] : charts;
   return {
-    request: plannedRequest,
-    chart,
-    error: chart
+    request: plannedRequests[0],
+    requests: plannedRequests,
+    chart: finalCharts[0] ?? null,
+    charts: finalCharts,
+    error: finalCharts.length > 0
       ? undefined
       : "No analyzed data was found for that chart scope yet.",
   };
+}
+
+function summarizeChartForResponse(chart: ChatChartPayload) {
+  return {
+    title: chart.title,
+    metric: chart.metric,
+    chartType: chart.chartType,
+    scope: chart.scopeLabel,
+    series: chart.yKeys,
+    sampleRows: chart.data.slice(0, 8),
+    plannerReason: chart.planner?.reason,
+  };
+}
+
+function fallbackChartAnswer(charts: ChatChartPayload[]) {
+  if (charts.length === 0) {
+    return "I could not build that chart yet.";
+  }
+  const chartList = charts
+    .map((chart, index) => `${index + 1}. **${chart.title}** (${chart.chartType})`)
+    .join("\n");
+  const firstChart = charts[0];
+  const strongestRows = firstChart.data
+    .slice(0, 3)
+    .map((row) => {
+      const values = firstChart.yKeys
+        .map((key) => `${key}: ${Number(row[key]) || 0}`)
+        .join(", ");
+      return `${row.label} (${values})`;
+    })
+    .join("; ");
+  return [
+    charts.length === 1
+      ? `I built **${firstChart.title}** from ${firstChart.scopeLabel}.`
+      : `I built ${charts.length} charts from ${firstChart.scopeLabel}:`,
+    charts.length > 1 ? chartList : "",
+    strongestRows
+      ? `What it shows: the strongest visible values are ${strongestRows}. Use this as a first read, then inspect the chart for the full pattern.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function synthesizeChartAnswer(
+  body: ChatRequestBody,
+  charts: ChatChartPayload[],
+  requests: ResolvedChartPlan[]
+) {
+  if (charts.length === 0) {
+    return fallbackChartAnswer(charts);
+  }
+  const prompt = String(body.message ?? "").trim();
+  const recentMessages = (body.messages ?? [])
+    .slice(-8)
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content ?? "").slice(0, 700),
+    }));
+
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content:
+            "You are a flexible research analytics assistant. The app has already built validated charts from real data. " +
+            "Write the assistant response that should accompany the charts. " +
+            "Default behavior: if the user simply asks for a chart or does not specify a response style, explain the chart automatically. " +
+            "Mention what the chart shows, the strongest visible pattern, and any useful caution about scope or missing data. " +
+            "If the user asks for ideas, thoughts, a plan, critique, summary, next steps, recommendations, or another format, prioritize that intent while still grounding the answer in the chart. " +
+            "Do not claim to have data beyond the provided chart summaries. Keep it concise but useful.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            userRequest: prompt || "Create the most useful chart from my analyzed papers.",
+            recentChatContext: recentMessages,
+            chartPlans: requests.map((request) => ({
+              metric: request.metric,
+              chartType: request.chartType,
+              focusTerms: request.focusTerms,
+              reason: request.reason,
+            })),
+            charts: charts.map(summarizeChartForResponse),
+          }),
+        },
+      ],
+      0.35,
+      resolveChatModel(body.model),
+      "CHART_SYNTHESIS",
+      { maxTokens: 900 }
+    );
+    return completion?.content?.trim() || fallbackChartAnswer(charts);
+  } catch {
+    return fallbackChartAnswer(charts);
+  }
 }
 
 function extractWebCitations(annotations: unknown): Citation[] {
@@ -3011,14 +3225,18 @@ async function normalChat(
     }
 
     let chart: ChatChartPayload | null = null;
+    let charts: ChatChartPayload[] = [];
     let chartError: string | undefined;
     let normalizedChartRequest: ResolvedChartPlan | null = null;
+    let normalizedChartRequests: ResolvedChartPlan[] = [];
     let deferred: ChartAnalysisDeferred | undefined;
     try {
       const result = await buildChatChart(ownerUserId, body, existingThreadDetail);
       chart = result.chart;
+      charts = result.charts;
       chartError = result.error;
       normalizedChartRequest = result.request;
+      normalizedChartRequests = result.requests;
       deferred = result.deferred;
     } catch (error) {
       chartError =
@@ -3026,22 +3244,24 @@ async function normalChat(
     }
 
     const toolResults: ChatToolResult[] = [
-      chart
-        ? { type: "chart", status: "succeeded", data: chart }
+      charts.length > 0
+        ? { type: "chart", status: "succeeded", data: { charts } }
         : deferred
           ? { type: "chart", status: "skipped", data: deferred }
         : { type: "chart", status: "failed", error: chartError },
     ];
-    const answer = chart
-      ? `I built **${chart.title}** from ${chart.scopeLabel}.`
+    const answer = charts.length > 0
+      ? await synthesizeChartAnswer(body, charts, normalizedChartRequests)
       : deferred
         ? `${deferred.message}\n\n${deferred.detail}\n\nAfter the analysis status changes to succeeded, ask me for the chart again and I will use the analyzed results.`
       : `I could not build that chart yet. ${chartError ?? "No analyzed data was found."}`;
     const metadata = {
-      mode: chart ? "grounded" : deferred ? "analysis_queued" : "fallback",
+      mode: charts.length > 0 ? "grounded" : deferred ? "analysis_queued" : "fallback",
       toolResults,
       chart,
+      charts,
       chartRequest: normalizedChartRequest,
+      chartRequests: normalizedChartRequests,
       deferredAnalysis: deferred ?? null,
     };
 
@@ -3062,11 +3282,12 @@ async function normalChat(
 
     const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
     return NextResponse.json({
-      mode: chart ? "grounded" : deferred ? "analysis_queued" : "fallback",
+      mode: charts.length > 0 ? "grounded" : deferred ? "analysis_queued" : "fallback",
       answer,
       citations: [],
       toolResults,
       chart,
+      charts,
       thread: detail.thread,
       messages: detail.messages,
       deepResearchSession: detail.deepResearchSession,
