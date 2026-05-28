@@ -891,8 +891,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     projects.find((project) => project.id === selectedProjectIdState) ??
     allProjects.find((project) => project.id === selectedProjectIdState) ??
     null;
-  const workspaceLoading =
-    !hydrated || Boolean(user && (!allProjectsLoadAttempted || allProjectsLoading));
+  const workspaceLoading = !hydrated || Boolean(user && !allProjectsLoadAttempted);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
