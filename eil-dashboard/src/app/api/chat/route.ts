@@ -1044,12 +1044,182 @@ async function planChartWithLlm(
   }
 }
 
+function readStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function attachmentNamesFromUnknown(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) =>
+      item && typeof item === "object"
+        ? String((item as { name?: unknown }).name ?? "").trim()
+        : ""
+    )
+    .filter(Boolean);
+}
+
+function collectThreadChartContext(threadDetail?: ChatThreadDetail | null) {
+  let selectedRunIds: string[] = [];
+  let attachmentNames: string[] = [];
+
+  for (const message of [...(threadDetail?.messages ?? [])].reverse()) {
+    const metadata = message.metadata ?? {};
+    const runIds = readStringArray(metadata.selectedRunIds);
+    const names = attachmentNamesFromUnknown(metadata.attachments);
+    if (selectedRunIds.length === 0 && runIds.length > 0) {
+      selectedRunIds = runIds;
+    }
+    if (attachmentNames.length === 0 && names.length > 0) {
+      attachmentNames = names;
+    }
+    if (selectedRunIds.length > 0 && attachmentNames.length > 0) {
+      break;
+    }
+  }
+
+  return {
+    selectedRunIds: [...new Set(selectedRunIds)],
+    attachmentNames: [...new Set(attachmentNames)],
+  };
+}
+
+function filterDashboardDataByPaperIds(
+  data: DashboardData,
+  paperIds: Array<string | number>
+): DashboardData {
+  const allowedPaperIds = new Set(paperIds.map((paperId) => String(paperId)));
+  return {
+    ...data,
+    trends: data.trends.filter((row) => allowedPaperIds.has(String(row.paper_id))),
+    tracksSingle: data.tracksSingle.filter((row) =>
+      allowedPaperIds.has(String(row.paper_id))
+    ),
+    tracksMulti: data.tracksMulti.filter((row) =>
+      allowedPaperIds.has(String(row.paper_id))
+    ),
+    topicFamilies: data.topicFamilies
+      ?.map((family) => ({
+        ...family,
+        paperIds: family.paperIds.filter((paperId) =>
+          allowedPaperIds.has(String(paperId))
+        ),
+      }))
+      .filter((family) => family.paperIds.length > 0),
+  };
+}
+
+function bestRankedChartPaperId(
+  analysis: ReturnType<typeof buildLocalPromptAnalysis>
+) {
+  const targetPaperId = String(analysis.target_paper_id ?? "").trim();
+  if (targetPaperId && targetPaperId !== "0") {
+    return targetPaperId;
+  }
+  const rankedMatches = Array.isArray(analysis.ranked_matches)
+    ? analysis.ranked_matches
+    : [];
+  const [top, second] = rankedMatches;
+  if (!top) {
+    return "";
+  }
+  const topScore = Number(top.score ?? 0);
+  const secondScore = Number(second?.score ?? 0);
+  const confident =
+    Boolean(top.exact_normalized_title_match) ||
+    Boolean(top.strong_title_match) ||
+    Boolean(top.selected_scope_anchor) ||
+    (topScore >= 8 && topScore >= secondScore + 2);
+  return confident ? String(top.paperId ?? "").trim() : "";
+}
+
+async function resolveChartSessionScope(
+  ownerUserId: string,
+  body: ChatRequestBody,
+  request: Required<ChartRequest>,
+  threadDetail?: ChatThreadDetail | null
+) {
+  const currentRunIds = [...new Set((body.selectedRunIds ?? []).filter(Boolean))];
+  const currentAttachmentNames = (body.attachments ?? [])
+    .map((attachment) => String(attachment?.name ?? "").trim())
+    .filter(Boolean);
+  const threadContext = collectThreadChartContext(threadDetail);
+  const attachmentNames = [
+    ...new Set([...currentAttachmentNames, ...threadContext.attachmentNames]),
+  ];
+  const prompt = String(body.message ?? "");
+  const wantsSessionPaper =
+    request.scope === "selected_files" ||
+    promptRequestsSessionScope(prompt) ||
+    attachmentNames.length > 0;
+
+  if (currentRunIds.length > 0) {
+    return {
+      selectedRunIds: currentRunIds,
+      selectedPaperIds: [] as string[],
+      attachmentNames,
+      scopeLabel: undefined as string | undefined,
+    };
+  }
+
+  if (wantsSessionPaper && threadContext.selectedRunIds.length > 0) {
+    return {
+      selectedRunIds: threadContext.selectedRunIds,
+      selectedPaperIds: [] as string[],
+      attachmentNames,
+      scopeLabel: `${threadContext.selectedRunIds.length} recent chat file${
+        threadContext.selectedRunIds.length === 1 ? "" : "s"
+      }`,
+    };
+  }
+
+  if (wantsSessionPaper || /\bwebquest\b/i.test(prompt)) {
+    let papers = await loadScopedPlanPapers(
+      ownerUserId,
+      body.folderId,
+      body.projectId,
+      []
+    );
+    let analysis = buildLocalPromptAnalysis(prompt, papers, [], attachmentNames);
+    let paperId = bestRankedChartPaperId(analysis);
+    if (!paperId && (body.folderId || body.projectId)) {
+      papers = await loadScopedPlanPapers(ownerUserId, undefined, undefined, []);
+      analysis = buildLocalPromptAnalysis(prompt, papers, [], attachmentNames);
+      paperId = bestRankedChartPaperId(analysis);
+    }
+    if (paperId) {
+      const matchedTitle =
+        analysis.ranked_matches.find((match) => String(match.paperId) === paperId)
+          ?.title ?? "matched paper";
+      return {
+        selectedRunIds: [] as string[],
+        selectedPaperIds: [paperId],
+        attachmentNames,
+        scopeLabel: matchedTitle,
+      };
+    }
+  }
+
+  return {
+    selectedRunIds: [] as string[],
+    selectedPaperIds: [] as string[],
+    attachmentNames,
+    scopeLabel: undefined as string | undefined,
+  };
+}
+
 async function loadChartDashboardData(
   ownerUserId: string,
   request: Required<ChartRequest>,
   folderId: string | "all" | undefined,
   projectId: string | undefined,
-  selectedRunIds: string[]
+  selectedRunIds: string[],
+  selectedPaperIds: string[] = [],
+  overrideScopeLabel?: string
 ) {
   const supabase = getSupabaseAdmin();
   if (request.scope === "selected_files" && selectedRunIds.length > 0) {
@@ -1066,6 +1236,18 @@ async function loadChartDashboardData(
     };
   }
 
+  if (request.scope === "selected_files" && selectedPaperIds.length > 0) {
+    const data = await loadScopedDashboardData(ownerUserId, null);
+    return {
+      data: filterDashboardDataByPaperIds(data, selectedPaperIds),
+      scopeLabel:
+        overrideScopeLabel ??
+        `${selectedPaperIds.length} matched paper${
+          selectedPaperIds.length === 1 ? "" : "s"
+        }`,
+    };
+  }
+
   return {
     data: await loadDashboardDataServer(
       ownerUserId,
@@ -1079,25 +1261,46 @@ async function loadChartDashboardData(
 
 async function buildChatChart(
   ownerUserId: string,
-  body: ChatRequestBody
+  body: ChatRequestBody,
+  threadDetail?: ChatThreadDetail | null
 ): Promise<{ chart: ChatChartPayload | null; error?: string; request: ResolvedChartPlan }> {
   const prompt = String(body.message ?? "");
-  const request = normalizeChartRequest(
+  let request = normalizeChartRequest(
     prompt,
     body.chartRequest,
     body.selectedRunIds ?? []
   );
+  const sessionScope = await resolveChartSessionScope(
+    ownerUserId,
+    body,
+    request,
+    threadDetail
+  );
+  if (
+    request.scope === "selected_files" &&
+    sessionScope.selectedRunIds.length === 0 &&
+    sessionScope.selectedPaperIds.length === 0 &&
+    !promptRequestsSessionScope(prompt)
+  ) {
+    request = { ...request, scope: "workspace" };
+  }
   const fallbackPlan = buildFallbackChartPlan(request);
-  if (request.scope === "selected_files" && (body.selectedRunIds ?? []).length === 0) {
+  if (
+    request.scope === "selected_files" &&
+    sessionScope.selectedRunIds.length === 0 &&
+    sessionScope.selectedPaperIds.length === 0
+  ) {
     return {
       request: {
         ...fallbackPlan,
         confidence: "low",
-        warnings: ["Chart mode needs at least one selected analyzed file for selected-file scope."],
+        warnings: [
+          "Chart mode could not resolve a selected paper from the current message or prior chat attachments.",
+        ],
       },
       chart: null,
       error:
-        "No selected analyzed paper is attached to this chat request. Add a library file first, then ask for the chart again.",
+        "I could not tell which analyzed paper you meant. Attach or select the paper from the library, or mention the exact paper title.",
     };
   }
   const { data, scopeLabel } = await loadChartDashboardData(
@@ -1105,7 +1308,9 @@ async function buildChatChart(
     request,
     body.folderId,
     body.projectId,
-    body.selectedRunIds ?? []
+    sessionScope.selectedRunIds,
+    sessionScope.selectedPaperIds,
+    sessionScope.scopeLabel
   );
   const plannedRequest = await planChartWithLlm(body, data, request, scopeLabel);
   const primaryChart = buildChartFromData(data, plannedRequest, scopeLabel);
@@ -1263,15 +1468,19 @@ const STOPWORDS = new Set([
   "after",
   "analysis",
   "analyze",
+  "build",
   "corpus",
   "create",
+  "chart",
   "deep",
   "evidence",
   "finish",
   "first",
+  "graph",
   "grounded",
   "identify",
   "paper",
+  "plot",
   "plan",
   "please",
   "report",
@@ -1280,7 +1489,11 @@ const STOPWORDS = new Set([
   "step",
   "steps",
   "structured",
+  "talking",
   "then",
+  "top",
+  "topic",
+  "topics",
   "using",
   "with",
 ]);
@@ -2458,15 +2671,23 @@ async function normalChat(
 
   const supabase = ownerUserId ? getSupabaseAdmin() : null;
   let thread: ChatThreadDetail["thread"] | null = null;
+  let existingThreadDetail: ChatThreadDetail | null = null;
   if (ownerUserId && supabase) {
-    thread = body.threadId
-      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
-      : await createWorkspaceThread(supabase, {
+    if (body.threadId) {
+      existingThreadDetail = await getWorkspaceThreadDetail(
+        supabase,
+        ownerUserId,
+        body.threadId
+      );
+      thread = existingThreadDetail.thread;
+    } else {
+      thread = await createWorkspaceThread(supabase, {
           ownerUserId,
           mode: "normal",
           title: buildThreadTitle(currentMessage),
           summary: currentMessage.slice(0, 180),
         });
+    }
 
     await appendWorkspaceMessage(supabase, {
       threadId: thread.id,
@@ -2475,7 +2696,10 @@ async function normalChat(
       role: "user",
       content: currentMessage,
       messageKind: "chat",
-      metadata: { attachments: body.attachments ?? [] },
+      metadata: {
+        attachments: body.attachments ?? [],
+        selectedRunIds: body.selectedRunIds ?? [],
+      },
     });
   }
 
@@ -2496,7 +2720,7 @@ async function normalChat(
     let chartError: string | undefined;
     let normalizedChartRequest: ResolvedChartPlan | null = null;
     try {
-      const result = await buildChatChart(ownerUserId, body);
+      const result = await buildChatChart(ownerUserId, body, existingThreadDetail);
       chart = result.chart;
       chartError = result.error;
       normalizedChartRequest = result.request;
