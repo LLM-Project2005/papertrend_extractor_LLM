@@ -17,6 +17,10 @@ import {
 import { createChatCompletionResult } from "@/lib/openai";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  persistWorkerStartState,
+  triggerWorkerQueueWithRetries,
+} from "@/lib/worker-queue-start";
 import { triggerResearchQueue, triggerWorkerQueue } from "@/lib/worker-trigger";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
@@ -66,6 +70,20 @@ interface ChatChartPayload {
     reason?: string;
     confidence?: "high" | "medium" | "low";
     warnings?: string[];
+  };
+}
+
+interface ChartAnalysisDeferred {
+  runIds: string[];
+  runTitles: string[];
+  statuses: Record<string, string>;
+  message: string;
+  detail: string;
+  queueStart?: {
+    started: boolean;
+    alreadyRunning: boolean;
+    progressMessage: string;
+    progressDetail: string;
   };
 }
 
@@ -1137,6 +1155,225 @@ function bestRankedChartPaperId(
   return confident ? String(top.paperId ?? "").trim() : "";
 }
 
+type ChartLibraryRun = {
+  id: string;
+  folder_id?: string | null;
+  folder_analysis_job_id?: string | null;
+  status: "queued" | "processing" | "succeeded" | "failed";
+  display_name?: string | null;
+  source_filename?: string | null;
+  source_path?: string | null;
+  input_payload?: Record<string, unknown> | null;
+};
+
+function chartRunLabel(run: Pick<ChartLibraryRun, "display_name" | "source_filename" | "source_path">) {
+  return (
+    String(run.display_name ?? "").trim() ||
+    String(run.source_filename ?? "").trim() ||
+    String(run.source_path ?? "").replace(/\\/g, "/").split("/").pop() ||
+    "selected file"
+  );
+}
+
+async function projectFolderIds(ownerUserId: string, projectId?: string) {
+  if (!projectId || projectId === "all") {
+    return [];
+  }
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("research_folders")
+    .select("id")
+    .eq("owner_user_id", ownerUserId)
+    .eq("project_id", projectId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? [])
+    .map((row) => String((row as { id?: string | null }).id ?? ""))
+    .filter(Boolean);
+}
+
+async function findLibraryRunsByAttachmentNames(
+  ownerUserId: string,
+  attachmentNames: string[],
+  folderId?: string | "all",
+  projectId?: string
+): Promise<ChartLibraryRun[]> {
+  const attachmentKeys = new Set(
+    attachmentNames.map(normalizeFileMatchKey).filter((value) => value.length >= 3)
+  );
+  if (attachmentKeys.size === 0) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("ingestion_runs")
+    .select("id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload")
+    .eq("owner_user_id", ownerUserId)
+    .eq("source_type", "upload")
+    .is("trashed_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(400);
+
+  if (folderId && folderId !== "all") {
+    query = query.eq("folder_id", folderId);
+  } else if (projectId && projectId !== "all") {
+    const folderIds = await projectFolderIds(ownerUserId, projectId);
+    if (folderIds.length === 0) {
+      return [];
+    }
+    query = query.in("folder_id", folderIds);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const matches = ((data ?? []) as ChartLibraryRun[]).filter((run) => {
+    const runKeys = [
+      run.display_name ?? "",
+      run.source_filename ?? "",
+      run.source_path ?? "",
+      chartRunLabel(run),
+    ]
+      .map(normalizeFileMatchKey)
+      .filter(Boolean);
+    return runKeys.some((runKey) =>
+      [...attachmentKeys].some(
+        (attachmentKey) =>
+          runKey === attachmentKey ||
+          runKey.includes(attachmentKey) ||
+          attachmentKey.includes(runKey)
+      )
+    );
+  });
+
+  matches.sort((left, right) => {
+    const rank = (run: ChartLibraryRun) =>
+      run.status === "succeeded"
+        ? 0
+        : run.status === "queued" || run.status === "processing"
+          ? 1
+          : 2;
+    return rank(left) - rank(right);
+  });
+  return matches;
+}
+
+async function loadChartRunsByIds(
+  ownerUserId: string,
+  runIds: string[]
+): Promise<ChartLibraryRun[]> {
+  const normalizedRunIds = [...new Set(runIds.filter(Boolean))];
+  if (normalizedRunIds.length === 0) {
+    return [];
+  }
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("ingestion_runs")
+    .select("id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload")
+    .eq("owner_user_id", ownerUserId)
+    .in("id", normalizedRunIds);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? []) as ChartLibraryRun[];
+}
+
+async function queueChartAnalysisRuns(
+  ownerUserId: string,
+  runs: ChartLibraryRun[]
+): Promise<ChartAnalysisDeferred | null> {
+  const notReadyRuns = runs.filter((run) => run.status !== "succeeded");
+  if (notReadyRuns.length === 0) {
+    return null;
+  }
+
+  const timestamp = new Date().toISOString();
+  const failedRuns = notReadyRuns.filter((run) => run.status === "failed");
+  const queuedRunIds = notReadyRuns.map((run) => run.id);
+  const supabase = getSupabaseAdmin();
+
+  for (const run of failedRuns) {
+    const existingPayload =
+      run.input_payload && typeof run.input_payload === "object" && !Array.isArray(run.input_payload)
+        ? run.input_payload
+        : {};
+    const retryCount =
+      typeof existingPayload.chat_chart_retry_count === "number"
+        ? existingPayload.chat_chart_retry_count
+        : Number(existingPayload.chat_chart_retry_count ?? 0) || 0;
+    const { error } = await supabase
+      .from("ingestion_runs")
+      .update({
+        status: "queued",
+        error_message: null,
+        completed_at: null,
+        updated_at: timestamp,
+        input_payload: {
+          ...existingPayload,
+          analysis_mode: "automatic",
+          analysis_label: "Queued from chat chart request",
+          chat_chart_retry_count: retryCount + 1,
+          chat_chart_requested_at: timestamp,
+          progress_stage: "queued",
+          progress_message: "Queued from chat chart request",
+          progress_detail:
+            "The user asked for a chart from this library file, so the failed analysis run was returned to the worker queue.",
+          progress_updated_at: timestamp,
+        },
+      })
+      .eq("id", run.id)
+      .eq("owner_user_id", ownerUserId);
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  const queueStart = await triggerWorkerQueueWithRetries({
+    maxRuns: Math.min(Math.max(queuedRunIds.length, 1), 5),
+    taskCount: queuedRunIds.length,
+    reason: "chat-chart-analysis-preflight",
+  });
+  await persistWorkerStartState({
+    supabase,
+    runIds: queuedRunIds,
+    folderJobId: String(notReadyRuns[0]?.folder_analysis_job_id ?? "") || null,
+    result: queueStart,
+  });
+
+  const statusSummary = notReadyRuns.reduce<Record<string, string>>((accumulator, run) => {
+    accumulator[run.id] = run.status === "failed" ? "requeued" : run.status;
+    return accumulator;
+  }, {});
+  const failedCount = failedRuns.length;
+  const activeCount = notReadyRuns.length - failedCount;
+  const message =
+    failedCount > 0
+      ? `I found ${failedCount} attached library file${failedCount === 1 ? "" : "s"} with failed analysis and re-queued ${failedCount === 1 ? "it" : "them"}.`
+      : `I found ${activeCount} attached library file${activeCount === 1 ? "" : "s"} that ${activeCount === 1 ? "is" : "are"} still being analyzed.`;
+  const detail =
+    queueStart.started || queueStart.alreadyRunning
+      ? `${queueStart.progressMessage}: ${queueStart.progressDetail} I will be able to build the chart after the analysis succeeds.`
+      : `${queueStart.progressMessage}: ${queueStart.progressDetail}`;
+
+  return {
+    runIds: queuedRunIds,
+    runTitles: notReadyRuns.map(chartRunLabel),
+    statuses: statusSummary,
+    message,
+    detail,
+    queueStart: {
+      started: queueStart.started,
+      alreadyRunning: queueStart.alreadyRunning,
+      progressMessage: queueStart.progressMessage,
+      progressDetail: queueStart.progressDetail,
+    },
+  };
+}
+
 async function resolveChartSessionScope(
   ownerUserId: string,
   body: ChatRequestBody,
@@ -1163,6 +1400,26 @@ async function resolveChartSessionScope(
       selectedPaperIds: [] as string[],
       attachmentNames,
       scopeLabel: undefined as string | undefined,
+    };
+  }
+
+  const matchedLibraryRuns = await findLibraryRunsByAttachmentNames(
+    ownerUserId,
+    currentAttachmentNames.length > 0 ? currentAttachmentNames : attachmentNames,
+    body.folderId,
+    body.projectId
+  );
+  if (matchedLibraryRuns.length > 0) {
+    const succeededRuns = matchedLibraryRuns.filter((run) => run.status === "succeeded");
+    const selectedRuns = succeededRuns.length > 0 ? succeededRuns : matchedLibraryRuns;
+    return {
+      selectedRunIds: selectedRuns.map((run) => run.id),
+      selectedPaperIds: [] as string[],
+      attachmentNames,
+      scopeLabel:
+        selectedRuns.length === 1
+          ? chartRunLabel(selectedRuns[0])
+          : `${selectedRuns.length} matched library files`,
     };
   }
 
@@ -1263,7 +1520,12 @@ async function buildChatChart(
   ownerUserId: string,
   body: ChatRequestBody,
   threadDetail?: ChatThreadDetail | null
-): Promise<{ chart: ChatChartPayload | null; error?: string; request: ResolvedChartPlan }> {
+): Promise<{
+  chart: ChatChartPayload | null;
+  error?: string;
+  request: ResolvedChartPlan;
+  deferred?: ChartAnalysisDeferred;
+}> {
   const prompt = String(body.message ?? "");
   let request = normalizeChartRequest(
     prompt,
@@ -1303,6 +1565,29 @@ async function buildChatChart(
         "I could not tell which analyzed paper you meant. Attach or select the paper from the library, or mention the exact paper title.",
     };
   }
+
+  if (request.scope === "selected_files" && sessionScope.selectedRunIds.length > 0) {
+    const selectedRuns = await loadChartRunsByIds(
+      ownerUserId,
+      sessionScope.selectedRunIds
+    );
+    const deferred = await queueChartAnalysisRuns(ownerUserId, selectedRuns);
+    if (deferred) {
+      return {
+        request: {
+          ...fallbackPlan,
+          confidence: "low",
+          warnings: [
+            "The selected library file is not chartable yet because its analysis has not succeeded.",
+          ],
+        },
+        chart: null,
+        deferred,
+        error: `${deferred.message} ${deferred.detail}`,
+      };
+    }
+  }
+
   const { data, scopeLabel } = await loadChartDashboardData(
     ownerUserId,
     request,
@@ -1574,6 +1859,15 @@ function extractAttachmentTitles(attachmentNames: string[] = []) {
     titles.push(withoutExt);
   }
   return titles;
+}
+
+function normalizeFileMatchKey(value: string) {
+  return normalizeTitle(
+    value
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop() ?? value
+  ).replace(/\b(pdf|docx?|txt|rtf|pptx?)\b$/i, "").trim();
 }
 
 function extractAuthorHint(prompt: string) {
@@ -2719,11 +3013,13 @@ async function normalChat(
     let chart: ChatChartPayload | null = null;
     let chartError: string | undefined;
     let normalizedChartRequest: ResolvedChartPlan | null = null;
+    let deferred: ChartAnalysisDeferred | undefined;
     try {
       const result = await buildChatChart(ownerUserId, body, existingThreadDetail);
       chart = result.chart;
       chartError = result.error;
       normalizedChartRequest = result.request;
+      deferred = result.deferred;
     } catch (error) {
       chartError =
         error instanceof Error ? error.message : "Failed to build chart.";
@@ -2732,16 +3028,21 @@ async function normalChat(
     const toolResults: ChatToolResult[] = [
       chart
         ? { type: "chart", status: "succeeded", data: chart }
+        : deferred
+          ? { type: "chart", status: "skipped", data: deferred }
         : { type: "chart", status: "failed", error: chartError },
     ];
     const answer = chart
       ? `I built **${chart.title}** from ${chart.scopeLabel}.`
+      : deferred
+        ? `${deferred.message}\n\n${deferred.detail}\n\nAfter the analysis status changes to succeeded, ask me for the chart again and I will use the analyzed results.`
       : `I could not build that chart yet. ${chartError ?? "No analyzed data was found."}`;
     const metadata = {
-      mode: chart ? "grounded" : "fallback",
+      mode: chart ? "grounded" : deferred ? "analysis_queued" : "fallback",
       toolResults,
       chart,
       chartRequest: normalizedChartRequest,
+      deferredAnalysis: deferred ?? null,
     };
 
     await appendWorkspaceMessage(supabase, {
@@ -2761,7 +3062,7 @@ async function normalChat(
 
     const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
     return NextResponse.json({
-      mode: chart ? "grounded" : "fallback",
+      mode: chart ? "grounded" : deferred ? "analysis_queued" : "fallback",
       answer,
       citations: [],
       toolResults,

@@ -1675,6 +1675,7 @@ export default function ChatClient() {
     if (context.folderId) {
       setChatScopeFolderId(context.folderId);
     }
+    setSelectedLibraryRuns(runs);
     void refreshFolders();
   }
 
