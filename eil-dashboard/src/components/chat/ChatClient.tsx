@@ -41,6 +41,7 @@ import {
   FileIcon,
   FolderIcon,
   MoreHorizontalIcon,
+  ImageIcon,
   PaperIcon,
   PencilSquareIcon,
   PinIcon,
@@ -98,6 +99,19 @@ interface ChatChartPayload {
     confidence?: "high" | "medium" | "low";
     warnings?: string[];
   };
+}
+
+interface ChatAttachmentPayload {
+  name: string;
+  type?: string;
+  size?: number;
+  url?: string;
+  previewUrl?: string;
+  dataUrl?: string;
+  runId?: string;
+  status?: IngestionRunRow["status"];
+  sourceLabel?: string;
+  extension?: string;
 }
 
 interface ChatToolResult {
@@ -195,6 +209,26 @@ function chartsFromMetadata(metadata?: Record<string, unknown> | null): ChatChar
   }
   const chart = chartFromMetadata(metadata);
   return chart ? [chart] : [];
+}
+
+function attachmentsFromMetadata(
+  metadata?: Record<string, unknown> | null
+): ChatAttachmentPayload[] {
+  const attachments = metadata?.attachments;
+  if (!Array.isArray(attachments)) {
+    return [];
+  }
+
+  return attachments
+    .map((attachment) =>
+      attachment && typeof attachment === "object"
+        ? (attachment as Partial<ChatAttachmentPayload>)
+        : null
+    )
+    .filter(
+      (attachment): attachment is ChatAttachmentPayload =>
+        Boolean(attachment?.name && typeof attachment.name === "string")
+    );
 }
 
 const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
@@ -820,6 +854,126 @@ function runGlyphTone(run: IngestionRunRow) {
   return "bg-white/10 text-[#d4d4d4]";
 }
 
+function attachmentExtension(attachment: ChatAttachmentPayload) {
+  const fromMetadata = attachment.extension?.trim().toLowerCase();
+  if (fromMetadata) {
+    return fromMetadata.replace(/^\./, "");
+  }
+  const fromName = attachment.name.split(".").pop()?.trim().toLowerCase();
+  if (fromName && fromName !== attachment.name.toLowerCase()) {
+    return fromName;
+  }
+  const fromType = attachment.type?.split("/").pop()?.trim().toLowerCase();
+  return fromType || "file";
+}
+
+function attachmentIsImage(attachment: ChatAttachmentPayload) {
+  const type = attachment.type?.toLowerCase() ?? "";
+  const ext = attachmentExtension(attachment);
+  return (
+    type.startsWith("image/") ||
+    ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"].includes(ext)
+  );
+}
+
+function attachmentPreviewSrc(attachment: ChatAttachmentPayload) {
+  return attachment.previewUrl || attachment.dataUrl || attachment.url || "";
+}
+
+function formatAttachmentSize(size?: number) {
+  if (typeof size !== "number" || !Number.isFinite(size) || size <= 0) {
+    return "";
+  }
+  if (size < 1024) {
+    return `${Math.round(size)} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
+function attachmentTone(attachment: ChatAttachmentPayload) {
+  const ext = attachmentExtension(attachment);
+  if (ext === "pdf") {
+    return "border-red-300/30 bg-red-500/10 text-red-200";
+  }
+  if (attachmentIsImage(attachment)) {
+    return "border-sky-300/30 bg-sky-500/10 text-sky-100";
+  }
+  if (ext === "doc" || ext === "docx") {
+    return "border-blue-300/30 bg-blue-500/10 text-blue-100";
+  }
+  return "border-white/10 bg-white/5 text-[#ececec]";
+}
+
+function AttachmentGlyph({ attachment }: { attachment: ChatAttachmentPayload }) {
+  const ext = attachmentExtension(attachment);
+  if (attachment.sourceLabel === "Google Drive") {
+    return <DriveIcon className="h-4 w-4" />;
+  }
+  if (ext === "pdf") {
+    return <PaperIcon className="h-4 w-4" />;
+  }
+  if (attachmentIsImage(attachment)) {
+    return <ImageIcon className="h-4 w-4" />;
+  }
+  return <FileIcon className="h-4 w-4" />;
+}
+
+function MessageAttachmentList({
+  attachments,
+}: {
+  attachments: ChatAttachmentPayload[];
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {attachments.map((attachment, index) => {
+        const ext = attachmentExtension(attachment);
+        const size = formatAttachmentSize(attachment.size);
+        const previewSrc = attachmentIsImage(attachment)
+          ? attachmentPreviewSrc(attachment)
+          : "";
+        const key = `${attachment.name}-${attachment.runId ?? index}`;
+
+        return (
+          <div
+            key={key}
+            className={`max-w-[240px] overflow-hidden rounded-2xl border text-left shadow-sm ${attachmentTone(
+              attachment
+            )}`}
+          >
+            {previewSrc ? (
+              <img
+                src={previewSrc}
+                alt={attachment.name}
+                className="h-28 w-full object-cover"
+              />
+            ) : null}
+            <div className="flex items-center gap-2 px-3 py-2.5">
+              <span className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-black/15 dark:bg-white/10">
+                <AttachmentGlyph attachment={attachment} />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-medium">
+                  {attachment.name}
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] uppercase tracking-[0.14em] opacity-70">
+                  {[ext, size, attachment.status].filter(Boolean).join(" | ")}
+                </span>
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function renderLoadingLabel(
   deepResearchEnabled: boolean,
   chartModeEnabled: boolean,
@@ -995,6 +1149,10 @@ export default function ChatClient() {
         name: runTitleOf(run),
         type: run.mime_type || runExtOf(run),
         size: run.file_size_bytes ?? undefined,
+        runId: run.id,
+        status: run.status,
+        sourceLabel: runSourceLabel(run),
+        extension: runExtOf(run),
       })),
     [selectedLibraryRuns]
   );
@@ -1386,7 +1544,13 @@ export default function ChatClient() {
     setError(null);
     setMenuOpen(false);
 
-    const nextMessages = [...messages, localMessage("user", prompt)];
+    const nextMessages = [
+      ...messages,
+      localMessage("user", prompt, [], {
+        attachments: selectedAttachments,
+        selectedRunIds,
+      }),
+    ];
     setMessages(nextMessages);
     setDraft("");
 
@@ -1461,6 +1625,8 @@ export default function ChatClient() {
       ...messages,
       localMessage("user", prompt, [], {
         toolMode: "chart",
+        attachments: selectedAttachments,
+        selectedRunIds,
       }),
     ];
     setMessages(nextMessages);
@@ -1536,7 +1702,14 @@ export default function ChatClient() {
     setLoading(true);
     setError(null);
     setMenuOpen(false);
-    const optimisticMessages = [...messages, localMessage("user", prompt)];
+    const optimisticMessages = [
+      ...messages,
+      localMessage("user", prompt, [], {
+        chatMode: "deep_research",
+        attachments: selectedAttachments,
+        selectedRunIds,
+      }),
+    ];
     setMessages(optimisticMessages);
     setDraft("");
 
@@ -2141,12 +2314,16 @@ export default function ChatClient() {
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);
+                  const attachments = attachmentsFromMetadata(message.metadata);
                   return (
                     <section key={message.id}>
                       {isUser ? (
                         <div className="flex justify-end">
-                          <div className="max-w-[72%] rounded-[18px] bg-[#2a2a2a] px-5 py-3 text-[15px] leading-7 text-[#f3f3f3]">
-                            {renderRichMessage(message.content, message.id, "user")}
+                          <div className="max-w-[78%] space-y-2">
+                            <div className="rounded-[18px] bg-[#2a2a2a] px-5 py-3 text-[15px] leading-7 text-[#f3f3f3]">
+                              {renderRichMessage(message.content, message.id, "user")}
+                            </div>
+                            <MessageAttachmentList attachments={attachments} />
                           </div>
                         </div>
                       ) : (

@@ -126,6 +126,13 @@ interface ChatRequestBody {
     name: string;
     type?: string;
     size?: number;
+    url?: string;
+    previewUrl?: string;
+    dataUrl?: string;
+    runId?: string;
+    status?: string;
+    sourceLabel?: string;
+    extension?: string;
   }>;
   generationParameters?: {
     temperature?: number;
@@ -3032,7 +3039,11 @@ async function planDeepResearch(
       role: "user",
       content: prompt,
       messageKind: "chat",
-      metadata: { chatMode: "deep_research" },
+      metadata: {
+        chatMode: "deep_research",
+        attachments: body.attachments ?? [],
+        selectedRunIds: body.selectedRunIds ?? [],
+      },
     });
   }
 
