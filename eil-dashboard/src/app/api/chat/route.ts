@@ -35,7 +35,14 @@ interface Citation {
 type ChatToolMode = "auto" | "web_search" | "chart" | "none";
 type ChartScope = "selected_files" | "workspace";
 type ChartType = "auto" | "bar" | "line" | "pie" | "table";
-type ChartMetric = "papers_per_year" | "top_topics" | "top_keywords" | "track_distribution";
+type ChartMetric =
+  | "papers_per_year"
+  | "top_topics"
+  | "top_keywords"
+  | "track_distribution"
+  | "topic_trend"
+  | "keyword_trend"
+  | "track_trend";
 type ChartGroupBy = "year" | "topic" | "keyword" | "track";
 
 interface ChartRequest {
@@ -52,12 +59,24 @@ interface ChatChartPayload {
   scopeLabel: string;
   metric: ChartMetric;
   xKey: "label";
-  yKeys: ["value"];
-  data: Array<{
-    label: string;
-    value: number;
-  }>;
+  yKeys: string[];
+  data: Array<Record<string, string | number>>;
+  planner?: {
+    source: "llm" | "fallback";
+    reason?: string;
+    confidence?: "high" | "medium" | "low";
+    warnings?: string[];
+  };
 }
+
+type ResolvedChartPlan = Required<ChartRequest> & {
+  source: "llm" | "fallback";
+  focusTerms: string[];
+  title?: string;
+  reason?: string;
+  confidence?: "high" | "medium" | "low";
+  warnings?: string[];
+};
 
 interface ChatToolResult {
   type: "web_search" | "chart";
@@ -178,8 +197,6 @@ const TOOL_CAPABLE_CHAT_MODELS = [
   "openai/gpt-4o-mini",
 ] as const;
 
-const CHART_INTENT_PATTERN =
-  /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
 const WEB_SEARCH_INTENT_PATTERN =
   /\b(web search|search the web|internet|online|latest|recent|today|news)\b|ค้นหาเว็บ|เว็บ|ล่าสุด|ข่าว/i;
 
@@ -205,8 +222,8 @@ function clampInteger(value: unknown, min: number, max: number, fallback: number
 }
 
 function groupByForMetric(metric: ChartMetric): ChartGroupBy {
-  if (metric === "top_topics") return "topic";
-  if (metric === "top_keywords") return "keyword";
+  if (metric === "top_topics" || metric === "topic_trend") return "topic";
+  if (metric === "top_keywords" || metric === "keyword_trend") return "keyword";
   if (metric === "track_distribution") return "track";
   return "year";
 }
@@ -215,7 +232,10 @@ function normalizeMetric(value: unknown): ChartMetric | null {
   return value === "top_topics" ||
     value === "top_keywords" ||
     value === "track_distribution" ||
-    value === "papers_per_year"
+    value === "papers_per_year" ||
+    value === "topic_trend" ||
+    value === "keyword_trend" ||
+    value === "track_trend"
     ? value
     : null;
 }
@@ -232,14 +252,18 @@ function normalizeChartType(value: unknown): ChartType | null {
 
 function inferMetricFromPrompt(message: string): ChartMetric | null {
   const text = message.toLowerCase();
+  const trendIntent =
+    /\b(trend|timeline|time series|over time|change|growth|decline|year by year|yearly|annual)\b/i.test(
+      text
+    );
   if (/\b(keyword|keywords|key word|key words)\b|คีย์เวิร์ด|คำสำคัญ/i.test(text)) {
-    return "top_keywords";
+    return trendIntent ? "keyword_trend" : "top_keywords";
   }
   if (/\b(topic|topics|theme|themes|concept|concepts)\b|หัวข้อ|ประเด็น/i.test(text)) {
-    return "top_topics";
+    return trendIntent ? "topic_trend" : "top_topics";
   }
   if (/\b(track|tracks|classification|classifications|el\b|eli\b|lae\b)\b/i.test(text)) {
-    return "track_distribution";
+    return trendIntent ? "track_trend" : "track_distribution";
   }
   if (/\b(year|years|trend|timeline|time series|over time|annual)\b|ปี|แนวโน้ม/i.test(text)) {
     return "papers_per_year";
@@ -256,7 +280,12 @@ function inferChartTypeFromPrompt(message: string, metric: ChartMetric): ChartTy
     return "pie";
   }
   if (/\b(line|trend|timeline|time series|over time)\b/i.test(text)) {
-    return metric === "papers_per_year" ? "line" : "bar";
+    return metric === "papers_per_year" ||
+      metric === "topic_trend" ||
+      metric === "keyword_trend" ||
+      metric === "track_trend"
+      ? "line"
+      : "bar";
   }
   if (/\b(bar|column)\b/i.test(text)) {
     return "bar";
@@ -264,8 +293,16 @@ function inferChartTypeFromPrompt(message: string, metric: ChartMetric): ChartTy
   return "auto";
 }
 
-function hasSpecificChartMetric(message: string, request?: ChartRequest) {
-  return Boolean(normalizeMetric(request?.metric) || inferMetricFromPrompt(message));
+function promptRequestsWorkspaceScope(message: string) {
+  return /\b(workspace|project|folder|folders|all folders|all papers|all analyzed|all analysed|whole corpus|entire corpus|corpus|library)\b/i.test(
+    message
+  );
+}
+
+function promptRequestsSessionScope(message: string) {
+  return /\b(attached|attachment|selected|selected file|selected files|selected paper|selected papers|this paper|this file|current paper|current file|these papers|these files)\b/i.test(
+    message
+  );
 }
 
 function normalizeChartRequest(
@@ -273,10 +310,17 @@ function normalizeChartRequest(
   request: ChartRequest | undefined,
   selectedRunIds: string[]
 ): Required<ChartRequest> {
-  const scope =
-    request?.scope === "selected_files" && selectedRunIds.length > 0
-      ? "selected_files"
-      : "workspace";
+  const requestedScope =
+    request?.scope === "workspace" || request?.scope === "selected_files"
+      ? request.scope
+      : null;
+  const scope: ChartScope =
+    requestedScope ??
+    (promptRequestsWorkspaceScope(message)
+      ? "workspace"
+      : promptRequestsSessionScope(message) || selectedRunIds.length > 0
+        ? "selected_files"
+        : "workspace");
   const metric = normalizeMetric(request?.metric) ?? inferMetricFromPrompt(message) ?? "papers_per_year";
   const groupBy: ChartGroupBy =
     request?.groupBy === "topic" ||
@@ -302,11 +346,16 @@ function chartTypeForMetric(
   requestedType: ChartType,
   metric: ChartMetric
 ): Exclude<ChartType, "auto"> {
+  const isTrendMetric =
+    metric === "papers_per_year" ||
+    metric === "topic_trend" ||
+    metric === "keyword_trend" ||
+    metric === "track_trend";
+  if (isTrendMetric) {
+    return requestedType === "table" ? "table" : "line";
+  }
   if (requestedType && requestedType !== "auto") {
     return requestedType;
-  }
-  if (metric === "papers_per_year") {
-    return "line";
   }
   if (metric === "track_distribution") {
     return "pie";
@@ -362,12 +411,181 @@ function topEntries(
   return rows.slice(0, topN);
 }
 
+function normalizeChartText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]+/g, " ").trim();
+}
+
+function chartPlannerMetadata(
+  request: Required<ChartRequest> | ResolvedChartPlan
+): ChatChartPayload["planner"] {
+  if ("source" in request) {
+    return {
+      source: request.source,
+      reason: request.reason,
+      confidence: request.confidence,
+      warnings: request.warnings?.length ? request.warnings : undefined,
+    };
+  }
+  return { source: "fallback" };
+}
+
+function chartTitle(
+  request: Required<ChartRequest> | ResolvedChartPlan,
+  fallbackTitle: string
+) {
+  return "title" in request && request.title?.trim()
+    ? request.title.trim()
+    : fallbackTitle;
+}
+
+function focusTermsFromPlan(request: Required<ChartRequest> | ResolvedChartPlan) {
+  return "focusTerms" in request
+    ? request.focusTerms.map((term) => term.trim()).filter(Boolean)
+    : [];
+}
+
+function focusMatchScore(label: string, focusTerms: string[]) {
+  if (focusTerms.length === 0) {
+    return 0;
+  }
+  const normalizedLabel = normalizeChartText(label);
+  return focusTerms.reduce((score, term) => {
+    const normalizedTerm = normalizeChartText(term);
+    if (!normalizedTerm) {
+      return score;
+    }
+    if (normalizedLabel === normalizedTerm) {
+      return score + 3;
+    }
+    if (
+      normalizedLabel.includes(normalizedTerm) ||
+      normalizedTerm.includes(normalizedLabel)
+    ) {
+      return score + 2;
+    }
+    return score;
+  }, 0);
+}
+
+function prioritizeByFocus(
+  rows: Array<{ label: string; value: number }>,
+  focusTerms: string[],
+  topN: number
+) {
+  if (focusTerms.length === 0) {
+    return rows.slice(0, topN);
+  }
+  const focused = rows
+    .map((row) => ({ ...row, focusScore: focusMatchScore(row.label, focusTerms) }))
+    .filter((row) => row.focusScore > 0)
+    .sort(
+      (left, right) =>
+        right.focusScore - left.focusScore ||
+        right.value - left.value ||
+        left.label.localeCompare(right.label)
+    )
+    .map(({ focusScore: _focusScore, ...row }) => row);
+
+  return (focused.length > 0 ? focused : rows).slice(0, topN);
+}
+
+function metricLabel(row: DashboardData["trends"][number], metric: ChartMetric) {
+  if (metric === "top_topics" || metric === "topic_trend") {
+    return String(row.topic || row.raw_topic || "Unclassified").trim();
+  }
+  return String(row.keyword || "").trim();
+}
+
+function trendSeriesLimit(request: Required<ChartRequest> | ResolvedChartPlan) {
+  return Math.min(Math.max(request.topN, 1), 6);
+}
+
+function buildTopicOrKeywordCounts(
+  data: DashboardData,
+  metric: ChartMetric
+) {
+  const counts = new Map<string, number>();
+  data.trends.forEach((row) => {
+    const label = metricLabel(row, metric);
+    if (!label) {
+      return;
+    }
+    counts.set(label, (counts.get(label) ?? 0) + Math.max(1, row.keyword_frequency || 0));
+  });
+  return counts;
+}
+
+function buildTrendRows(
+  data: DashboardData,
+  request: Required<ChartRequest> | ResolvedChartPlan,
+  metric: "topic_trend" | "keyword_trend"
+) {
+  const labelMetric = metric === "topic_trend" ? "top_topics" : "top_keywords";
+  const candidateRows = prioritizeByFocus(
+    topEntries(buildTopicOrKeywordCounts(data, labelMetric), 100),
+    focusTermsFromPlan(request),
+    trendSeriesLimit(request)
+  );
+  const yKeys = candidateRows.map((row) => row.label);
+  if (yKeys.length === 0) {
+    return null;
+  }
+
+  const selectedLabels = new Set(yKeys);
+  const rowsByYear = new Map<string, Record<string, string | number>>();
+  data.trends.forEach((row) => {
+    const label = metricLabel(row, labelMetric);
+    if (!selectedLabels.has(label)) {
+      return;
+    }
+    const year = String(row.year ?? "Unknown").trim() || "Unknown";
+    const yearRow = rowsByYear.get(year) ?? { label: year };
+    yearRow[label] =
+      Number(yearRow[label] ?? 0) + Math.max(1, row.keyword_frequency || 0);
+    rowsByYear.set(year, yearRow);
+  });
+
+  const rows = [...rowsByYear.values()].sort((left, right) =>
+    String(left.label).localeCompare(String(right.label), undefined, {
+      numeric: true,
+    })
+  );
+  rows.forEach((row) => {
+    yKeys.forEach((key) => {
+      row[key] = Math.round((Number(row[key]) || 0) * 100) / 100;
+    });
+  });
+  return { rows, yKeys };
+}
+
+function buildTrackTrendRows(data: DashboardData) {
+  const trackRows = data.tracksSingle.length > 0 ? data.tracksSingle : data.tracksMulti;
+  const rowsByYear = new Map<string, Record<string, string | number>>();
+  trackRows.forEach((row) => {
+    const year = String(row.year ?? "Unknown").trim() || "Unknown";
+    const yearRow = rowsByYear.get(year) ?? { label: year };
+    TRACK_COLS.forEach((track) => {
+      yearRow[track] =
+        Number(yearRow[track] ?? 0) + (trackValue(row, track) > 0 ? 1 : 0);
+    });
+    rowsByYear.set(year, yearRow);
+  });
+
+  const rows = [...rowsByYear.values()].sort((left, right) =>
+    String(left.label).localeCompare(String(right.label), undefined, {
+      numeric: true,
+    })
+  );
+  return { rows, yKeys: [...TRACK_COLS] };
+}
+
 function buildChartFromData(
   data: DashboardData,
-  request: Required<ChartRequest>,
+  request: Required<ChartRequest> | ResolvedChartPlan,
   scopeLabel: string
 ): ChatChartPayload | null {
   const chartType = chartTypeForMetric(request.chartType, request.metric);
+  const planner = chartPlannerMetadata(request);
 
   if (request.metric === "papers_per_year") {
     const byYear = new Map<string, Set<string>>();
@@ -384,54 +602,94 @@ function buildChartFromData(
     }
     return {
       chartType,
-      title: "Analyzed papers per year",
+      title: chartTitle(request, "Analyzed papers per year"),
       scopeLabel,
       metric: request.metric,
       xKey: "label",
       yKeys: ["value"],
       data: rows,
+      planner,
     };
   }
 
   if (request.metric === "top_topics") {
-    const counts = new Map<string, number>();
-    data.trends.forEach((row) => {
-      const label = String(row.topic || row.raw_topic || "Unclassified").trim();
-      counts.set(label, (counts.get(label) ?? 0) + Math.max(1, row.keyword_frequency || 0));
-    });
-    const rows = topEntries(counts, request.topN);
+    const rows = prioritizeByFocus(
+      topEntries(buildTopicOrKeywordCounts(data, request.metric), 100),
+      focusTermsFromPlan(request),
+      request.topN
+    );
     if (rows.length === 0) {
       return null;
     }
     return {
       chartType,
-      title: "Top topics by keyword frequency",
+      title: chartTitle(request, "Top topics by keyword frequency"),
       scopeLabel,
       metric: request.metric,
       xKey: "label",
       yKeys: ["value"],
       data: rows,
+      planner,
     };
   }
 
   if (request.metric === "top_keywords") {
-    const counts = new Map<string, number>();
-    data.trends.forEach((row) => {
-      const label = String(row.keyword || "").trim();
-      counts.set(label, (counts.get(label) ?? 0) + Math.max(1, row.keyword_frequency || 0));
-    });
-    const rows = topEntries(counts, request.topN);
+    const rows = prioritizeByFocus(
+      topEntries(buildTopicOrKeywordCounts(data, request.metric), 100),
+      focusTermsFromPlan(request),
+      request.topN
+    );
     if (rows.length === 0) {
       return null;
     }
     return {
       chartType,
-      title: "Top keywords by frequency",
+      title: chartTitle(request, "Top keywords by frequency"),
       scopeLabel,
       metric: request.metric,
       xKey: "label",
       yKeys: ["value"],
       data: rows,
+      planner,
+    };
+  }
+
+  if (request.metric === "topic_trend" || request.metric === "keyword_trend") {
+    const series = buildTrendRows(data, request, request.metric);
+    if (!series || series.rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: chartTitle(
+        request,
+        request.metric === "topic_trend"
+          ? "Topic trend over time"
+          : "Keyword trend over time"
+      ),
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: series.yKeys,
+      data: series.rows,
+      planner,
+    };
+  }
+
+  if (request.metric === "track_trend") {
+    const series = buildTrackTrendRows(data);
+    if (series.rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: chartTitle(request, "Track trend over time"),
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: series.yKeys,
+      data: series.rows,
+      planner,
     };
   }
 
@@ -450,28 +708,30 @@ function buildChartFromData(
   }
   return {
     chartType,
-    title: "Track distribution",
+    title: chartTitle(request, "Track distribution"),
     scopeLabel,
     metric: request.metric,
     xKey: "label",
     yKeys: ["value"],
     data: rows,
+    planner,
   };
 }
 
 function buildBestAvailableChartFromData(
   data: DashboardData,
-  request: Required<ChartRequest>,
+  request: Required<ChartRequest> | ResolvedChartPlan,
   scopeLabel: string
 ): ChatChartPayload | null {
   const candidateMetrics: ChartMetric[] = [];
   if (data.trends.length > 0) {
-    candidateMetrics.push("top_topics", "top_keywords");
+    candidateMetrics.push("top_topics", "top_keywords", "topic_trend", "keyword_trend");
   }
   if (data.tracksSingle.length > 0 || data.tracksMulti.length > 0) {
-    candidateMetrics.push("track_distribution");
+    candidateMetrics.push("track_distribution", "track_trend");
   }
   candidateMetrics.push("papers_per_year");
+  const previousWarnings = "warnings" in request ? request.warnings ?? [] : [];
 
   for (const metric of [...new Set(candidateMetrics)]) {
     const chart = buildChartFromData(
@@ -481,6 +741,18 @@ function buildBestAvailableChartFromData(
         metric,
         groupBy: groupByForMetric(metric),
         chartType: "auto",
+        source: "fallback",
+        focusTerms: "focusTerms" in request ? request.focusTerms : [],
+        reason:
+          "reason" in request
+            ? request.reason
+            : "Used deterministic chart inference.",
+        confidence:
+          "confidence" in request ? request.confidence ?? "medium" : "medium",
+        warnings: [
+          ...previousWarnings,
+          "Used the strongest available chart because the requested chart was empty.",
+        ],
       },
       scopeLabel
     );
@@ -490,6 +762,286 @@ function buildBestAvailableChartFromData(
   }
 
   return null;
+}
+
+const CHART_METRIC_VALUES: ChartMetric[] = [
+  "papers_per_year",
+  "top_topics",
+  "top_keywords",
+  "track_distribution",
+  "topic_trend",
+  "keyword_trend",
+  "track_trend",
+];
+
+function extractJsonObject(text: string | null | undefined) {
+  if (!text) {
+    return null;
+  }
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace < 0 || lastBrace <= firstBrace) {
+    return null;
+  }
+  try {
+    return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function normalizePlannerConfidence(value: unknown) {
+  return value === "high" || value === "medium" || value === "low"
+    ? value
+    : undefined;
+}
+
+function normalizeFocusTerms(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      value
+        .map((term) => String(term ?? "").trim())
+        .filter((term) => term.length > 1)
+        .slice(0, 8)
+    ),
+  ];
+}
+
+function availableChartMetrics(data: DashboardData): ChartMetric[] {
+  const metrics: ChartMetric[] = [];
+  const years = new Set<string>();
+  [...data.trends, ...data.tracksSingle, ...data.tracksMulti].forEach((row) => {
+    const year = String(row.year ?? "").trim();
+    if (year) {
+      years.add(year);
+    }
+  });
+
+  if (years.size > 0) {
+    metrics.push("papers_per_year");
+  }
+  if (data.trends.length > 0) {
+    metrics.push("top_topics", "top_keywords");
+    if (years.size > 1) {
+      metrics.push("topic_trend", "keyword_trend");
+    }
+  }
+  if (data.tracksSingle.length > 0 || data.tracksMulti.length > 0) {
+    metrics.push("track_distribution");
+    if (years.size > 1) {
+      metrics.push("track_trend");
+    }
+  }
+
+  return [...new Set(metrics)];
+}
+
+function chartDataProfile(data: DashboardData, scopeLabel: string) {
+  const paperIds = new Set<string>();
+  const years = new Set<string>();
+  [...data.trends, ...data.tracksSingle, ...data.tracksMulti].forEach((row) => {
+    const paperId = String(row.paper_id ?? "").trim();
+    const year = String(row.year ?? "").trim();
+    if (paperId) {
+      paperIds.add(paperId);
+    }
+    if (year) {
+      years.add(year);
+    }
+  });
+
+  const trackCounts = new Map<string, number>();
+  const trackRows = data.tracksSingle.length > 0 ? data.tracksSingle : data.tracksMulti;
+  trackRows.forEach((row) => {
+    TRACK_COLS.forEach((track) => {
+      if (trackValue(row, track) > 0) {
+        trackCounts.set(track, (trackCounts.get(track) ?? 0) + 1);
+      }
+    });
+  });
+
+  return {
+    scopeLabel,
+    paperCount: paperIds.size,
+    rowCounts: {
+      keywordRows: data.trends.length,
+      singleTrackRows: data.tracksSingle.length,
+      multiTrackRows: data.tracksMulti.length,
+    },
+    years: [...years].sort((left, right) =>
+      left.localeCompare(right, undefined, { numeric: true })
+    ),
+    availableMetrics: availableChartMetrics(data),
+    topTopics: topEntries(buildTopicOrKeywordCounts(data, "top_topics"), 8),
+    topKeywords: topEntries(buildTopicOrKeywordCounts(data, "top_keywords"), 8),
+    trackDistribution: topEntries(trackCounts, TRACK_COLS.length),
+  };
+}
+
+function buildFallbackChartPlan(
+  request: Required<ChartRequest>,
+  reason = "Used deterministic chart inference."
+): ResolvedChartPlan {
+  return {
+    ...request,
+    source: "fallback",
+    focusTerms: [],
+    reason,
+    confidence: "medium",
+  };
+}
+
+function sanitizePlannerPlan(
+  rawPlan: Record<string, unknown> | null,
+  fallbackRequest: Required<ChartRequest>,
+  availableMetrics: ChartMetric[],
+  prompt: string
+): ResolvedChartPlan {
+  const fallback = buildFallbackChartPlan(fallbackRequest);
+  if (!rawPlan) {
+    return {
+      ...fallback,
+      confidence: "low",
+      warnings: ["The chart planner did not return valid JSON."],
+    };
+  }
+
+  const warnings: string[] = [];
+  let metric = normalizeMetric(rawPlan.metric);
+  if (!metric || !availableMetrics.includes(metric)) {
+    warnings.push(
+      metric
+        ? `Planner requested unavailable metric '${metric}'.`
+        : "Planner did not choose a supported metric."
+    );
+    metric = availableMetrics.includes(fallbackRequest.metric)
+      ? fallbackRequest.metric
+      : availableMetrics[0] ?? fallbackRequest.metric;
+  }
+
+  let chartType = normalizeChartType(rawPlan.chartType);
+  if (!chartType) {
+    chartType = inferChartTypeFromPrompt(prompt, metric) ?? fallbackRequest.chartType;
+  }
+  if (
+    chartType === "pie" &&
+    (metric === "papers_per_year" ||
+      metric === "topic_trend" ||
+      metric === "keyword_trend" ||
+      metric === "track_trend")
+  ) {
+    warnings.push("Changed pie chart to line chart because the selected metric is time-based.");
+    chartType = "line";
+  }
+
+  const groupBy =
+    rawPlan.groupBy === "year" ||
+    rawPlan.groupBy === "topic" ||
+    rawPlan.groupBy === "keyword" ||
+    rawPlan.groupBy === "track"
+      ? rawPlan.groupBy
+      : groupByForMetric(metric);
+  const topN = clampInteger(rawPlan.topN, 3, 25, fallbackRequest.topN);
+  const title = String(rawPlan.title ?? "").trim().slice(0, 96) || undefined;
+  const reason = String(rawPlan.reason ?? "").trim().slice(0, 240) || undefined;
+
+  return {
+    scope: fallbackRequest.scope,
+    metric,
+    groupBy,
+    chartType,
+    topN,
+    source: "llm",
+    focusTerms: normalizeFocusTerms(rawPlan.focusTerms),
+    title,
+    reason,
+    confidence: normalizePlannerConfidence(rawPlan.confidence) ?? "medium",
+    warnings,
+  };
+}
+
+async function planChartWithLlm(
+  body: ChatRequestBody,
+  data: DashboardData,
+  fallbackRequest: Required<ChartRequest>,
+  scopeLabel: string
+): Promise<ResolvedChartPlan> {
+  const profile = chartDataProfile(data, scopeLabel);
+  if (profile.availableMetrics.length === 0) {
+    return buildFallbackChartPlan(fallbackRequest, "No chartable analyzed data is available.");
+  }
+
+  const recentMessages = (body.messages ?? [])
+    .slice(-8)
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content ?? "").slice(0, 800),
+    }));
+  const prompt = String(body.message ?? "").trim();
+
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content:
+            "You are a production chart planner for a research-paper analytics app. " +
+            "Choose the most useful chart from the available analyzed data. " +
+            "Return strict JSON only. Do not include markdown. Do not invent metrics, columns, or data.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            userRequest: prompt || "Create the most useful chart from my analyzed papers.",
+            recentChatContext: recentMessages,
+            resolvedScope: fallbackRequest.scope,
+            selectedFileCount: body.selectedRunIds?.length ?? 0,
+            availableMetrics: profile.availableMetrics,
+            dataProfile: profile,
+            allowedOutput: {
+              metric: CHART_METRIC_VALUES,
+              chartType: ["auto", "bar", "line", "pie", "table"],
+              groupBy: ["year", "topic", "keyword", "track"],
+              topN: "integer 3-25",
+              focusTerms: "optional keywords/topics/tracks from the user request or data profile",
+              title: "short human-readable chart title",
+              reason: "one sentence explaining why this chart answers the request",
+              confidence: ["high", "medium", "low"],
+            },
+          }),
+        },
+      ],
+      0.1,
+      resolveChatModel(body.model),
+      "CHART_PLANNER",
+      { maxTokens: 700 }
+    );
+    return sanitizePlannerPlan(
+      extractJsonObject(completion?.content),
+      fallbackRequest,
+      profile.availableMetrics,
+      prompt
+    );
+  } catch (error) {
+    return {
+      ...buildFallbackChartPlan(
+        fallbackRequest,
+        "The LLM chart planner failed, so deterministic inference was used."
+      ),
+      confidence: "low",
+      warnings: [
+        error instanceof Error ? error.message : "Chart planner request failed.",
+      ],
+    };
+  }
 }
 
 async function loadChartDashboardData(
@@ -528,13 +1080,26 @@ async function loadChartDashboardData(
 async function buildChatChart(
   ownerUserId: string,
   body: ChatRequestBody
-): Promise<{ chart: ChatChartPayload | null; error?: string; request: Required<ChartRequest> }> {
+): Promise<{ chart: ChatChartPayload | null; error?: string; request: ResolvedChartPlan }> {
   const prompt = String(body.message ?? "");
   const request = normalizeChartRequest(
     prompt,
     body.chartRequest,
     body.selectedRunIds ?? []
   );
+  const fallbackPlan = buildFallbackChartPlan(request);
+  if (request.scope === "selected_files" && (body.selectedRunIds ?? []).length === 0) {
+    return {
+      request: {
+        ...fallbackPlan,
+        confidence: "low",
+        warnings: ["Chart mode needs at least one selected analyzed file for selected-file scope."],
+      },
+      chart: null,
+      error:
+        "No selected analyzed paper is attached to this chat request. Add a library file first, then ask for the chart again.",
+    };
+  }
   const { data, scopeLabel } = await loadChartDashboardData(
     ownerUserId,
     request,
@@ -542,11 +1107,25 @@ async function buildChatChart(
     body.projectId,
     body.selectedRunIds ?? []
   );
-  const chart = hasSpecificChartMetric(prompt, body.chartRequest)
-    ? buildChartFromData(data, request, scopeLabel)
-    : buildBestAvailableChartFromData(data, request, scopeLabel);
+  const plannedRequest = await planChartWithLlm(body, data, request, scopeLabel);
+  const primaryChart = buildChartFromData(data, plannedRequest, scopeLabel);
+  const chart =
+    primaryChart ??
+    buildBestAvailableChartFromData(
+      data,
+      {
+        ...plannedRequest,
+        source: "fallback",
+        confidence: "low",
+        warnings: [
+          ...(plannedRequest.warnings ?? []),
+          "The planned chart had no rows, so a backup chart was selected.",
+        ],
+      },
+      scopeLabel
+    );
   return {
-    request,
+    request: plannedRequest,
     chart,
     error: chart
       ? undefined
@@ -1915,7 +2494,7 @@ async function normalChat(
 
     let chart: ChatChartPayload | null = null;
     let chartError: string | undefined;
-    let normalizedChartRequest: Required<ChartRequest> | null = null;
+    let normalizedChartRequest: ResolvedChartPlan | null = null;
     try {
       const result = await buildChatChart(ownerUserId, body);
       chart = result.chart;

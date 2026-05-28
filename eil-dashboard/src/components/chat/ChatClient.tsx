@@ -75,7 +75,14 @@ interface Citation {
 }
 
 type ChartType = "auto" | "bar" | "line" | "pie" | "table";
-type ChartMetric = "papers_per_year" | "top_topics" | "top_keywords" | "track_distribution";
+type ChartMetric =
+  | "papers_per_year"
+  | "top_topics"
+  | "top_keywords"
+  | "track_distribution"
+  | "topic_trend"
+  | "keyword_trend"
+  | "track_trend";
 
 interface ChatChartPayload {
   chartType: Exclude<ChartType, "auto">;
@@ -83,11 +90,14 @@ interface ChatChartPayload {
   scopeLabel: string;
   metric: ChartMetric;
   xKey: "label";
-  yKeys: ["value"];
-  data: Array<{
-    label: string;
-    value: number;
-  }>;
+  yKeys: string[];
+  data: Array<Record<string, string | number>>;
+  planner?: {
+    source: "llm" | "fallback";
+    reason?: string;
+    confidence?: "high" | "medium" | "low";
+    warnings?: string[];
+  };
 }
 
 interface ChatToolResult {
@@ -553,7 +563,14 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
 
 function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   const chartData = chart.data ?? [];
-  const maxValue = Math.max(...chartData.map((row) => Number(row.value) || 0), 0);
+  const yKeys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
+  const primaryKey = yKeys[0] ?? "value";
+  const maxValue = Math.max(
+    ...chartData.flatMap((row) =>
+      yKeys.map((key) => Number(row[key]) || 0)
+    ),
+    0
+  );
 
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#202020]">
@@ -567,6 +584,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
           </h3>
           <p className="mt-1 text-xs text-slate-500 dark:text-[#a3a3a3]">
             {chart.scopeLabel}
+            {chart.planner?.reason ? ` - ${chart.planner.reason}` : ""}
           </p>
         </div>
         <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-white/10 dark:text-[#d8d8d8]">
@@ -580,16 +598,25 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
             <thead className="sticky top-0 bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-[#b4b4b4]">
               <tr>
                 <th className="px-4 py-3 font-semibold">Label</th>
-                <th className="px-4 py-3 text-right font-semibold">Value</th>
+                {yKeys.map((key) => (
+                  <th key={key} className="px-4 py-3 text-right font-semibold">
+                    {key}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {chartData.map((row) => (
-                <tr key={row.label} className="border-t border-slate-200 dark:border-white/10">
+                <tr key={String(row.label)} className="border-t border-slate-200 dark:border-white/10">
                   <td className="px-4 py-3 text-slate-700 dark:text-[#ececec]">{row.label}</td>
-                  <td className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white">
-                    {row.value}
-                  </td>
+                  {yKeys.map((key) => (
+                    <td
+                      key={key}
+                      className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white"
+                    >
+                      {Number(row[key]) || 0}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -604,21 +631,24 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                 <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 12 }} />
                 <YAxis allowDecimals={false} tick={{ fill: "#9ca3af", fontSize: 12 }} />
                 <Tooltip />
-                <Line
-                  type="monotone"
-                  dataKey="value"
-                  stroke="#4a7fe5"
-                  strokeWidth={2.4}
-                  dot={{ r: 3 }}
-                  activeDot={{ r: 5 }}
-                />
+                {yKeys.map((key, index) => (
+                  <Line
+                    key={key}
+                    type="monotone"
+                    dataKey={key}
+                    stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                    strokeWidth={2.4}
+                    dot={{ r: 3 }}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
               </LineChart>
             ) : chart.chartType === "pie" ? (
               <PieChart>
                 <Tooltip />
                 <Pie
                   data={chartData}
-                  dataKey="value"
+                  dataKey={primaryKey}
                   nameKey="label"
                   outerRadius={105}
                   label={(entry) => entry.label}
@@ -652,14 +682,20 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                   tick={{ fill: "#9ca3af", fontSize: 12 }}
                 />
                 <Tooltip />
-                <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                  {chartData.map((row, index) => (
-                    <Cell
-                      key={`${row.label}-${index}`}
-                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    />
-                  ))}
-                </Bar>
+                {yKeys.map((key, keyIndex) => (
+                  <Bar key={key} dataKey={key} radius={[4, 4, 0, 0]}>
+                    {chartData.map((row, index) => (
+                      <Cell
+                        key={`${String(row.label)}-${key}-${index}`}
+                        fill={
+                          yKeys.length > 1
+                            ? TOPIC_PALETTE[keyIndex % TOPIC_PALETTE.length]
+                            : TOPIC_PALETTE[index % TOPIC_PALETTE.length]
+                        }
+                      />
+                    ))}
+                  </Bar>
+                ))}
               </BarChart>
             )}
           </ResponsiveContainer>
