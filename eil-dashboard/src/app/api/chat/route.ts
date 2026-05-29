@@ -148,6 +148,7 @@ interface ChatRequestBody {
   queryLanguage?: string;
   selectedRunIds?: string[];
   threadId?: string;
+  editMessageId?: string;
   folderId?: string | "all";
   projectId?: string;
   toolMode?: ChatToolMode;
@@ -3252,18 +3253,61 @@ async function normalChat(
         });
     }
 
-    await appendWorkspaceMessage(supabase, {
-      threadId: thread.id,
-      ownerUserId,
-      folderId: body.folderId,
-      role: "user",
-      content: currentMessage,
-      messageKind: "chat",
-      metadata: {
-        attachments: body.attachments ?? [],
-        selectedRunIds: body.selectedRunIds ?? [],
-      },
-    });
+    const editTarget =
+      body.editMessageId && existingThreadDetail
+        ? existingThreadDetail.messages.find(
+            (message) =>
+              message.id === body.editMessageId && message.role === "user"
+          )
+        : null;
+
+    if (editTarget) {
+      const { error: updateMessageError } = await supabase
+        .from("workspace_messages")
+        .update({
+          content: currentMessage,
+          metadata: {
+            ...(editTarget.metadata &&
+            typeof editTarget.metadata === "object"
+              ? (editTarget.metadata as Record<string, unknown>)
+              : {}),
+            attachments: body.attachments ?? [],
+            selectedRunIds: body.selectedRunIds ?? [],
+            editedAt: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editTarget.id)
+        .eq("thread_id", thread.id)
+        .eq("owner_user_id", ownerUserId)
+        .eq("role", "user");
+      if (updateMessageError) {
+        throw new Error(updateMessageError.message);
+      }
+
+      const { error: deleteLaterMessagesError } = await supabase
+        .from("workspace_messages")
+        .delete()
+        .eq("thread_id", thread.id)
+        .eq("owner_user_id", ownerUserId)
+        .gt("created_at", editTarget.created_at);
+      if (deleteLaterMessagesError) {
+        throw new Error(deleteLaterMessagesError.message);
+      }
+    } else {
+      await appendWorkspaceMessage(supabase, {
+        threadId: thread.id,
+        ownerUserId,
+        folderId: body.folderId,
+        role: "user",
+        content: currentMessage,
+        messageKind: "chat",
+        metadata: {
+          attachments: body.attachments ?? [],
+          selectedRunIds: body.selectedRunIds ?? [],
+        },
+      });
+    }
   }
 
   const requestedToolMode: ChatToolMode = body.toolMode ?? "auto";

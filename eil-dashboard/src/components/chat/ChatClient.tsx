@@ -32,14 +32,19 @@ import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
   ChartIcon,
+  ChatIcon,
+  CheckIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   CircleIcon,
   CloseIcon,
+  CopyIcon,
   DriveIcon,
   EqualizerIcon,
+  ExitFullscreenIcon,
   FileIcon,
   FolderIcon,
+  FullscreenIcon,
   MoreHorizontalIcon,
   ImageIcon,
   PaperIcon,
@@ -48,6 +53,7 @@ import {
   PlusIcon,
   SearchIcon,
   SendIcon,
+  SidebarIcon,
   SparkIcon,
   StopIcon,
   TrashIcon,
@@ -142,6 +148,15 @@ interface ChatPayload {
   thread?: WorkspaceThreadSummary;
   messages?: WorkspaceMessageRecord[];
   deepResearchSession?: DeepResearchSessionRecord | null;
+}
+
+interface ChatSearchResult {
+  id: string;
+  thread: WorkspaceThreadSummary;
+  message?: WorkspaceMessageRecord;
+  snippet: string;
+  matchedIn: "title" | "summary" | "message";
+  groupLabel: string;
 }
 
 const PINNED_THREADS_STORAGE_KEY = "papertrend_pinned_chat_threads_v1";
@@ -790,6 +805,94 @@ function sortThreads(
   });
 }
 
+function compactSearchText(value: string, maxLength = 180) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 3)}...` : compact;
+}
+
+function searchDateGroup(dateValue?: string | null) {
+  const timestamp = dateValue ? new Date(dateValue).getTime() : 0;
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "Older";
+  }
+  const ageMs = Date.now() - timestamp;
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (ageMs < dayMs) return "Today";
+  if (ageMs < 2 * dayMs) return "Yesterday";
+  if (ageMs < 7 * dayMs) return "Previous 7 Days";
+  if (ageMs < 30 * dayMs) return "Previous 30 Days";
+  return "Older";
+}
+
+function findQuerySnippet(content: string, query: string) {
+  const text = content.replace(/\s+/g, " ").trim();
+  if (!query) return compactSearchText(text);
+  const index = text.toLowerCase().indexOf(query.toLowerCase());
+  if (index < 0) return compactSearchText(text);
+  const start = Math.max(0, index - 70);
+  const end = Math.min(text.length, index + query.length + 110);
+  return `${start > 0 ? "..." : ""}${text.slice(start, end)}${end < text.length ? "..." : ""}`;
+}
+
+function buildChatSearchResults(
+  details: ChatThreadDetail[],
+  query: string
+): ChatSearchResult[] {
+  const needle = query.trim().toLowerCase();
+  const results: ChatSearchResult[] = [];
+
+  details.forEach((detail) => {
+    const groupLabel = searchDateGroup(detail.thread.updated_at);
+    const title = detail.thread.title ?? "Untitled chat";
+    const summary = detail.thread.summary ?? "";
+
+    if (!needle) {
+      results.push({
+        id: `${detail.thread.id}-thread`,
+        thread: detail.thread,
+        snippet: compactSearchText(summary || title, 120),
+        matchedIn: "title",
+        groupLabel,
+      });
+      return;
+    }
+
+    if (title.toLowerCase().includes(needle)) {
+      results.push({
+        id: `${detail.thread.id}-title`,
+        thread: detail.thread,
+        snippet: findQuerySnippet(title, needle),
+        matchedIn: "title",
+        groupLabel,
+      });
+    } else if (summary.toLowerCase().includes(needle)) {
+      results.push({
+        id: `${detail.thread.id}-summary`,
+        thread: detail.thread,
+        snippet: findQuerySnippet(summary, needle),
+        matchedIn: "summary",
+        groupLabel,
+      });
+    }
+
+    detail.messages.forEach((message) => {
+      if (!message.content?.toLowerCase().includes(needle)) {
+        return;
+      }
+      results.push({
+        id: `${detail.thread.id}-${message.id}`,
+        thread: detail.thread,
+        message,
+        snippet: findQuerySnippet(message.content, needle),
+        matchedIn: "message",
+        groupLabel,
+      });
+    });
+  });
+
+  return results;
+}
+
 function sessionLabel(session?: DeepResearchSessionRecord | null) {
   if (!session) return null;
   const partialCompletion = session.steps?.some(
@@ -1120,11 +1223,22 @@ export default function ChatClient() {
   const [threadMenuId, setThreadMenuId] = useState<string | null>(null);
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
+  const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [chatSearchDetails, setChatSearchDetails] = useState<ChatThreadDetail[]>([]);
+  const [chatSearchLoading, setChatSearchLoading] = useState(false);
+  const [chatSearchError, setChatSearchError] = useState<string | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
   const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const parameterMenuRef = useRef<HTMLDivElement | null>(null);
+  const editComposerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const canPersist = Boolean(user && session?.access_token);
   const effectiveSelectedYears = selectedYears.length > 0 ? selectedYears : allYears;
@@ -1138,6 +1252,10 @@ export default function ChatClient() {
   const sortedThreads = useMemo(
     () => sortThreads(threads, pinnedThreadIds),
     [pinnedThreadIds, threads]
+  );
+  const chatSearchResults = useMemo(
+    () => buildChatSearchResults(chatSearchDetails, chatSearchQuery),
+    [chatSearchDetails, chatSearchQuery]
   );
   const selectedRunIds = useMemo(
     () => selectedLibraryRuns.map((run) => run.id),
@@ -1424,6 +1542,41 @@ export default function ChatClient() {
     [canPersist, session?.access_token]
   );
 
+  const loadChatSearchDetails = useCallback(async () => {
+    if (!canPersist || !session?.access_token) {
+      setChatSearchDetails([]);
+      return;
+    }
+
+    setChatSearchLoading(true);
+    setChatSearchError(null);
+    try {
+      const details = await Promise.all(
+        sortedThreads.map(async (thread) => {
+          const response = await fetch(`/api/chat/threads/${thread.id}`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          const payload = (await response.json()) as ChatThreadDetail & {
+            error?: string;
+          };
+          if (!response.ok) {
+            throw new Error(payload.error ?? "Failed to load chat thread.");
+          }
+          return payload;
+        })
+      );
+      setChatSearchDetails(details);
+    } catch (nextError) {
+      setChatSearchError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Failed to search chat history."
+      );
+    } finally {
+      setChatSearchLoading(false);
+    }
+  }, [canPersist, session?.access_token, sortedThreads]);
+
   const loadLibraryRuns = useCallback(async () => {
     if (!canPersist || !selectedProjectId) {
       setLibraryRuns([]);
@@ -1488,6 +1641,26 @@ export default function ChatClient() {
   }, [loadLibraryRuns, showLibraryPicker]);
 
   useEffect(() => {
+    if (!searchModalOpen) return;
+    void loadChatSearchDetails();
+  }, [loadChatSearchDetails, searchModalOpen]);
+
+  useEffect(() => {
+    if (!copiedMessageId) return;
+    const timeoutId = window.setTimeout(() => setCopiedMessageId(null), 1600);
+    return () => window.clearTimeout(timeoutId);
+  }, [copiedMessageId]);
+
+  useEffect(() => {
+    if (!editingMessageId) return;
+    window.requestAnimationFrame(() => {
+      editComposerRef.current?.focus();
+      const length = editingDraft.length;
+      editComposerRef.current?.setSelectionRange(length, length);
+    });
+  }, [editingDraft.length, editingMessageId]);
+
+  useEffect(() => {
     setSelectedLibraryRuns([]);
     setLibraryRuns([]);
     setLibraryQuery("");
@@ -1534,6 +1707,121 @@ export default function ChatClient() {
       }
       return [...current, run];
     });
+  }
+
+  async function copyMessageContent(message: MessageView) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+    } catch {
+      setError("Could not copy this message.");
+    }
+  }
+
+  function startEditingUserMessage(message: MessageView) {
+    if (activeThread?.mode === "deep_research") {
+      setDeepResearchEnabled(true);
+      focusComposerWithDraft(message.content);
+      return;
+    }
+    setEditingMessageId(message.id);
+    setEditingDraft(message.content);
+  }
+
+  function cancelEditingUserMessage() {
+    setEditingMessageId(null);
+    setEditingDraft("");
+  }
+
+  async function submitEditedUserMessage(message: MessageView) {
+    const prompt = editingDraft.trim();
+    if (!prompt) return;
+
+    const editIndex = messages.findIndex((item) => item.id === message.id);
+    if (editIndex < 0) {
+      cancelEditingUserMessage();
+      return;
+    }
+
+    const messageMetadata =
+      message.metadata && typeof message.metadata === "object" ? message.metadata : {};
+    const editedAttachments = attachmentsFromMetadata(messageMetadata);
+    const editedRunIds = Array.isArray(messageMetadata.selectedRunIds)
+      ? messageMetadata.selectedRunIds.map(String).filter(Boolean)
+      : [];
+    const nextMessages = messages.slice(0, editIndex + 1).map((item) =>
+      item.id === message.id
+        ? {
+            ...item,
+            content: prompt,
+            metadata: {
+              ...(item.metadata ?? {}),
+              editedAt: new Date().toISOString(),
+            },
+          }
+        : item
+    );
+
+    setLoading(true);
+    setError(null);
+    setMenuOpen(false);
+    setParameterMenuOpen(false);
+    setEditingMessageId(null);
+    setEditingDraft("");
+    setMessages(nextMessages);
+
+    try {
+      const payload = await sendRequest({
+        message: prompt,
+        model: selectedModel,
+        generationParameters: {
+          temperature: chatParameters.temperature,
+          topP: chatParameters.topP,
+          topK: chatParameters.topK,
+          maxTokens: chatParameters.maxTokens,
+          frequencyPenalty: chatParameters.frequencyPenalty,
+          presencePenalty: chatParameters.presencePenalty,
+        },
+        attachments: editedAttachments,
+        messages: nextMessages.map((item) => ({
+          role: item.role,
+          content: item.content,
+        })),
+        selectedYears: effectiveSelectedYears,
+        selectedTracks: effectiveSelectedTracks,
+        searchQuery,
+        folderId: chatScopeFolderId,
+        projectId: selectedProjectId ?? undefined,
+        selectedRunIds: editedRunIds,
+        toolMode: webSearchEnabled ? "web_search" : "auto",
+        webSearchEnabled,
+        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        editMessageId: message.id.startsWith("local-") ? undefined : message.id,
+        chatMode: "normal",
+        action: "message",
+      });
+      if (payload.thread && payload.messages) {
+        applyPayload(payload);
+      } else {
+        setMessages([
+          ...nextMessages,
+          localMessage(
+            "assistant",
+            payload.answer ?? "No answer returned.",
+            payload.citations ?? [],
+            { mode: payload.mode ?? "fallback" }
+          ),
+        ]);
+      }
+    } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === "AbortError") return;
+      setError(
+        nextError instanceof Error ? nextError.message : "Failed to edit message."
+      );
+    } finally {
+      abortControllerRef.current = null;
+      setLoading(false);
+    }
   }
 
   async function handleNormalSend() {
@@ -1893,16 +2181,53 @@ export default function ChatClient() {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-5rem)] min-h-0 w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-[#161719] dark:text-[#ececec]">
-        <aside className="hidden h-full min-h-0 w-[288px] flex-none border-r border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-[#121214] lg:flex lg:flex-col">
-          <button
-            type="button"
-            onClick={() => resetChat("normal")}
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:border-white/10 dark:text-[#ececec] dark:hover:bg-[#212121]"
-          >
-            <PencilSquareIcon className="h-4 w-4" />
-            <span>New chat</span>
-          </button>
+      <div
+        className={`flex min-h-0 w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-[#161719] dark:text-[#ececec] ${
+          fullscreenEnabled
+            ? "fixed inset-0 z-50 h-screen"
+            : "h-[calc(100vh-5rem)]"
+        }`}
+      >
+        <aside
+          className={`h-full min-h-0 w-[288px] flex-none border-r border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-[#121214] ${
+            sidebarCollapsed ? "hidden" : "hidden lg:flex lg:flex-col"
+          }`}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => resetChat("normal")}
+                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:text-[#ececec] dark:hover:bg-[#212121]"
+              >
+                <PencilSquareIcon className="h-5 w-5" />
+                <span>New chat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchModalOpen(true);
+                  setChatSearchQuery("");
+                }}
+                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:text-[#ececec] dark:hover:bg-[#212121]"
+              >
+                <SearchIcon className="h-5 w-5" />
+                <span>Search chats</span>
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed(true)}
+              title="Close sidebar"
+              className="group relative inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#212121] dark:hover:text-white"
+              aria-label="Close sidebar"
+            >
+              <SidebarIcon className="h-5 w-5" />
+              <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
+                Close sidebar
+              </span>
+            </button>
+          </div>
 
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
@@ -2012,6 +2337,18 @@ export default function ChatClient() {
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
+                onClick={() => setSidebarCollapsed((current) => !current)}
+                title={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
+                className="group relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-[#ececec] dark:hover:bg-[#242424]"
+                aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
+              >
+                <SidebarIcon className="h-4 w-4" />
+                <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
+                  {sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
+                </span>
+              </button>
+              <button
+                type="button"
                 onClick={() => resetChat("normal")}
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-white/10 dark:text-[#ececec] lg:hidden"
               >
@@ -2022,11 +2359,26 @@ export default function ChatClient() {
               </p>
             </div>
 
-            {deepSession ? (
-              <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-500 dark:border-white/10 dark:bg-[#2a2a2a] dark:text-[#b4b4b4]">
-                {sessionLabel(deepSession) ?? "Saved"}
-              </span>
-            ) : null}
+            <div className="flex items-center gap-2">
+              {deepSession ? (
+                <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-500 dark:border-white/10 dark:bg-[#2a2a2a] dark:text-[#b4b4b4]">
+                  {sessionLabel(deepSession) ?? "Saved"}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setFullscreenEnabled((current) => !current)}
+                title={fullscreenEnabled ? "Exit fullscreen" : "Fullscreen"}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-[#ececec] dark:hover:bg-[#242424]"
+                aria-label={fullscreenEnabled ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {fullscreenEnabled ? (
+                  <ExitFullscreenIcon className="h-4 w-4" />
+                ) : (
+                  <FullscreenIcon className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-8 sm:px-6 xl:px-8">
@@ -2319,11 +2671,67 @@ export default function ChatClient() {
                     <section key={message.id}>
                       {isUser ? (
                         <div className="flex justify-end">
-                          <div className="max-w-[78%] space-y-2">
-                            <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-7 text-slate-900 shadow-sm dark:border-white/10 dark:bg-[#2a2a2a] dark:text-[#f3f3f3]">
-                              {renderRichMessage(message.content, message.id, "user")}
-                            </div>
-                            <MessageAttachmentList attachments={attachments} />
+                          <div className="group/message relative max-w-[78%] space-y-2">
+                            {editingMessageId === message.id ? (
+                              <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-4 text-left shadow-sm dark:border-white/10 dark:bg-[#2a2a2a]">
+                                <MessageAttachmentList attachments={attachments} />
+                                <textarea
+                                  ref={editComposerRef}
+                                  value={editingDraft}
+                                  onChange={(event) => setEditingDraft(event.target.value)}
+                                  rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                />
+                                <div className="mt-4 flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingUserMessage}
+                                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-black dark:text-white dark:hover:bg-[#111111]"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void submitEditedUserMessage(message)}
+                                    disabled={!editingDraft.trim() || loading}
+                                    className="inline-flex h-10 items-center rounded-full bg-white px-5 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                                  >
+                                    Send
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyMessageContent(message)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#111111] dark:text-[#ececec] dark:ring-white/10 dark:hover:bg-[#242424]"
+                                    aria-label="Copy message"
+                                    title="Copy"
+                                  >
+                                    {copiedMessageId === message.id ? (
+                                      <CheckIcon className="h-4 w-4" />
+                                    ) : (
+                                      <CopyIcon className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingUserMessage(message)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#111111] dark:text-[#ececec] dark:ring-white/10 dark:hover:bg-[#242424]"
+                                    aria-label="Edit message"
+                                    title="Edit"
+                                  >
+                                    <PencilSquareIcon className="h-4 w-4" />
+                                  </button>
+                                </div>
+                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-7 text-slate-900 shadow-sm dark:border-white/10 dark:bg-[#2a2a2a] dark:text-[#f3f3f3]">
+                                  {renderRichMessage(message.content, message.id, "user")}
+                                </div>
+                                <MessageAttachmentList attachments={attachments} />
+                              </>
+                            )}
                           </div>
                         </div>
                       ) : (
@@ -2958,6 +3366,114 @@ export default function ChatClient() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {searchModalOpen ? (
+        <Modal onClose={() => setSearchModalOpen(false)} zIndexClassName="z-[60]">
+          <div className="flex h-[min(660px,86vh)] w-[min(860px,94vw)] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white text-slate-900 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-white/10 dark:bg-[#2d2d2d] dark:text-[#f4f4f4] dark:shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
+            <div className="flex h-20 flex-none items-center border-b border-slate-200 px-6 dark:border-white/10">
+              <label className="relative flex min-w-0 flex-1 items-center">
+                <SearchIcon className="pointer-events-none absolute left-0 h-5 w-5 text-slate-400 dark:text-[#b4b4b4]" />
+                <input
+                  type="search"
+                  value={chatSearchQuery}
+                  onChange={(event) => setChatSearchQuery(event.target.value)}
+                  placeholder="Search chats..."
+                  className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#c7c7c7]"
+                  autoFocus
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setSearchModalOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-white/10 dark:hover:text-white"
+                aria-label="Close chat search"
+              >
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  resetChat("normal");
+                  setSearchModalOpen(false);
+                }}
+                className="mb-5 flex h-12 w-full items-center gap-4 rounded-xl px-1 text-left text-base font-medium text-slate-900 transition-colors hover:bg-slate-100 dark:text-white dark:hover:bg-white/10"
+              >
+                <PencilSquareIcon className="h-5 w-5" />
+                <span>New chat</span>
+              </button>
+
+              {chatSearchLoading ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-[#c7c7c7]">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-white/20 dark:border-t-white" />
+                  <span>Searching chats...</span>
+                </div>
+              ) : null}
+
+              {!chatSearchLoading && chatSearchError ? (
+                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                  {chatSearchError}
+                </div>
+              ) : null}
+
+              {!chatSearchLoading && !chatSearchError && chatSearchResults.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-[#c7c7c7]">
+                  {chatSearchQuery.trim()
+                    ? "No chats matched that search."
+                    : "No chats yet."}
+                </div>
+              ) : null}
+
+              {!chatSearchLoading && !chatSearchError
+                ? ["Today", "Yesterday", "Previous 7 Days", "Previous 30 Days", "Older"].map(
+                    (groupLabel) => {
+                      const groupResults = chatSearchResults.filter(
+                        (result) => result.groupLabel === groupLabel
+                      );
+                      if (groupResults.length === 0) return null;
+                      return (
+                        <section key={groupLabel} className="mb-6">
+                          <p className="mb-2 text-sm text-slate-500 dark:text-[#b4b4b4]">
+                            {groupLabel}
+                          </p>
+                          <div className="space-y-1">
+                            {groupResults.map((result) => (
+                              <button
+                                key={result.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveThreadId(result.thread.id);
+                                  setSearchModalOpen(false);
+                                  setThreadMenuId(null);
+                                }}
+                                className="flex w-full items-start gap-4 rounded-xl px-1 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-white/10"
+                              >
+                                <ChatIcon className="mt-1 h-5 w-5 flex-none text-slate-700 dark:text-white" />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-base font-medium text-slate-900 dark:text-white">
+                                    {result.thread.title || "Untitled chat"}
+                                  </span>
+                                  {result.snippet ? (
+                                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-slate-500 dark:text-[#c7c7c7]">
+                                      {result.matchedIn === "message" ? "Message: " : ""}
+                                      {result.snippet}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    }
+                  )
+                : null}
+            </div>
+          </div>
+        </Modal>
       ) : null}
 
       {showLibraryPicker ? (

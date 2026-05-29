@@ -383,6 +383,37 @@ export function CheckIcon({ className }: IconProps) {
   );
 }
 
+export function SidebarIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="4" y="5" width="16" height="14" rx="2.5" />
+      <path d="M9.5 5v14" />
+    </BaseIcon>
+  );
+}
+
+export function FullscreenIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M8.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v2.7" />
+      <path d="M15.5 4.5h2.7a1.3 1.3 0 0 1 1.3 1.3v2.7" />
+      <path d="M19.5 15.5v2.7a1.3 1.3 0 0 1-1.3 1.3h-2.7" />
+      <path d="M8.5 19.5H5.8a1.3 1.3 0 0 1-1.3-1.3v-2.7" />
+    </BaseIcon>
+  );
+}
+
+export function ExitFullscreenIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M9 5v3.2A.8.8 0 0 1 8.2 9H5" />
+      <path d="M15 5v3.2a.8.8 0 0 0 .8.8H19" />
+      <path d="M19 15h-3.2a.8.8 0 0 0-.8.8V19" />
+      <path d="M5 15h3.2a.8.8 0 0 1 .8.8V19" />
+    </BaseIcon>
+  );
+}
+
 export function DownloadIcon({ className }: IconProps) {
   return (
     <BaseIcon className={className}>
