@@ -2857,7 +2857,7 @@ export default function ChatClient() {
                                 current.filter((item) => item.id !== run.id)
                               )
                             }
-                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-white/10 dark:hover:text-white group-hover:opacity-100"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
                             aria-label={`Remove ${runTitleOf(run)}`}
                           >
                             <CloseIcon className="h-3 w-3" />
@@ -2888,7 +2888,7 @@ export default function ChatClient() {
                       <button
                         type="button"
                         onClick={() => setChartSuggestionDismissedFor(trimmedDraft)}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sky-700 hover:bg-sky-100 dark:text-sky-100 dark:hover:bg-white/10"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sky-700 hover:bg-sky-100 dark:text-sky-100 dark:hover:bg-[#0a0a0a]"
                         aria-label="Dismiss chart mode suggestion"
                       >
                         <CloseIcon className="h-3.5 w-3.5" />
@@ -3113,7 +3113,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setDeepResearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-white/10 group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable deep research"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3128,7 +3128,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setChartModeEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-white/10 group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable chart mode"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3143,7 +3143,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setWebSearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-white/10 group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable web search"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3404,7 +3404,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setSearchModalOpen(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-white/10 dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                 aria-label="Close chat search"
               >
                 <CloseIcon className="h-5 w-5" />
@@ -3418,7 +3418,7 @@ export default function ChatClient() {
                   resetChat("normal");
                   setSearchModalOpen(false);
                 }}
-                className="mb-5 flex h-12 w-full items-center gap-4 rounded-xl px-1 text-left text-base font-medium text-slate-900 transition-colors hover:bg-slate-100 dark:text-white dark:hover:bg-white/10"
+                className="mb-5 flex h-12 w-full items-center gap-4 rounded-xl px-1 text-left text-base font-medium text-slate-900 transition-colors hover:bg-slate-100 dark:text-white dark:hover:bg-[#0a0a0a]"
               >
                 <PencilSquareIcon className="h-5 w-5" />
                 <span>New chat</span>
@@ -3467,7 +3467,7 @@ export default function ChatClient() {
                                   setSearchModalOpen(false);
                                   setThreadMenuId(null);
                                 }}
-                                className="flex w-full items-start gap-4 rounded-xl px-1 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-white/10"
+                                className="flex w-full items-start gap-4 rounded-xl px-1 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
                               >
                                 <ChatIcon className="mt-1 h-5 w-5 flex-none text-slate-700 dark:text-white" />
                                 <span className="min-w-0">
