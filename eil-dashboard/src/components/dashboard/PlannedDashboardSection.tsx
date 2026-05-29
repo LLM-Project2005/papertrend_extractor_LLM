@@ -28,7 +28,7 @@ export default function PlannedDashboardSection({
   return (
     <div className="space-y-4">
       <section className="app-surface px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
           Adaptive section
         </p>
         <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">

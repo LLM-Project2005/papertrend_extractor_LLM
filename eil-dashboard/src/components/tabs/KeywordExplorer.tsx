@@ -320,7 +320,7 @@ export default function KeywordExplorer({
             placeholder="Search a concept, e.g. intelligibility / comprehensibility"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white"
           />
         </div>
       </section>
@@ -346,14 +346,14 @@ export default function KeywordExplorer({
               <section className="app-surface px-5 py-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Canonical concept
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
                       {conceptResult.canonicalConcept || query}
                     </h3>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-slate-950 dark:text-slate-300">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#030303] dark:text-slate-300">
                     {conceptResult.source === "fallback" ? "Fallback analysis" : "Node analysis"}
                   </span>
                 </div>
@@ -367,7 +367,7 @@ export default function KeywordExplorer({
                     {conceptResult.matchedTerms.map((term) => (
                       <span
                         key={term}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-slate-300"
                       >
                         {term}
                       </span>
@@ -377,7 +377,7 @@ export default function KeywordExplorer({
 
                 {conceptResult.notFound && conceptResult.suggestedConcepts.length > 0 ? (
                   <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Nearby grounded concepts
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -386,7 +386,7 @@ export default function KeywordExplorer({
                           key={term}
                           type="button"
                           onClick={() => setQuery(term)}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a]"
                         >
                           {term}
                         </button>
@@ -399,7 +399,7 @@ export default function KeywordExplorer({
               {conceptResult.firstAppearance ? (
                 <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       First appearance
                     </p>
                     <h4 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">
@@ -415,7 +415,7 @@ export default function KeywordExplorer({
                       {conceptResult.firstAppearance.tracksSingle.map((track) => (
                         <span
                           key={track}
-                          className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-slate-950 dark:text-slate-300"
+                          className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#030303] dark:text-slate-300"
                         >
                           {track}
                         </span>
@@ -430,7 +430,7 @@ export default function KeywordExplorer({
                   </article>
 
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Objective verbs
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -438,7 +438,7 @@ export default function KeywordExplorer({
                         conceptResult.objectiveVerbs.map((item) => (
                           <span
                             key={item.label}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-slate-300"
                           >
                             {item.label} ({item.count})
                           </span>
@@ -452,7 +452,7 @@ export default function KeywordExplorer({
                   </article>
 
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Contribution groups
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -460,7 +460,7 @@ export default function KeywordExplorer({
                         conceptResult.contributionTypes.map((item) => (
                           <span
                             key={item.label}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-slate-300"
                           >
                             {item.label} ({item.count})
                           </span>
@@ -539,7 +539,7 @@ export default function KeywordExplorer({
                       conceptResult.cooccurringConcepts.map((item) => (
                         <div
                           key={item.label}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950"
+                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
                           <span className="text-sm text-slate-700 dark:text-slate-200">
                             {item.label}
@@ -566,9 +566,9 @@ export default function KeywordExplorer({
                       conceptResult.evidence.map((item, index) => (
                         <div
                           key={`${item.paperId}-${index}`}
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-950"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-slate-500">
                             {item.year} • {item.section}
                           </p>
                           <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
@@ -597,7 +597,7 @@ export default function KeywordExplorer({
                     conceptResult.papers.map((paper) => (
                       <div
                         key={paper.paperId}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-950"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -620,7 +620,7 @@ export default function KeywordExplorer({
                           {paper.tracksSingle.map((track) => (
                             <span
                               key={`${paper.paperId}-${track}`}
-                              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300"
+                              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-slate-300"
                             >
                               {track}
                             </span>
@@ -631,7 +631,7 @@ export default function KeywordExplorer({
                           {paper.matchedTerms.map((term) => (
                             <span
                               key={`${paper.paperId}-${term}`}
-                              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300"
                             >
                               {term}
                             </span>
@@ -723,9 +723,9 @@ export default function KeywordExplorer({
         <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
           Keyword table
         </h3>
-        <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-200 dark:border-[#1f1f1f]">
           <table className="min-w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950">
+            <thead className="sticky top-0 bg-slate-50 dark:bg-[#030303]">
               <tr>
                 <th className="px-3 py-2 text-left font-semibold">Canonical topic</th>
                 <th className="px-3 py-2 text-right font-semibold">Total Freq</th>
@@ -738,7 +738,7 @@ export default function KeywordExplorer({
               {keywordAggregate.map((row) => (
                 <tr
                   key={row.keyword}
-                  className="border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950"
+                  className="border-t border-slate-200 hover:bg-slate-50 dark:border-[#1f1f1f] dark:hover:bg-[#0a0a0a]"
                 >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
                     {row.keyword}
@@ -781,7 +781,7 @@ export default function KeywordExplorer({
               className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
                 comparisonKeywords.includes(row.keyword)
                   ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a]"
               }`}
             >
               {row.keyword}

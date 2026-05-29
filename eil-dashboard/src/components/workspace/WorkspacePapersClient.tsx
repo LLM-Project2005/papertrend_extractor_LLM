@@ -75,21 +75,21 @@ export default function WorkspacePapersClient() {
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             placeholder="Search papers, topics, keywords, or years"
-            className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+            className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
           />
         </label>
 
         <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
             {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
           </span>
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
             {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
           </span>
           <button
             type="button"
             onClick={() => setFilterOpen(true)}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
           >
             <FilterIcon className="h-4 w-4" />
             <span>Filters</span>
@@ -100,15 +100,15 @@ export default function WorkspacePapersClient() {
       <div className="min-w-0">
         {filterOpen && (
           <div className="fixed inset-0 z-40 bg-slate-950/45">
-            <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121] xl:max-w-md">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#2f2f2f] sm:px-5">
+            <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] xl:max-w-md">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#1f1f1f] sm:px-5">
                 <p className="text-sm font-medium text-slate-900 dark:text-white">
                   Paper filters
                 </p>
                 <button
                   type="button"
                   onClick={() => setFilterOpen(false)}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#171717] dark:text-[#d0d0d0]"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>

@@ -201,8 +201,8 @@ function DesktopSidebar({
                       onClick={() => onNavigate(item.href)}
                       className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
-                          ? "bg-slate-900 text-white dark:bg-[#111111]"
-                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
+                          ? "bg-slate-900 text-white dark:bg-[#030303]"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                       }`}
                     >
                       <Icon className="h-[18px] w-[18px] flex-none" />
@@ -250,7 +250,7 @@ function MobileSidebar({
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#242424] dark:bg-[#050505] dark:text-[#d0d0d0]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
             aria-label="Close workspace navigation"
           >
             <CloseIcon className="h-4 w-4" />
@@ -280,8 +280,8 @@ function MobileSidebar({
                     }}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        ? "bg-slate-900 text-white dark:bg-[#111111]"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#1a1a1a] dark:hover:text-white"
+                        ? "bg-slate-900 text-white dark:bg-[#030303]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                     }`}
                   >
                     <Icon className="h-4 w-4 flex-none" />
@@ -486,7 +486,7 @@ export default function WorkspaceShell({
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#242424] dark:bg-[#050505] dark:text-[#d0d0d0] lg:hidden"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] lg:hidden"
                 aria-label="Open workspace navigation"
               >
                 <MenuIcon className="h-4 w-4" />

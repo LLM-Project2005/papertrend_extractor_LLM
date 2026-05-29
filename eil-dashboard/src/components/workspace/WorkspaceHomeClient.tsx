@@ -118,7 +118,7 @@ function AIActionCard({
       className={`${surfaceClass} group flex min-h-[150px] flex-col justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]`}
     >
       <div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#171717] dark:border-[#242424] dark:bg-[#030303] dark:text-white">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#171717] dark:border-[#1f1f1f] dark:bg-black dark:text-white">
           <Icon className="h-5 w-5" />
         </span>
         <h3 className="mt-4 text-sm font-semibold text-[#171717] dark:text-white">
@@ -173,7 +173,7 @@ function InsightList({
             </div>
           ))
         ) : (
-          <p className="rounded-lg border border-dashed border-[#ebebeb] px-3 py-4 text-sm text-[#4d4d4d] dark:border-[#303030] dark:text-[#8f8f8f]">
+          <p className="rounded-lg border border-dashed border-[#ebebeb] px-3 py-4 text-sm text-[#4d4d4d] dark:border-[#1f1f1f] dark:text-[#8f8f8f]">
             {emptyLabel}
           </p>
         )}
@@ -242,7 +242,7 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
 
   return (
     <div className="flex items-start gap-3 rounded-lg border border-[#ebebeb] bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#242424] dark:bg-[#030303] dark:text-[#bdbdbd]">
+      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#bdbdbd]">
         <FileIcon className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
@@ -742,7 +742,7 @@ export default function WorkspaceHomeClient() {
             </div>
             <Link
               href="/workspace/dashboard"
-              className="inline-flex items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#242424] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
               Dashboard
               <ArrowRightIcon className="h-4 w-4" />
@@ -783,7 +783,7 @@ export default function WorkspaceHomeClient() {
 
           <div className="mt-5 space-y-3">
             {libraryLoading ? (
-              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#303030]">
+              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
                 <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#a1a1a1] border-t-transparent dark:border-[#8e8e8e]" />
                 <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
                   Loading recent activity
@@ -796,7 +796,7 @@ export default function WorkspaceHomeClient() {
             ) : recentRuns.length > 0 ? (
               recentRuns.map((run) => <RunActivityRow key={run.id} run={run} />)
             ) : (
-              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#303030]">
+              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
                 <CheckCircleIcon className="mx-auto h-8 w-8 text-[#a1a1a1] dark:text-[#555555]" />
                 <p className="mt-3 text-sm font-medium text-[#171717] dark:text-[#d0d0d0]">
                   No file activity yet
@@ -813,7 +813,7 @@ export default function WorkspaceHomeClient() {
       <section className="grid gap-3 md:grid-cols-3">
         <Link
           href="/workspace/dashboard"
-          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#444444]`}
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
         >
           <span>
             <span className="block text-sm font-semibold text-[#171717] dark:text-white">
@@ -827,7 +827,7 @@ export default function WorkspaceHomeClient() {
         </Link>
         <Link
           href="/workspace/library"
-          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#444444]`}
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
         >
           <span>
             <span className="block text-sm font-semibold text-[#171717] dark:text-white">
@@ -841,7 +841,7 @@ export default function WorkspaceHomeClient() {
         </Link>
         <Link
           href="/workspace/chat"
-          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#444444]`}
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
         >
           <span>
             <span className="block text-sm font-semibold text-[#171717] dark:text-white">

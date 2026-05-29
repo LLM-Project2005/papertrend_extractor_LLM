@@ -64,7 +64,7 @@ export default function WorkspaceProfileClient() {
         <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">
           Account
         </p>
-        <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+        <h1 className="mt-1 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
           Profile
         </h1>
         <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
@@ -76,7 +76,7 @@ export default function WorkspaceProfileClient() {
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
         <form onSubmit={handleSubmit} className="app-surface p-6">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#232323] dark:text-[#d0d0d0]">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
               <UserIcon className="h-5 w-5" />
             </span>
             <div>
@@ -98,7 +98,7 @@ export default function WorkspaceProfileClient() {
                 value={fullName}
                 onChange={(event) => setFullName(event.target.value)}
                 placeholder="Your name"
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:border-[#353535] dark:bg-[#171717] dark:text-[#f2f2f2] dark:placeholder:text-[#727272] dark:focus:border-[#4a4a4a]"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f2f2f2] dark:placeholder:text-[#727272] dark:focus:border-[#4a4a4a]"
               />
             </label>
 
@@ -110,7 +110,7 @@ export default function WorkspaceProfileClient() {
                 value={avatarUrl}
                 onChange={(event) => setAvatarUrl(event.target.value)}
                 placeholder="https://..."
-                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:border-[#353535] dark:bg-[#171717] dark:text-[#f2f2f2] dark:placeholder:text-[#727272] dark:focus:border-[#4a4a4a]"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f2f2f2] dark:placeholder:text-[#727272] dark:focus:border-[#4a4a4a]"
               />
             </label>
           </div>

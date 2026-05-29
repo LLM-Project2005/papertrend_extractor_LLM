@@ -99,8 +99,8 @@ export default function ProjectsPage() {
     "Projects";
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#111111] dark:text-white">
-      <header className="border-b border-slate-200 bg-white/80 dark:border-white/10 dark:bg-transparent">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
+      <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-4">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1f9d63] text-white">
             <LogoMarkIcon className="h-5 w-5" />
@@ -124,7 +124,7 @@ export default function ProjectsPage() {
       <section className="mx-auto max-w-7xl px-6 py-16">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
-            <h1 className="text-4xl font-semibold tracking-tight text-slate-950 dark:text-white">Projects</h1>
+            <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">Projects</h1>
             <p className="mt-4 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
               Create a project for each research space you want to analyze and
               explore.
@@ -132,7 +132,7 @@ export default function ProjectsPage() {
           </div>
 
           <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
-            <label className="flex flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-[#171717]">
+            <label className="flex flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
               <SearchIcon className="h-4 w-4 text-slate-400 dark:text-[#7a7a7a]" />
               <input
                 value={query}
@@ -173,7 +173,7 @@ export default function ProjectsPage() {
                 });
                 router.push("/workspace/home");
               }}
-              className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-[#171717] dark:hover:border-white/20 dark:hover:bg-[#1b1b1b]"
+              className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -196,7 +196,7 @@ export default function ProjectsPage() {
         </div>
 
         {visibleProjects.length === 0 ? (
-          <div className="mt-16 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-white/10 dark:bg-[#141414]">
+          <div className="mt-16 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
             <p className="text-lg font-medium text-slate-900 dark:text-white">No projects yet</p>
             <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
               Create your first project in this organization to open the

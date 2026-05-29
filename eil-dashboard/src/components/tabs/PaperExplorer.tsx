@@ -118,7 +118,7 @@ export default function PaperExplorer({
   return (
     <div className="space-y-4">
       <section className="app-surface overflow-hidden">
-        <div className="border-b border-slate-200 px-4 py-4 dark:border-[#2f2f2f] sm:px-5">
+        <div className="border-b border-slate-200 px-4 py-4 dark:border-[#1f1f1f] sm:px-5">
           <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
             Papers
           </p>
@@ -133,20 +133,20 @@ export default function PaperExplorer({
               key={paper.paper_id}
               type="button"
               onClick={() => setSelectedPaperId(paper.paper_id)}
-              className="flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#171717] sm:gap-4 sm:px-5"
+              className="flex w-full items-start gap-3 px-4 py-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a] sm:gap-4 sm:px-5"
             >
-              <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#171717] dark:text-[#bdbdbd]">
+              <span className="flex h-10 w-10 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#bdbdbd]">
                 <PaperIcon className="h-4 w-4" />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                  <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                     {paper.year}
                   </span>
                   {paper.trackLabels.map((track) => (
                     <span
                       key={track}
-                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-[#171717] dark:text-[#c7c7c7]"
+                      className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:bg-[#050505] dark:text-[#c7c7c7]"
                     >
                       {track}
                     </span>
@@ -166,10 +166,10 @@ export default function PaperExplorer({
 
       {detail && (
         <Modal onClose={() => setSelectedPaperId(null)}>
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#212121]">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#2f2f2f] sm:px-6">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                   Selected paper
                 </p>
                 <h3 className="mt-2 text-xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
@@ -182,7 +182,7 @@ export default function PaperExplorer({
               <button
                 type="button"
                 onClick={() => setSelectedPaperId(null)}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#171717] dark:text-[#d0d0d0]"
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
               >
                 <CloseIcon className="h-4 w-4" />
               </button>
@@ -194,7 +194,7 @@ export default function PaperExplorer({
                   {detail.tracks.map((track) => (
                     <span
                       key={track}
-                      className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#c7c7c7]"
+                      className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#c7c7c7]"
                     >
                       {track}
                     </span>
@@ -206,7 +206,7 @@ export default function PaperExplorer({
                 {detail.keywords.map((keyword, index) => (
                   <article
                     key={`${keyword.keyword}-${index}`}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]"
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                   >
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -216,7 +216,7 @@ export default function PaperExplorer({
                         {keyword.frequency}
                       </span>
                     </div>
-                    <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+                    <p className="mt-2 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                       {keyword.topic}
                     </p>
                     <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">

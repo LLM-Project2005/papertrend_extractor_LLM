@@ -51,8 +51,8 @@ export default function WorkspaceSettingsClient() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-[#2c2c2c]">
+      <aside className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <div className="border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f]">
           <h1 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
             Settings
           </h1>
@@ -60,7 +60,7 @@ export default function WorkspaceSettingsClient() {
 
         <div className="space-y-6 px-4 py-5">
           <div>
-            <p className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#7d7d7d]">
+            <p className="px-2 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#7d7d7d]">
               Configuration
             </p>
             <nav className="mt-3 space-y-1">
@@ -73,8 +73,8 @@ export default function WorkspaceSettingsClient() {
                     onClick={() => setActiveSection(section.id)}
                     className={`w-full rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
                       isActive
-                        ? "bg-slate-100 font-medium text-slate-950 dark:bg-[#2b2b2b] dark:text-[#f2f2f2]"
-                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-[#b8b8b8] dark:hover:bg-[#232323] dark:hover:text-[#ececec]"
+                        ? "bg-slate-100 font-medium text-slate-950 dark:bg-[#050505] dark:text-[#f2f2f2]"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-[#b8b8b8] dark:hover:bg-[#0a0a0a] dark:hover:text-[#ececec]"
                     }`}
                   >
                     {section.label}
@@ -84,11 +84,11 @@ export default function WorkspaceSettingsClient() {
             </nav>
           </div>
 
-          <div className="border-t border-slate-200 pt-5 dark:border-[#2c2c2c]">
-            <p className="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#7d7d7d]">
+          <div className="border-t border-slate-200 pt-5 dark:border-[#1f1f1f]">
+            <p className="px-2 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#7d7d7d]">
               Account
             </p>
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2c2c2c] dark:bg-[#202020]">
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
               <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
                 {authProfile?.full_name || user?.email || "Guest session"}
               </p>
@@ -96,10 +96,10 @@ export default function WorkspaceSettingsClient() {
                 {user?.email ?? "No account connected"}
               </p>
               <div className="mt-3 flex items-center gap-2 text-xs text-slate-500 dark:text-[#8f8f8f]">
-                <span className="rounded-full border border-slate-200 px-2 py-1 dark:border-[#353535]">
+                <span className="rounded-full border border-slate-200 px-2 py-1 dark:border-[#1f1f1f]">
                   {isAdmin ? "Admin" : "Member"}
                 </span>
-                <span className="rounded-full border border-slate-200 px-2 py-1 dark:border-[#353535]">
+                <span className="rounded-full border border-slate-200 px-2 py-1 dark:border-[#1f1f1f]">
                   {user ? "Synced" : "Local"}
                 </span>
               </div>
@@ -120,9 +120,9 @@ export default function WorkspaceSettingsClient() {
 
         {activeSection === "general" ? (
           <>
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#2c2c2c]">
-                <h2 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-[#ececec]">
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
+                <h2 className="text-3xl font-semibold tracking-normal text-slate-950 dark:text-[#ececec]">
                   Project settings
                 </h2>
                 <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
@@ -146,7 +146,7 @@ export default function WorkspaceSettingsClient() {
                       updateProfile({ name: event.target.value });
                       setSavedMessage();
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#353535] dark:bg-[#232323] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
                   />
                 </label>
 
@@ -165,7 +165,7 @@ export default function WorkspaceSettingsClient() {
                       updateProfile({ organization: event.target.value });
                       setSavedMessage();
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#353535] dark:bg-[#232323] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
                   />
                 </label>
 
@@ -184,13 +184,13 @@ export default function WorkspaceSettingsClient() {
                       updateProfile({ domain: event.target.value });
                       setSavedMessage();
                     }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#353535] dark:bg-[#232323] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
                   />
                 </label>
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="flex items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <h3 className="text-xl font-semibold text-slate-950 dark:text-[#ececec]">
@@ -206,7 +206,7 @@ export default function WorkspaceSettingsClient() {
                     resetProfile();
                     setSavedMessage("Workspace preferences reset to defaults.");
                   }}
-                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#353535] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:bg-[#232323]"
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                 >
                   Reset workspace
                 </button>
@@ -217,8 +217,8 @@ export default function WorkspaceSettingsClient() {
 
         {activeSection === "workspace" ? (
           <>
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#2c2c2c]">
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Workspace focus
                 </h2>
@@ -239,8 +239,8 @@ export default function WorkspaceSettingsClient() {
                       }}
                       className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
                         isActive
-                          ? "border-slate-400 bg-slate-50 dark:border-[#4d4d4d] dark:bg-[#232323]"
-                          : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#303030] dark:bg-[#1d1d1d] dark:hover:border-[#3b3b3b]"
+                          ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       }`}
                     >
                       <p className="text-sm font-semibold text-slate-950 dark:text-[#ececec]">
@@ -255,8 +255,8 @@ export default function WorkspaceSettingsClient() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#2c2c2c]">
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Intake defaults
                 </h2>
@@ -277,15 +277,15 @@ export default function WorkspaceSettingsClient() {
                       }}
                       className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
                         isActive
-                          ? "border-slate-400 bg-slate-50 dark:border-[#4d4d4d] dark:bg-[#232323]"
-                          : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#303030] dark:bg-[#1d1d1d] dark:hover:border-[#3b3b3b]"
+                          ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       }`}
                     >
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-slate-950 dark:text-[#ececec]">
                           {item.label}
                         </p>
-                        <span className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-500 dark:border-[#353535] dark:text-[#8f8f8f]">
+                        <span className="rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-medium uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:text-[#8f8f8f]">
                           {item.status}
                         </span>
                       </div>
@@ -298,8 +298,8 @@ export default function WorkspaceSettingsClient() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#2c2c2c]">
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Output defaults
                 </h2>
@@ -317,8 +317,8 @@ export default function WorkspaceSettingsClient() {
                       onClick={() => toggleOutput(item.id)}
                       className={`rounded-2xl border p-4 text-left transition-colors ${
                         isActive
-                          ? "border-slate-400 bg-slate-50 dark:border-[#4d4d4d] dark:bg-[#232323]"
-                          : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#303030] dark:bg-[#1d1d1d] dark:hover:border-[#3b3b3b]"
+                          ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       }`}
                     >
                       <p className="text-sm font-semibold text-slate-950 dark:text-[#ececec]">
@@ -337,8 +337,8 @@ export default function WorkspaceSettingsClient() {
 
         {activeSection === "access" ? (
           <>
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#2c2c2c]">
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Project access
                 </h2>
@@ -357,7 +357,7 @@ export default function WorkspaceSettingsClient() {
                       Active account linked to this workspace.
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#303030] dark:bg-[#202020]">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
                       {authProfile?.full_name || "Guest session"}
                     </p>
@@ -377,10 +377,10 @@ export default function WorkspaceSettingsClient() {
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <span className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 dark:border-[#353535] dark:text-[#c9c9c9]">
+                    <span className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:text-[#c9c9c9]">
                       {user ? "Supabase sync enabled" : "Local browser storage"}
                     </span>
-                    <span className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 dark:border-[#353535] dark:text-[#c9c9c9]">
+                    <span className="rounded-full border border-slate-200 px-3 py-1.5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:text-[#c9c9c9]">
                       {isAdmin ? "Admin privileges" : "Standard access"}
                     </span>
                   </div>

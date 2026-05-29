@@ -74,9 +74,9 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+    <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
       {showHeader && (
-        <div className="border-b border-slate-200 px-5 py-4 dark:border-[#2c2c2c]">
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
           <h2 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">
             {title}
           </h2>
@@ -95,7 +95,7 @@ export default function Sidebar({
 
         {onFolderChange ? (
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
               Folders
             </h3>
             <div className="space-y-3">
@@ -105,7 +105,7 @@ export default function Sidebar({
                 className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                   allFoldersSelected
                     ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+                    : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a] dark:hover:text-[#ececec]"
                 }`}
               >
                 All folders
@@ -122,7 +122,7 @@ export default function Sidebar({
                       className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                         active
                           ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a] dark:hover:text-[#ececec]"
                       }`}
                     >
                       {folder.name}
@@ -143,7 +143,7 @@ export default function Sidebar({
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
               Years
             </h3>
             <button
@@ -166,7 +166,7 @@ export default function Sidebar({
                   className={`rounded-full border px-3 py-1.5 text-sm transition-colors ${
                     active
                       ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444] dark:hover:text-[#ececec]"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a] dark:hover:text-[#ececec]"
                   }`}
                 >
                   {year}
@@ -177,7 +177,7 @@ export default function Sidebar({
         </section>
 
         <section>
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
             Tracks
           </h3>
           <div className="space-y-2">
@@ -191,7 +191,7 @@ export default function Sidebar({
                   className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition-colors ${
                     active
                       ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#353535] dark:bg-[#232323] dark:text-[#c7c7c7] dark:hover:border-[#444444]"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#c7c7c7] dark:hover:border-[#3a3a3a]"
                   }`}
                 >
                   <span>
@@ -209,8 +209,8 @@ export default function Sidebar({
                   <span
                     className={`mt-0.5 h-2.5 w-2.5 rounded-full ${
                       active
-                        ? "bg-white dark:bg-[#171717]"
-                        : "bg-slate-200 dark:bg-[#404040]"
+                        ? "bg-white dark:bg-[#050505]"
+                        : "bg-slate-200 dark:bg-[#1f1f1f]"
                     }`}
                   />
                 </button>

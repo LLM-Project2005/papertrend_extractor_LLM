@@ -58,8 +58,8 @@ export default function NewOrganizationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#111111] dark:text-white">
-      <header className="border-b border-slate-200 bg-white/80 dark:border-white/10 dark:bg-transparent">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
+      <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-4">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1f9d63] text-white">
             <LogoMarkIcon className="h-5 w-5" />
@@ -71,10 +71,10 @@ export default function NewOrganizationPage() {
       <section className="mx-auto flex max-w-5xl justify-center px-6 py-20">
         <form
           onSubmit={handleSubmit}
-          className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#171717]"
+          className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]"
         >
-          <div className="border-b border-slate-200 px-8 py-7 dark:border-white/10">
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-white">
+          <div className="border-b border-slate-200 px-8 py-7 dark:border-[#1f1f1f]">
+            <h1 className="text-3xl font-semibold tracking-normal text-slate-900 dark:text-white">
               Create a new organization
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500 dark:text-[#9b9b9b]">
@@ -90,7 +90,7 @@ export default function NewOrganizationPage() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Organization name"
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-[#1f9d63] dark:border-white/10 dark:bg-[#111111] dark:text-white dark:placeholder:text-[#666]"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666]"
               />
             </div>
 
@@ -101,7 +101,7 @@ export default function NewOrganizationPage() {
                 onChange={(event) =>
                   setType(event.target.value as WorkspaceOrganizationRow["type"])
                 }
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-[#1f9d63] dark:border-white/10 dark:bg-[#111111] dark:text-white"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white"
               >
                 {ORGANIZATION_TYPES.map((option) => (
                   <option key={option} value={option}>
@@ -118,10 +118,10 @@ export default function NewOrganizationPage() {
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-200 px-8 py-5 dark:border-white/10">
+          <div className="flex items-center justify-between border-t border-slate-200 px-8 py-5 dark:border-[#1f1f1f]">
             <Link
               href="/organizations"
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:bg-[#141414] dark:text-[#d0d0d0] dark:hover:bg-[#1b1b1b]"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               Cancel
             </Link>
