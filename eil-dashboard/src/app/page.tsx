@@ -1,23 +1,8 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useAuth } from "@/components/auth/AuthProvider";
-import { getStoredWorkspaceRoute } from "@/lib/workspace-session";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import { LogoMarkIcon } from "@/components/ui/Icons";
 
 export default function LandingPage() {
-  const router = useRouter();
-  const { hydrated, user } = useAuth();
-
-  useEffect(() => {
-    if (hydrated && user) {
-      router.replace(getStoredWorkspaceRoute() ?? "/organizations");
-    }
-  }, [hydrated, router, user]);
-
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
       <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
