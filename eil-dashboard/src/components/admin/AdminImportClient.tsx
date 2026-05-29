@@ -15,6 +15,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { supabase } from "@/lib/supabase";
 import Modal from "@/components/ui/Modal";
 import {
   CheckIcon,
@@ -234,35 +235,7 @@ function getFolderUploadName(files: File[]) {
   return "Uploaded folder";
 }
 
-const MAX_UPLOAD_BATCH_FILES = 8;
-const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
-
-function splitIntoUploadBatches(files: File[]) {
-  const batches: File[][] = [];
-  let currentBatch: File[] = [];
-  let currentBytes = 0;
-
-  for (const file of files) {
-    const wouldOverflowCount = currentBatch.length >= MAX_UPLOAD_BATCH_FILES;
-    const wouldOverflowBytes =
-      currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES;
-
-    if (wouldOverflowCount || wouldOverflowBytes) {
-      batches.push(currentBatch);
-      currentBatch = [];
-      currentBytes = 0;
-    }
-
-    currentBatch.push(file);
-    currentBytes += file.size;
-  }
-
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
-
-  return batches;
-}
+const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
 
 async function readJsonPayload<T>(response: Response): Promise<T | null> {
   const text = await response.text();
@@ -302,11 +275,155 @@ function badgeToneForEntry(item: LibraryEntry) {
   if (item.sourceFilter === "google-drive") {
     return "bg-sky-100 text-sky-600 dark:bg-sky-950/30 dark:text-sky-300";
   }
-  return "bg-slate-200 text-slate-700 dark:bg-[#2b2b2b] dark:text-[#d6d6d6]";
+  return "bg-slate-200 text-slate-700 dark:bg-[#050505] dark:text-[#d6d6d6]";
 }
 
 function defaultDirectionForSort(sortKey: SortKey): SortDirection {
   return sortKey === "name" ? "asc" : "desc";
+}
+
+function sanitizeFilenamePart(value: string) {
+  return value
+    .trim()
+    .replace(/[<>:"/\\|?*\u0000-\u001F]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/\.+$/g, "")
+    .slice(0, 120);
+}
+
+function cleanReportText(value: string | null | undefined) {
+  return String(value ?? "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function quoteMarkdown(value: string | null | undefined) {
+  const cleaned = cleanReportText(value);
+  if (!cleaned) {
+    return "_No evidence stored._";
+  }
+  return cleaned
+    .split("\n")
+    .map((line) => `> ${line}`)
+    .join("\n");
+}
+
+function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) {
+  const title = cleanReportText(detail.title || titleOf(run)) || titleOf(run);
+  const lines: string[] = [
+    `# ${title}`,
+    "",
+    "## Report Metadata",
+    `- Source file: ${detail.source_filename || run.source_filename || titleOf(run)}`,
+    `- Year: ${detail.year || "Unknown"}`,
+    `- Run ID: ${run.id}`,
+    `- Paper ID: ${detail.paper_id || "Unavailable"}`,
+    `- Status: ${run.status}`,
+    `- Analysis source: ${detail.diagnostics?.dataSource || (detail.available ? "pipeline" : "unavailable")}`,
+    "",
+    "## Track Classification",
+  ];
+
+  if (detail.tracksSingle.length > 0) {
+    lines.push(...detail.tracksSingle.map((track) => `- Primary track: ${track}`));
+  } else {
+    lines.push("- Primary track: Not stored");
+  }
+
+  if (detail.tracksMulti.length > 0) {
+    lines.push(...detail.tracksMulti.map((track) => `- Cross-track: ${track}`));
+  } else {
+    lines.push("- Cross-track: None stored");
+  }
+
+  lines.push("", "## Topics");
+  if (detail.topics.length > 0) {
+    lines.push(...detail.topics.map((topic) => `- ${topic}`));
+  } else {
+    lines.push("- No topic labels were stored.");
+  }
+
+  lines.push("", "## Canonical Concepts");
+  if (detail.concepts.length > 0) {
+    for (const concept of detail.concepts) {
+      lines.push(`### ${concept.label}`);
+      lines.push(`- Total frequency: ${concept.totalFrequency}`);
+      if (concept.matchedTerms.length > 0) {
+        lines.push(`- Matched terms: ${concept.matchedTerms.join(", ")}`);
+      }
+      if (concept.relatedKeywords.length > 0) {
+        lines.push(`- Related keywords: ${concept.relatedKeywords.join(", ")}`);
+      }
+      lines.push("- Evidence:");
+      lines.push(quoteMarkdown(concept.firstEvidence || concept.evidenceSnippets[0] || null));
+      lines.push("");
+    }
+  } else {
+    lines.push("- No canonical concepts were stored.");
+  }
+
+  lines.push("## Analytical Facets");
+  if (detail.facets.length > 0) {
+    for (const facet of detail.facets) {
+      lines.push(`- **${facet.facetType.replace(/_/g, " ")}**: ${facet.label}`);
+      if (cleanReportText(facet.evidence)) {
+        lines.push(`  - Evidence: ${cleanReportText(facet.evidence)}`);
+      }
+    }
+  } else {
+    lines.push("- No analytical facets were stored.");
+  }
+
+  lines.push("", "## Grounded Keywords");
+  if (detail.keywords.length > 0) {
+    for (const keyword of detail.keywords) {
+      lines.push(`- **${keyword.keyword}**`);
+      lines.push(`  - Topic: ${keyword.topic || "Unclassified topic"}`);
+      lines.push(`  - Frequency: ${keyword.frequency}`);
+      lines.push(`  - Evidence: ${cleanReportText(keyword.evidence) || "No supporting evidence stored."}`);
+    }
+  } else {
+    lines.push("- No grounded keyword rows were available for this paper.");
+  }
+
+  for (const [label, value] of [
+    ["Extracted Abstract Claims", detail.abstract_claims],
+    ["Extracted Methods", detail.methods],
+    ["Extracted Results", detail.results],
+    ["Extracted Conclusion", detail.conclusion],
+  ] as const) {
+    lines.push("", `## ${label}`, "", cleanReportText(value) || "_No extracted text was available for this section._");
+  }
+
+  if (detail.warnings && detail.warnings.length > 0) {
+    lines.push("", "## Warnings", ...detail.warnings.map((warning) => `- ${warning}`));
+  }
+
+  if (detail.diagnostics?.missingOutputs && detail.diagnostics.missingOutputs.length > 0) {
+    lines.push(
+      "",
+      "## Diagnostics",
+      ...detail.diagnostics.missingOutputs.map((item) => `- Missing output: ${item}`)
+    );
+  }
+
+  return `${lines.join("\n").replace(/\n{3,}/g, "\n\n")}\n`;
+}
+
+function triggerTextDownload(filename: string, content: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = "noopener noreferrer";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export default function AdminImportClient() {
@@ -555,26 +672,8 @@ export default function AdminImportClient() {
     setAnalysisLoading(true);
 
     try {
-      const response = await fetch(`/api/workspace/library/${run.id}/analysis`, {
-        headers: requestHeaders,
-      });
-      const payload = (await response.json()) as RunAnalysisResponse;
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load analysis details.");
-      }
-
-      setAnalysisDetail(
-        payload.analysis ?? {
-          available: false,
-          topics: [],
-          keywords: [],
-          concepts: [],
-          facets: [],
-          tracksSingle: [],
-          tracksMulti: [],
-        }
-      );
+      const detail = await fetchAnalysisDetail(run.id);
+      setAnalysisDetail(detail);
     } catch (analysisLoadError) {
       setAnalysisError(
         analysisLoadError instanceof Error
@@ -585,6 +684,29 @@ export default function AdminImportClient() {
     } finally {
       setAnalysisLoading(false);
     }
+  }
+
+  async function fetchAnalysisDetail(runId: string) {
+    const response = await fetch(`/api/workspace/library/${runId}/analysis`, {
+      headers: requestHeaders,
+    });
+    const payload = (await response.json()) as RunAnalysisResponse;
+
+    if (!response.ok) {
+      throw new Error(payload.error ?? "Failed to load analysis details.");
+    }
+
+    return (
+      payload.analysis ?? {
+        available: false,
+        topics: [],
+        keywords: [],
+        concepts: [],
+        facets: [],
+        tracksSingle: [],
+        tracksMulti: [],
+      }
+    );
   }
 
   async function handleOpenPrimaryFileAction(run: IngestionRunRow) {
@@ -642,6 +764,27 @@ export default function AdminImportClient() {
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove();
+  }
+
+  async function handleDownloadAnalysisReport(
+    run: IngestionRunRow,
+    suppliedDetail?: RunAnalysisDetail | null
+  ) {
+    const detail =
+      suppliedDetail && suppliedDetail.available
+        ? suppliedDetail
+        : await fetchAnalysisDetail(run.id);
+
+    if (!detail.available) {
+      throw new Error("Pipeline analysis is not ready yet for this file.");
+    }
+
+    const markdown = buildAnalysisMarkdown(run, detail);
+    const baseName = sanitizeFilenamePart(
+      detail.title || run.display_name || run.source_filename || run.id
+    );
+    const filename = `${baseName || "analysis-report"} - pipeline-analysis.md`;
+    triggerTextDownload(filename, markdown, "text/markdown;charset=utf-8");
   }
 
   async function handleRenameRun(run: IngestionRunRow) {
@@ -710,9 +853,27 @@ export default function AdminImportClient() {
       file.name.toLowerCase().endsWith(".pdf")
     );
     const ignoredCount = selectedFiles.length - pdfFiles.length;
+    const oversizedFiles = pdfFiles.filter((file) => file.size > MAX_UPLOAD_FILE_BYTES);
 
     if (pdfFiles.length === 0) {
       setError("Only PDF uploads are supported right now.");
+      return;
+    }
+
+    if (oversizedFiles.length > 0) {
+      const names = oversizedFiles
+        .slice(0, 3)
+        .map((file) => `${file.name} (${formatBytes(file.size)})`)
+        .join(", ");
+      const extra = oversizedFiles.length > 3 ? ` and ${oversizedFiles.length - 3} more` : "";
+      setError(
+        `Each PDF must be 20 MB or smaller. Oversized file(s): ${names}${extra}.`
+      );
+      return;
+    }
+
+    if (!supabase) {
+      setError("Supabase browser client is not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
       return;
     }
 
@@ -721,70 +882,172 @@ export default function AdminImportClient() {
 
     setLoading(true);
     try {
-      const batches = splitIntoUploadBatches(pdfFiles);
-      const createdRuns: IngestionRunRow[] = [];
-      let nextFolderId: string | null = null;
-      let nextFolderJob: FolderAnalysisJobRow | null = null;
-      let queueWarning: string | null = null;
+      const prepared = await fetch("/api/admin/import/prepare", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          folder: targetFolderName,
+          source_kind: "pdf-upload",
+          project_id: currentProject.id,
+          files: pdfFiles.map((file, fileIndex) => ({
+            fileIndex,
+            name: file.name,
+            size: file.size,
+            type: file.type || "application/pdf",
+          })),
+        }),
+      });
 
-      for (const batch of batches) {
-        const formData = new FormData();
-        batch.forEach((file) => formData.append("files", file));
-        formData.append("folder", targetFolderName);
-        formData.append("source_kind", "pdf-upload");
-        formData.append("project_id", currentProject.id);
+      const preparePayload = await readJsonPayload<{
+        runs?: IngestionRunRow[];
+        folderJob?: FolderAnalysisJobRow | null;
+        folderId?: string | null;
+        uploads?: Array<{
+          fileIndex: number;
+          runId: string;
+          storagePath: string;
+          token: string;
+          signedUrl: string;
+          fileName: string;
+        }>;
+        error?: string;
+      }>(prepared);
 
-        const response = await fetch("/api/admin/import", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: formData,
-        });
+      if (!prepared.ok || !preparePayload?.folderJob || !preparePayload.uploads) {
+        throw new Error(
+          buildUploadErrorMessage(
+            `Upload preparation failed with status ${prepared.status}.`,
+            preparePayload
+          )
+        );
+      }
 
-        const payload = await readJsonPayload<{
-          runs?: IngestionRunRow[];
-          folderJob?: FolderAnalysisJobRow | null;
-          warning?: string | null;
-          error?: string;
-        }>(response);
+      const uploaded: Array<{
+        runId: string;
+        storagePath: string;
+        fileName: string;
+      }> = [];
+      const failed: Array<{
+        runId: string;
+        storagePath: string;
+        fileName: string;
+        errorMessage: string;
+      }> = [];
 
-        if (!response.ok) {
-          const fallbackMessage =
-            response.status === 413
-              ? "This upload batch is too large for the server. Try fewer or smaller PDFs at a time."
-              : `Upload request failed with status ${response.status}.`;
-          throw new Error(buildUploadErrorMessage(fallbackMessage, payload));
+      for (const uploadTarget of preparePayload.uploads) {
+        const file = pdfFiles[uploadTarget.fileIndex];
+        if (!file) {
+          failed.push({
+            runId: uploadTarget.runId,
+            storagePath: uploadTarget.storagePath,
+            fileName: uploadTarget.fileName,
+            errorMessage: "Local file mapping failed during upload.",
+          });
+          continue;
         }
 
-        createdRuns.push(...(payload?.runs ?? []));
-        nextFolderId = payload?.folderJob?.folder_id ?? nextFolderId;
-        nextFolderJob = payload?.folderJob ?? nextFolderJob;
-        if (payload?.warning) {
-          queueWarning = payload.warning;
+        try {
+          const response = await fetch(uploadTarget.signedUrl, {
+            method: "PUT",
+            headers: {
+              "Content-Type": file.type || "application/pdf",
+              "x-upsert": "false",
+            },
+            body: file,
+          });
+
+          if (!response.ok) {
+            const body = await response.text();
+            throw new Error(body || `Storage upload failed with status ${response.status}.`);
+          }
+
+          uploaded.push({
+            runId: uploadTarget.runId,
+            storagePath: uploadTarget.storagePath,
+            fileName: uploadTarget.fileName,
+          });
+        } catch (uploadError) {
+          failed.push({
+            runId: uploadTarget.runId,
+            storagePath: uploadTarget.storagePath,
+            fileName: uploadTarget.fileName,
+            errorMessage:
+              uploadError instanceof Error
+                ? uploadError.message
+                : "Failed to upload file to storage.",
+          });
         }
       }
+
+      const finalizeResponse = await fetch("/api/admin/import/finalize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          folderJobId: preparePayload.folderJob.id,
+          uploaded,
+          failed,
+        }),
+      });
+
+      const finalizePayload = await readJsonPayload<{
+        runs?: IngestionRunRow[];
+        folderJob?: FolderAnalysisJobRow | null;
+        warning?: string | null;
+        error?: string;
+      }>(finalizeResponse);
+
+      if (!finalizeResponse.ok) {
+        throw new Error(
+          buildUploadErrorMessage(
+            `Upload finalize failed with status ${finalizeResponse.status}.`,
+            finalizePayload
+          )
+        );
+      }
+
+      const createdRuns = finalizePayload?.runs ?? [];
+      const successfulRuns = createdRuns.filter((run) => run.status !== "failed");
+      const nextFolderId = finalizePayload?.folderJob?.folder_id ?? preparePayload.folderId ?? null;
+      const nextFolderJob = finalizePayload?.folderJob ?? preparePayload.folderJob;
+      const queueWarning = finalizePayload?.warning ?? null;
 
       setRuns((current) => {
         const createdIds = new Set(createdRuns.map((run) => run.id));
         return [...createdRuns, ...current.filter((run) => !createdIds.has(run.id))];
       });
       await refreshFolders();
-      startAnalysisSession(createdRuns, {
-        sourceKind: "pdf-upload",
-        folder: targetFolderName,
-        folderId: nextFolderId,
-        folderJob: nextFolderJob,
-      });
+      if (successfulRuns.length > 0) {
+        startAnalysisSession(successfulRuns, {
+          sourceKind: "pdf-upload",
+          folder: targetFolderName,
+          folderId: nextFolderId,
+          folderJob: nextFolderJob,
+        });
+      }
       if (nextFolderId && (mode === "folder" || selectedFolderId !== "all")) {
         setSelectedFolderId(nextFolderId);
       }
+      const failedUploadCount = failed.length;
       setMessage(
-        ignoredCount > 0
-          ? `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"}. Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-          : `Queued ${pdfFiles.length} PDF file${pdfFiles.length === 1 ? "" : "s"} for analysis.`
+        mode === "folder"
+          ? ignoredCount > 0
+            ? `Created Library folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+            : `Created Library folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
+          : ignoredCount > 0
+            ? `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"}.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+            : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
       );
-      setError(queueWarning);
+      if (failedUploadCount > 0 && !queueWarning) {
+        setError(`${failedUploadCount} file${failedUploadCount === 1 ? "" : "s"} failed to upload. Check internet connection and retry.`);
+      } else {
+        setError(queueWarning);
+      }
     } catch (uploadError) {
       setError(
         uploadError instanceof Error ? uploadError.message : "Failed to queue uploads."
@@ -914,7 +1177,10 @@ export default function AdminImportClient() {
   const fileEntries = useMemo<LibraryEntry[]>(() => {
     return runs
       .filter((run) => {
-        if (selectedFolderId !== "all" && run.folder_id !== selectedFolderId) {
+        if (selectedFolderId === "all") {
+          return !run.folder_id;
+        }
+        if (run.folder_id !== selectedFolderId) {
           return false;
         }
         return !run.trashed_at;
@@ -1036,9 +1302,9 @@ export default function AdminImportClient() {
     if (!toolbarPopover) return null;
 
     const sectionClass =
-      "rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#2f2f2f] dark:bg-[#171717]";
+      "rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]";
     const itemClass =
-      "flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]";
+      "flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
 
     if (toolbarPopover.kind === "new") {
       return (
@@ -1185,7 +1451,7 @@ export default function AdminImportClient() {
         }}
       >
         <div className="space-y-1">
-          <p className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#808080]">
+          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#808080]">
             Sort by
           </p>
           {SORT_KEY_OPTIONS.map((option) => (
@@ -1204,8 +1470,8 @@ export default function AdminImportClient() {
           ))}
         </div>
 
-        <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-[#2a2a2a]">
-          <p className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#808080]">
+        <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]">
+          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#808080]">
             Sort direction
           </p>
           {currentSortDirectionOptions.map((option) => (
@@ -1221,8 +1487,8 @@ export default function AdminImportClient() {
           ))}
         </div>
 
-        <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-[#2a2a2a]">
-          <p className="px-3 text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#808080]">
+        <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]">
+          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#808080]">
             Folders
           </p>
           {FOLDER_PLACEMENT_OPTIONS.map((option) => (
@@ -1245,13 +1511,13 @@ export default function AdminImportClient() {
     if (!itemMenuState) return null;
 
     const itemClass =
-      "flex w-full rounded-2xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#222222]";
+      "flex w-full rounded-2xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
     const menuItem = itemMenuState.item;
 
     if (menuItem.kind === "folder" && menuItem.folder) {
       return (
         <div
-          className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#2f2f2f] dark:bg-[#171717]"
+          className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]"
           style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
         >
           <button
@@ -1283,7 +1549,7 @@ export default function AdminImportClient() {
 
     return (
       <div
-        className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#2f2f2f] dark:bg-[#171717]"
+        className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]"
         style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
       >
         {activeMenuRun.status === "succeeded" ? (
@@ -1305,6 +1571,29 @@ export default function AdminImportClient() {
             className={itemClass}
           >
             View pipeline analysis
+          </button>
+        ) : null}
+        {activeMenuRun.status === "succeeded" ? (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await handleDownloadAnalysisReport(activeMenuRun);
+                setMessage(`Downloaded the analysis report for "${titleOf(activeMenuRun)}".`);
+                setError(null);
+              } catch (downloadError) {
+                setError(
+                  downloadError instanceof Error
+                    ? downloadError.message
+                    : "Failed to download the analysis report."
+                );
+              } finally {
+                setItemMenuState(null);
+              }
+            }}
+            className={itemClass}
+          >
+            Download analysis report
           </button>
         ) : null}
         <button
@@ -1450,7 +1739,7 @@ export default function AdminImportClient() {
       <button
         type="button"
         onClick={(event) => openToolbarMenu(event, kind, 220)}
-        className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#383838] dark:bg-[#161616] dark:text-[#d0d0d0] dark:hover:border-[#4a4a4a] dark:hover:text-white"
+        className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
       >
         <span>{label}</span>
         <ChevronDownIcon className="h-4 w-4" />
@@ -1478,7 +1767,7 @@ export default function AdminImportClient() {
                   <button
                     type="button"
                     onClick={() => setSelectedFolderId("all")}
-                    className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#1b1b1b] dark:hover:text-white"
+                    className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   >
                     My Drive
                   </button>
@@ -1491,7 +1780,7 @@ export default function AdminImportClient() {
                 <span>My Drive</span>
               )}
             </div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+            <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
               {activeFolder?.name ?? "My Drive"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
@@ -1504,7 +1793,7 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={(event) => openToolbarMenu(event, "new", 240)}
-              className="inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-300 bg-[#e8f0fe] px-5 text-sm font-semibold text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition hover:border-slate-400 dark:border-[#3c3c3c] dark:bg-[#1e2a3b] dark:text-white dark:hover:border-[#515151]"
+              className="inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-300 bg-[#e8f0fe] px-5 text-sm font-semibold text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition hover:border-slate-400 dark:border-[#1f1f1f] dark:bg-white dark:text-[#171717] dark:hover:border-[#3a3a3a] dark:hover:bg-[#f2f2f2]"
             >
               <PlusIcon className="h-4 w-4" />
               <span>New</span>
@@ -1517,7 +1806,7 @@ export default function AdminImportClient() {
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search in Library"
-                className="h-14 w-full rounded-[20px] border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-slate-900/5 dark:border-[#383838] dark:bg-[#161616] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#5a5a5a] dark:focus:ring-white/10"
+                className="h-14 w-full rounded-[20px] border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-slate-900/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a] dark:focus:ring-[#242424]"
               />
             </label>
           </div>
@@ -1540,7 +1829,7 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={(event) => openToolbarMenu(event, "sort", 260)}
-              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#383838] dark:bg-[#161616] dark:text-[#d0d0d0] dark:hover:border-[#4a4a4a] dark:hover:text-white"
+              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
               <SortIcon className="h-4 w-4" />
               <span>Sort</span>
@@ -1548,11 +1837,11 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={() => void loadRuns()}
-              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#383838] dark:bg-[#161616] dark:text-[#d0d0d0] dark:hover:border-[#4a4a4a] dark:hover:text-white"
+              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
               {loading ? "Refreshing..." : "Refresh"}
             </button>
-            <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 dark:border-[#383838] dark:bg-[#161616]">
+            <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 dark:border-[#1f1f1f] dark:bg-[#050505]">
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
@@ -1594,7 +1883,7 @@ export default function AdminImportClient() {
       ) : null}
 
       <section className="app-surface overflow-visible">
-        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-5 dark:border-[#2f2f2f] sm:px-6">
+        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-5 dark:border-[#1f1f1f] sm:px-6">
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -1603,7 +1892,7 @@ export default function AdminImportClient() {
               <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
                 {activeFolder
                   ? `Showing everything inside ${activeFolder.name}.`
-                  : "Folders and files are mixed together in one library view."}
+                  : "Showing top-level folders and root files in this project."}
               </p>
             </div>
           </div>
@@ -1612,7 +1901,7 @@ export default function AdminImportClient() {
         {visibleEntries.length === 0 ? (
           <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
             <div>
-              <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-slate-100 text-slate-500 dark:bg-[#171717] dark:text-[#9c9c9c]">
+              <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
                 <FolderIcon className="h-7 w-7" />
               </span>
               <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -1625,7 +1914,7 @@ export default function AdminImportClient() {
           </div>
         ) : viewMode === "list" ? (
           <div className="px-4 py-4 sm:px-6">
-            <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_160px] items-center gap-4 border-b border-slate-200 px-3 py-3 text-sm font-medium text-slate-600 dark:border-[#2a2a2a] dark:text-[#9c9c9c] md:grid">
+            <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_160px] items-center gap-4 border-b border-slate-200 px-3 py-3 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#9c9c9c] md:grid">
               <button
                 type="button"
                 onClick={() => handleSortHeaderClick("name")}
@@ -1700,7 +1989,7 @@ export default function AdminImportClient() {
                                 {item.name}
                               </button>
                             )}
-                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#1c1c1c] dark:text-[#bbbbbb]">
+                            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]">
                               {item.kind === "folder"
                                 ? "Folder"
                                 : extOf(item.run!).toUpperCase()}
@@ -1711,7 +2000,7 @@ export default function AdminImportClient() {
                               </span>
                             ) : null}
                             {item.statusLabel ? (
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold capitalize text-slate-600 dark:bg-[#1c1c1c] dark:text-[#bbbbbb]">
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold capitalize text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]">
                                 {item.statusLabel}
                               </span>
                             ) : null}
@@ -1757,7 +2046,7 @@ export default function AdminImportClient() {
                                 );
                               }
                             }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             aria-label={`Download ${item.name}`}
                           >
                             <DownloadIcon className="h-4 w-4" />
@@ -1775,7 +2064,7 @@ export default function AdminImportClient() {
                                 );
                               }
                             }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             aria-label={`Rename ${item.name}`}
                           >
                             <PencilSquareIcon className="h-4 w-4" />
@@ -1796,7 +2085,7 @@ export default function AdminImportClient() {
                             className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
                               item.favorite
                                 ? "bg-amber-100 text-amber-600 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
-                                : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                                : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             }`}
                             aria-label={`${item.favorite ? "Remove" : "Add"} ${item.name} ${
                               item.favorite ? "from" : "to"
@@ -1809,7 +2098,7 @@ export default function AdminImportClient() {
                         <button
                           type="button"
                           onClick={() => setSelectedFolderId(item.folder!.id)}
-                          className="inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#b6b6b6] dark:hover:bg-[#202020] dark:hover:text-white"
+                          className="inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#b6b6b6] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                         >
                           <FolderIcon className="h-4 w-4" />
                           <span>Open</span>
@@ -1818,7 +2107,7 @@ export default function AdminImportClient() {
                       <button
                         type="button"
                         onClick={(event) => openItemMenu(event, item)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                         aria-label={`Open actions for ${item.name}`}
                       >
                         <MoreHorizontalIcon className="h-4 w-4" />
@@ -1834,7 +2123,7 @@ export default function AdminImportClient() {
             {selectedFolderId === "all" && folderPlacement === "on-top" && rootGridFolders.length > 0 ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-[#8b8b8b]">
+                  <h2 className="text-sm font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8b8b8b]">
                     Folders
                   </h2>
                 </div>
@@ -1846,7 +2135,7 @@ export default function AdminImportClient() {
                         key={item.id}
                         type="button"
                         onClick={() => setSelectedFolderId(item.folder!.id)}
-                        className="group flex items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-white dark:border-[#2c2c2c] dark:bg-[#191919] dark:hover:border-[#3a3a3a] dark:hover:bg-[#1e1e1e]"
+                        className="group flex items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-white dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                       >
                         <div className="min-w-0">
                           <div className="flex items-center gap-3">
@@ -1871,7 +2160,7 @@ export default function AdminImportClient() {
                             event.stopPropagation();
                             openItemMenu(event, item);
                           }}
-                          className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#242424] dark:hover:text-white"
+                          className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                           aria-label={`Open actions for ${item.name}`}
                         >
                           <MoreHorizontalIcon className="h-4 w-4" />
@@ -1886,7 +2175,7 @@ export default function AdminImportClient() {
             {(selectedFolderId !== "all" || folderPlacement === "mixed" || rootGridFiles.length > 0) ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-[#8b8b8b]">
+                  <h2 className="text-sm font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8b8b8b]">
                     {selectedFolderId === "all" ? "Files" : "Folder contents"}
                   </h2>
                 </div>
@@ -1904,7 +2193,7 @@ export default function AdminImportClient() {
                           key={item.id}
                           type="button"
                           onClick={() => setSelectedFolderId(item.folder!.id)}
-                          className="group flex items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-white dark:border-[#2c2c2c] dark:bg-[#191919] dark:hover:border-[#3a3a3a] dark:hover:bg-[#1e1e1e]"
+                          className="group flex items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-white dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                         >
                           <div className="min-w-0">
                             <div className="flex items-center gap-3">
@@ -1929,7 +2218,7 @@ export default function AdminImportClient() {
                               event.stopPropagation();
                               openItemMenu(event, item);
                             }}
-                            className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#242424] dark:hover:text-white"
+                            className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             aria-label={`Open actions for ${item.name}`}
                           >
                             <MoreHorizontalIcon className="h-4 w-4" />
@@ -1942,20 +2231,20 @@ export default function AdminImportClient() {
                     return (
                       <article
                         key={item.id}
-                        className="group overflow-hidden rounded-[24px] border border-slate-200 bg-white transition hover:border-slate-300 dark:border-[#2c2c2c] dark:bg-[#171717] dark:hover:border-[#3a3a3a]"
+                        className="group overflow-hidden rounded-[24px] border border-slate-200 bg-white transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       >
                         <button
                           type="button"
                           onClick={() => void handleOpenPrimaryFileAction(item.run!)}
                           className="flex w-full flex-col text-left"
                         >
-                          <div className="relative flex h-44 items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(191,219,254,0.75),rgba(255,255,255,0.95))] dark:bg-[radial-gradient(circle_at_top_left,rgba(30,64,175,0.28),rgba(23,23,23,1))]">
+                          <div className="relative flex h-44 items-center justify-center overflow-hidden bg-slate-100 dark:bg-[#050505]">
                             <span
                               className={`flex h-16 w-16 items-center justify-center rounded-[20px] ${badgeToneForEntry(item)}`}
                             >
                               <Glyph className="h-7 w-7" />
                             </span>
-                            <span className="absolute left-4 top-4 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:bg-[#0f0f0f]/90 dark:text-[#d0d0d0]">
+                            <span className="absolute left-4 top-4 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:bg-[#050505]/90 dark:text-[#d0d0d0]">
                               {extOf(item.run!).toUpperCase()}
                             </span>
                             {item.favorite ? (
@@ -1979,7 +2268,7 @@ export default function AdminImportClient() {
                             </div>
                           </div>
                         </button>
-                        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-[#242424]">
+                        <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
                           <div className="flex items-center gap-1">
                             <button
                               type="button"
@@ -1994,7 +2283,7 @@ export default function AdminImportClient() {
                                   );
                                 }
                               }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                               aria-label={`Download ${item.name}`}
                             >
                               <DownloadIcon className="h-4 w-4" />
@@ -2012,7 +2301,7 @@ export default function AdminImportClient() {
                                   );
                                 }
                               }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                               aria-label={`Rename ${item.name}`}
                             >
                               <PencilSquareIcon className="h-4 w-4" />
@@ -2033,7 +2322,7 @@ export default function AdminImportClient() {
                               className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
                                 item.favorite
                                   ? "bg-amber-100 text-amber-600 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
-                                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                                  : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                               }`}
                               aria-label={`${item.favorite ? "Remove" : "Add"} ${item.name} ${
                                 item.favorite ? "from" : "to"
@@ -2045,7 +2334,7 @@ export default function AdminImportClient() {
                           <button
                             type="button"
                             onClick={(event) => openItemMenu(event, item)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#202020] dark:hover:text-white"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             aria-label={`Open actions for ${item.name}`}
                           >
                             <MoreHorizontalIcon className="h-4 w-4" />
@@ -2107,15 +2396,15 @@ export default function AdminImportClient() {
 
       {previewUrl ? (
         <Modal onClose={() => setPreviewUrl(null)}>
-          <div className="h-[85vh] w-[min(1100px,92vw)] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#111111]">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#2f2f2f]">
+          <div className="h-[85vh] w-[min(1100px,92vw)] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
               <p className="text-sm font-medium text-slate-900 dark:text-white">
                 {previewTitle}
               </p>
               <button
                 type="button"
                 onClick={() => setPreviewUrl(null)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
               >
                 Close
               </button>
@@ -2143,6 +2432,19 @@ export default function AdminImportClient() {
           onResolvePreviewUrl={() => getRunOpenUrl(analysisRun)}
           onOpenInNewTab={() => handleOpenRunInNewTab(analysisRun)}
           onDownload={() => handleDownloadRun(analysisRun)}
+          onDownloadReport={async () => {
+            try {
+              await handleDownloadAnalysisReport(analysisRun, analysisDetail);
+              setMessage(`Downloaded the analysis report for "${titleOf(analysisRun)}".`);
+              setError(null);
+            } catch (downloadError) {
+              setError(
+                downloadError instanceof Error
+                  ? downloadError.message
+                  : "Failed to download the analysis report."
+              );
+            }
+          }}
           onToggleFavorite={() => handleToggleFavorite(analysisRun)}
           onRename={() => handleRenameRun(analysisRun)}
           onOpenDashboard={() => {
@@ -2161,23 +2463,23 @@ export default function AdminImportClient() {
             setAnalysisError(null);
           }}
         >
-          <div className="max-h-[90vh] w-[min(980px,92vw)] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#111111]">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#2f2f2f] sm:px-6">
+          <div className="max-h-[90vh] w-[min(980px,92vw)] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                   Pipeline analysis
                 </p>
                 <h2 className="mt-2 truncate text-xl font-semibold text-slate-900 dark:text-white">
                   {analysisDetail?.title || titleOf(analysisRun!)}
                 </h2>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                     {analysisDetail?.year || "Year unavailable"}
                   </span>
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                     {analysisRun!.status === "succeeded" ? "Analysis ready" : analysisRun!.status}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                     <ChartIcon className="h-3.5 w-3.5" />
                     <span>{analysisDetail?.available ? "Node output" : "Preview only"}</span>
                   </span>
@@ -2190,14 +2492,14 @@ export default function AdminImportClient() {
                   setAnalysisDetail(null);
                   setAnalysisError(null);
                 }}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
               >
                 Close
               </button>
             </div>
 
             <div className="space-y-5 px-5 py-5 sm:px-6">
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   This panel shows the fixed pipeline analysis from the workspace nodes.
                 </p>
@@ -2237,7 +2539,7 @@ export default function AdminImportClient() {
                       );
                     }
                   }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                 >
                   Open in new tab
                 </button>
@@ -2254,7 +2556,7 @@ export default function AdminImportClient() {
                       );
                     }
                   }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                 >
                   Download
                 </button>
@@ -2265,14 +2567,14 @@ export default function AdminImportClient() {
                       window.location.assign("/workspace/dashboard");
                     }
                   }}
-                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                 >
                   Open dashboard charts
                 </button>
               </div>
 
               {analysisLoading ? (
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#2f2f2f] dark:bg-[#171717]">
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
                   <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
                   <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                     Loading the extracted analysis for this paper...
@@ -2287,7 +2589,7 @@ export default function AdminImportClient() {
               ) : null}
 
               {!analysisLoading && !analysisError && !analysisDetail?.available ? (
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
                   <p className="text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
                     Analysis details are not ready yet for this file.
                   </p>
@@ -2306,8 +2608,8 @@ export default function AdminImportClient() {
                     analysisDetail!.tracksMulti.length > 0 ||
                     analysisDetail!.topics.length > 0) ? (
                     <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Primary track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2315,7 +2617,7 @@ export default function AdminImportClient() {
                             analysisDetail!.tracksSingle.map((track) => (
                               <span
                                 key={track}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
                               >
                                 {track}
                               </span>
@@ -2328,8 +2630,8 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Cross-track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2337,7 +2639,7 @@ export default function AdminImportClient() {
                             analysisDetail!.tracksMulti.map((track) => (
                               <span
                                 key={track}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
                               >
                                 {track}
                               </span>
@@ -2350,8 +2652,8 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Concept clusters
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2359,7 +2661,7 @@ export default function AdminImportClient() {
                             analysisDetail!.concepts.slice(0, 6).map((concept) => (
                               <span
                                 key={concept.label}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
                               >
                                 {concept.label}
                               </span>
@@ -2372,8 +2674,8 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Analytical facets
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2381,7 +2683,7 @@ export default function AdminImportClient() {
                             analysisDetail!.facets.slice(0, 6).map((facet, index) => (
                               <span
                                 key={`${facet.facetType}-${facet.label}-${index}`}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
                               >
                                 {facet.label}
                               </span>
@@ -2394,8 +2696,8 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Pipeline topics
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2403,7 +2705,7 @@ export default function AdminImportClient() {
                             analysisDetail!.topics.slice(0, 8).map((topic) => (
                               <span
                                 key={topic}
-                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]"
+                                className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]"
                               >
                                 {topic}
                               </span>
@@ -2419,17 +2721,17 @@ export default function AdminImportClient() {
                   ) : null}
 
                   {analysisDetail!.concepts.length > 0 ? (
-                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                             Canonical concepts
                           </p>
                           <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
                             Grouped concept families produced by the node pipeline.
                           </p>
                         </div>
-                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]">
+                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]">
                           {analysisDetail!.concepts.length} concept
                           {analysisDetail!.concepts.length === 1 ? "" : "s"}
                         </span>
@@ -2439,18 +2741,18 @@ export default function AdminImportClient() {
                         {analysisDetail!.concepts.slice(0, 8).map((concept) => (
                           <article
                             key={concept.label}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                                 {concept.label}
                               </p>
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                                 {concept.totalFrequency}
                               </span>
                             </div>
                             {concept.matchedTerms.length > 0 ? (
-                              <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+                              <p className="mt-2 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                                 {concept.matchedTerms.slice(0, 5).join(" • ")}
                               </p>
                             ) : null}
@@ -2466,10 +2768,10 @@ export default function AdminImportClient() {
                   ) : null}
 
                   {analysisDetail!.facets.length > 0 ? (
-                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                             Analytical facets
                           </p>
                           <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
@@ -2482,9 +2784,9 @@ export default function AdminImportClient() {
                         {analysisDetail!.facets.map((facet, index) => (
                           <article
                             key={`${facet.facetType}-${facet.label}-${index}`}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                           >
-                            <p className="text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+                            <p className="text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                               {facet.facetType.replace(/_/g, " ")}
                             </p>
                             <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -2508,9 +2810,9 @@ export default function AdminImportClient() {
                     ].map(([label, content]) => (
                       <article
                         key={label}
-                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]"
+                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                       >
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           {label}
                         </p>
                         <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-[#d0d0d0]">
@@ -2520,17 +2822,17 @@ export default function AdminImportClient() {
                     ))}
                   </section>
 
-                  <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+                  <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Grounded keywords
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
                           Evidence-backed keyword rows that feed the dashboard and chart planner.
                         </p>
                       </div>
-                      <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#111111] dark:text-[#d0d0d0]">
+                      <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:bg-[#030303] dark:text-[#d0d0d0]">
                         {analysisDetail!.keywords.length} keyword
                         {analysisDetail!.keywords.length === 1 ? "" : "s"}
                       </span>
@@ -2541,17 +2843,17 @@ export default function AdminImportClient() {
                         analysisDetail!.keywords.slice(0, 10).map((keyword, index) => (
                           <article
                             key={`${keyword.keyword}-${index}`}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#111111]"
+                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                                 {keyword.keyword}
                               </p>
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#171717] dark:text-[#d0d0d0]">
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                                 {keyword.frequency}
                               </span>
                             </div>
-                            <p className="mt-2 text-xs uppercase tracking-[0.16em] text-slate-400 dark:text-[#8e8e8e]">
+                            <p className="mt-2 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                               {keyword.topic || "Unclassified topic"}
                             </p>
                             <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
@@ -2575,7 +2877,7 @@ export default function AdminImportClient() {
 
       {infoRun ? (
         <Modal onClose={() => setInfoRun(null)}>
-          <div className="w-[min(560px,92vw)] rounded-[28px] border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#2f2f2f] dark:bg-[#111111]">
+          <div className="w-[min(560px,92vw)] rounded-[28px] border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
               File information
             </h2>

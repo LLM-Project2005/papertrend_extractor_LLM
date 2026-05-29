@@ -84,7 +84,7 @@ function statusTone(status: IngestionRunRow["status"]) {
   if (status === "failed") {
     return "bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-300";
   }
-  return "bg-slate-200 text-slate-700 dark:bg-[#2a2a2a] dark:text-[#d6d6d6]";
+  return "bg-slate-200 text-slate-700 dark:bg-[#050505] dark:text-[#d6d6d6]";
 }
 
 function groupLabelForDate(date: Date) {
@@ -289,11 +289,11 @@ export default function WorkspaceLogsPage() {
     <div className="mx-auto max-w-[1100px] space-y-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div className="space-y-2">
-          <div className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-xs font-medium uppercase tracking-[0.22em] text-slate-500 dark:border-[#2f2f2f] dark:text-[#a3a3a3]">
+          <div className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-xs font-medium uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:text-[#a3a3a3]">
             Analysis History
           </div>
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+            <h1 className="text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
               History
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
@@ -307,14 +307,14 @@ export default function WorkspaceLogsPage() {
           <button
             type="button"
             onClick={resetHiddenHistory}
-            className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:text-[#d2d2d2] dark:hover:border-[#3a3a3a] dark:hover:text-[#f2f2f2]"
+            className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#d2d2d2] dark:hover:border-[#3a3a3a] dark:hover:text-[#f2f2f2]"
           >
             Restore hidden items ({hiddenCount})
           </button>
         ) : null}
       </div>
 
-      <section className="rounded-[28px] border border-slate-200/80 bg-white/85 p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.32)] backdrop-blur dark:border-[#2f2f2f] dark:bg-[#1a1a1a]">
+      <section className="rounded-[28px] border border-slate-200/80 bg-white/85 p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.32)] backdrop-blur dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <label className="relative block flex-1">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#7a7a7a]">
@@ -325,7 +325,7 @@ export default function WorkspaceLogsPage() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search by file name, source path, status, or error"
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white dark:border-[#2c2c2c] dark:bg-[#111111] dark:text-[#f2f2f2] dark:placeholder:text-[#7a7a7a] dark:focus:border-[#3a3a3a]"
+              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white dark:border-[#1f1f1f] dark:bg-black dark:text-[#f2f2f2] dark:placeholder:text-[#7a7a7a] dark:focus:border-[#3a3a3a]"
             />
           </label>
           <p className="text-sm text-slate-500 dark:text-[#9c9c9c]">
@@ -345,11 +345,11 @@ export default function WorkspaceLogsPage() {
       ) : null}
 
       {loading ? (
-        <div className="rounded-[28px] border border-slate-200/80 bg-white/80 px-5 py-10 text-sm text-slate-500 dark:border-[#2f2f2f] dark:bg-[#171717]/85 dark:text-[#a3a3a3]">
+        <div className="rounded-[28px] border border-slate-200/80 bg-white/80 px-5 py-10 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505]/85 dark:text-[#a3a3a3]">
           Loading analysis history...
         </div>
       ) : groups.length === 0 ? (
-        <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-sm text-slate-500 dark:border-[#333333] dark:bg-[#171717]/80 dark:text-[#9c9c9c]">
+        <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505]/80 dark:text-[#9c9c9c]">
           {runs.length === 0
             ? "No analysis history yet."
             : "No history items matched your search."}
@@ -367,11 +367,11 @@ export default function WorkspaceLogsPage() {
                   return (
                     <article
                       key={run.id}
-                      className="rounded-[24px] border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.35)] transition hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#202020] dark:hover:border-[#3a3a3a]"
+                      className="rounded-[24px] border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.35)] transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                     >
                       <div className="flex flex-col gap-4 md:flex-row md:items-center">
                         <div className="flex min-w-0 flex-1 items-start gap-4">
-                          <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#222222] dark:text-[#d6d6d6]">
+                          <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#0a0a0a] dark:text-[#d6d6d6]">
                             <FileIcon className="h-5 w-5" />
                           </span>
                           <div className="min-w-0 space-y-2">
@@ -387,7 +387,7 @@ export default function WorkspaceLogsPage() {
                                 {run.status}
                               </span>
                               {removedFromLibrary ? (
-                                <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-[#2a2a2a] dark:text-[#c8c8c8]">
+                                <span className="inline-flex items-center rounded-full bg-slate-200 px-2.5 py-1 text-[11px] font-medium text-slate-700 dark:bg-[#050505] dark:text-[#c8c8c8]">
                                   Removed from library
                                 </span>
                               ) : null}
@@ -410,7 +410,7 @@ export default function WorkspaceLogsPage() {
                           ) : (
                             <Link
                               href={`/workspace/library?runId=${encodeURIComponent(run.id)}`}
-                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:text-[#d6d6d6] dark:hover:border-[#3a3a3a] dark:hover:text-[#f2f2f2]"
+                              className="inline-flex items-center gap-2 rounded-full border border-slate-200 px-3.5 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#d6d6d6] dark:hover:border-[#3a3a3a] dark:hover:text-[#f2f2f2]"
                             >
                               <AttachmentIcon className="h-4 w-4" />
                               View in library
@@ -420,7 +420,7 @@ export default function WorkspaceLogsPage() {
                           <button
                             type="button"
                             onClick={() => dismissRun(run.id)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700 dark:text-[#8a8a8a] dark:hover:border-[#333333] dark:hover:bg-[#222222] dark:hover:text-[#f2f2f2]"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700 dark:text-[#8a8a8a] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a] dark:hover:text-[#f2f2f2]"
                             title="Remove from history only"
                             aria-label={`Remove ${titleOf(run)} from history`}
                           >

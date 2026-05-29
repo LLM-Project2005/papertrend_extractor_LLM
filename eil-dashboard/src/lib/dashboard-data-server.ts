@@ -1,6 +1,10 @@
 import { generateMockData } from "@/lib/mockData";
 import { normalizePaperId, paperIdFromRunId, paperLookupKey } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  filterTopicFamiliesByPaperIds,
+  loadOrBuildProjectCorpusTopicCache,
+} from "@/lib/corpus-topic-cache";
 import type {
   DashboardData,
   DashboardDataMode,
@@ -8,6 +12,16 @@ import type {
   TrackRow,
   TrendRow,
 } from "@/types/database";
+
+const DASHBOARD_SERVER_CACHE_TTL_MS = 15_000;
+
+type DashboardServerCacheEntry = {
+  timestamp: number;
+  data: DashboardData;
+};
+
+const dashboardServerCache = new Map<string, DashboardServerCacheEntry>();
+const dashboardServerInFlight = new Map<string, Promise<DashboardData>>();
 
 type PaperMetadata = {
   paper_id: PaperId;
@@ -32,14 +46,21 @@ function emptyDashboardData(): DashboardData {
     trends: [],
     tracksSingle: [],
     tracksMulti: [],
+    topicFamilies: [],
     useMock: false,
     diagnostics: null,
   };
 }
 
-function describeScope(folderId?: string | null, projectId?: string | null): string {
-  if (folderId && folderId !== "all") {
+function describeScope(
+  folderIds?: string[] | null,
+  projectId?: string | null
+): string {
+  if (folderIds && folderIds.length === 1) {
     return "selected folder";
+  }
+  if (folderIds && folderIds.length > 1) {
+    return "selected folders";
   }
   if (projectId && projectId !== "all") {
     return "selected project";
@@ -55,8 +76,28 @@ function hasAnyDashboardRows(data: DashboardData | null): boolean {
   return (
     data.trends.length > 0 ||
     data.tracksSingle.length > 0 ||
-    data.tracksMulti.length > 0
+    data.tracksMulti.length > 0 ||
+    (data.topicFamilies?.length ?? 0) > 0
   );
+}
+
+function normalizeRequestedFolderIds(
+  folderSelection?: string[] | string | null
+): string[] | null {
+  if (Array.isArray(folderSelection)) {
+    const normalized = [...new Set(folderSelection.map((value) => String(value || "").trim()).filter(Boolean))];
+    return normalized.length > 0 ? normalized : null;
+  }
+
+  if (typeof folderSelection === "string") {
+    const trimmed = folderSelection.trim();
+    if (!trimmed || trimmed === "all") {
+      return null;
+    }
+    return [trimmed];
+  }
+
+  return null;
 }
 
 function buildMetadataLookups(metadata: PaperMetadata[]) {
@@ -220,7 +261,7 @@ async function loadPaperMetadata(
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("papers_full")
-    .select("paper_id,folder_id,year,title,ingestion_run_id")
+    .select("paper_id::text,folder_id,year,title,ingestion_run_id")
     .eq("owner_user_id", ownerUserId);
 
   if (scopedRunIds) {
@@ -267,15 +308,15 @@ async function loadViewData(
 
   let trendsQuery = supabase
     .from("trends_flat")
-    .select("*")
+    .select("paper_id::text,folder_id,year,title,topic,keyword,keyword_frequency,evidence")
     .eq("owner_user_id", ownerUserId);
   let singleQuery = supabase
     .from("tracks_single_flat")
-    .select("*")
+    .select("paper_id::text,folder_id,year,title,el,eli,lae,other")
     .eq("owner_user_id", ownerUserId);
   let multiQuery = supabase
     .from("tracks_multi_flat")
-    .select("*")
+    .select("paper_id::text,folder_id,year,title,el,eli,lae,other")
     .eq("owner_user_id", ownerUserId);
 
   if (scopedPaperIds) {
@@ -323,6 +364,7 @@ async function loadViewData(
     trends,
     tracksSingle,
     tracksMulti,
+    topicFamilies: [],
     useMock: false,
     diagnostics: null,
   };
@@ -337,49 +379,66 @@ async function loadTableData(
   }
 
   const supabase = getSupabaseAdmin();
-  const paperPayloads = await Promise.all(
-    metadata.map(async (paper) => {
-      const [keywordsResult, singleResult, multiResult] = await Promise.all([
-        supabase
-          .from("paper_keywords")
-          .select("folder_id,topic,keyword,keyword_frequency,evidence")
-          .eq("owner_user_id", ownerUserId)
-          .eq("paper_id", paper.paper_id),
-        supabase
-          .from("paper_tracks_single")
-          .select("folder_id,el,eli,lae,other")
-          .eq("owner_user_id", ownerUserId)
-          .eq("paper_id", paper.paper_id)
-          .maybeSingle(),
-        supabase
-          .from("paper_tracks_multi")
-          .select("folder_id,el,eli,lae,other")
-          .eq("owner_user_id", ownerUserId)
-          .eq("paper_id", paper.paper_id)
-          .maybeSingle(),
-      ]);
+  const paperIds = metadata.map((paper) => paper.paper_id);
+  const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
 
-      if (keywordsResult.error) {
-        throw new Error(keywordsResult.error.message);
-      }
-      if (singleResult.error) {
-        throw new Error(singleResult.error.message);
-      }
-      if (multiResult.error) {
-        throw new Error(multiResult.error.message);
-      }
+  const [keywordsResult, singleResult, multiResult] = await Promise.all([
+    supabase
+      .from("paper_keywords")
+      .select("paper_id::text,folder_id,topic,keyword,keyword_frequency,evidence")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+    supabase
+      .from("paper_tracks_single")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+    supabase
+      .from("paper_tracks_multi")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+  ]);
 
-      return {
-        paper,
-        keywords: (keywordsResult.data ?? []) as Record<string, unknown>[],
-        trackSingle: (singleResult.data as Record<string, unknown> | null) ?? null,
-        trackMulti: (multiResult.data as Record<string, unknown> | null) ?? null,
-      };
-    })
-  );
+  if (keywordsResult.error) {
+    throw new Error(keywordsResult.error.message);
+  }
+  if (singleResult.error) {
+    throw new Error(singleResult.error.message);
+  }
+  if (multiResult.error) {
+    throw new Error(multiResult.error.message);
+  }
 
-  const trends: TrendRow[] = paperPayloads.flatMap(({ paper, keywords }) =>
-    keywords
+  const keywordsByPaperId = new Map<PaperId, Record<string, unknown>[]>();
+  ((keywordsResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+    const paperId = normalizePaperId(row.paper_id);
+    if (!paperId) {
+      return;
+    }
+    const list = keywordsByPaperId.get(paperId) ?? [];
+    list.push(row);
+    keywordsByPaperId.set(paperId, list);
+  });
+
+  const singleByPaperId = new Map<PaperId, Record<string, unknown>>();
+  ((singleResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+    const paperId = normalizePaperId(row.paper_id);
+    if (paperId && !singleByPaperId.has(paperId)) {
+      singleByPaperId.set(paperId, row);
+    }
+  });
+
+  const multiByPaperId = new Map<PaperId, Record<string, unknown>>();
+  ((multiResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+    const paperId = normalizePaperId(row.paper_id);
+    if (paperId && !multiByPaperId.has(paperId)) {
+      multiByPaperId.set(paperId, row);
+    }
+  });
+
+  const trends: TrendRow[] = metadata.flatMap((paper) =>
+    (keywordsByPaperId.get(paper.paper_id) ?? [])
       .map((row) => ({
         paper_id: paper.paper_id,
         folder_id:
@@ -394,50 +453,60 @@ async function loadTableData(
       .filter((row) => row.keyword)
   );
 
-  const tracksSingle: TrackRow[] = paperPayloads.flatMap(({ paper, trackSingle }) =>
-    trackSingle
-      ? [
-          {
-            paper_id: paper.paper_id,
-            folder_id:
-              typeof trackSingle.folder_id === "string"
-                ? trackSingle.folder_id
-                : paper.folder_id,
-            year: paper.year,
-            title: paper.title,
-            el: Number(trackSingle.el ?? 0),
-            eli: Number(trackSingle.eli ?? 0),
-            lae: Number(trackSingle.lae ?? 0),
-            other: Number(trackSingle.other ?? 0),
-          },
-        ]
-      : []
-  );
+  const buildDefaultTrackRow = (paper: PaperMetadata): TrackRow => ({
+    paper_id: paper.paper_id,
+    folder_id: paper.folder_id,
+    year: paper.year,
+    title: paper.title,
+    el: 0,
+    eli: 0,
+    lae: 0,
+    other: 1,
+  });
 
-  const tracksMulti: TrackRow[] = paperPayloads.flatMap(({ paper, trackMulti }) =>
-    trackMulti
-      ? [
-          {
-            paper_id: paper.paper_id,
-            folder_id:
-              typeof trackMulti.folder_id === "string"
-                ? trackMulti.folder_id
-                : paper.folder_id,
-            year: paper.year,
-            title: paper.title,
-            el: Number(trackMulti.el ?? 0),
-            eli: Number(trackMulti.eli ?? 0),
-            lae: Number(trackMulti.lae ?? 0),
-            other: Number(trackMulti.other ?? 0),
-          },
-        ]
-      : []
-  );
+  const tracksSingle: TrackRow[] = metadata.map((paper) => {
+    const trackRow = singleByPaperId.get(paper.paper_id);
+    if (!trackRow) {
+      return buildDefaultTrackRow(paper);
+    }
+
+    return {
+      paper_id: paper.paper_id,
+      folder_id:
+        typeof trackRow.folder_id === "string" ? trackRow.folder_id : paper.folder_id,
+      year: paper.year,
+      title: paper.title,
+      el: Number(trackRow.el ?? 0),
+      eli: Number(trackRow.eli ?? 0),
+      lae: Number(trackRow.lae ?? 0),
+      other: Number(trackRow.other ?? 0),
+    };
+  });
+
+  const tracksMulti: TrackRow[] = metadata.map((paper) => {
+    const trackRow = multiByPaperId.get(paper.paper_id);
+    if (!trackRow) {
+      return buildDefaultTrackRow(paper);
+    }
+
+    return {
+      paper_id: paper.paper_id,
+      folder_id:
+        typeof trackRow.folder_id === "string" ? trackRow.folder_id : paper.folder_id,
+      year: paper.year,
+      title: paper.title,
+      el: Number(trackRow.el ?? 0),
+      eli: Number(trackRow.eli ?? 0),
+      lae: Number(trackRow.lae ?? 0),
+      other: Number(trackRow.other ?? 0),
+    };
+  });
 
   return {
     trends,
     tracksSingle,
     tracksMulti,
+    topicFamilies: [],
     useMock: false,
     diagnostics: null,
   };
@@ -451,20 +520,28 @@ function mergeDashboardSources(
     return fallback;
   }
 
+  const mergeTrackRows = (primary: TrackRow[], secondary: TrackRow[]) => {
+    const seen = new Set(primary.map((row) => row.paper_id));
+    return [
+      ...primary,
+      ...secondary.filter((row) => !seen.has(row.paper_id)),
+    ];
+  };
+
   return {
     trends: preferred.trends.length > 0 ? preferred.trends : fallback.trends,
-    tracksSingle:
-      preferred.tracksSingle.length > 0
-        ? preferred.tracksSingle
-        : fallback.tracksSingle,
-    tracksMulti:
-      preferred.tracksMulti.length > 0 ? preferred.tracksMulti : fallback.tracksMulti,
+    tracksSingle: mergeTrackRows(preferred.tracksSingle, fallback.tracksSingle),
+    tracksMulti: mergeTrackRows(preferred.tracksMulti, fallback.tracksMulti),
+    topicFamilies:
+      (preferred.topicFamilies?.length ?? 0) > 0
+        ? preferred.topicFamilies
+        : fallback.topicFamilies ?? [],
     useMock: false,
     diagnostics: null,
   };
 }
 
-async function loadScopedDashboardData(
+export async function loadScopedDashboardData(
   ownerUserId: string,
   scopedRunIds: string[] | null
 ): Promise<DashboardData> {
@@ -476,12 +553,170 @@ async function loadScopedDashboardData(
   return mergeDashboardSources(preferred, fallback);
 }
 
-export async function loadDashboardDataServer(
+async function loadTrackTableData(
+  ownerUserId: string,
+  metadata: PaperMetadata[]
+): Promise<Pick<DashboardData, "tracksSingle" | "tracksMulti">> {
+  if (metadata.length === 0) {
+    return { tracksSingle: [], tracksMulti: [] };
+  }
+
+  const supabase = getSupabaseAdmin();
+  const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
+  const paperIds = metadata.map((paper) => paper.paper_id);
+
+  const [singleResult, multiResult] = await Promise.all([
+    supabase
+      .from("paper_tracks_single")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+    supabase
+      .from("paper_tracks_multi")
+      .select("paper_id::text,folder_id,el,eli,lae,other")
+      .eq("owner_user_id", ownerUserId)
+      .in("paper_id", paperIds),
+  ]);
+
+  if (singleResult.error) {
+    throw new Error(singleResult.error.message);
+  }
+  if (multiResult.error) {
+    throw new Error(multiResult.error.message);
+  }
+
+  const defaultRows = () =>
+    metadata.map((paper) => ({
+      paper_id: paper.paper_id,
+      folder_id: paper.folder_id,
+      year: paper.year,
+      title: paper.title,
+      el: 0,
+      eli: 0,
+      lae: 0,
+      other: 1,
+    }));
+
+  const mapRows = (rows: Record<string, unknown>[]) => {
+    const mappedRows = rows.flatMap((row) => {
+      const paperId = normalizePaperId(row.paper_id);
+      const paper = paperId ? metadataByPaperId.get(paperId) : null;
+      if (!paper) {
+        return [];
+      }
+
+      return [
+        {
+          paper_id: paper.paper_id,
+          folder_id:
+            typeof row.folder_id === "string" ? row.folder_id : paper.folder_id,
+          year: paper.year,
+          title: paper.title,
+          el: Number(row.el ?? 0),
+          eli: Number(row.eli ?? 0),
+          lae: Number(row.lae ?? 0),
+          other: Number(row.other ?? 0),
+        },
+      ];
+    });
+
+    const seen = new Set(mappedRows.map((row) => row.paper_id));
+    return [
+      ...mappedRows,
+      ...defaultRows().filter((row) => !seen.has(row.paper_id)),
+    ];
+  };
+
+  return {
+    tracksSingle: mapRows((singleResult.data ?? []) as Record<string, unknown>[]),
+    tracksMulti: mapRows((multiResult.data ?? []) as Record<string, unknown>[]),
+  };
+}
+
+async function loadProjectScopedDashboardData(
+  ownerUserId: string,
+  projectId: string,
+  requestedFolderIds: string[] | null
+): Promise<DashboardData> {
+  const projectCache = await loadOrBuildProjectCorpusTopicCache(ownerUserId, projectId);
+  const hasFolderSelection = Boolean(requestedFolderIds && requestedFolderIds.length > 0);
+  const activeFolderIds = hasFolderSelection ? requestedFolderIds ?? [] : [];
+  const activeFolderIdSet = new Set(activeFolderIds);
+
+  const trends = projectCache.cache.trends.filter((row) => {
+    if (!hasFolderSelection) {
+      return true;
+    }
+    return row.folder_id ? activeFolderIdSet.has(row.folder_id) : false;
+  });
+  const allowedPaperIds = new Set(trends.map((row) => row.paper_id));
+  const topicFamilies = filterTopicFamiliesByPaperIds(
+    projectCache.topicFamilies,
+    allowedPaperIds
+  ).filter((family) =>
+    !hasFolderSelection
+      ? true
+      : family.folderIds.some((folderId) => activeFolderIdSet.has(folderId))
+  );
+
+  const metadataMap = new Map<PaperId, PaperMetadata>();
+  trends.forEach((row) => {
+    if (!metadataMap.has(row.paper_id)) {
+      metadataMap.set(row.paper_id, {
+        paper_id: row.paper_id,
+        folder_id: row.folder_id ?? null,
+        year: row.year,
+        title: row.title,
+        ingestion_run_id: null,
+      });
+    }
+  });
+  const metadata = [...metadataMap.values()];
+  const preferredTrackData = await loadViewData(ownerUserId, [...allowedPaperIds], metadata);
+  const trackFallback = await loadTrackTableData(ownerUserId, metadata);
+
+  return {
+    trends,
+    tracksSingle:
+      preferredTrackData?.tracksSingle.length
+        ? preferredTrackData.tracksSingle
+        : trackFallback.tracksSingle,
+    tracksMulti:
+      preferredTrackData?.tracksMulti.length
+        ? preferredTrackData.tracksMulti
+        : trackFallback.tracksMulti,
+    topicFamilies,
+    useMock: false,
+    diagnostics: null,
+  };
+}
+
+async function loadProjectScopedDashboardFallbackData(
+  ownerUserId: string,
+  projectId: string,
+  requestedFolderIds: string[] | null
+): Promise<DashboardData> {
+  const scopedFolderIds =
+    requestedFolderIds && requestedFolderIds.length > 0
+      ? requestedFolderIds
+      : await resolveScopedFolderIds(ownerUserId, null, projectId);
+  const scopedRunIds = await resolveScopedRunIds(
+    ownerUserId,
+    scopedFolderIds,
+    projectId
+  );
+  return loadScopedDashboardData(ownerUserId, scopedRunIds);
+}
+
+async function loadDashboardDataServerUncached(
   ownerUserId?: string | null,
-  folderId?: string | null,
+  folderSelection?: string[] | string | null,
   projectId?: string | null,
   mode: DashboardDataMode = "auto"
 ): Promise<DashboardData> {
+  const requestedFolderIds = normalizeRequestedFolderIds(folderSelection);
+  const scopeDescription = describeScope(requestedFolderIds, projectId);
+
   if (mode === "mock") {
     return withDiagnostics(generateMockData(), {
       dataSource: "mock",
@@ -499,18 +734,39 @@ export async function loadDashboardDataServer(
       });
     }
 
-    const scopeDescription = describeScope(folderId, projectId);
-    const scopedFolderIds = await resolveScopedFolderIds(
-      ownerUserId,
-      folderId,
-      projectId
-    );
-    const scopedRunIds = await resolveScopedRunIds(
-      ownerUserId,
-      scopedFolderIds,
-      projectId
-    );
-    const scopedData = await loadScopedDashboardData(ownerUserId, scopedRunIds);
+    const scopedData =
+      projectId && projectId !== "all"
+        ? await (async () => {
+            try {
+              return await loadProjectScopedDashboardData(
+                ownerUserId,
+                projectId,
+                requestedFolderIds
+              );
+            } catch {
+              return loadProjectScopedDashboardFallbackData(
+                ownerUserId,
+                projectId,
+                requestedFolderIds
+              );
+            }
+          })()
+        : await (async () => {
+            const scopedFolderIds =
+              requestedFolderIds && requestedFolderIds.length > 0
+                ? requestedFolderIds
+                : await resolveScopedFolderIds(
+                    ownerUserId,
+                    null,
+                    projectId
+                  );
+            const scopedRunIds = await resolveScopedRunIds(
+              ownerUserId,
+              scopedFolderIds,
+              projectId
+            );
+            return loadScopedDashboardData(ownerUserId, scopedRunIds);
+          })();
 
     if (hasAnyDashboardRows(scopedData)) {
       return withDiagnostics(scopedData, {
@@ -520,7 +776,8 @@ export async function loadDashboardDataServer(
       });
     }
 
-    if (mode === "auto" && (folderId || projectId)) {
+    const hasExplicitFolderSelection = (requestedFolderIds?.length ?? 0) > 0;
+    if (mode === "auto" && projectId && !hasExplicitFolderSelection) {
       const ownerWideData = await loadScopedDashboardData(ownerUserId, null);
       if (hasAnyDashboardRows(ownerWideData)) {
         return withDiagnostics(ownerWideData, {
@@ -536,17 +793,66 @@ export async function loadDashboardDataServer(
       recoveredFromLegacyScope: false,
       scopeDescription,
     });
-  } catch {
-    return mode === "live"
+  } catch (error) {
+    const errorMessage =
+      error instanceof Error ? error.message : "Failed to assemble live dashboard data.";
+    return mode === "live" || Boolean(ownerUserId)
       ? withDiagnostics(emptyDashboardData(), {
           dataSource: "empty",
           recoveredFromLegacyScope: false,
-          scopeDescription: describeScope(folderId, projectId),
+          scopeDescription,
+          errorMessage,
         })
       : withDiagnostics(generateMockData(), {
           dataSource: "mock",
           recoveredFromLegacyScope: false,
           scopeDescription: "preview data",
+          errorMessage,
         });
   }
+}
+
+export async function loadDashboardDataServer(
+  ownerUserId?: string | null,
+  folderSelection?: string[] | string | null,
+  projectId?: string | null,
+  mode: DashboardDataMode = "auto"
+): Promise<DashboardData> {
+  const normalizedFolderIds = normalizeRequestedFolderIds(folderSelection) ?? [];
+  const cacheKey = JSON.stringify({
+    ownerUserId: ownerUserId ?? null,
+    projectId: projectId ?? null,
+    mode,
+    folderIds: normalizedFolderIds,
+  });
+
+  const cached = dashboardServerCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < DASHBOARD_SERVER_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
+  const inFlight = dashboardServerInFlight.get(cacheKey);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const work = loadDashboardDataServerUncached(
+    ownerUserId,
+    normalizedFolderIds,
+    projectId,
+    mode
+  )
+    .then((data) => {
+      dashboardServerCache.set(cacheKey, {
+        timestamp: Date.now(),
+        data,
+      });
+      return data;
+    })
+    .finally(() => {
+      dashboardServerInFlight.delete(cacheKey);
+    });
+
+  dashboardServerInFlight.set(cacheKey, work);
+  return work;
 }

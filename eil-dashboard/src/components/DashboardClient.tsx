@@ -1,32 +1,47 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import PlannedDashboardSection from "@/components/dashboard/PlannedDashboardSection";
-import { useDashboardData } from "@/hooks/useData";
-import { TRACK_COLS } from "@/lib/constants";
-import { filterDashboardData } from "@/lib/dashboard-filters";
-import { createDefaultVisualizationPlan } from "@/lib/visualization-plan";
+import AdaptiveDashboardTab from "@/components/dashboard/AdaptiveDashboardTab";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
-import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
-import type { TrackKey } from "@/lib/constants";
+import { useDashboardData } from "@/hooks/useData";
+import { TRACK_COLS, type TrackKey } from "@/lib/constants";
+import { filterDashboardData } from "@/lib/dashboard-filters";
+import { createDefaultVisualizationPlan } from "@/lib/visualization-plan";
+import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { DashboardDataMode } from "@/types/database";
 import type { VisualizationPlan } from "@/types/visualization";
 
-const STATIC_TAB_DEFINITIONS = [
+const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
   { key: "trend_analysis", label: "Trend Analysis" },
   { key: "track_analysis", label: "Track Analysis" },
   { key: "keyword_explorer", label: "Keyword Explorer" },
-  { key: "paper_explorer", label: "Paper Explorer" },
+  { key: "adaptive", label: "Adaptive" },
 ] as const;
+
+const ADAPTIVE_PLAN_CACHE_PREFIX = "adaptive-plan-cache:v1";
+const ADAPTIVE_SIGNATURE_SAMPLE_SIZE = 1200;
+const ADAPTIVE_RENDER_ROW_LIMIT = 10000;
+
+function stableSerialize(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
 
 function normalizeTabKey(value: string | null): string | null {
   if (!value) {
@@ -36,9 +51,26 @@ function normalizeTabKey(value: string | null): string | null {
   return value.replace(/-/g, "_");
 }
 
+function parseSelectedFolderIds(
+  searchParams: URLSearchParams,
+  fallbackFolderId: string
+): string[] {
+  const raw = searchParams.get("folders");
+  if (raw) {
+    return [...new Set(raw.split(",").map((value) => value.trim()).filter(Boolean))];
+  }
+
+  if (fallbackFolderId && fallbackFolderId !== "all") {
+    return [fallbackFolderId];
+  }
+
+  return [];
+}
+
 function FilterPanel({
   folders,
-  selectedFolderId,
+  selectedFolderIds,
+  allFoldersSelected,
   onFolderChange,
   allYears,
   selectedYears,
@@ -49,8 +81,9 @@ function FilterPanel({
   showHeader = true,
 }: {
   folders: ReturnType<typeof useWorkspaceProfile>["folders"];
-  selectedFolderId: string;
-  onFolderChange: (folderId: string) => void;
+  selectedFolderIds: string[];
+  allFoldersSelected: boolean;
+  onFolderChange: (folderIds: string[], allSelected: boolean) => void;
   allYears: string[];
   selectedYears: string[];
   onYearsChange: (years: string[]) => void;
@@ -62,7 +95,8 @@ function FilterPanel({
   return (
     <Sidebar
       folders={folders}
-      selectedFolderId={selectedFolderId}
+      selectedFolderIds={selectedFolderIds}
+      allFoldersSelected={allFoldersSelected}
       onFolderChange={onFolderChange}
       allYears={allYears}
       selectedYears={selectedYears}
@@ -71,7 +105,7 @@ function FilterPanel({
       onTracksChange={onTracksChange}
       useMock={useMock}
       title="Analytics filters"
-      description="Narrow the years and track categories before reading the dashboard."
+      description="Choose folders, years, and tracks before reading the dashboard."
       showHeader={showHeader}
     />
   );
@@ -88,7 +122,6 @@ export default function DashboardClient({
     selectedFolderId,
     selectedProjectId,
     folders,
-    setSelectedFolderId,
     selectedYears,
     setSelectedYears,
     selectedTracks,
@@ -96,78 +129,273 @@ export default function DashboardClient({
     searchQuery,
     setSearchQuery,
   } = useWorkspaceProfile();
+  const { session } = useAuth();
+
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
+  const routeSelectedFolderIds = useMemo(
+    () => parseSelectedFolderIds(searchParams, selectedFolderId),
+    [searchParams, selectedFolderId]
+  );
+  const [optimisticFolderIds, setOptimisticFolderIds] = useState(routeSelectedFolderIds);
+  const selectedFolderIds = optimisticFolderIds;
+  const allFoldersSelected = selectedFolderIds.length === 0;
+  const folderNamesById = useMemo(
+    () =>
+      Object.fromEntries(folders.map((folder) => [folder.id, folder.name] as const)),
+    [folders]
+  );
   const dashboardDataMode: DashboardDataMode =
     searchParams.get("data") === "mock"
       ? "mock"
       : searchParams.get("data") === "live"
         ? "live"
         : "auto";
-  const { data, loading, allYears } = useDashboardData(
-    selectedFolderId,
+  const { data, loading, refreshing, allYears, refresh } = useDashboardData(
+    allFoldersSelected ? "all" : selectedFolderIds,
     scopedFolderIds,
     {
       mode: dashboardDataMode,
       projectId: selectedProjectId,
+      refetchOnWindowFocus: false,
     }
   );
-  const { session } = useAuth();
-
   const [filterOpen, setFilterOpen] = useState(false);
   const [planState, setPlanState] = useState<{
     plan: VisualizationPlan;
     source: "agent" | "fallback";
   } | null>(null);
+  const previousAllYearsRef = useRef<string[]>([]);
+  const lastPlanSignatureRef = useRef<string | null>(null);
+  const liveDataError = data?.diagnostics?.errorMessage ?? null;
 
-  const linkedPaperId = useMemo(() => {
-    const value = (searchParams.get("paperId") ?? "").trim();
-    return value || null;
-  }, [searchParams]);
-  const plannerMode = searchParams.get("planner") === "classic" ? "classic" : "agent";
   useEffect(() => {
+    setOptimisticFolderIds(routeSelectedFolderIds);
+  }, [routeSelectedFolderIds]);
+
+  useEffect(() => {
+    const previousAllYears = previousAllYearsRef.current;
+    const previousAllYearSet = new Set(previousAllYears);
+    const hadAllYearsSelectedPreviously =
+      previousAllYears.length > 0 &&
+      selectedYears.length === previousAllYears.length &&
+      selectedYears.every((year) => previousAllYearSet.has(year));
+
     if (allYears.length === 0) {
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     if (selectedYears.length === 0) {
+      previousAllYearsRef.current = allYears;
+      return;
+    }
+
+    if (hadAllYearsSelectedPreviously) {
       setSelectedYears(allYears);
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     const nextYears = selectedYears.filter((year) => allYears.includes(year));
     if (nextYears.length === 0) {
-      setSelectedYears(allYears);
+      setSelectedYears([]);
+      previousAllYearsRef.current = allYears;
       return;
     }
 
     if (nextYears.length !== selectedYears.length) {
       setSelectedYears(nextYears);
-    }
-  }, [allYears, selectedYears, setSelectedYears]);
-
-  useEffect(() => {
-    if (plannerMode !== "agent") {
-      setPlanState(null);
+      previousAllYearsRef.current = allYears;
       return;
     }
 
-    if (!data || selectedYears.length === 0) {
+    previousAllYearsRef.current = allYears;
+  }, [allYears, selectedYears, setSelectedYears]);
+
+  const [isRoutePending, startRouteTransition] = useTransition();
+  const routeTabKey = useMemo(() => {
+    const tabParam = normalizeTabKey(searchParams.get("tab"));
+    if (tabParam && TAB_DEFINITIONS.some((tab) => tab.key === tabParam)) {
+      return tabParam;
+    }
+    return "overview";
+  }, [searchParams]);
+  const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
+  const currentTabKey = optimisticTabKey;
+  const isAdaptiveTab = currentTabKey === "adaptive";
+
+  useEffect(() => {
+    setOptimisticTabKey(routeTabKey);
+  }, [routeTabKey]);
+
+  useEffect(() => {
+    const tabParam = normalizeTabKey(searchParams.get("tab"));
+    if (tabParam === routeTabKey) {
+      return;
+    }
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", routeTabKey);
+    const nextQuery = params.toString();
+    startRouteTransition(() => {
+      router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+        scroll: false,
+      });
+    });
+  }, [basePath, routeTabKey, router, searchParams, startRouteTransition]);
+
+  const updateRoute = (mutator: (params: URLSearchParams) => void) => {
+    const params = new URLSearchParams(searchParams.toString());
+    mutator(params);
+    const nextQuery = params.toString();
+    startRouteTransition(() => {
+      router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
+        scroll: false,
+      });
+    });
+  };
+
+  const updateRouteForTab = (tabKey: string) => {
+    setOptimisticTabKey(tabKey);
+    updateRoute((params) => {
+      params.set("tab", tabKey);
+    });
+  };
+
+  const updateFolderSelection = (folderIds: string[], allSelected: boolean) => {
+    const nextFolderIds = allSelected || folderIds.length === 0 ? [] : [...folderIds];
+    setOptimisticFolderIds(nextFolderIds);
+    updateRoute((params) => {
+      if (nextFolderIds.length === 0) {
+        params.delete("folders");
+      } else {
+        params.set("folders", nextFolderIds.join(","));
+      }
+    });
+  };
+
+  const updateDataMode = (mode: DashboardDataMode) => {
+    updateRoute((params) => {
+      if (mode === "auto") {
+        params.delete("data");
+      } else {
+        params.set("data", mode);
+      }
+    });
+  };
+
+  const filteredData = useMemo(() => {
+    if (!data) {
+      return { trends: [], tracksSingle: [], tracksMulti: [], topicFamilies: [] };
+    }
+
+    return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
+  }, [data, searchQuery, selectedTracks, selectedYears]);
+
+  const adaptivePlanSignature = useMemo(() => {
+    if (!data || !isAdaptiveTab) {
+      return null;
+    }
+
+    const sampledTrends = filteredData.trends.slice(0, ADAPTIVE_SIGNATURE_SAMPLE_SIZE);
+    const sampledTracksSingle = filteredData.tracksSingle.slice(
+      0,
+      ADAPTIVE_SIGNATURE_SAMPLE_SIZE
+    );
+    const sampledTopicFamilies = (filteredData.topicFamilies ?? []).slice(0, 200);
+
+    return stableSerialize({
+      projectId: selectedProjectId ?? "all",
+      mode: data.useMock ? "mock" : "live",
+      diagnostics: data.diagnostics?.dataSource ?? null,
+      folders: [...selectedFolderIds].sort(),
+      selectedYears: [...selectedYears].sort(),
+      selectedTracks: [...selectedTracks].sort(),
+      searchQuery: searchQuery.trim(),
+      trendRowCount: filteredData.trends.length,
+      tracksSingleRowCount: filteredData.tracksSingle.length,
+      topicFamilyCount: filteredData.topicFamilies?.length ?? 0,
+      trendRows: sampledTrends.map((row) => ({
+        paper_id: row.paper_id,
+        folder_id: row.folder_id ?? null,
+        year: row.year,
+        topic: row.topic,
+        keyword: row.keyword,
+        keyword_frequency: row.keyword_frequency,
+      })),
+      topicFamilies: sampledTopicFamilies.map((family) => ({
+        id: family.id,
+        canonicalTopic: family.canonicalTopic,
+        aliases: [...family.aliases].sort(),
+        totalKeywordFrequency: family.totalKeywordFrequency,
+        paperIds: [...family.paperIds].sort(),
+      })),
+      tracksSingle: sampledTracksSingle.map((row) => ({
+        paper_id: row.paper_id,
+        year: row.year,
+        el: row.el,
+        eli: row.eli,
+        lae: row.lae,
+        other: row.other,
+      })),
+    });
+  }, [
+    data,
+    filteredData.topicFamilies,
+    filteredData.tracksSingle,
+    filteredData.trends,
+    searchQuery,
+    isAdaptiveTab,
+    selectedFolderIds,
+    selectedProjectId,
+    selectedTracks,
+    selectedYears,
+  ]);
+
+  useEffect(() => {
+    if (!isAdaptiveTab || !data || selectedYears.length === 0 || !adaptivePlanSignature) {
       return;
     }
 
     let cancelled = false;
+    const includeFolderComparison =
+      selectedFolderIds.length > 1 || (selectedFolderIds.length === 0 && folders.length > 1);
     const fallbackPlan = createDefaultVisualizationPlan(
       data.useMock ? "mock" : "live",
-      selectedTracks as TrackKey[]
+      selectedTracks as TrackKey[],
+      includeFolderComparison
     );
+    const cacheKey = [
+      ADAPTIVE_PLAN_CACHE_PREFIX,
+      session?.user?.id ?? "anonymous",
+      selectedProjectId ?? "all",
+      adaptivePlanSignature,
+    ].join(":");
 
-    setPlanState((current) => {
-      if (current?.plan.mode === fallbackPlan.mode) {
-        return current;
+    try {
+      const cachedValue = window.sessionStorage.getItem(cacheKey);
+      if (cachedValue) {
+        const parsed = JSON.parse(cachedValue) as {
+          plan?: VisualizationPlan;
+          source?: "agent" | "fallback";
+        };
+        if (parsed.plan && lastPlanSignatureRef.current !== adaptivePlanSignature) {
+          setPlanState({
+            plan: parsed.plan,
+            source: parsed.source ?? "agent",
+          });
+          lastPlanSignatureRef.current = adaptivePlanSignature;
+          return;
+        }
       }
+    } catch {
+      // Ignore cache parsing issues and rebuild below.
+    }
 
-      return { plan: fallbackPlan, source: "fallback" };
-    });
+    if (lastPlanSignatureRef.current !== adaptivePlanSignature) {
+      lastPlanSignatureRef.current = adaptivePlanSignature;
+      setPlanState({ plan: fallbackPlan, source: "fallback" });
+    }
 
     const timer = window.setTimeout(async () => {
       try {
@@ -183,11 +411,10 @@ export default function DashboardClient({
             selectedYears,
             selectedTracks,
             searchQuery,
-            folderId: selectedFolderId,
+            folderIds: selectedFolderIds,
             projectId: selectedProjectId,
           }),
         });
-
         const payload = (await response.json()) as {
           plan?: VisualizationPlan;
           source?: "agent" | "fallback";
@@ -197,12 +424,20 @@ export default function DashboardClient({
           return;
         }
 
-        setPlanState({
+        const nextState = {
           plan: payload.plan,
           source: payload.source ?? "fallback",
-        });
+        } as const;
+        lastPlanSignatureRef.current = adaptivePlanSignature;
+        setPlanState(nextState);
+        try {
+          window.sessionStorage.setItem(cacheKey, JSON.stringify(nextState));
+        } catch {
+          // Ignore cache write failures.
+        }
       } catch {
         if (!cancelled) {
+          lastPlanSignatureRef.current = adaptivePlanSignature;
           setPlanState({ plan: fallbackPlan, source: "fallback" });
         }
       }
@@ -213,105 +448,35 @@ export default function DashboardClient({
       window.clearTimeout(timer);
     };
   }, [
+    isAdaptiveTab,
     data,
-    plannerMode,
+    adaptivePlanSignature,
+    folders.length,
     searchQuery,
-    selectedFolderId,
+    selectedFolderIds,
     selectedProjectId,
     selectedTracks,
     selectedYears,
     session?.access_token,
   ]);
 
-  const fallbackPlan = useMemo(
-    () =>
-      createDefaultVisualizationPlan(
-        data?.useMock ? "mock" : "live",
-        selectedTracks as TrackKey[]
-      ),
-    [data?.useMock, selectedTracks]
+  const adaptiveRenderData = useMemo(
+    () => ({
+      trends: filteredData.trends.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
+      tracksSingle: filteredData.tracksSingle.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
+      tracksMulti: filteredData.tracksMulti.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
+      topicFamilies: (filteredData.topicFamilies ?? []).slice(0, 300),
+    }),
+    [
+      filteredData.topicFamilies,
+      filteredData.tracksMulti,
+      filteredData.tracksSingle,
+      filteredData.trends,
+    ]
   );
+  const adaptiveSection = planState?.plan.sections[0] ?? null;
 
-  const activePlan = plannerMode === "agent" ? planState?.plan ?? fallbackPlan : null;
-  const tabDefinitions = plannerMode === "agent"
-    ? (activePlan?.sections.map((section) => ({
-        key: section.section_key,
-        label: section.title,
-      })) ?? STATIC_TAB_DEFINITIONS)
-    : STATIC_TAB_DEFINITIONS;
-
-  const currentTabKey = useMemo(() => {
-    const tabParam = normalizeTabKey(searchParams.get("tab"));
-    if (tabParam && tabDefinitions.some((tab) => tab.key === tabParam)) {
-      return tabParam;
-    }
-
-    return tabDefinitions[0]?.key ?? "overview";
-  }, [searchParams, tabDefinitions]);
-
-  useEffect(() => {
-    const tabParam = normalizeTabKey(searchParams.get("tab"));
-    if (tabParam === currentTabKey) {
-      return;
-    }
-
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", currentTabKey);
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  }, [basePath, currentTabKey, router, searchParams]);
-
-  const updateRouteForTab = (tabKey: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("tab", tabKey);
-    if (tabKey !== "paper_explorer") {
-      params.delete("paperId");
-    }
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  };
-
-  const updatePlannerMode = (mode: "agent" | "classic") => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (mode === "classic") {
-      params.set("planner", "classic");
-    } else {
-      params.delete("planner");
-    }
-
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  };
-
-  const updateDataMode = (mode: DashboardDataMode) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (mode === "auto") {
-      params.delete("data");
-    } else {
-      params.set("data", mode);
-    }
-
-    const nextQuery = params.toString();
-    router.replace(nextQuery ? `${basePath}?${nextQuery}` : basePath, {
-      scroll: false,
-    });
-  };
-
-  const filteredData = useMemo(() => {
-    if (!data) {
-      return { trends: [], tracksSingle: [], tracksMulti: [] };
-    }
-
-    return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
-  }, [data, searchQuery, selectedTracks, selectedYears]);
-
-  if (loading || !data) {
+  if (loading && !data) {
     return (
       <div className="app-surface flex min-h-[60vh] items-center justify-center">
         <div className="text-center">
@@ -335,43 +500,26 @@ export default function DashboardClient({
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search papers, topics, keywords, or years"
-              className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+              className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
             />
           </label>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
+              {allFoldersSelected
+                ? `All folders (${folders.length})`
+                : `${selectedFolderIds.length} folder${
+                    selectedFolderIds.length === 1 ? "" : "s"
+                  }`}
+            </span>
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
               {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
             </span>
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
               {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
             </span>
-            <div className="inline-flex overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
-              <button
-                type="button"
-                onClick={() => updatePlannerMode("agent")}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  plannerMode === "agent"
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
-                    : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
-                }`}
-              >
-                Adaptive
-              </button>
-              <button
-                type="button"
-                onClick={() => updatePlannerMode("classic")}
-                className={`px-3 py-2 text-sm font-medium transition-colors ${
-                  plannerMode === "classic"
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
-                    : "text-slate-600 hover:bg-slate-50 dark:text-[#bdbdbd] dark:hover:bg-[#262626]"
-                }`}
-              >
-                Classic
-              </button>
-            </div>
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#bdbdbd]">
-              <span className="text-xs font-medium uppercase tracking-[0.14em] text-slate-400 dark:text-[#8e8e8e]">
+            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#bdbdbd]">
+              <span className="text-xs font-medium uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                 Data
               </span>
               <select
@@ -387,8 +535,17 @@ export default function DashboardClient({
             </label>
             <button
               type="button"
+              onClick={() => {
+                void refresh();
+              }}
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            >
+              {refreshing ? "Refreshing..." : "Refresh"}
+            </button>
+            <button
+              type="button"
               onClick={() => setFilterOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
               <FilterIcon className="h-4 w-4" />
               <span>Filters</span>
@@ -396,44 +553,56 @@ export default function DashboardClient({
           </div>
         </div>
 
-        {plannerMode === "agent" && activePlan ? (
-          <section className="app-surface px-4 py-4 sm:px-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
-                  Visualization planner
-                </p>
-                <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                  {activePlan.dashboard_title}
-                </h2>
-                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                  {activePlan.summary}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
-                  {data.useMock ? "Preview data" : "Live data"}
-                </span>
-                {data.diagnostics?.recoveredFromLegacyScope ? (
-                  <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                    Showing recovered legacy analyses
-                  </span>
-                ) : null}
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#212121] dark:text-[#a3a3a3]">
-                  {planState?.source === "agent" ? "LLM plan" : "Fallback plan"}
-                </span>
-              </div>
+        <section className="app-surface px-4 py-4 sm:px-5">
+          {liveDataError ? (
+            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+              Live dashboard data could not be loaded for this scope. {liveDataError}
             </div>
-          </section>
-        ) : null}
+          ) : null}
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+                Visualization planner
+              </p>
+              <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                {planState?.plan.dashboard_title ??
+                  (data?.useMock ? "Preview adaptive workspace" : "Adaptive analytics workspace")}
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                {planState?.plan.summary ??
+                  "Adaptive charts focus on the strongest normalized corpus signals for the current filters."}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
+                {data?.useMock ? "Preview data" : "Live data"}
+              </span>
+              {refreshing ? (
+                <span className="rounded-full bg-sky-100 px-3 py-1.5 text-xs text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+                  Refreshing in background
+                </span>
+              ) : null}
+              {data?.diagnostics?.recoveredFromLegacyScope ? (
+                <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                  Showing recovered legacy analyses
+                </span>
+              ) : null}
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
+                {planState?.source === "agent" ? "Adaptive plan" : "Fallback plan"}
+              </span>
+            </div>
+          </div>
+        </section>
 
-        <nav className="flex gap-2 overflow-x-auto pb-1" aria-label="Tabs">
-          {tabDefinitions.map((tab) => (
+        <nav
+          className="flex gap-2 overflow-x-auto pb-1"
+          aria-label="Tabs"
+          aria-busy={isRoutePending}
+        >
+          {TAB_DEFINITIONS.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => {
-                updateRouteForTab(tab.key);
-              }}
+              onClick={() => updateRouteForTab(tab.key)}
               className={`tab-btn ${
                 currentTabKey === tab.key ? "tab-btn-active" : "tab-btn-inactive"
               }`}
@@ -441,21 +610,27 @@ export default function DashboardClient({
               {tab.label}
             </button>
           ))}
+          {isRoutePending ? (
+            <span
+              className="my-auto h-2 w-2 flex-none animate-pulse rounded-full bg-emerald-500"
+              title="Changing view"
+            />
+          ) : null}
         </nav>
       </div>
 
       <div className="min-w-0">
         {filterOpen && (
           <div className="fixed inset-0 z-40 bg-black/55 xl:hidden">
-            <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#2c2c2c] dark:bg-[#1d1d1d] xl:max-w-md">
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#2c2c2c] sm:px-5">
+            <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] xl:max-w-md">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#1f1f1f] sm:px-5">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
                   Analytics filters
                 </p>
                 <button
                   type="button"
                   onClick={() => setFilterOpen(false)}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0]"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
@@ -463,14 +638,15 @@ export default function DashboardClient({
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <FilterPanel
                   folders={folders}
-                  selectedFolderId={selectedFolderId}
-                  onFolderChange={setSelectedFolderId}
+                  selectedFolderIds={selectedFolderIds}
+                  allFoldersSelected={allFoldersSelected}
+                  onFolderChange={updateFolderSelection}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
-                  useMock={data.useMock}
+                  useMock={data?.useMock ?? true}
                   showHeader={false}
                 />
               </div>
@@ -479,7 +655,10 @@ export default function DashboardClient({
         )}
 
         {filterOpen && (
-          <div className="fixed inset-0 z-30 hidden bg-transparent xl:block" onClick={() => setFilterOpen(false)} />
+          <div
+            className="fixed inset-0 z-30 hidden bg-transparent xl:block"
+            onClick={() => setFilterOpen(false)}
+          />
         )}
 
         <div className="hidden xl:block">
@@ -488,15 +667,15 @@ export default function DashboardClient({
               filterOpen ? "" : "pointer-events-none opacity-0"
             } transition-all`}
           >
-            <div className="rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#2c2c2c]">
+            <div className="rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
                   Analytics filters
                 </p>
                 <button
                   type="button"
                   onClick={() => setFilterOpen(false)}
-                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#353535] dark:bg-[#232323] dark:text-[#d0d0d0]"
+                  className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
@@ -504,14 +683,15 @@ export default function DashboardClient({
               <div className="max-h-[70vh] overflow-y-auto p-4">
                 <FilterPanel
                   folders={folders}
-                  selectedFolderId={selectedFolderId}
-                  onFolderChange={setSelectedFolderId}
+                  selectedFolderIds={selectedFolderIds}
+                  allFoldersSelected={allFoldersSelected}
+                  onFolderChange={updateFolderSelection}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
-                  useMock={data.useMock}
+                  useMock={data?.useMock ?? true}
                   showHeader={false}
                 />
               </div>
@@ -520,34 +700,19 @@ export default function DashboardClient({
         </div>
 
         <section className="min-w-0">
-          {plannerMode === "agent" && activePlan ? (
-            <PlannedDashboardSection
-              section={
-                activePlan.sections.find((section) => section.section_key === currentTabKey) ??
-                activePlan.sections[0]
-              }
-              data={filteredData}
-              folderId={selectedFolderId}
-              selectedYears={selectedYears}
-              selectedTracks={selectedTracks}
-              linkedPaperId={linkedPaperId}
-              useMock={data.useMock}
-            />
-          ) : null}
-
-          {plannerMode === "classic" && currentTabKey === "overview" ? (
+          {currentTabKey === "overview" ? (
             <Overview
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
-              useMock={data.useMock}
+              useMock={data?.useMock ?? true}
             />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "trend_analysis" ? (
+          {currentTabKey === "trend_analysis" ? (
             <TrendAnalysis trends={filteredData.trends} />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "track_analysis" ? (
+          {currentTabKey === "track_analysis" ? (
             <TrackAnalysis
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
@@ -555,20 +720,30 @@ export default function DashboardClient({
               selectedTracks={selectedTracks}
             />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "keyword_explorer" ? (
+          {currentTabKey === "keyword_explorer" ? (
             <KeywordExplorer
               trends={filteredData.trends}
-              folderId={selectedFolderId}
+              topicFamilies={filteredData.topicFamilies}
+              folderIds={selectedFolderIds}
+              projectId={selectedProjectId ?? undefined}
               selectedYears={selectedYears}
               selectedTracks={selectedTracks}
             />
           ) : null}
-          {plannerMode === "classic" && currentTabKey === "paper_explorer" ? (
-            <PaperExplorer
-              trends={filteredData.trends}
-              tracksSingle={filteredData.tracksSingle}
-              linkedPaperId={linkedPaperId}
-            />
+          {currentTabKey === "adaptive" ? (
+            adaptiveSection ? (
+              <AdaptiveDashboardTab
+                data={adaptiveRenderData}
+                adaptiveSection={adaptiveSection}
+                folderNamesById={folderNamesById}
+              />
+            ) : (
+              <section className="app-surface px-5 py-5">
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Preparing adaptive charts for the current scope...
+                </p>
+              </section>
+            )
           ) : null}
         </section>
       </div>

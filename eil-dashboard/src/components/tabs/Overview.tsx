@@ -159,7 +159,7 @@ export default function Overview({
               return (
                 <div
                   key={item.name}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#303030] dark:bg-[#202020]"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -180,7 +180,7 @@ export default function Overview({
                       </p>
                     </div>
                   </div>
-                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-[#2b2b2b]">
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-[#050505]">
                     <div
                       className="h-full rounded-full"
                       style={{

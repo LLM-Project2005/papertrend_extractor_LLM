@@ -4,32 +4,56 @@ import Link from "next/link";
 import {
   FormEvent,
   KeyboardEvent,
+  type ReactNode,
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
-import { TRACK_COLS } from "@/lib/constants";
+import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
+  ChartIcon,
+  ChatIcon,
+  CheckIcon,
   CheckCircleIcon,
   ChevronDownIcon,
   CircleIcon,
   CloseIcon,
+  CopyIcon,
   DriveIcon,
+  EqualizerIcon,
+  ExitFullscreenIcon,
   FileIcon,
   FolderIcon,
+  FullscreenIcon,
   MoreHorizontalIcon,
+  ImageIcon,
   PaperIcon,
   PencilSquareIcon,
   PinIcon,
   PlusIcon,
   SearchIcon,
   SendIcon,
+  SidebarIcon,
   SparkIcon,
   StopIcon,
   TrashIcon,
@@ -54,6 +78,54 @@ interface Citation {
   year: string;
   href: string;
   reason: string;
+  sourceType?: "paper" | "web";
+}
+
+type ChartType = "auto" | "bar" | "line" | "pie" | "table";
+type ChartMetric =
+  | "papers_per_year"
+  | "top_topics"
+  | "top_keywords"
+  | "track_distribution"
+  | "topic_trend"
+  | "keyword_trend"
+  | "track_trend";
+
+interface ChatChartPayload {
+  chartType: Exclude<ChartType, "auto">;
+  title: string;
+  scopeLabel: string;
+  metric: ChartMetric;
+  xKey: "label";
+  yKeys: string[];
+  data: Array<Record<string, string | number>>;
+  planner?: {
+    source: "llm" | "fallback";
+    reason?: string;
+    confidence?: "high" | "medium" | "low";
+    warnings?: string[];
+  };
+}
+
+interface ChatAttachmentPayload {
+  name: string;
+  type?: string;
+  size?: number;
+  url?: string;
+  previewUrl?: string;
+  dataUrl?: string;
+  runId?: string;
+  status?: IngestionRunRow["status"];
+  sourceLabel?: string;
+  extension?: string;
+}
+
+interface ChatToolResult {
+  type: "web_search" | "chart";
+  status: "succeeded" | "failed" | "skipped";
+  data?: unknown;
+  citations?: Citation[];
+  error?: string;
 }
 
 interface MessageView {
@@ -67,24 +139,112 @@ interface MessageView {
 
 interface ChatPayload {
   answer?: string;
-  mode?: "grounded" | "fallback";
+  mode?: "grounded" | "fallback" | "analysis_queued";
   citations?: Citation[];
+  toolResults?: ChatToolResult[];
+  chart?: ChatChartPayload | null;
+  charts?: ChatChartPayload[];
   error?: string;
   thread?: WorkspaceThreadSummary;
   messages?: WorkspaceMessageRecord[];
   deepResearchSession?: DeepResearchSessionRecord | null;
 }
 
+interface ChatSearchResult {
+  id: string;
+  thread: WorkspaceThreadSummary;
+  message?: WorkspaceMessageRecord;
+  snippet: string;
+  matchedIn: "title" | "summary" | "message";
+  groupLabel: string;
+}
+
 const PINNED_THREADS_STORAGE_KEY = "papertrend_pinned_chat_threads_v1";
 const CHAT_MODEL_STORAGE_KEY = "papertrend_chat_model_v1";
+const CHAT_PARAMETERS_STORAGE_KEY = "papertrend_chat_parameters_v1";
+const DEFAULT_CHAT_MODEL = "google/gemini-3.1-flash-lite";
+
+type ChatGenerationParameters = {
+  temperature: number;
+  topP: number;
+  topK: number;
+  maxTokens: number;
+  frequencyPenalty: number;
+  presencePenalty: number;
+};
+
+const DEFAULT_CHAT_PARAMETERS: ChatGenerationParameters = {
+  temperature: 0.4,
+  topP: 0.95,
+  topK: 0,
+  maxTokens: 1200,
+  frequencyPenalty: 0,
+  presencePenalty: 0,
+};
 
 const MODEL_OPTIONS = [
-  { value: "", label: "Auto" },
-  { value: "openai/gpt-4o-mini", label: "GPT-4o mini" },
+  { value: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
+  { value: "google/gemma-4-31b-it", label: "Gemma 4 31B" },
   { value: "openai/gpt-4.1-mini", label: "GPT-4.1 mini" },
-  { value: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { value: "google/gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
+  { value: "openai/gpt-4o-mini", label: "GPT-4o mini" },
 ] as const;
+
+const CHART_INTENT_PATTERN =
+  /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
+
+function normalizeStoredModel(value: string | null) {
+  return MODEL_OPTIONS.some((option) => option.value === value)
+    ? String(value)
+    : DEFAULT_CHAT_MODEL;
+}
+
+function chartFromMetadata(metadata?: Record<string, unknown> | null): ChatChartPayload | null {
+  const chart = metadata?.chart;
+  if (!chart || typeof chart !== "object") {
+    return null;
+  }
+  const value = chart as Partial<ChatChartPayload>;
+  if (!Array.isArray(value.data) || !value.title || !value.chartType) {
+    return null;
+  }
+  return value as ChatChartPayload;
+}
+
+function chartsFromMetadata(metadata?: Record<string, unknown> | null): ChatChartPayload[] {
+  const charts = metadata?.charts;
+  if (Array.isArray(charts)) {
+    return charts
+      .map((chart) =>
+        chart && typeof chart === "object" ? (chart as Partial<ChatChartPayload>) : null
+      )
+      .filter(
+        (chart): chart is ChatChartPayload =>
+          Boolean(chart?.title && chart.chartType && Array.isArray(chart.data))
+      );
+  }
+  const chart = chartFromMetadata(metadata);
+  return chart ? [chart] : [];
+}
+
+function attachmentsFromMetadata(
+  metadata?: Record<string, unknown> | null
+): ChatAttachmentPayload[] {
+  const attachments = metadata?.attachments;
+  if (!Array.isArray(attachments)) {
+    return [];
+  }
+
+  return attachments
+    .map((attachment) =>
+      attachment && typeof attachment === "object"
+        ? (attachment as Partial<ChatAttachmentPayload>)
+        : null
+    )
+    .filter(
+      (attachment): attachment is ChatAttachmentPayload =>
+        Boolean(attachment?.name && typeof attachment.name === "string")
+    );
+}
 
 const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
   id: message.id,
@@ -109,6 +269,529 @@ const localMessage = (
   metadata: metadata ?? null,
 });
 
+function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+
+    const token = match[0];
+    if (token.startsWith("**") && token.endsWith("**")) {
+      nodes.push(
+        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-slate-900 dark:text-white">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
+      const parts = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
+      if (parts) {
+        nodes.push(
+          <a
+            key={`${keyPrefix}-link-${match.index}`}
+            href={parts[2]}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-sky-700 underline underline-offset-4 transition-colors hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-200"
+          >
+            {parts[1]}
+          </a>
+        );
+      } else {
+        nodes.push(token);
+      }
+    } else if (token.startsWith("`") && token.endsWith("`")) {
+      nodes.push(
+        <code
+          key={`${keyPrefix}-code-${match.index}`}
+          className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.95em] text-slate-800 dark:bg-white/10 dark:text-[#f3f3f3]"
+        >
+          {token.slice(1, -1)}
+        </code>
+      );
+    }
+
+    lastIndex = match.index + token.length;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
+}
+
+function isMarkdownTable(lines: string[]) {
+  if (lines.length < 2) {
+    return false;
+  }
+  const separator = lines[1].trim();
+  return (
+    lines[0].includes("|") &&
+    /^\|?[\s:-]+(\|[\s:-]+)+\|?$/.test(separator)
+  );
+}
+
+function parseMarkdownTableRow(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function groupMarkdownLines(lines: string[]) {
+  const groups: string[][] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+
+    if (/^#{1,3}\s+/.test(line)) {
+      groups.push([line]);
+      index += 1;
+      continue;
+    }
+
+    if (line.includes("|") && index + 1 < lines.length) {
+      const tableCandidate = [line, lines[index + 1]];
+      let cursor = index + 2;
+      while (cursor < lines.length && lines[cursor].includes("|")) {
+        tableCandidate.push(lines[cursor]);
+        cursor += 1;
+      }
+      if (isMarkdownTable(tableCandidate)) {
+        groups.push(tableCandidate);
+        index = cursor;
+        continue;
+      }
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      const listGroup = [line];
+      index += 1;
+      while (index < lines.length && /^[-*]\s+/.test(lines[index])) {
+        listGroup.push(lines[index]);
+        index += 1;
+      }
+      groups.push(listGroup);
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(line)) {
+      const listGroup = [line];
+      index += 1;
+      while (index < lines.length && /^\d+\.\s+/.test(lines[index])) {
+        listGroup.push(lines[index]);
+        index += 1;
+      }
+      groups.push(listGroup);
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      const quoteGroup = [line];
+      index += 1;
+      while (index < lines.length && /^>\s?/.test(lines[index])) {
+        quoteGroup.push(lines[index]);
+        index += 1;
+      }
+      groups.push(quoteGroup);
+      continue;
+    }
+
+    const paragraphGroup = [line];
+    index += 1;
+    while (
+      index < lines.length &&
+      !/^#{1,3}\s+/.test(lines[index]) &&
+      !/^[-*]\s+/.test(lines[index]) &&
+      !/^\d+\.\s+/.test(lines[index]) &&
+      !/^>\s?/.test(lines[index])
+    ) {
+      if (lines[index].includes("|") && index + 1 < lines.length) {
+        const candidate = [lines[index], lines[index + 1]];
+        if (isMarkdownTable(candidate)) {
+          break;
+        }
+      }
+      paragraphGroup.push(lines[index]);
+      index += 1;
+    }
+    groups.push(paragraphGroup);
+  }
+
+  return groups;
+}
+
+function renderRichMessage(content: string, keyPrefix: string, tone: "assistant" | "user" = "assistant") {
+  const normalized = content.replace(/\r\n/g, "\n");
+  const blocks: string[] = [];
+  const lines = normalized.split("\n");
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    if (line.trim().startsWith("```")) {
+      const codeLines = [line];
+      index += 1;
+      while (index < lines.length) {
+        codeLines.push(lines[index]);
+        if (lines[index].trim().startsWith("```")) {
+          index += 1;
+          break;
+        }
+        index += 1;
+      }
+      blocks.push(codeLines.join("\n"));
+      continue;
+    }
+
+    const chunk = [line];
+    index += 1;
+    while (index < lines.length && lines[index].trim()) {
+      if (lines[index].trim().startsWith("```")) {
+        break;
+      }
+      chunk.push(lines[index]);
+      index += 1;
+    }
+    blocks.push(chunk.join("\n"));
+  }
+
+  const headingClass =
+    tone === "assistant"
+      ? "text-lg font-semibold text-slate-900 dark:text-white"
+      : "text-base font-semibold text-slate-900 dark:text-[#f3f3f3]";
+  const paragraphClass =
+    tone === "assistant"
+      ? "text-[15px] leading-7 text-slate-700 dark:text-[#ececec]"
+      : "text-[15px] leading-7 text-slate-800 dark:text-[#f3f3f3]";
+
+  return (
+    <div className="space-y-4">
+      {blocks.map((block, blockIndex) => {
+        const rawLines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+        if (rawLines.length === 0) {
+          return null;
+        }
+
+        if (block.trim().startsWith("```")) {
+          const rawLines = block.split("\n");
+          const fence = rawLines[0].trim();
+          const language = fence.replace(/^```/, "").trim();
+          const code = rawLines
+            .slice(1, rawLines[rawLines.length - 1]?.trim().startsWith("```") ? -1 : undefined)
+            .join("\n");
+          return (
+            <div
+              key={`${keyPrefix}-codeblock-${blockIndex}`}
+              className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505]"
+            >
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:text-[#8e8e8e]">
+                <span>{language || "Code"}</span>
+              </div>
+              <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#e6e6e6]">
+                <code>{code}</code>
+              </pre>
+            </div>
+          );
+        }
+
+        return (
+          <div key={`${keyPrefix}-block-${blockIndex}`} className="space-y-4">
+            {groupMarkdownLines(rawLines).map((lines, groupIndex) => {
+              if (isMarkdownTable(lines)) {
+                const header = parseMarkdownTableRow(lines[0]);
+                const rows = lines.slice(2).map(parseMarkdownTableRow).filter((row) => row.length > 0);
+                return (
+                  <div
+                    key={`${keyPrefix}-table-${blockIndex}-${groupIndex}`}
+                    className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#0a0a0a]"
+                  >
+                    <table className="min-w-full border-collapse text-left text-sm text-slate-700 dark:text-[#ececec]">
+                      <thead className="bg-slate-100 dark:bg-white/5">
+                        <tr>
+                          {header.map((cell, cellIndex) => (
+                            <th
+                              key={`${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`}
+                              className="border-b border-slate-200 px-4 py-3 font-semibold dark:border-[#1f1f1f]"
+                            >
+                              {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`)}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {rows.map((row, rowIndex) => (
+                          <tr key={`${keyPrefix}-tr-${blockIndex}-${groupIndex}-${rowIndex}`} className="border-t border-slate-200 dark:border-[#1f1f1f]">
+                            {row.map((cell, cellIndex) => (
+                              <td
+                                key={`${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`}
+                                className="px-4 py-3 align-top text-slate-600 dark:text-[#d8d8d8]"
+                              >
+                                {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              }
+
+              const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
+              if (bulletLines.length === lines.length) {
+                return (
+                  <ul
+                    key={`${keyPrefix}-list-${blockIndex}-${groupIndex}`}
+                    className={`space-y-2 ${paragraphClass}`}
+                  >
+                    {bulletLines.map((line, lineIndex) => (
+                      <li key={`${keyPrefix}-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
+                        <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-400 dark:bg-white/60" />
+                        <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                );
+              }
+
+              const numberedLines = lines.filter((line) => /^\d+\.\s+/.test(line));
+              if (numberedLines.length === lines.length) {
+                return (
+                  <ol
+                    key={`${keyPrefix}-ordered-${blockIndex}-${groupIndex}`}
+                    className={`space-y-2 ${paragraphClass}`}
+                  >
+                    {numberedLines.map((line, lineIndex) => (
+                      <li key={`${keyPrefix}-ordered-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
+                        <span className="min-w-[1.5rem] flex-none font-semibold text-slate-500 dark:text-white/75">
+                          {line.match(/^(\d+)\./)?.[1]}.
+                        </span>
+                        <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
+                      </li>
+                    ))}
+                  </ol>
+                );
+              }
+
+              const quoteLines = lines.filter((line) => /^>\s?/.test(line));
+              if (quoteLines.length === lines.length) {
+                return (
+                  <blockquote
+                    key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
+                    className="rounded-r-2xl border-l-4 border-sky-500/70 bg-sky-50 px-4 py-3 text-[15px] leading-7 text-sky-900 dark:border-sky-400/70 dark:bg-white/5 dark:text-[#d9e9ff]"
+                  >
+                    <div className="space-y-2">
+                      {quoteLines.map((line, lineIndex) => (
+                        <p key={`${keyPrefix}-quote-line-${blockIndex}-${groupIndex}-${lineIndex}`}>
+                          {renderInlineMarkdown(line.replace(/^>\s?/, ""), `${keyPrefix}-quote-${blockIndex}-${groupIndex}-${lineIndex}`)}
+                        </p>
+                      ))}
+                    </div>
+                  </blockquote>
+                );
+              }
+
+              if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+                const headingText = lines[0].replace(/^#{1,3}\s+/, "");
+                return (
+                  <h3 key={`${keyPrefix}-heading-${blockIndex}-${groupIndex}`} className={headingClass}>
+                    {renderInlineMarkdown(headingText, `${keyPrefix}-heading-${blockIndex}-${groupIndex}`)}
+                  </h3>
+                );
+              }
+
+              return (
+                <p key={`${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`} className={paragraphClass}>
+                  {renderInlineMarkdown(lines.join(" "), `${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`)}
+                </p>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+const chatChartTooltipTheme = {
+  contentStyle: {
+    backgroundColor: "#111827",
+    border: "1px solid rgba(148, 163, 184, 0.35)",
+    borderRadius: "12px",
+    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.32)",
+    color: "#f8fafc",
+  },
+  labelStyle: {
+    color: "#f8fafc",
+    fontWeight: 600,
+  },
+  itemStyle: {
+    color: "#e5e7eb",
+  },
+  cursor: {
+    fill: "rgba(148, 163, 184, 0.14)",
+    stroke: "rgba(148, 163, 184, 0.25)",
+  },
+};
+
+function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
+  const chartData = chart.data ?? [];
+  const yKeys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
+  const primaryKey = yKeys[0] ?? "value";
+  const maxValue = Math.max(
+    ...chartData.flatMap((row) =>
+      yKeys.map((key) => Number(row[key]) || 0)
+    ),
+    0
+  );
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+            Chart
+          </p>
+          <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
+            {chart.title}
+          </h3>
+          <p className="mt-1 text-xs text-slate-500 dark:text-[#a3a3a3]">
+            {chart.scopeLabel}
+            {chart.planner?.reason ? ` - ${chart.planner.reason}` : ""}
+          </p>
+        </div>
+        <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d8d8d8]">
+          {chart.chartType}
+        </span>
+      </div>
+
+      {chart.chartType === "table" ? (
+        <div className="max-h-[360px] overflow-auto">
+          <table className="min-w-full text-left text-sm">
+            <thead className="sticky top-0 bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#b4b4b4]">
+              <tr>
+                <th className="px-4 py-3 font-semibold">Label</th>
+                {yKeys.map((key) => (
+                  <th key={key} className="px-4 py-3 text-right font-semibold">
+                    {key}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {chartData.map((row) => (
+                <tr key={String(row.label)} className="border-t border-slate-200 dark:border-[#1f1f1f]">
+                  <td className="px-4 py-3 text-slate-700 dark:text-[#ececec]">{row.label}</td>
+                  {yKeys.map((key) => (
+                    <td
+                      key={key}
+                      className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white"
+                    >
+                      {Number(row[key]) || 0}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="h-[320px] px-3 py-4">
+          <ResponsiveContainer width="100%" height="100%">
+            {chart.chartType === "line" ? (
+              <LineChart data={chartData} margin={{ left: 6, right: 18, top: 8, bottom: 8 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
+                <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fill: "#9ca3af", fontSize: 12 }} />
+                <Tooltip {...chatChartTooltipTheme} />
+                {yKeys.map((key, index) => (
+                  <Line
+                    key={key}
+                    type="monotone"
+                    dataKey={key}
+                    stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                    strokeWidth={2.4}
+                    dot={{ r: 3 }}
+                    activeDot={{ r: 5 }}
+                  />
+                ))}
+              </LineChart>
+            ) : chart.chartType === "pie" ? (
+              <PieChart>
+                <Tooltip {...chatChartTooltipTheme} />
+                <Pie
+                  data={chartData}
+                  dataKey={primaryKey}
+                  nameKey="label"
+                  outerRadius={105}
+                  label={(entry) => entry.label}
+                >
+                  {chartData.map((row, index) => (
+                    <Cell
+                      key={`${row.label}-${index}`}
+                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                    />
+                  ))}
+                </Pie>
+              </PieChart>
+            ) : (
+              <BarChart
+                data={chartData}
+                layout={chartData.length > 6 ? "vertical" : "horizontal"}
+                margin={{ left: chartData.length > 6 ? 30 : 6, right: 18, top: 8, bottom: 8 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
+                <XAxis
+                  type={chartData.length > 6 ? "number" : "category"}
+                  dataKey={chartData.length > 6 ? undefined : "label"}
+                  tick={{ fill: "#9ca3af", fontSize: 12 }}
+                  domain={chartData.length > 6 ? [0, Math.ceil(maxValue)] : undefined}
+                />
+                <YAxis
+                  type={chartData.length > 6 ? "category" : "number"}
+                  dataKey={chartData.length > 6 ? "label" : undefined}
+                  width={chartData.length > 6 ? 120 : undefined}
+                  allowDecimals={false}
+                  tick={{ fill: "#9ca3af", fontSize: 12 }}
+                />
+                <Tooltip {...chatChartTooltipTheme} />
+                {yKeys.map((key, keyIndex) => (
+                  <Bar key={key} dataKey={key} radius={[4, 4, 0, 0]}>
+                    {chartData.map((row, index) => (
+                      <Cell
+                        key={`${String(row.label)}-${key}-${index}`}
+                        fill={
+                          yKeys.length > 1
+                            ? TOPIC_PALETTE[keyIndex % TOPIC_PALETTE.length]
+                            : TOPIC_PALETTE[index % TOPIC_PALETTE.length]
+                        }
+                      />
+                    ))}
+                  </Bar>
+                ))}
+              </BarChart>
+            )}
+          </ResponsiveContainer>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function sortThreads(
   threads: WorkspaceThreadSummary[],
   pinnedIds: string[]
@@ -120,6 +803,94 @@ function sortThreads(
     if (leftPinned !== rightPinned) return rightPinned - leftPinned;
     return (right.updated_at ?? "").localeCompare(left.updated_at ?? "");
   });
+}
+
+function compactSearchText(value: string, maxLength = 180) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength - 3)}...` : compact;
+}
+
+function searchDateGroup(dateValue?: string | null) {
+  const timestamp = dateValue ? new Date(dateValue).getTime() : 0;
+  if (!Number.isFinite(timestamp) || timestamp <= 0) {
+    return "Older";
+  }
+  const ageMs = Date.now() - timestamp;
+  const dayMs = 24 * 60 * 60 * 1000;
+  if (ageMs < dayMs) return "Today";
+  if (ageMs < 2 * dayMs) return "Yesterday";
+  if (ageMs < 7 * dayMs) return "Previous 7 Days";
+  if (ageMs < 30 * dayMs) return "Previous 30 Days";
+  return "Older";
+}
+
+function findQuerySnippet(content: string, query: string) {
+  const text = content.replace(/\s+/g, " ").trim();
+  if (!query) return compactSearchText(text);
+  const index = text.toLowerCase().indexOf(query.toLowerCase());
+  if (index < 0) return compactSearchText(text);
+  const start = Math.max(0, index - 70);
+  const end = Math.min(text.length, index + query.length + 110);
+  return `${start > 0 ? "..." : ""}${text.slice(start, end)}${end < text.length ? "..." : ""}`;
+}
+
+function buildChatSearchResults(
+  details: ChatThreadDetail[],
+  query: string
+): ChatSearchResult[] {
+  const needle = query.trim().toLowerCase();
+  const results: ChatSearchResult[] = [];
+
+  details.forEach((detail) => {
+    const groupLabel = searchDateGroup(detail.thread.updated_at);
+    const title = detail.thread.title ?? "Untitled chat";
+    const summary = detail.thread.summary ?? "";
+
+    if (!needle) {
+      results.push({
+        id: `${detail.thread.id}-thread`,
+        thread: detail.thread,
+        snippet: compactSearchText(summary || title, 120),
+        matchedIn: "title",
+        groupLabel,
+      });
+      return;
+    }
+
+    if (title.toLowerCase().includes(needle)) {
+      results.push({
+        id: `${detail.thread.id}-title`,
+        thread: detail.thread,
+        snippet: findQuerySnippet(title, needle),
+        matchedIn: "title",
+        groupLabel,
+      });
+    } else if (summary.toLowerCase().includes(needle)) {
+      results.push({
+        id: `${detail.thread.id}-summary`,
+        thread: detail.thread,
+        snippet: findQuerySnippet(summary, needle),
+        matchedIn: "summary",
+        groupLabel,
+      });
+    }
+
+    detail.messages.forEach((message) => {
+      if (!message.content?.toLowerCase().includes(needle)) {
+        return;
+      }
+      results.push({
+        id: `${detail.thread.id}-${message.id}`,
+        thread: detail.thread,
+        message,
+        snippet: findQuerySnippet(message.content, needle),
+        matchedIn: "message",
+        groupLabel,
+      });
+    });
+  });
+
+  return results;
 }
 
 function sessionLabel(session?: DeepResearchSessionRecord | null) {
@@ -178,18 +949,140 @@ function runGlyph(run: IngestionRunRow) {
 function runGlyphTone(run: IngestionRunRow) {
   const ext = runExtOf(run);
   if (ext === "pdf") {
-    return "bg-red-500/15 text-red-300";
+    return "bg-red-100 text-red-700 dark:bg-red-500/15 dark:text-red-300";
   }
   if (ext === "doc" || ext === "docx") {
-    return "bg-blue-500/15 text-blue-300";
+    return "bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300";
   }
-  return "bg-white/10 text-[#d4d4d4]";
+  return "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-[#d4d4d4]";
+}
+
+function attachmentExtension(attachment: ChatAttachmentPayload) {
+  const fromMetadata = attachment.extension?.trim().toLowerCase();
+  if (fromMetadata) {
+    return fromMetadata.replace(/^\./, "");
+  }
+  const fromName = attachment.name.split(".").pop()?.trim().toLowerCase();
+  if (fromName && fromName !== attachment.name.toLowerCase()) {
+    return fromName;
+  }
+  const fromType = attachment.type?.split("/").pop()?.trim().toLowerCase();
+  return fromType || "file";
+}
+
+function attachmentIsImage(attachment: ChatAttachmentPayload) {
+  const type = attachment.type?.toLowerCase() ?? "";
+  const ext = attachmentExtension(attachment);
+  return (
+    type.startsWith("image/") ||
+    ["png", "jpg", "jpeg", "webp", "gif", "bmp", "avif"].includes(ext)
+  );
+}
+
+function attachmentPreviewSrc(attachment: ChatAttachmentPayload) {
+  return attachment.previewUrl || attachment.dataUrl || attachment.url || "";
+}
+
+function formatAttachmentSize(size?: number) {
+  if (typeof size !== "number" || !Number.isFinite(size) || size <= 0) {
+    return "";
+  }
+  if (size < 1024) {
+    return `${Math.round(size)} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${Math.round(size / 1024)} KB`;
+  }
+  return `${(size / (1024 * 1024)).toFixed(size < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
+function attachmentTone(attachment: ChatAttachmentPayload) {
+  const ext = attachmentExtension(attachment);
+  if (ext === "pdf") {
+    return "border-red-200 bg-red-50 text-red-800 dark:border-red-300/30 dark:bg-red-500/10 dark:text-red-200";
+  }
+  if (attachmentIsImage(attachment)) {
+    return "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-300/30 dark:bg-sky-500/10 dark:text-sky-100";
+  }
+  if (ext === "doc" || ext === "docx") {
+    return "border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-300/30 dark:bg-blue-500/10 dark:text-blue-100";
+  }
+  return "border-slate-200 bg-white text-slate-700 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#ececec]";
+}
+
+function AttachmentGlyph({ attachment }: { attachment: ChatAttachmentPayload }) {
+  const ext = attachmentExtension(attachment);
+  if (attachment.sourceLabel === "Google Drive") {
+    return <DriveIcon className="h-4 w-4" />;
+  }
+  if (ext === "pdf") {
+    return <PaperIcon className="h-4 w-4" />;
+  }
+  if (attachmentIsImage(attachment)) {
+    return <ImageIcon className="h-4 w-4" />;
+  }
+  return <FileIcon className="h-4 w-4" />;
+}
+
+function MessageAttachmentList({
+  attachments,
+}: {
+  attachments: ChatAttachmentPayload[];
+}) {
+  if (attachments.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap justify-end gap-2">
+      {attachments.map((attachment, index) => {
+        const ext = attachmentExtension(attachment);
+        const size = formatAttachmentSize(attachment.size);
+        const previewSrc = attachmentIsImage(attachment)
+          ? attachmentPreviewSrc(attachment)
+          : "";
+        const key = `${attachment.name}-${attachment.runId ?? index}`;
+
+        return (
+          <div
+            key={key}
+            className={`max-w-[240px] overflow-hidden rounded-2xl border text-left shadow-sm ${attachmentTone(
+              attachment
+            )}`}
+          >
+            {previewSrc ? (
+              <img
+                src={previewSrc}
+                alt={attachment.name}
+                className="h-28 w-full object-cover"
+              />
+            ) : null}
+            <div className="flex items-center gap-2 px-3 py-2.5">
+              <span className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-xl bg-white/70 text-current dark:bg-white/10">
+                <AttachmentGlyph attachment={attachment} />
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-xs font-medium">
+                  {attachment.name}
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] uppercase tracking-normal opacity-70">
+                  {[ext, size, attachment.status].filter(Boolean).join(" | ")}
+                </span>
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function renderLoadingLabel(
   deepResearchEnabled: boolean,
+  chartModeEnabled: boolean,
   activeSession?: DeepResearchSessionRecord | null
 ) {
+  if (chartModeEnabled) return "Building chart...";
   if (!deepResearchEnabled) return "Generating answer...";
   if (activeSession?.status === "planned") return "Planning deep research...";
   if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis...";
@@ -295,8 +1188,15 @@ export default function ChatClient() {
     refreshFolders,
   } = useWorkspaceProfile();
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
-  const [selectedModel, setSelectedModel] = useState("");
+  const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [chartModeEnabled, setChartModeEnabled] = useState(false);
+  const [chartSuggestionDismissedFor, setChartSuggestionDismissedFor] = useState("");
+  const [parameterMenuOpen, setParameterMenuOpen] = useState(false);
+  const [chatParameters, setChatParameters] = useState<ChatGenerationParameters>(
+    DEFAULT_CHAT_PARAMETERS
+  );
   const projectFolderIds = useMemo(
     () => folders.map((folder) => folder.id),
     [folders]
@@ -323,10 +1223,22 @@ export default function ChatClient() {
   const [threadMenuId, setThreadMenuId] = useState<string | null>(null);
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
+  const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [chatSearchQuery, setChatSearchQuery] = useState("");
+  const [chatSearchDetails, setChatSearchDetails] = useState<ChatThreadDetail[]>([]);
+  const [chatSearchLoading, setChatSearchLoading] = useState(false);
+  const [chatSearchError, setChatSearchError] = useState<string | null>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
   const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const parameterMenuRef = useRef<HTMLDivElement | null>(null);
+  const editComposerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const canPersist = Boolean(user && session?.access_token);
   const effectiveSelectedYears = selectedYears.length > 0 ? selectedYears : allYears;
@@ -341,6 +1253,10 @@ export default function ChatClient() {
     () => sortThreads(threads, pinnedThreadIds),
     [pinnedThreadIds, threads]
   );
+  const chatSearchResults = useMemo(
+    () => buildChatSearchResults(chatSearchDetails, chatSearchQuery),
+    [chatSearchDetails, chatSearchQuery]
+  );
   const selectedRunIds = useMemo(
     () => selectedLibraryRuns.map((run) => run.id),
     [selectedLibraryRuns]
@@ -351,6 +1267,10 @@ export default function ChatClient() {
         name: runTitleOf(run),
         type: run.mime_type || runExtOf(run),
         size: run.file_size_bytes ?? undefined,
+        runId: run.id,
+        status: run.status,
+        sourceLabel: runSourceLabel(run),
+        extension: runExtOf(run),
       })),
     [selectedLibraryRuns]
   );
@@ -407,6 +1327,14 @@ export default function ChatClient() {
     [deepSession]
   );
   const hasContent = visibleMessages.length > 0 || Boolean(deepSession);
+  const trimmedDraft = draft.trim();
+  const chartSuggestionVisible = Boolean(
+    trimmedDraft &&
+      CHART_INTENT_PATTERN.test(trimmedDraft) &&
+      !chartModeEnabled &&
+      !deepResearchEnabled &&
+      chartSuggestionDismissedFor !== trimmedDraft
+  );
 
   const resizeComposer = useCallback(() => {
     const node = composerRef.current;
@@ -423,7 +1351,17 @@ export default function ChatClient() {
         const parsed = JSON.parse(rawPinned) as string[];
         if (Array.isArray(parsed)) setPinnedThreadIds(parsed.filter(Boolean));
       }
-      setSelectedModel(window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY) ?? "");
+      setSelectedModel(
+        normalizeStoredModel(window.localStorage.getItem(CHAT_MODEL_STORAGE_KEY))
+      );
+      const rawParams = window.localStorage.getItem(CHAT_PARAMETERS_STORAGE_KEY);
+      if (rawParams) {
+        const parsed = JSON.parse(rawParams) as Partial<ChatGenerationParameters>;
+        setChatParameters({
+          ...DEFAULT_CHAT_PARAMETERS,
+          ...parsed,
+        });
+      }
     } catch {
       setPinnedThreadIds([]);
     }
@@ -441,6 +1379,39 @@ export default function ChatClient() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(
+      CHAT_PARAMETERS_STORAGE_KEY,
+      JSON.stringify(chatParameters)
+    );
+  }, [chatParameters]);
+
+  useEffect(() => {
+    if (!parameterMenuOpen) return;
+    function handlePointerDown(event: MouseEvent) {
+      const target = event.target as Node;
+      if (!parameterMenuRef.current?.contains(target)) {
+        setParameterMenuOpen(false);
+      }
+    }
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => window.removeEventListener("mousedown", handlePointerDown);
+  }, [parameterMenuOpen]);
+
+  useEffect(() => {
+    if (deepResearchEnabled) {
+      setParameterMenuOpen(false);
+      setChartModeEnabled(false);
+    }
+  }, [deepResearchEnabled]);
+
+  useEffect(() => {
+    if (chartModeEnabled) {
+      setParameterMenuOpen(false);
+    }
+  }, [chartModeEnabled]);
 
   useEffect(() => {
     resizeComposer();
@@ -467,6 +1438,7 @@ export default function ChatClient() {
       setThreadMenuId(null);
       setReportFullViewOpen(false);
       setDeepResearchEnabled(mode === "deep_research");
+      setChartModeEnabled(false);
     },
     [deepResearchEnabled]
   );
@@ -476,6 +1448,9 @@ export default function ChatClient() {
       setActiveThread(payload.thread);
       setActiveThreadId(payload.thread.id);
       setDeepResearchEnabled(payload.thread.mode === "deep_research");
+      if (payload.thread.mode === "deep_research") {
+        setChartModeEnabled(false);
+      }
       setThreads((current) => [
         payload.thread!,
         ...current.filter((item) => item.id !== payload.thread!.id),
@@ -567,6 +1542,41 @@ export default function ChatClient() {
     [canPersist, session?.access_token]
   );
 
+  const loadChatSearchDetails = useCallback(async () => {
+    if (!canPersist || !session?.access_token) {
+      setChatSearchDetails([]);
+      return;
+    }
+
+    setChatSearchLoading(true);
+    setChatSearchError(null);
+    try {
+      const details = await Promise.all(
+        sortedThreads.map(async (thread) => {
+          const response = await fetch(`/api/chat/threads/${thread.id}`, {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          const payload = (await response.json()) as ChatThreadDetail & {
+            error?: string;
+          };
+          if (!response.ok) {
+            throw new Error(payload.error ?? "Failed to load chat thread.");
+          }
+          return payload;
+        })
+      );
+      setChatSearchDetails(details);
+    } catch (nextError) {
+      setChatSearchError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Failed to search chat history."
+      );
+    } finally {
+      setChatSearchLoading(false);
+    }
+  }, [canPersist, session?.access_token, sortedThreads]);
+
   const loadLibraryRuns = useCallback(async () => {
     if (!canPersist || !selectedProjectId) {
       setLibraryRuns([]);
@@ -631,6 +1641,26 @@ export default function ChatClient() {
   }, [loadLibraryRuns, showLibraryPicker]);
 
   useEffect(() => {
+    if (!searchModalOpen) return;
+    void loadChatSearchDetails();
+  }, [loadChatSearchDetails, searchModalOpen]);
+
+  useEffect(() => {
+    if (!copiedMessageId) return;
+    const timeoutId = window.setTimeout(() => setCopiedMessageId(null), 1600);
+    return () => window.clearTimeout(timeoutId);
+  }, [copiedMessageId]);
+
+  useEffect(() => {
+    if (!editingMessageId) return;
+    window.requestAnimationFrame(() => {
+      editComposerRef.current?.focus();
+      const length = editingDraft.length;
+      editComposerRef.current?.setSelectionRange(length, length);
+    });
+  }, [editingDraft.length, editingMessageId]);
+
+  useEffect(() => {
     setSelectedLibraryRuns([]);
     setLibraryRuns([]);
     setLibraryQuery("");
@@ -679,6 +1709,121 @@ export default function ChatClient() {
     });
   }
 
+  async function copyMessageContent(message: MessageView) {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopiedMessageId(message.id);
+    } catch {
+      setError("Could not copy this message.");
+    }
+  }
+
+  function startEditingUserMessage(message: MessageView) {
+    if (activeThread?.mode === "deep_research") {
+      setDeepResearchEnabled(true);
+      focusComposerWithDraft(message.content);
+      return;
+    }
+    setEditingMessageId(message.id);
+    setEditingDraft(message.content);
+  }
+
+  function cancelEditingUserMessage() {
+    setEditingMessageId(null);
+    setEditingDraft("");
+  }
+
+  async function submitEditedUserMessage(message: MessageView) {
+    const prompt = editingDraft.trim();
+    if (!prompt) return;
+
+    const editIndex = messages.findIndex((item) => item.id === message.id);
+    if (editIndex < 0) {
+      cancelEditingUserMessage();
+      return;
+    }
+
+    const messageMetadata =
+      message.metadata && typeof message.metadata === "object" ? message.metadata : {};
+    const editedAttachments = attachmentsFromMetadata(messageMetadata);
+    const editedRunIds = Array.isArray(messageMetadata.selectedRunIds)
+      ? messageMetadata.selectedRunIds.map(String).filter(Boolean)
+      : [];
+    const nextMessages = messages.slice(0, editIndex + 1).map((item) =>
+      item.id === message.id
+        ? {
+            ...item,
+            content: prompt,
+            metadata: {
+              ...(item.metadata ?? {}),
+              editedAt: new Date().toISOString(),
+            },
+          }
+        : item
+    );
+
+    setLoading(true);
+    setError(null);
+    setMenuOpen(false);
+    setParameterMenuOpen(false);
+    setEditingMessageId(null);
+    setEditingDraft("");
+    setMessages(nextMessages);
+
+    try {
+      const payload = await sendRequest({
+        message: prompt,
+        model: selectedModel,
+        generationParameters: {
+          temperature: chatParameters.temperature,
+          topP: chatParameters.topP,
+          topK: chatParameters.topK,
+          maxTokens: chatParameters.maxTokens,
+          frequencyPenalty: chatParameters.frequencyPenalty,
+          presencePenalty: chatParameters.presencePenalty,
+        },
+        attachments: editedAttachments,
+        messages: nextMessages.map((item) => ({
+          role: item.role,
+          content: item.content,
+        })),
+        selectedYears: effectiveSelectedYears,
+        selectedTracks: effectiveSelectedTracks,
+        searchQuery,
+        folderId: chatScopeFolderId,
+        projectId: selectedProjectId ?? undefined,
+        selectedRunIds: editedRunIds,
+        toolMode: webSearchEnabled ? "web_search" : "auto",
+        webSearchEnabled,
+        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        editMessageId: message.id.startsWith("local-") ? undefined : message.id,
+        chatMode: "normal",
+        action: "message",
+      });
+      if (payload.thread && payload.messages) {
+        applyPayload(payload);
+      } else {
+        setMessages([
+          ...nextMessages,
+          localMessage(
+            "assistant",
+            payload.answer ?? "No answer returned.",
+            payload.citations ?? [],
+            { mode: payload.mode ?? "fallback" }
+          ),
+        ]);
+      }
+    } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === "AbortError") return;
+      setError(
+        nextError instanceof Error ? nextError.message : "Failed to edit message."
+      );
+    } finally {
+      abortControllerRef.current = null;
+      setLoading(false);
+    }
+  }
+
   async function handleNormalSend() {
     const prompt = draft.trim();
     if (!prompt) return;
@@ -687,15 +1832,28 @@ export default function ChatClient() {
     setError(null);
     setMenuOpen(false);
 
-    const nextMessages = [...messages, localMessage("user", prompt)];
-    if (!canPersist) {
-      setMessages(nextMessages);
-    }
+    const nextMessages = [
+      ...messages,
+      localMessage("user", prompt, [], {
+        attachments: selectedAttachments,
+        selectedRunIds,
+      }),
+    ];
+    setMessages(nextMessages);
+    setDraft("");
 
     try {
       const payload = await sendRequest({
         message: prompt,
-        model: selectedModel || undefined,
+        model: selectedModel,
+        generationParameters: {
+          temperature: chatParameters.temperature,
+          topP: chatParameters.topP,
+          topK: chatParameters.topK,
+          maxTokens: chatParameters.maxTokens,
+          frequencyPenalty: chatParameters.frequencyPenalty,
+          presencePenalty: chatParameters.presencePenalty,
+        },
         attachments: selectedAttachments,
         messages: nextMessages.map((message) => ({
           role: message.role,
@@ -707,11 +1865,12 @@ export default function ChatClient() {
         folderId: chatScopeFolderId,
         projectId: selectedProjectId ?? undefined,
         selectedRunIds,
+        toolMode: webSearchEnabled ? "web_search" : "auto",
+        webSearchEnabled,
         threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
         chatMode: "normal",
         action: "message",
       });
-      setDraft("");
       setSelectedLibraryRuns([]);
       if (payload.thread && payload.messages) {
         applyPayload(payload);
@@ -737,6 +1896,89 @@ export default function ChatClient() {
     }
   }
 
+  async function handleChartModeSend() {
+    const prompt =
+      draft.trim() || "Create the most useful chart from my analyzed papers.";
+    if (!canPersist) {
+      setError("Sign in to build charts from workspace data.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setMenuOpen(false);
+    setParameterMenuOpen(false);
+
+    const nextMessages = [
+      ...messages,
+      localMessage("user", prompt, [], {
+        toolMode: "chart",
+        attachments: selectedAttachments,
+        selectedRunIds,
+      }),
+    ];
+    setMessages(nextMessages);
+    setDraft("");
+
+    try {
+      const payload = await sendRequest({
+        message: prompt,
+        model: selectedModel,
+        attachments: selectedAttachments,
+        messages: nextMessages.map((message) => ({
+          role: message.role,
+          content: message.content,
+        })),
+        selectedYears: effectiveSelectedYears,
+        selectedTracks: effectiveSelectedTracks,
+        searchQuery,
+        folderId: chatScopeFolderId,
+        projectId: selectedProjectId ?? undefined,
+        selectedRunIds,
+        toolMode: "chart",
+        threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
+        chatMode: "normal",
+        action: "message",
+      });
+      if (payload.thread && payload.messages) {
+        applyPayload(payload);
+      } else {
+        setMessages([
+          ...nextMessages,
+          localMessage(
+            "assistant",
+            payload.answer ?? "No chart returned.",
+            payload.citations ?? [],
+            {
+              mode: payload.mode ?? "fallback",
+              toolResults: payload.toolResults ?? [],
+              chart: payload.chart ?? null,
+              charts: payload.charts ?? (payload.chart ? [payload.chart] : []),
+            }
+          ),
+        ]);
+      }
+    } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === "AbortError") return;
+      setError(
+        nextError instanceof Error ? nextError.message : "Chart request failed."
+      );
+    } finally {
+      abortControllerRef.current = null;
+      setLoading(false);
+    }
+  }
+
+  function handleParameterChange<K extends keyof ChatGenerationParameters>(
+    key: K,
+    value: ChatGenerationParameters[K]
+  ) {
+    setChatParameters((current) => ({
+      ...current,
+      [key]: value,
+    }));
+  }
+
   async function handlePlanResearch() {
     const prompt = draft.trim();
     if (!prompt) return;
@@ -748,6 +1990,16 @@ export default function ChatClient() {
     setLoading(true);
     setError(null);
     setMenuOpen(false);
+    const optimisticMessages = [
+      ...messages,
+      localMessage("user", prompt, [], {
+        chatMode: "deep_research",
+        attachments: selectedAttachments,
+        selectedRunIds,
+      }),
+    ];
+    setMessages(optimisticMessages);
+    setDraft("");
 
     try {
       const payload = await sendRequest({
@@ -762,7 +2014,6 @@ export default function ChatClient() {
         chatMode: "deep_research",
         action: "plan",
       });
-      setDraft("");
       applyPayload(payload);
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
@@ -819,6 +2070,10 @@ export default function ChatClient() {
     }
     if (deepResearchEnabled) {
       await handlePlanResearch();
+      return;
+    }
+    if (chartModeEnabled) {
+      await handleChartModeSend();
       return;
     }
     await handleNormalSend();
@@ -920,35 +2175,102 @@ export default function ChatClient() {
     if (context.folderId) {
       setChatScopeFolderId(context.folderId);
     }
+    setSelectedLibraryRuns(runs);
     void refreshFolders();
   }
 
   return (
     <>
-      <div className="flex min-h-[calc(100vh-5rem)] w-full overflow-hidden bg-[#212121] text-[#ececec]">
-        <aside className="hidden w-[288px] flex-none border-r border-white/10 bg-[#171717] p-3 lg:flex lg:flex-col">
-          <button
-            type="button"
-            onClick={() => resetChat("normal")}
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/10 px-3 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#212121]"
-          >
-            <PencilSquareIcon className="h-4 w-4" />
-            <span>New chat</span>
-          </button>
+      <div
+        className={`flex min-h-0 w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-black dark:text-[#ececec] ${
+          fullscreenEnabled
+            ? "fixed inset-0 z-50 h-screen"
+            : "h-[calc(100vh-5rem)]"
+        }`}
+      >
+        <aside
+          className={`hidden h-full min-h-0 flex-none border-r border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] lg:flex lg:flex-col ${
+            sidebarCollapsed ? "w-[60px] p-2" : "w-[288px] p-3"
+          }`}
+        >
+          {sidebarCollapsed ? (
+            <div className="flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                aria-label="Open chat sidebar"
+              >
+                <SidebarIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => resetChat("normal")}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                aria-label="New chat"
+              >
+                <PencilSquareIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchModalOpen(true);
+                  setChatSearchQuery("");
+                }}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                aria-label="Search chats"
+              >
+                <SearchIcon className="h-5 w-5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <button
+                type="button"
+                onClick={() => resetChat("normal")}
+                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+              >
+                <PencilSquareIcon className="h-5 w-5" />
+                <span>New chat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchModalOpen(true);
+                  setChatSearchQuery("");
+                }}
+                className="inline-flex h-10 items-center gap-3 rounded-xl px-2.5 text-sm font-medium text-slate-800 transition-colors hover:bg-slate-100 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+              >
+                <SearchIcon className="h-5 w-5" />
+                <span>Search chats</span>
+              </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                aria-label="Close chat sidebar"
+              >
+                <SidebarIcon className="h-5 w-5" />
+              </button>
+            </div>
+          )}
 
+          {!sidebarCollapsed ? (
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
-              <p className="text-sm font-medium text-[#ececec]">Your chats</p>
+              <p className="text-sm font-medium text-slate-800 dark:text-[#ececec]">Your chats</p>
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {threadsLoading ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
                   Loading...
                 </div>
               ) : null}
 
               {!threadsLoading && sortedThreads.length === 0 ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
                   {canPersist ? "No chats yet." : "Sign in to save chats."}
                 </div>
               ) : null}
@@ -960,7 +2282,9 @@ export default function ChatClient() {
                   <div
                     key={thread.id}
                     className={`group relative rounded-xl px-2 py-1 ${
-                      active ? "bg-[#2a2a2a]" : "hover:bg-[#212121]"
+                      active
+                        ? "bg-slate-200 dark:bg-[#050505]"
+                        : "hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
                     }`}
                   >
                     <button
@@ -973,9 +2297,9 @@ export default function ChatClient() {
                     >
                       <div className="flex items-center gap-2">
                         {pinned ? (
-                          <PinIcon className="h-3.5 w-3.5 flex-none text-[#8e8e8e]" />
+                          <PinIcon className="h-3.5 w-3.5 flex-none text-slate-500 dark:text-[#8e8e8e]" />
                         ) : null}
-                        <span className="truncate text-[13px] font-medium text-[#ececec]">
+                        <span className="truncate text-[13px] font-medium text-slate-800 dark:text-[#ececec]">
                           {thread.title}
                         </span>
                       </div>
@@ -988,20 +2312,20 @@ export default function ChatClient() {
                           current === thread.id ? null : thread.id
                         )
                       }
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-[#8e8e8e] opacity-0 transition-opacity hover:bg-[#303030] hover:text-white group-hover:opacity-100"
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
 
                     {threadMenuId === thread.id ? (
-                      <div className="absolute right-2 top-9 z-20 w-40 rounded-xl border border-white/10 bg-[#2a2a2a] p-1 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                      <div className="absolute right-2 top-9 z-20 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-[0_12px_36px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                         <button
                           type="button"
                           onClick={() => {
                             togglePinnedThread(thread.id);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                         >
                           <PinIcon className="h-4 w-4" />
                           <span>{pinned ? "Unpin chat" : "Pin chat"}</span>
@@ -1012,7 +2336,7 @@ export default function ChatClient() {
                             void renameThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                         >
                           <PencilSquareIcon className="h-4 w-4" />
                           <span>Rename</span>
@@ -1023,7 +2347,7 @@ export default function ChatClient() {
                             void deleteThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-300 transition-colors hover:bg-red-950/20"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
                         >
                           <TrashIcon className="h-4 w-4" />
                           <span>Delete</span>
@@ -1035,39 +2359,55 @@ export default function ChatClient() {
               })}
             </div>
           </div>
+          ) : null}
         </aside>
 
-        <section className="relative flex min-w-0 flex-1 flex-col bg-[#212121]">
-          <header className="flex h-14 items-center justify-between border-b border-white/8 px-4 sm:px-6">
+        <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-100 dark:bg-black">
+          <header className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-white/8 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 text-[#ececec] lg:hidden"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
               >
                 <PencilSquareIcon className="h-4 w-4" />
               </button>
-              <p className="truncate text-lg font-semibold text-[#ececec]">
+              <p className="truncate text-lg font-semibold text-slate-900 dark:text-[#ececec]">
                 {pageTitle}
               </p>
             </div>
 
-            {deepSession ? (
-              <span className="inline-flex h-9 items-center rounded-full border border-white/10 bg-[#2a2a2a] px-3 text-sm text-[#b4b4b4]">
-                {sessionLabel(deepSession) ?? "Saved"}
-              </span>
-            ) : null}
+            <div className="flex items-center gap-2">
+              {deepSession ? (
+                <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                  {sessionLabel(deepSession) ?? "Saved"}
+                </span>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => setFullscreenEnabled((current) => !current)}
+                title={fullscreenEnabled ? "Exit fullscreen" : "Fullscreen"}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                aria-label={fullscreenEnabled ? "Exit fullscreen" : "Enter fullscreen"}
+              >
+                {fullscreenEnabled ? (
+                  <ExitFullscreenIcon className="h-4 w-4" />
+                ) : (
+                  <FullscreenIcon className="h-4 w-4" />
+                )}
+              </button>
+            </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-48 pt-8 sm:px-6 xl:px-8">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-8 sm:px-6 xl:px-8">
             {deepSession ? (
-              <section className="mb-6 w-full max-w-[1040px]">
+              <section className="mx-auto mb-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
                   <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-[#b4b4b4]">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-[#b4b4b4]">
                       <div className="flex flex-wrap items-center gap-2">
                         <span>Research completed</span>
-                        <span className="text-white/20">·</span>
+                        <span className="text-slate-300 dark:text-white/20">·</span>
                         <span>
                           {researchProgress.completedSteps}/{Math.max(
                             researchProgress.totalSteps,
@@ -1077,7 +2417,7 @@ export default function ChatClient() {
                         </span>
                         {deepSession.folder_id ? (
                           <>
-                            <span className="text-white/20">·</span>
+                            <span className="text-slate-300 dark:text-white/20">·</span>
                             <span>{buildFolderLabel(deepSession.folder_id, folders)}</span>
                           </>
                         ) : null}
@@ -1085,23 +2425,23 @@ export default function ChatClient() {
                       <button
                         type="button"
                         onClick={() => setReportFullViewOpen(true)}
-                        className="inline-flex h-10 items-center rounded-full border border-white/10 bg-[#2a2a2a] px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#303030]"
+                        className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                       >
                         Full view
                       </button>
                     </div>
 
-                    <div className="overflow-hidden rounded-[26px] border border-white/10 bg-[#111111] shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
-                      <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                    <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#030303] dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
+                      <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
                         <div className="flex items-center gap-3">
                           <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white">
                             <SparkIcon className="h-4 w-4" />
                           </span>
                           <div>
-                            <p className="text-sm font-semibold text-[#ececec]">
+                            <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">
                               {researchTitle}
                             </p>
-                            <p className="text-xs text-[#8e8e8e]">
+                            <p className="text-xs text-slate-500 dark:text-[#8e8e8e]">
                               Deep research report
                             </p>
                           </div>
@@ -1109,14 +2449,14 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setReportFullViewOpen(true)}
-                          className="inline-flex h-9 items-center rounded-full border border-white/10 px-3 text-xs font-medium text-[#b4b4b4] transition-colors hover:bg-[#1f1f1f] hover:text-white"
+                          className="inline-flex h-9 items-center rounded-full border border-slate-200 px-3 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                         >
                           Expand
                         </button>
                       </div>
 
                       <article className="space-y-5 px-6 py-7 sm:px-10 sm:py-10">
-                        <h2 className="text-[2rem] font-semibold tracking-tight text-[#ececec] sm:text-[2.6rem]">
+                        <h2 className="text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.6rem]">
                           {researchTitle}
                         </h2>
                         <div className="space-y-5">
@@ -1126,14 +2466,14 @@ export default function ChatClient() {
                           ).map((block, index) => (
                             <p
                               key={`${deepSession.id}-report-${index}`}
-                              className="whitespace-pre-wrap text-[15px] leading-8 text-[#ececec]"
+                              className="whitespace-pre-wrap text-[15px] leading-8 text-slate-700 dark:text-[#ececec]"
                             >
                               {block}
                             </p>
                           ))}
                         </div>
                         {researchBlocks.length > 6 ? (
-                          <div className="rounded-2xl border border-white/10 bg-[#171717] px-4 py-3 text-sm text-[#b4b4b4]">
+                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                             Continue in full view to read the rest of the report.
                           </div>
                         ) : null}
@@ -1141,24 +2481,24 @@ export default function ChatClient() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-[24px] border border-white/10 bg-[#171717] p-6 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+                  <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_40px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white">
                             <SparkIcon className="h-4 w-4" />
                           </span>
-                          <p className="text-[1.35rem] font-semibold tracking-tight text-[#ececec]">
+                          <p className="text-[1.35rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
                             {researchTitle}
                           </p>
                           {deepSession.folder_id ? (
-                            <span className="rounded-full border border-white/10 bg-[#212121] px-3 py-1 text-xs font-medium text-[#b4b4b4]">
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                               {buildFolderLabel(deepSession.folder_id, folders)}
                             </span>
                           ) : null}
                         </div>
                         {deepSession.plan_summary ? (
-                          <p className="mt-3 max-w-3xl text-sm leading-6 text-[#b4b4b4]">
+                          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#b4b4b4]">
                             {deepSession.plan_summary}
                           </p>
                         ) : null}
@@ -1170,14 +2510,14 @@ export default function ChatClient() {
                             <button
                               type="button"
                               onClick={handleEditResearchPlan}
-                              className="inline-flex h-11 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#242424]"
+                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                             >
                               Edit
                             </button>
                             <button
                               type="button"
                               onClick={() => resetChat("deep_research")}
-                              className="inline-flex h-11 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#b4b4b4] transition-colors hover:bg-[#242424] hover:text-white"
+                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             >
                               Cancel
                             </button>
@@ -1185,7 +2525,7 @@ export default function ChatClient() {
                               type="button"
                               onClick={() => void handleContinueResearch()}
                               disabled={loading}
-                              className="inline-flex h-11 items-center rounded-full bg-white px-5 text-sm font-semibold text-[#111111] transition-colors hover:bg-[#f1f1f1] disabled:cursor-not-allowed disabled:opacity-60"
+                              className="inline-flex h-11 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
                             >
                               Start
                             </button>
@@ -1194,7 +2534,7 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={handleEditResearchPlan}
-                            className="inline-flex h-11 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#242424]"
+                            className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                           >
                             Update
                           </button>
@@ -1233,14 +2573,14 @@ export default function ChatClient() {
                             <span
                               className={`mt-1 inline-flex h-6 w-6 flex-none items-center justify-center rounded-full ${
                                 isComplete
-                                  ? "bg-white text-[#111111]"
+                                  ? "bg-slate-900 text-white dark:bg-white dark:text-[#111111]"
                                   : isProcessing
-                                    ? "border border-white bg-transparent text-white"
-                                    : isBlocked
-                                      ? "border border-amber-400/60 bg-amber-500/10 text-amber-200"
+                                    ? "border border-slate-400 bg-transparent text-slate-700 dark:border-white dark:text-white"
+                                  : isBlocked
+                                      ? "border border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-200"
                                     : isPending
-                                      ? "border border-white/20 bg-transparent text-transparent"
-                                      : "border border-red-400/50 bg-red-500/10 text-red-300"
+                                      ? "border border-slate-300 bg-transparent text-transparent dark:border-[#1f1f1f]"
+                                      : "border border-red-400/50 bg-red-500/10 text-red-600 dark:text-red-300"
                               }`}
                             >
                               {isComplete ? (
@@ -1257,37 +2597,37 @@ export default function ChatClient() {
                             </span>
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[15px] leading-7 text-[#ececec]">
+                                <p className="text-[15px] leading-7 text-slate-900 dark:text-[#ececec]">
                                   {step.title}
                                 </p>
                                 {isAppended ? (
-                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-blue-200">
+                                  <span className="rounded-full border border-blue-400/20 bg-blue-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-blue-700 dark:text-blue-200">
                                     Added
                                   </span>
                                 ) : null}
                                 {isObsolete ? (
-                                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-[#b4b4b4]">
+                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]">
                                     Obsolete
                                   </span>
                                 ) : null}
                                 {isBlocked ? (
-                                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-amber-200">
+                                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-amber-700 dark:text-amber-200">
                                     Waiting on recovery
                                   </span>
                                 ) : null}
                                 {isFailed ? (
-                                  <span className="rounded-full border border-red-400/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-[0.16em] text-red-200">
+                                  <span className="rounded-full border border-red-400/20 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-red-700 dark:text-red-200">
                                     Failed
                                   </span>
                                 ) : null}
                               </div>
                               {stepBody ? (
-                                <p className="text-sm leading-6 text-[#b4b4b4]">
+                                <p className="text-sm leading-6 text-slate-500 dark:text-[#b4b4b4]">
                                   {stepBody}
                                 </p>
                               ) : null}
                               {statusReason ? (
-                                <p className="text-xs leading-5 text-[#8e8e8e]">
+                                <p className="text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
                                   {statusReason}
                                 </p>
                               ) : null}
@@ -1299,7 +2639,7 @@ export default function ChatClient() {
 
                     {deepSession.status !== "planned" ? (
                       <div className="mt-6">
-                        <div className="flex items-center justify-between gap-3 text-sm text-[#b4b4b4]">
+                        <div className="flex items-center justify-between gap-3 text-sm text-slate-500 dark:text-[#b4b4b4]">
                           <span>{researchProgress.detail}</span>
                           <span>
                             {researchProgress.completedSteps}/{Math.max(
@@ -1309,9 +2649,9 @@ export default function ChatClient() {
                             steps
                           </span>
                         </div>
-                        <div className="mt-3 h-2.5 rounded-full bg-white/10">
+                        <div className="mt-3 h-2.5 rounded-full bg-slate-200 dark:bg-white/10">
                           <div
-                            className="h-full rounded-full bg-white transition-[width] duration-500"
+                            className="h-full rounded-full bg-slate-900 transition-[width] duration-500 dark:bg-white"
                             style={{
                               width: `${Math.max(
                                 6,
@@ -1324,7 +2664,7 @@ export default function ChatClient() {
                     ) : null}
 
                     {deepSession.status === "failed" && deepSession.last_error ? (
-                      <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-200">
+                      <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
                         {deepSession.last_error}
                       </div>
                     ) : null}
@@ -1335,45 +2675,117 @@ export default function ChatClient() {
 
             {!hasContent && !loading ? (
               <div className="flex min-h-[52vh] items-center justify-center">
-                <h1 className="text-center text-[2rem] font-semibold tracking-tight text-[#ececec] sm:text-[2.5rem]">
+                <h1 className="text-center text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.5rem]">
                   Where should we begin?
                 </h1>
               </div>
             ) : (
-              <div className="flex w-full max-w-[1040px] flex-col gap-7">
+              <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
+                  const charts = chartsFromMetadata(message.metadata);
+                  const attachments = attachmentsFromMetadata(message.metadata);
                   return (
                     <section key={message.id}>
                       {isUser ? (
                         <div className="flex justify-end">
-                          <div className="max-w-[72%] rounded-[18px] bg-[#2a2a2a] px-5 py-3 text-[15px] leading-7 text-[#f3f3f3]">
-                            <div className="whitespace-pre-wrap">{message.content}</div>
+                          <div className="group/message relative max-w-[78%] space-y-2">
+                            {editingMessageId === message.id ? (
+                              <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-4 text-left shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+                                <MessageAttachmentList attachments={attachments} />
+                                <textarea
+                                  ref={editComposerRef}
+                                  value={editingDraft}
+                                  onChange={(event) => setEditingDraft(event.target.value)}
+                                  rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                />
+                                <div className="mt-4 flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingUserMessage}
+                                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-black dark:text-white dark:hover:bg-[#0a0a0a]"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void submitEditedUserMessage(message)}
+                                    disabled={!editingDraft.trim() || loading}
+                                    className="inline-flex h-10 items-center rounded-full bg-white px-5 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                                  >
+                                    Send
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyMessageContent(message)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
+                                    aria-label="Copy message"
+                                    title="Copy"
+                                  >
+                                    {copiedMessageId === message.id ? (
+                                      <CheckIcon className="h-4 w-4" />
+                                    ) : (
+                                      <CopyIcon className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingUserMessage(message)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
+                                    aria-label="Edit message"
+                                    title="Edit"
+                                  >
+                                    <PencilSquareIcon className="h-4 w-4" />
+                                  </button>
+                                </div>
+                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-7 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
+                                  {renderRichMessage(message.content, message.id, "user")}
+                                </div>
+                                <MessageAttachmentList attachments={attachments} />
+                              </>
+                            )}
                           </div>
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          <div className="whitespace-pre-wrap text-[15px] leading-7 text-[#ececec]">
-                            {message.content}
-                          </div>
+                          {renderRichMessage(message.content, message.id, "assistant")}
+                          {charts.map((chart, chartIndex) => (
+                            <ChatChartCard
+                              key={`${message.id}-chart-${chartIndex}-${chart.title}`}
+                              chart={chart}
+                            />
+                          ))}
                           {message.citations.length > 0 ? (
                             <div className="space-y-2">
                               {message.citations.map((citation) => (
                                 <Link
                                   key={`${message.id}-${citation.paperId}`}
                                   href={citation.href}
-                                  className="flex items-start gap-3 rounded-2xl border border-white/10 bg-[#2a2a2a] px-4 py-3 text-sm transition-colors hover:bg-[#303030]"
+                                  className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
                                 >
-                                  <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-[#8e8e8e]" />
+                                  {citation.sourceType === "web" ? (
+                                    <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+                                  ) : (
+                                    <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+                                  )}
                                   <span className="min-w-0">
-                                    <span className="font-medium text-[#ececec]">
-                                      [Paper {citation.paperId}] {citation.title}
+                                    <span className="font-medium text-slate-900 dark:text-[#ececec]">
+                                      {citation.sourceType === "web"
+                                        ? `[${citation.paperId}]`
+                                        : `[Paper ${citation.paperId}]`}{" "}
+                                      {citation.title}
                                     </span>
-                                    <span className="ml-2 text-[#8e8e8e]">
+                                    <span className="ml-2 text-slate-500 dark:text-[#8e8e8e]">
                                       ({citation.year})
                                     </span>
                                     {citation.reason ? (
-                                      <span className="mt-1 block text-xs leading-5 text-[#8e8e8e]">
+                                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
                                         {citation.reason}
                                       </span>
                                     ) : null}
@@ -1390,9 +2802,13 @@ export default function ChatClient() {
 
                 {loading ? (
                   <div className="flex items-start gap-3">
-                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-                    <div className="rounded-2xl border border-white/10 bg-[#2a2a2a] px-4 py-3 text-sm text-[#b4b4b4]">
-                      {renderLoadingLabel(deepResearchEnabled, deepSession)}
+                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
+                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                      {renderLoadingLabel(
+                        deepResearchEnabled,
+                        chartModeEnabled,
+                        deepSession
+                      )}
                     </div>
                   </div>
                 ) : null}
@@ -1400,17 +2816,17 @@ export default function ChatClient() {
             )}
 
             {detailLoading ? (
-              <div className="mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-[#8e8e8e]">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+              <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                 <span>Loading chat...</span>
               </div>
             ) : null}
             <div ref={scrollAnchorRef} />
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-4 pb-6 sm:px-6 xl:px-8">
-            <form onSubmit={handleSubmit} className="pointer-events-auto w-full max-w-[1040px]">
-              <div className="rounded-[28px] border border-white/10 bg-[#2a2a2a] px-4 pb-3 pt-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+          <div className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">
+            <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
+              <div className="rounded-[28px] border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                 {error ? (
                   <div className="mb-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
                     {error}
@@ -1424,7 +2840,7 @@ export default function ChatClient() {
                       return (
                         <span
                           key={run.id}
-                          className="group inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#d4d4d4]"
+                          className="group inline-flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-700 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d4d4d4]"
                         >
                           <span
                             className={`inline-flex h-5 w-5 items-center justify-center rounded-full ${runGlyphTone(run)}`}
@@ -1441,7 +2857,7 @@ export default function ChatClient() {
                                 current.filter((item) => item.id !== run.id)
                               )
                             }
-                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#8e8e8e] opacity-0 transition-opacity hover:bg-white/10 hover:text-white group-hover:opacity-100"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
                             aria-label={`Remove ${runTitleOf(run)}`}
                           >
                             <CloseIcon className="h-3 w-3" />
@@ -1452,14 +2868,47 @@ export default function ChatClient() {
                   </div>
                 ) : null}
 
+                {chartSuggestionVisible ? (
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100">
+                    <span className="inline-flex items-center gap-2">
+                      <ChartIcon className="h-4 w-4" />
+                      Use Chart mode for this request.
+                    </span>
+                    <span className="inline-flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setChartModeEnabled(true);
+                          setDeepResearchEnabled(false);
+                        }}
+                        className="rounded-full bg-sky-700 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-sky-800 dark:bg-sky-200 dark:text-sky-950 dark:hover:bg-white"
+                      >
+                        Use Chart mode
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setChartSuggestionDismissedFor(trimmedDraft)}
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sky-700 hover:bg-sky-100 dark:text-sky-100 dark:hover:bg-[#0a0a0a]"
+                        aria-label="Dismiss chart mode suggestion"
+                      >
+                        <CloseIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </span>
+                  </div>
+                ) : null}
+
                 <textarea
                   ref={composerRef}
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
-                  placeholder="Ask anything"
+                  placeholder={
+                    chartModeEnabled
+                      ? "Ask for a chart, or leave blank for the best chart"
+                      : "Ask anything"
+                  }
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-[#ececec] outline-none placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -1468,28 +2917,53 @@ export default function ChatClient() {
                       <button
                         type="button"
                         onClick={() => setMenuOpen((current) => !current)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#ececec] transition-colors hover:bg-[#303030]"
+                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                        aria-label="Open attachment and tool menu"
                       >
                         <PlusIcon className="h-5 w-5" />
                       </button>
 
                       {menuOpen ? (
-                        <div className="absolute bottom-12 left-0 z-30 w-72 rounded-2xl border border-white/10 bg-[#2a2a2a] p-2 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                        <div className="absolute bottom-12 left-0 z-30 w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_16px_42px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                           <button
                             type="button"
                             onClick={() => {
                               setShowLibraryPicker(true);
                               setMenuOpen(false);
                             }}
-                            className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
+                            className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                           >
                             <span className="flex items-center gap-3">
                               <FileIcon className="h-4 w-4" />
                               <span>Add from library</span>
                             </span>
                             {selectedLibraryRuns.length > 0 ? (
-                              <span className="rounded-full bg-white/10 px-2 py-0.5 text-[11px] font-medium text-[#ececec]">
+                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-white/10 dark:text-[#ececec]">
                                 {selectedLibraryRuns.length}
+                              </span>
+                            ) : null}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setChartModeEnabled((current) => !current);
+                              setDeepResearchEnabled(false);
+                              setMenuOpen(false);
+                            }}
+                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+                              chartModeEnabled
+                                ? "bg-sky-100 text-sky-800 dark:bg-[#173868] dark:text-[#9cc8ff]"
+                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                            }`}
+                          >
+                            <span className="flex items-center gap-3">
+                              <ChartIcon className="h-4 w-4" />
+                              <span>Chart mode</span>
+                            </span>
+                            {chartModeEnabled ? (
+                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#2b5da8]">
+                                Active
                               </span>
                             ) : null}
                           </button>
@@ -1500,7 +2974,7 @@ export default function ChatClient() {
                               setShowAnalyzeModal(true);
                               setMenuOpen(false);
                             }}
-                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#ececec] transition-colors hover:bg-[#303030]"
+                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                           >
                             <PaperIcon className="h-4 w-4" />
                             <span>Upload files</span>
@@ -1509,13 +2983,37 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={() => {
+                              setWebSearchEnabled((current) => !current);
+                              setMenuOpen(false);
+                            }}
+                            className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
+                              webSearchEnabled
+                                ? "bg-sky-100 text-sky-800 dark:bg-[#173868] dark:text-[#9cc8ff]"
+                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                            }`}
+                          >
+                            <span className="flex items-center gap-3">
+                              <SearchIcon className="h-4 w-4" />
+                              <span>Web search</span>
+                            </span>
+                            {webSearchEnabled ? (
+                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#2b5da8]">
+                                Active
+                              </span>
+                            ) : null}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
                               setDeepResearchEnabled((current) => !current);
+                              setChartModeEnabled(false);
                               setMenuOpen(false);
                             }}
                             className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
                               deepResearchEnabled
-                                ? "bg-[#173868] text-[#9cc8ff]"
-                                : "text-[#ececec] hover:bg-[#303030]"
+                                ? "bg-sky-100 text-sky-800 dark:bg-[#173868] dark:text-[#9cc8ff]"
+                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                             }`}
                           >
                             <span className="flex items-center gap-3">
@@ -1523,18 +3021,18 @@ export default function ChatClient() {
                               <span>Deep research</span>
                             </span>
                             {deepResearchEnabled ? (
-                              <span className="rounded-full bg-[#2b5da8] px-2 py-0.5 text-[11px] font-medium text-white">
+                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#2b5da8]">
                                 Active
                               </span>
                             ) : null}
                           </button>
 
-                          <div className="mt-2 border-t border-white/10 pt-2">
+                          <div className="mt-2 border-t border-slate-200 pt-2 dark:border-[#1f1f1f]">
                             <div className="flex items-center justify-between px-3 pb-2">
-                              <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8e8e8e]">
+                              <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                                 Folder scope
                               </span>
-                              <span className="inline-flex items-center gap-1 text-xs text-[#b4b4b4]">
+                              <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-[#b4b4b4]">
                                 <FolderIcon className="h-3.5 w-3.5" />
                                 {activeFolderLabel}
                               </span>
@@ -1547,8 +3045,8 @@ export default function ChatClient() {
                               }}
                               className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
                                 chatScopeFolderId === "all"
-                                  ? "bg-[#303030] text-white"
-                                  : "text-[#ececec] hover:bg-[#303030]"
+                                  ? "bg-slate-100 text-slate-900 dark:bg-[#0a0a0a] dark:text-white"
+                                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                               }`}
                             >
                               <span>All folders</span>
@@ -1569,8 +3067,8 @@ export default function ChatClient() {
                                     }}
                                     className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
                                       active
-                                        ? "bg-[#303030] text-white"
-                                        : "text-[#ececec] hover:bg-[#303030]"
+                                        ? "bg-slate-100 text-slate-900 dark:bg-[#0a0a0a] dark:text-white"
+                                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                                     }`}
                                   >
                                     <span className="truncate">{folder.name}</span>
@@ -1584,18 +3082,23 @@ export default function ChatClient() {
                           </div>
                         </div>
                       ) : null}
+
                     </div>
 
-                    {!deepResearchEnabled ? (
-                      <label className="inline-flex h-9 items-center gap-2 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#b4b4b4]">
+                    {!deepResearchEnabled && !chartModeEnabled ? (
+                      <label className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                         <span>Model</span>
                         <select
                           value={selectedModel}
                           onChange={(event) => setSelectedModel(event.target.value)}
-                          className="bg-transparent text-xs font-medium text-[#ececec] outline-none"
+                          className="rounded-md bg-white text-xs font-medium text-slate-900 outline-none dark:bg-[#050505] dark:text-[#ececec]"
                         >
                           {MODEL_OPTIONS.map((option) => (
-                            <option key={option.value || "auto"} value={option.value}>
+                            <option
+                              key={option.value}
+                              value={option.value}
+                              className="bg-white text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
+                            >
                               {option.label}
                             </option>
                           ))}
@@ -1604,13 +3107,13 @@ export default function ChatClient() {
                     ) : null}
 
                     {deepResearchEnabled ? (
-                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-[#2b5da8] bg-[#173868] px-3 text-xs font-medium text-[#9cc8ff]">
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]">
                         <SparkIcon className="h-3.5 w-3.5" />
                         Deep research
                         <button
                           type="button"
                           onClick={() => setDeepResearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-[#9cc8ff] opacity-0 transition-opacity hover:bg-white/10 group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable deep research"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -1618,35 +3121,208 @@ export default function ChatClient() {
                       </span>
                     ) : null}
 
+                    {chartModeEnabled && !deepResearchEnabled ? (
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]">
+                        <ChartIcon className="h-3.5 w-3.5" />
+                        Chart mode
+                        <button
+                          type="button"
+                          onClick={() => setChartModeEnabled(false)}
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          aria-label="Disable chart mode"
+                        >
+                          <CloseIcon className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : null}
+
+                    {webSearchEnabled && !deepResearchEnabled ? (
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]">
+                        <SearchIcon className="h-3.5 w-3.5" />
+                        Web search
+                        <button
+                          type="button"
+                          onClick={() => setWebSearchEnabled(false)}
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          aria-label="Disable web search"
+                        >
+                          <CloseIcon className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ) : null}
+
                     {chatScopeFolderId !== "all" ? (
-                      <span className="inline-flex h-9 items-center gap-1 rounded-full border border-white/10 bg-[#212121] px-3 text-xs text-[#b4b4b4]">
+                      <span className="inline-flex h-9 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                         <FolderIcon className="h-3.5 w-3.5" />
                         {activeFolderLabel}
                       </span>
                     ) : null}
                   </div>
 
-                  <button
-                    type="submit"
-                    disabled={
-                      (!loading && draft.trim().length === 0) ||
-                      (deepResearchEnabled && !canPersist)
-                    }
-                    className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
-                      loading
-                        ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
-                        : draft.trim().length > 0
-                          ? "bg-white text-[#111111] hover:bg-[#f3f3f3]"
-                          : "bg-[#3a3a3a] text-[#8e8e8e]"
-                    } disabled:cursor-not-allowed`}
-                    aria-label={loading ? "Stop generating" : "Send message"}
-                  >
-                    {loading ? (
-                      <StopIcon className="h-4 w-4" />
-                    ) : (
-                      <SendIcon className="h-4 w-4" />
-                    )}
-                  </button>
+                  <div className="relative flex items-center gap-2" ref={parameterMenuRef}>
+                    {!deepResearchEnabled && !chartModeEnabled ? (
+                      <button
+                        type="button"
+                        onClick={() => setParameterMenuOpen((current) => !current)}
+                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+                          parameterMenuOpen
+                            ? "border-slate-300 bg-slate-100 text-slate-900 dark:border-white/30 dark:bg-[#050505] dark:text-white"
+                            : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a]"
+                        }`}
+                        aria-label="Open generation parameters"
+                        title="Generation parameters"
+                      >
+                        <EqualizerIcon className="h-4 w-4" />
+                      </button>
+                    ) : null}
+
+                    {parameterMenuOpen && !deepResearchEnabled && !chartModeEnabled ? (
+                      <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+                        <div className="mb-3 flex items-center justify-between">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#9b9b9b]">
+                            Generation
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setChatParameters(DEFAULT_CHAT_PARAMETERS)}
+                            className="text-xs font-medium text-sky-700 hover:text-sky-900 dark:text-[#9cc8ff] dark:hover:text-[#c9e2ff]"
+                          >
+                            Reset
+                          </button>
+                        </div>
+
+                        <div className="space-y-3 text-xs text-slate-700 dark:text-[#d8d8d8]">
+                          <label className="block">
+                            <div className="mb-1 flex items-center justify-between">
+                              <span>Temperature</span>
+                              <span className="text-slate-500 dark:text-[#9b9b9b]">{chatParameters.temperature.toFixed(2)}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={2}
+                              step={0.05}
+                              value={chatParameters.temperature}
+                              onChange={(event) =>
+                                handleParameterChange("temperature", Number(event.target.value))
+                              }
+                              className="w-full accent-sky-600 dark:accent-[#9cc8ff]"
+                            />
+                          </label>
+
+                          <label className="block">
+                            <div className="mb-1 flex items-center justify-between">
+                              <span>Top P</span>
+                              <span className="text-slate-500 dark:text-[#9b9b9b]">{chatParameters.topP.toFixed(2)}</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={1}
+                              step={0.01}
+                              value={chatParameters.topP}
+                              onChange={(event) =>
+                                handleParameterChange("topP", Number(event.target.value))
+                              }
+                              className="w-full accent-sky-600 dark:accent-[#9cc8ff]"
+                            />
+                          </label>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className="mb-1 block">Top K</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={200}
+                                step={1}
+                                value={chatParameters.topK}
+                                onChange={(event) =>
+                                  handleParameterChange("topK", Number(event.target.value || 0))
+                                }
+                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="mb-1 block">Max Tokens</span>
+                              <input
+                                type="number"
+                                min={64}
+                                max={8192}
+                                step={1}
+                                value={chatParameters.maxTokens}
+                                onChange={(event) =>
+                                  handleParameterChange("maxTokens", Number(event.target.value || 0))
+                                }
+                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
+                              />
+                            </label>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <label className="block">
+                              <span className="mb-1 block">Frequency Penalty</span>
+                              <input
+                                type="number"
+                                min={-2}
+                                max={2}
+                                step={0.1}
+                                value={chatParameters.frequencyPenalty}
+                                onChange={(event) =>
+                                  handleParameterChange(
+                                    "frequencyPenalty",
+                                    Number(event.target.value || 0)
+                                  )
+                                }
+                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
+                              />
+                            </label>
+
+                            <label className="block">
+                              <span className="mb-1 block">Presence Penalty</span>
+                              <input
+                                type="number"
+                                min={-2}
+                                max={2}
+                                step={0.1}
+                                value={chatParameters.presencePenalty}
+                                onChange={(event) =>
+                                  handleParameterChange(
+                                    "presencePenalty",
+                                    Number(event.target.value || 0)
+                                  )
+                                }
+                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
+                              />
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="submit"
+                      disabled={
+                        (!loading && draft.trim().length === 0 && !chartModeEnabled) ||
+                        (deepResearchEnabled && !canPersist)
+                      }
+                      className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                        loading
+                          ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
+                          : draft.trim().length > 0 || chartModeEnabled
+                            ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
+                            : "bg-slate-200 text-slate-400 dark:bg-[#1f1f1f] dark:text-[#8e8e8e]"
+                      } disabled:cursor-not-allowed`}
+                      aria-label={loading ? "Stop generating" : "Send message"}
+                    >
+                      {loading ? (
+                        <StopIcon className="h-4 w-4" />
+                      ) : (
+                        <SendIcon className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
             </form>
@@ -1655,19 +3331,19 @@ export default function ChatClient() {
       </div>
 
       {reportFullViewOpen && researchReport ? (
-        <div className="fixed inset-0 z-50 bg-[#171717]">
+        <div className="fixed inset-0 z-50 bg-slate-50 text-slate-900 dark:bg-[#050505] dark:text-[#ececec]">
           <div className="flex h-full flex-col">
-            <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 sm:px-6">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f] sm:px-6">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setReportFullViewOpen(false)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#b4b4b4] transition-colors hover:bg-[#2a2a2a] hover:text-white"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   aria-label="Close full report"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
-                <span className="text-sm font-medium text-[#b4b4b4]">
+                <span className="text-sm font-medium text-slate-500 dark:text-[#b4b4b4]">
                   Deep research report
                 </span>
               </div>
@@ -1675,7 +3351,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setReportFullViewOpen(false)}
-                className="inline-flex h-10 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#2a2a2a]"
+                className="inline-flex h-10 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
               >
                 Close
               </button>
@@ -1684,10 +3360,10 @@ export default function ChatClient() {
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-10 sm:px-10">
               <article className="mx-auto max-w-[900px] space-y-8">
                 <div className="space-y-3">
-                  <p className="text-sm text-[#8e8e8e]">
+                  <p className="text-sm text-slate-500 dark:text-[#8e8e8e]">
                     Research completed in the selected library scope.
                   </p>
-                  <h1 className="text-[2.2rem] font-semibold tracking-tight text-[#ececec] sm:text-[3rem]">
+                  <h1 className="text-[2.2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[3rem]">
                     {researchTitle}
                   </h1>
                 </div>
@@ -1697,7 +3373,7 @@ export default function ChatClient() {
                     (block, index) => (
                       <p
                         key={`fullscreen-report-${index}`}
-                        className="whitespace-pre-wrap text-[17px] leading-9 text-[#ececec]"
+                        className="whitespace-pre-wrap text-[17px] leading-9 text-slate-700 dark:text-[#ececec]"
                       >
                         {block}
                       </p>
@@ -1710,15 +3386,123 @@ export default function ChatClient() {
         </div>
       ) : null}
 
+      {searchModalOpen ? (
+        <Modal onClose={() => setSearchModalOpen(false)} zIndexClassName="z-[60]">
+          <div className="flex h-[min(660px,86vh)] w-[min(860px,94vw)] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white text-slate-900 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f4f4f4] dark:shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
+            <div className="flex h-20 flex-none items-center border-b border-slate-200 px-6 dark:border-[#1f1f1f]">
+              <label className="relative flex min-w-0 flex-1 items-center">
+                <SearchIcon className="pointer-events-none absolute left-0 h-5 w-5 text-slate-400 dark:text-[#b4b4b4]" />
+                <input
+                  type="search"
+                  value={chatSearchQuery}
+                  onChange={(event) => setChatSearchQuery(event.target.value)}
+                  placeholder="Search chats..."
+                  className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#c7c7c7]"
+                  autoFocus
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => setSearchModalOpen(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                aria-label="Close chat search"
+              >
+                <CloseIcon className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+              <button
+                type="button"
+                onClick={() => {
+                  resetChat("normal");
+                  setSearchModalOpen(false);
+                }}
+                className="mb-5 flex h-12 w-full items-center gap-4 rounded-xl px-1 text-left text-base font-medium text-slate-900 transition-colors hover:bg-slate-100 dark:text-white dark:hover:bg-[#0a0a0a]"
+              >
+                <PencilSquareIcon className="h-5 w-5" />
+                <span>New chat</span>
+              </button>
+
+              {chatSearchLoading ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
+                  <span>Searching chats...</span>
+                </div>
+              ) : null}
+
+              {!chatSearchLoading && chatSearchError ? (
+                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                  {chatSearchError}
+                </div>
+              ) : null}
+
+              {!chatSearchLoading && !chatSearchError && chatSearchResults.length === 0 ? (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
+                  {chatSearchQuery.trim()
+                    ? "No chats matched that search."
+                    : "No chats yet."}
+                </div>
+              ) : null}
+
+              {!chatSearchLoading && !chatSearchError
+                ? ["Today", "Yesterday", "Previous 7 Days", "Previous 30 Days", "Older"].map(
+                    (groupLabel) => {
+                      const groupResults = chatSearchResults.filter(
+                        (result) => result.groupLabel === groupLabel
+                      );
+                      if (groupResults.length === 0) return null;
+                      return (
+                        <section key={groupLabel} className="mb-6">
+                          <p className="mb-2 text-sm text-slate-500 dark:text-[#b4b4b4]">
+                            {groupLabel}
+                          </p>
+                          <div className="space-y-1">
+                            {groupResults.map((result) => (
+                              <button
+                                key={result.id}
+                                type="button"
+                                onClick={() => {
+                                  setActiveThreadId(result.thread.id);
+                                  setSearchModalOpen(false);
+                                  setThreadMenuId(null);
+                                }}
+                                className="flex w-full items-start gap-4 rounded-xl px-1 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
+                              >
+                                <ChatIcon className="mt-1 h-5 w-5 flex-none text-slate-700 dark:text-white" />
+                                <span className="min-w-0">
+                                  <span className="block truncate text-base font-medium text-slate-900 dark:text-white">
+                                    {result.thread.title || "Untitled chat"}
+                                  </span>
+                                  {result.snippet ? (
+                                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-slate-500 dark:text-[#c7c7c7]">
+                                      {result.matchedIn === "message" ? "Message: " : ""}
+                                      {result.snippet}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      );
+                    }
+                  )
+                : null}
+            </div>
+          </div>
+        </Modal>
+      ) : null}
+
       {showLibraryPicker ? (
         <Modal onClose={() => setShowLibraryPicker(false)}>
-          <div className="w-[min(720px,92vw)] rounded-[28px] border border-white/10 bg-[#171717] p-6 shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+          <div className="w-[min(720px,92vw)] rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-semibold text-[#ececec]">
+                <h2 className="text-xl font-semibold text-slate-900 dark:text-[#ececec]">
                   Add from library
                 </h2>
-                <p className="mt-1 text-sm text-[#8e8e8e]">
+                <p className="mt-1 text-sm text-slate-500 dark:text-[#8e8e8e]">
                   Choose files from {currentProject?.name ?? "this project"} to focus the
                   chat context.
                 </p>
@@ -1726,7 +3510,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setShowLibraryPicker(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-[#8e8e8e] transition-colors hover:bg-[#2a2a2a] hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                 aria-label="Close library picker"
               >
                 <CloseIcon className="h-4 w-4" />
@@ -1734,24 +3518,24 @@ export default function ChatClient() {
             </div>
 
             <label className="relative mt-5 block">
-              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8e8e8e]" />
+              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#8e8e8e]" />
               <input
                 type="search"
                 value={libraryQuery}
                 onChange={(event) => setLibraryQuery(event.target.value)}
                 placeholder="Search files"
-                className="w-full rounded-2xl border border-white/10 bg-[#212121] py-3 pl-11 pr-4 text-sm text-[#ececec] outline-none placeholder:text-[#8e8e8e] focus:border-white/20"
+                className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
               />
             </label>
 
             <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
               {libraryLoading ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-[#212121] px-4 py-4 text-sm text-[#b4b4b4]">
-                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                   <span>Loading library files...</span>
                 </div>
               ) : filteredLibraryRuns.length === 0 ? (
-                <div className="rounded-2xl border border-white/10 bg-[#212121] px-4 py-5 text-sm text-[#8e8e8e]">
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">
                   No files matched this search.
                 </div>
               ) : (
@@ -1765,8 +3549,8 @@ export default function ChatClient() {
                       onClick={() => toggleLibraryRun(run)}
                       className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
                         selected
-                          ? "border-[#2b5da8] bg-[#173868]/65"
-                          : "border-white/10 bg-[#212121] hover:bg-[#262626]"
+                          ? "border-sky-300 bg-sky-50 dark:border-[#2b5da8] dark:bg-[#173868]/65"
+                          : "border-slate-200 bg-white hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
                       }`}
                     >
                       <span
@@ -1775,22 +3559,22 @@ export default function ChatClient() {
                         <Glyph className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-[#ececec]">
+                        <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">
                           {runTitleOf(run)}
                         </span>
-                        <span className="mt-1 block text-xs text-[#8e8e8e]">
+                        <span className="mt-1 block text-xs text-slate-500 dark:text-[#8e8e8e]">
                           {runSourceLabel(run)} | {runExtOf(run).toUpperCase()}
                         </span>
                       </span>
                       <span
                         className={`mt-1 inline-flex h-5 w-5 flex-none rounded-full border ${
                           selected
-                            ? "border-[#9cc8ff] bg-[#9cc8ff]"
-                            : "border-white/20"
+                            ? "border-sky-600 bg-sky-600 dark:border-[#9cc8ff] dark:bg-[#9cc8ff]"
+                            : "border-slate-300 dark:border-[#1f1f1f]"
                         }`}
                       >
                         {selected ? (
-                          <CheckCircleIcon className="h-5 w-5 text-[#173868]" />
+                          <CheckCircleIcon className="h-5 w-5 text-white dark:text-[#173868]" />
                         ) : null}
                       </span>
                     </button>
@@ -1800,7 +3584,7 @@ export default function ChatClient() {
             </div>
 
             <div className="mt-5 flex items-center justify-between gap-3">
-              <p className="text-sm text-[#8e8e8e]">
+              <p className="text-sm text-slate-500 dark:text-[#8e8e8e]">
                 {selectedLibraryRuns.length} file
                 {selectedLibraryRuns.length === 1 ? "" : "s"} selected
               </p>
@@ -1808,7 +3592,7 @@ export default function ChatClient() {
                 <button
                   type="button"
                   onClick={() => setShowLibraryPicker(false)}
-                  className="inline-flex h-10 items-center rounded-full border border-white/10 px-4 text-sm font-medium text-[#ececec] transition-colors hover:bg-[#2a2a2a]"
+                  className="inline-flex h-10 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                 >
                   Done
                 </button>

@@ -4,17 +4,40 @@ export interface TrendRow {
   paper_id: PaperId;
   folder_id?: string | null;
   year: string;
+  year_confidence?: number | null;
+  year_source?: string | null;
+  year_evidence?: string | null;
+  year_candidates?: Array<Record<string, unknown>> | null;
   title: string;
   topic: string;
+  raw_topic?: string;
   keyword: string;
   keyword_frequency: number;
   evidence: string;
+}
+
+export interface CorpusTopicFamily {
+  id: string;
+  canonicalTopic: string;
+  aliases: string[];
+  representativeKeywords: string[];
+  relatedKeywords: string[];
+  matchedTerms: string[];
+  evidenceSnippets: string[];
+  paperIds: PaperId[];
+  folderIds: string[];
+  years: string[];
+  totalKeywordFrequency: number;
 }
 
 export interface TrackRow {
   paper_id: PaperId;
   folder_id?: string | null;
   year: string;
+  year_confidence?: number | null;
+  year_source?: string | null;
+  year_evidence?: string | null;
+  year_candidates?: Array<Record<string, unknown>> | null;
   title: string;
   el: number;
   eli: number;
@@ -26,11 +49,13 @@ export interface DashboardData {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
+  topicFamilies?: CorpusTopicFamily[];
   useMock: boolean;
   diagnostics?: {
     dataSource?: "scoped" | "legacy_fallback" | "mock" | "empty";
     recoveredFromLegacyScope?: boolean;
     scopeDescription?: string;
+    errorMessage?: string;
   } | null;
 }
 
@@ -41,6 +66,10 @@ export interface DbPaper {
   owner_user_id?: string | null;
   folder_id?: string | null;
   year: string;
+  year_confidence?: number | null;
+  year_source?: string | null;
+  year_evidence?: string | null;
+  year_candidates?: Array<Record<string, unknown>> | null;
   title: string;
   created_at?: string;
 }
@@ -162,6 +191,10 @@ export interface PaperFullRow {
   paper_id: PaperId;
   folder_id?: string | null;
   year: string;
+  year_confidence?: number | null;
+  year_source?: string | null;
+  year_evidence?: string | null;
+  year_candidates?: Array<Record<string, unknown>> | null;
   title: string;
   abstract?: string | null;
   abstract_claims?: string | null;

@@ -58,8 +58,8 @@ export default function NewOrganizationPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] text-white">
-      <header className="border-b border-white/10">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
+      <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-4">
           <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1f9d63] text-white">
             <LogoMarkIcon className="h-5 w-5" />
@@ -71,13 +71,13 @@ export default function NewOrganizationPage() {
       <section className="mx-auto flex max-w-5xl justify-center px-6 py-20">
         <form
           onSubmit={handleSubmit}
-          className="w-full max-w-3xl rounded-3xl border border-white/10 bg-[#171717]"
+          className="w-full max-w-3xl rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]"
         >
-          <div className="border-b border-white/10 px-8 py-7">
-            <h1 className="text-3xl font-semibold tracking-tight">
+          <div className="border-b border-slate-200 px-8 py-7 dark:border-[#1f1f1f]">
+            <h1 className="text-3xl font-semibold tracking-normal text-slate-900 dark:text-white">
               Create a new organization
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-[#9b9b9b]">
+            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-500 dark:text-[#9b9b9b]">
               Organizations group related projects together so your library,
               dashboard, and research chat stay easy to manage.
             </p>
@@ -85,23 +85,23 @@ export default function NewOrganizationPage() {
 
           <div className="space-y-8 px-8 py-8">
             <div className="grid gap-3">
-              <label className="text-sm font-medium text-white">Name</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-white">Name</label>
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Organization name"
-                className="rounded-2xl border border-white/10 bg-[#111111] px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#666] focus:border-[#1f9d63]"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666]"
               />
             </div>
 
             <div className="grid gap-3">
-              <label className="text-sm font-medium text-white">Type</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-white">Type</label>
               <select
                 value={type}
                 onChange={(event) =>
                   setType(event.target.value as WorkspaceOrganizationRow["type"])
                 }
-                className="rounded-2xl border border-white/10 bg-[#111111] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-[#1f9d63]"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white"
               >
                 {ORGANIZATION_TYPES.map((option) => (
                   <option key={option} value={option}>
@@ -112,16 +112,16 @@ export default function NewOrganizationPage() {
             </div>
 
             {error ? (
-              <div className="rounded-2xl border border-red-900/60 bg-red-950/30 px-4 py-3 text-sm text-red-200">
+              <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                 {error}
               </div>
             ) : null}
           </div>
 
-          <div className="flex items-center justify-between border-t border-white/10 px-8 py-5">
+          <div className="flex items-center justify-between border-t border-slate-200 px-8 py-5 dark:border-[#1f1f1f]">
             <Link
               href="/organizations"
-              className="rounded-xl border border-white/10 bg-[#141414] px-4 py-2.5 text-sm font-medium text-[#d0d0d0] transition-colors hover:bg-[#1b1b1b]"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               Cancel
             </Link>

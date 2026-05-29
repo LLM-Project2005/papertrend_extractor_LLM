@@ -3,7 +3,9 @@ import logging
 import os
 import re
 from difflib import SequenceMatcher
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+
+from pydantic import BaseModel, Field
 
 from nodes import ModelTask, get_task_llm
 from nodes.keyword_search import keyword_search_node
@@ -63,7 +65,70 @@ STOPWORDS = {
 INTERNAL_VERIFY_TOOL = "verify_research"
 INTERNAL_SYNTHESIZE_TOOL = "synthesize_report"
 PAYLOAD_VERSION = 3
-PLANNER_VERSION = "hybrid-v2"
+PLANNER_VERSION = "hybrid-v3"
+MIN_ACCEPTABLE_PLAN_SCORE = 72
+MAX_PLANNING_STEPS = 10
+MIN_INTENT_CONFIDENCE = 0.55
+PLANNING_TOOL_ALLOWLIST = {
+    "list_folder_papers",
+    "get_dashboard_summary",
+    "keyword_search",
+    "fetch_papers",
+    "read_paper_sections",
+    INTERNAL_VERIFY_TOOL,
+    INTERNAL_SYNTHESIZE_TOOL,
+}
+PLANNING_TOOL_DEFAULTS: Dict[str, Dict[str, str]] = {
+    "list_folder_papers": {
+        "phase_class": "research",
+        "required_class": "required_before_verification",
+        "purpose": "Confirm scoped paper coverage before evidence extraction.",
+        "expected_output": "A scoped paper list relevant to the request.",
+        "completion_condition": "Scope coverage is confirmed or gaps are recorded.",
+    },
+    "get_dashboard_summary": {
+        "phase_class": "research",
+        "required_class": "optional_context",
+        "purpose": "Add corpus-level context where it improves interpretation.",
+        "expected_output": "A concise scope or trend framing note.",
+        "completion_condition": "Framing context is captured or judged unnecessary.",
+    },
+    "keyword_search": {
+        "phase_class": "research",
+        "required_class": "optional_context",
+        "purpose": "Expand grounded vocabulary and nearby concepts in scope.",
+        "expected_output": "Keyword-level supporting context linked to scoped papers.",
+        "completion_condition": "Relevant concepts are identified or no useful expansions remain.",
+    },
+    "fetch_papers": {
+        "phase_class": "research",
+        "required_class": "required_before_verification",
+        "purpose": "Retrieve papers that directly support the user request.",
+        "expected_output": "A grounded shortlist of relevant papers.",
+        "completion_condition": "Relevant papers are retrieved or an evidence gap is recorded.",
+    },
+    "read_paper_sections": {
+        "phase_class": "research",
+        "required_class": "required_before_verification",
+        "purpose": "Extract section-level evidence for requested claims.",
+        "expected_output": "Structured section evidence with clear provenance.",
+        "completion_condition": "Requested sections are extracted or reported missing.",
+    },
+    INTERNAL_VERIFY_TOOL: {
+        "phase_class": "verification",
+        "required_class": "verification",
+        "purpose": "Validate coverage, citations, and evidence sufficiency before synthesis.",
+        "expected_output": "Verification decision with warnings or required follow-up.",
+        "completion_condition": "Verification passes, passes with warnings, or returns replan work.",
+    },
+    INTERNAL_SYNTHESIZE_TOOL: {
+        "phase_class": "synthesis",
+        "required_class": "synthesis",
+        "purpose": "Compose grounded user-facing report from verified evidence only.",
+        "expected_output": "Final report with explicit evidence-aware framing.",
+        "completion_condition": "A complete grounded report or scoped partial report is produced.",
+    },
+}
 MAX_VERIFICATION_REPLAN_ROUNDS = 1
 REQUIRED_PRIORITY = {
     "required_before_verification": 0,
@@ -127,6 +192,20 @@ UNRESOLVED_SECTION_MESSAGES = {
     "limitations": "The extracted sections do not state explicit limitations clearly.",
     "implications": "The extracted sections do not provide clean grounded evidence for the paper's implications.",
 }
+
+
+class DeepResearchIntentResolutionSchema(BaseModel):
+    rewritten_prompt: str = Field(default="", description="Prompt rewritten to resolve deictic references to concrete titles.")
+    intent_label: Literal["single_paper", "comparison", "survey", "topic_review", "evidence_audit"] = Field(
+        default="topic_review",
+        description="Primary request intent class.",
+    )
+    candidate_title: str = Field(default="", description="Resolved primary paper title if the request targets one paper.")
+    target_paper_id: int = Field(default=0, ge=0, description="Resolved target paper id from the provided scoped catalog only.")
+    requested_sections: List[str] = Field(default_factory=list, description="Requested report sections when explicitly implied.")
+    compare: bool = Field(default=False, description="Whether the request is comparative across papers.")
+    survey: bool = Field(default=False, description="Whether the request is broad survey/review style.")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Resolver confidence score.")
 
 
 def _get_supabase_url() -> str:
@@ -348,9 +427,56 @@ def _extract_candidate_title(prompt: str) -> str:
         if not match:
             continue
         candidate = _normalize_space(match.group(1)).strip(" .,:;")
-        if len(candidate) >= 12:
+        if len(candidate) >= 12 and not _is_placeholder_title(candidate):
             return candidate
     return ""
+
+
+def _is_placeholder_title(value: str) -> bool:
+    normalized = _normalize_title(value)
+    if not normalized:
+        return False
+    placeholder_phrases = {
+        "this file",
+        "this file here",
+        "that file",
+        "the file",
+        "file here",
+        "this paper",
+        "that paper",
+        "the paper",
+        "paper here",
+        "attached file",
+        "attached paper",
+        "attached document",
+        "this document",
+        "that document",
+        "the document",
+    }
+    if normalized in placeholder_phrases:
+        return True
+    normalized_tokens = set(_tokenize(normalized))
+    placeholder_tokens = {"this", "that", "here", "attached", "file", "paper", "document"}
+    return bool(normalized_tokens) and normalized_tokens.issubset(placeholder_tokens)
+
+
+def _extract_attachment_titles(attachment_names: Optional[Sequence[str]] = None) -> List[str]:
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for name in list(attachment_names or []):
+        title = _normalize_space(str(name or ""))
+        if not title:
+            continue
+        title = re.sub(r"\.[a-z0-9]{1,6}$", "", title, flags=re.IGNORECASE)
+        title = _normalize_space(title)
+        if len(title) < 4 or _is_placeholder_title(title):
+            continue
+        normalized = _normalize_title(title)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        cleaned.append(title)
+    return cleaned
 
 
 def _extract_author_hint(prompt: str) -> str:
@@ -377,6 +503,16 @@ def _normalize_search_query(prompt: str, candidate_title: str) -> str:
     )[0]
     normalized = re.sub(
         r"(?i)\b(deep research|analysis|structured report|report)\b",
+        " ",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?i)\b(this|that)\s+(file|paper|document)(\s+here)?\b",
+        " ",
+        normalized,
+    )
+    normalized = re.sub(
+        r"(?i)\battached\s+(file|paper|document)\b",
         " ",
         normalized,
     )
@@ -474,6 +610,8 @@ def _selected_query_bundle(
         bundle = dict(tool_input.get("queryBundle") or {})
     elif tool_input and isinstance(tool_input.get("normalizedQuery"), dict):
         bundle = dict(tool_input.get("normalizedQuery") or {})
+    elif isinstance(state.get("query_bundle"), dict):
+        bundle = dict(state.get("query_bundle") or {})
     return _normalize_query_bundle(
         bundle,
         prompt_analysis=prompt_analysis,
@@ -605,6 +743,26 @@ def _token_overlap_count(left: str, right: str) -> int:
     return len(left_tokens & right_tokens)
 
 
+def _paper_section_keyword_hits(
+    paper: Dict[str, Any],
+    requested_sections: Sequence[str],
+) -> int:
+    score = 0
+    for requested_section in requested_sections:
+        rule = _section_rule(requested_section)
+        keywords = [str(keyword).lower() for keyword in list(rule.get("keywords") or [])]
+        fields = [field for field in list(rule.get("fields") or []) if field in TEXT_FIELDS]
+        field_bonus = dict(rule.get("field_bonus") or {})
+        for field in fields:
+            text = str(paper.get(field) or "").lower()
+            if not text:
+                continue
+            field_hits = sum(1 for keyword in keywords if keyword in text)
+            if field_hits:
+                score += field_hits * (2 + int(field_bonus.get(field) or 0))
+    return score
+
+
 def _score_paper_match(
     paper: Dict[str, Any],
     normalized_query: str,
@@ -622,16 +780,10 @@ def _score_paper_match(
     )
     haystack = _paper_text_haystack(paper)
     title_component = 1000 if exact_normalized_title_match else int(title_strength * 160)
-    selected_scope_anchor_bonus = 60 if selected_scope_anchor else 0
+    selected_scope_anchor_bonus = 80 if selected_scope_anchor else 0
     author_component = _token_overlap_count(author_hint, str(paper.get("authors") or paper_title)) * 12
-    section_component = 0
     requested_sections = list(requested_sections or [])
-    for requested_section in requested_sections:
-        section_component += sum(
-            6
-            for keyword in SECTION_EVIDENCE_RULES.get(requested_section, {}).get("keywords", ())
-            if keyword.lower() in haystack
-        )
+    section_component = _paper_section_keyword_hits(paper, requested_sections)
     general_component = 0
     for token in _tokenize(normalized_query):
         if token in _normalize_title(paper_title):
@@ -639,7 +791,24 @@ def _score_paper_match(
         elif token in haystack:
             general_component += 3
     noise_penalty = _paper_noise_penalty(paper)
-    score = title_component + selected_scope_anchor_bonus + author_component + section_component + general_component - noise_penalty
+    duplicate_penalty = 0
+    if (
+        candidate_title
+        and not exact_normalized_title_match
+        and _normalize_title(candidate_title)
+        and _normalize_title(candidate_title) in _normalize_title(paper_title)
+        and title_strength < 0.82
+    ):
+        duplicate_penalty += 12
+    score = (
+        title_component
+        + selected_scope_anchor_bonus
+        + author_component
+        + section_component
+        + general_component
+        - noise_penalty
+        - duplicate_penalty
+    )
     return {
         "paperId": _json_safe_id(int(paper.get("paper_id") or 0)),
         "title": paper_title,
@@ -655,6 +824,7 @@ def _score_paper_match(
             "requested_sections": section_component,
             "general_content": general_component,
             "noise_penalty": -noise_penalty,
+            "duplicate_penalty": -duplicate_penalty,
         },
     }
 
@@ -663,10 +833,36 @@ def _analyze_prompt(
     prompt: str,
     papers: Sequence[Dict[str, Any]],
     selected_run_ids: Optional[Sequence[str]] = None,
+    attachment_names: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
+    selected_scope_ids = {
+        str(run_id).strip()
+        for run_id in list(selected_run_ids or [])
+        if str(run_id).strip()
+    }
+    explicit_selected_scope = bool(selected_scope_ids)
     candidate_title = _extract_candidate_title(prompt)
     quoted_title = _extract_quoted_title(prompt)
     author_hint = _extract_author_hint(prompt)
+    attachment_titles = _extract_attachment_titles(attachment_names)
+    selected_scope_papers = [
+        paper
+        for paper in papers
+        if str(paper.get("ingestion_run_id") or "").strip() in selected_scope_ids
+    ]
+    if explicit_selected_scope and not selected_scope_papers:
+        selected_scope_papers = list(papers)
+    if not candidate_title and len(attachment_titles) == 1:
+        candidate_title = attachment_titles[0]
+    if not candidate_title and len(selected_scope_papers) == 1:
+        candidate_title = _normalize_space(str(selected_scope_papers[0].get("title") or ""))
+    if _is_placeholder_title(candidate_title):
+        if len(selected_scope_papers) == 1:
+            candidate_title = _normalize_space(str(selected_scope_papers[0].get("title") or ""))
+        elif len(attachment_titles) == 1:
+            candidate_title = attachment_titles[0]
+        else:
+            candidate_title = ""
     requested_sections = _detect_requested_sections(prompt)
     normalized_query = _normalize_search_query(prompt, candidate_title)
     lowered = prompt.lower()
@@ -700,14 +896,8 @@ def _analyze_prompt(
         "requested_sections": requested_sections,
         "normalized_topic_terms": _tokenize(normalized_query)[:10],
         "exclusion_ids": [],
+        "attachment_titles": attachment_titles,
     }
-    explicit_selected_scope = bool(
-        {
-            str(run_id).strip()
-            for run_id in list(selected_run_ids or [])
-            if str(run_id).strip()
-        }
-    )
     ranked_matches = sorted(
         [
             _score_paper_match(
@@ -716,12 +906,7 @@ def _analyze_prompt(
                 analysis["candidate_title"],
                 author_hint=author_hint,
                 requested_sections=requested_sections,
-                selected_scope_anchor=str(paper.get("ingestion_run_id") or "").strip()
-                in {
-                    str(run_id).strip()
-                    for run_id in list(selected_run_ids or [])
-                    if str(run_id).strip()
-                },
+                selected_scope_anchor=str(paper.get("ingestion_run_id") or "").strip() in selected_scope_ids,
             )
             for paper in papers
         ],
@@ -759,13 +944,7 @@ def _analyze_prompt(
                 requested_sections=requested_sections,
                 selected_scope_anchor=True,
             )
-            for paper in papers
-            if str(paper.get("ingestion_run_id") or "").strip()
-            in {
-                str(run_id).strip()
-                for run_id in list(selected_run_ids or [])
-                if str(run_id).strip()
-            }
+            for paper in selected_scope_papers
         ]
         selected_exact = next(
             (
@@ -861,17 +1040,227 @@ def _analyze_prompt(
     return analysis
 
 
+def _build_intent_resolution_prompt(
+    prompt: str,
+    papers: Sequence[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]] = None,
+    attachment_names: Optional[Sequence[str]] = None,
+    heuristic_analysis: Optional[Dict[str, Any]] = None,
+) -> str:
+    scoped_catalog = [
+        f"- paper_id={int(paper.get('paper_id') or 0)} | title={_normalize_space(str(paper.get('title') or ''))} | year={_normalize_space(str(paper.get('year') or 'Unknown'))} | run_id={_normalize_space(str(paper.get('ingestion_run_id') or ''))}"
+        for paper in list(papers or [])[:40]
+        if _normalize_space(str(paper.get("title") or ""))
+    ]
+    selected_ids = [str(run_id).strip() for run_id in list(selected_run_ids or []) if str(run_id).strip()]
+    attachment_list = [
+        _normalize_space(str(name or ""))
+        for name in list(attachment_names or [])
+        if _normalize_space(str(name or ""))
+    ]
+    heuristic = heuristic_analysis if isinstance(heuristic_analysis, dict) else {}
+    return (
+        "You resolve user intent for a corpus-grounded deep-research planner.\n"
+        "Return only a JSON object that matches DeepResearchIntentResolutionSchema.\n"
+        "Never invent paper ids or titles not present in the scoped catalog.\n"
+        "If the prompt uses deictic references like 'this file here', map to a concrete scoped title only when justified.\n"
+        "\n"
+        "Rules:\n"
+        "- target_paper_id must be one of the provided paper_id values or 0.\n"
+        "- candidate_title must be empty when unresolved.\n"
+        "- requested_sections should only include known section keys.\n"
+        "- rewritten_prompt should preserve the user's intent while replacing ambiguous references.\n"
+        "\n"
+        f"User prompt: {prompt}\n"
+        f"Selected run ids: {selected_ids}\n"
+        f"Attachment names: {attachment_list}\n"
+        f"Heuristic analysis snapshot: {json.dumps(_json_safe_prompt_analysis(heuristic), ensure_ascii=True)}\n"
+        "Scoped paper catalog:\n"
+        + ("\n".join(scoped_catalog) if scoped_catalog else "- (no scoped papers available)")
+    )
+
+
+def _resolve_prompt_intent_with_llm(
+    prompt: str,
+    papers: Sequence[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]] = None,
+    attachment_names: Optional[Sequence[str]] = None,
+    heuristic_analysis: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    structured_llm = research_planning_llm.with_structured_output(
+        DeepResearchIntentResolutionSchema,
+        method="json_schema",
+    )
+    prompt_text = _build_intent_resolution_prompt(
+        prompt,
+        papers,
+        selected_run_ids=selected_run_ids,
+        attachment_names=attachment_names,
+        heuristic_analysis=heuristic_analysis,
+    )
+    try:
+        result = structured_llm.invoke(prompt_text)
+        payload = result.model_dump() if hasattr(result, "model_dump") else dict(result or {})
+    except Exception as error:
+        logger.warning("deep research intent resolver failed: %s", error)
+        return None
+
+    confidence = float(payload.get("confidence") or 0.0)
+    if confidence < MIN_INTENT_CONFIDENCE:
+        return None
+
+    allowed_sections = set(SECTION_ALIASES.keys())
+    requested_sections = [
+        _normalize_space(str(section)).lower()
+        for section in list(payload.get("requested_sections") or [])
+        if _normalize_space(str(section)).lower() in allowed_sections
+    ]
+    target_paper_id = int(payload.get("target_paper_id") or 0)
+    paper_ids = {int(paper.get("paper_id") or 0) for paper in list(papers or [])}
+    if target_paper_id not in paper_ids:
+        target_paper_id = 0
+
+    candidate_title = _normalize_space(str(payload.get("candidate_title") or ""))
+    if _is_placeholder_title(candidate_title):
+        candidate_title = ""
+
+    rewritten_prompt = _normalize_space(str(payload.get("rewritten_prompt") or ""))
+    if rewritten_prompt and _is_placeholder_title(rewritten_prompt):
+        rewritten_prompt = ""
+
+    return {
+        "rewritten_prompt": rewritten_prompt,
+        "intent_label": str(payload.get("intent_label") or "topic_review"),
+        "candidate_title": candidate_title,
+        "target_paper_id": target_paper_id,
+        "requested_sections": requested_sections,
+        "compare": bool(payload.get("compare")),
+        "survey": bool(payload.get("survey")),
+        "confidence": confidence,
+    }
+
+
+def _merge_prompt_intent(
+    prompt: str,
+    papers: Sequence[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]],
+    attachment_names: Optional[Sequence[str]],
+    heuristic_analysis: Dict[str, Any],
+    resolved_intent: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    if not resolved_intent:
+        return heuristic_analysis
+
+    candidate_title = _normalize_space(str(resolved_intent.get("candidate_title") or ""))
+    rewritten_prompt = _normalize_space(str(resolved_intent.get("rewritten_prompt") or ""))
+    if not rewritten_prompt and candidate_title:
+        rewritten_prompt = re.sub(
+            r"(?i)\b(this|that)\s+(file|paper|document)(\s+here)?\b",
+            candidate_title,
+            prompt,
+        )
+        rewritten_prompt = re.sub(
+            r"(?i)\battached\s+(file|paper|document)\b",
+            candidate_title,
+            rewritten_prompt,
+        )
+
+    next_analysis = _analyze_prompt(
+        rewritten_prompt or prompt,
+        papers,
+        selected_run_ids=selected_run_ids,
+        attachment_names=attachment_names,
+    )
+
+    intent_sections = [
+        _normalize_space(str(section)).lower()
+        for section in list(resolved_intent.get("requested_sections") or [])
+        if _normalize_space(str(section)).lower() in SECTION_ALIASES
+    ]
+    if intent_sections:
+        next_analysis["requested_sections"] = intent_sections
+        next_analysis["evidence_extraction"] = True
+        next_analysis["requested_output_mode"] = "structured_sections"
+
+    next_analysis["compare"] = bool(resolved_intent.get("compare", next_analysis.get("compare")))
+    next_analysis["survey"] = bool(resolved_intent.get("survey", next_analysis.get("survey")))
+
+    target_paper_id = int(resolved_intent.get("target_paper_id") or 0)
+    by_id = {
+        int(paper.get("paper_id") or 0): paper
+        for paper in list(papers or [])
+        if int(paper.get("paper_id") or 0) > 0
+    }
+    if target_paper_id in by_id:
+        resolved_paper = by_id[target_paper_id]
+        resolved_title = _normalize_space(str(resolved_paper.get("title") or ""))
+        next_analysis["single_paper"] = True
+        next_analysis["candidate_title"] = resolved_title
+        next_analysis["target_in_scope"] = True
+        next_analysis["target_paper_id"] = target_paper_id
+        next_analysis["target_paper_title"] = resolved_title
+        next_analysis["target_resolution_status"] = "exact_match"
+        next_analysis["primary_intent"] = "paper_lookup"
+        next_analysis["target_entity_type"] = "paper"
+        next_analysis["normalized_query"] = _normalize_search_query(prompt, resolved_title)[:180]
+        target_match = {
+            **_score_paper_match(
+                resolved_paper,
+                str(next_analysis.get("normalized_query") or ""),
+                resolved_title,
+                author_hint=str(next_analysis.get("author_hint") or ""),
+                requested_sections=list(next_analysis.get("requested_sections") or []),
+                selected_scope_anchor=True,
+            ),
+            "selected_scope_anchor": True,
+        }
+        ranked_matches = [
+            target_match,
+            *[
+                row
+                for row in list(next_analysis.get("ranked_matches") or [])
+                if int(row.get("paperId") or 0) != target_paper_id
+            ],
+        ]
+        next_analysis["ranked_matches"] = ranked_matches[:5]
+
+    next_analysis["llm_intent_resolution"] = {
+        "intent_label": str(resolved_intent.get("intent_label") or "topic_review"),
+        "confidence": float(resolved_intent.get("confidence") or 0.0),
+        "rewritten_prompt": rewritten_prompt,
+        "candidate_title": candidate_title,
+        "target_paper_id": target_paper_id,
+    }
+    return next_analysis
+
+
 def _build_planning_snapshot(
     owner_user_id: str,
     folder_id: Optional[str],
     project_id: Optional[str],
     prompt: str,
     selected_run_ids: Optional[Sequence[str]] = None,
+    attachment_names: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     dataset, filtered = _scope_dataset(owner_user_id, folder_id, project_id, selected_run_ids)
     analytics = build_visualization_analytics(filtered)
     papers = list(filtered.get("papers_full") or [])
-    prompt_analysis = _analyze_prompt(prompt, papers, selected_run_ids)
+    heuristic_analysis = _analyze_prompt(prompt, papers, selected_run_ids, attachment_names)
+    resolved_intent = _resolve_prompt_intent_with_llm(
+        prompt,
+        papers,
+        selected_run_ids=selected_run_ids,
+        attachment_names=attachment_names,
+        heuristic_analysis=heuristic_analysis,
+    )
+    prompt_analysis = _merge_prompt_intent(
+        prompt,
+        papers,
+        selected_run_ids,
+        attachment_names,
+        heuristic_analysis,
+        resolved_intent,
+    )
     filtered = _ensure_target_paper_in_filtered_scope(owner_user_id, filtered, prompt_analysis)
     papers = list(filtered.get("papers_full") or [])
     logger.info(
@@ -896,11 +1285,22 @@ def _build_planning_snapshot(
         }
     )
     safe_prompt_analysis = _json_safe_prompt_analysis(prompt_analysis)
+    resolved_query_bundle = _normalize_query_bundle(
+        {},
+        prompt_analysis=safe_prompt_analysis,
+        fallback_query=prompt,
+        target_title=str(safe_prompt_analysis.get("candidate_title") or ""),
+    )
     return {
         "prompt": prompt,
         "folder_id": folder_id,
         "project_id": project_id,
         "selected_run_ids": [str(run_id).strip() for run_id in list(selected_run_ids or []) if str(run_id).strip()],
+        "attachment_names": [
+            _normalize_space(str(name or ""))
+            for name in list(attachment_names or [])
+            if _normalize_space(str(name or ""))
+        ],
         "mode": dataset.get("mode", "live"),
         "paper_count": len(papers),
         "pending_run_count": _pending_runs(owner_user_id, folder_id, project_id, selected_run_ids),
@@ -908,6 +1308,7 @@ def _build_planning_snapshot(
         "top_papers": _safe_papers(filtered),
         "filters": analytics.get("filters", {}),
         "prompt_analysis": safe_prompt_analysis,
+        "query_bundle": resolved_query_bundle,
         "ranked_matches": safe_prompt_analysis.get("ranked_matches", []),
         "available_sections": available_sections,
         "keyword_coverage": keyword_coverage,
@@ -939,12 +1340,17 @@ def _todo_input(
     requested = list(requested_sections or prompt_analysis.get("requested_sections") or [])
     exclusions = [int(item) for item in (exclusion_ids or []) if str(item).strip().isdigit()]
     primary_query = tool_query or str(prompt_analysis.get("normalized_query") or snapshot.get("prompt") or "")
-    query_bundle = _build_query_bundle(
-        primary_query,
-        requested,
+    query_bundle = _normalize_query_bundle(
+        _build_query_bundle(
+            primary_query,
+            requested,
+            target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
+            exclusion_ids=exclusions,
+            author_hint=str(prompt_analysis.get("author_hint") or ""),
+        ),
+        prompt_analysis=safe_prompt_analysis,
+        fallback_query=primary_query,
         target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
-        exclusion_ids=exclusions,
-        author_hint=str(prompt_analysis.get("author_hint") or ""),
     )
     payload: Dict[str, Any] = {
         "payload_version": PAYLOAD_VERSION,
@@ -1324,12 +1730,417 @@ def _build_deterministic_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _planner_mode() -> str:
+    mode = _normalize_space(str(os.getenv("DEEP_RESEARCH_PLAN_MODE") or "hybrid")).lower()
+    if mode in {"deterministic", "hybrid", "llm"}:
+        return mode
+    return "hybrid"
+
+
+def _safe_plan_dict(plan_obj: Any) -> Dict[str, Any]:
+    if hasattr(plan_obj, "model_dump"):
+        dumped = plan_obj.model_dump()
+        return dumped if isinstance(dumped, dict) else {}
+    if isinstance(plan_obj, dict):
+        return dict(plan_obj)
+    return {}
+
+
+def _step_template(tool_name: str) -> Dict[str, str]:
+    return dict(PLANNING_TOOL_DEFAULTS.get(tool_name) or PLANNING_TOOL_DEFAULTS["fetch_papers"])
+
+
+def _coerce_tool_name(raw_name: Any) -> str:
+    name = _normalize_space(str(raw_name or "")).lower()
+    aliases = {
+        "list papers": "list_folder_papers",
+        "list_folder": "list_folder_papers",
+        "dashboard_summary": "get_dashboard_summary",
+        "search_keywords": "keyword_search",
+        "search_papers": "fetch_papers",
+        "fetch": "fetch_papers",
+        "read_sections": "read_paper_sections",
+        "read": "read_paper_sections",
+        "verify": INTERNAL_VERIFY_TOOL,
+        "verification": INTERNAL_VERIFY_TOOL,
+        "synthesize": INTERNAL_SYNTHESIZE_TOOL,
+        "synthesis": INTERNAL_SYNTHESIZE_TOOL,
+    }
+    if name in aliases:
+        return aliases[name]
+    if name in PLANNING_TOOL_ALLOWLIST:
+        return name
+    return "fetch_papers"
+
+
+def _is_research_tool(tool_name: str) -> bool:
+    return tool_name in {
+        "list_folder_papers",
+        "get_dashboard_summary",
+        "keyword_search",
+        "fetch_papers",
+        "read_paper_sections",
+    }
+
+
+def _format_top_papers_for_prompt(snapshot: Dict[str, Any]) -> str:
+    lines: List[str] = []
+    for item in list(snapshot.get("top_papers") or [])[:8]:
+        paper_id = int(item.get("paper_id") or 0)
+        title = _normalize_space(str(item.get("title") or ""))
+        year = _normalize_space(str(item.get("year") or "Unknown"))
+        if title:
+            lines.append(f"- id={paper_id} | title={title} | year={year}")
+    return "\n".join(lines) if lines else "- (no scoped papers available)"
+
+
+def _build_llm_planner_prompt(
+    snapshot: Dict[str, Any],
+    deterministic_plan: Dict[str, Any],
+    critique: str = "",
+) -> str:
+    prompt_analysis = snapshot.get("prompt_analysis") if isinstance(snapshot.get("prompt_analysis"), dict) else {}
+    requested_sections = list(prompt_analysis.get("requested_sections") or [])
+    selected_run_ids = list(snapshot.get("selected_run_ids") or [])
+    attachment_names = list(snapshot.get("attachment_names") or [])
+    candidate_title = _normalize_space(str(prompt_analysis.get("candidate_title") or ""))
+    target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
+    target_in_scope = bool(prompt_analysis.get("target_in_scope"))
+    pending_run_count = int(snapshot.get("pending_run_count") or 0)
+    mode = _normalize_space(str(snapshot.get("mode") or "live"))
+    ranked_matches = list(prompt_analysis.get("ranked_matches") or [])[:5]
+    ranked_lines = "\n".join(
+        f"- id={int(item.get('paperId') or 0)} | title={_normalize_space(str(item.get('title') or ''))} | score={int(item.get('score') or 0)}"
+        for item in ranked_matches
+        if _normalize_space(str(item.get("title") or ""))
+    )
+    if not ranked_lines:
+        ranked_lines = "- (no ranked matches)"
+    allowed_tools = ", ".join(sorted(PLANNING_TOOL_ALLOWLIST))
+    deterministic_titles = [
+        _normalize_space(str(step.get("title") or ""))
+        for step in list(deterministic_plan.get("steps") or [])
+        if _normalize_space(str(step.get("title") or ""))
+    ]
+    deterministic_preview = "\n".join(f"- {title}" for title in deterministic_titles[:8]) or "- (no baseline steps)"
+    critique_block = f"\nCritique from previous plan attempt:\n{critique}\n" if critique else ""
+    return (
+        "You are the planner for a corpus-grounded deep research system.\n"
+        "Return only a valid JSON object matching the DeepResearchPlanSchema.\n"
+        "Never write final answer prose; produce only executable plan steps.\n"
+        "All steps must use only allowed local tools.\n"
+        "Do not use world knowledge. Use scoped corpus signals only.\n"
+        "Make the plan specific to the resolved target document when one exists.\n"
+        "\n"
+        "Hard constraints:\n"
+        f"- Allowed tool_name values: {allowed_tools}\n"
+        "- Include verification and synthesis steps.\n"
+        "- verification step tool_name must be verify_research and appear before synthesize_report.\n"
+        "- final synthesis step tool_name must be synthesize_report and be the last step.\n"
+        "- If single paper target is resolved, at least one read_paper_sections step must anchor targetPaperId and targetTitle.\n"
+        "- If requested_sections are provided, include them in read_paper_sections tool_input.requestedSections.\n"
+        "- Keep steps concise, operational, and evidence-oriented.\n"
+        "\n"
+        "Scoped context:\n"
+        f"- User prompt: {str(snapshot.get('prompt') or '')}\n"
+        f"- Mode: {mode}\n"
+        f"- Pending run count: {pending_run_count}\n"
+        f"- Paper count in scope: {int(snapshot.get('paper_count') or 0)}\n"
+        f"- Candidate title: {candidate_title or '(none)'}\n"
+        f"- Target paper id: {target_paper_id}\n"
+        f"- Target in scope: {target_in_scope}\n"
+        f"- Requested sections: {requested_sections}\n"
+        f"- Selected run ids: {selected_run_ids}\n"
+        f"- Attachment names: {attachment_names}\n"
+        "\n"
+        "Top scoped papers:\n"
+        f"{_format_top_papers_for_prompt(snapshot)}\n"
+        "\n"
+        "Ranked candidate matches:\n"
+        f"{ranked_lines}\n"
+        "\n"
+        "Deterministic baseline step titles (use as fallback reference only, not as a copy template):\n"
+        f"{deterministic_preview}\n"
+        f"{critique_block}"
+    )
+
+
+def _normalize_llm_plan(
+    snapshot: Dict[str, Any],
+    raw_plan: Dict[str, Any],
+    deterministic_plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    prompt = _normalize_space(str(snapshot.get("prompt") or ""))
+    prompt_analysis = snapshot.get("prompt_analysis") if isinstance(snapshot.get("prompt_analysis"), dict) else {}
+    normalized_query = _normalize_space(str(prompt_analysis.get("normalized_query") or prompt))
+    requested_sections = list(prompt_analysis.get("requested_sections") or [])
+    candidate_title = _normalize_space(str(prompt_analysis.get("candidate_title") or ""))
+    target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
+    needs_analysis = int(snapshot.get("pending_run_count") or 0) > 0
+    raw_steps = list(raw_plan.get("steps") or [])[:MAX_PLANNING_STEPS]
+    normalized_steps: List[Dict[str, Any]] = []
+
+    for index, step in enumerate(raw_steps, start=1):
+        if not isinstance(step, dict):
+            continue
+        tool_name = _coerce_tool_name(step.get("tool_name"))
+        title = _normalize_space(str(step.get("title") or f"Step {index}")) or f"Step {index}"
+        description = _normalize_space(str(step.get("description") or "Research this requirement."))
+        step_input = step.get("tool_input") if isinstance(step.get("tool_input"), dict) else {}
+        template = _step_template(tool_name)
+        phase_class = str(step_input.get("phaseClass") or template["phase_class"])
+        required_class = str(step_input.get("requiredClass") or template["required_class"])
+        query = _normalize_space(str(step_input.get("query") or "")) or (
+            candidate_title if tool_name in {"list_folder_papers", "read_paper_sections"} and candidate_title else normalized_query
+        )
+
+        exclusion_ids = [
+            int(item)
+            for item in list(step_input.get("excludePaperIds") or step_input.get("exclusionIds") or [])
+            if str(item).strip().isdigit()
+        ]
+        requested = [
+            _normalize_space(str(section))
+            for section in list(step_input.get("requestedSections") or requested_sections)
+            if _normalize_space(str(section))
+        ]
+        target_title = _normalize_space(str(step_input.get("targetTitle") or candidate_title))
+        resolved_target_paper_id = int(step_input.get("targetPaperId") or target_paper_id or 0)
+
+        extra: Dict[str, Any] = {}
+        if tool_name in {"list_folder_papers", "fetch_papers", "read_paper_sections"}:
+            extra["limit"] = max(1, min(int(step_input.get("limit") or 6), 20))
+        if tool_name == "get_dashboard_summary":
+            focus = _normalize_space(str(step_input.get("focus") or "overview")).lower()
+            extra["focus"] = focus if focus in {"overview", "trends"} else "overview"
+        if tool_name == "read_paper_sections":
+            paper_ids = [
+                int(item)
+                for item in list(step_input.get("paperIds") or [])
+                if str(item).strip().isdigit()
+            ]
+            if not paper_ids and resolved_target_paper_id > 0 and candidate_title:
+                paper_ids = [resolved_target_paper_id]
+            if paper_ids:
+                extra["paperIds"] = paper_ids[:6]
+
+        todo_id = f"initial-{index}-{_slugify(title)}"
+        tool_input = _todo_input(
+            snapshot,
+            todo_id=todo_id,
+            title=title,
+            phase_class=phase_class,
+            required_class=required_class,
+            purpose=str(step_input.get("purpose") or template["purpose"]),
+            expected_output=str(step_input.get("expectedOutput") or template["expected_output"]),
+            completion_condition=str(step_input.get("completionCondition") or template["completion_condition"]),
+            origin="initial",
+            tool_query=query,
+            target_title=target_title,
+            target_paper_id=resolved_target_paper_id,
+            requested_sections=requested,
+            exclusion_ids=exclusion_ids,
+            extra=extra,
+        )
+        normalized_steps.append(
+            _todo_step(
+                len(normalized_steps) + 1,
+                title=title,
+                description=description or template["purpose"],
+                tool_name=tool_name,
+                tool_input=tool_input,
+            )
+        )
+
+    def ensure_terminal_step(tool_name: str, title: str, description: str) -> None:
+        existing = next((step for step in normalized_steps if str(step.get("tool_name") or "") == tool_name), None)
+        if existing:
+            normalized_steps.remove(existing)
+            normalized_steps.append(existing)
+            return
+        template = _step_template(tool_name)
+        todo_id = f"initial-{len(normalized_steps) + 1}-{_slugify(title)}"
+        normalized_steps.append(
+            _todo_step(
+                len(normalized_steps) + 1,
+                title=title,
+                description=description,
+                tool_name=tool_name,
+                tool_input=_todo_input(
+                    snapshot,
+                    todo_id=todo_id,
+                    title=title,
+                    phase_class=template["phase_class"],
+                    required_class=template["required_class"],
+                    purpose=template["purpose"],
+                    expected_output=template["expected_output"],
+                    completion_condition=template["completion_condition"],
+                    tool_query=normalized_query,
+                    target_title=candidate_title,
+                    target_paper_id=target_paper_id,
+                    requested_sections=requested_sections,
+                ),
+            )
+        )
+
+    ensure_terminal_step(
+        INTERNAL_VERIFY_TOOL,
+        "Verify coverage before synthesis",
+        "Validate target resolution, requested sections, and evidence sufficiency before drafting.",
+    )
+    ensure_terminal_step(
+        INTERNAL_SYNTHESIZE_TOOL,
+        "Draft the final report",
+        "Compose a grounded report from verified evidence only.",
+    )
+
+    for position, step in enumerate(normalized_steps, start=1):
+        step["position"] = position
+
+    title = _normalize_space(str(raw_plan.get("title") or "")) or str(deterministic_plan.get("title") or "Deep research session")
+    summary = _normalize_space(str(raw_plan.get("summary") or "")) or str(deterministic_plan.get("summary") or "")
+    if needs_analysis and summary:
+        lowered = summary.lower()
+        if not lowered.startswith("analyze the pending files first"):
+            summary = f"Analyze the pending files first, then {summary[0].lower() + summary[1:]}"
+
+    return {
+        "title": title[:80] or "Deep research session",
+        "summary": summary or str(deterministic_plan.get("summary") or ""),
+        "requires_analysis": needs_analysis,
+        "pending_run_count": int(snapshot.get("pending_run_count") or 0),
+        "steps": normalized_steps,
+    }
+
+
+def _score_plan_quality(plan: Dict[str, Any], snapshot: Dict[str, Any]) -> Tuple[int, List[str]]:
+    score = 100
+    notes: List[str] = []
+    steps = [step for step in list(plan.get("steps") or []) if isinstance(step, dict)]
+    prompt_analysis = snapshot.get("prompt_analysis") if isinstance(snapshot.get("prompt_analysis"), dict) else {}
+    requested_sections = {
+        _normalize_space(str(section)).lower()
+        for section in list(prompt_analysis.get("requested_sections") or [])
+        if _normalize_space(str(section))
+    }
+    single_paper = bool(prompt_analysis.get("single_paper"))
+    target_in_scope = bool(prompt_analysis.get("target_in_scope"))
+    target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
+    compare = bool(prompt_analysis.get("compare"))
+
+    if len(steps) < 4:
+        score -= 20
+        notes.append("too_few_steps")
+
+    if not any(str(step.get("tool_name") or "") == INTERNAL_VERIFY_TOOL for step in steps):
+        score -= 25
+        notes.append("missing_verification")
+    if not steps or str(steps[-1].get("tool_name") or "") != INTERNAL_SYNTHESIZE_TOOL:
+        score -= 25
+        notes.append("missing_terminal_synthesis")
+
+    research_steps = [step for step in steps if _is_research_tool(str(step.get("tool_name") or ""))]
+    if not research_steps:
+        score -= 20
+        notes.append("missing_research_steps")
+
+    has_read_step = any(str(step.get("tool_name") or "") == "read_paper_sections" for step in steps)
+    if (requested_sections or single_paper) and not has_read_step:
+        score -= 15
+        notes.append("missing_read_sections")
+
+    if requested_sections:
+        covered_sections: set[str] = set()
+        for step in steps:
+            if str(step.get("tool_name") or "") != "read_paper_sections":
+                continue
+            tool_input = step.get("tool_input") if isinstance(step.get("tool_input"), dict) else {}
+            for section in list(tool_input.get("requestedSections") or []):
+                normalized_section = _normalize_space(str(section)).lower()
+                if normalized_section:
+                    covered_sections.add(normalized_section)
+        if not covered_sections.intersection(requested_sections):
+            score -= 12
+            notes.append("requested_sections_not_covered")
+
+    if single_paper and target_in_scope and target_paper_id > 0:
+        anchored = False
+        for step in steps:
+            if str(step.get("tool_name") or "") != "read_paper_sections":
+                continue
+            tool_input = step.get("tool_input") if isinstance(step.get("tool_input"), dict) else {}
+            if int(tool_input.get("targetPaperId") or 0) == target_paper_id:
+                anchored = True
+                break
+            paper_ids = [
+                int(item)
+                for item in list(tool_input.get("paperIds") or [])
+                if str(item).strip().isdigit()
+            ]
+            if target_paper_id in paper_ids:
+                anchored = True
+                break
+        if not anchored:
+            score -= 18
+            notes.append("single_paper_not_anchored")
+
+    if compare:
+        compare_support = sum(
+            1
+            for step in steps
+            if str(step.get("tool_name") or "") in {"fetch_papers", "read_paper_sections"}
+        )
+        if compare_support < 2:
+            score -= 10
+            notes.append("weak_comparison_support")
+
+    return max(0, score), notes
+
+
+def _build_hybrid_plan(snapshot: Dict[str, Any], deterministic_plan: Dict[str, Any]) -> Dict[str, Any]:
+    structured_planner = research_planning_llm.with_structured_output(DeepResearchPlanSchema, method="json_schema")
+    prompt = _build_llm_planner_prompt(snapshot, deterministic_plan)
+
+    try:
+        first_result = structured_planner.invoke(prompt)
+        first_plan = _normalize_llm_plan(snapshot, _safe_plan_dict(first_result), deterministic_plan)
+        first_score, first_notes = _score_plan_quality(first_plan, snapshot)
+        logger.info(
+            "deep research hybrid plan attempt=1 score=%s notes=%s",
+            first_score,
+            first_notes,
+        )
+        if first_score >= MIN_ACCEPTABLE_PLAN_SCORE:
+            return first_plan
+
+        critique = (
+            "The previous plan did not meet quality thresholds. "
+            f"Issues: {', '.join(first_notes) if first_notes else 'quality too low'}. "
+            "Improve anchoring to resolved target, requested section coverage, and verification flow."
+        )
+        second_result = structured_planner.invoke(_build_llm_planner_prompt(snapshot, deterministic_plan, critique=critique))
+        second_plan = _normalize_llm_plan(snapshot, _safe_plan_dict(second_result), deterministic_plan)
+        second_score, second_notes = _score_plan_quality(second_plan, snapshot)
+        logger.info(
+            "deep research hybrid plan attempt=2 score=%s notes=%s",
+            second_score,
+            second_notes,
+        )
+        if second_score >= MIN_ACCEPTABLE_PLAN_SCORE:
+            return second_plan
+    except Exception as error:
+        logger.warning("deep research hybrid planner failed; falling back deterministic: %s", error)
+
+    return deterministic_plan
+
+
 def generate_deep_research_plan(
     owner_user_id: str,
     folder_id: Optional[str],
     prompt: str,
     project_id: Optional[str] = None,
     selected_run_ids: Optional[Sequence[str]] = None,
+    attachment_names: Optional[Sequence[str]] = None,
 ) -> Dict[str, Any]:
     snapshot = _build_planning_snapshot(
         owner_user_id,
@@ -1337,8 +2148,24 @@ def generate_deep_research_plan(
         project_id,
         prompt,
         selected_run_ids,
+        attachment_names,
     )
-    plan = _build_deterministic_plan(snapshot)
+    deterministic_plan = _build_deterministic_plan(snapshot)
+    mode = _planner_mode()
+    if mode == "deterministic":
+        plan = deterministic_plan
+    elif mode == "llm":
+        plan = _build_hybrid_plan(snapshot, deterministic_plan)
+    else:
+        plan = _build_hybrid_plan(snapshot, deterministic_plan)
+    score, notes = _score_plan_quality(plan, snapshot)
+    logger.info(
+        "deep research planner finalized mode=%s score=%s notes=%s title=%s",
+        mode,
+        score,
+        notes,
+        str(plan.get("title") or ""),
+    )
     return plan
 
 
@@ -1404,6 +2231,18 @@ def _rank_papers(
         for row in ranked
         if int(row["match"].get("score") or 0) > 0 or bool(row["match"].get("strong_title_match"))
     ]
+    seen_titles: set[str] = set()
+    for row in ranked:
+        normalized_title = _normalize_title(str(row["match"].get("title") or ""))
+        if not normalized_title:
+            continue
+        if normalized_title in seen_titles:
+            row["match"]["score"] = int(row["match"].get("score") or 0) - 18
+            components = dict(row["match"].get("score_components") or {})
+            components["duplicate_penalty"] = int(components.get("duplicate_penalty") or 0) - 18
+            row["match"]["score_components"] = components
+            continue
+        seen_titles.add(normalized_title)
     ranked.sort(
         key=lambda row: (
             bool(row["match"].get("exact_normalized_title_match")),
@@ -1559,6 +2398,7 @@ def _read_paper_sections_tool(
     evidence_items: List[Dict[str, Any]] = []
     section_counts: Dict[str, int] = {}
     discarded_noisy: Dict[str, int] = {}
+    unresolved_sections: List[str] = []
     normalized_sections = [
         str(section).strip()
         for section in list(requested_sections or _normalize_query_bundle(query_bundle).get("requested_sections") or [])
@@ -1586,6 +2426,13 @@ def _read_paper_sections_tool(
             section_counts[section] = section_counts.get(section, 0) + int(count or 0)
         for section, count in dict(paper_diagnostics.get("discarded_noisy_counts") or {}).items():
             discarded_noisy[section] = discarded_noisy.get(section, 0) + int(count or 0)
+        unresolved_sections.extend(
+            [
+                str(item.get("requested_section") or "")
+                for item in paper_evidence
+                if not bool(item.get("supports_section")) and str(item.get("requested_section") or "").strip()
+            ]
+        )
     return {
         "query": query,
         "targetTitle": target_title,
@@ -1598,9 +2445,10 @@ def _read_paper_sections_tool(
         "papers": material,
         "evidenceItems": evidence_items,
         "diagnostics": {
-            "supported_counts": section_counts,
-            "discarded_noisy_counts": discarded_noisy,
+            "selected_evidence_counts": section_counts,
+            "discarded_noisy_snippet_counts": discarded_noisy,
             "evidence_item_count": len(evidence_items),
+            "unresolved_sections": sorted({section for section in unresolved_sections if section}),
         },
     }
 
@@ -1950,7 +2798,7 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
         )
         evidence_items = raw_output.get("evidenceItems") if isinstance(raw_output.get("evidenceItems"), list) else []
         if tool_name == "read_paper_sections":
-            supported_counts = dict(raw_diagnostics.get("supported_counts") or {})
+            supported_counts = dict(raw_diagnostics.get("selected_evidence_counts") or {})
             supported_label = ", ".join(
                 f"{section.replace('_', ' ')} ({count})"
                 for section, count in supported_counts.items()
@@ -2242,18 +3090,26 @@ def _sentence_noise_score(sentence: str) -> int:
     score = 0
     if len(sentence) < 40:
         score += 2
+    if len(re.findall(r"\b[A-Za-z]{1,2}\b", sentence)) >= 6:
+        score += 1
     if len(re.findall(r"[A-Za-z]{1,3}\d", sentence)) > 2:
         score += 2
     if sentence.count("[") + sentence.count("]") > 2:
         score += 2
+    if sentence.count("(") + sentence.count(")") > 6:
+        score += 2
     if re.search(r"\b(ST|TT)\s*:", sentence):
         score += 4
+    if re.search(r"\[[A-Za-z0-9' -]{20,}\]", sentence):
+        score += 3
     if re.search(r"\([A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}\s+[A-Za-z0-9_'-]{2,}", sentence):
         score += 2
     if len(re.findall(r"[^\x00-\x7F]", sentence)) > 12:
         score += 4
     if any(token in sentence for token in ("Example (", "Examples (", "Word-by-word translation")):
         score += 5
+    if sentence.count("/") >= 4:
+        score += 2
     return score
 
 
@@ -2357,6 +3213,13 @@ def _section_sentence_candidates(
         for sentence in _sentences(text):
             normalized_sentence = _normalize_space(sentence)
             if not normalized_sentence:
+                continue
+            word_count = len(re.findall(r"[A-Za-z0-9]+", normalized_sentence))
+            if word_count < 7:
+                diagnostics["discarded_noisy"] += 1
+                continue
+            if normalized_sentence.count(":") >= 2:
+                diagnostics["discarded_noisy"] += 1
                 continue
             noise_score = _sentence_noise_score(normalized_sentence)
             relevance_score = _sentence_relevance_score(normalized_sentence, keywords) + int(
@@ -2498,16 +3361,11 @@ def _requested_section_coverage(
     supported_items = _step_evidence_items(step_results)
     coverage: Dict[str, bool] = {}
     for section in requested_sections:
-        section_supported = any(
+        coverage[section] = any(
             bool(item.get("supports_section"))
             and str(item.get("requested_section") or "") == section
             for item in supported_items
         )
-        if section_supported:
-            coverage[section] = True
-            continue
-        papers = _step_papers(step_results)
-        coverage[section] = any(_paper_has_section_evidence(paper, section) for paper in papers)
     return coverage
 
 
@@ -2609,6 +3467,12 @@ def _build_verification_result(
         "section_coverage_map": section_coverage,
         "section_evidence_counts": section_evidence_counts,
         "thin_evidence": thin_evidence,
+        "diagnostics": {
+            "target_resolution": "matched" if target_resolved else "unresolved",
+            "selected_evidence_counts": section_evidence_counts,
+            "unresolved_sections": unresolved_sections,
+            "verification_warnings": warnings,
+        },
     }
 
 

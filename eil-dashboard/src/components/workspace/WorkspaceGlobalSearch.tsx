@@ -124,7 +124,7 @@ export default function WorkspaceGlobalSearch({
         searchText: `${organization.name} ${organization.type.replace(/_/g, " ")}`,
         onSelect: () => {
           setSelectedOrganizationId(organization.id);
-          router.push(`/organizations/${organization.id}/projects`);
+          router.push("/organizations");
         },
       })),
       ...allProjects.map((project) => {
@@ -236,17 +236,17 @@ export default function WorkspaceGlobalSearch({
           onFocus={() => setOpen(true)}
           placeholder="Search anything"
           aria-label="Search anything in the workspace"
-          className="h-10 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#4a4a4a]"
+          className="h-10 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-11 pr-4 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#4a4a4a]"
         />
       </form>
 
       {open ? (
-        <div className="absolute left-0 right-0 z-50 mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-[#2f2f2f] dark:bg-[#171717] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div className="absolute left-0 right-0 z-50 mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
           {groupedResults.length > 0 ? (
             <div className="max-h-[420px] overflow-y-auto p-2">
               {groupedResults.map((group) => (
                 <div key={group.category} className="py-1">
-                  <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                  <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                     {group.category}
                   </p>
                   <div className="space-y-1">
@@ -258,9 +258,9 @@ export default function WorkspaceGlobalSearch({
                           key={result.id}
                           type="button"
                           onClick={() => handleSelect(result)}
-                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-[#202020]"
+                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
                         >
-                          <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 dark:border-[#2f2f2f] dark:bg-[#1e1e1e] dark:text-[#d0d0d0]">
+                          <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#d0d0d0]">
                             <Icon className="h-4 w-4" />
                           </span>
                           <span className="min-w-0">

@@ -179,6 +179,19 @@ export function FilterIcon({ className }: IconProps) {
   );
 }
 
+export function EqualizerIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M6 5.5v13" />
+      <path d="M12 5.5v13" />
+      <path d="M18 5.5v13" />
+      <circle cx="6" cy="9" r="1.6" />
+      <circle cx="12" cy="14" r="1.6" />
+      <circle cx="18" cy="10.5" r="1.6" />
+    </BaseIcon>
+  );
+}
+
 export function SearchIcon({ className }: IconProps) {
   return (
     <BaseIcon className={className}>
@@ -366,6 +379,37 @@ export function CheckIcon({ className }: IconProps) {
   return (
     <BaseIcon className={className}>
       <path d="m5 12 4.2 4.2L19 6.5" />
+    </BaseIcon>
+  );
+}
+
+export function SidebarIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <rect x="4" y="5" width="16" height="14" rx="2.5" />
+      <path d="M9.5 5v14" />
+    </BaseIcon>
+  );
+}
+
+export function FullscreenIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M8.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v2.7" />
+      <path d="M15.5 4.5h2.7a1.3 1.3 0 0 1 1.3 1.3v2.7" />
+      <path d="M19.5 15.5v2.7a1.3 1.3 0 0 1-1.3 1.3h-2.7" />
+      <path d="M8.5 19.5H5.8a1.3 1.3 0 0 1-1.3-1.3v-2.7" />
+    </BaseIcon>
+  );
+}
+
+export function ExitFullscreenIcon({ className }: IconProps) {
+  return (
+    <BaseIcon className={className}>
+      <path d="M9 5v3.2A.8.8 0 0 1 8.2 9H5" />
+      <path d="M15 5v3.2a.8.8 0 0 0 .8.8H19" />
+      <path d="M19 15h-3.2a.8.8 0 0 0-.8.8V19" />
+      <path d="M5 15h3.2a.8.8 0 0 1 .8.8V19" />
     </BaseIcon>
   );
 }

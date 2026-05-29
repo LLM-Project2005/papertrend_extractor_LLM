@@ -85,6 +85,43 @@ class PaperFacetSchema(BaseModel):
     facets: List[PaperFacet]
 
 
+class AuthorProvidedKeyword(BaseModel):
+    keyword: str = Field(description="One keyword exactly from the author-provided keyword list.")
+    evidence: str = Field(description="Verbatim labeled keyword-list text that supports the extraction.")
+    source_section: str = Field(description="Where the labeled keyword list appears.")
+
+
+class AuthorProvidedKeywordSchema(BaseModel):
+    has_author_keywords: bool = Field(
+        description="True only when the paper contains an explicit author-provided keyword list."
+    )
+    keywords: List[AuthorProvidedKeyword] = Field(default_factory=list)
+
+
+class ResearchTypologySchema(BaseModel):
+    primary_group_number: Literal[1, 2, 3, 4]
+    primary_group_name: Literal[
+        "Descriptive & Explanatory",
+        "Pedagogical & Intervention",
+        "Assessment & Measurement",
+        "Policy, Sociolinguistic & Critical",
+    ]
+    secondary_group_number: Optional[Literal[1, 2, 3, 4]] = None
+    secondary_group_name: Optional[
+        Literal[
+            "Descriptive & Explanatory",
+            "Pedagogical & Intervention",
+            "Assessment & Measurement",
+            "Policy, Sociolinguistic & Critical",
+        ]
+    ] = None
+    stated_purpose: str = Field(description="Direct quote or close paraphrase of the stated aim.")
+    primary_contribution: str = Field(description="What the paper primarily adds to the field.")
+    group_match: str = Field(description="Why the primary group fits and any secondary group touched.")
+    boundary_rule: str = Field(description="Whether the Group 2/3 boundary rule was applied.")
+    verdict: str = Field(description="Final assignment and concise justification.")
+
+
 class QueryExpansionSchema(BaseModel):
     canonical_concept: str = Field(description="Best canonical concept label for the user query.")
     matched_terms: List[str] = Field(
@@ -148,6 +185,37 @@ class DeepResearchPlanSchema(BaseModel):
     steps: List[DeepResearchPlanStep] = Field(description="Ordered deep research steps.")
 
 
+class DeepResearchQueryBundleSchema(BaseModel):
+    primary_query: str = ""
+    supporting_queries: List[str] = Field(default_factory=list)
+    exact_title_query: str = ""
+    section_query: str = ""
+    author_hint: str = ""
+    requested_sections: List[str] = Field(default_factory=list)
+    exclusion_ids: List[str] = Field(default_factory=list)
+
+
+class DeepResearchEvidenceItemSchema(BaseModel):
+    paperId: str
+    title: str
+    section: str
+    requested_section: str
+    snippet: str
+    relevance_score: int
+    noise_score: int
+    supports_section: bool
+
+
+class DeepResearchStepDiagnosticsSchema(BaseModel):
+    target_resolution: str = ""
+    top_ranked_candidates: List[Dict[str, Any]] = Field(default_factory=list)
+    evidence_item_count: int = 0
+    selected_evidence_counts: Dict[str, int] = Field(default_factory=dict)
+    discarded_noisy_snippet_counts: Dict[str, int] = Field(default_factory=dict)
+    unresolved_sections: List[str] = Field(default_factory=list)
+    verification_warnings: List[str] = Field(default_factory=list)
+
+
 class IngestionState(TypedDict, total=False):
     messages: Annotated[List[BaseMessage], operator.add]
     pdf_path: str
@@ -157,6 +225,8 @@ class IngestionState(TypedDict, total=False):
     owner_user_id: str
     folder_id: str
     paper_id: int
+    input_payload: Dict[str, Any]
+    pdf_metadata: Dict[str, Any]
     extraction_method: str
     raw_text: str
     cleaned_text: str
@@ -165,12 +235,15 @@ class IngestionState(TypedDict, total=False):
     semantic_map: Optional[Dict[str, Any]]
     final_json: Optional[Dict[str, Any]]
     paper_metadata: Optional[Dict[str, Any]]
+    year_resolution: Optional[Dict[str, Any]]
     keyword_candidates: List[Dict[str, Any]]
     semantic_topics: List[Dict[str, Any]]
     final_labeled_topics: List[Dict[str, Any]]
     track_single: Dict[str, Any]
     track_multi: Dict[str, Any]
     analysis_facets: List[Dict[str, Any]]
+    author_keywords: List[Dict[str, Any]]
+    research_typology: Dict[str, Any]
     concept_rows: List[Dict[str, Any]]
     dataset: Dict[str, Any]
     errors: List[str]
@@ -199,6 +272,8 @@ class WorkspaceQueryState(TypedDict, total=False):
     papers_full: List[Dict[str, Any]]
     concept_rows: List[Dict[str, Any]]
     facet_rows: List[Dict[str, Any]]
+    author_keyword_rows: List[Dict[str, Any]]
+    typology_rows: List[Dict[str, Any]]
     keyword_search_result: Dict[str, Any]
     chat_result: Dict[str, Any]
     visualization_result: Dict[str, Any]
@@ -216,6 +291,7 @@ class DeepResearchState(TypedDict, total=False):
     session_id: str
     prompt: str
     prompt_analysis: Dict[str, Any]
+    query_bundle: Dict[str, Any]
     title: str
     plan_summary: str
     requires_analysis: bool
@@ -227,6 +303,8 @@ class DeepResearchState(TypedDict, total=False):
     verification_result: Dict[str, Any]
     final_report: str
     final_citations: List[Dict[str, Any]]
+    evidence_items: List[Dict[str, Any]]
+    research_diagnostics: Dict[str, Any]
     completion_kind: str
     synthesis_step_position: int
     errors: List[str]

@@ -2,79 +2,278 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
-import { WORKSPACE_GOALS, WORKSPACE_SOURCES } from "@/lib/workspace-profile";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
+import { getRunStageCaption } from "@/lib/ingestion-status";
 import {
   ArrowRightIcon,
   ChartIcon,
   ChatIcon,
   CheckCircleIcon,
-  CircleIcon,
+  FileIcon,
   PaperIcon,
+  RefreshIcon,
+  SparkIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
+
+type RankedItem = {
+  label: string;
+  value: number;
+  detail?: string;
+};
+
+const STUCK_RUN_MINUTES = 15;
+
+const AI_ACTIONS = [
+  {
+    title: "Ask the workspace",
+    description: "Start with a grounded question across analyzed papers.",
+    prompt: "What are the main findings in this workspace?",
+    icon: ChatIcon,
+  },
+  {
+    title: "Create a chart",
+    description: "Use Chart mode to visualize topics, keywords, years, or tracks.",
+    prompt: "Create the most useful chart from my analyzed papers.",
+    icon: ChartIcon,
+  },
+  {
+    title: "Summarize recent papers",
+    description: "Turn the latest analyzed files into a compact reading brief.",
+    prompt: "Summarize the recent papers and highlight what matters.",
+    icon: PaperIcon,
+  },
+  {
+    title: "Compare papers",
+    description: "Ask for similarities, differences, methods, and contributions.",
+    prompt: "Compare the strongest papers in this workspace.",
+    icon: SparkIcon,
+  },
+  {
+    title: "Find research gaps",
+    description: "Look for missing angles, weak evidence, and next-study ideas.",
+    prompt: "Find research gaps and possible future study ideas.",
+    icon: RefreshIcon,
+  },
+] as const;
+
+const surfaceClass =
+  "rounded-xl border border-[#ebebeb] bg-white shadow-[0_1px_1px_rgba(0,0,0,0.02),0_2px_2px_rgba(0,0,0,0.04)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-none";
+const softSurfaceClass =
+  "rounded-lg border border-[#ebebeb] bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#030303]";
+const eyebrowClass =
+  "font-mono text-[11px] font-medium uppercase tracking-normal text-[#888888] dark:text-[#8f8f8f]";
+const primaryButtonClass =
+  "inline-flex min-h-11 items-center gap-2 rounded-full bg-[#171717] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]";
+const secondaryButtonClass =
+  "inline-flex min-h-11 items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-5 py-2.5 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]";
 
 function MetricCard({
   label,
   value,
   icon,
+  detail,
 }: {
   label: string;
   value: string;
   icon: React.ReactNode;
+  detail?: string;
 }) {
   return (
-    <article className="app-card px-5 py-4">
+    <article className={`${surfaceClass} px-5 py-5`}>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">{label}</p>
-        <span className="text-slate-400 dark:text-[#8e8e8e]">{icon}</span>
+        <p className={eyebrowClass}>{label}</p>
+        <span className="text-[#888888] dark:text-[#8f8f8f]">{icon}</span>
       </div>
-      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+      <p className="mt-5 text-3xl font-semibold tracking-normal text-[#171717] dark:text-white">
         {value}
       </p>
+      {detail ? (
+        <p className="mt-2 text-sm leading-5 text-[#4d4d4d] dark:text-[#a3a3a3]">{detail}</p>
+      ) : null}
     </article>
   );
 }
 
-function QuickLink({
-  href,
+function AIActionCard({
   title,
   description,
-  icon,
+  prompt,
+  icon: Icon,
 }: {
-  href: string;
   title: string;
   description: string;
-  icon: React.ReactNode;
+  prompt: string;
+  icon: (props: { className?: string }) => JSX.Element;
 }) {
   return (
     <Link
-      href={href}
-      className="flex items-start justify-between gap-4 rounded-xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717] dark:hover:border-[#3a3a3a]"
+      href="/workspace/chat"
+      className={`${surfaceClass} group flex min-h-[150px] flex-col justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]`}
     >
-      <div className="flex items-start gap-3">
-        <span className="mt-0.5 text-slate-400 dark:text-[#8e8e8e]">{icon}</span>
-        <div>
-          <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{title}</p>
-          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">{description}</p>
-        </div>
+      <div>
+        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#171717] dark:border-[#1f1f1f] dark:bg-black dark:text-white">
+          <Icon className="h-5 w-5" />
+        </span>
+        <h3 className="mt-4 text-sm font-semibold text-[#171717] dark:text-white">
+          {title}
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-[#4d4d4d] dark:text-[#a3a3a3]">
+          {description}
+        </p>
       </div>
-      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-300 dark:text-[#666666]" />
+      <p className="mt-4 line-clamp-2 rounded-md bg-[#fafafa] px-3 py-2 font-mono text-xs leading-5 text-[#4d4d4d] transition-colors group-hover:bg-white dark:bg-[#030303] dark:text-[#8f8f8f] dark:group-hover:bg-[#050505]">
+        {prompt}
+      </p>
     </Link>
   );
 }
 
+function InsightList({
+  title,
+  items,
+  emptyLabel,
+}: {
+  title: string;
+  items: RankedItem[];
+  emptyLabel: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-[#171717] dark:text-white">{title}</h3>
+        <span className="font-mono text-xs text-[#888888] dark:text-[#8f8f8f]">Top 5</span>
+      </div>
+      <div className="mt-3 space-y-2">
+        {items.length > 0 ? (
+          items.map((item, index) => (
+            <div
+              key={`${title}-${item.label}`}
+              className="flex items-center justify-between gap-4 rounded-lg border border-[#ebebeb] bg-white px-3 py-2.5 dark:border-[#1f1f1f] dark:bg-[#050505]"
+            >
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-[#171717] dark:text-white">
+                  {index + 1}. {item.label}
+                </p>
+                {item.detail ? (
+                  <p className="mt-0.5 truncate text-xs text-[#888888] dark:text-[#8f8f8f]">
+                    {item.detail}
+                  </p>
+                ) : null}
+              </div>
+              <span className="rounded-full bg-[#fafafa] px-2.5 py-1 font-mono text-xs text-[#4d4d4d] dark:bg-[#030303] dark:text-[#d0d0d0]">
+                {item.value.toLocaleString()}
+              </span>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-lg border border-dashed border-[#ebebeb] px-3 py-4 text-sm text-[#4d4d4d] dark:border-[#1f1f1f] dark:text-[#8f8f8f]">
+            {emptyLabel}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function runTitleOf(run: IngestionRunRow) {
+  return run.display_name || run.source_filename || "Untitled file";
+}
+
+function getRunTimestamp(run: IngestionRunRow) {
+  return run.completed_at ?? run.updated_at ?? run.created_at ?? null;
+}
+
+function getRunTimeMs(run: IngestionRunRow) {
+  const timestamp = getRunTimestamp(run);
+  if (!timestamp) return 0;
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function getRunAgeMinutes(run: IngestionRunRow) {
+  const timestampMs = getRunTimeMs(run);
+  if (!timestampMs) return 0;
+  return Math.floor((Date.now() - timestampMs) / 60000);
+}
+
+function isRunStuck(run: IngestionRunRow) {
+  if (run.status !== "queued" && run.status !== "processing") {
+    return false;
+  }
+  return getRunAgeMinutes(run) >= STUCK_RUN_MINUTES;
+}
+
+function formatTimestamp(value?: string | null) {
+  if (!value) return "Not available";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function statusTone(status: IngestionRunRow["status"], stuck: boolean) {
+  if (status === "succeeded") {
+    return "bg-[#d3e5ff] text-[#0761d1] dark:bg-[#0b274a] dark:text-[#58a6ff]";
+  }
+  if (status === "failed") {
+    return "bg-[#f7d4d6] text-[#c50000] dark:bg-[#351113] dark:text-[#ffb4b8]";
+  }
+  if (stuck) {
+    return "bg-[#ffefcf] text-[#ab570a] dark:bg-[#382300] dark:text-[#ffd38a]";
+  }
+  return "bg-[#fafafa] text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#050505] dark:text-[#d0d0d0] dark:ring-[#242424]";
+}
+
+function RunActivityRow({ run }: { run: IngestionRunRow }) {
+  const stuck = isRunStuck(run);
+  const timestamp = getRunTimestamp(run);
+  const statusLabel = stuck ? "needs attention" : run.status;
+
+  return (
+    <div className="flex items-start gap-3 rounded-lg border border-[#ebebeb] bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#bdbdbd]">
+        <FileIcon className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="min-w-0 truncate text-sm font-medium text-[#171717] dark:text-white">
+            {runTitleOf(run)}
+          </p>
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-normal ${statusTone(
+              run.status,
+              stuck
+            )}`}
+          >
+            {statusLabel}
+          </span>
+        </div>
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#4d4d4d] dark:text-[#8f8f8f]">
+          {getRunStageCaption(run)}
+        </p>
+        <p className="mt-2 font-mono text-[11px] text-[#888888] dark:text-[#6f6f6f]">
+          {formatTimestamp(timestamp)}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function WorkspaceHomeClient() {
+  const { session } = useAuth();
   const {
     profile,
-    folders,
-    selectedProjectId,
-    selectedFolderId,
     refreshFolders,
     analysisSession,
     startAnalysisSession,
@@ -82,10 +281,7 @@ export default function WorkspaceHomeClient() {
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
-  const { data, loading } = useDashboardData(selectedFolderId, scopedFolderIds, {
-    projectId: selectedProjectId,
-  });
+  const { data, loading } = useDashboardData("all");
   const {
     runs,
     folderJob,
@@ -95,17 +291,15 @@ export default function WorkspaceHomeClient() {
     startQueuedProcessing,
     debugClearQueue,
     refresh,
-  } =
-    useIngestionRuns({
+  } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
     pollIntervalMs: 8000,
   });
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
-  const selectedFolderLabel =
-    selectedFolderId === "all"
-      ? "All folders"
-      : folders.find((folder) => folder.id === selectedFolderId)?.name ?? "Selected folder";
+  const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
+  const [libraryLoading, setLibraryLoading] = useState(false);
+  const [libraryError, setLibraryError] = useState<string | null>(null);
 
   const summary = useMemo(() => {
     if (!data) {
@@ -114,45 +308,113 @@ export default function WorkspaceHomeClient() {
         topicCount: "0",
         keywordCount: "0",
         yearRange: "No data yet",
+        topTopics: [] as RankedItem[],
+        topKeywords: [] as RankedItem[],
       };
     }
 
-    const papers = new Set([
+    const paperIds = new Set([
       ...data.trends.map((row) => row.paper_id),
       ...data.tracksSingle.map((row) => row.paper_id),
       ...data.tracksMulti.map((row) => row.paper_id),
-    ]).size;
-    const topics = new Set(data.trends.map((row) => row.topic)).size;
-    const keywords = new Set(data.trends.map((row) => row.keyword)).size;
+    ]);
+    const keywords = new Set(data.trends.map((row) => row.keyword).filter(Boolean));
     const years = [
       ...new Set([
         ...data.trends.map((row) => row.year),
         ...data.tracksSingle.map((row) => row.year),
         ...data.tracksMulti.map((row) => row.year),
       ]),
-    ].sort();
+    ]
+      .filter(Boolean)
+      .sort();
+    const topicCount =
+      data.topicFamilies && data.topicFamilies.length > 0
+        ? data.topicFamilies.length
+        : new Set(data.trends.map((row) => row.topic).filter(Boolean)).size;
+
+    const topicItems =
+      data.topicFamilies && data.topicFamilies.length > 0
+        ? data.topicFamilies
+            .map((family) => ({
+              label: family.canonicalTopic,
+              value: family.totalKeywordFrequency,
+              detail: `${family.paperIds.length} paper${
+                family.paperIds.length === 1 ? "" : "s"
+              }`,
+            }))
+            .sort((left, right) => right.value - left.value)
+            .slice(0, 5)
+        : Object.values(
+            data.trends.reduce<Record<string, RankedItem & { paperIds: Set<string> }>>(
+              (acc, row) => {
+                const label = row.topic || "Unclassified";
+                if (!acc[label]) {
+                  acc[label] = {
+                    label,
+                    value: 0,
+                    paperIds: new Set<string>(),
+                  };
+                }
+                acc[label].value += Number(row.keyword_frequency ?? 0) || 1;
+                acc[label].paperIds.add(row.paper_id);
+                return acc;
+              },
+              {}
+            )
+          )
+            .map((item) => ({
+              label: item.label,
+              value: item.value,
+              detail: `${item.paperIds.size} paper${item.paperIds.size === 1 ? "" : "s"}`,
+            }))
+            .sort((left, right) => right.value - left.value)
+            .slice(0, 5);
+
+    const keywordItems = Object.values(
+      data.trends.reduce<Record<string, RankedItem>>((acc, row) => {
+        const label = row.keyword || "Unclassified";
+        if (!acc[label]) {
+          acc[label] = { label, value: 0 };
+        }
+        acc[label].value += Number(row.keyword_frequency ?? 0) || 1;
+        return acc;
+      }, {})
+    )
+      .sort((left, right) => right.value - left.value)
+      .slice(0, 5);
 
     return {
-      paperCount: papers.toLocaleString(),
-      topicCount: topics.toLocaleString(),
-      keywordCount: keywords.toLocaleString(),
+      paperCount: paperIds.size.toLocaleString(),
+      topicCount: topicCount.toLocaleString(),
+      keywordCount: keywords.size.toLocaleString(),
       yearRange:
         years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data yet",
+      topTopics: topicItems,
+      topKeywords: keywordItems,
     };
   }, [data]);
 
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
     : [];
-
-  const activeSource = WORKSPACE_SOURCES.find(
-    (source) => source.id === profile.primarySource
+  const workspaceRuns = useMemo(() => {
+    const merged = new Map(libraryRuns.map((run) => [run.id, run]));
+    activeRuns.forEach((run) => merged.set(run.id, run));
+    return [...merged.values()].sort((left, right) => getRunTimeMs(right) - getRunTimeMs(left));
+  }, [activeRuns, libraryRuns]);
+  const attentionRuns = useMemo(
+    () =>
+      workspaceRuns
+        .filter((run) => run.status === "failed" || isRunStuck(run))
+        .slice(0, 3),
+    [workspaceRuns]
   );
-  const activeGoal = WORKSPACE_GOALS.find((goal) => goal.id === profile.goal);
+  const recentRuns = useMemo(() => workspaceRuns.slice(0, 5), [workspaceRuns]);
   const isPreviewMode = data?.useMock ?? true;
+  const liveDataError = data?.diagnostics?.errorMessage ?? null;
   const hasLiveAnalysisSession =
     Boolean(analysisSession?.runIds.length) && !analysisSession?.minimized;
-  const hasCompletedRealData = !isPreviewMode;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -165,27 +427,54 @@ export default function WorkspaceHomeClient() {
     }
   }, []);
 
-  const checklist = [
-    {
-      title: "Confirm workspace profile",
-      detail: "Name, domain, goal, and outputs can all be tuned from Settings.",
-      done: profile.onboardingComplete,
-    },
-    {
-      title: "Queue the first analysis run",
-      detail: isPreviewMode
-        ? "Optional for now. Preview data stays available while the live backend analysis is offline."
-        : "Upload PDFs and choose the first source method from Analyze.",
-      done: activeRuns.length > 0 || hasCompletedRealData,
-    },
-    {
-      title: "Validate workspace data",
-      detail: hasCompletedRealData
-        ? "Analytics are reading from the current Supabase-backed dataset."
-        : "The workspace will switch away from preview mode after the analysis worker finishes and syncs the results.",
-      done: hasCompletedRealData,
-    },
-  ];
+  useEffect(() => {
+    if (!session?.access_token) {
+      setLibraryRuns([]);
+      setLibraryLoading(false);
+      setLibraryError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function loadLibraryRuns() {
+      setLibraryLoading(true);
+      try {
+        const response = await fetch("/api/workspace/library?includeTrashed=false", {
+          headers: {
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          signal: controller.signal,
+        });
+        const payload = (await response.json()) as {
+          runs?: IngestionRunRow[];
+          error?: string;
+        };
+
+        if (!response.ok) {
+          throw new Error(payload.error ?? "Failed to load recent workspace activity.");
+        }
+
+        setLibraryRuns(payload.runs ?? []);
+        setLibraryError(null);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setLibraryError(
+          error instanceof Error ? error.message : "Failed to load recent workspace activity."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLibraryLoading(false);
+        }
+      }
+    }
+
+    void loadLibraryRuns();
+
+    return () => controller.abort();
+  }, [session?.access_token]);
 
   function handleAnalyzeCreated(
     createdRuns: IngestionRunRow[],
@@ -197,6 +486,7 @@ export default function WorkspaceHomeClient() {
     }
   ) {
     startAnalysisSession(createdRuns, context);
+    setLibraryRuns((current) => [...createdRuns, ...current]);
     void refreshFolders();
     setShowAnalyzeModal(false);
   }
@@ -281,23 +571,24 @@ export default function WorkspaceHomeClient() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <section className="app-surface px-6 py-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">
-              Workspace overview
+    <div className="mx-auto max-w-[1400px] space-y-6">
+      <section className={`${surfaceClass} relative overflow-hidden px-6 py-8 sm:px-8`}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#007cf0,#00dfd8,#7928ca,#ff0080,#ff4d4d,#f9cb28)]" />
+        <div className="pointer-events-none absolute right-0 top-0 h-40 w-1/2 bg-[radial-gradient(ellipse_at_top_right,rgba(0,124,240,0.14),transparent_55%)]" />
+        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <p className={eyebrowClass}>
+              Workspace command center
             </p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+            <h1 className="mt-3 text-4xl font-semibold leading-[1.05] tracking-normal text-[#171717] dark:text-white">
               {profile.name}
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
-              {isPreviewMode
-                ? "Preview data is active, so you can keep using analytics, papers, and chat while the live backend analysis process is being fixed."
-                : "A clean control center for bringing in papers, reviewing analytics, and switching into grounded chat without bouncing between separate tools."}
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[#4d4d4d] dark:text-[#a3a3a3]">
+              Bring papers into analysis, watch the queue, and jump straight into AI
+              workflows once the workspace has data.
             </p>
-            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#6f6f6f]">
-              Current scope: {selectedFolderLabel}
+            <p className="mt-4 inline-flex rounded-full bg-[#fafafa] px-3 py-1 font-mono text-xs text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#030303] dark:text-[#a3a3a3] dark:ring-[#242424]">
+              Showing all analyzed data across this workspace
             </p>
           </div>
 
@@ -305,15 +596,17 @@ export default function WorkspaceHomeClient() {
             <button
               type="button"
               onClick={() => setShowAnalyzeModal(true)}
-              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#f3f3f3] dark:text-[#171717] dark:hover:bg-white"
+              className={primaryButtonClass}
             >
-              Analyze
+              <UploadIcon className="h-4 w-4" />
+              <span>Analyze papers</span>
             </button>
             <Link
-              href="/workspace/library"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              href="/workspace/chat"
+              className={secondaryButtonClass}
             >
-              Open library
+              <ChatIcon className="h-4 w-4" />
+              <span>Open chat</span>
             </Link>
           </div>
         </div>
@@ -334,145 +627,233 @@ export default function WorkspaceHomeClient() {
         />
       ) : null}
 
-      <>
-        {isPreviewMode ? (
-          <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-            Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
-          </section>
-        ) : null}
+      {liveDataError ? (
+        <section className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-5 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
+          Live dashboard data could not be loaded right now. The backend returned an error while assembling this workspace&apos;s analytics: {liveDataError}
+        </section>
+      ) : null}
 
-        {data?.diagnostics?.recoveredFromLegacyScope ? (
-          <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
-            Showing recovered historical analyses because the current project scope did not return any canonical rows yet.
-          </section>
-        ) : null}
+      {isPreviewMode ? (
+        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 text-sm text-[#ab570a] dark:border-[#5f3b00] dark:bg-[#211600] dark:text-[#ffd38a]">
+          Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
+        </section>
+      ) : null}
 
-          <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <MetricCard
-              label="Papers"
-              value={loading ? "..." : summary.paperCount}
-              icon={<PaperIcon className="h-5 w-5" />}
-            />
-            <MetricCard
-              label="Topics"
-              value={loading ? "..." : summary.topicCount}
-              icon={<ChartIcon className="h-5 w-5" />}
-            />
-            <MetricCard
-              label="Keywords"
-              value={loading ? "..." : summary.keywordCount}
-              icon={<ChatIcon className="h-5 w-5" />}
-            />
-            <MetricCard
-              label="Coverage"
-              value={loading ? "..." : summary.yearRange}
-              icon={<UploadIcon className="h-5 w-5" />}
-            />
-          </section>
+      {data?.diagnostics?.recoveredFromLegacyScope ? (
+        <section className="rounded-lg border border-[#d3e5ff] bg-[#f5f9ff] px-5 py-4 text-sm text-[#0761d1] dark:border-[#14395f] dark:bg-[#07192b] dark:text-[#8bbcff]">
+          Showing recovered historical analyses because this workspace has older canonical rows available.
+        </section>
+      ) : null}
 
-          <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-            <article className="app-surface p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                    Continue setup
-                  </h2>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
-                    Keep the workspace focused on the next meaningful actions.
-                  </p>
-                </div>
-                <Link
-                  href="/workspace/settings"
-                  className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-[#bdbdbd] dark:hover:text-white"
-                >
-                  Edit settings
-                </Link>
-              </div>
-
-              <div className="mt-5 divide-y divide-slate-200 dark:divide-[#2f2f2f]">
-                {checklist.map((item) => (
-                  <div key={item.title} className="flex items-start gap-4 py-4 first:pt-0">
-                    <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center">
-                      {item.done ? (
-                        <CheckCircleIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-300" />
-                      ) : (
-                        <CircleIcon className="h-5 w-5 text-slate-300 dark:text-[#555555]" />
-                      )}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">{item.title}</p>
-                      <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">{item.detail}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </article>
-
-            <div className="space-y-6">
-              <article className="app-surface p-6">
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">Quick access</h2>
-                <div className="mt-4 space-y-3">
-                  <QuickLink
-                    href="/workspace/dashboard"
-                    title="Dashboard"
-                    description="Trends, tracks, keywords, and the current research picture."
-                    icon={<ChartIcon className="h-5 w-5" />}
-                  />
-                <QuickLink
-                  href="/workspace/chat"
-                  title="Chat"
-                  description={
-                    isPreviewMode
-                      ? "Ask questions against the preview corpus until the live analysis backend is restored."
-                      : "Ask grounded questions and follow citations back to papers."
-                  }
-                  icon={<ChatIcon className="h-5 w-5" />}
-                />
-                <QuickLink
-                  href="/workspace/papers"
-                    title="Library"
-                    description={
-                      isPreviewMode
-                      ? "Browse the preview paper set and the current uploaded files in one place."
-                      : "Manage files and review analyzed papers from the same library."
-                    }
-                    icon={<PaperIcon className="h-5 w-5" />}
-                  />
-              </div>
-              </article>
-
-              <article className="app-surface p-6">
-                <h2 className="text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">Workspace profile</h2>
-                <dl className="mt-4 space-y-4 text-sm">
-                  <div className="flex items-start justify-between gap-4">
-                    <dt className="text-slate-500 dark:text-[#a3a3a3]">Organization</dt>
-                    <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
-                      {profile.organization}
-                    </dd>
-                  </div>
-                  <div className="flex items-start justify-between gap-4">
-                    <dt className="text-slate-500 dark:text-[#a3a3a3]">Domain</dt>
-                    <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
-                      {profile.domain}
-                    </dd>
-                  </div>
-                  <div className="flex items-start justify-between gap-4">
-                    <dt className="text-slate-500 dark:text-[#a3a3a3]">Goal</dt>
-                    <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
-                      {activeGoal?.label}
-                    </dd>
-                  </div>
-                  <div className="flex items-start justify-between gap-4">
-                    <dt className="text-slate-500 dark:text-[#a3a3a3]">Primary source</dt>
-                    <dd className="text-right font-medium text-slate-900 dark:text-[#f2f2f2]">
-                      {activeSource?.label}
-                    </dd>
-                  </div>
-                </dl>
-              </article>
+      {attentionRuns.length > 0 ? (
+        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 dark:border-[#5f3b00] dark:bg-[#211600]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[#171717] dark:text-[#fff4dc]">
+                Needs attention
+              </p>
+              <p className="mt-1 text-sm leading-6 text-[#ab570a] dark:text-[#ffd38a]">
+                {attentionRuns.length} recent file{attentionRuns.length === 1 ? "" : "s"} failed or stopped updating.
+              </p>
             </div>
-          </section>
-      </>
+            <div className="flex flex-wrap gap-2">
+              {attentionRuns.map((run) => (
+                <span
+                  key={run.id}
+                  className="max-w-[260px] truncate rounded-full border border-[#ffefcf] bg-white px-3 py-1 font-mono text-xs text-[#ab570a] dark:border-[#5f3b00] dark:bg-[#050505] dark:text-[#fff4dc]"
+                >
+                  {runTitleOf(run)}
+                </span>
+              ))}
+              <Link
+                href="/workspace/logs"
+                className="inline-flex items-center gap-1 rounded-full bg-[#171717] px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
+              >
+                Review
+                <ArrowRightIcon className="h-3 w-3" />
+              </Link>
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          label="Papers"
+          value={loading ? "..." : summary.paperCount}
+          detail="Unique analyzed papers"
+          icon={<PaperIcon className="h-5 w-5" />}
+        />
+        <MetricCard
+          label="Topics"
+          value={loading ? "..." : summary.topicCount}
+          detail="Workspace topic groups"
+          icon={<ChartIcon className="h-5 w-5" />}
+        />
+        <MetricCard
+          label="Keywords"
+          value={loading ? "..." : summary.keywordCount}
+          detail="Extracted keyword labels"
+          icon={<ChatIcon className="h-5 w-5" />}
+        />
+        <MetricCard
+          label="Coverage"
+          value={loading ? "..." : summary.yearRange}
+          detail="Publication year span"
+          icon={<UploadIcon className="h-5 w-5" />}
+        />
+      </section>
+
+      <section className={`${surfaceClass} p-6`}>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className={eyebrowClass}>
+              AI actions
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
+              What do you want to do with these papers?
+            </h2>
+          </div>
+          <Link
+            href="/workspace/chat"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
+          >
+            Open full chat
+            <ArrowRightIcon className="h-4 w-4" />
+          </Link>
+        </div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          {AI_ACTIONS.map((action) => (
+            <AIActionCard key={action.title} {...action} />
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+        <article className={`${surfaceClass} p-6`}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className={eyebrowClass}>
+                Workspace signal
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
+                Compact insight preview
+              </h2>
+            </div>
+            <Link
+              href="/workspace/dashboard"
+              className="inline-flex items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+            >
+              Dashboard
+              <ArrowRightIcon className="h-4 w-4" />
+            </Link>
+          </div>
+
+          <div className="mt-5 grid gap-6 lg:grid-cols-2">
+            <InsightList
+              title="Top topics"
+              items={summary.topTopics}
+              emptyLabel="No topic rows are available yet. Analyze papers to populate this view."
+            />
+            <InsightList
+              title="Top keywords"
+              items={summary.topKeywords}
+              emptyLabel="No keyword rows are available yet. Analyze papers to populate this view."
+            />
+          </div>
+        </article>
+
+        <article className={`${surfaceClass} p-6`}>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className={eyebrowClass}>
+                Operations
+              </p>
+              <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
+                Recent activity
+              </h2>
+            </div>
+            <Link
+              href="/workspace/logs"
+              className="text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
+            >
+              History
+            </Link>
+          </div>
+
+          <div className="mt-5 space-y-3">
+            {libraryLoading ? (
+              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#a1a1a1] border-t-transparent dark:border-[#8e8e8e]" />
+                <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
+                  Loading recent activity
+                </p>
+              </div>
+            ) : libraryError ? (
+              <p className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-4 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
+                {libraryError}
+              </p>
+            ) : recentRuns.length > 0 ? (
+              recentRuns.map((run) => <RunActivityRow key={run.id} run={run} />)
+            ) : (
+              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
+                <CheckCircleIcon className="mx-auto h-8 w-8 text-[#a1a1a1] dark:text-[#555555]" />
+                <p className="mt-3 text-sm font-medium text-[#171717] dark:text-[#d0d0d0]">
+                  No file activity yet
+                </p>
+                <p className="mt-1 text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
+                  Analyze papers to start building the workspace record.
+                </p>
+              </div>
+            )}
+          </div>
+        </article>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        <Link
+          href="/workspace/dashboard"
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
+        >
+          <span>
+            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
+              Review analytics
+            </span>
+            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
+              Trends, tracks, keywords
+            </span>
+          </span>
+          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
+        </Link>
+        <Link
+          href="/workspace/library"
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
+        >
+          <span>
+            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
+              Manage library
+            </span>
+            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
+              Files, folders, analysis
+            </span>
+          </span>
+          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
+        </Link>
+        <Link
+          href="/workspace/chat"
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
+        >
+          <span>
+            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
+              Ask with sources
+            </span>
+            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
+              Chat, charts, web search
+            </span>
+          </span>
+          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
+        </Link>
+      </section>
 
       <AnalyzeFlowModal
         open={showAnalyzeModal}

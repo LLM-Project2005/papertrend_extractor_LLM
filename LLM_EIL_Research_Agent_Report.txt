@@ -1,0 +1,441 @@
+EIL PAPER ANALYSIS AGENT:
+AN LLM-BASED PIPELINE FOR RESEARCH TREND EXTRACTION IN THE EIL PROGRAM
+
+Prepared for: LLM Class
+Prepared by: Thanawat Traipat
+Program: English as an International Language (EIL), Chulalongkorn University
+Date: 10 May 2026
+
+
+ABSTRACT
+
+This report presents the design, implementation, and evaluation of the EIL Paper Analysis Agent, an LLM-based system for analyzing research papers from the English as an International Language (EIL) program at Chulalongkorn University. The project addresses a practical academic problem: the EIL program has produced research across English Linguistics (EL), English Language Instruction (ELI), and Language Assessment & Evaluation (LAE), but these papers are difficult to analyze systematically when they remain stored mainly as PDF files. The proposed system uses a graph-based LLM pipeline to convert papers into structured data, including metadata, content sections, generated keywords, author-provided keywords, track classification, research typology, methodology facets, and topic labels. The structured outputs are then made available through a dashboard, search interface, and corpus-grounded chat workflow.
+
+The prototype was evaluated using eleven processed 2024 papers and the existing evaluation file in data/eval_output/research_eval_metrics.csv. All eleven outputs reached dataset_ready status. Ten papers were scored in the evaluation CSV. The mean Keyword Fidelity score was 0.8850, the mean normalized Davies-Bouldin Index score was 0.5133, and the mean Labeller LSI score was 0.7924. These results suggest that the pipeline is especially strong at extracting relevant keywords and producing meaningful topic labels, while topic grouping remains the clearest area for improvement.
+
+
+1. INTRODUCTION
+
+The English as an International Language (EIL) program at Chulalongkorn University is an interdisciplinary graduate program involving the Faculty of Arts, Faculty of Education, and Language Institute. The program covers three main academic tracks:
+
+1. English Linguistics (EL), which focuses on the structure, variation, use, and cultural significance of English in global contexts.
+
+2. English Language Instruction (ELI), which focuses on research-driven teaching methods, instructional design, classroom practice, and language learning.
+
+3. Language Assessment & Evaluation (LAE), which focuses on the development, validation, and evaluation of tools and frameworks for measuring language proficiency.
+
+Over time, the program has produced many research papers, theses, journal articles, and conference papers. These papers contain valuable information about research trends in English linguistics, language teaching, assessment, learner identity, language policy, methodology, and educational innovation. However, when the papers exist mainly as PDF documents, it is difficult to answer program-level questions such as:
+
+- Which research topics appear most often in each track?
+- How have research interests changed over time?
+- Which papers are mainly pedagogical, linguistic, assessment-based, or sociolinguistic?
+- What methods and populations are commonly used?
+- Which author-provided keywords appear across the corpus?
+- What future research directions can be identified from past work?
+
+This project was developed to solve that problem by building an LLM-based research analysis agent. Instead of manually reading every paper and entering information into a spreadsheet, the system uses a multi-node pipeline to extract, classify, normalize, and store important research information. The final goal is to support a dashboard and chat interface where users can explore the EIL research corpus interactively.
+
+
+1.1 Research Questions
+
+RQ1: How can EIL research papers be converted from unstructured PDF files into structured, evidence-grounded data for analysis?
+
+RQ2: What topic, track, keyword, methodology, and typology signals can be extracted from EIL papers using an LLM pipeline?
+
+RQ3: How can the resulting corpus be explored through a dashboard, keyword search, visualization, and corpus-grounded chat?
+
+
+1.2 Hypotheses
+
+H1: A graph-based LLM pipeline can transform unstructured EIL PDF papers into normalized tables of metadata, sections, keywords, concepts, tracks, facets, author-provided keywords, and research typology.
+
+H2: Evaluation using keyword fidelity, cluster quality, and label alignment can indicate whether extracted concepts are useful for research trend analysis.
+
+H3: A dashboard and chat layer can make the EIL corpus easier to explore than static folders of PDF files alone.
+
+
+2. PROJECT OVERVIEW
+
+The project is a multi-runtime academic research platform. It combines a Python-based LLM pipeline, a LangGraph workflow, a Supabase database, and a Next.js dashboard. The central idea is that each PDF paper should move through a sequence of specialized nodes. Each node performs one clear task, such as extracting text, cleaning the text, segmenting the paper, extracting metadata, identifying keywords, classifying tracks, and building database-ready rows.
+
+The project is not only a single prompt or chatbot. It is a system with multiple layers:
+
+1. A PDF ingestion layer that reads papers and prepares text.
+2. A LangGraph analysis layer that routes the paper through multiple LLM and processing nodes.
+3. A dataset builder layer that converts model outputs into normalized database records.
+4. A Supabase persistence layer that stores papers, keywords, tracks, content, facets, and classifications.
+5. A dashboard layer that lets users search, filter, and inspect the processed corpus.
+6. A chat and deep research layer that lets users ask questions grounded in the corpus.
+
+This architecture is important because academic paper analysis requires more than one LLM response. A paper must be cleaned, segmented, classified, checked, stored, and later retrieved. The use of LangGraph helps make the workflow explicit and maintainable.
+
+
+TABLE I
+MAIN SYSTEM COMPONENTS
+
++--------------------------+--------------------------------------------------------------+
+| Component                | Responsibility                                               |
++--------------------------+--------------------------------------------------------------+
+| Next.js dashboard        | Displays corpus summaries, paper records, dashboard views,   |
+|                          | search results, chat, and admin import screens.              |
+| Python node service      | Exposes graph execution endpoints for ingestion, search,     |
+|                          | conversation, and deep research workflows.                   |
+| Worker queue             | Downloads PDFs, extracts text, runs the graph pipeline, and  |
+|                          | persists outputs.                                            |
+| Supabase database        | Stores normalized paper records, keywords, content, tracks,  |
+|                          | concepts, facets, author keywords, and typology rows.        |
+| LangGraph workflows      | Orchestrate the step-by-step LLM pipeline and query flows.   |
+| Evaluation scripts       | Measure keyword fidelity, topic grouping, and label quality. |
++--------------------------+--------------------------------------------------------------+
+
+
+3. METHODOLOGY
+
+3.1 Corpus and Data
+
+The intended corpus includes EIL-related journal and conference papers from academic year 2549 to the present. For the current prototype, the available processed sample contains eleven 2024 PDF papers. These papers are stored as JSON outputs in data/output, and all eleven have dataset_ready status.
+
+The prototype sample is suitable for checking whether the pipeline can process real papers and produce structured outputs. However, it is not yet large enough to make final claims about long-term program-wide research trends. A full historical run will be needed after the dependency environment and database pipeline are fully prepared.
+
+
+TABLE II
+PROTOTYPE CORPUS
+
++------------------------------------------+------------------------------------------+
+| Item                                     | Current Value                            |
++------------------------------------------+------------------------------------------+
+| Target corpus                            | EIL papers from academic year 2549 to    |
+|                                          | present                                  |
+| Prototype input                          | 11 PDF papers from 2024                  |
+| Processed output                         | 11 JSON files                            |
+| Processing status                        | 11 dataset_ready outputs                 |
+| Evaluation source                        | data/eval_output/research_eval_metrics. |
+|                                          | csv                                      |
+| Evaluated papers in CSV                  | 10 papers                                |
++------------------------------------------+------------------------------------------+
+
+
+3.2 Ingestion Pipeline
+
+The ingestion pipeline is defined as a LangGraph workflow. The current graph follows this sequence:
+
+extract -> clean -> translate? -> segment -> metadata -> author_keywords -> mine_keywords -> group_topics -> label_trends -> classify_tracks -> classify_typology -> extract_facets -> build_dataset
+
+Each node is responsible for one part of the analysis. This makes the system easier to extend because new capabilities can be added as new nodes rather than by rewriting the entire pipeline.
+
+
+TABLE III
+INGESTION NODES AND OUTPUTS
+
++--------------------------------+--------------------------------------------------------------+
+| Node or Stage                  | Main Output                                                  |
++--------------------------------+--------------------------------------------------------------+
+| extract                        | Raw text extracted from PDF files.                           |
+| clean                          | Cleaned text with reduced noise and formatting artifacts.    |
+| translate?                     | Optional translated or normalized text when needed.          |
+| segment                        | Structured paper sections such as abstract, introduction,    |
+|                                | methods, results, and conclusion.                            |
+| metadata                       | Title, year, authors, and bibliographic information.         |
+| author_keywords                | Keywords explicitly listed by the paper author, when they    |
+|                                | exist in the paper.                                          |
+| mine_keywords                  | LLM-generated keywords grounded in the paper content.        |
+| group_topics                   | Keyword groups or concepts that connect related terms.       |
+| label_trends                   | Human-readable topic labels for keyword groups.              |
+| classify_tracks                | EIL track classification: EL, ELI, LAE, or Other.            |
+| classify_typology              | Research typology classification into one of four groups.    |
+| extract_facets                 | Method, population, language focus, and other analytic       |
+|                                | facets.                                                      |
+| build_dataset                  | Final database-ready rows for persistence and dashboard use. |
++--------------------------------+--------------------------------------------------------------+
+
+
+3.3 Track Classification Logic
+
+The track classifier assigns each paper to one or more EIL program tracks:
+
+1. English Linguistics (EL)
+2. English Language Instruction (ELI)
+3. Language Assessment & Evaluation (LAE)
+4. Other
+
+The classifier is based on the academic identity of the EIL program. EL papers usually focus on linguistic structure, discourse, pragmatics, phonology, morphology, syntax, corpus analysis, language use, or interlanguage patterns. ELI papers usually focus on pedagogy, instructional design, classroom intervention, teaching strategies, learner development, and educational practice. LAE papers usually focus on assessment instruments, test validation, rubrics, scoring, measurement frameworks, and evaluation design.
+
+The system stores both single-track and multi-track outputs. This is important because some EIL papers genuinely sit between tracks. For example, a paper about classroom assessment may touch both ELI and LAE. However, the single-track classification gives the dashboard a clear primary category.
+
+
+3.4 Author-Provided Keyword Node
+
+A recent extension to the project is the author-provided keyword node. This node is separate from the generated keyword node. The reason is that author-provided keywords and LLM-generated keywords represent different kinds of evidence.
+
+Author-provided keywords are the terms the original researcher intentionally listed in the paper. They show how the author framed the work. Generated keywords, by contrast, are inferred by the LLM from the full text. Both are useful, but they should not be mixed together.
+
+The intended behavior of the author-provided keyword node is:
+
+1. Search for explicit keyword sections in the paper, such as "Keywords", "Key words", or similar labels.
+2. Extract only the listed author keywords.
+3. Preserve the original keyword wording where possible.
+4. Return no rows when a paper does not provide author keywords.
+5. Store author keywords separately from generated keywords in the final dataset.
+
+This design prevents the dashboard from confusing author intent with model inference.
+
+
+3.5 Research Typology Node
+
+Another recent extension is the research typology node. This node classifies the type of research contribution made by each paper. It is separate from track classification. A track answers "Which EIL area does this belong to?" A typology answers "What kind of research work is this?"
+
+The four typology groups are:
+
+Group 1: Descriptive & Explanatory
+Studies that describe, analyze, or explain linguistic phenomena, language use, or learner behavior. These studies do not primarily design an intervention or validate a test instrument.
+
+Group 2: Pedagogical & Intervention
+Studies that design, implement, and evaluate a teaching method, instructional module, classroom intervention, or learning treatment.
+
+Group 3: Assessment & Measurement
+Studies that develop, validate, or critically examine a test, rubric, scoring system, assessment framework, or measurement instrument.
+
+Group 4: Policy, Sociolinguistic & Critical
+Studies that examine broader social, cultural, institutional, ideological, or political dimensions of English language use and education.
+
+This node uses a detailed classification prompt. The prompt requires the model to identify the stated purpose, identify the primary contribution, match the paper to a group, apply the boundary rule between intervention and assessment when needed, and provide a final verdict. The boundary rule is especially important: if a test is only used to measure whether a teaching intervention worked, the paper belongs to Group 2; if the test itself is developed or validated as the main contribution, the paper belongs to Group 3.
+
+
+3.6 Dataset Builder
+
+After all nodes finish, the dataset builder converts graph state into normalized rows. This is where the project becomes useful for a dashboard and database. Instead of storing one large unstructured LLM response, the system builds separate tables for:
+
+- papers
+- keywords
+- tracks_single
+- tracks_multi
+- paper_content
+- keyword_concepts
+- paper_facets
+- author_keywords
+- research_typologies
+
+This normalized design makes it possible to filter papers by year, track, keyword, concept, typology, and method. It also makes the data easier to inspect and debug.
+
+
+3.7 Dashboard, Search, and Deep Research
+
+The dashboard is built with Next.js and connected to Supabase. It is designed to support practical exploration of the processed corpus. The user should be able to import papers, view processing status, inspect outputs, search keywords, and ask questions about the corpus.
+
+The workspace query graph supports keyword search and visualization. The conversation layer uses tools to answer questions from the corpus rather than answering only from general model knowledge. A separate deep research graph performs a preflight step, executes research steps, and synthesizes a final answer. This makes the system closer to an academic research assistant than a normal chatbot.
+
+
+4. EVALUATION
+
+4.1 Evaluation Metrics
+
+The existing evaluation CSV reports three main metrics:
+
+1. Keyword Fidelity (LLM)
+
+This metric uses an LLM-based judge to evaluate whether generated keywords are relevant, technically meaningful, and faithful to the paper context. A higher score means the extracted keywords better represent the actual paper.
+
+2. Grouper DBI (Normalized)
+
+This metric is based on the Davies-Bouldin Index, a clustering metric that estimates how compact and separated topic groups are. The project uses a normalized version where higher is better. A stronger score suggests that keywords are grouped into more coherent topic clusters.
+
+3. Labeller LSI Score
+
+This metric checks whether a generated topic label is semantically aligned with the keyword group it represents. It compares the label with the centroid of the grouped keyword embeddings. A higher score means the label is closer to the concept represented by the group.
+
+
+4.2 Evaluation Results from CSV
+
+The evaluation results below are taken from:
+
+data/eval_output/research_eval_metrics.csv
+
+
+TABLE IV
+EVALUATION RESULTS
+
++----------------------------+-----+--------+-------+-------+------------------------------+
+| Metric                     | N   | Mean   | Min   | Max   | Interpretation               |
++----------------------------+-----+--------+-------+-------+------------------------------+
+| Keyword Fidelity (LLM)     | 10  | 0.8850 | 0.850 | 0.950 | High keyword relevance and   |
+|                            |     |        |       |       | context fidelity.            |
+| Grouper DBI (Normalized)   | 10  | 0.5133 | 0.414 | 0.754 | Moderate cluster quality;    |
+|                            |     |        |       |       | grouping can be improved.    |
+| Labeller LSI Score         | 10  | 0.7924 | 0.686 | 0.933 | Topic labels generally align |
+|                            |     |        |       |       | well with keyword groups.    |
++----------------------------+-----+--------+-------+-------+------------------------------+
+
+The strongest result is Keyword Fidelity, with a mean score of 0.8850. This suggests that the keyword extraction node is already producing terms that are mostly faithful to the papers. The Labeller LSI score is also strong, with a mean of 0.7924, suggesting that the topic labeler is usually able to summarize keyword groups with meaningful labels.
+
+The weakest result is the normalized Grouper DBI score, with a mean of 0.5133. This does not mean the grouping is unusable, but it shows that topic grouping is the part of the pipeline that needs the most improvement. Possible improvements include changing the embedding model, adjusting clustering thresholds, adding post-processing rules, or using the paper section structure more strongly when grouping keywords.
+
+
+4.3 Processing Summary
+
+The current prototype output folder contains eleven JSON outputs. All eleven reached dataset_ready status.
+
+
+TABLE V
+PROCESSING SUMMARY
+
++------------------------------------------+----------+
+| Measure                                  | Result   |
++------------------------------------------+----------+
+| JSON outputs inspected                   | 11       |
+| dataset_ready outputs                    | 11       |
+| Average generated keywords per paper     | 12.55    |
+| Average keyword concepts per paper       | 10.91    |
+| Average extracted facets per paper       | 6.09     |
+| Evaluated papers in CSV                  | 10       |
++------------------------------------------+----------+
+
+One paper in the current output set produced no generated keywords, concepts, or facets. For that reason, the evaluation CSV contains ten scored papers rather than eleven. This is useful because it reveals a real pipeline edge case: the system should handle papers where extraction or downstream topic generation fails, and it should report that failure clearly in the dashboard.
+
+
+4.4 Track Distribution
+
+The processed 2024 prototype outputs contain the following single-track distribution:
+
+
+TABLE VI
+TRACK DISTRIBUTION IN PROTOTYPE OUTPUTS
+
++------------------------------------------+-------+
+| Track                                    | Count |
++------------------------------------------+-------+
+| English Linguistics (EL)                 | 2     |
+| English Language Instruction (ELI)       | 7     |
+| Language Assessment & Evaluation (LAE)   | 1     |
+| Other                                    | 1     |
++------------------------------------------+-------+
+
+The sample is dominated by ELI papers. This makes sense because several prototype papers are about teaching interventions, feedback, classroom discourse, dynamic assessment used pedagogically, and learner development. However, this distribution should not yet be interpreted as a full EIL program trend because the prototype only uses eleven 2024 papers.
+
+
+4.5 Verification During Report Preparation
+
+Several checks were run during report preparation.
+
+
+TABLE VII
+VERIFICATION RESULTS
+
++------------------------------------------------------+------------------------------------------+
+| Check                                                | Result                                   |
++------------------------------------------------------+------------------------------------------+
+| python -m pytest tests/test_new_ingestion_nodes.py   | Passed. 8 tests collected, 8 passed.     |
+| tests/test_workspace_data.py tests/test_supabase_    |                                          |
+| http.py                                              |                                          |
+| python -m py_compile on core graph, node, worker,    | Passed. No syntax errors reported.       |
+| and evaluation files                                 |                                          |
+| python -m pytest tests                               | Blocked during collection because        |
+|                                                      | langchain_openai is missing.             |
+| python eval.py                                       | Blocked because langchain_openai is      |
+|                                                      | missing. Existing CSV was used instead.  |
+| Frontend build                                       | Not run because eil-dashboard/node_      |
+|                                                      | modules is not installed.                |
++------------------------------------------------------+------------------------------------------+
+
+The successful tests show that dependency-light ingestion nodes, workspace data access, and Supabase HTTP utilities are working. The blocked tests are environment issues rather than direct evidence that the project logic is broken. A full verification run requires installing the missing Python LLM and graph dependencies, then installing the dashboard Node dependencies.
+
+
+5. RESULTS AND DISCUSSION
+
+The prototype demonstrates that the project logic is sound. The system can process PDF papers into structured outputs, build normalized rows, and produce evaluation metrics from the processed corpus. The evaluation results show that the keyword extraction and topic labeling parts of the pipeline are promising. In particular, the high Keyword Fidelity score suggests that the LLM-generated keywords are not random or generic; they are usually grounded in the actual paper content.
+
+The project also shows why a graph-based approach is better than a single prompt. If the system used only one prompt to analyze an entire paper, the output would be harder to validate, debug, and store. By separating the process into nodes, the project can improve one step at a time. For example, the author-provided keyword node can be improved without changing the track classifier. The research typology node can be evaluated separately from the generated keyword node. This modularity is one of the main strengths of the system.
+
+The most important limitation is that the current processed outputs are from an earlier run and do not yet contain the new author_keywords and research_typologies rows. The code and schemas support these nodes, but the sample outputs need to be regenerated after the full dependency environment is available. Another limitation is that the evaluation currently focuses on keyword and topic quality. Future evaluation should include human annotation for track classification, typology classification, author keyword extraction accuracy, and dashboard answer quality.
+
+
+6. CONCLUSION AND FUTURE WORKS
+
+This project builds an LLM-based academic research agent for the EIL program. It converts PDF papers into structured research data and supports later exploration through dashboard, search, and chat workflows. The prototype evaluation shows strong keyword fidelity and meaningful topic-label alignment. The system is therefore a promising foundation for program-level trend analysis.
+
+At the same time, the project is still in development. The topic grouping score shows that clustering quality should be improved. The full test suite and evaluation script also need to be rerun in a complete dependency environment. Finally, the full historical corpus from academic year 2549 to the present must be processed before the project can make strong claims about long-term EIL research trends.
+
+
+6.1 Future Works
+
+1. Regenerate the prototype corpus with the new author-provided keyword and research typology nodes enabled.
+
+2. Install the missing Python dependencies, including langchain_openai, langchain_core, langgraph, and PDF extraction dependencies, then rerun the full pytest suite and eval.py.
+
+3. Install dashboard dependencies in eil-dashboard and run the frontend build.
+
+4. Expand the corpus from the 2024 prototype to the full historical range from academic year 2549 to the present.
+
+5. Add human-labeled validation data for track classification, research typology, author keyword extraction, and topic labels.
+
+6. Improve keyword grouping by experimenting with embedding models, clustering thresholds, and concept-merging rules.
+
+7. Add end-to-end tests for PDF upload, queue processing, Supabase persistence, dashboard filtering, paper detail pages, and chat responses.
+
+8. Extend the dashboard to show language focus, methodology trends, author background, cultural bias, and future research directions.
+
+
+7. DEMO IMPLEMENTATION
+
+The current implementation can be understood through the following project files and folders:
+
+
+TABLE VIII
+IMPORTANT FILES AND FOLDERS
+
++------------------------------------------------------+------------------------------------------+
+| File or Folder                                       | Purpose                                  |
++------------------------------------------------------+------------------------------------------+
+| main.py                                              | Local batch entry point for processing   |
+|                                                      | papers outside the dashboard.            |
+| graphs.py                                            | Defines ingestion, workspace query, and  |
+|                                                      | deep research LangGraph workflows.       |
+| state.py                                             | Defines graph state and structured       |
+|                                                      | schemas.                                 |
+| nodes/                                               | Contains extraction, classification,     |
+|                                                      | grouping, routing, search, and chat      |
+|                                                      | nodes.                                   |
+| nodes/author_keywords.py                             | Extracts author-provided keywords when   |
+|                                                      | papers explicitly list them.             |
+| nodes/research_typology.py                           | Classifies papers into four research     |
+|                                                      | typology groups.                         |
+| nodes/dataset_builder.py                             | Converts graph outputs into normalized   |
+|                                                      | dataset rows.                            |
+| nodes/model_router.py                                | Routes model tasks to primary and        |
+|                                                      | fallback LLM models.                     |
+| node_service.py                                      | Exposes graph execution through an HTTP  |
+|                                                      | service.                                 |
+| eil-dashboard/                                       | Next.js dashboard and worker interface.  |
+| eil-dashboard/worker/analysis_pipeline/pipeline.py   | Worker pipeline for ingestion jobs.      |
+| data/output/                                         | Current processed JSON outputs.          |
+| data/eval_output/research_eval_metrics.csv           | Evaluation metrics used in this report.  |
++------------------------------------------------------+------------------------------------------+
+
+The intended demo flow is:
+
+1. A user uploads or imports PDF papers through the dashboard or local input folder.
+2. The worker downloads or reads the PDF file.
+3. The Python graph extracts and analyzes the paper.
+4. The dataset builder creates normalized rows.
+5. Supabase stores the structured data.
+6. The dashboard displays paper, keyword, track, topic, and typology information.
+7. The chat layer answers user questions using the processed corpus.
+
+
+8. REFERENCES
+
+Davies, D. L., & Bouldin, D. W. (1979). A cluster separation measure. IEEE Transactions on Pattern Analysis and Machine Intelligence, PAMI-1(2), 224-227.
+
+Reimers, N., & Gurevych, I. (2019). Sentence-BERT: Sentence embeddings using Siamese BERT-networks. Proceedings of EMNLP-IJCNLP.
+
+LangChain and LangGraph documentation. Used as the workflow and model-orchestration framework for ingestion, workspace query, and deep research graphs.
+
+Supabase documentation. Used as the database and backend persistence layer for the dashboard.
+
+Next.js documentation. Used as the frontend and API framework for the dashboard application.
+
+Project source files and documentation in /Users/thanawattraipat/Documents/EIL_Research_agent, inspected on 10 May 2026.
+
+
+APPENDIX A: SHORT SUPERVISOR SUMMARY
+
+This project is an LLM-based research analysis system for the EIL program at Chulalongkorn University. It processes PDF papers, extracts structured academic information, classifies papers by EIL track and research typology, and prepares the data for dashboard exploration. The system uses LangGraph to separate the workflow into maintainable nodes. In the current prototype, eleven 2024 papers were processed successfully, and ten papers were evaluated using the existing metrics CSV. The evaluation shows high keyword fidelity and strong topic-label alignment, while topic grouping needs further improvement. The next step is to regenerate the corpus with the new author-provided keyword and research typology nodes, then run the full evaluation in a complete dependency environment.

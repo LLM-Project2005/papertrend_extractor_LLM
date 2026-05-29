@@ -46,6 +46,10 @@ def _segment_by_headings(text: str) -> Dict[str, str]:
 def _slice_span(text: str, start: int, end: int) -> str:
     safe_start = max(0, min(int(start or 0), len(text)))
     safe_end = max(safe_start, min(int(end or 0), len(text)))
+    while safe_start > 0 and text[safe_start - 1].isalnum() and safe_start < len(text) and text[safe_start].isalnum():
+        safe_start -= 1
+    while safe_end < len(text) and safe_end > 0 and text[safe_end - 1].isalnum() and text[safe_end].isalnum():
+        safe_end += 1
     return _clean_section_text(text[safe_start:safe_end])
 
 

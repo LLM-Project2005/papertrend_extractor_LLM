@@ -1,4 +1,5 @@
 import argparse
+from datetime import datetime, timedelta, timezone
 import json
 import logging
 import os
@@ -39,6 +40,22 @@ def _batch_stale_after_seconds(env_name: str, default_seconds: int) -> float:
         return max(float(os.getenv(env_name, str(default_seconds))), 30.0)
     except Exception:
         return float(default_seconds)
+
+
+def _int_env(name: str, default_value: int, minimum: int = 1) -> int:
+    try:
+        value = int(os.getenv(name, str(default_value)))
+    except Exception:
+        value = default_value
+    return max(value, minimum)
+
+
+def _float_env(name: str, default_value: float, minimum: float = 0.0) -> float:
+    try:
+        value = float(os.getenv(name, str(default_value)))
+    except Exception:
+        value = default_value
+    return max(value, minimum)
 
 
 def _active_thread_state(
@@ -123,6 +140,138 @@ def _run_research_batch(max_runs: int) -> Dict[str, Any]:
     config = load_config()
     client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
     return process_batch(client, max_runs=max_runs)
+
+
+def _worker_base_url_from_request(handler: BaseHTTPRequestHandler) -> str:
+    configured = (
+        os.getenv("CLOUD_TASKS_TARGET_BASE_URL")
+        or os.getenv("WORKER_SERVICE_URL")
+        or os.getenv("PYTHON_NODE_SERVICE_URL")
+        or ""
+    ).strip()
+    if configured:
+        return configured.rstrip("/")
+
+    host = (
+        handler.headers.get("X-Forwarded-Host")
+        or handler.headers.get("Host")
+        or ""
+    ).strip()
+    if not host:
+        return ""
+    proto = (handler.headers.get("X-Forwarded-Proto") or "https").strip() or "https"
+    return f"{proto}://{host}".rstrip("/")
+
+
+def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        from google.cloud import tasks_v2
+        from google.protobuf import timestamp_pb2
+    except Exception as error:
+        raise RuntimeError(
+            "Cloud Tasks support is not installed. Add google-cloud-tasks to requirements."
+        ) from error
+
+    project_id = (
+        os.getenv("CLOUD_TASKS_PROJECT_ID")
+        or os.getenv("GOOGLE_CLOUD_PROJECT")
+        or os.getenv("GCP_PROJECT")
+        or ""
+    ).strip()
+    location_id = (
+        os.getenv("CLOUD_TASKS_LOCATION")
+        or os.getenv("GOOGLE_CLOUD_TASKS_LOCATION")
+        or "asia-southeast1"
+    ).strip()
+    queue_id = (
+        os.getenv("CLOUD_TASKS_QUEUE")
+        or os.getenv("GOOGLE_CLOUD_TASKS_QUEUE")
+        or ""
+    ).strip()
+    worker_secret = (
+        os.getenv("WORKER_WEBHOOK_SECRET")
+        or os.getenv("CRON_SECRET")
+        or os.getenv("ADMIN_IMPORT_SECRET")
+        or ""
+    ).strip()
+    target_base_url = _worker_base_url_from_request(handler)
+
+    missing = [
+        name
+        for name, value in {
+            "CLOUD_TASKS_PROJECT_ID": project_id,
+            "CLOUD_TASKS_LOCATION": location_id,
+            "CLOUD_TASKS_QUEUE": queue_id,
+            "WORKER_WEBHOOK_SECRET": worker_secret,
+            "CLOUD_TASKS_TARGET_BASE_URL": target_base_url,
+        }.items()
+        if not value
+    ]
+    if missing:
+        return {
+            "ok": False,
+            "enqueued": False,
+            "reason": "missing_cloud_tasks_config",
+            "missing": missing,
+        }
+
+    max_tasks = _int_env("CLOUD_TASKS_MAX_TASKS_PER_REQUEST", 50, 1)
+    requested_task_count = int(body.get("taskCount") or body.get("task_count") or 1)
+    task_count = min(max(requested_task_count, 1), max_tasks)
+    max_runs_per_task = min(max(int(body.get("maxRuns") or 1), 1), 5)
+    spacing_seconds = _float_env("CLOUD_TASKS_TASK_SPACING_SECONDS", 15.0, 0.0)
+    initial_delay_seconds = _float_env("CLOUD_TASKS_INITIAL_DELAY_SECONDS", 0.0, 0.0)
+    reason = str(body.get("reason") or "cloud-tasks-trigger").strip() or "cloud-tasks-trigger"
+    force_start = bool(body.get("force", False))
+
+    client = tasks_v2.CloudTasksClient()
+    parent = client.queue_path(project_id, location_id, queue_id)
+    target_url = f"{target_base_url}/process-queue"
+    task_names = []
+    now = datetime.now(timezone.utc)
+
+    for index in range(task_count):
+        payload = {
+            "async": True,
+            "maxRuns": max_runs_per_task,
+            "reason": f"{reason}-task-{index + 1}",
+            "force": force_start,
+            "retryOnBusy": True,
+            "source": "cloud-tasks",
+        }
+        task: Dict[str, Any] = {
+            "http_request": {
+                "http_method": tasks_v2.HttpMethod.POST,
+                "url": target_url,
+                "headers": {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {worker_secret}",
+                    "X-Papertrend-Task-Source": "cloud-tasks",
+                },
+                "body": json.dumps(payload).encode("utf-8"),
+            }
+        }
+
+        delay_seconds = initial_delay_seconds + (index * spacing_seconds)
+        if delay_seconds > 0:
+            schedule_time = timestamp_pb2.Timestamp()
+            schedule_time.FromDatetime(now + timedelta(seconds=delay_seconds))
+            task["schedule_time"] = schedule_time
+
+        created = client.create_task(request={"parent": parent, "task": task})
+        task_names.append(created.name)
+
+    return {
+        "ok": True,
+        "enqueued": True,
+        "queue": queue_id,
+        "location": location_id,
+        "task_count": task_count,
+        "requested_task_count": requested_task_count,
+        "max_runs_per_task": max_runs_per_task,
+        "target_path": "/process-queue",
+        "task_names": task_names,
+    }
 
 
 def _run_queue_batch_background(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
@@ -333,11 +482,33 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
                 run_async = bool(body.get("async", True))
                 force_start = bool(body.get("force", False))
+                retry_on_busy = bool(body.get("retryOnBusy", False))
                 if run_async:
+                    async_max_runs = min(
+                        max_runs,
+                        _int_env("NODE_SERVICE_ASYNC_MAX_RUNS", 1, 1),
+                    )
                     start_result = _run_queue_batch_background(
-                        max_runs=max_runs,
+                        max_runs=async_max_runs,
                         force=force_start,
                     )
+                    if retry_on_busy and bool(start_result["already_running"]):
+                        _json_response(
+                            self,
+                            429,
+                            {
+                                "ok": False,
+                                "queued": False,
+                                "already_running": True,
+                                "reason": "worker_already_running_retry_later",
+                                "max_runs": async_max_runs,
+                                "requested_max_runs": max_runs,
+                                "force": force_start,
+                                "retry_on_busy": True,
+                                "active_batch_age_seconds": start_result["active_batch_age_seconds"],
+                            },
+                        )
+                        return
                     _json_response(
                         self,
                         202,
@@ -345,7 +516,8 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                             "ok": True,
                             "queued": bool(start_result["started"]),
                             "already_running": bool(start_result["already_running"]),
-                            "max_runs": max_runs,
+                            "max_runs": async_max_runs,
+                            "requested_max_runs": max_runs,
                             "force": force_start,
                             "stale_lock_recovered": bool(start_result["stale_lock_recovered"]),
                             "active_batch_age_seconds": start_result["active_batch_age_seconds"],
@@ -357,6 +529,14 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 summary = _run_queue_batch(max_runs=max_runs)
                 logger.info("worker queue batch %s", summary)
                 _json_response(self, 200, summary)
+                return
+
+            if self.path == "/enqueue-ingestion-tasks":
+                if not _is_authorized_worker_request(self):
+                    _json_response(self, 401, {"error": "Unauthorized"})
+                    return
+                task_result = _enqueue_ingestion_tasks(self, body)
+                _json_response(self, 202 if task_result.get("enqueued") else 503, task_result)
                 return
 
             if self.path == "/process-research-queue":
@@ -407,6 +587,7 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     project_id=str(body.get("projectId") or "") or None,
                     prompt=str(body.get("message") or ""),
                     selected_run_ids=list(body.get("selectedRunIds") or []),
+                    attachment_names=list(body.get("attachmentNames") or []),
                 )
                 logger.info("workspace usage summary %s", consume_usage_summary())
                 _json_response(self, 200, plan)

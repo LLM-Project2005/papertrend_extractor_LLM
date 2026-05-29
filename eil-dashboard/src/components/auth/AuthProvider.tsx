@@ -16,9 +16,31 @@ import type { WorkspaceProfile } from "@/types/workspace";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new Error("Auth profile request timed out."));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 function getRedirectTo(): string | undefined {
+  const configuredSiteUrl =
+    process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") || null;
+
   if (typeof window === "undefined") {
-    return undefined;
+    return configuredSiteUrl ? `${configuredSiteUrl}/organizations` : undefined;
   }
 
   return `${window.location.origin}/organizations`;
@@ -58,11 +80,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       avatar_url: metadata.avatar_url,
     };
 
-    const { data, error } = await supabase
-      .from("user_profiles")
-      .upsert(fallbackPayload, { onConflict: "id" })
-      .select("*")
-      .single();
+    const profileResult = await withTimeout(
+      Promise.resolve(
+        supabase
+          .from("user_profiles")
+          .upsert(fallbackPayload, { onConflict: "id" })
+          .select("*")
+          .single()
+      ) as Promise<{ data: UserProfileRecord | null; error: Error | null }>,
+      8000
+    );
+    const { data, error } = profileResult;
 
     if (error) {
       throw error;
@@ -79,32 +107,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let mounted = true;
 
-    supabase.auth
-      .getSession()
-      .then(async ({ data }) => {
+    withTimeout(supabase.auth.getSession(), 8000)
+      .then(({ data }) => {
         if (!mounted) {
           return;
         }
 
         setSession(data.session);
         setUser(data.session?.user ?? null);
+        setHydrated(true);
 
         if (data.session?.user) {
-          try {
-            await loadProfile(data.session.user);
-          } catch {
-            setProfile(null);
-          }
+          loadProfile(data.session.user).catch(() => {
+            if (mounted) {
+              setProfile(null);
+            }
+          });
         } else {
           setProfile(null);
-        }
-
-        if (mounted) {
-          setHydrated(true);
         }
       })
       .catch(() => {
         if (mounted) {
+          setSession(null);
+          setUser(null);
+          setProfile(null);
           setHydrated(true);
         }
       });
@@ -114,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } = supabase.auth.onAuthStateChange((_, nextSession) => {
       setSession(nextSession);
       setUser(nextSession?.user ?? null);
+      setHydrated(true);
 
       if (nextSession?.user) {
         loadProfile(nextSession.user).catch(() => {
@@ -140,10 +168,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const existingWorkspaceProfile = profile?.workspace_profile ?? null;
+      const mergedWorkspaceProfile: WorkspaceProfile = {
+        ...workspaceProfile,
+        analysisHistoryHiddenByProject:
+          workspaceProfile.analysisHistoryHiddenByProject &&
+          typeof workspaceProfile.analysisHistoryHiddenByProject === "object"
+            ? workspaceProfile.analysisHistoryHiddenByProject
+            : existingWorkspaceProfile?.analysisHistoryHiddenByProject ?? {},
+        projectCorpusTopicCacheByProject:
+          existingWorkspaceProfile?.projectCorpusTopicCacheByProject &&
+          typeof existingWorkspaceProfile.projectCorpusTopicCacheByProject === "object"
+            ? existingWorkspaceProfile.projectCorpusTopicCacheByProject
+            : workspaceProfile.projectCorpusTopicCacheByProject,
+      };
+
       const { error } = await supabase
         .from("user_profiles")
         .update({
-          workspace_profile: workspaceProfile,
+          workspace_profile: mergedWorkspaceProfile,
         })
         .eq("id", user.id);
 
@@ -151,7 +194,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    [user]
+    [profile?.workspace_profile, user]
   );
 
   const saveUserProfile = useCallback(
@@ -199,15 +242,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("Supabase auth is not configured.");
         }
 
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider,
-          options: {
-            redirectTo: getRedirectTo(),
-          },
-        });
+        const { data, error } = await withTimeout(
+          supabase.auth.signInWithOAuth({
+            provider,
+            options: {
+              redirectTo: getRedirectTo(),
+              skipBrowserRedirect: true,
+            },
+          }),
+          10000
+        );
 
         if (error) {
           throw error;
+        }
+
+        const redirectUrl = data?.url?.trim();
+        if (!redirectUrl) {
+          throw new Error("Supabase did not return an OAuth redirect URL.");
+        }
+
+        if (typeof window !== "undefined") {
+          window.location.assign(redirectUrl);
         }
       },
       signInWithPassword: async (email, password) => {

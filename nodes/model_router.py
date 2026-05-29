@@ -21,10 +21,12 @@ class ModelTask(str, Enum):
     SEGMENTATION = "SEGMENTATION"
     TRANSLATION = "TRANSLATION"
     METADATA = "METADATA"
+    AUTHOR_KEYWORD_EXTRACTION = "AUTHOR_KEYWORD_EXTRACTION"
     KEYWORD_EXTRACTION = "KEYWORD_EXTRACTION"
     KEYWORD_GROUPING = "KEYWORD_GROUPING"
     TOPIC_LABELING = "TOPIC_LABELING"
     TRACK_CLASSIFICATION = "TRACK_CLASSIFICATION"
+    RESEARCH_TYPOLOGY = "RESEARCH_TYPOLOGY"
     FACET_EXTRACTION = "FACET_EXTRACTION"
     QUERY_EXPANSION = "QUERY_EXPANSION"
     CHAT_SYNTHESIS = "CHAT_SYNTHESIS"
@@ -63,6 +65,8 @@ MODEL_PRICE_USD_PER_1M_TOKENS: Dict[str, Dict[str, float]] = {
     "openai/gpt-4.1-nano": {"input": 0.10, "output": 0.40},
     "google/gemini-2.5-flash": {"input": 0.30, "output": 2.50},
     "google/gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
+    "google/gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
+    "google/gemma-4-31b-it": {"input": 0.12, "output": 0.37},
 }
 
 CONSERVATIVE_PRESET: Dict[ModelTask, TaskProfile] = {
@@ -71,10 +75,12 @@ CONSERVATIVE_PRESET: Dict[ModelTask, TaskProfile] = {
     ModelTask.SEGMENTATION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.TRANSLATION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.METADATA: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
+    ModelTask.AUTHOR_KEYWORD_EXTRACTION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
     ModelTask.KEYWORD_EXTRACTION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.KEYWORD_GROUPING: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.TOPIC_LABELING: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.TRACK_CLASSIFICATION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
+    ModelTask.RESEARCH_TYPOLOGY: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash"),
     ModelTask.FACET_EXTRACTION: TaskProfile(primary="openai/gpt-4.1-mini", fallback="google/gemini-2.5-flash-lite"),
     ModelTask.QUERY_EXPANSION: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-nano"),
     ModelTask.CHAT_SYNTHESIS: TaskProfile(primary="google/gemini-2.5-flash", fallback="openai/gpt-4.1-mini"),
@@ -92,6 +98,20 @@ AGGRESSIVE_COST_PRESET: Dict[ModelTask, TaskProfile] = {
     ModelTask.TOPIC_LABELING: TaskProfile(primary="google/gemini-2.5-flash-lite", fallback="openai/gpt-4.1-mini"),
 }
 
+BUDGET_STRUCTURED_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemini-3.1-flash-lite")
+    for task in ModelTask
+}
+BUDGET_STRUCTURED_PRESET.update(
+    {
+        ModelTask.METADATA: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.AUTHOR_KEYWORD_EXTRACTION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.TRACK_CLASSIFICATION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.QUERY_EXPANSION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+        ModelTask.RESEARCH_SUMMARIZATION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
+    }
+)
+
 QUALITY_FIRST_PRESET: Dict[ModelTask, TaskProfile] = {
     **CONSERVATIVE_PRESET,
     ModelTask.SEGMENTATION: TaskProfile(
@@ -106,10 +126,30 @@ QUALITY_FIRST_PRESET: Dict[ModelTask, TaskProfile] = {
     ),
 }
 
+GEMINI_25_FLASH_LITE_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemini-2.5-flash-lite")
+    for task in ModelTask
+}
+
+GEMINI_31_FLASH_LITE_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemini-3.1-flash-lite")
+    for task in ModelTask
+}
+
+GEMMA_4_31B_PRESET: Dict[ModelTask, TaskProfile] = {
+    task: TaskProfile(primary="google/gemma-4-31b-it")
+    for task in ModelTask
+}
+
 PRESETS: Dict[str, Dict[ModelTask, TaskProfile]] = {
     "conservative": CONSERVATIVE_PRESET,
     "aggressive-cost": AGGRESSIVE_COST_PRESET,
+    "budget-structured": BUDGET_STRUCTURED_PRESET,
     "quality-first": QUALITY_FIRST_PRESET,
+    "gemini-2.5-flash-lite": GEMINI_25_FLASH_LITE_PRESET,
+    "gemini-3.1-flash-lite": GEMINI_31_FLASH_LITE_PRESET,
+    "gemma-4-31b": GEMMA_4_31B_PRESET,
+    "gemma-4-31b-it": GEMMA_4_31B_PRESET,
 }
 
 _SESSION_LABEL = contextvars.ContextVar("papertrend_model_router_label", default="")
@@ -143,6 +183,28 @@ def _parse_csv_env(name: str) -> Tuple[str, ...]:
     if not value:
         return ()
     return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def _parse_float_env(name: str, default: float) -> float:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except Exception:
+        return default
+    return value if value > 0 else default
+
+
+def _parse_int_env(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except Exception:
+        return default
+    return value if value >= 0 else default
 
 
 def _resolve_profile(task: ModelTask) -> TaskProfile:
@@ -195,11 +257,18 @@ def _create_chat_openai(model_name: str, config: TaskRoutingConfig, **overrides:
     extra_body_override = overrides.pop("extra_body", None)
     if isinstance(extra_body_override, Mapping):
         extra_body.update(extra_body_override)
+
+    # Guard against long-hanging provider calls. This timeout applies per model attempt.
+    request_timeout_seconds = _parse_float_env("MODEL_REQUEST_TIMEOUT_SECONDS", 180.0)
+    max_retries = _parse_int_env("MODEL_REQUEST_MAX_RETRIES", 1)
+
     init_kwargs = {
         "model": model_name,
         "temperature": overrides.pop("temperature", config.temperature),
         "api_key": config.api_key,
         "base_url": config.base_url,
+        "timeout": overrides.pop("timeout", request_timeout_seconds),
+        "max_retries": overrides.pop("max_retries", max_retries),
         "reasoning_effort": overrides.pop("reasoning_effort", config.reasoning_effort),
         "extra_body": extra_body or None,
         "max_completion_tokens": overrides.pop("max_completion_tokens", None),

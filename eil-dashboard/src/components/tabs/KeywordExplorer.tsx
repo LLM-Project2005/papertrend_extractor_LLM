@@ -18,15 +18,17 @@ import {
 } from "recharts";
 import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
-import type { PaperId, TrendRow } from "@/types/database";
+import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
+  topicFamilies?: CorpusTopicFamily[];
   selectedYears?: string[];
   selectedTracks?: string[];
-  folderId?: string | "all";
+  folderIds?: string[];
+  projectId?: string | "all";
   planCharts?: VisualizationPlanChart[];
 }
 
@@ -82,9 +84,11 @@ const TreemapCell = (props: {
 
 export default function KeywordExplorer({
   trends,
+  topicFamilies = [],
   selectedYears = [],
   selectedTracks = [],
-  folderId = "all",
+  folderIds = [],
+  projectId = "all",
   planCharts,
 }: Props) {
   const { session } = useAuth();
@@ -123,13 +127,14 @@ export default function KeywordExplorer({
               ? { Authorization: `Bearer ${session.access_token}` }
               : {}),
           },
-          body: JSON.stringify({
-            query: trimmed,
-            selectedYears,
-            selectedTracks,
-            folderId,
-          }),
-        });
+            body: JSON.stringify({
+              query: trimmed,
+              selectedYears,
+              selectedTracks,
+              folderIds,
+              projectId,
+            }),
+          });
 
         const payload = (await response.json()) as KeywordSearchResponse & {
           error?: string;
@@ -160,34 +165,66 @@ export default function KeywordExplorer({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [folderId, query, selectedTracks, selectedYears, session?.access_token]);
+  }, [folderIds, projectId, query, selectedTracks, selectedYears, session?.access_token]);
 
   const keywordAggregate = useMemo(() => {
-    const map: Record<
-      string,
-      { total: number; papers: Set<PaperId>; years: Set<string>; topics: Set<string> }
-    > = {};
+    const families =
+      topicFamilies.length > 0
+        ? topicFamilies
+        : Object.entries(
+            trends.reduce<
+              Record<
+                string,
+                {
+                  paperIds: Set<PaperId>;
+                  years: Set<string>;
+                  aliases: Set<string>;
+                  keywords: Map<string, number>;
+                }
+              >
+            >((accumulator, row) => {
+              const entry = (accumulator[row.topic] ??= {
+                paperIds: new Set<PaperId>(),
+                years: new Set<string>(),
+                aliases: new Set<string>([row.topic, row.raw_topic ?? row.topic]),
+                keywords: new Map<string, number>(),
+              });
+              entry.paperIds.add(row.paper_id);
+              entry.years.add(row.year);
+              entry.keywords.set(
+                row.keyword,
+                (entry.keywords.get(row.keyword) ?? 0) + row.keyword_frequency
+              );
+              return accumulator;
+            }, {})
+          ).map(([canonicalTopic, entry], index) => ({
+            id: `topic-family-${index + 1}`,
+            canonicalTopic,
+            aliases: [...entry.aliases],
+            representativeKeywords: [...entry.keywords.entries()]
+              .sort((left, right) => right[1] - left[1])
+              .slice(0, 6)
+              .map(([keyword]) => keyword),
+            relatedKeywords: [...entry.keywords.keys()],
+            matchedTerms: [...entry.aliases],
+            evidenceSnippets: [],
+            paperIds: [...entry.paperIds],
+            folderIds: [],
+            years: [...entry.years].sort(),
+            totalKeywordFrequency: [...entry.keywords.values()].reduce(
+              (sum, value) => sum + value,
+              0
+            ),
+          }));
 
-    trends.forEach((row) => {
-      const entry = (map[row.keyword] ??= {
-        total: 0,
-        papers: new Set(),
-        years: new Set(),
-        topics: new Set(),
-      });
-      entry.total += row.keyword_frequency;
-      entry.papers.add(row.paper_id);
-      entry.years.add(row.year);
-      entry.topics.add(row.topic);
-    });
-
-    let results = Object.entries(map)
-      .map(([keyword, entry]) => ({
-        keyword,
-        totalFreq: entry.total,
-        papers: entry.papers.size,
-        years: Array.from(entry.years).sort().join(", "),
-        topics: Array.from(entry.topics).join(", "),
+    let results = families
+      .map((family) => ({
+        keyword: family.canonicalTopic,
+        totalFreq: family.totalKeywordFrequency,
+        papers: family.paperIds.length,
+        years: family.years.join(", "),
+        topics: family.aliases.join(", "),
+        representativeKeywords: family.representativeKeywords,
       }))
       .sort((left, right) => right.totalFreq - left.totalFreq);
 
@@ -196,12 +233,13 @@ export default function KeywordExplorer({
       results = results.filter(
         (row) =>
           row.keyword.toLowerCase().includes(normalized) ||
-          row.topics.toLowerCase().includes(normalized)
+          row.topics.toLowerCase().includes(normalized) ||
+          row.representativeKeywords.join(" ").toLowerCase().includes(normalized)
       );
     }
 
     return results;
-  }, [query, trends]);
+  }, [query, topicFamilies, trends]);
 
   const heatmapData = useMemo(() => {
     const years = [...new Set(trends.map((row) => row.year))].sort();
@@ -211,12 +249,12 @@ export default function KeywordExplorer({
 
     const grid: Record<string, Record<string, number>> = {};
     trends.forEach((row) => {
-      if (!topKeywords.includes(row.keyword)) {
+      if (!topKeywords.includes(row.topic)) {
         return;
       }
-      grid[row.keyword] ??= {};
-      grid[row.keyword][row.year] =
-        (grid[row.keyword][row.year] ?? 0) + row.keyword_frequency;
+      grid[row.topic] ??= {};
+      grid[row.topic][row.year] =
+        (grid[row.topic][row.year] ?? 0) + row.keyword_frequency;
     });
 
     return {
@@ -245,14 +283,14 @@ export default function KeywordExplorer({
   const timelineData = useMemo(() => {
     const years = [...new Set(trends.map((row) => row.year))].sort();
     return years.map((year) => {
-      const entry: Record<string, string | number> = { year };
-      comparisonKeywords.forEach((keyword) => {
-        entry[keyword] = trends
-          .filter((row) => row.year === year && row.keyword === keyword)
-          .reduce((sum, row) => sum + row.keyword_frequency, 0);
+        const entry: Record<string, string | number> = { year };
+        comparisonKeywords.forEach((keyword) => {
+          entry[keyword] = trends
+            .filter((row) => row.year === year && row.topic === keyword)
+            .reduce((sum, row) => sum + row.keyword_frequency, 0);
+        });
+        return entry;
       });
-      return entry;
-    });
   }, [comparisonKeywords, trends]);
 
   if (trends.length === 0) {
@@ -282,7 +320,7 @@ export default function KeywordExplorer({
             placeholder="Search a concept, e.g. intelligibility / comprehensibility"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white"
           />
         </div>
       </section>
@@ -308,14 +346,14 @@ export default function KeywordExplorer({
               <section className="app-surface px-5 py-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Canonical concept
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
                       {conceptResult.canonicalConcept || query}
                     </h3>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-slate-950 dark:text-slate-300">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#030303] dark:text-slate-300">
                     {conceptResult.source === "fallback" ? "Fallback analysis" : "Node analysis"}
                   </span>
                 </div>
@@ -329,7 +367,7 @@ export default function KeywordExplorer({
                     {conceptResult.matchedTerms.map((term) => (
                       <span
                         key={term}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                        className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-slate-300"
                       >
                         {term}
                       </span>
@@ -339,7 +377,7 @@ export default function KeywordExplorer({
 
                 {conceptResult.notFound && conceptResult.suggestedConcepts.length > 0 ? (
                   <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Nearby grounded concepts
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -348,7 +386,7 @@ export default function KeywordExplorer({
                           key={term}
                           type="button"
                           onClick={() => setQuery(term)}
-                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
+                          className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a]"
                         >
                           {term}
                         </button>
@@ -361,7 +399,7 @@ export default function KeywordExplorer({
               {conceptResult.firstAppearance ? (
                 <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       First appearance
                     </p>
                     <h4 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">
@@ -377,7 +415,7 @@ export default function KeywordExplorer({
                       {conceptResult.firstAppearance.tracksSingle.map((track) => (
                         <span
                           key={track}
-                          className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-slate-950 dark:text-slate-300"
+                          className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#030303] dark:text-slate-300"
                         >
                           {track}
                         </span>
@@ -392,7 +430,7 @@ export default function KeywordExplorer({
                   </article>
 
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Objective verbs
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -400,7 +438,7 @@ export default function KeywordExplorer({
                         conceptResult.objectiveVerbs.map((item) => (
                           <span
                             key={item.label}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-slate-300"
                           >
                             {item.label} ({item.count})
                           </span>
@@ -414,7 +452,7 @@ export default function KeywordExplorer({
                   </article>
 
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                       Contribution groups
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -422,7 +460,7 @@ export default function KeywordExplorer({
                         conceptResult.contributionTypes.map((item) => (
                           <span
                             key={item.label}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                            className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-slate-300"
                           >
                             {item.label} ({item.count})
                           </span>
@@ -501,7 +539,7 @@ export default function KeywordExplorer({
                       conceptResult.cooccurringConcepts.map((item) => (
                         <div
                           key={item.label}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950"
+                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
                           <span className="text-sm text-slate-700 dark:text-slate-200">
                             {item.label}
@@ -528,9 +566,9 @@ export default function KeywordExplorer({
                       conceptResult.evidence.map((item, index) => (
                         <div
                           key={`${item.paperId}-${index}`}
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-950"
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-slate-500">
                             {item.year} • {item.section}
                           </p>
                           <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
@@ -559,7 +597,7 @@ export default function KeywordExplorer({
                     conceptResult.papers.map((paper) => (
                       <div
                         key={paper.paperId}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-slate-700 dark:bg-slate-950"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
@@ -582,7 +620,7 @@ export default function KeywordExplorer({
                           {paper.tracksSingle.map((track) => (
                             <span
                               key={`${paper.paperId}-${track}`}
-                              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300"
+                              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-slate-300"
                             >
                               {track}
                             </span>
@@ -593,7 +631,7 @@ export default function KeywordExplorer({
                           {paper.matchedTerms.map((term) => (
                             <span
                               key={`${paper.paperId}-${term}`}
-                              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300"
                             >
                               {term}
                             </span>
@@ -625,7 +663,7 @@ export default function KeywordExplorer({
             Keyword atlas
           </h3>
           <span className="text-xs text-slate-500 dark:text-slate-400">
-            Ranked and filterable corpus keywords
+            Ranked canonical topic families across the current corpus
           </span>
         </div>
       </section>
@@ -633,11 +671,11 @@ export default function KeywordExplorer({
       <section className="app-surface px-5 py-5">
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Keyword heatmap
-          </h3>
-          <span className="text-xs text-slate-500 dark:text-slate-400">
-            Top keywords: {plannerHeatN}
-          </span>
+              Keyword heatmap
+            </h3>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Top topic families: {plannerHeatN}
+            </span>
         </div>
 
         <div className="mt-4">
@@ -653,11 +691,11 @@ export default function KeywordExplorer({
       <section className="app-surface px-5 py-5">
         <div className="flex flex-wrap items-center gap-3">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Keyword treemap
-          </h3>
-          <label className="text-xs text-slate-500 dark:text-slate-400">
-            Top keywords: {treeN}
-          </label>
+              Keyword treemap
+            </h3>
+            <label className="text-xs text-slate-500 dark:text-slate-400">
+              Top topic families: {treeN}
+            </label>
           <input
             type="range"
             min={10}
@@ -685,36 +723,38 @@ export default function KeywordExplorer({
         <h3 className="mb-4 text-base font-semibold text-slate-900 dark:text-white">
           Keyword table
         </h3>
-        <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="max-h-[420px] overflow-auto rounded-xl border border-slate-200 dark:border-[#1f1f1f]">
           <table className="min-w-full text-xs">
-            <thead className="sticky top-0 bg-slate-50 dark:bg-slate-950">
+            <thead className="sticky top-0 bg-slate-50 dark:bg-[#030303]">
               <tr>
-                <th className="px-3 py-2 text-left font-semibold">Keyword</th>
+                <th className="px-3 py-2 text-left font-semibold">Canonical topic</th>
                 <th className="px-3 py-2 text-right font-semibold">Total Freq</th>
                 <th className="px-3 py-2 text-right font-semibold">Papers</th>
                 <th className="px-3 py-2 text-left font-semibold">Years Active</th>
-                <th className="px-3 py-2 text-left font-semibold">Associated Topics</th>
+                <th className="px-3 py-2 text-left font-semibold">Aliases and keywords</th>
               </tr>
             </thead>
             <tbody>
               {keywordAggregate.map((row) => (
                 <tr
                   key={row.keyword}
-                  className="border-t border-slate-200 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950"
+                  className="border-t border-slate-200 hover:bg-slate-50 dark:border-[#1f1f1f] dark:hover:bg-[#0a0a0a]"
                 >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
                     {row.keyword}
                   </td>
                   <td className="px-3 py-2 text-right">{row.totalFreq}</td>
                   <td className="px-3 py-2 text-right">{row.papers}</td>
-                  <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
-                    {row.years}
-                  </td>
-                  <td className="max-w-xs truncate px-3 py-2 text-slate-500 dark:text-slate-400">
-                    {row.topics}
-                  </td>
-                </tr>
-              ))}
+                    <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
+                      {row.years}
+                    </td>
+                    <td className="max-w-xs truncate px-3 py-2 text-slate-500 dark:text-slate-400">
+                      {[row.topics, row.representativeKeywords.join(", ")]
+                        .filter(Boolean)
+                        .join(" • ")}
+                    </td>
+                  </tr>
+                ))}
             </tbody>
           </table>
         </div>
@@ -722,10 +762,10 @@ export default function KeywordExplorer({
 
       <section className="app-surface px-5 py-5">
         <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-          Keyword timeline
+          Topic family timeline
         </h3>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Select keywords to compare across the selected years.
+          Select canonical topic families to compare across the selected years.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           {keywordAggregate.slice(0, 20).map((row) => (
@@ -741,7 +781,7 @@ export default function KeywordExplorer({
               className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
                 comparisonKeywords.includes(row.keyword)
                   ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-slate-900"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-slate-600"
+                  : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a]"
               }`}
             >
               {row.keyword}

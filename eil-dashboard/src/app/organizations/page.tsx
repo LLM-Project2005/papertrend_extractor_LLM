@@ -85,12 +85,12 @@ export default function OrganizationsPage() {
   }
 
   if (!hydrated) {
-    return <main className="min-h-screen bg-[#111111]" />;
+    return <main className="min-h-screen bg-slate-50 dark:bg-black" />;
   }
 
   return (
-    <main className="min-h-screen bg-[#111111] text-white">
-      <header className="border-b border-white/10">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
+      <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#1f9d63] text-white">
@@ -116,21 +116,21 @@ export default function OrganizationsPage() {
 
       <section className="mx-auto max-w-7xl px-6 py-16">
         <div className="max-w-3xl">
-          <h1 className="text-4xl font-semibold tracking-tight">Your Organizations</h1>
-          <p className="mt-4 text-base leading-8 text-[#a3a3a3]">
+          <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">Your Organizations</h1>
+          <p className="mt-4 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
             Create a clean home for each team, lab, or research initiative before
             you start building projects.
           </p>
         </div>
 
         <div className="mt-10 max-w-sm">
-          <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-[#171717] px-4 py-3">
-            <SearchIcon className="h-4 w-4 text-[#7a7a7a]" />
+          <label className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <SearchIcon className="h-4 w-4 text-slate-400 dark:text-[#7a7a7a]" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="Search for an organization"
-              className="w-full bg-transparent text-sm text-white outline-none placeholder:text-[#6f6f6f]"
+              className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#6f6f6f]"
             />
           </label>
         </div>
@@ -144,10 +144,10 @@ export default function OrganizationsPage() {
                 setSelectedOrganizationId(organization.id);
                 router.push(`/organizations/${organization.id}/projects`);
               }}
-              className="rounded-2xl border border-white/10 bg-[#171717] p-6 text-left transition-colors hover:border-white/20 hover:bg-[#1b1b1b]"
+              className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
-              <p className="text-xl font-semibold text-white">{organization.name}</p>
-              <p className="mt-2 text-sm capitalize text-[#9c9c9c]">
+              <p className="text-xl font-semibold text-slate-900 dark:text-white">{organization.name}</p>
+              <p className="mt-2 text-sm capitalize text-slate-500 dark:text-[#9c9c9c]">
                 {organization.type.replace(/_/g, " ")}
               </p>
             </button>
@@ -155,9 +155,9 @@ export default function OrganizationsPage() {
         </div>
 
         {visibleOrganizations.length === 0 ? (
-          <div className="mt-16 rounded-3xl border border-dashed border-white/10 bg-[#141414] px-6 py-14 text-center">
-            <p className="text-lg font-medium text-white">No organizations yet</p>
-            <p className="mt-3 text-sm leading-7 text-[#9c9c9c]">
+          <div className="mt-16 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <p className="text-lg font-medium text-slate-900 dark:text-white">No organizations yet</p>
+            <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
               Start by creating one organization, then add projects inside it.
             </p>
           </div>
@@ -186,13 +186,13 @@ export default function OrganizationsPage() {
         onSubmit={handleCreateOrganization}
       >
         <label className="grid gap-3">
-          <span className="text-sm font-medium text-white">Type</span>
+          <span className="text-sm font-medium text-slate-700 dark:text-white">Type</span>
           <select
             value={type}
             onChange={(event) =>
               setType(event.target.value as WorkspaceOrganizationRow["type"])
             }
-            className="rounded-2xl border border-white/10 bg-[#111111] px-4 py-3 text-sm text-white outline-none transition-colors focus:border-[#1f9d63]"
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white"
           >
             {ORGANIZATION_TYPES.map((option) => (
               <option key={option} value={option}>

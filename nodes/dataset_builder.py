@@ -4,10 +4,10 @@ from typing import Any, Dict, List, Sequence
 from nodes.common import (
     choose_first_span,
     infer_paper_id,
-    normalize_year,
     pick_title,
     safe_json_list,
 )
+from nodes.year_resolver import normalize_publication_year
 from state import IngestionState
 
 
@@ -33,7 +33,11 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
     folder_id = str(state.get("folder_id") or "").strip() or None
     paper_id = int(state.get("paper_id") or infer_paper_id(source_path, ingestion_run_id))
     title = (metadata.get("title") or final_json.get("title") or pick_title(raw_text, source_filename)).strip()[:500]
-    year = normalize_year(str(metadata.get("year") or "Unknown"))
+    year = normalize_publication_year(metadata.get("year") or "Unknown")
+    year_resolution = state.get("year_resolution") or {}
+    year_confidence = float(year_resolution.get("year_confidence") or 0.0)
+    year_source = str(year_resolution.get("year_source") or "unresolved")[:120]
+    year_evidence = str(year_resolution.get("year_evidence") or "")[:1000]
 
     keyword_candidates = state.get("keyword_candidates") or []
     semantic_topics = state.get("semantic_topics") or []
@@ -143,9 +147,69 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         if facet.get("label")
     ]
 
+    author_keywords = []
+    seen_author_keywords = set()
+    for index, keyword in enumerate(state.get("author_keywords") or [], start=1):
+        label = str(keyword.get("keyword") or "").strip()[:200]
+        if not label or label.lower() in seen_author_keywords:
+            continue
+        seen_author_keywords.add(label.lower())
+        author_keywords.append(
+            {
+                "paper_id": paper_id,
+                "owner_user_id": owner_user_id,
+                "folder_id": folder_id,
+                "keyword": label,
+                "normalized_keyword": label.lower(),
+                "evidence": str(keyword.get("evidence") or "")[:5000],
+                "source_section": str(keyword.get("source_section") or "unknown")[:100],
+                "position": index,
+            }
+        )
+
+    typology = state.get("research_typology") or {}
+    typology_rows = []
+    if typology.get("primary_group_number") and typology.get("primary_group_name"):
+        secondary_group_number = typology.get("secondary_group_number")
+        typology_rows.append(
+            {
+                "paper_id": paper_id,
+                "owner_user_id": owner_user_id,
+                "folder_id": folder_id,
+                "primary_group_number": int(typology.get("primary_group_number") or 0),
+                "primary_group_name": str(typology.get("primary_group_name") or "")[:120],
+                "secondary_group_number": int(secondary_group_number) if secondary_group_number else None,
+                "secondary_group_name": (
+                    str(typology.get("secondary_group_name") or "")[:120]
+                    if typology.get("secondary_group_name")
+                    else None
+                ),
+                "stated_purpose": str(typology.get("stated_purpose") or "")[:5000],
+                "primary_contribution": str(typology.get("primary_contribution") or "")[:5000],
+                "group_match": str(typology.get("group_match") or "")[:5000],
+                "boundary_rule": str(typology.get("boundary_rule") or "")[:5000],
+                "verdict": str(typology.get("verdict") or "")[:5000],
+                "classifier_source": str(typology.get("classifier_source") or "unknown")[:80],
+            }
+        )
+
     dataset = {
         "paper_id": paper_id,
-        "papers": [{"id": paper_id, "year": year[:100], "title": title, "owner_user_id": owner_user_id, "folder_id": folder_id}],
+        "year": year,
+        "year_resolution": year_resolution,
+        "papers": [
+            {
+                "id": paper_id,
+                "year": year[:100],
+                "title": title,
+                "owner_user_id": owner_user_id,
+                "folder_id": folder_id,
+                "year_confidence": year_confidence,
+                "year_source": year_source,
+                "year_evidence": year_evidence,
+                "year_candidates": year_resolution.get("year_candidates") or [],
+            }
+        ],
         "keywords": keyword_rows,
         "tracks_single": [{"paper_id": paper_id, "owner_user_id": owner_user_id, "folder_id": folder_id, **(state.get("track_single") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],
         "tracks_multi": [{"paper_id": paper_id, "owner_user_id": owner_user_id, "folder_id": folder_id, **(state.get("track_multi") or {"el": 0, "eli": 0, "lae": 0, "other": 1})}],
@@ -168,11 +232,15 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         ],
         "keyword_concepts": concept_rows,
         "paper_facets": facets,
+        "author_keywords": author_keywords,
+        "research_typologies": typology_rows,
     }
 
     return {
         "paper_id": paper_id,
         "concept_rows": concept_rows,
+        "author_keywords": author_keywords,
+        "research_typology": typology,
         "dataset": dataset,
         "errors": [],
         "status": "dataset_ready",

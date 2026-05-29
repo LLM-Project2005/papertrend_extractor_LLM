@@ -9,7 +9,7 @@ export default function AuthStatus() {
 
   if (!hydrated) {
     return (
-      <div className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-[#353535] dark:bg-[#171717] dark:text-[#a3a3a3]">
+      <div className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3]">
         Loading account...
       </div>
     );
@@ -19,7 +19,7 @@ export default function AuthStatus() {
     return (
       <Link
         href="/#account"
-        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
       >
         <UserIcon className="h-4 w-4" />
         <span>Sign in</span>
@@ -31,9 +31,9 @@ export default function AuthStatus() {
     <div className="flex items-center gap-2">
       <Link
         href="/workspace/profile"
-        className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-slate-300 dark:border-[#353535] dark:bg-[#171717] dark:hover:border-[#3a3a3a] sm:flex"
+        className="hidden items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 transition-colors hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] sm:flex"
       >
-        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-[#2a2a2a] dark:text-[#d0d0d0]">
+        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
           <UserIcon className="h-4 w-4" />
         </span>
         <div className="min-w-0">
@@ -50,7 +50,7 @@ export default function AuthStatus() {
         onClick={() => {
           void signOut();
         }}
-        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
       >
         <LogoutIcon className="h-4 w-4" />
         <span className="hidden sm:inline">Sign out</span>

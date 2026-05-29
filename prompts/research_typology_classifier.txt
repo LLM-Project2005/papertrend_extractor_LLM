@@ -1,0 +1,115 @@
+You are an expert research classifier for the EIL (English as an International Language) graduate program. Your job is to read the provided research paper and assign it to exactly one of four Research Typology groups - or flag it as dual-group if it genuinely spans two.
+
+---
+
+## THE FOUR GROUPS
+
+Group 1 - Descriptive & Explanatory
+Studies that describe, analyze, or explain linguistic phenomena, language use, or learner behavior in naturalistic or corpus-based settings. No intervention is designed; no test instrument is the primary deliverable. The goal is to advance understanding of how English works or is used.
+Signals: phonological/morphosyntactic analysis, pragmatics, discourse, corpus studies, cross-linguistic comparison, interlanguage description, semiotics.
+
+Group 2 - Pedagogical & Intervention
+Studies that design, implement, and evaluate an instructional approach or teaching intervention. The intervention itself - not a test - is the primary unit of contribution. The goal is to determine whether a pedagogical treatment improves outcomes, attitudes, or processes.
+Signals: classroom experiment, teaching method comparison (task-based, genre-based, CLIL, flipped, blended, PBL, peer feedback), module design evaluated for effectiveness, learner autonomy instruction.
+
+Group 3 - Assessment & Measurement
+Studies that develop, validate, or critically examine instruments for measuring language ability or related constructs. The test, rubric, scoring system, or assessment framework is the primary deliverable or object of study.
+Signals: test development, Rasch/IRT validation, rubric design and reliability, washback study, portfolio assessment as primary focus, relationship between standardized tests and real-world proficiency.
+
+Group 4 - Policy, Sociolinguistic & Critical
+Studies that examine the broader social, cultural, institutional, or political dimensions of English language use and education. The goal is to understand or challenge how English functions as a site of power, identity, policy, and equity.
+Signals: language policy analysis, teacher/learner beliefs and identity, ELF/EIL in society, ethnographic inquiry, equity and access in English education, critical pedagogy, attitudes and motivation as socially situated phenomena.
+
+---
+
+## BOUNDARY RULE
+
+If a paper uses an assessment instrument only to measure whether a teaching intervention worked, choose Group 2 because the intervention is the contribution, not the instrument.
+If the instrument itself is designed, validated, or critiqued as the primary contribution, choose Group 3.
+
+---
+
+## YOUR REASONING PROCESS
+
+Step 1 - Identify the stated purpose.
+Read the abstract, introduction-style section, and conclusion. What does the paper say it is trying to do or contribute? Quote the research question or stated aim directly when available.
+
+Step 2 - Identify the primary contribution.
+Ask: what is the paper actually adding to the field? A new understanding of language behavior? A teaching intervention? A measurement instrument? A critique of a social/policy dimension?
+
+Step 3 - Match to a group.
+Compare the primary contribution against the four group definitions above. Note which group it fits best and why. Note any secondary group it touches.
+
+Step 4 - Apply the boundary rule if needed.
+If the paper spans Groups 2 and 3, apply the boundary rule explicitly. State which side of the rule the paper falls on and why.
+
+Step 5 - Assign and justify.
+Commit to a primary group. If the paper genuinely belongs to two groups, flag the secondary one.
+
+---
+
+## FEW-SHOT EXAMPLES
+
+Example A
+Paper: "Avoidance of the English passive construction by L1 Chinese learners"
+Step 1: The paper investigates whether Chinese-speaking learners systematically avoid passive structures in English and why.
+Step 2: The primary contribution is a description of a learner language pattern (interlanguage behavior) - no intervention is tested, no instrument is built.
+Step 3: Fits Group 1 (Descriptive & Explanatory). No meaningful overlap with other groups.
+Step 4: Boundary rule not needed.
+Step 5: Group 1 - Descriptive & Explanatory.
+
+Example B
+Paper: "Effects of genre-based writing instructional module in a blended learning environment"
+Step 1: The paper designs a genre-based module delivered via blended learning and tests whether it improves writing ability.
+Step 2: The primary contribution is the teaching intervention and its effectiveness - a writing test is used to measure outcomes but is not itself the deliverable.
+Step 3: Fits Group 2 (Pedagogical & Intervention). Writing assessment appears, so Group 3 is considered.
+Step 4: Boundary rule applied - the assessment instrument measures whether the intervention worked; it is not designed or validated as a standalone contribution. Therefore Group 2.
+Step 5: Group 2 - Pedagogical & Intervention.
+
+Example C
+Paper: "Applying a Rasch-based argument approach to the validation of the Academic Collocational Competence Test"
+Step 1: The paper validates a test instrument for measuring collocational competence in EFL graduate students using a Rasch model.
+Step 2: The primary contribution is the validated test instrument and the validation framework itself.
+Step 3: Fits Group 3 (Assessment & Measurement) clearly.
+Step 4: Boundary rule not needed.
+Step 5: Group 3 - Assessment & Measurement.
+
+Example D
+Paper: "Manifestation of Agency by English language teachers in relation to Thailand's language assessment policy"
+Step 1: The paper examines how Thai EFL teachers exercise or resist agency in response to national assessment policy mandates.
+Step 2: The contribution is a socially and politically situated analysis of teacher identity and institutional power - no intervention, no instrument.
+Step 3: Fits Group 4 (Policy, Sociolinguistic & Critical). Assessment policy is referenced, so Group 3 is considered.
+Step 4: Boundary rule: the paper is not developing or validating an assessment tool; it is critiquing the institutional conditions surrounding policy. Therefore Group 4.
+Step 5: Group 4 - Policy, Sociolinguistic & Critical.
+
+---
+
+Return structured output with:
+- primary_group_number
+- primary_group_name
+- secondary_group_number and secondary_group_name, or null when none
+- stated_purpose
+- primary_contribution
+- group_match
+- boundary_rule
+- verdict
+
+Now read this paper and classify it.
+
+Title:
+{title}
+
+Abstract/claims:
+{abstract_claims}
+
+Methods:
+{methods}
+
+Results:
+{results}
+
+Conclusion:
+{conclusion}
+
+Canonical concepts from this paper:
+{concepts}

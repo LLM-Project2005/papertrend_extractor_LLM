@@ -18,7 +18,7 @@ export default function LoginPage() {
   }, [hydrated, router, user]);
 
   return (
-    <main className="min-h-screen bg-[#111111] px-6 py-12 text-white">
+    <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 dark:bg-black dark:text-white">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-center gap-10">
         <div className="mt-12 flex items-center gap-3">
           <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1f9d63] text-white">
@@ -26,7 +26,7 @@ export default function LoginPage() {
           </span>
           <div>
             <p className="text-xl font-semibold">Papertrend</p>
-            <p className="text-sm text-[#8f8f8f]">Sign in to continue</p>
+            <p className="text-sm text-slate-500 dark:text-[#8f8f8f]">Sign in to continue</p>
           </div>
         </div>
 

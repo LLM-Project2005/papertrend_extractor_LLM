@@ -1,0 +1,45 @@
+# Cloud Build trigger config for the test branch.
+# This deploys only the Python node service/worker surface to Cloud Run staging.
+# It intentionally uses Cloud Run source deploy/buildpacks, not a Dockerfile.
+
+steps:
+  - id: deploy-cloud-run-staging
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --project
+      - ${PROJECT_ID}
+      - --region
+      - ${_REGION}
+      - --source
+      - .
+      - --allow-unauthenticated
+      - --memory
+      - 2Gi
+      - --cpu
+      - "1"
+      - --no-cpu-throttling
+      - --timeout
+      - "900"
+      - --concurrency
+      - "4"
+      - --min-instances
+      - "0"
+      - --max-instances
+      - "2"
+      - --set-build-env-vars
+      - GOOGLE_RUNTIME_VERSION=3.13,GOOGLE_ENTRYPOINT=python node_service.py --host 0.0.0.0 --port 8080
+      - --set-env-vars
+      - NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=budget-structured,NODE_SERVICE_ASYNC_MAX_RUNS=1,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2,CLOUD_TASKS_PROJECT_ID=${PROJECT_ID},CLOUD_TASKS_LOCATION=${_REGION},CLOUD_TASKS_QUEUE=papertrend-ingestion-staging,CLOUD_TASKS_MAX_TASKS_PER_REQUEST=50,CLOUD_TASKS_TASK_SPACING_SECONDS=15
+      - --set-secrets
+      - OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,SUPABASE_URL=SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
+
+substitutions:
+  _REGION: asia-southeast1
+  _SERVICE_NAME: papertrend-node-service-staging
+
+options:
+  logging: CLOUD_LOGGING_ONLY

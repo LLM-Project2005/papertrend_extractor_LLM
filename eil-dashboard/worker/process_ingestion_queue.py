@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import tempfile
 import threading
 import time
@@ -42,6 +43,22 @@ AUTO_ANALYSIS_MODEL = "automatic-task-routing"
 AUTO_ANALYSIS_LABEL = "Automatic per-task model routing"
 USER_STALE_REQUEUE_AFTER_SECONDS = 180
 
+
+def _int_env(name: str, default: int, minimum: int = 1) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+    except Exception:
+        value = default
+    return max(value, minimum)
+
+
+def _float_env(name: str, default: float, minimum: float = 0.0) -> float:
+    try:
+        value = float(os.getenv(name, str(default)))
+    except Exception:
+        value = default
+    return max(value, minimum)
+
 INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
     "extract": {
         "stage": "extracting_text",
@@ -68,6 +85,11 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
         "message": "Inferring title and publication metadata",
         "detail": "Resolving the paper title, year, and key document metadata from the extracted content.",
     },
+    "author_keywords": {
+        "stage": "extracting_author_keywords",
+        "message": "Extracting author-provided keywords",
+        "detail": "Looking for explicit keyword lists supplied by the paper authors.",
+    },
     "mine_keywords": {
         "stage": "extracting_keywords",
         "message": "Extracting grounded keywords",
@@ -88,6 +110,11 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
         "message": "Classifying research tracks",
         "detail": "Assigning the paper to the most relevant EL, ELI, LAE, or Other tracks.",
     },
+    "classify_typology": {
+        "stage": "classifying_typology",
+        "message": "Classifying research typology",
+        "detail": "Assigning the paper to the EIL research typology groups.",
+    },
     "extract_facets": {
         "stage": "extracting_facets",
         "message": "Extracting research facets",
@@ -105,11 +132,19 @@ class SupabaseRestClient:
     def __init__(self, url: str, service_key: str) -> None:
         self.url = url.rstrip("/")
         self.service_key = service_key
-        self.session = build_retrying_session(
-            {
-                "apikey": service_key,
-                "Authorization": f"Bearer {service_key}",
-            }
+        base_headers = {
+            "apikey": service_key,
+            "Authorization": f"Bearer {service_key}",
+        }
+        self.session = build_retrying_session(base_headers)
+        self.heartbeat_timeout_seconds = _float_env("WORKER_HEARTBEAT_TIMEOUT_SECONDS", 10.0, 1.0)
+        # requests.Session is not guaranteed to be thread-safe. Heartbeat runs on a
+        # background thread, so it uses an isolated short-lived PATCH retry policy.
+        self.heartbeat_session = build_retrying_session(
+            {**base_headers, "Connection": "close"},
+            attempts=_int_env("WORKER_HEARTBEAT_ATTEMPTS", 2, 1),
+            backoff_seconds=_float_env("WORKER_HEARTBEAT_BACKOFF_SECONDS", 0.5, 0.0),
+            retry_methods=("PATCH",),
         )
 
     def _rest_url(self, table: str) -> str:
@@ -258,11 +293,11 @@ class SupabaseRestClient:
         response.raise_for_status()
 
     def touch_run(self, run_id: str) -> None:
-        response = self.session.patch(
+        response = self.heartbeat_session.patch(
             self._rest_url("ingestion_runs"),
             params={"id": f"eq.{run_id}", "status": "eq.processing"},
             json={"updated_at": now_iso()},
-            timeout=60,
+            timeout=self.heartbeat_timeout_seconds,
         )
         response.raise_for_status()
 
@@ -592,15 +627,21 @@ def processing_heartbeat(
     interval_seconds: int,
 ):
     stop_event = threading.Event()
+    consecutive_failures = 0
 
     def _worker() -> None:
+        nonlocal consecutive_failures
         while not stop_event.wait(interval_seconds):
             try:
                 client.touch_run(run_id)
+                consecutive_failures = 0
             except Exception as error:  # pragma: no cover - best-effort heartbeat
+                consecutive_failures += 1
                 logger.warning(
-                    "run heartbeat failed",
-                    extra={"run_id": run_id, "error_message": str(error)},
+                    "run heartbeat failed (%s consecutive): %s",
+                    consecutive_failures,
+                    str(error),
+                    extra={"run_id": run_id},
                 )
 
     thread = threading.Thread(target=_worker, name=f"run-heartbeat-{run_id}", daemon=True)
@@ -777,7 +818,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
 
     with processing_heartbeat(client, run_id, config.heartbeat_interval_seconds):
         with tempfile.TemporaryDirectory(prefix="papertrend-run-") as temp_dir:
-            local_pdf = Path(temp_dir) / (str(run.get("source_filename") or "paper.pdf"))
+            local_pdf = Path(temp_dir) / f"{run_id}.pdf"
             update_run_progress(
                 client,
                 run,
@@ -893,6 +934,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                             "analysis_label": AUTO_ANALYSIS_LABEL,
                             "pipeline": PIPELINE_NAME,
                             "paper_id": result.dataset["paper_id"],
+                            "year": result.dataset.get("year"),
+                            "year_resolution": result.dataset.get("year_resolution"),
                             "raw_text_length": len(result.raw_text),
                             "keyword_count": len(result.dataset["keywords"]),
                             "progress_stage_sequence": list(INGESTION_NODE_PROGRESS.keys()),

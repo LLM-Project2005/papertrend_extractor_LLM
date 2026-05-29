@@ -187,11 +187,13 @@ def _dashboard_summary_tool(state: WorkspaceQueryState, focus: str) -> Dict[str,
         return {
             "focus": "keywords",
             "keyword_heatmap": analytics.get("keyword_heatmap", {}),
+            "author_keywords": analytics.get("author_keywords", {}),
         }
     return {
         "focus": "overview",
         "overview": analytics.get("overview", {}),
         "filters": analytics.get("filters", {}),
+        "research_typologies": analytics.get("research_typologies", {}),
     }
 
 

@@ -193,5 +193,56 @@ export function generateMockData(): DashboardData {
     return row;
   });
 
-  return { trends, tracksSingle, tracksMulti, useMock: true };
+  const topicMap = new Map<
+    string,
+    {
+      aliases: Set<string>;
+      keywords: Map<string, number>;
+      evidence: Set<string>;
+      paperIds: Set<string>;
+      years: Set<string>;
+    }
+  >();
+
+  trends.forEach((row) => {
+    const entry =
+      topicMap.get(row.topic) ??
+      {
+        aliases: new Set<string>([row.topic]),
+        keywords: new Map<string, number>(),
+        evidence: new Set<string>(),
+        paperIds: new Set<string>(),
+        years: new Set<string>(),
+      };
+    entry.keywords.set(
+      row.keyword,
+      (entry.keywords.get(row.keyword) ?? 0) + row.keyword_frequency
+    );
+    entry.evidence.add(row.evidence);
+    entry.paperIds.add(row.paper_id);
+    entry.years.add(row.year);
+    topicMap.set(row.topic, entry);
+  });
+
+  const topicFamilies = [...topicMap.entries()].map(([canonicalTopic, entry], index) => ({
+    id: `mock-topic-${index + 1}`,
+    canonicalTopic,
+    aliases: [...entry.aliases],
+    representativeKeywords: [...entry.keywords.entries()]
+      .sort((left, right) => right[1] - left[1])
+      .slice(0, 6)
+      .map(([keyword]) => keyword),
+    relatedKeywords: [...entry.keywords.keys()].slice(0, 10),
+    matchedTerms: [...entry.aliases],
+    evidenceSnippets: [...entry.evidence].slice(0, 4),
+    paperIds: [...entry.paperIds],
+    folderIds: [],
+    years: [...entry.years].sort(),
+    totalKeywordFrequency: [...entry.keywords.values()].reduce(
+      (sum, value) => sum + value,
+      0
+    ),
+  }));
+
+  return { trends, tracksSingle, tracksMulti, topicFamilies, useMock: true };
 }

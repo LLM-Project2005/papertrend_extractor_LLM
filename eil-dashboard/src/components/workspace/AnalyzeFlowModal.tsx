@@ -77,35 +77,7 @@ const SOURCE_OPTIONS = [
   },
 ] as const;
 
-const MAX_UPLOAD_BATCH_FILES = 8;
-const MAX_UPLOAD_BATCH_BYTES = 18 * 1024 * 1024;
-
-function splitIntoUploadBatches(files: File[]) {
-  const batches: File[][] = [];
-  let currentBatch: File[] = [];
-  let currentBytes = 0;
-
-  for (const file of files) {
-    const wouldOverflowCount = currentBatch.length >= MAX_UPLOAD_BATCH_FILES;
-    const wouldOverflowBytes =
-      currentBatch.length > 0 && currentBytes + file.size > MAX_UPLOAD_BATCH_BYTES;
-
-    if (wouldOverflowCount || wouldOverflowBytes) {
-      batches.push(currentBatch);
-      currentBatch = [];
-      currentBytes = 0;
-    }
-
-    currentBatch.push(file);
-    currentBytes += file.size;
-  }
-
-  if (currentBatch.length > 0) {
-    batches.push(currentBatch);
-  }
-
-  return batches;
-}
+const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
 
 async function readJsonPayload<T>(response: Response): Promise<T | null> {
   const text = await response.text();
@@ -312,6 +284,20 @@ export default function AnalyzeFlowModal({
           throw new Error("Choose at least one PDF file.");
         }
 
+        const invalidFiles = files.filter(
+          (file) => !file.name.toLowerCase().endsWith(".pdf")
+        );
+        if (invalidFiles.length > 0) {
+          throw new Error("Only PDF files are supported for direct upload.");
+        }
+
+        const oversizedFiles = files.filter((file) => file.size > MAX_UPLOAD_FILE_BYTES);
+        if (oversizedFiles.length > 0) {
+          throw new Error(
+            `Each PDF must be 20 MB or smaller. Oversized count: ${oversizedFiles.length}.`
+          );
+        }
+
         const headers: Record<string, string> = {};
         if (session?.access_token && user) {
           headers.Authorization = `Bearer ${session.access_token}`;
@@ -319,45 +305,137 @@ export default function AnalyzeFlowModal({
           headers["x-admin-secret"] = adminSecret.trim();
         }
 
-        const batches = splitIntoUploadBatches(files);
-        const queuedRuns: IngestionRunRow[] = [];
-        let folderJob: FolderAnalysisJobRow | null = null;
-        let queueWarning: string | null = null;
+        const prepareResponse = await fetch("/api/admin/import/prepare", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...headers,
+          },
+          body: JSON.stringify({
+            folder: folder.trim() || defaultFolder,
+            source_kind: selectedSource,
+            project_id: selectedProjectId,
+            files: files.map((file, fileIndex) => ({
+              fileIndex,
+              name: file.name,
+              size: file.size,
+              type: file.type || "application/pdf",
+            })),
+          }),
+        });
 
-        for (const batch of batches) {
-          const formData = new FormData();
-          batch.forEach((file) => formData.append("files", file));
-          formData.append("folder", folder.trim() || defaultFolder);
-          formData.append("source_kind", selectedSource);
-          formData.append("project_id", selectedProjectId);
+        const preparePayload = await readJsonPayload<{
+          runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
+          uploads?: Array<{
+            fileIndex: number;
+            runId: string;
+            storagePath: string;
+            signedUrl: string;
+            fileName: string;
+          }>;
+          error?: string;
+        }>(prepareResponse);
 
-          const response = await fetch("/api/admin/import", {
-            method: "POST",
-            headers,
-            body: formData,
-          });
+        if (!prepareResponse.ok || !preparePayload?.folderJob || !preparePayload.uploads) {
+          throw new Error(
+            preparePayload?.error ??
+              `Failed to prepare direct upload (status ${prepareResponse.status}).`
+          );
+        }
 
-          const payload = await readJsonPayload<{
-            runs?: IngestionRunRow[];
-            folderJob?: FolderAnalysisJobRow | null;
-            warning?: string | null;
-            error?: string;
-          }>(response);
+        const uploaded: Array<{
+          runId: string;
+          storagePath: string;
+          fileName: string;
+        }> = [];
+        const failed: Array<{
+          runId: string;
+          storagePath: string;
+          fileName: string;
+          errorMessage: string;
+        }> = [];
 
-          if (!response.ok) {
-            if (response.status === 413) {
-              throw new Error(
-                "This upload batch is too large for the server. Try fewer or smaller PDFs at a time."
-              );
+        for (const uploadTarget of preparePayload.uploads) {
+          const file = files[uploadTarget.fileIndex];
+          if (!file) {
+            failed.push({
+              runId: uploadTarget.runId,
+              storagePath: uploadTarget.storagePath,
+              fileName: uploadTarget.fileName,
+              errorMessage: "Local file mapping failed during upload.",
+            });
+            continue;
+          }
+
+          try {
+            const uploadResponse = await fetch(uploadTarget.signedUrl, {
+              method: "PUT",
+              headers: {
+                "Content-Type": file.type || "application/pdf",
+                "x-upsert": "false",
+              },
+              body: file,
+            });
+
+            if (!uploadResponse.ok) {
+              const body = await uploadResponse.text();
+              throw new Error(body || `Storage upload failed with status ${uploadResponse.status}.`);
             }
-            throw new Error(payload?.error ?? `Failed to queue analysis (status ${response.status}).`);
-          }
 
-          queuedRuns.push(...(payload?.runs ?? []));
-          folderJob = payload?.folderJob ?? folderJob;
-          if (payload?.warning) {
-            queueWarning = payload.warning;
+            uploaded.push({
+              runId: uploadTarget.runId,
+              storagePath: uploadTarget.storagePath,
+              fileName: uploadTarget.fileName,
+            });
+          } catch (uploadError) {
+            failed.push({
+              runId: uploadTarget.runId,
+              storagePath: uploadTarget.storagePath,
+              fileName: uploadTarget.fileName,
+              errorMessage:
+                uploadError instanceof Error
+                  ? uploadError.message
+                  : "Failed to upload file to storage.",
+            });
           }
+        }
+
+        const finalizeResponse = await fetch("/api/admin/import/finalize", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...headers,
+          },
+          body: JSON.stringify({
+            folderJobId: preparePayload.folderJob.id,
+            uploaded,
+            failed,
+          }),
+        });
+
+        const finalizePayload = await readJsonPayload<{
+          runs?: IngestionRunRow[];
+          folderJob?: FolderAnalysisJobRow | null;
+          warning?: string | null;
+          error?: string;
+        }>(finalizeResponse);
+
+        if (!finalizeResponse.ok) {
+          throw new Error(
+            finalizePayload?.error ??
+              `Failed to finalize direct upload (status ${finalizeResponse.status}).`
+          );
+        }
+
+        const queuedRuns = (finalizePayload?.runs ?? []).filter(
+          (run) => run.status !== "failed"
+        );
+        const folderJob = finalizePayload?.folderJob ?? null;
+        const queueWarning = finalizePayload?.warning ?? null;
+
+        if (queuedRuns.length === 0) {
+          throw new Error("All selected files failed during upload.");
         }
 
         if (adminSecret.trim() && typeof window !== "undefined") {
@@ -449,8 +527,8 @@ export default function AnalyzeFlowModal({
 
   return (
     <Modal onClose={onClose}>
-      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#2f2f2f] dark:bg-[#212121]">
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#2f2f2f] sm:px-6">
+      <div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
           <div>
             <p className="text-sm font-medium text-slate-500 dark:text-[#9c9c9c]">
               {eyebrow}
@@ -462,7 +540,7 @@ export default function AnalyzeFlowModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0]"
+            className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
           >
             <CloseIcon className="h-4 w-4" />
           </button>
@@ -481,7 +559,7 @@ export default function AnalyzeFlowModal({
                   className={`rounded-3xl border px-4 py-4 text-left transition-colors ${
                     active
                       ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
-                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a]"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a]"
                   }`}
                 >
                   <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-black/5 dark:bg-black/10">
@@ -490,14 +568,14 @@ export default function AnalyzeFlowModal({
                   <div className="mt-4 flex items-center justify-between gap-3">
                     <p className="text-sm font-medium">{source.label}</p>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-normal ${
                         source.status === "ready"
                           ? active
                             ? "bg-white/15 text-white dark:bg-black/10 dark:text-[#171717]"
                             : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
                           : active
                             ? "bg-white/15 text-white/75 dark:bg-black/10 dark:text-[#444444]"
-                            : "bg-slate-100 text-slate-500 dark:bg-[#2a2a2a] dark:text-[#8f8f8f]"
+                            : "bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#8f8f8f]"
                       }`}
                     >
                       {source.status}
@@ -518,8 +596,8 @@ export default function AnalyzeFlowModal({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.9fr)]">
-            <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-[#3a3a3a] dark:bg-[#171717]">
-              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-600 dark:bg-[#212121] dark:text-[#d0d0d0]">
+            <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-[#3a3a3a] dark:bg-[#050505]">
+              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                 <PaperIcon className="h-6 w-6" />
               </span>
 
@@ -553,7 +631,7 @@ export default function AnalyzeFlowModal({
                   </p>
 
                   {!user ? (
-                    <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500 dark:border-[#2f2f2f] dark:bg-[#212121] dark:text-[#9c9c9c]">
+                    <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#9c9c9c]">
                       Sign in first to connect Google Drive.
                     </div>
                   ) : !driveConnected ? (
@@ -578,7 +656,7 @@ export default function AnalyzeFlowModal({
                               const nextTrail = driveFolderTrail.slice(0, index + 1);
                               setDriveFolderTrail(nextTrail);
                             }}
-                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#212121] dark:hover:border-[#3a3a3a]"
+                            className="rounded-full border border-slate-200 bg-white px-3 py-1.5 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                           >
                             {folder.name}
                           </button>
@@ -590,7 +668,7 @@ export default function AnalyzeFlowModal({
                           value={driveSearch}
                           onChange={(event) => setDriveSearch(event.target.value)}
                           placeholder="Search this folder"
-                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
                         />
                         <button
                           type="button"
@@ -600,13 +678,13 @@ export default function AnalyzeFlowModal({
                               driveFolderTrail.at(-1)?.id ?? "root"
                             );
                           }}
-                          className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 dark:border-[#2f2f2f] dark:text-[#d0d0d0]"
+                          className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                         >
                           Refresh
                         </button>
                       </div>
 
-                      <div className="max-h-[320px] overflow-y-auto rounded-2xl border border-slate-200 bg-white dark:border-[#2f2f2f] dark:bg-[#212121]">
+                      <div className="max-h-[320px] overflow-y-auto rounded-2xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
                         {driveLoading ? (
                           <p className="px-4 py-4 text-sm text-slate-500 dark:text-[#9c9c9c]">
                             Loading Google Drive PDFs...
@@ -628,7 +706,7 @@ export default function AnalyzeFlowModal({
                                   ]);
                                   setDriveSearch("");
                                 }}
-                                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-[#1b1b1b]"
+                                className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
                               >
                                 <span className="flex h-4 w-4 items-center justify-center">
                                   <FolderIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
@@ -648,7 +726,7 @@ export default function AnalyzeFlowModal({
                               return (
                                 <label
                                   key={file.id}
-                                  className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-[#1b1b1b]"
+                                  className="flex cursor-pointer items-start gap-3 px-4 py-3 hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
                                 >
                                   <input
                                     type="checkbox"
@@ -700,7 +778,7 @@ export default function AnalyzeFlowModal({
                   <button
                     type="button"
                     disabled
-                    className="mt-5 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-400 dark:border-[#2f2f2f] dark:text-[#707070]"
+                    className="mt-5 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-400 dark:border-[#1f1f1f] dark:text-[#707070]"
                   >
                     Coming soon
                   </button>
@@ -709,13 +787,13 @@ export default function AnalyzeFlowModal({
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   Analysis details
                 </p>
                 <div className="mt-4 space-y-3">
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#8f8f8f]">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
                       Project
                     </p>
                     <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -726,10 +804,10 @@ export default function AnalyzeFlowModal({
                     value={folder}
                     onChange={(event) => setFolder(event.target.value)}
                     placeholder="Folder or group, e.g. Inbox"
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#212121] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
                   />
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#8f8f8f]">
+                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
                       Model selection
                     </p>
                     <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -742,13 +820,13 @@ export default function AnalyzeFlowModal({
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   Selected files
                 </p>
                 {!user && (
-                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#212121]">
-                    <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-[#8f8f8f]">
+                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <p className="text-xs font-medium uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
                       Access
                     </p>
                     <input
@@ -756,7 +834,7 @@ export default function AnalyzeFlowModal({
                       value={adminSecret}
                       onChange={(event) => setAdminSecret(event.target.value)}
                       placeholder="Shared admin secret"
-                      className="mt-3 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#171717] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-white/10"
+                      className="mt-3 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
                     />
                   </div>
                 )}
@@ -771,7 +849,7 @@ export default function AnalyzeFlowModal({
                       {files.map((file) => (
                         <div
                           key={`${file.name}-${file.size}`}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]"
+                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex items-center gap-3">
                             <FileIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
@@ -796,7 +874,7 @@ export default function AnalyzeFlowModal({
                       {selectedDriveFiles.map((file) => (
                         <div
                           key={file.id}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#212121]"
+                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex items-center gap-3">
                             <DriveIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
@@ -829,7 +907,7 @@ export default function AnalyzeFlowModal({
           )}
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-[#2f2f2f]">
+        <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-[#1f1f1f]">
           <p className="text-sm text-slate-500 dark:text-[#9c9c9c]">
             Files are queued in Supabase first, then processed by the external analysis worker.
           </p>
@@ -837,7 +915,7 @@ export default function AnalyzeFlowModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#2f2f2f] dark:text-[#b8b8b8]"
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#b8b8b8]"
             >
               Cancel
             </button>

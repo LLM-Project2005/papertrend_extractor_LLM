@@ -143,7 +143,7 @@ export default function AnalysisStatusCard({
 
   if (compact) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex items-start gap-3">
           <button
             type="button"
@@ -151,7 +151,7 @@ export default function AnalysisStatusCard({
             className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
           >
             <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+              <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
                 {folderJob ? "Folder analysis" : "Analysis active"}
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
@@ -171,7 +171,7 @@ export default function AnalysisStatusCard({
             <button
               type="button"
               onClick={onClear}
-              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a0a0a0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
               aria-label="Dismiss analysis status"
               title="Dismiss"
             >
@@ -182,7 +182,7 @@ export default function AnalysisStatusCard({
             <button
               type="button"
               onClick={() => void onCancelAll()}
-              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#d0d0d0] dark:hover:border-[#444444] dark:hover:text-white"
+              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
               aria-label="Cancel all active analysis runs"
               title="Cancel all processing"
             >
@@ -234,7 +234,7 @@ export default function AnalysisStatusCard({
           <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
             {folderJob ? "Folder analysis status" : "Analysis status"}
           </p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
             {folderJob
               ? "Your folder batch is moving through analysis"
               : "Your files are being prepared for analysis"}
@@ -293,13 +293,13 @@ export default function AnalysisStatusCard({
           <button
             type="button"
             onClick={onMinimize}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
           >
             Minimize
           </button>
           <Link
             href="/workspace/imports"
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
           >
             Open imports
           </Link>
@@ -317,20 +317,20 @@ export default function AnalysisStatusCard({
 
       <div className="mt-5 flex flex-wrap gap-2">
         {folderJob ? (
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
+          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
             Stage: {folderJob.progress_message || folderJob.status}
           </span>
         ) : null}
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
+        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
           {summary.total} total
         </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
+        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
           {summary.queued} queued
         </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
+        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
           {summary.processing} processing
         </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#232323] dark:text-[#c9c9c9]">
+        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
           {summary.succeeded} succeeded
         </span>
         {summary.failed > 0 ? (
@@ -352,7 +352,7 @@ export default function AnalysisStatusCard({
           </div>
         ) : null}
         {folderJob ? (
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]">
+          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -367,21 +367,21 @@ export default function AnalysisStatusCard({
                   </p>
                 ) : null}
               </div>
-              <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-[#8f8f8f]">
+              <span className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                 {folderJob.status}
               </span>
             </div>
           </article>
         ) : null}
         {runs.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#a3a3a3]">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3]">
             {loading ? "Loading run status..." : "Waiting for run status to appear."}
           </div>
         ) : (
           runs.map((run) => (
             <article
               key={run.id}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#2f2f2f] dark:bg-[#171717]"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
@@ -414,7 +414,7 @@ export default function AnalysisStatusCard({
                     <button
                       type="button"
                       onClick={() => void onCancelRun(run.id)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#353535] dark:bg-[#202020] dark:text-[#a0a0a0] dark:hover:border-[#444444] dark:hover:text-white"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a0a0a0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
                       aria-label={`Cancel analysis for ${run.source_filename || run.id}`}
                       title="Cancel analysis"
                     >
@@ -426,7 +426,7 @@ export default function AnalysisStatusCard({
                   ) : (
                     <CircleIcon className="h-4 w-4 text-slate-400 dark:text-[#666666]" />
                   )}
-                  <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500 dark:text-[#8f8f8f]">
+                  <span className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                     {run.status}
                   </span>
                 </div>

@@ -9,28 +9,113 @@ import {
   replaceDeepResearchPlan,
   updateWorkspaceThread,
 } from "@/lib/chat-store";
+import { TRACK_COLS, type TrackKey } from "@/lib/constants";
 import {
-  buildDeterministicGroundedAnswer,
-  buildGroundedContext,
-  retrieveCorpusPapers,
-} from "@/lib/corpus";
-import { createChatCompletion } from "@/lib/openai";
+  loadDashboardDataServer,
+  loadScopedDashboardData,
+} from "@/lib/dashboard-data-server";
+import { createChatCompletionResult } from "@/lib/openai";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  persistWorkerStartState,
+  triggerWorkerQueueWithRetries,
+} from "@/lib/worker-queue-start";
 import { triggerResearchQueue, triggerWorkerQueue } from "@/lib/worker-trigger";
+import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
   DeepResearchSessionRecord,
 } from "@/types/research";
-
-export const runtime = "nodejs";
-
 interface Citation {
   paperId: number | string;
   title: string;
   year: string;
   href: string;
   reason: string;
+  sourceType?: "paper" | "web";
+}
+
+type ChatToolMode = "auto" | "web_search" | "chart" | "none";
+type ChartScope = "selected_files" | "workspace";
+type ChartType = "auto" | "bar" | "line" | "pie" | "table";
+type ChartMetric =
+  | "papers_per_year"
+  | "top_topics"
+  | "top_keywords"
+  | "track_distribution"
+  | "topic_trend"
+  | "keyword_trend"
+  | "track_trend";
+type ChartGroupBy = "year" | "topic" | "keyword" | "track";
+
+interface ChartRequest {
+  scope?: ChartScope;
+  chartType?: ChartType;
+  metric?: ChartMetric;
+  groupBy?: ChartGroupBy;
+  topN?: number;
+}
+
+interface ChatChartPayload {
+  chartType: Exclude<ChartType, "auto">;
+  title: string;
+  scopeLabel: string;
+  metric: ChartMetric;
+  xKey: "label";
+  yKeys: string[];
+  data: Array<Record<string, string | number>>;
+  planner?: {
+    source: "llm" | "fallback";
+    reason?: string;
+    confidence?: "high" | "medium" | "low";
+    warnings?: string[];
+  };
+}
+
+interface ChartAnalysisDeferred {
+  runIds: string[];
+  runTitles: string[];
+  statuses: Record<string, string>;
+  message: string;
+  detail: string;
+  queueStart?: {
+    started: boolean;
+    alreadyRunning: boolean;
+    progressMessage: string;
+    progressDetail: string;
+  };
+}
+
+interface ChartBundlePlan {
+  plans: ResolvedChartPlan[];
+  notes?: string;
+}
+
+type ResolvedChartPlan = Required<ChartRequest> & {
+  source: "llm" | "fallback";
+  focusTerms: string[];
+  title?: string;
+  reason?: string;
+  confidence?: "high" | "medium" | "low";
+  warnings?: string[];
+};
+
+interface ChatToolResult {
+  type: "web_search" | "chart";
+  status: "succeeded" | "failed" | "skipped";
+  data?: unknown;
+  citations?: Citation[];
+  error?: string;
+}
+
+interface ChatGenerationOptions {
+  temperature?: number;
+  topP?: number;
+  topK?: number;
+  maxTokens?: number;
+  frequencyPenalty?: number;
+  presencePenalty?: number;
 }
 
 interface ChatRequestBody {
@@ -41,15 +126,34 @@ interface ChatRequestBody {
     name: string;
     type?: string;
     size?: number;
+    url?: string;
+    previewUrl?: string;
+    dataUrl?: string;
+    runId?: string;
+    status?: string;
+    sourceLabel?: string;
+    extension?: string;
   }>;
+  generationParameters?: {
+    temperature?: number;
+    topP?: number;
+    topK?: number;
+    maxTokens?: number;
+    frequencyPenalty?: number;
+    presencePenalty?: number;
+  };
   selectedYears?: string[];
   selectedTracks?: string[];
   searchQuery?: string;
   queryLanguage?: string;
   selectedRunIds?: string[];
   threadId?: string;
+  editMessageId?: string;
   folderId?: string | "all";
   projectId?: string;
+  toolMode?: ChatToolMode;
+  chartRequest?: ChartRequest;
+  webSearchEnabled?: boolean;
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
@@ -64,6 +168,1763 @@ function normalizeOptionalScopeId(value?: string | null) {
     return "";
   }
   return value.trim();
+}
+
+function clampValue(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function resolveGenerationOptions(body: ChatRequestBody): ChatGenerationOptions {
+  const params =
+    body.generationParameters && typeof body.generationParameters === "object"
+      ? body.generationParameters
+      : {};
+
+  const temperature = toFiniteNumber(params.temperature);
+  const topP = toFiniteNumber(params.topP);
+  const topK = toFiniteNumber(params.topK);
+  const maxTokens = toFiniteNumber(params.maxTokens);
+  const frequencyPenalty = toFiniteNumber(params.frequencyPenalty);
+  const presencePenalty = toFiniteNumber(params.presencePenalty);
+
+  const options: ChatGenerationOptions = {};
+  if (temperature !== undefined) {
+    options.temperature = clampValue(temperature, 0, 2);
+  }
+  if (topP !== undefined) {
+    options.topP = clampValue(topP, 0, 1);
+  }
+  if (topK !== undefined) {
+    options.topK = Math.round(clampValue(topK, 0, 200));
+  }
+  if (maxTokens !== undefined) {
+    options.maxTokens = Math.round(clampValue(maxTokens, 64, 8192));
+  }
+  if (frequencyPenalty !== undefined) {
+    options.frequencyPenalty = clampValue(frequencyPenalty, -2, 2);
+  }
+  if (presencePenalty !== undefined) {
+    options.presencePenalty = clampValue(presencePenalty, -2, 2);
+  }
+  return options;
+}
+
+const DEFAULT_CHAT_MODEL = "google/gemini-3.1-flash-lite";
+const TOOL_CAPABLE_CHAT_MODELS = [
+  "google/gemini-3.1-flash-lite",
+  "google/gemma-4-31b-it",
+  "openai/gpt-4.1-mini",
+  "openai/gpt-4o-mini",
+] as const;
+
+const WEB_SEARCH_INTENT_PATTERN =
+  /\b(web search|search the web|internet|online|latest|recent|today|news)\b|ค้นหาเว็บ|เว็บ|ล่าสุด|ข่าว/i;
+
+function resolveChatModel(model?: string | null) {
+  const normalized = String(model ?? "").trim();
+  return TOOL_CAPABLE_CHAT_MODELS.includes(
+    normalized as (typeof TOOL_CAPABLE_CHAT_MODELS)[number]
+  )
+    ? normalized
+    : DEFAULT_CHAT_MODEL;
+}
+
+function hasWebSearchIntent(message: string) {
+  return WEB_SEARCH_INTENT_PATTERN.test(message);
+}
+
+function clampInteger(value: unknown, min: number, max: number, fallback: number) {
+  const parsed = toFiniteNumber(value);
+  if (parsed === undefined) {
+    return fallback;
+  }
+  return Math.round(clampValue(parsed, min, max));
+}
+
+function groupByForMetric(metric: ChartMetric): ChartGroupBy {
+  if (metric === "top_topics" || metric === "topic_trend") return "topic";
+  if (metric === "top_keywords" || metric === "keyword_trend") return "keyword";
+  if (metric === "track_distribution") return "track";
+  return "year";
+}
+
+function normalizeMetric(value: unknown): ChartMetric | null {
+  return value === "top_topics" ||
+    value === "top_keywords" ||
+    value === "track_distribution" ||
+    value === "papers_per_year" ||
+    value === "topic_trend" ||
+    value === "keyword_trend" ||
+    value === "track_trend"
+    ? value
+    : null;
+}
+
+function normalizeChartType(value: unknown): ChartType | null {
+  return value === "bar" ||
+    value === "line" ||
+    value === "pie" ||
+    value === "table" ||
+    value === "auto"
+    ? value
+    : null;
+}
+
+function inferMetricFromPrompt(message: string): ChartMetric | null {
+  const text = message.toLowerCase();
+  const trendIntent =
+    /\b(trend|timeline|time series|over time|change|growth|decline|year by year|yearly|annual)\b/i.test(
+      text
+    );
+  if (/\b(keyword|keywords|key word|key words)\b|คีย์เวิร์ด|คำสำคัญ/i.test(text)) {
+    return trendIntent ? "keyword_trend" : "top_keywords";
+  }
+  if (/\b(topic|topics|theme|themes|concept|concepts)\b|หัวข้อ|ประเด็น/i.test(text)) {
+    return trendIntent ? "topic_trend" : "top_topics";
+  }
+  if (/\b(track|tracks|classification|classifications|el\b|eli\b|lae\b)\b/i.test(text)) {
+    return trendIntent ? "track_trend" : "track_distribution";
+  }
+  if (/\b(year|years|trend|timeline|time series|over time|annual)\b|ปี|แนวโน้ม/i.test(text)) {
+    return "papers_per_year";
+  }
+  return null;
+}
+
+function inferChartTypeFromPrompt(message: string, metric: ChartMetric): ChartType {
+  const text = message.toLowerCase();
+  if (/\b(table|list|ranking)\b|ตาราง|รายการ/i.test(text)) {
+    return "table";
+  }
+  if (/\b(pie|donut|doughnut|share|distribution)\b/i.test(text)) {
+    return "pie";
+  }
+  if (/\b(line|trend|timeline|time series|over time)\b/i.test(text)) {
+    return metric === "papers_per_year" ||
+      metric === "topic_trend" ||
+      metric === "keyword_trend" ||
+      metric === "track_trend"
+      ? "line"
+      : "bar";
+  }
+  if (/\b(bar|column)\b/i.test(text)) {
+    return "bar";
+  }
+  return "auto";
+}
+
+function promptRequestsWorkspaceScope(message: string) {
+  return /\b(workspace|project|folder|folders|all folders|all papers|all analyzed|all analysed|whole corpus|entire corpus|corpus|library)\b/i.test(
+    message
+  );
+}
+
+function promptRequestsSessionScope(message: string) {
+  return /\b(attached|attachment|selected|selected file|selected files|selected paper|selected papers|this paper|this file|current paper|current file|these papers|these files)\b/i.test(
+    message
+  );
+}
+
+function normalizeChartRequest(
+  message: string,
+  request: ChartRequest | undefined,
+  selectedRunIds: string[]
+): Required<ChartRequest> {
+  const requestedScope =
+    request?.scope === "workspace" || request?.scope === "selected_files"
+      ? request.scope
+      : null;
+  const scope: ChartScope =
+    requestedScope ??
+    (promptRequestsWorkspaceScope(message)
+      ? "workspace"
+      : promptRequestsSessionScope(message) || selectedRunIds.length > 0
+        ? "selected_files"
+        : "workspace");
+  const metric = normalizeMetric(request?.metric) ?? inferMetricFromPrompt(message) ?? "papers_per_year";
+  const groupBy: ChartGroupBy =
+    request?.groupBy === "topic" ||
+    request?.groupBy === "keyword" ||
+    request?.groupBy === "track" ||
+    request?.groupBy === "year"
+      ? request.groupBy
+      : groupByForMetric(metric);
+  const chartType =
+    normalizeChartType(request?.chartType) ??
+    inferChartTypeFromPrompt(message, metric);
+
+  return {
+    scope,
+    metric,
+    groupBy,
+    chartType,
+    topN: clampInteger(request?.topN, 3, 25, 10),
+  };
+}
+
+function chartTypeForMetric(
+  requestedType: ChartType,
+  metric: ChartMetric
+): Exclude<ChartType, "auto"> {
+  const isTrendMetric =
+    metric === "papers_per_year" ||
+    metric === "topic_trend" ||
+    metric === "keyword_trend" ||
+    metric === "track_trend";
+  if (isTrendMetric) {
+    return requestedType === "table" ? "table" : "line";
+  }
+  if (requestedType && requestedType !== "auto") {
+    return requestedType;
+  }
+  if (metric === "track_distribution") {
+    return "pie";
+  }
+  return "bar";
+}
+
+function addUniquePaperYear(
+  rows: Array<{ paper_id: string | number; year?: string | null }>,
+  byYear: Map<string, Set<string>>
+) {
+  rows.forEach((row) => {
+    const year = String(row.year ?? "Unknown").trim() || "Unknown";
+    const paperId = String(row.paper_id ?? "").trim();
+    if (!paperId) {
+      return;
+    }
+    if (!byYear.has(year)) {
+      byYear.set(year, new Set());
+    }
+    byYear.get(year)?.add(paperId);
+  });
+}
+
+function trackValue(row: TrackRow, track: TrackKey) {
+  if (track === "Other") {
+    return row.other;
+  }
+  return row[track.toLowerCase() as "el" | "eli" | "lae"];
+}
+
+function topEntries(
+  counts: Map<string, number>,
+  topN: number,
+  sortLabels = false
+) {
+  const rows = [...counts.entries()]
+    .map(([label, value]) => ({ label, value: Math.round(value * 100) / 100 }))
+    .filter((row) => row.label && row.value > 0);
+
+  rows.sort((left, right) => {
+    if (sortLabels) {
+      const leftNumber = Number(left.label);
+      const rightNumber = Number(right.label);
+      if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+        return leftNumber - rightNumber;
+      }
+      return left.label.localeCompare(right.label);
+    }
+    return right.value - left.value || left.label.localeCompare(right.label);
+  });
+
+  return rows.slice(0, topN);
+}
+
+function normalizeChartText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]+/g, " ").trim();
+}
+
+function chartPlannerMetadata(
+  request: Required<ChartRequest> | ResolvedChartPlan
+): ChatChartPayload["planner"] {
+  if ("source" in request) {
+    return {
+      source: request.source,
+      reason: request.reason,
+      confidence: request.confidence,
+      warnings: request.warnings?.length ? request.warnings : undefined,
+    };
+  }
+  return { source: "fallback" };
+}
+
+function chartTitle(
+  request: Required<ChartRequest> | ResolvedChartPlan,
+  fallbackTitle: string
+) {
+  return "title" in request && request.title?.trim()
+    ? request.title.trim()
+    : fallbackTitle;
+}
+
+function focusTermsFromPlan(request: Required<ChartRequest> | ResolvedChartPlan) {
+  return "focusTerms" in request
+    ? request.focusTerms.map((term) => term.trim()).filter(Boolean)
+    : [];
+}
+
+function focusMatchScore(label: string, focusTerms: string[]) {
+  if (focusTerms.length === 0) {
+    return 0;
+  }
+  const normalizedLabel = normalizeChartText(label);
+  return focusTerms.reduce((score, term) => {
+    const normalizedTerm = normalizeChartText(term);
+    if (!normalizedTerm) {
+      return score;
+    }
+    if (normalizedLabel === normalizedTerm) {
+      return score + 3;
+    }
+    if (
+      normalizedLabel.includes(normalizedTerm) ||
+      normalizedTerm.includes(normalizedLabel)
+    ) {
+      return score + 2;
+    }
+    return score;
+  }, 0);
+}
+
+function prioritizeByFocus(
+  rows: Array<{ label: string; value: number }>,
+  focusTerms: string[],
+  topN: number
+) {
+  if (focusTerms.length === 0) {
+    return rows.slice(0, topN);
+  }
+  const focused = rows
+    .map((row) => ({ ...row, focusScore: focusMatchScore(row.label, focusTerms) }))
+    .filter((row) => row.focusScore > 0)
+    .sort(
+      (left, right) =>
+        right.focusScore - left.focusScore ||
+        right.value - left.value ||
+        left.label.localeCompare(right.label)
+    )
+    .map(({ focusScore: _focusScore, ...row }) => row);
+
+  return (focused.length > 0 ? focused : rows).slice(0, topN);
+}
+
+function metricLabel(row: DashboardData["trends"][number], metric: ChartMetric) {
+  if (metric === "top_topics" || metric === "topic_trend") {
+    return String(row.topic || row.raw_topic || "Unclassified").trim();
+  }
+  return String(row.keyword || "").trim();
+}
+
+function trendSeriesLimit(request: Required<ChartRequest> | ResolvedChartPlan) {
+  return Math.min(Math.max(request.topN, 1), 6);
+}
+
+function buildTopicOrKeywordCounts(
+  data: DashboardData,
+  metric: ChartMetric
+) {
+  const counts = new Map<string, number>();
+  data.trends.forEach((row) => {
+    const label = metricLabel(row, metric);
+    if (!label) {
+      return;
+    }
+    counts.set(label, (counts.get(label) ?? 0) + Math.max(1, row.keyword_frequency || 0));
+  });
+  return counts;
+}
+
+function buildTrendRows(
+  data: DashboardData,
+  request: Required<ChartRequest> | ResolvedChartPlan,
+  metric: "topic_trend" | "keyword_trend"
+) {
+  const labelMetric = metric === "topic_trend" ? "top_topics" : "top_keywords";
+  const candidateRows = prioritizeByFocus(
+    topEntries(buildTopicOrKeywordCounts(data, labelMetric), 100),
+    focusTermsFromPlan(request),
+    trendSeriesLimit(request)
+  );
+  const yKeys = candidateRows.map((row) => row.label);
+  if (yKeys.length === 0) {
+    return null;
+  }
+
+  const selectedLabels = new Set(yKeys);
+  const rowsByYear = new Map<string, Record<string, string | number>>();
+  data.trends.forEach((row) => {
+    const label = metricLabel(row, labelMetric);
+    if (!selectedLabels.has(label)) {
+      return;
+    }
+    const year = String(row.year ?? "Unknown").trim() || "Unknown";
+    const yearRow = rowsByYear.get(year) ?? { label: year };
+    yearRow[label] =
+      Number(yearRow[label] ?? 0) + Math.max(1, row.keyword_frequency || 0);
+    rowsByYear.set(year, yearRow);
+  });
+
+  const rows = [...rowsByYear.values()].sort((left, right) =>
+    String(left.label).localeCompare(String(right.label), undefined, {
+      numeric: true,
+    })
+  );
+  rows.forEach((row) => {
+    yKeys.forEach((key) => {
+      row[key] = Math.round((Number(row[key]) || 0) * 100) / 100;
+    });
+  });
+  return { rows, yKeys };
+}
+
+function buildTrackTrendRows(data: DashboardData) {
+  const trackRows = data.tracksSingle.length > 0 ? data.tracksSingle : data.tracksMulti;
+  const rowsByYear = new Map<string, Record<string, string | number>>();
+  trackRows.forEach((row) => {
+    const year = String(row.year ?? "Unknown").trim() || "Unknown";
+    const yearRow = rowsByYear.get(year) ?? { label: year };
+    TRACK_COLS.forEach((track) => {
+      yearRow[track] =
+        Number(yearRow[track] ?? 0) + (trackValue(row, track) > 0 ? 1 : 0);
+    });
+    rowsByYear.set(year, yearRow);
+  });
+
+  const rows = [...rowsByYear.values()].sort((left, right) =>
+    String(left.label).localeCompare(String(right.label), undefined, {
+      numeric: true,
+    })
+  );
+  return { rows, yKeys: [...TRACK_COLS] };
+}
+
+function buildChartFromData(
+  data: DashboardData,
+  request: Required<ChartRequest> | ResolvedChartPlan,
+  scopeLabel: string
+): ChatChartPayload | null {
+  const chartType = chartTypeForMetric(request.chartType, request.metric);
+  const planner = chartPlannerMetadata(request);
+
+  if (request.metric === "papers_per_year") {
+    const byYear = new Map<string, Set<string>>();
+    addUniquePaperYear(data.trends, byYear);
+    addUniquePaperYear(data.tracksSingle, byYear);
+    addUniquePaperYear(data.tracksMulti, byYear);
+    const rows = topEntries(
+      new Map([...byYear.entries()].map(([year, paperIds]) => [year, paperIds.size])),
+      100,
+      true
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: chartTitle(request, "Analyzed papers per year"),
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: ["value"],
+      data: rows,
+      planner,
+    };
+  }
+
+  if (request.metric === "top_topics") {
+    const rows = prioritizeByFocus(
+      topEntries(buildTopicOrKeywordCounts(data, request.metric), 100),
+      focusTermsFromPlan(request),
+      request.topN
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: chartTitle(request, "Top topics by keyword frequency"),
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: ["value"],
+      data: rows,
+      planner,
+    };
+  }
+
+  if (request.metric === "top_keywords") {
+    const rows = prioritizeByFocus(
+      topEntries(buildTopicOrKeywordCounts(data, request.metric), 100),
+      focusTermsFromPlan(request),
+      request.topN
+    );
+    if (rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: chartTitle(request, "Top keywords by frequency"),
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: ["value"],
+      data: rows,
+      planner,
+    };
+  }
+
+  if (request.metric === "topic_trend" || request.metric === "keyword_trend") {
+    const series = buildTrendRows(data, request, request.metric);
+    if (!series || series.rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: chartTitle(
+        request,
+        request.metric === "topic_trend"
+          ? "Topic trend over time"
+          : "Keyword trend over time"
+      ),
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: series.yKeys,
+      data: series.rows,
+      planner,
+    };
+  }
+
+  if (request.metric === "track_trend") {
+    const series = buildTrackTrendRows(data);
+    if (series.rows.length === 0) {
+      return null;
+    }
+    return {
+      chartType,
+      title: chartTitle(request, "Track trend over time"),
+      scopeLabel,
+      metric: request.metric,
+      xKey: "label",
+      yKeys: series.yKeys,
+      data: series.rows,
+      planner,
+    };
+  }
+
+  const counts = new Map<string, number>();
+  const trackRows = data.tracksSingle.length > 0 ? data.tracksSingle : data.tracksMulti;
+  trackRows.forEach((row) => {
+    TRACK_COLS.forEach((track) => {
+      if (trackValue(row, track) > 0) {
+        counts.set(track, (counts.get(track) ?? 0) + 1);
+      }
+    });
+  });
+  const rows = topEntries(counts, TRACK_COLS.length);
+  if (rows.length === 0) {
+    return null;
+  }
+  return {
+    chartType,
+    title: chartTitle(request, "Track distribution"),
+    scopeLabel,
+    metric: request.metric,
+    xKey: "label",
+    yKeys: ["value"],
+    data: rows,
+    planner,
+  };
+}
+
+function buildBestAvailableChartFromData(
+  data: DashboardData,
+  request: Required<ChartRequest> | ResolvedChartPlan,
+  scopeLabel: string
+): ChatChartPayload | null {
+  const candidateMetrics: ChartMetric[] = [];
+  if (data.trends.length > 0) {
+    candidateMetrics.push("top_topics", "top_keywords", "topic_trend", "keyword_trend");
+  }
+  if (data.tracksSingle.length > 0 || data.tracksMulti.length > 0) {
+    candidateMetrics.push("track_distribution", "track_trend");
+  }
+  candidateMetrics.push("papers_per_year");
+  const previousWarnings = "warnings" in request ? request.warnings ?? [] : [];
+
+  for (const metric of [...new Set(candidateMetrics)]) {
+    const chart = buildChartFromData(
+      data,
+      {
+        ...request,
+        metric,
+        groupBy: groupByForMetric(metric),
+        chartType: "auto",
+        source: "fallback",
+        focusTerms: "focusTerms" in request ? request.focusTerms : [],
+        reason:
+          "reason" in request
+            ? request.reason
+            : "Used deterministic chart inference.",
+        confidence:
+          "confidence" in request ? request.confidence ?? "medium" : "medium",
+        warnings: [
+          ...previousWarnings,
+          "Used the strongest available chart because the requested chart was empty.",
+        ],
+      },
+      scopeLabel
+    );
+    if (chart) {
+      return chart;
+    }
+  }
+
+  return null;
+}
+
+const CHART_METRIC_VALUES: ChartMetric[] = [
+  "papers_per_year",
+  "top_topics",
+  "top_keywords",
+  "track_distribution",
+  "topic_trend",
+  "keyword_trend",
+  "track_trend",
+];
+
+function extractJsonObject(text: string | null | undefined) {
+  if (!text) {
+    return null;
+  }
+  const cleaned = text
+    .trim()
+    .replace(/^```(?:json)?/i, "")
+    .replace(/```$/i, "")
+    .trim();
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace < 0 || lastBrace <= firstBrace) {
+    return null;
+  }
+  try {
+    return JSON.parse(cleaned.slice(firstBrace, lastBrace + 1)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function normalizePlannerConfidence(value: unknown) {
+  return value === "high" || value === "medium" || value === "low"
+    ? value
+    : undefined;
+}
+
+function normalizeFocusTerms(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return [
+    ...new Set(
+      value
+        .map((term) => String(term ?? "").trim())
+        .filter((term) => term.length > 1)
+        .slice(0, 8)
+    ),
+  ];
+}
+
+function availableChartMetrics(data: DashboardData): ChartMetric[] {
+  const metrics: ChartMetric[] = [];
+  const years = new Set<string>();
+  [...data.trends, ...data.tracksSingle, ...data.tracksMulti].forEach((row) => {
+    const year = String(row.year ?? "").trim();
+    if (year) {
+      years.add(year);
+    }
+  });
+
+  if (years.size > 0) {
+    metrics.push("papers_per_year");
+  }
+  if (data.trends.length > 0) {
+    metrics.push("top_topics", "top_keywords");
+    if (years.size > 1) {
+      metrics.push("topic_trend", "keyword_trend");
+    }
+  }
+  if (data.tracksSingle.length > 0 || data.tracksMulti.length > 0) {
+    metrics.push("track_distribution");
+    if (years.size > 1) {
+      metrics.push("track_trend");
+    }
+  }
+
+  return [...new Set(metrics)];
+}
+
+function chartDataProfile(data: DashboardData, scopeLabel: string) {
+  const paperIds = new Set<string>();
+  const years = new Set<string>();
+  [...data.trends, ...data.tracksSingle, ...data.tracksMulti].forEach((row) => {
+    const paperId = String(row.paper_id ?? "").trim();
+    const year = String(row.year ?? "").trim();
+    if (paperId) {
+      paperIds.add(paperId);
+    }
+    if (year) {
+      years.add(year);
+    }
+  });
+
+  const trackCounts = new Map<string, number>();
+  const trackRows = data.tracksSingle.length > 0 ? data.tracksSingle : data.tracksMulti;
+  trackRows.forEach((row) => {
+    TRACK_COLS.forEach((track) => {
+      if (trackValue(row, track) > 0) {
+        trackCounts.set(track, (trackCounts.get(track) ?? 0) + 1);
+      }
+    });
+  });
+
+  return {
+    scopeLabel,
+    paperCount: paperIds.size,
+    rowCounts: {
+      keywordRows: data.trends.length,
+      singleTrackRows: data.tracksSingle.length,
+      multiTrackRows: data.tracksMulti.length,
+    },
+    years: [...years].sort((left, right) =>
+      left.localeCompare(right, undefined, { numeric: true })
+    ),
+    availableMetrics: availableChartMetrics(data),
+    topTopics: topEntries(buildTopicOrKeywordCounts(data, "top_topics"), 8),
+    topKeywords: topEntries(buildTopicOrKeywordCounts(data, "top_keywords"), 8),
+    trackDistribution: topEntries(trackCounts, TRACK_COLS.length),
+  };
+}
+
+function buildFallbackChartPlan(
+  request: Required<ChartRequest>,
+  reason = "Used deterministic chart inference."
+): ResolvedChartPlan {
+  return {
+    ...request,
+    source: "fallback",
+    focusTerms: [],
+    reason,
+    confidence: "medium",
+  };
+}
+
+function sanitizePlannerPlan(
+  rawPlan: Record<string, unknown> | null,
+  fallbackRequest: Required<ChartRequest>,
+  availableMetrics: ChartMetric[],
+  prompt: string
+): ResolvedChartPlan {
+  const fallback = buildFallbackChartPlan(fallbackRequest);
+  if (!rawPlan) {
+    return {
+      ...fallback,
+      confidence: "low",
+      warnings: ["The chart planner did not return valid JSON."],
+    };
+  }
+
+  const warnings: string[] = [];
+  let metric = normalizeMetric(rawPlan.metric);
+  if (!metric || !availableMetrics.includes(metric)) {
+    warnings.push(
+      metric
+        ? `Planner requested unavailable metric '${metric}'.`
+        : "Planner did not choose a supported metric."
+    );
+    metric = availableMetrics.includes(fallbackRequest.metric)
+      ? fallbackRequest.metric
+      : availableMetrics[0] ?? fallbackRequest.metric;
+  }
+
+  let chartType = normalizeChartType(rawPlan.chartType);
+  if (!chartType) {
+    chartType = inferChartTypeFromPrompt(prompt, metric) ?? fallbackRequest.chartType;
+  }
+  if (
+    chartType === "pie" &&
+    (metric === "papers_per_year" ||
+      metric === "topic_trend" ||
+      metric === "keyword_trend" ||
+      metric === "track_trend")
+  ) {
+    warnings.push("Changed pie chart to line chart because the selected metric is time-based.");
+    chartType = "line";
+  }
+
+  const groupBy =
+    rawPlan.groupBy === "year" ||
+    rawPlan.groupBy === "topic" ||
+    rawPlan.groupBy === "keyword" ||
+    rawPlan.groupBy === "track"
+      ? rawPlan.groupBy
+      : groupByForMetric(metric);
+  const topN = clampInteger(rawPlan.topN, 3, 25, fallbackRequest.topN);
+  const title = String(rawPlan.title ?? "").trim().slice(0, 96) || undefined;
+  const reason = String(rawPlan.reason ?? "").trim().slice(0, 240) || undefined;
+
+  return {
+    scope: fallbackRequest.scope,
+    metric,
+    groupBy,
+    chartType,
+    topN,
+    source: "llm",
+    focusTerms: normalizeFocusTerms(rawPlan.focusTerms),
+    title,
+    reason,
+    confidence: normalizePlannerConfidence(rawPlan.confidence) ?? "medium",
+    warnings,
+  };
+}
+
+function fallbackChartPlansFromPrompt(
+  prompt: string,
+  fallbackRequest: Required<ChartRequest>,
+  availableMetrics: ChartMetric[]
+): ResolvedChartPlan[] {
+  const text = prompt.toLowerCase();
+  const requestedMetrics: ChartMetric[] = [];
+  const addMetric = (metric: ChartMetric) => {
+    if (availableMetrics.includes(metric) && !requestedMetrics.includes(metric)) {
+      requestedMetrics.push(metric);
+    }
+  };
+  const trendIntent =
+    /\b(trend|timeline|time series|over time|change|growth|decline|year by year|yearly|annual)\b/i.test(
+      text
+    );
+
+  if (/\b(topic|topics|theme|themes|concept|concepts)\b/i.test(text)) {
+    addMetric(trendIntent ? "topic_trend" : "top_topics");
+  }
+  if (/\b(keyword|keywords|key word|key words)\b/i.test(text)) {
+    addMetric(trendIntent ? "keyword_trend" : "top_keywords");
+  }
+  if (/\b(track|tracks|classification|classifications|el\b|eli\b|lae\b)\b/i.test(text)) {
+    addMetric(trendIntent ? "track_trend" : "track_distribution");
+  }
+  if (/\b(year|years|papers per year|paper count|timeline)\b/i.test(text)) {
+    addMetric("papers_per_year");
+  }
+
+  if (requestedMetrics.length === 0) {
+    requestedMetrics.push(
+      availableMetrics.includes(fallbackRequest.metric)
+        ? fallbackRequest.metric
+        : availableMetrics[0] ?? fallbackRequest.metric
+    );
+  }
+
+  return requestedMetrics.slice(0, 4).map((metric) => ({
+    ...buildFallbackChartPlan(
+      {
+        ...fallbackRequest,
+        metric,
+        groupBy: groupByForMetric(metric),
+        chartType: inferChartTypeFromPrompt(prompt, metric),
+      },
+      "Used deterministic multi-chart inference."
+    ),
+    title: undefined,
+  }));
+}
+
+function mergeExplicitChartPlans(
+  plannerPlans: ResolvedChartPlan[],
+  promptFallbackPlans: ResolvedChartPlan[]
+) {
+  const merged: ResolvedChartPlan[] = [];
+  const seenMetrics = new Set<ChartMetric>();
+
+  for (const plan of plannerPlans) {
+    if (seenMetrics.has(plan.metric)) {
+      continue;
+    }
+    seenMetrics.add(plan.metric);
+    merged.push(plan);
+  }
+
+  if (promptFallbackPlans.length > 1) {
+    for (const plan of promptFallbackPlans) {
+      if (seenMetrics.has(plan.metric)) {
+        continue;
+      }
+      seenMetrics.add(plan.metric);
+      merged.push({
+        ...plan,
+        reason:
+          plan.reason ??
+          "Added because the user explicitly requested this chart angle.",
+        confidence: plan.confidence ?? "medium",
+        warnings: [
+          ...(plan.warnings ?? []),
+          "Added by prompt parsing because the chart planner omitted this requested metric.",
+        ],
+      });
+    }
+  }
+
+  return merged.slice(0, 4);
+}
+
+function sanitizePlannerBundle(
+  rawPlan: Record<string, unknown> | null,
+  fallbackRequest: Required<ChartRequest>,
+  availableMetrics: ChartMetric[],
+  prompt: string
+): ChartBundlePlan {
+  const rawCharts = Array.isArray(rawPlan?.charts)
+    ? rawPlan.charts
+    : rawPlan
+      ? [rawPlan]
+      : [];
+  const plans = rawCharts
+    .slice(0, 4)
+    .map((chartPlan) =>
+      sanitizePlannerPlan(
+        chartPlan && typeof chartPlan === "object"
+          ? (chartPlan as Record<string, unknown>)
+          : null,
+        fallbackRequest,
+        availableMetrics,
+        prompt
+      )
+    );
+  const validPlans = plans.filter((plan) => availableMetrics.includes(plan.metric));
+  const promptFallbackPlans = fallbackChartPlansFromPrompt(
+    prompt,
+    fallbackRequest,
+    availableMetrics
+  );
+  const mergedPlans = mergeExplicitChartPlans(validPlans, promptFallbackPlans);
+  return {
+    plans:
+      mergedPlans.length > 0
+        ? mergedPlans
+        : promptFallbackPlans,
+    notes: String(rawPlan?.notes ?? "").trim().slice(0, 400) || undefined,
+  };
+}
+
+async function planChartBundleWithLlm(
+  body: ChatRequestBody,
+  data: DashboardData,
+  fallbackRequest: Required<ChartRequest>,
+  scopeLabel: string
+): Promise<ChartBundlePlan> {
+  const profile = chartDataProfile(data, scopeLabel);
+  if (profile.availableMetrics.length === 0) {
+    return {
+      plans: [
+        buildFallbackChartPlan(
+          fallbackRequest,
+          "No chartable analyzed data is available."
+        ),
+      ],
+    };
+  }
+
+  const recentMessages = (body.messages ?? [])
+    .slice(-8)
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content ?? "").slice(0, 800),
+    }));
+  const prompt = String(body.message ?? "").trim();
+
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content:
+            "You are a production chart planner for a research-paper analytics app. " +
+            "Choose one or more useful charts from the available analyzed data. " +
+            "If the user asks for multiple charts, comparisons, a dashboard, a report, or several angles, return multiple chart specs. " +
+            "Return strict JSON only. Do not include markdown. Do not invent metrics, columns, or data.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            userRequest: prompt || "Create the most useful chart from my analyzed papers.",
+            recentChatContext: recentMessages,
+            resolvedScope: fallbackRequest.scope,
+            selectedFileCount: body.selectedRunIds?.length ?? 0,
+            availableMetrics: profile.availableMetrics,
+            dataProfile: profile,
+            allowedOutput: {
+              charts: "array of 1-4 chart specs",
+              metric: CHART_METRIC_VALUES,
+              chartType: ["auto", "bar", "line", "pie", "table"],
+              groupBy: ["year", "topic", "keyword", "track"],
+              topN: "integer 3-25",
+              focusTerms: "optional keywords/topics/tracks from the user request or data profile",
+              title: "short human-readable chart title",
+              reason: "one sentence explaining why this chart answers the request",
+              confidence: ["high", "medium", "low"],
+              notes: "optional short planning note",
+            },
+          }),
+        },
+      ],
+      0.1,
+      resolveChatModel(body.model),
+      "CHART_PLANNER",
+      { maxTokens: 1200 }
+    );
+    return sanitizePlannerBundle(
+      extractJsonObject(completion?.content),
+      fallbackRequest,
+      profile.availableMetrics,
+      prompt
+    );
+  } catch (error) {
+    return {
+      plans: fallbackChartPlansFromPrompt(prompt, fallbackRequest, profile.availableMetrics).map(
+        (plan) => ({
+          ...plan,
+          confidence: "low",
+          warnings: [
+            ...(plan.warnings ?? []),
+            error instanceof Error ? error.message : "Chart planner request failed.",
+          ],
+        })
+      ),
+    };
+  }
+}
+
+function readStringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+}
+
+function attachmentNamesFromUnknown(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((item) =>
+      item && typeof item === "object"
+        ? String((item as { name?: unknown }).name ?? "").trim()
+        : ""
+    )
+    .filter(Boolean);
+}
+
+function collectThreadChartContext(threadDetail?: ChatThreadDetail | null) {
+  let selectedRunIds: string[] = [];
+  let attachmentNames: string[] = [];
+
+  for (const message of [...(threadDetail?.messages ?? [])].reverse()) {
+    const metadata = message.metadata ?? {};
+    const runIds = readStringArray(metadata.selectedRunIds);
+    const names = attachmentNamesFromUnknown(metadata.attachments);
+    if (selectedRunIds.length === 0 && runIds.length > 0) {
+      selectedRunIds = runIds;
+    }
+    if (attachmentNames.length === 0 && names.length > 0) {
+      attachmentNames = names;
+    }
+    if (selectedRunIds.length > 0 && attachmentNames.length > 0) {
+      break;
+    }
+  }
+
+  return {
+    selectedRunIds: [...new Set(selectedRunIds)],
+    attachmentNames: [...new Set(attachmentNames)],
+  };
+}
+
+function filterDashboardDataByPaperIds(
+  data: DashboardData,
+  paperIds: Array<string | number>
+): DashboardData {
+  const allowedPaperIds = new Set(paperIds.map((paperId) => String(paperId)));
+  return {
+    ...data,
+    trends: data.trends.filter((row) => allowedPaperIds.has(String(row.paper_id))),
+    tracksSingle: data.tracksSingle.filter((row) =>
+      allowedPaperIds.has(String(row.paper_id))
+    ),
+    tracksMulti: data.tracksMulti.filter((row) =>
+      allowedPaperIds.has(String(row.paper_id))
+    ),
+    topicFamilies: data.topicFamilies
+      ?.map((family) => ({
+        ...family,
+        paperIds: family.paperIds.filter((paperId) =>
+          allowedPaperIds.has(String(paperId))
+        ),
+      }))
+      .filter((family) => family.paperIds.length > 0),
+  };
+}
+
+function bestRankedChartPaperId(
+  analysis: ReturnType<typeof buildLocalPromptAnalysis>
+) {
+  const targetPaperId = String(analysis.target_paper_id ?? "").trim();
+  if (targetPaperId && targetPaperId !== "0") {
+    return targetPaperId;
+  }
+  const rankedMatches = Array.isArray(analysis.ranked_matches)
+    ? analysis.ranked_matches
+    : [];
+  const [top, second] = rankedMatches;
+  if (!top) {
+    return "";
+  }
+  const topScore = Number(top.score ?? 0);
+  const secondScore = Number(second?.score ?? 0);
+  const confident =
+    Boolean(top.exact_normalized_title_match) ||
+    Boolean(top.strong_title_match) ||
+    Boolean(top.selected_scope_anchor) ||
+    (topScore >= 8 && topScore >= secondScore + 2);
+  return confident ? String(top.paperId ?? "").trim() : "";
+}
+
+type ChartLibraryRun = {
+  id: string;
+  folder_id?: string | null;
+  folder_analysis_job_id?: string | null;
+  status: "queued" | "processing" | "succeeded" | "failed";
+  display_name?: string | null;
+  source_filename?: string | null;
+  source_path?: string | null;
+  input_payload?: Record<string, unknown> | null;
+};
+
+function chartRunLabel(run: Pick<ChartLibraryRun, "display_name" | "source_filename" | "source_path">) {
+  return (
+    String(run.display_name ?? "").trim() ||
+    String(run.source_filename ?? "").trim() ||
+    String(run.source_path ?? "").replace(/\\/g, "/").split("/").pop() ||
+    "selected file"
+  );
+}
+
+async function projectFolderIds(ownerUserId: string, projectId?: string) {
+  if (!projectId || projectId === "all") {
+    return [];
+  }
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("research_folders")
+    .select("id")
+    .eq("owner_user_id", ownerUserId)
+    .eq("project_id", projectId);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? [])
+    .map((row) => String((row as { id?: string | null }).id ?? ""))
+    .filter(Boolean);
+}
+
+async function findLibraryRunsByAttachmentNames(
+  ownerUserId: string,
+  attachmentNames: string[],
+  folderId?: string | "all",
+  projectId?: string
+): Promise<ChartLibraryRun[]> {
+  const attachmentKeys = new Set(
+    attachmentNames.map(normalizeFileMatchKey).filter((value) => value.length >= 3)
+  );
+  if (attachmentKeys.size === 0) {
+    return [];
+  }
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from("ingestion_runs")
+    .select("id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload")
+    .eq("owner_user_id", ownerUserId)
+    .eq("source_type", "upload")
+    .is("trashed_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(400);
+
+  if (folderId && folderId !== "all") {
+    query = query.eq("folder_id", folderId);
+  } else if (projectId && projectId !== "all") {
+    const folderIds = await projectFolderIds(ownerUserId, projectId);
+    if (folderIds.length === 0) {
+      return [];
+    }
+    query = query.in("folder_id", folderIds);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const matches = ((data ?? []) as ChartLibraryRun[]).filter((run) => {
+    const runKeys = [
+      run.display_name ?? "",
+      run.source_filename ?? "",
+      run.source_path ?? "",
+      chartRunLabel(run),
+    ]
+      .map(normalizeFileMatchKey)
+      .filter(Boolean);
+    return runKeys.some((runKey) =>
+      [...attachmentKeys].some(
+        (attachmentKey) =>
+          runKey === attachmentKey ||
+          runKey.includes(attachmentKey) ||
+          attachmentKey.includes(runKey)
+      )
+    );
+  });
+
+  matches.sort((left, right) => {
+    const rank = (run: ChartLibraryRun) =>
+      run.status === "succeeded"
+        ? 0
+        : run.status === "queued" || run.status === "processing"
+          ? 1
+          : 2;
+    return rank(left) - rank(right);
+  });
+  return matches;
+}
+
+async function loadChartRunsByIds(
+  ownerUserId: string,
+  runIds: string[]
+): Promise<ChartLibraryRun[]> {
+  const normalizedRunIds = [...new Set(runIds.filter(Boolean))];
+  if (normalizedRunIds.length === 0) {
+    return [];
+  }
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("ingestion_runs")
+    .select("id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload")
+    .eq("owner_user_id", ownerUserId)
+    .in("id", normalizedRunIds);
+  if (error) {
+    throw new Error(error.message);
+  }
+  return (data ?? []) as ChartLibraryRun[];
+}
+
+async function queueChartAnalysisRuns(
+  ownerUserId: string,
+  runs: ChartLibraryRun[]
+): Promise<ChartAnalysisDeferred | null> {
+  const notReadyRuns = runs.filter((run) => run.status !== "succeeded");
+  if (notReadyRuns.length === 0) {
+    return null;
+  }
+
+  const timestamp = new Date().toISOString();
+  const failedRuns = notReadyRuns.filter((run) => run.status === "failed");
+  const queuedRunIds = notReadyRuns.map((run) => run.id);
+  const supabase = getSupabaseAdmin();
+
+  for (const run of failedRuns) {
+    const existingPayload =
+      run.input_payload && typeof run.input_payload === "object" && !Array.isArray(run.input_payload)
+        ? run.input_payload
+        : {};
+    const retryCount =
+      typeof existingPayload.chat_chart_retry_count === "number"
+        ? existingPayload.chat_chart_retry_count
+        : Number(existingPayload.chat_chart_retry_count ?? 0) || 0;
+    const { error } = await supabase
+      .from("ingestion_runs")
+      .update({
+        status: "queued",
+        error_message: null,
+        completed_at: null,
+        updated_at: timestamp,
+        input_payload: {
+          ...existingPayload,
+          analysis_mode: "automatic",
+          analysis_label: "Queued from chat chart request",
+          chat_chart_retry_count: retryCount + 1,
+          chat_chart_requested_at: timestamp,
+          progress_stage: "queued",
+          progress_message: "Queued from chat chart request",
+          progress_detail:
+            "The user asked for a chart from this library file, so the failed analysis run was returned to the worker queue.",
+          progress_updated_at: timestamp,
+        },
+      })
+      .eq("id", run.id)
+      .eq("owner_user_id", ownerUserId);
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  const queueStart = await triggerWorkerQueueWithRetries({
+    maxRuns: Math.min(Math.max(queuedRunIds.length, 1), 5),
+    taskCount: queuedRunIds.length,
+    reason: "chat-chart-analysis-preflight",
+  });
+  await persistWorkerStartState({
+    supabase,
+    runIds: queuedRunIds,
+    folderJobId: String(notReadyRuns[0]?.folder_analysis_job_id ?? "") || null,
+    result: queueStart,
+  });
+
+  const statusSummary = notReadyRuns.reduce<Record<string, string>>((accumulator, run) => {
+    accumulator[run.id] = run.status === "failed" ? "requeued" : run.status;
+    return accumulator;
+  }, {});
+  const failedCount = failedRuns.length;
+  const activeCount = notReadyRuns.length - failedCount;
+  const message =
+    failedCount > 0
+      ? `I found ${failedCount} attached library file${failedCount === 1 ? "" : "s"} with failed analysis and re-queued ${failedCount === 1 ? "it" : "them"}.`
+      : `I found ${activeCount} attached library file${activeCount === 1 ? "" : "s"} that ${activeCount === 1 ? "is" : "are"} still being analyzed.`;
+  const detail =
+    queueStart.started || queueStart.alreadyRunning
+      ? `${queueStart.progressMessage}: ${queueStart.progressDetail} I will be able to build the chart after the analysis succeeds.`
+      : `${queueStart.progressMessage}: ${queueStart.progressDetail}`;
+
+  return {
+    runIds: queuedRunIds,
+    runTitles: notReadyRuns.map(chartRunLabel),
+    statuses: statusSummary,
+    message,
+    detail,
+    queueStart: {
+      started: queueStart.started,
+      alreadyRunning: queueStart.alreadyRunning,
+      progressMessage: queueStart.progressMessage,
+      progressDetail: queueStart.progressDetail,
+    },
+  };
+}
+
+async function resolveChartSessionScope(
+  ownerUserId: string,
+  body: ChatRequestBody,
+  request: Required<ChartRequest>,
+  threadDetail?: ChatThreadDetail | null
+) {
+  const currentRunIds = [...new Set((body.selectedRunIds ?? []).filter(Boolean))];
+  const currentAttachmentNames = (body.attachments ?? [])
+    .map((attachment) => String(attachment?.name ?? "").trim())
+    .filter(Boolean);
+  const threadContext = collectThreadChartContext(threadDetail);
+  const attachmentNames = [
+    ...new Set([...currentAttachmentNames, ...threadContext.attachmentNames]),
+  ];
+  const prompt = String(body.message ?? "");
+  const wantsSessionPaper =
+    request.scope === "selected_files" ||
+    promptRequestsSessionScope(prompt) ||
+    attachmentNames.length > 0;
+
+  if (currentRunIds.length > 0) {
+    return {
+      selectedRunIds: currentRunIds,
+      selectedPaperIds: [] as string[],
+      attachmentNames,
+      scopeLabel: undefined as string | undefined,
+    };
+  }
+
+  const matchedLibraryRuns = await findLibraryRunsByAttachmentNames(
+    ownerUserId,
+    currentAttachmentNames.length > 0 ? currentAttachmentNames : attachmentNames,
+    body.folderId,
+    body.projectId
+  );
+  if (matchedLibraryRuns.length > 0) {
+    const succeededRuns = matchedLibraryRuns.filter((run) => run.status === "succeeded");
+    const selectedRuns = succeededRuns.length > 0 ? succeededRuns : matchedLibraryRuns;
+    return {
+      selectedRunIds: selectedRuns.map((run) => run.id),
+      selectedPaperIds: [] as string[],
+      attachmentNames,
+      scopeLabel:
+        selectedRuns.length === 1
+          ? chartRunLabel(selectedRuns[0])
+          : `${selectedRuns.length} matched library files`,
+    };
+  }
+
+  if (wantsSessionPaper && threadContext.selectedRunIds.length > 0) {
+    return {
+      selectedRunIds: threadContext.selectedRunIds,
+      selectedPaperIds: [] as string[],
+      attachmentNames,
+      scopeLabel: `${threadContext.selectedRunIds.length} recent chat file${
+        threadContext.selectedRunIds.length === 1 ? "" : "s"
+      }`,
+    };
+  }
+
+  if (wantsSessionPaper || /\bwebquest\b/i.test(prompt)) {
+    let papers = await loadScopedPlanPapers(
+      ownerUserId,
+      body.folderId,
+      body.projectId,
+      []
+    );
+    let analysis = buildLocalPromptAnalysis(prompt, papers, [], attachmentNames);
+    let paperId = bestRankedChartPaperId(analysis);
+    if (!paperId && (body.folderId || body.projectId)) {
+      papers = await loadScopedPlanPapers(ownerUserId, undefined, undefined, []);
+      analysis = buildLocalPromptAnalysis(prompt, papers, [], attachmentNames);
+      paperId = bestRankedChartPaperId(analysis);
+    }
+    if (paperId) {
+      const matchedTitle =
+        analysis.ranked_matches.find((match) => String(match.paperId) === paperId)
+          ?.title ?? "matched paper";
+      return {
+        selectedRunIds: [] as string[],
+        selectedPaperIds: [paperId],
+        attachmentNames,
+        scopeLabel: matchedTitle,
+      };
+    }
+  }
+
+  return {
+    selectedRunIds: [] as string[],
+    selectedPaperIds: [] as string[],
+    attachmentNames,
+    scopeLabel: undefined as string | undefined,
+  };
+}
+
+async function loadChartDashboardData(
+  ownerUserId: string,
+  request: Required<ChartRequest>,
+  folderId: string | "all" | undefined,
+  projectId: string | undefined,
+  selectedRunIds: string[],
+  selectedPaperIds: string[] = [],
+  overrideScopeLabel?: string
+) {
+  const supabase = getSupabaseAdmin();
+  if (request.scope === "selected_files" && selectedRunIds.length > 0) {
+    const scopedRunIds = await resolveScopedRunIds(
+      supabase,
+      ownerUserId,
+      selectedRunIds
+    );
+    return {
+      data: await loadScopedDashboardData(ownerUserId, scopedRunIds),
+      scopeLabel: `${selectedRunIds.length} selected file${
+        selectedRunIds.length === 1 ? "" : "s"
+      }`,
+    };
+  }
+
+  if (request.scope === "selected_files" && selectedPaperIds.length > 0) {
+    const data = await loadScopedDashboardData(ownerUserId, null);
+    return {
+      data: filterDashboardDataByPaperIds(data, selectedPaperIds),
+      scopeLabel:
+        overrideScopeLabel ??
+        `${selectedPaperIds.length} matched paper${
+          selectedPaperIds.length === 1 ? "" : "s"
+        }`,
+    };
+  }
+
+  return {
+    data: await loadDashboardDataServer(
+      ownerUserId,
+      folderId && folderId !== "all" ? [folderId] : null,
+      projectId && projectId !== "all" ? projectId : null,
+      "live"
+    ),
+    scopeLabel: folderId && folderId !== "all" ? "selected folder" : "workspace",
+  };
+}
+
+async function buildChatChart(
+  ownerUserId: string,
+  body: ChatRequestBody,
+  threadDetail?: ChatThreadDetail | null
+): Promise<{
+  chart: ChatChartPayload | null;
+  charts: ChatChartPayload[];
+  error?: string;
+  request: ResolvedChartPlan;
+  requests: ResolvedChartPlan[];
+  deferred?: ChartAnalysisDeferred;
+}> {
+  const prompt = String(body.message ?? "");
+  let request = normalizeChartRequest(
+    prompt,
+    body.chartRequest,
+    body.selectedRunIds ?? []
+  );
+  const sessionScope = await resolveChartSessionScope(
+    ownerUserId,
+    body,
+    request,
+    threadDetail
+  );
+  if (
+    request.scope === "selected_files" &&
+    sessionScope.selectedRunIds.length === 0 &&
+    sessionScope.selectedPaperIds.length === 0 &&
+    !promptRequestsSessionScope(prompt)
+  ) {
+    request = { ...request, scope: "workspace" };
+  }
+  const fallbackPlan = buildFallbackChartPlan(request);
+  if (
+    request.scope === "selected_files" &&
+    sessionScope.selectedRunIds.length === 0 &&
+    sessionScope.selectedPaperIds.length === 0
+  ) {
+    return {
+      request: {
+        ...fallbackPlan,
+        confidence: "low",
+        warnings: [
+          "Chart mode could not resolve a selected paper from the current message or prior chat attachments.",
+        ],
+      },
+      chart: null,
+      charts: [],
+      requests: [fallbackPlan],
+      error:
+        "I could not tell which analyzed paper you meant. Attach or select the paper from the library, or mention the exact paper title.",
+    };
+  }
+
+  if (request.scope === "selected_files" && sessionScope.selectedRunIds.length > 0) {
+    const selectedRuns = await loadChartRunsByIds(
+      ownerUserId,
+      sessionScope.selectedRunIds
+    );
+    const deferred = await queueChartAnalysisRuns(ownerUserId, selectedRuns);
+    if (deferred) {
+      return {
+        request: {
+          ...fallbackPlan,
+          confidence: "low",
+          warnings: [
+            "The selected library file is not chartable yet because its analysis has not succeeded.",
+          ],
+        },
+        chart: null,
+        charts: [],
+        requests: [fallbackPlan],
+        deferred,
+        error: `${deferred.message} ${deferred.detail}`,
+      };
+    }
+  }
+
+  const { data, scopeLabel } = await loadChartDashboardData(
+    ownerUserId,
+    request,
+    body.folderId,
+    body.projectId,
+    sessionScope.selectedRunIds,
+    sessionScope.selectedPaperIds,
+    sessionScope.scopeLabel
+  );
+  const chartBundle = await planChartBundleWithLlm(body, data, request, scopeLabel);
+  const plannedRequests = chartBundle.plans.length > 0
+    ? chartBundle.plans
+    : [buildFallbackChartPlan(request)];
+  const charts = plannedRequests
+    .map((plannedRequest) => buildChartFromData(data, plannedRequest, scopeLabel))
+    .filter((chart): chart is ChatChartPayload => Boolean(chart));
+  const fallbackChart =
+    charts.length === 0
+      ? buildBestAvailableChartFromData(
+      data,
+      {
+        ...plannedRequests[0],
+        source: "fallback",
+        confidence: "low",
+        warnings: [
+          ...(plannedRequests[0]?.warnings ?? []),
+          "The planned chart had no rows, so a backup chart was selected.",
+        ],
+      },
+      scopeLabel
+        )
+      : null;
+  const finalCharts = fallbackChart ? [fallbackChart] : charts;
+  return {
+    request: plannedRequests[0],
+    requests: plannedRequests,
+    chart: finalCharts[0] ?? null,
+    charts: finalCharts,
+    error: finalCharts.length > 0
+      ? undefined
+      : "No analyzed data was found for that chart scope yet.",
+  };
+}
+
+function summarizeChartForResponse(chart: ChatChartPayload) {
+  return {
+    title: chart.title,
+    metric: chart.metric,
+    chartType: chart.chartType,
+    scope: chart.scopeLabel,
+    series: chart.yKeys,
+    sampleRows: chart.data.slice(0, 8),
+    plannerReason: chart.planner?.reason,
+  };
+}
+
+function fallbackChartAnswer(charts: ChatChartPayload[]) {
+  if (charts.length === 0) {
+    return "I could not build that chart yet.";
+  }
+  const chartList = charts
+    .map((chart, index) => `${index + 1}. **${chart.title}** (${chart.chartType})`)
+    .join("\n");
+  const firstChart = charts[0];
+  const strongestRows = firstChart.data
+    .slice(0, 3)
+    .map((row) => {
+      const values = firstChart.yKeys
+        .map((key) => `${key}: ${Number(row[key]) || 0}`)
+        .join(", ");
+      return `${row.label} (${values})`;
+    })
+    .join("; ");
+  return [
+    charts.length === 1
+      ? `I built **${firstChart.title}** from ${firstChart.scopeLabel}.`
+      : `I built ${charts.length} charts from ${firstChart.scopeLabel}:`,
+    charts.length > 1 ? chartList : "",
+    strongestRows
+      ? `What it shows: the strongest visible values are ${strongestRows}. Use this as a first read, then inspect the chart for the full pattern.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function synthesizeChartAnswer(
+  body: ChatRequestBody,
+  charts: ChatChartPayload[],
+  requests: ResolvedChartPlan[]
+) {
+  if (charts.length === 0) {
+    return fallbackChartAnswer(charts);
+  }
+  const prompt = String(body.message ?? "").trim();
+  const recentMessages = (body.messages ?? [])
+    .slice(-8)
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content ?? "").slice(0, 700),
+    }));
+
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content:
+            "You are a flexible research analytics assistant. The app has already built validated charts from real data. " +
+            "Write the assistant response that should accompany the charts. " +
+            "Default behavior: if the user simply asks for a chart or does not specify a response style, explain the chart automatically. " +
+            "Mention what the chart shows, the strongest visible pattern, and any useful caution about scope or missing data. " +
+            "If the user asks for ideas, thoughts, a plan, critique, summary, next steps, recommendations, or another format, prioritize that intent while still grounding the answer in the chart. " +
+            "Do not claim to have data beyond the provided chart summaries. Keep it concise but useful.",
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            userRequest: prompt || "Create the most useful chart from my analyzed papers.",
+            recentChatContext: recentMessages,
+            chartPlans: requests.map((request) => ({
+              metric: request.metric,
+              chartType: request.chartType,
+              focusTerms: request.focusTerms,
+              reason: request.reason,
+            })),
+            charts: charts.map(summarizeChartForResponse),
+          }),
+        },
+      ],
+      0.35,
+      resolveChatModel(body.model),
+      "CHART_SYNTHESIS",
+      { maxTokens: 900 }
+    );
+    return completion?.content?.trim() || fallbackChartAnswer(charts);
+  } catch {
+    return fallbackChartAnswer(charts);
+  }
+}
+
+function extractWebCitations(annotations: unknown): Citation[] {
+  if (!Array.isArray(annotations)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const citations: Citation[] = [];
+  annotations.forEach((annotation) => {
+    if (!annotation || typeof annotation !== "object") {
+      return;
+    }
+    const citation = (annotation as { url_citation?: Record<string, unknown> })
+      .url_citation;
+    const url = String(citation?.url ?? "").trim();
+    if (!url || seen.has(url)) {
+      return;
+    }
+    seen.add(url);
+    let host = "web";
+    try {
+      host = new URL(url).hostname.replace(/^www\./, "");
+    } catch {
+      host = "web";
+    }
+    const title = String(citation?.title ?? host).trim() || host;
+    const content = String(citation?.content ?? "").trim();
+    citations.push({
+      paperId: `Web ${citations.length + 1}`,
+      title,
+      year: "Web",
+      href: url,
+      reason: content ? content.slice(0, 220) : host,
+      sourceType: "web",
+    });
+  });
+  return citations;
 }
 
 async function resolveReusableDeepResearchSessionId(
@@ -118,15 +1979,14 @@ async function resolveReusableDeepResearchSessionId(
   return samePrompt && sameFolder && sameProject && sameRuns ? sessionId : undefined;
 }
 
-function buildFallbackAnswer(question: string, corpusError?: string): string {
+function buildFallbackAnswer(question: string, modelError?: string): string {
   const lines = [
-    "Broader guidance beyond the corpus:",
-    `I could not find a direct answer to "${question}" in the stored workspace paper data.`,
-    "A useful next step is to narrow the question by topic, year, track, folder, or a specific paper title so the answer can be grounded in the dataset.",
+    `I could not generate a full response right now for: "${question}".`,
+    "Please try again in a moment.",
   ];
 
-  if (corpusError) {
-    lines.push(`Corpus note: ${corpusError}`);
+  if (modelError) {
+    lines.push(`Model note: ${modelError}`);
   }
 
   return lines.join("\n");
@@ -159,15 +2019,19 @@ const STOPWORDS = new Set([
   "after",
   "analysis",
   "analyze",
+  "build",
   "corpus",
   "create",
+  "chart",
   "deep",
   "evidence",
   "finish",
   "first",
+  "graph",
   "grounded",
   "identify",
   "paper",
+  "plot",
   "plan",
   "please",
   "report",
@@ -176,7 +2040,11 @@ const STOPWORDS = new Set([
   "step",
   "steps",
   "structured",
+  "talking",
   "then",
+  "top",
+  "topic",
+  "topics",
   "using",
   "with",
 ]);
@@ -204,11 +2072,68 @@ function extractCandidateTitle(prompt: string) {
   for (const pattern of patterns) {
     const match = truncated.match(pattern);
     const candidate = (match?.[1] ?? "").trim().replace(/[.,:;]+$/, "");
-    if (candidate.length >= 12) {
+    if (candidate.length >= 12 && !isPlaceholderTitle(candidate)) {
       return candidate;
     }
   }
   return "";
+}
+
+function isPlaceholderTitle(value: string) {
+  const normalized = normalizeTitle(value);
+  if (!normalized) return false;
+  const placeholderPhrases = new Set([
+    "this file",
+    "this file here",
+    "that file",
+    "the file",
+    "file here",
+    "this paper",
+    "that paper",
+    "the paper",
+    "paper here",
+    "attached file",
+    "attached paper",
+    "attached document",
+    "this document",
+    "that document",
+    "the document",
+  ]);
+  if (placeholderPhrases.has(normalized)) {
+    return true;
+  }
+  const tokens = new Set(tokenize(normalized));
+  const placeholderTokens = new Set(["this", "that", "here", "attached", "file", "paper", "document"]);
+  if (tokens.size === 0) return false;
+  for (const token of tokens) {
+    if (!placeholderTokens.has(token)) return false;
+  }
+  return true;
+}
+
+function extractAttachmentTitles(attachmentNames: string[] = []) {
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const name of attachmentNames) {
+    const trimmed = String(name ?? "").trim();
+    if (!trimmed) continue;
+    const withoutExt = trimmed.replace(/\.[a-z0-9]{1,6}$/i, "").trim();
+    if (withoutExt.length < 4 || isPlaceholderTitle(withoutExt)) continue;
+    const normalized = normalizeTitle(withoutExt);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    titles.push(withoutExt);
+  }
+  return titles;
+}
+
+function normalizeFileMatchKey(value: string) {
+  return normalizeTitle(
+    value
+      .replace(/\\/g, "/")
+      .split("/")
+      .pop() ?? value
+  ).replace(/\b(pdf|docx?|txt|rtf|pptx?)\b$/i, "").trim();
 }
 
 function extractAuthorHint(prompt: string) {
@@ -239,6 +2164,8 @@ function normalizeSearchQuery(prompt: string, candidateTitle: string) {
     .replace(/\b(do|please|can you|could you|run|perform)\b/gi, " ")
     .split(/\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b/i)[0]
     .replace(/\b(deep research|analysis|structured report|report)\b/gi, " ")
+    .replace(/\b(this|that)\s+(file|paper|document)(\s+here)?\b/gi, " ")
+    .replace(/\battached\s+(file|paper|document)\b/gi, " ")
     .replace(/\s+/g, " ")
     .trim()
     .replace(/[.,:;]+$/, "");
@@ -383,11 +2310,34 @@ function scorePaperMatch(
 function buildLocalPromptAnalysis(
   prompt: string,
   papers: LocalPlanPaper[],
-  selectedRunIds: string[] = []
+  selectedRunIds: string[] = [],
+  attachmentNames: string[] = []
 ) {
-  const candidateTitle = extractCandidateTitle(prompt);
+  let candidateTitle = extractCandidateTitle(prompt);
   const quotedTitle = extractQuotedTitle(prompt);
   const authorHint = extractAuthorHint(prompt);
+  const attachmentTitles = extractAttachmentTitles(attachmentNames);
+  let selectedScopePapers = papers.filter((paper) =>
+    selectedRunIds.includes(String(paper.ingestion_run_id ?? ""))
+  );
+  if (selectedRunIds.length > 0 && selectedScopePapers.length === 0) {
+    selectedScopePapers = [...papers];
+  }
+  if (!candidateTitle && attachmentTitles.length === 1) {
+    candidateTitle = attachmentTitles[0];
+  }
+  if (!candidateTitle && selectedScopePapers.length === 1) {
+    candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
+  }
+  if (isPlaceholderTitle(candidateTitle)) {
+    if (selectedScopePapers.length === 1) {
+      candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
+    } else if (attachmentTitles.length === 1) {
+      candidateTitle = attachmentTitles[0];
+    } else {
+      candidateTitle = "";
+    }
+  }
   const normalizedQuery = normalizeSearchQuery(prompt, candidateTitle);
   const lowered = prompt.toLowerCase();
   const requestedSections = detectRequestedSections(prompt);
@@ -469,6 +2419,7 @@ function buildLocalPromptAnalysis(
     author_hint: authorHint,
     normalized_query: normalizedQuery || prompt.trim(),
     requested_sections: requestedSections,
+    attachment_titles: attachmentTitles,
     target_in_scope: Boolean(target),
     target_paper_id: target?.paperId ?? 0,
     ranked_matches: rankedMatches,
@@ -721,10 +2672,11 @@ async function buildLocalResearchPlan(
   ownerUserId: string,
   folderId: string | "all" | undefined,
   projectId: string | undefined,
-  selectedRunIds: string[] = []
+  selectedRunIds: string[] = [],
+  attachmentNames: string[] = []
 ) {
   const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId, selectedRunIds);
-  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds);
+  const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds, attachmentNames);
   const needsAnalysis = pendingRunCount > 0;
   const requestedSections = Array.isArray(promptAnalysis.requested_sections)
     ? promptAnalysis.requested_sections
@@ -1056,6 +3008,10 @@ async function planDeepResearch(
   ownerUserId: string
 ): Promise<NextResponse> {
   const prompt = body.message?.trim();
+  const attachmentNames = (body.attachments ?? [])
+    .map((attachment) => String(attachment?.name ?? "").trim())
+    .filter(Boolean);
+  const selectedRunIds = body.selectedRunIds ?? [];
   if (!prompt) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
@@ -1084,7 +3040,11 @@ async function planDeepResearch(
       role: "user",
       content: prompt,
       messageKind: "chat",
-      metadata: { chatMode: "deep_research" },
+      metadata: {
+        chatMode: "deep_research",
+        attachments: body.attachments ?? [],
+        selectedRunIds: body.selectedRunIds ?? [],
+      },
     });
   }
 
@@ -1105,6 +3065,9 @@ async function planDeepResearch(
     | null = null;
 
   try {
+    const attachmentNames = (body.attachments ?? [])
+      .map((attachment) => String(attachment?.name ?? "").trim())
+      .filter(Boolean);
     rawPlan = await callPythonNodeService<{
       title?: string;
       summary?: string;
@@ -1121,7 +3084,8 @@ async function planDeepResearch(
       ownerUserId,
       folderId: body.folderId,
       projectId: body.projectId,
-      selectedRunIds: body.selectedRunIds ?? [],
+      selectedRunIds,
+      attachmentNames,
       message: prompt,
     });
   } catch {
@@ -1142,7 +3106,8 @@ async function planDeepResearch(
       ownerUserId,
       body.folderId,
       body.projectId,
-      body.selectedRunIds ?? []
+      selectedRunIds,
+      attachmentNames
     ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,
@@ -1270,107 +3235,265 @@ async function normalChat(
 
   const supabase = ownerUserId ? getSupabaseAdmin() : null;
   let thread: ChatThreadDetail["thread"] | null = null;
+  let existingThreadDetail: ChatThreadDetail | null = null;
   if (ownerUserId && supabase) {
-    thread = body.threadId
-      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
-      : await createWorkspaceThread(supabase, {
+    if (body.threadId) {
+      existingThreadDetail = await getWorkspaceThreadDetail(
+        supabase,
+        ownerUserId,
+        body.threadId
+      );
+      thread = existingThreadDetail.thread;
+    } else {
+      thread = await createWorkspaceThread(supabase, {
           ownerUserId,
           mode: "normal",
           title: buildThreadTitle(currentMessage),
           summary: currentMessage.slice(0, 180),
         });
+    }
+
+    const editTarget =
+      body.editMessageId && existingThreadDetail
+        ? existingThreadDetail.messages.find(
+            (message) =>
+              message.id === body.editMessageId && message.role === "user"
+          )
+        : null;
+
+    if (editTarget) {
+      const { error: updateMessageError } = await supabase
+        .from("workspace_messages")
+        .update({
+          content: currentMessage,
+          metadata: {
+            ...(editTarget.metadata &&
+            typeof editTarget.metadata === "object"
+              ? (editTarget.metadata as Record<string, unknown>)
+              : {}),
+            attachments: body.attachments ?? [],
+            selectedRunIds: body.selectedRunIds ?? [],
+            editedAt: new Date().toISOString(),
+          },
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editTarget.id)
+        .eq("thread_id", thread.id)
+        .eq("owner_user_id", ownerUserId)
+        .eq("role", "user");
+      if (updateMessageError) {
+        throw new Error(updateMessageError.message);
+      }
+
+      const { error: deleteLaterMessagesError } = await supabase
+        .from("workspace_messages")
+        .delete()
+        .eq("thread_id", thread.id)
+        .eq("owner_user_id", ownerUserId)
+        .gt("created_at", editTarget.created_at);
+      if (deleteLaterMessagesError) {
+        throw new Error(deleteLaterMessagesError.message);
+      }
+    } else {
+      await appendWorkspaceMessage(supabase, {
+        threadId: thread.id,
+        ownerUserId,
+        folderId: body.folderId,
+        role: "user",
+        content: currentMessage,
+        messageKind: "chat",
+        metadata: {
+          attachments: body.attachments ?? [],
+          selectedRunIds: body.selectedRunIds ?? [],
+        },
+      });
+    }
+  }
+
+  const requestedToolMode: ChatToolMode = body.toolMode ?? "auto";
+  const chartRequested =
+    requestedToolMode === "chart" ||
+    Boolean(body.chartRequest);
+
+  if (chartRequested) {
+    if (!ownerUserId || !supabase || !thread) {
+      return NextResponse.json(
+        { error: "Sign in to build charts from workspace data." },
+        { status: 401 }
+      );
+    }
+
+    let chart: ChatChartPayload | null = null;
+    let charts: ChatChartPayload[] = [];
+    let chartError: string | undefined;
+    let normalizedChartRequest: ResolvedChartPlan | null = null;
+    let normalizedChartRequests: ResolvedChartPlan[] = [];
+    let deferred: ChartAnalysisDeferred | undefined;
+    try {
+      const result = await buildChatChart(ownerUserId, body, existingThreadDetail);
+      chart = result.chart;
+      charts = result.charts;
+      chartError = result.error;
+      normalizedChartRequest = result.request;
+      normalizedChartRequests = result.requests;
+      deferred = result.deferred;
+    } catch (error) {
+      chartError =
+        error instanceof Error ? error.message : "Failed to build chart.";
+    }
+
+    const toolResults: ChatToolResult[] = [
+      charts.length > 0
+        ? { type: "chart", status: "succeeded", data: { charts } }
+        : deferred
+          ? { type: "chart", status: "skipped", data: deferred }
+        : { type: "chart", status: "failed", error: chartError },
+    ];
+    const answer = charts.length > 0
+      ? await synthesizeChartAnswer(body, charts, normalizedChartRequests)
+      : deferred
+        ? `${deferred.message}\n\n${deferred.detail}\n\nAfter the analysis status changes to succeeded, ask me for the chart again and I will use the analyzed results.`
+      : `I could not build that chart yet. ${chartError ?? "No analyzed data was found."}`;
+    const metadata = {
+      mode: charts.length > 0 ? "grounded" : deferred ? "analysis_queued" : "fallback",
+      toolResults,
+      chart,
+      charts,
+      chartRequest: normalizedChartRequest,
+      chartRequests: normalizedChartRequests,
+      deferredAnalysis: deferred ?? null,
+    };
 
     await appendWorkspaceMessage(supabase, {
       threadId: thread.id,
       ownerUserId,
       folderId: body.folderId,
-      role: "user",
-      content: currentMessage,
+      role: "assistant",
+      content: answer,
       messageKind: "chat",
-      metadata: { attachments: body.attachments ?? [] },
+      citations: [],
+      metadata,
+    });
+    await updateWorkspaceThread(supabase, thread.id, {
+      summary: answer.slice(0, 240),
+      title: thread.title || buildThreadTitle(currentMessage),
+    });
+
+    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+    return NextResponse.json({
+      mode: charts.length > 0 ? "grounded" : deferred ? "analysis_queued" : "fallback",
+      answer,
+      citations: [],
+      toolResults,
+      chart,
+      charts,
+      thread: detail.thread,
+      messages: detail.messages,
+      deepResearchSession: detail.deepResearchSession,
     });
   }
 
-  let proxied:
-    | {
-        answer?: string;
-        mode?: "grounded" | "fallback";
-        citations?: Citation[];
-        suggestedConcepts?: string[];
-      }
-    | null = null;
+  const citations: Citation[] = [];
+  let mode: "grounded" | "fallback" = "fallback";
+  const generationOptions = resolveGenerationOptions(body);
+  const selectedModel = resolveChatModel(body.model);
+  const webSearchRequested =
+    requestedToolMode === "web_search" ||
+    Boolean(body.webSearchEnabled) ||
+    (requestedToolMode === "auto" && hasWebSearchIntent(currentMessage));
+  const webSearchTools = webSearchRequested
+    ? [
+        {
+          type: "openrouter:web_search",
+          parameters: {
+            max_results: 5,
+            max_total_results: 8,
+            search_context_size: "medium",
+          },
+        },
+      ]
+    : undefined;
+  const toolResults: ChatToolResult[] = [];
 
-  try {
-    proxied = await callPythonNodeService<{
-      answer?: string;
-      mode?: "grounded" | "fallback";
-      citations?: Citation[];
-      suggestedConcepts?: string[];
-    }>("/chat", { ...body, ownerUserId });
-  } catch {
-    proxied = null;
+  const history = (body.messages ?? [])
+    .map((message) => ({
+      role: message.role,
+      content: String(message.content ?? "").trim(),
+    }))
+    .filter((message) => Boolean(message.content))
+    .slice(-16);
+
+  const chatMessages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
+    {
+      role: "system",
+      content:
+        "You are a helpful, general-purpose assistant. Respond conversationally and clearly. " +
+        "Do not assume access to workspace databases, filters, or paper corpora unless the user explicitly provides that context in the chat.",
+    },
+  ];
+
+  if (history.length > 0) {
+    chatMessages.push(...history);
+  } else {
+    chatMessages.push({ role: "user", content: currentMessage });
   }
 
-  let answer = proxied?.answer ?? "";
-  let mode = proxied?.mode ?? "fallback";
-  let citations = proxied?.citations ?? [];
+  if (attachmentContext) {
+    for (let index = chatMessages.length - 1; index >= 0; index -= 1) {
+      if (chatMessages[index].role === "user") {
+        chatMessages[index] = {
+          ...chatMessages[index],
+          content: `${chatMessages[index].content}${attachmentContext}`,
+        };
+        break;
+      }
+    }
+  }
+
+  let answer = "";
+  let modelError: string | undefined;
+  try {
+    const completion = await createChatCompletionResult(
+      chatMessages,
+      generationOptions.temperature ?? 0.4,
+      selectedModel,
+      "CHAT_SYNTHESIS",
+      {
+        topP: generationOptions.topP,
+        topK: generationOptions.topK,
+        maxTokens: generationOptions.maxTokens,
+        frequencyPenalty: generationOptions.frequencyPenalty,
+        presencePenalty: generationOptions.presencePenalty,
+        tools: webSearchTools,
+        toolChoice: webSearchRequested ? "auto" : undefined,
+      }
+    );
+    answer = completion?.content ?? "";
+    const webCitations = extractWebCitations(completion?.annotations ?? []);
+    citations.push(...webCitations);
+    if (webSearchRequested) {
+      toolResults.push({
+        type: "web_search",
+        status: webCitations.length > 0 ? "succeeded" : "skipped",
+        citations: webCitations,
+      });
+    }
+  } catch (error) {
+    modelError = error instanceof Error ? error.message : "Model request failed.";
+    if (webSearchRequested) {
+      toolResults.push({
+        type: "web_search",
+        status: "failed",
+        error: modelError,
+      });
+    }
+  }
 
   if (!answer) {
-    let papers: Awaited<ReturnType<typeof retrieveCorpusPapers>>["papers"] = [];
-    let corpusError: string | undefined;
-
-    try {
-      const corpus = await retrieveCorpusPapers(
-        currentMessage,
-        ownerUserId,
-        body.folderId && body.folderId !== "all" ? body.folderId : null,
-        body.projectId ?? null,
-        body.selectedRunIds ?? []
-      );
-      papers = corpus.papers;
-      citations = corpus.citations;
-    } catch (error) {
-      corpusError = error instanceof Error ? error.message : "Corpus retrieval failed.";
-    }
-
-    if (papers.length > 0) {
-      const context = buildGroundedContext(papers);
-      const llmAnswer = await createChatCompletion(
-        [
-          {
-            role: "system",
-            content:
-              "You are the chat assistant for a research workspace. Answer from the supplied corpus context first. Cite papers inline as [Paper <id>]. If the corpus is insufficient, add a final section titled 'Broader guidance beyond the corpus'. Do not invent citations.",
-          },
-          {
-            role: "user",
-            content: `Question:\n${currentMessage}${attachmentContext}\n\nCorpus context:\n${context}`,
-          },
-        ],
-        0.2,
-        body.model,
-        "CHAT_SYNTHESIS"
-      );
-      answer = llmAnswer ?? buildDeterministicGroundedAnswer(currentMessage, papers);
-      mode = "grounded";
-    } else {
-      const fallbackPrompt = [
-        {
-          role: "system" as const,
-          content:
-            "You are the chat assistant for a research workspace. The stored corpus does not directly answer the user's request. Provide careful broader guidance, and begin the answer with the heading 'Broader guidance beyond the corpus:'.",
-        },
-        {
-          role: "user" as const,
-          content: `${currentMessage}${attachmentContext}`,
-        },
-      ];
-
-      answer =
-        (await createChatCompletion(fallbackPrompt, 0.4, body.model, "CHAT_SYNTHESIS")) ??
-        buildFallbackAnswer(currentMessage, corpusError);
-      mode = "fallback";
-    }
+    answer = buildFallbackAnswer(currentMessage, modelError);
+  }
+  if (citations.length > 0 || webSearchRequested) {
+    mode = "grounded";
   }
 
   if (ownerUserId && supabase && thread) {
@@ -1382,7 +3505,12 @@ async function normalChat(
       content: answer,
       messageKind: "chat",
       citations,
-      metadata: { mode },
+      metadata: {
+        mode,
+        model: selectedModel,
+        toolResults,
+        webSearchEnabled: webSearchRequested,
+      },
     });
     await updateWorkspaceThread(supabase, thread.id, {
       summary: answer.slice(0, 240),
@@ -1394,6 +3522,7 @@ async function normalChat(
       mode,
       answer,
       citations,
+      toolResults,
       thread: detail.thread,
       messages: detail.messages,
       deepResearchSession: detail.deepResearchSession,
@@ -1404,6 +3533,7 @@ async function normalChat(
     mode,
     answer,
     citations,
+    toolResults,
   });
 }
 

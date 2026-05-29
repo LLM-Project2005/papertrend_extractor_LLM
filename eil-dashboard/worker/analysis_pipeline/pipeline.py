@@ -36,6 +36,7 @@ def process_pdf_run(
         "ingestion_run_id": str(run.get("id") or ""),
         "owner_user_id": str(run.get("owner_user_id") or ""),
         "folder_id": str(run.get("folder_id") or ""),
+        "input_payload": run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {},
         "errors": [],
         "messages": [],
         "status": "starting",

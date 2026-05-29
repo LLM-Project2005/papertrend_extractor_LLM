@@ -32,10 +32,10 @@ function SectionHeader({
 }) {
   return (
     <div className="mb-5">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400 dark:text-[#6f6f6f]">
+      <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
         {step}
       </p>
-      <h2 className="mt-2 text-xl font-semibold tracking-tight text-slate-900 dark:text-[#ececec]">
+      <h2 className="mt-2 text-xl font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
         {title}
       </h2>
       <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">{description}</p>
@@ -125,7 +125,7 @@ export default function StartWorkspaceClient() {
   return (
     <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_340px]">
       <section className="space-y-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 1"
             title="Workspace basics"
@@ -140,7 +140,7 @@ export default function StartWorkspaceClient() {
               <input
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#232323] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
                 placeholder="Faculty research workspace"
               />
             </label>
@@ -152,7 +152,7 @@ export default function StartWorkspaceClient() {
               <input
                 value={organization}
                 onChange={(event) => setOrganization(event.target.value)}
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#232323] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
+                className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
                 placeholder="Department, lab, or faculty"
               />
             </label>
@@ -165,13 +165,13 @@ export default function StartWorkspaceClient() {
             <input
               value={domain}
               onChange={(event) => setDomain(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#353535] dark:bg-[#232323] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
+              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
               placeholder="Education, engineering, health sciences, policy, ..."
             />
           </label>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 2"
             title="Primary objective"
@@ -190,7 +190,7 @@ export default function StartWorkspaceClient() {
                   className={`w-full rounded-xl border px-4 py-4 text-left transition-colors ${
                     isActive
                       ? "border-slate-900 bg-slate-900 text-white dark:border-[#ececec] dark:bg-[#ececec] dark:text-[#171717]"
-                      : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-[#303030] dark:bg-[#1d1d1d] dark:text-[#ececec] dark:hover:border-[#444444]"
+                      : "border-slate-200 bg-white text-slate-900 hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:hover:border-[#3a3a3a]"
                   }`}
                 >
                   <p className="text-sm font-medium">{item.label}</p>
@@ -207,7 +207,7 @@ export default function StartWorkspaceClient() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 3"
             title="First intake path"
@@ -225,17 +225,17 @@ export default function StartWorkspaceClient() {
                   onClick={() => setPrimarySource(item.id)}
                   className={`w-full rounded-xl border px-4 py-4 text-left transition-colors ${
                     isActive
-                      ? "border-slate-900 bg-slate-50 dark:border-[#4d4d4d] dark:bg-[#232323]"
-                      : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#303030] dark:bg-[#1d1d1d] dark:hover:border-[#444444]"
+                      ? "border-slate-900 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                      : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                   }`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">{item.label}</p>
                     <span
-                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.16em] ${
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-normal ${
                         item.status === "ready"
                           ? "bg-emerald-100 text-emerald-700 dark:bg-[#193126] dark:text-[#7ed9a8]"
-                          : "bg-slate-100 text-slate-500 dark:bg-[#252525] dark:text-[#8f8f8f]"
+                          : "bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#8f8f8f]"
                       }`}
                     >
                       {item.status}
@@ -250,7 +250,7 @@ export default function StartWorkspaceClient() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 4"
             title="Prioritized outputs"
@@ -268,8 +268,8 @@ export default function StartWorkspaceClient() {
                   onClick={() => toggleOutput(item.id)}
                   className={`rounded-xl border px-4 py-4 text-left transition-colors ${
                     isActive
-                      ? "border-slate-900 bg-slate-50 dark:border-[#4d4d4d] dark:bg-[#232323]"
-                      : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#303030] dark:bg-[#1d1d1d] dark:hover:border-[#444444]"
+                      ? "border-slate-900 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                      : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                   }`}
                 >
                   <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">{item.label}</p>
@@ -284,9 +284,9 @@ export default function StartWorkspaceClient() {
       </section>
 
       <aside className="space-y-6">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Current summary</p>
-          <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-900 dark:text-[#ececec]">
+          <h2 className="mt-3 text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
             {name || profile.name}
           </h2>
           <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
@@ -310,7 +310,7 @@ export default function StartWorkspaceClient() {
           </dl>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <h3 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">Readiness</h3>
           <div className="mt-4 space-y-4">
             {checklist.map((item) => (
@@ -333,9 +333,9 @@ export default function StartWorkspaceClient() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#2c2c2c] dark:bg-[#1d1d1d]">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <div className="flex items-start gap-3">
-            <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-[#b8b8b8]">
+            <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#b8b8b8]">
               <HomeIcon className="h-4 w-4" />
             </span>
             <div>
@@ -348,7 +348,7 @@ export default function StartWorkspaceClient() {
           </div>
 
           <div className="mt-4 flex items-start gap-3">
-            <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-[#b8b8b8]">
+            <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#b8b8b8]">
               <UploadIcon className="h-4 w-4" />
             </span>
             <p className="text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">

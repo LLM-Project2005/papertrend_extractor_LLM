@@ -28,7 +28,7 @@ desktop.ini
 # ── PDF data folders (too large for GitHub – keep locally) ──
 10_years_test/
 Test_batch/
-
+papers/
 # ── IDE ──
 .vscode/
 .idea/
@@ -57,3 +57,10 @@ __pycache__/
 
 cloudrun.env.yaml
 .gcloud/
+
+# Private professor/local batch export artifacts
+Progress status _ EIL papers - *.csv
+data/cache/professor_export/
+data/output/eil_professor*
+data/output/*professor*
+papers-*.zip

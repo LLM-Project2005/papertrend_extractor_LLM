@@ -70,6 +70,7 @@ export async function POST(request: Request) {
     try {
       queueStart = await triggerWorkerQueueWithRetries({
         maxRuns: Math.min(Math.max(queuedRuns.length, 1), 5),
+        taskCount: queuedRuns.length,
         reason: "manual-start-processing",
         force: true,
       });

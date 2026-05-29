@@ -54,6 +54,55 @@ async function triggerWorkerEndpoint(
   }
 }
 
+export async function enqueueWorkerQueueTasks(options?: {
+  taskCount?: number;
+  maxRuns?: number;
+  reason?: string;
+  force?: boolean;
+}): Promise<{ started: boolean; status: number; payload: Record<string, unknown> }> {
+  const workerServiceUrl = getWorkerServiceUrl();
+  const workerWebhookSecret = getWorkerWebhookSecret();
+
+  if (!workerServiceUrl || !workerWebhookSecret) {
+    return { started: false, status: 0, payload: { skipped: true, reason: "missing_worker_config" } };
+  }
+
+  const taskCount = Math.min(Math.max(options?.taskCount ?? 1, 1), 50);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+
+  try {
+    const response = await fetch(`${workerServiceUrl}/enqueue-ingestion-tasks`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${workerWebhookSecret}`,
+      },
+      body: JSON.stringify({
+        taskCount,
+        maxRuns: Math.min(Math.max(options?.maxRuns ?? 1, 1), 5),
+        reason: options?.reason ?? "api-cloud-task-trigger",
+        force: Boolean(options?.force),
+      }),
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    const enqueued = response.ok && payload.enqueued === true;
+    return {
+      started: enqueued,
+      status: response.status,
+      payload: {
+        ...payload,
+        trigger_kind: "cloud_tasks",
+      },
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function callWorkerControlEndpoint(
   path: string,
   body?: Record<string, unknown>
