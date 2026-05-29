@@ -177,13 +177,13 @@ function DesktopSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <aside className="group fixed inset-y-0 left-0 top-16 z-30 hidden w-[60px] overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[220px] dark:border-[#1f1f1f] dark:bg-[#050505] lg:block">
-      <div className="flex h-full flex-col py-3">
+    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[208px] dark:border-[#1f1f1f] dark:bg-[#050505] lg:block">
+      <div className="flex h-full flex-col py-2">
         <nav className="flex-1 overflow-y-auto px-2">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.id}
-              className={sectionIndex === 0 ? "" : "mt-4 border-t border-slate-200 pt-4 dark:border-[#1f1f1f]"}
+              className={sectionIndex === 0 ? "" : "mt-3 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]"}
             >
               <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
                 {section.label}
@@ -199,9 +199,9 @@ function DesktopSidebar({
                       href={item.href}
                       prefetch={false}
                       onClick={() => onNavigate(item.href)}
-                      className={`mx-auto flex h-11 w-11 items-center justify-center rounded-xl text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
+                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
-                          ? "bg-slate-900 text-white dark:bg-[#030303]"
+                          ? "bg-slate-900 text-white dark:bg-[#111111]"
                           : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                       }`}
                     >
@@ -465,6 +465,51 @@ export default function WorkspaceShell({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-[#f2f2f2]">
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95 relative">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSidebarOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] lg:hidden"
+              aria-label="Open workspace navigation"
+            >
+              <MenuIcon className="h-4 w-4" />
+            </button>
+
+            <Link
+              href="/organizations"
+              prefetch={false}
+              onClick={() => handleNavigate("/organizations")}
+              className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white transition-transform hover:scale-[1.02]"
+              aria-label="Go to start page"
+            >
+              <LogoMarkIcon className="h-5 w-5" />
+            </Link>
+
+            <WorkspaceBreadcrumb
+              organizationName={currentOrganization?.name ?? ""}
+              projectName={currentProject?.name ?? ""}
+              onNavigate={handleNavigate}
+            />
+          </div>
+
+          <div className="order-3 w-full min-w-0 lg:order-2 lg:max-w-[560px] lg:flex-1">
+            <WorkspaceGlobalSearch pageItems={SEARCH_PAGE_ITEMS} />
+          </div>
+
+          <div className="ml-auto flex items-center gap-2 lg:order-3">
+            <ThemeToggle compact />
+            <WorkspaceProfileMenu />
+          </div>
+        </div>
+        {navigating ? (
+          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-emerald-500/15">
+            <div className="h-full w-1/2 animate-pulse bg-emerald-500" />
+          </div>
+        ) : null}
+      </header>
+
       <DesktopSidebar pathname={pathname} onNavigate={handleNavigate} />
 
       {sidebarOpen ? (
@@ -479,52 +524,7 @@ export default function WorkspaceShell({
         </div>
       ) : null}
 
-      <div className="min-h-screen lg:pl-[60px]">
-        <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95 relative">
-          <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(true)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] lg:hidden"
-                aria-label="Open workspace navigation"
-              >
-                <MenuIcon className="h-4 w-4" />
-              </button>
-
-              <Link
-                href="/organizations"
-                prefetch={false}
-                onClick={() => handleNavigate("/organizations")}
-                className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white transition-transform hover:scale-[1.02]"
-                aria-label="Go to start page"
-              >
-                <LogoMarkIcon className="h-5 w-5" />
-              </Link>
-
-              <WorkspaceBreadcrumb
-                organizationName={currentOrganization?.name ?? ""}
-                projectName={currentProject?.name ?? ""}
-                onNavigate={handleNavigate}
-              />
-            </div>
-
-            <div className="order-3 w-full min-w-0 lg:order-2 lg:max-w-[560px] lg:flex-1">
-              <WorkspaceGlobalSearch pageItems={SEARCH_PAGE_ITEMS} />
-            </div>
-
-            <div className="ml-auto flex items-center gap-2 lg:order-3">
-              <ThemeToggle compact />
-              <WorkspaceProfileMenu />
-            </div>
-          </div>
-          {navigating ? (
-            <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-emerald-500/15">
-              <div className="h-full w-1/2 animate-pulse bg-emerald-500" />
-            </div>
-          ) : null}
-        </header>
-
+      <div className="min-h-[calc(100vh-4rem)] lg:pl-14">
         <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
           {workspaceLoading ? (
             <WorkspaceLoadingState />
