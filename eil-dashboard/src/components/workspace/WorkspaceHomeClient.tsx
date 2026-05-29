@@ -64,15 +64,15 @@ const AI_ACTIONS = [
 ] as const;
 
 const surfaceClass =
-  "rounded-xl border border-[#ebebeb] bg-white shadow-[0_1px_1px_rgba(0,0,0,0.02),0_2px_2px_rgba(0,0,0,0.04)] dark:border-[#2a2a2a] dark:bg-[#171717]";
+  "rounded-xl border border-[#ebebeb] bg-white shadow-[0_1px_1px_rgba(0,0,0,0.02),0_2px_2px_rgba(0,0,0,0.04)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-none";
 const softSurfaceClass =
-  "rounded-lg border border-[#ebebeb] bg-[#fafafa] dark:border-[#2a2a2a] dark:bg-[#111111]";
+  "rounded-lg border border-[#ebebeb] bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#030303]";
 const eyebrowClass =
   "font-mono text-[11px] font-medium uppercase tracking-normal text-[#888888] dark:text-[#8f8f8f]";
 const primaryButtonClass =
   "inline-flex min-h-11 items-center gap-2 rounded-full bg-[#171717] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]";
 const secondaryButtonClass =
-  "inline-flex min-h-11 items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-5 py-2.5 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#333333] dark:bg-[#171717] dark:text-white dark:hover:border-[#555555] dark:hover:bg-[#1f1f1f]";
+  "inline-flex min-h-11 items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-5 py-2.5 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]";
 
 function MetricCard({
   label,
@@ -115,10 +115,10 @@ function AIActionCard({
   return (
     <Link
       href="/workspace/chat"
-      className={`${surfaceClass} group flex min-h-[150px] flex-col justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:hover:border-[#444444] dark:hover:bg-[#1f1f1f]`}
+      className={`${surfaceClass} group flex min-h-[150px] flex-col justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]`}
     >
       <div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#171717] dark:border-[#333333] dark:bg-[#111111] dark:text-white">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#171717] dark:border-[#242424] dark:bg-[#030303] dark:text-white">
           <Icon className="h-5 w-5" />
         </span>
         <h3 className="mt-4 text-sm font-semibold text-[#171717] dark:text-white">
@@ -128,7 +128,7 @@ function AIActionCard({
           {description}
         </p>
       </div>
-      <p className="mt-4 line-clamp-2 rounded-md bg-[#fafafa] px-3 py-2 font-mono text-xs leading-5 text-[#4d4d4d] transition-colors group-hover:bg-white dark:bg-[#111111] dark:text-[#8f8f8f] dark:group-hover:bg-[#161616]">
+      <p className="mt-4 line-clamp-2 rounded-md bg-[#fafafa] px-3 py-2 font-mono text-xs leading-5 text-[#4d4d4d] transition-colors group-hover:bg-white dark:bg-[#030303] dark:text-[#8f8f8f] dark:group-hover:bg-[#050505]">
         {prompt}
       </p>
     </Link>
@@ -155,7 +155,7 @@ function InsightList({
           items.map((item, index) => (
             <div
               key={`${title}-${item.label}`}
-              className="flex items-center justify-between gap-4 rounded-lg border border-[#ebebeb] bg-white px-3 py-2.5 dark:border-[#2a2a2a] dark:bg-[#171717]"
+              className="flex items-center justify-between gap-4 rounded-lg border border-[#ebebeb] bg-white px-3 py-2.5 dark:border-[#1f1f1f] dark:bg-[#050505]"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-medium text-[#171717] dark:text-white">
@@ -167,7 +167,7 @@ function InsightList({
                   </p>
                 ) : null}
               </div>
-              <span className="rounded-full bg-[#fafafa] px-2.5 py-1 font-mono text-xs text-[#4d4d4d] dark:bg-[#111111] dark:text-[#d0d0d0]">
+              <span className="rounded-full bg-[#fafafa] px-2.5 py-1 font-mono text-xs text-[#4d4d4d] dark:bg-[#030303] dark:text-[#d0d0d0]">
                 {item.value.toLocaleString()}
               </span>
             </div>
@@ -224,15 +224,15 @@ function formatTimestamp(value?: string | null) {
 
 function statusTone(status: IngestionRunRow["status"], stuck: boolean) {
   if (status === "succeeded") {
-    return "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-300";
+    return "bg-[#d3e5ff] text-[#0761d1] dark:bg-[#0b274a] dark:text-[#58a6ff]";
   }
   if (status === "failed") {
-    return "bg-red-100 text-red-700 dark:bg-red-950/30 dark:text-red-300";
+    return "bg-[#f7d4d6] text-[#c50000] dark:bg-[#351113] dark:text-[#ffb4b8]";
   }
   if (stuck) {
-    return "bg-amber-100 text-amber-800 dark:bg-amber-950/30 dark:text-amber-200";
+    return "bg-[#ffefcf] text-[#ab570a] dark:bg-[#382300] dark:text-[#ffd38a]";
   }
-  return "bg-slate-100 text-slate-600 dark:bg-[#242424] dark:text-[#d0d0d0]";
+  return "bg-[#fafafa] text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#050505] dark:text-[#d0d0d0] dark:ring-[#242424]";
 }
 
 function RunActivityRow({ run }: { run: IngestionRunRow }) {
@@ -241,8 +241,8 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
   const statusLabel = stuck ? "needs attention" : run.status;
 
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-[#ebebeb] bg-white px-4 py-3 dark:border-[#2a2a2a] dark:bg-[#171717]">
-      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#333333] dark:bg-[#111111] dark:text-[#bdbdbd]">
+    <div className="flex items-start gap-3 rounded-lg border border-[#ebebeb] bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#242424] dark:bg-[#030303] dark:text-[#bdbdbd]">
         <FileIcon className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
@@ -587,7 +587,7 @@ export default function WorkspaceHomeClient() {
               Bring papers into analysis, watch the queue, and jump straight into AI
               workflows once the workspace has data.
             </p>
-            <p className="mt-4 inline-flex rounded-full bg-[#fafafa] px-3 py-1 font-mono text-xs text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#111111] dark:text-[#a3a3a3] dark:ring-[#333333]">
+            <p className="mt-4 inline-flex rounded-full bg-[#fafafa] px-3 py-1 font-mono text-xs text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#030303] dark:text-[#a3a3a3] dark:ring-[#242424]">
               Showing all analyzed data across this workspace
             </p>
           </div>
@@ -628,31 +628,31 @@ export default function WorkspaceHomeClient() {
       ) : null}
 
       {liveDataError ? (
-        <section className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-5 py-4 text-sm text-[#c50000] dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        <section className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-5 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
           Live dashboard data could not be loaded right now. The backend returned an error while assembling this workspace&apos;s analytics: {liveDataError}
         </section>
       ) : null}
 
       {isPreviewMode ? (
-        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 text-sm text-[#ab570a] dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 text-sm text-[#ab570a] dark:border-[#5f3b00] dark:bg-[#211600] dark:text-[#ffd38a]">
           Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
         </section>
       ) : null}
 
       {data?.diagnostics?.recoveredFromLegacyScope ? (
-        <section className="rounded-lg border border-[#d3e5ff] bg-[#f5f9ff] px-5 py-4 text-sm text-[#0761d1] dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+        <section className="rounded-lg border border-[#d3e5ff] bg-[#f5f9ff] px-5 py-4 text-sm text-[#0761d1] dark:border-[#14395f] dark:bg-[#07192b] dark:text-[#8bbcff]">
           Showing recovered historical analyses because this workspace has older canonical rows available.
         </section>
       ) : null}
 
       {attentionRuns.length > 0 ? (
-        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/30">
+        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 dark:border-[#5f3b00] dark:bg-[#211600]">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-sm font-semibold text-[#171717] dark:text-amber-100">
+              <p className="text-sm font-semibold text-[#171717] dark:text-[#fff4dc]">
                 Needs attention
               </p>
-              <p className="mt-1 text-sm leading-6 text-[#ab570a] dark:text-amber-200">
+              <p className="mt-1 text-sm leading-6 text-[#ab570a] dark:text-[#ffd38a]">
                 {attentionRuns.length} recent file{attentionRuns.length === 1 ? "" : "s"} failed or stopped updating.
               </p>
             </div>
@@ -660,14 +660,14 @@ export default function WorkspaceHomeClient() {
               {attentionRuns.map((run) => (
                 <span
                   key={run.id}
-                  className="max-w-[260px] truncate rounded-full border border-[#ffefcf] bg-white px-3 py-1 font-mono text-xs text-[#ab570a] dark:border-amber-900/70 dark:bg-[#171717] dark:text-amber-100"
+                  className="max-w-[260px] truncate rounded-full border border-[#ffefcf] bg-white px-3 py-1 font-mono text-xs text-[#ab570a] dark:border-[#5f3b00] dark:bg-[#050505] dark:text-[#fff4dc]"
                 >
                   {runTitleOf(run)}
                 </span>
               ))}
               <Link
                 href="/workspace/logs"
-                className="inline-flex items-center gap-1 rounded-full bg-[#171717] px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-black dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
+                className="inline-flex items-center gap-1 rounded-full bg-[#171717] px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
               >
                 Review
                 <ArrowRightIcon className="h-3 w-3" />
@@ -742,7 +742,7 @@ export default function WorkspaceHomeClient() {
             </div>
             <Link
               href="/workspace/dashboard"
-              className="inline-flex items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#333333] dark:bg-[#171717] dark:text-white dark:hover:border-[#555555]"
+              className="inline-flex items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#242424] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
               Dashboard
               <ArrowRightIcon className="h-4 w-4" />
@@ -784,20 +784,20 @@ export default function WorkspaceHomeClient() {
           <div className="mt-5 space-y-3">
             {libraryLoading ? (
               <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#303030]">
-                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
+                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#a1a1a1] border-t-transparent dark:border-[#8e8e8e]" />
                 <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
                   Loading recent activity
                 </p>
               </div>
             ) : libraryError ? (
-              <p className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-4 py-4 text-sm text-[#c50000] dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+              <p className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-4 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
                 {libraryError}
               </p>
             ) : recentRuns.length > 0 ? (
               recentRuns.map((run) => <RunActivityRow key={run.id} run={run} />)
             ) : (
               <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#303030]">
-                <CheckCircleIcon className="mx-auto h-8 w-8 text-slate-300 dark:text-[#555555]" />
+                <CheckCircleIcon className="mx-auto h-8 w-8 text-[#a1a1a1] dark:text-[#555555]" />
                 <p className="mt-3 text-sm font-medium text-[#171717] dark:text-[#d0d0d0]">
                   No file activity yet
                 </p>
