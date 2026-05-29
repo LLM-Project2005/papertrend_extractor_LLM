@@ -465,7 +465,7 @@ export default function WorkspaceShell({
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-[#f2f2f2]">
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95 relative">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95">
         <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
@@ -478,11 +478,11 @@ export default function WorkspaceShell({
             </button>
 
             <Link
-              href="/organizations"
+              href="/"
               prefetch={false}
-              onClick={() => handleNavigate("/organizations")}
+              onClick={() => handleNavigate("/")}
               className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#1f9d63] text-white transition-transform hover:scale-[1.02]"
-              aria-label="Go to start page"
+              aria-label="Go to front page"
             >
               <LogoMarkIcon className="h-5 w-5" />
             </Link>
@@ -524,7 +524,7 @@ export default function WorkspaceShell({
         </div>
       ) : null}
 
-      <div className="min-h-[calc(100vh-4rem)] lg:pl-14">
+      <div className="min-h-screen pt-[116px] lg:pl-14 lg:pt-16">
         <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
           {workspaceLoading ? (
             <WorkspaceLoadingState />
