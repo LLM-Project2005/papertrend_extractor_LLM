@@ -63,6 +63,17 @@ const AI_ACTIONS = [
   },
 ] as const;
 
+const surfaceClass =
+  "rounded-xl border border-[#ebebeb] bg-white shadow-[0_1px_1px_rgba(0,0,0,0.02),0_2px_2px_rgba(0,0,0,0.04)] dark:border-[#2a2a2a] dark:bg-[#171717]";
+const softSurfaceClass =
+  "rounded-lg border border-[#ebebeb] bg-[#fafafa] dark:border-[#2a2a2a] dark:bg-[#111111]";
+const eyebrowClass =
+  "font-mono text-[11px] font-medium uppercase tracking-normal text-[#888888] dark:text-[#8f8f8f]";
+const primaryButtonClass =
+  "inline-flex min-h-11 items-center gap-2 rounded-full bg-[#171717] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]";
+const secondaryButtonClass =
+  "inline-flex min-h-11 items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-5 py-2.5 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#333333] dark:bg-[#171717] dark:text-white dark:hover:border-[#555555] dark:hover:bg-[#1f1f1f]";
+
 function MetricCard({
   label,
   value,
@@ -75,16 +86,16 @@ function MetricCard({
   detail?: string;
 }) {
   return (
-    <article className="app-card px-5 py-4">
+    <article className={`${surfaceClass} px-5 py-5`}>
       <div className="flex items-center justify-between gap-3">
-        <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">{label}</p>
-        <span className="text-slate-400 dark:text-[#8e8e8e]">{icon}</span>
+        <p className={eyebrowClass}>{label}</p>
+        <span className="text-[#888888] dark:text-[#8f8f8f]">{icon}</span>
       </div>
-      <p className="mt-4 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+      <p className="mt-5 text-3xl font-semibold tracking-normal text-[#171717] dark:text-white">
         {value}
       </p>
       {detail ? (
-        <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{detail}</p>
+        <p className="mt-2 text-sm leading-5 text-[#4d4d4d] dark:text-[#a3a3a3]">{detail}</p>
       ) : null}
     </article>
   );
@@ -104,20 +115,20 @@ function AIActionCard({
   return (
     <Link
       href="/workspace/chat"
-      className="group flex min-h-[150px] flex-col justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2f2f2f] dark:bg-[#171717] dark:hover:border-[#3a3a3a] dark:hover:bg-[#1f1f1f]"
+      className={`${surfaceClass} group flex min-h-[150px] flex-col justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:hover:border-[#444444] dark:hover:bg-[#1f1f1f]`}
     >
       <div>
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#242424] dark:text-[#d0d0d0]">
+        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#171717] dark:border-[#333333] dark:bg-[#111111] dark:text-white">
           <Icon className="h-5 w-5" />
         </span>
-        <h3 className="mt-4 text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+        <h3 className="mt-4 text-sm font-semibold text-[#171717] dark:text-white">
           {title}
         </h3>
-        <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+        <p className="mt-2 text-sm leading-6 text-[#4d4d4d] dark:text-[#a3a3a3]">
           {description}
         </p>
       </div>
-      <p className="mt-4 line-clamp-2 rounded-xl bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500 transition-colors group-hover:bg-white dark:bg-[#111111] dark:text-[#8f8f8f] dark:group-hover:bg-[#161616]">
+      <p className="mt-4 line-clamp-2 rounded-md bg-[#fafafa] px-3 py-2 font-mono text-xs leading-5 text-[#4d4d4d] transition-colors group-hover:bg-white dark:bg-[#111111] dark:text-[#8f8f8f] dark:group-hover:bg-[#161616]">
         {prompt}
       </p>
     </Link>
@@ -136,33 +147,33 @@ function InsightList({
   return (
     <div>
       <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">{title}</h3>
-        <span className="text-xs font-medium text-slate-400 dark:text-[#6f6f6f]">Top 5</span>
+        <h3 className="text-sm font-semibold text-[#171717] dark:text-white">{title}</h3>
+        <span className="font-mono text-xs text-[#888888] dark:text-[#8f8f8f]">Top 5</span>
       </div>
       <div className="mt-3 space-y-2">
         {items.length > 0 ? (
           items.map((item, index) => (
             <div
               key={`${title}-${item.label}`}
-              className="flex items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-[#2f2f2f] dark:bg-[#171717]"
+              className="flex items-center justify-between gap-4 rounded-lg border border-[#ebebeb] bg-white px-3 py-2.5 dark:border-[#2a2a2a] dark:bg-[#171717]"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-800 dark:text-[#e6e6e6]">
+                <p className="truncate text-sm font-medium text-[#171717] dark:text-white">
                   {index + 1}. {item.label}
                 </p>
                 {item.detail ? (
-                  <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-[#8f8f8f]">
+                  <p className="mt-0.5 truncate text-xs text-[#888888] dark:text-[#8f8f8f]">
                     {item.detail}
                   </p>
                 ) : null}
               </div>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-[#242424] dark:text-[#d0d0d0]">
+              <span className="rounded-full bg-[#fafafa] px-2.5 py-1 font-mono text-xs text-[#4d4d4d] dark:bg-[#111111] dark:text-[#d0d0d0]">
                 {item.value.toLocaleString()}
               </span>
             </div>
           ))
         ) : (
-          <p className="rounded-xl border border-dashed border-slate-200 px-3 py-4 text-sm text-slate-500 dark:border-[#303030] dark:text-[#8f8f8f]">
+          <p className="rounded-lg border border-dashed border-[#ebebeb] px-3 py-4 text-sm text-[#4d4d4d] dark:border-[#303030] dark:text-[#8f8f8f]">
             {emptyLabel}
           </p>
         )}
@@ -230,17 +241,17 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
   const statusLabel = stuck ? "needs attention" : run.status;
 
   return (
-    <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#2f2f2f] dark:bg-[#171717]">
-      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#242424] dark:text-[#bdbdbd]">
+    <div className="flex items-start gap-3 rounded-lg border border-[#ebebeb] bg-white px-4 py-3 dark:border-[#2a2a2a] dark:bg-[#171717]">
+      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#333333] dark:bg-[#111111] dark:text-[#bdbdbd]">
         <FileIcon className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+          <p className="min-w-0 truncate text-sm font-medium text-[#171717] dark:text-white">
             {runTitleOf(run)}
           </p>
           <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] ${statusTone(
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-normal ${statusTone(
               run.status,
               stuck
             )}`}
@@ -248,10 +259,10 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
             {statusLabel}
           </span>
         </div>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#4d4d4d] dark:text-[#8f8f8f]">
           {getRunStageCaption(run)}
         </p>
-        <p className="mt-2 text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400 dark:text-[#6f6f6f]">
+        <p className="mt-2 font-mono text-[11px] text-[#888888] dark:text-[#6f6f6f]">
           {formatTimestamp(timestamp)}
         </p>
       </div>
@@ -560,21 +571,23 @@ export default function WorkspaceHomeClient() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <section className="app-surface px-6 py-6">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+    <div className="mx-auto max-w-[1400px] space-y-6">
+      <section className={`${surfaceClass} relative overflow-hidden px-6 py-8 sm:px-8`}>
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#007cf0,#00dfd8,#7928ca,#ff0080,#ff4d4d,#f9cb28)]" />
+        <div className="pointer-events-none absolute right-0 top-0 h-40 w-1/2 bg-[radial-gradient(ellipse_at_top_right,rgba(0,124,240,0.14),transparent_55%)]" />
+        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
-            <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">
+            <p className={eyebrowClass}>
               Workspace command center
             </p>
-            <h1 className="mt-1 text-3xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+            <h1 className="mt-3 text-4xl font-semibold leading-[1.05] tracking-normal text-[#171717] dark:text-white">
               {profile.name}
             </h1>
-            <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
+            <p className="mt-4 max-w-2xl text-base leading-7 text-[#4d4d4d] dark:text-[#a3a3a3]">
               Bring papers into analysis, watch the queue, and jump straight into AI
               workflows once the workspace has data.
             </p>
-            <p className="mt-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-400 dark:text-[#6f6f6f]">
+            <p className="mt-4 inline-flex rounded-full bg-[#fafafa] px-3 py-1 font-mono text-xs text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#111111] dark:text-[#a3a3a3] dark:ring-[#333333]">
               Showing all analyzed data across this workspace
             </p>
           </div>
@@ -583,14 +596,14 @@ export default function WorkspaceHomeClient() {
             <button
               type="button"
               onClick={() => setShowAnalyzeModal(true)}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#f3f3f3] dark:text-[#171717] dark:hover:bg-white"
+              className={primaryButtonClass}
             >
               <UploadIcon className="h-4 w-4" />
               <span>Analyze papers</span>
             </button>
             <Link
               href="/workspace/chat"
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className={secondaryButtonClass}
             >
               <ChatIcon className="h-4 w-4" />
               <span>Open chat</span>
@@ -615,31 +628,31 @@ export default function WorkspaceHomeClient() {
       ) : null}
 
       {liveDataError ? (
-        <section className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        <section className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-5 py-4 text-sm text-[#c50000] dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
           Live dashboard data could not be loaded right now. The backend returned an error while assembling this workspace&apos;s analytics: {liveDataError}
         </section>
       ) : null}
 
       {isPreviewMode ? (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 text-sm text-[#ab570a] dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
           Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
         </section>
       ) : null}
 
       {data?.diagnostics?.recoveredFromLegacyScope ? (
-        <section className="rounded-2xl border border-sky-200 bg-sky-50 px-5 py-4 text-sm text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+        <section className="rounded-lg border border-[#d3e5ff] bg-[#f5f9ff] px-5 py-4 text-sm text-[#0761d1] dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
           Showing recovered historical analyses because this workspace has older canonical rows available.
         </section>
       ) : null}
 
       {attentionRuns.length > 0 ? (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/30">
+        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 dark:border-amber-900/60 dark:bg-amber-950/30">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <p className="text-sm font-semibold text-amber-900 dark:text-amber-100">
+              <p className="text-sm font-semibold text-[#171717] dark:text-amber-100">
                 Needs attention
               </p>
-              <p className="mt-1 text-sm leading-6 text-amber-800 dark:text-amber-200">
+              <p className="mt-1 text-sm leading-6 text-[#ab570a] dark:text-amber-200">
                 {attentionRuns.length} recent file{attentionRuns.length === 1 ? "" : "s"} failed or stopped updating.
               </p>
             </div>
@@ -647,14 +660,14 @@ export default function WorkspaceHomeClient() {
               {attentionRuns.map((run) => (
                 <span
                   key={run.id}
-                  className="max-w-[260px] truncate rounded-full border border-amber-300 bg-white/70 px-3 py-1 text-xs font-medium text-amber-900 dark:border-amber-900/70 dark:bg-[#171717] dark:text-amber-100"
+                  className="max-w-[260px] truncate rounded-full border border-[#ffefcf] bg-white px-3 py-1 font-mono text-xs text-[#ab570a] dark:border-amber-900/70 dark:bg-[#171717] dark:text-amber-100"
                 >
                   {runTitleOf(run)}
                 </span>
               ))}
               <Link
                 href="/workspace/logs"
-                className="inline-flex items-center gap-1 rounded-full bg-amber-900 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-amber-800 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
+                className="inline-flex items-center gap-1 rounded-full bg-[#171717] px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-black dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100"
               >
                 Review
                 <ArrowRightIcon className="h-3 w-3" />
@@ -691,19 +704,19 @@ export default function WorkspaceHomeClient() {
         />
       </section>
 
-      <section className="app-surface p-6">
+      <section className={`${surfaceClass} p-6`}>
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">
+            <p className={eyebrowClass}>
               AI actions
             </p>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+            <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
               What do you want to do with these papers?
             </h2>
           </div>
           <Link
             href="/workspace/chat"
-            className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-[#bdbdbd] dark:hover:text-white"
+            className="inline-flex items-center gap-2 text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
           >
             Open full chat
             <ArrowRightIcon className="h-4 w-4" />
@@ -717,19 +730,19 @@ export default function WorkspaceHomeClient() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-        <article className="app-surface p-6">
+        <article className={`${surfaceClass} p-6`}>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">
+              <p className={eyebrowClass}>
                 Workspace signal
               </p>
-              <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+              <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
                 Compact insight preview
               </h2>
             </div>
             <Link
               href="/workspace/dashboard"
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#2f2f2f] dark:bg-[#171717] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#333333] dark:bg-[#171717] dark:text-white dark:hover:border-[#555555]"
             >
               Dashboard
               <ArrowRightIcon className="h-4 w-4" />
@@ -750,19 +763,19 @@ export default function WorkspaceHomeClient() {
           </div>
         </article>
 
-        <article className="app-surface p-6">
+        <article className={`${surfaceClass} p-6`}>
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-medium text-slate-500 dark:text-[#a3a3a3]">
+              <p className={eyebrowClass}>
                 Operations
               </p>
-              <h2 className="mt-1 text-xl font-semibold tracking-tight text-slate-900 dark:text-[#f2f2f2]">
+              <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
                 Recent activity
               </h2>
             </div>
             <Link
               href="/workspace/logs"
-              className="text-sm font-medium text-slate-600 hover:text-slate-900 dark:text-[#bdbdbd] dark:hover:text-white"
+              className="text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
             >
               History
             </Link>
@@ -770,25 +783,25 @@ export default function WorkspaceHomeClient() {
 
           <div className="mt-5 space-y-3">
             {libraryLoading ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center dark:border-[#303030]">
+              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#303030]">
                 <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
-                <p className="text-sm text-slate-500 dark:text-[#8f8f8f]">
+                <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
                   Loading recent activity
                 </p>
               </div>
             ) : libraryError ? (
-              <p className="rounded-2xl border border-red-200 bg-red-50 px-4 py-4 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+              <p className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-4 py-4 text-sm text-[#c50000] dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                 {libraryError}
               </p>
             ) : recentRuns.length > 0 ? (
               recentRuns.map((run) => <RunActivityRow key={run.id} run={run} />)
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-8 text-center dark:border-[#303030]">
+              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#303030]">
                 <CheckCircleIcon className="mx-auto h-8 w-8 text-slate-300 dark:text-[#555555]" />
-                <p className="mt-3 text-sm font-medium text-slate-700 dark:text-[#d0d0d0]">
+                <p className="mt-3 text-sm font-medium text-[#171717] dark:text-[#d0d0d0]">
                   No file activity yet
                 </p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                <p className="mt-1 text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
                   Analyze papers to start building the workspace record.
                 </p>
               </div>
@@ -800,45 +813,45 @@ export default function WorkspaceHomeClient() {
       <section className="grid gap-3 md:grid-cols-3">
         <Link
           href="/workspace/dashboard"
-          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717] dark:hover:border-[#3a3a3a]"
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#444444]`}
         >
           <span>
-            <span className="block text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
               Review analytics
             </span>
-            <span className="mt-1 block text-sm text-slate-500 dark:text-[#a3a3a3]">
+            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
               Trends, tracks, keywords
             </span>
           </span>
-          <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8e8e8e]" />
+          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
         </Link>
         <Link
           href="/workspace/library"
-          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717] dark:hover:border-[#3a3a3a]"
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#444444]`}
         >
           <span>
-            <span className="block text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
               Manage library
             </span>
-            <span className="mt-1 block text-sm text-slate-500 dark:text-[#a3a3a3]">
+            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
               Files, folders, analysis
             </span>
           </span>
-          <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8e8e8e]" />
+          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
         </Link>
         <Link
           href="/workspace/chat"
-          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 transition-colors hover:border-slate-300 dark:border-[#2f2f2f] dark:bg-[#171717] dark:hover:border-[#3a3a3a]"
+          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#444444]`}
         >
           <span>
-            <span className="block text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
               Ask with sources
             </span>
-            <span className="mt-1 block text-sm text-slate-500 dark:text-[#a3a3a3]">
+            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
               Chat, charts, web search
             </span>
           </span>
-          <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8e8e8e]" />
+          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
         </Link>
       </section>
 
