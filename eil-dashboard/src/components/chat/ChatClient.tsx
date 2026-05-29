@@ -2189,12 +2189,43 @@ export default function ChatClient() {
         }`}
       >
         <aside
-          className={`h-full min-h-0 w-[288px] flex-none border-r border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-[#121214] ${
-            sidebarCollapsed ? "hidden" : "hidden lg:flex lg:flex-col"
+          className={`hidden h-full min-h-0 flex-none border-r border-slate-200 bg-white dark:border-white/10 dark:bg-[#121214] lg:flex lg:flex-col ${
+            sidebarCollapsed ? "w-[60px] p-2" : "w-[288px] p-3"
           }`}
         >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-1 flex-col gap-1">
+          {sidebarCollapsed ? (
+            <div className="flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(false)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#212121] dark:hover:text-white"
+                aria-label="Open chat sidebar"
+              >
+                <SidebarIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => resetChat("normal")}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#212121] dark:hover:text-white"
+                aria-label="New chat"
+              >
+                <PencilSquareIcon className="h-5 w-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchModalOpen(true);
+                  setChatSearchQuery("");
+                }}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#212121] dark:hover:text-white"
+                aria-label="Search chats"
+              >
+                <SearchIcon className="h-5 w-5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
@@ -2214,21 +2245,19 @@ export default function ChatClient() {
                 <SearchIcon className="h-5 w-5" />
                 <span>Search chats</span>
               </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed(true)}
+                className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#212121] dark:hover:text-white"
+                aria-label="Close chat sidebar"
+              >
+                <SidebarIcon className="h-5 w-5" />
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => setSidebarCollapsed(true)}
-              title="Close sidebar"
-              className="group relative inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#212121] dark:hover:text-white"
-              aria-label="Close sidebar"
-            >
-              <SidebarIcon className="h-5 w-5" />
-              <span className="pointer-events-none absolute left-full top-1/2 z-30 ml-2 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
-                Close sidebar
-              </span>
-            </button>
-          </div>
+          )}
 
+          {!sidebarCollapsed ? (
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
               <p className="text-sm font-medium text-slate-800 dark:text-[#ececec]">Your chats</p>
@@ -2330,23 +2359,12 @@ export default function ChatClient() {
               })}
             </div>
           </div>
+          ) : null}
         </aside>
 
         <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-100 dark:bg-[#161719]">
           <header className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-white/8 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => setSidebarCollapsed((current) => !current)}
-                title={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
-                className="group relative inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-white/10 dark:text-[#ececec] dark:hover:bg-[#242424]"
-                aria-label={sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
-              >
-                <SidebarIcon className="h-4 w-4" />
-                <span className="pointer-events-none absolute left-0 top-full z-30 mt-2 hidden whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white shadow-lg group-hover:block dark:bg-white dark:text-slate-900">
-                  {sidebarCollapsed ? "Open sidebar" : "Close sidebar"}
-                </span>
-              </button>
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
