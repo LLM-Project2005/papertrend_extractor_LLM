@@ -203,6 +203,8 @@ export const footerLinks = [
   { label: "Research dashboard", href: "/features/research-dashboard" },
   { label: "AI research chat", href: "/features/ai-research-chat" },
   { label: "Cloud queue", href: "/features/cloud-queue" },
+  { label: "Documentation", href: "/docs" },
+  { label: "Search docs", href: "/docs/search" },
 ];
 
 export const valuePillars = [

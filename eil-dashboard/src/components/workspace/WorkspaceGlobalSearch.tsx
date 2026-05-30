@@ -10,6 +10,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { docsSearchItems } from "@/lib/docs-content";
 import {
   ChartIcon,
   ChatIcon,
@@ -146,21 +147,47 @@ const DOC_ITEMS: Array<{
   keywords: string[];
 }> = [
   {
-    id: "documentation",
+    id: "docs-home",
     label: "Documentation",
-    description: "Prepared route for the upcoming product documentation.",
+    description: "Open the public Papertrend documentation home.",
     href: "/docs",
     icon: FileIcon,
-    keywords: ["docs", "documentation", "guide", "manual", "help"],
+    keywords: ["docs", "documentation", "guide", "manual", "help", "product docs"],
   },
   {
-    id: "search-docs",
+    id: "docs-search",
     label: "Search docs",
-    description: "Prepared route for future documentation search.",
+    description: "Search public docs for features, troubleshooting, and evaluation guidance.",
     href: "/docs/search",
     icon: SearchIcon,
-    keywords: ["search docs", "docs search", "documentation search", "help search"],
+    keywords: [
+      "search docs",
+      "docs search",
+      "documentation search",
+      "help search",
+      "troubleshooting",
+      "evaluation",
+    ],
   },
+  ...docsSearchItems.map((item) => ({
+    id: item.id,
+    label: item.sectionId ? `${item.title} docs` : item.title,
+    description: item.sectionId ? `Section in ${item.description}` : item.description,
+    href: item.href,
+    icon: item.sectionId ? SearchIcon : FileIcon,
+    keywords: [
+      "docs",
+      "documentation",
+      "guide",
+      "manual",
+      "help",
+      item.category,
+      item.title,
+      item.description,
+      ...item.tags,
+      item.searchText,
+    ],
+  })),
 ];
 
 function normalizeSearch(value: string) {

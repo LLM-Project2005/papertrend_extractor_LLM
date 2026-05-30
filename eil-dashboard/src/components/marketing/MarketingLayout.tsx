@@ -35,6 +35,16 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
               {feature.navLabel}
             </Link>
           ))}
+          <Link
+            href="/docs"
+            className={`rounded-md px-3 py-2 text-sm transition-colors ${
+              activeSlug === "docs"
+                ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+            }`}
+          >
+            Docs
+          </Link>
         </nav>
 
         <div className="flex items-center gap-2">

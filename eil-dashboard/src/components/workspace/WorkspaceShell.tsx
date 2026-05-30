@@ -496,6 +496,16 @@ export default function WorkspaceShell({
 
           <div className="ml-auto flex items-center gap-2">
             <WorkspaceGlobalSearch pageItems={SEARCH_PAGE_ITEMS} />
+            <Link
+              href="/docs"
+              prefetch={false}
+              onClick={() => handleNavigate("/docs")}
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              aria-label="Open documentation"
+            >
+              <FileIcon className="h-4 w-4" />
+              <span className="hidden md:inline">Docs</span>
+            </Link>
             <ThemeToggle compact />
             <WorkspaceProfileMenu />
           </div>
