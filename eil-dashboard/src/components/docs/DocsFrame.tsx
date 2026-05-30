@@ -15,6 +15,7 @@ import {
   SearchIcon,
   SparkIcon,
 } from "@/components/ui/Icons";
+import DocsFixedRail from "@/components/docs/DocsFixedRail";
 import DocsOnThisPage from "@/components/docs/DocsOnThisPage";
 
 function calloutClasses(tone: DocsCallout["tone"]) {
@@ -31,7 +32,7 @@ function calloutClasses(tone: DocsCallout["tone"]) {
 
 function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
   return (
-    <aside className="fixed left-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))] top-20 z-20 hidden h-[calc(100vh-5rem)] w-[260px] overflow-y-hidden overscroll-contain pr-4 hover:overflow-y-auto focus-within:overflow-y-auto lg:block">
+    <DocsFixedRail side="left">
       <div className="space-y-2">
         <Link
           href="/docs/search"
@@ -81,7 +82,7 @@ function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
           </nav>
         ))}
       </div>
-    </aside>
+    </DocsFixedRail>
   );
 }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { DocsSection } from "@/lib/docs-content";
+import DocsFixedRail from "@/components/docs/DocsFixedRail";
 
 export default function DocsOnThisPage({
   sections,
@@ -58,7 +59,7 @@ export default function DocsOnThisPage({
   }, [sections]);
 
   return (
-    <aside className="fixed right-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))] top-20 z-20 hidden h-[calc(100vh-5rem)] w-[220px] overflow-y-hidden overscroll-contain border-l border-slate-200 pl-5 hover:overflow-y-auto focus-within:overflow-y-auto dark:border-[#1f1f1f] xl:block">
+    <DocsFixedRail side="right">
       <p className="text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
         On this page
       </p>
@@ -82,6 +83,6 @@ export default function DocsOnThisPage({
           );
         })}
       </nav>
-    </aside>
+    </DocsFixedRail>
   );
 }

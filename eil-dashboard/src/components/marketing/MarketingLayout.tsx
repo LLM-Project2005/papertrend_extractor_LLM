@@ -59,7 +59,10 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
 
 export function MarketingFooter() {
   return (
-    <footer className="border-t border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-black">
+    <footer
+      data-site-footer
+      className="border-t border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-black"
+    >
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1fr_1.2fr]">
         <div>
           <Link href="/" className="inline-flex items-center gap-3">
