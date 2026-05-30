@@ -5,7 +5,9 @@ import { FinalCTA, SellingPoint } from "@/components/marketing/FeatureBand";
 import {
   AIResearchChatShowcase,
   AnalysisFullPipelineShowcase,
+  AdaptiveDashboardShowcase,
   CloudQueueShowcase,
+  CloudWebsiteFlowShowcase,
   DeepResearchGraphShowcase,
   PaperAnalysisShowcase,
   ResearchDashboardShowcase,
@@ -99,6 +101,69 @@ function TechNoteGrid({
         ))}
       </div>
     </MotionReveal>
+  );
+}
+
+function LogicSteps({
+  eyebrow,
+  title,
+  copy,
+  steps,
+}: {
+  eyebrow: string;
+  title: string;
+  copy: string;
+  steps: string[];
+}) {
+  return (
+    <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
+      <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr]">
+        <div>
+          <p className="font-mono text-xs text-[#8f8f8f]">{eyebrow}</p>
+          <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">{title}</h2>
+          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{copy}</p>
+        </div>
+        <div className="grid gap-px overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#1f1f1f] sm:grid-cols-2">
+          {steps.map((step, index) => (
+            <div key={step} className="bg-[#030303] p-4">
+              <p className="font-mono text-xs text-[#8f8f8f]">0{index + 1}</p>
+              <p className="mt-3 text-sm leading-6 text-[#d0d0d0]">{step}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </MotionReveal>
+  );
+}
+
+function DeepResearchSpotlight() {
+  return (
+    <section className="relative overflow-hidden border-y border-[#1f1f1f] bg-[#030303] px-4 py-20 sm:px-6">
+      <div className="marketing-grid pointer-events-none absolute inset-0 opacity-20" />
+      <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.78fr_1.22fr] lg:items-center">
+        <MotionReveal>
+          <p className="font-mono text-xs text-[#f9cb28]">DEEP RESEARCH AGENT</p>
+          <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-5xl">
+            The agent plans first, researches second, and writes last.
+          </h2>
+          <p className="mt-5 text-base leading-8 text-[#a3a3a3]">
+            This is the big mode for serious questions. It behaves like a
+            LangGraph-style state graph: resolve intent, plan steps, call scoped
+            tools, verify evidence coverage, then synthesize a grounded report.
+          </p>
+          <div className="mt-7 grid gap-3">
+            {[
+              "Planner produces visible research steps before synthesis.",
+              "Tool steps can fetch papers, read sections, search keywords, and inspect dashboard summaries.",
+              "Verification catches weak evidence before the final report is written.",
+            ].map((item) => (
+              <SellingPoint key={item}>{item}</SellingPoint>
+            ))}
+          </div>
+        </MotionReveal>
+        <DeepResearchGraphShowcase />
+      </div>
+    </section>
   );
 }
 
@@ -250,16 +315,39 @@ function ResearchDashboardPage({ feature }: { feature: MarketingFeature }) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <TechNoteGrid
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
+        <AdaptiveDashboardShowcase />
+        <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
+          <p className="font-mono text-xs text-[#8f8f8f]">ADAPTIVE DASHBOARD</p>
+          <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
+            The dashboard can choose the chart mix for the current corpus.
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+            The Adaptive tab uses a visualization planner to pick a balanced set
+            of charts from the deterministic chart catalog. It looks for time
+            signals, comparison signals, and structure signals, then falls back to
+            a safe plan when the scoped data is thin.
+          </p>
+          <div className="mt-6 grid gap-3">
+            {["topic momentum", "emerging topics", "keyword heatmap", "track/topic comparison"].map((item) => (
+              <div key={item} className="rounded-md border border-[#1f1f1f] bg-[#030303] px-3 py-2 font-mono text-xs text-[#d0d0d0]">
+                {item}
+              </div>
+            ))}
+          </div>
+        </MotionReveal>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
+        <LogicSteps
           eyebrow="DASHBOARD LOGIC"
           title="Fast views come from normalized research tables."
-          copy="The dashboard reads analyzed paper rows, keyword rows, concept rows, and track rows, then aggregates them into views the user can filter instantly. AI helps create the source signals; the dashboard keeps the math predictable."
-          items={[
-            "Workspace-wide scope is the default for Home and high-level metrics.",
-            "Topic and keyword charts are aggregated from persisted analysis rows.",
-            "Year and track filters reuse the same data shape as library and chart mode.",
-            "The dashboard acts as the stable source for chat-generated visualizations.",
+          copy="The dashboard reads analyzed paper rows, keyword rows, concept rows, and track rows, then aggregates them into views the user can filter instantly."
+          steps={[
+            "AI creates source signals during ingestion; dashboard math stays deterministic.",
+            "Workspace, year, folder, and track filters reuse the same normalized data shape.",
+            "Adaptive charts are selected from an allowed catalog, not invented at render time.",
+            "Chat chart mode can reuse the same stable dashboard data.",
           ]}
         />
       </section>
@@ -319,51 +407,21 @@ function AIResearchChatPage({ feature }: { feature: MarketingFeature }) {
         </div>
       </section>
 
-      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <TechNoteGrid
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+        <LogicSteps
           eyebrow="CHAT LOGIC"
-          title="The assistant routes simple chat, chart requests, web search, and deep research differently."
-          copy="A normal answer can use recent messages and attached papers. Chart mode adds a planning step that decides which analyzed data to visualize. Web search stays opt-in so citations and cost stay visible."
-          items={[
-            "Attached library files define the first context window for paper-specific questions.",
-            "Chart requests use an LLM planner first, then deterministic chart data builders.",
-            "Web search is treated as a tool result with citation links, not hidden background browsing.",
-            "Failed or unanalyzed attachments can be sent back into the analysis queue before charting.",
+          title="Different requests take different routes."
+          copy="The chat UI is one surface, but the backend separates everyday answers, chart mode, web search, and deep research so the assistant can stay useful without doing expensive work for every prompt."
+          steps={[
+            "Attached papers and recent messages create the first context window.",
+            "Chart requests go through an LLM chart planner before deterministic data builders render the chart.",
+            "Web search is opt-in and returns citation links as visible tool metadata.",
+            "Unanalyzed library attachments can be sent back into the worker queue before charting.",
           ]}
         />
-        <DeepResearchGraphShowcase />
       </section>
 
-      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-16 sm:px-6">
-        <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[0.82fr_1.18fr]">
-          <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-            <p className="font-mono text-xs text-[#8f8f8f]">DEEP RESEARCH</p>
-            <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
-              For bigger questions, chat becomes a graph-style research run.
-            </h2>
-            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
-              Deep research works like a LangGraph-style state graph: resolve the
-              user's intent, create a plan, execute scoped tools, verify evidence
-              coverage, then synthesize the final answer. The important bit for
-              users is simple: it does not jump straight to a polished paragraph;
-              it checks what it knows first.
-            </p>
-          </MotionReveal>
-          <MotionReveal delay={0.1} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-            <p className="font-mono text-xs text-[#8f8f8f]">WHY IT MATTERS</p>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              {[
-                "Plans are stored so the user can see what the research run is doing.",
-                "Tool steps can fetch papers, read sections, search keywords, or inspect dashboard summaries.",
-                "Verification catches weak evidence before synthesis.",
-                "The final report is grounded in retrieved paper snippets and visible citations.",
-              ].map((item) => (
-                <SellingPoint key={item}>{item}</SellingPoint>
-              ))}
-            </div>
-          </MotionReveal>
-        </div>
-      </section>
+      <DeepResearchSpotlight />
 
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
         <ProofStrip feature={feature} />
@@ -438,18 +496,44 @@ function CloudQueuePage({ feature }: { feature: MarketingFeature }) {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <TechNoteGrid
-          eyebrow="QUEUE LOGIC"
-          title="Background analysis is designed to be boring in the best way."
-          copy="Long-running paper analysis should not depend on an open browser tab. The queue keeps the work durable and visible while still protecting the worker from too many concurrent runs."
-          items={[
-            "Cloud Tasks triggers the worker endpoint when queued work exists.",
-            "The worker claims one run, processes it, persists results, then releases the lock.",
-            "Heartbeats make stuck processing runs visible and recoverable.",
-            "Retry records let failed papers be requeued from the library instead of reuploaded.",
-          ]}
-        />
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 lg:grid-cols-[0.84fr_1.16fr] lg:items-center">
+        <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
+          <p className="font-mono text-xs text-[#8f8f8f]">WEBSITE TO GOOGLE CLOUD</p>
+          <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
+            The website starts the work. Google Cloud keeps it moving.
+          </h2>
+          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+            The browser never owns the long-running analysis. It uploads files
+            and creates queue records; Cloud Tasks calls the Cloud Run worker;
+            the worker claims a run, heartbeats, saves results, and schedules the
+            next continuation if more files are waiting.
+          </p>
+          <div className="mt-6 space-y-3">
+            {[
+              "429 while busy is expected: it protects one-at-a-time queue processing.",
+              "Cloud Run can start cold, process one file, then scale back down.",
+              "Supabase rows hold durable status so the UI can refresh safely.",
+            ].map((item) => (
+              <SellingPoint key={item}>{item}</SellingPoint>
+            ))}
+          </div>
+        </MotionReveal>
+        <CloudWebsiteFlowShowcase />
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
+        <MotionReveal className="grid gap-4 rounded-lg border border-[#1f1f1f] bg-[#050505] p-6 lg:grid-cols-[1fr_1fr_1fr]">
+          {[
+            ["Trigger", "Cloud Tasks sends an authenticated POST to the worker endpoint."],
+            ["Claim", "The worker locks one queued run so duplicate tasks cannot double-process a file."],
+            ["Continue", "When a run finishes, the service schedules the next queued paper automatically."],
+          ].map(([title, copy]) => (
+            <div key={title} className="border-[#1f1f1f] lg:border-r lg:pr-5 lg:last:border-r-0">
+              <p className="font-mono text-xs text-[#8f8f8f]">{title}</p>
+              <p className="mt-3 text-sm leading-6 text-[#d0d0d0]">{copy}</p>
+            </div>
+          ))}
+        </MotionReveal>
       </section>
 
       <FinalCTA />

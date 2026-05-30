@@ -2,7 +2,16 @@
 
 import { motion, useReducedMotion, type Transition } from "framer-motion";
 import type { ReactNode } from "react";
-import { ChartIcon, ChatIcon, CloudIcon, PaperIcon, SparkIcon, UploadIcon } from "@/components/ui/Icons";
+import {
+  ChartIcon,
+  ChatIcon,
+  CloudIcon,
+  EqualizerIcon,
+  PaperIcon,
+  SearchIcon,
+  SparkIcon,
+  UploadIcon,
+} from "@/components/ui/Icons";
 
 const loopTransition: Transition = {
   duration: 2.8,
@@ -250,63 +259,136 @@ export function ResearchDashboardShowcase() {
   );
 }
 
+export function AdaptiveDashboardShowcase() {
+  const transition = useLoopTransition();
+  const chartCards = [
+    ["Topic momentum", "time"],
+    ["Emerging topics", "structure"],
+    ["Keyword heatmap", "time + structure"],
+    ["Track comparison", "comparison"],
+    ["Folder contrast", "comparison"],
+  ];
+
+  return (
+    <Frame label="dashboard.adaptive/planner">
+      <div className="grid gap-px bg-[#1f1f1f] lg:grid-cols-[0.76fr_1.24fr]">
+        <div className="bg-[#050505] p-5">
+          <div className="rounded-lg border border-[#1f1f1f] bg-[#030303] p-4">
+            <div className="flex items-center gap-2">
+              <SparkIcon className="h-4 w-4 text-[#f9cb28]" />
+              <p className="font-mono text-xs text-[#8f8f8f]">ADAPTIVE PLAN</p>
+            </div>
+            <p className="mt-4 text-sm leading-6 text-[#d0d0d0]">
+              Pick charts that best explain this filtered corpus.
+            </p>
+            <div className="mt-5 space-y-2">
+              {["time", "comparison", "structure"].map((rubric, index) => (
+                <motion.div
+                  key={rubric}
+                  className="rounded-md border border-[#1f1f1f] bg-[#050505] px-3 py-2"
+                  animate={transition ? { borderColor: index === 1 ? ["#1f1f1f", "#ff0080"] : "#1f1f1f" } : undefined}
+                  transition={transition}
+                >
+                  <p className="font-mono text-xs text-[#8f8f8f]">{rubric}</p>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-black p-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {chartCards.map(([title, kind], index) => (
+              <motion.div
+                key={title}
+                className={index === 2 ? "rounded-lg border border-[#1f1f1f] bg-[#050505] p-4 sm:col-span-2" : "rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"}
+                animate={transition ? { y: index === 0 ? [0, -4] : 0 } : undefined}
+                transition={transition}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-semibold text-white">{title}</h3>
+                  <span className="font-mono text-[11px] text-[#8f8f8f]">{kind}</span>
+                </div>
+                <div className="mt-4 flex h-20 items-end gap-2">
+                  {[46, 72, 58, 86, 64].map((height, barIndex) => (
+                    <motion.div
+                      key={`${title}-${height}`}
+                      className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-[#7928ca] via-[#ff0080] to-[#f9cb28]"
+                      initial={{ height: `${height * 0.55}%` }}
+                      animate={transition ? { height: [`${height * 0.55}%`, `${height}%`] } : undefined}
+                      transition={transition ? { ...transition, delay: barIndex * 0.05 } : undefined}
+                    />
+                  ))}
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
 export function AIResearchChatShowcase() {
   const transition = useLoopTransition();
 
   return (
-    <Frame label="workspace.chat/simplified">
-      <div className="grid min-h-[520px] gap-px bg-[#1f1f1f] lg:grid-cols-[190px_1fr]">
-        <aside className="hidden bg-[#050505] p-4 lg:block">
-          <div className="rounded-md border border-[#1f1f1f] bg-[#030303] px-3 py-2 text-sm text-white">
-            New chat
+    <Frame label="workspace.chat/simplified-product-ui">
+      <div className="grid min-h-[560px] gap-px bg-[#1f1f1f] lg:grid-cols-[210px_1fr]">
+        <aside className="hidden bg-[#030303] p-4 lg:block">
+          <div className="flex items-center justify-between">
+            <div className="inline-flex h-10 items-center rounded-xl px-2.5 text-sm font-medium text-[#ececec]">
+              New chat
+            </div>
+            <SearchIcon className="h-4 w-4 text-[#8e8e8e]" />
           </div>
-          <div className="mt-4 space-y-2">
+          <div className="mt-5 space-y-1">
             {["Webquest topic chart", "Compare two papers", "Research gaps"].map((item) => (
-              <div key={item} className="truncate rounded-md px-3 py-2 text-xs text-[#a3a3a3]">
+              <div key={item} className="truncate rounded-xl px-3 py-2.5 text-xs text-[#a3a3a3] first:bg-[#0a0a0a] first:text-white">
                 {item}
               </div>
             ))}
           </div>
         </aside>
 
-        <div className="flex min-h-[520px] flex-col bg-black">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1f1f1f] bg-[#050505] px-4 py-3">
+        <div className="flex min-h-[560px] flex-col bg-black">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1f1f1f] bg-black px-5 py-4">
             <div>
               <p className="text-sm font-medium text-white">Webquest topic chart</p>
               <p className="mt-1 font-mono text-xs text-[#8f8f8f]">attached-paper session</p>
             </div>
             <div className="flex gap-2">
               {["Chart mode", "Deep research"].map((mode) => (
-                <span key={mode} className="rounded-md border border-[#2a2a2a] bg-[#030303] px-2.5 py-1 text-xs text-[#d0d0d0]">
+                <span key={mode} className="rounded-full border border-[#2b5da8] bg-[#173868] px-3 py-1 text-xs font-medium text-[#9cc8ff]">
                   {mode}
                 </span>
               ))}
             </div>
           </div>
 
-          <div className="flex-1 space-y-4 p-5">
+          <div className="flex-1 space-y-5 p-5">
             <motion.div
-              className="ml-auto max-w-[82%] rounded-lg border border-[#2a2a2a] bg-white p-4 text-[#111111]"
+              className="ml-auto max-w-[78%] rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-7 text-slate-900 shadow-sm"
               initial={{ opacity: 0.76, y: 8 }}
               animate={transition ? { opacity: [0.76, 1], y: [8, 0] } : undefined}
               transition={transition}
             >
               <p className="text-sm leading-6">Create a top topic chart for this paper, then explain the pattern.</p>
-              <div className="mt-3 inline-flex items-center gap-2 rounded-md border border-[#d8d8d8] px-2.5 py-1 text-xs">
+              <div className="mt-3 inline-flex items-center gap-2 rounded-xl border border-[#d8d8d8] bg-slate-50 px-2.5 py-1 text-xs text-slate-700">
                 <PaperIcon className="h-3.5 w-3.5" />
                 webquest-learning.pdf
               </div>
             </motion.div>
 
-            <div className="max-w-[88%] rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
+            <div className="max-w-[88%]">
               <div className="flex items-center gap-2">
                 <SparkIcon className="h-4 w-4 text-[#f9cb28]" />
                 <span className="font-mono text-xs text-[#8f8f8f]">AI response with chart tool</span>
               </div>
-              <p className="mt-3 text-sm leading-6 text-[#d0d0d0]">
+              <p className="mt-3 text-[15px] leading-7 text-[#f3f3f3]">
                 The strongest cluster is inquiry-based learning, followed by collaboration and assessment design.
               </p>
-              <div className="mt-4 flex h-32 items-end gap-2 rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
+              <div className="mt-4 flex h-32 items-end gap-2 rounded-2xl border border-[#1f1f1f] bg-[#050505] p-3">
                 {[82, 64, 48, 35].map((height, index) => (
                   <motion.div
                     key={height}
@@ -320,11 +402,13 @@ export function AIResearchChatShowcase() {
             </div>
           </div>
 
-          <div className="border-t border-[#1f1f1f] bg-[#050505] p-4">
-            <div className="flex items-center gap-3 rounded-lg border border-[#1f1f1f] bg-[#030303] px-4 py-3">
-              <span className="text-[#8f8f8f]">+</span>
+          <div className="bg-black p-4">
+            <div className="flex items-center gap-3 rounded-[28px] border border-[#1f1f1f] bg-[#050505] px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+              <span className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#ececec]">+</span>
               <span className="flex-1 text-sm text-[#8f8f8f]">Ask anything about attached papers...</span>
-              <span className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-[#111111]">Send</span>
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-xs font-medium text-[#111111]">
+                Send
+              </span>
             </div>
           </div>
         </div>
@@ -344,14 +428,14 @@ export function DeepResearchGraphShowcase() {
   ];
 
   return (
-    <Frame label="deep.research/graph-style-flow">
+    <Frame label="deep.research/agent-graph">
       <div className="bg-black p-5">
         <div className="grid gap-3 lg:grid-cols-5">
           {nodes.map(([title, detail], index) => (
             <motion.div
               key={title}
-              className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"
-              animate={transition ? { borderColor: index === 2 ? ["#1f1f1f", "#f9cb28"] : "#1f1f1f" } : undefined}
+              className={index === 1 ? "rounded-lg border border-[#f9cb28]/40 bg-[#120f05] p-4 shadow-[0_0_34px_rgba(249,203,40,0.12)]" : "rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"}
+              animate={transition ? { borderColor: index === 1 ? ["rgba(249,203,40,0.22)", "rgba(249,203,40,0.72)"] : "#1f1f1f" } : undefined}
               transition={transition}
             >
               <p className="font-mono text-xs text-[#8f8f8f]">node {index + 1}</p>
@@ -388,6 +472,51 @@ export function DeepResearchGraphShowcase() {
               ))}
             </div>
           </div>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+export function CloudWebsiteFlowShowcase() {
+  const transition = useLoopTransition();
+  const flow = [
+    ["Browser", "upload + status"],
+    ["Next.js API", "create run rows"],
+    ["Supabase", "queue + storage"],
+    ["Cloud Tasks", "signed POST"],
+    ["Cloud Run", "worker instance"],
+    ["Workspace", "results update"],
+  ];
+
+  return (
+    <Frame label="cloud.queue/web-to-worker-flow">
+      <div className="bg-black p-5">
+        <div className="grid gap-3 md:grid-cols-3">
+          {flow.map(([title, detail], index) => (
+            <motion.div
+              key={title}
+              className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"
+              animate={transition ? { y: index === 3 ? [0, -5] : 0, borderColor: index === 3 ? ["#1f1f1f", "#007cf0"] : "#1f1f1f" } : undefined}
+              transition={transition}
+            >
+              <div className="flex items-center gap-2">
+                {index < 2 ? <UploadIcon className="h-4 w-4 text-[#00dfd8]" /> : index < 4 ? <CloudIcon className="h-4 w-4 text-[#007cf0]" /> : <SparkIcon className="h-4 w-4 text-[#ff4d4d]" />}
+                <p className="font-mono text-xs text-[#8f8f8f]">{String(index + 1).padStart(2, "0")}</p>
+              </div>
+              <h3 className="mt-4 text-sm font-semibold text-white">{title}</h3>
+              <p className="mt-2 text-xs leading-5 text-[#a3a3a3]">{detail}</p>
+            </motion.div>
+          ))}
+        </div>
+        <div className="mt-4 rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
+          <div className="flex items-center gap-3">
+            <EqualizerIcon className="h-4 w-4 text-[#f9cb28]" />
+            <p className="text-sm font-medium text-white">Only one worker claims the queue lock at a time.</p>
+          </div>
+          <p className="mt-3 text-xs leading-5 text-[#a3a3a3]">
+            Extra task calls can safely return 429 while the active worker continues. When a run finishes, the app schedules the next continuation.
+          </p>
         </div>
       </div>
     </Frame>
