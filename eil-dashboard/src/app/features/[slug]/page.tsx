@@ -4,7 +4,9 @@ import { notFound } from "next/navigation";
 import { FinalCTA, SellingPoint } from "@/components/marketing/FeatureBand";
 import {
   AIResearchChatShowcase,
+  AnalysisFullPipelineShowcase,
   CloudQueueShowcase,
+  DeepResearchGraphShowcase,
   PaperAnalysisShowcase,
   ResearchDashboardShowcase,
 } from "@/components/marketing/FeatureShowcases";
@@ -73,6 +75,33 @@ function ProofStrip({ feature, className = "" }: { feature: MarketingFeature; cl
   );
 }
 
+function TechNoteGrid({
+  eyebrow,
+  title,
+  copy,
+  items,
+}: {
+  eyebrow: string;
+  title: string;
+  copy: string;
+  items: string[];
+}) {
+  return (
+    <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
+      <p className="font-mono text-xs text-[#8f8f8f]">{eyebrow}</p>
+      <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">{title}</h2>
+      <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{copy}</p>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+        {items.map((item) => (
+          <div key={item} className="rounded-md border border-[#1f1f1f] bg-[#030303] px-3 py-2 text-sm leading-6 text-[#d0d0d0]">
+            {item}
+          </div>
+        ))}
+      </div>
+    </MotionReveal>
+  );
+}
+
 function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
   const Icon = feature.icon;
 
@@ -91,7 +120,8 @@ function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-8 text-[#a3a3a3] sm:text-lg">
               {feature.description} This page shows the analysis engine as a lab bench:
-              file intake, section recovery, metadata, topics, and evidence all becoming structured output.
+              file intake, section recovery, metadata, year evidence, topics,
+              tracks, facets, and workspace tables becoming structured output.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <MarketingCTA />
@@ -105,9 +135,18 @@ function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
       <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
         <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
           <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-            <p className="font-mono text-xs text-[#8f8f8f]">PIPELINE</p>
+            <p className="font-mono text-xs text-[#8f8f8f]">MARKETING VERSION</p>
+            <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
+              The simple story: clean the paper, find the signals, save the evidence.
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+              The real worker does more than one AI call. For users, the journey
+              can be understood in four plain stages: take in the PDF, recover
+              usable sections, extract research signals, then persist evidence
+              so the dashboard and chat can reuse it.
+            </p>
             <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#1f1f1f] md:grid-cols-4">
-              {["PDF", "Sections", "Signals", "Evidence"].map((step, index) => (
+              {["Ingest", "Recover", "Analyze", "Persist"].map((step, index) => (
                 <div key={step} className="bg-[#030303] p-5">
                   <p className="font-mono text-xs text-[#8f8f8f]">0{index + 1}</p>
                   <h3 className="mt-4 text-lg font-semibold text-white">{step}</h3>
@@ -126,6 +165,23 @@ function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
           </MotionReveal>
         </div>
         <ProofStrip feature={feature} className="mt-4" />
+      </section>
+
+      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-16 sm:px-6">
+        <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1.25fr_0.75fr]">
+          <AnalysisFullPipelineShowcase />
+          <TechNoteGrid
+            eyebrow="FULL PIPELINE"
+            title="A full run becomes reusable research data."
+            copy="The worker keeps every output close to a paper, owner, folder, and evidence trail. That makes the same analysis available to the library, dashboard, charts, and chat without re-reading the PDF every time."
+            items={[
+              "Text extraction first, vision/OCR fallback when text is unusable.",
+              "Structured model calls for segmentation, metadata, keywords, topics, tracks, typology, and facets.",
+              "Supabase persistence writes paper rows, content, keyword rows, concepts, tracks, and analysis facets.",
+              "Retry-safe queue records let failed or incomplete files be resumed instead of silently disappearing.",
+            ]}
+          />
+        </div>
       </section>
 
       <FinalCTA />
@@ -151,7 +207,8 @@ function ResearchDashboardPage({ feature }: { feature: MarketingFeature }) {
             </h1>
             <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-[#a3a3a3] sm:text-lg">
               {feature.description} The dashboard page is a command wall: filters,
-              trends, topic movement, and library coverage in one scan.
+              trends, topic movement, track distribution, paper coverage, and
+              library status in one scan.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
               <MarketingCTA />
@@ -168,6 +225,11 @@ function ResearchDashboardPage({ feature }: { feature: MarketingFeature }) {
         <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
           <h2 className="text-2xl font-semibold leading-tight text-white">{feature.sections[0].title}</h2>
           <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{feature.sections[0].copy}</p>
+          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+            This part is intentionally deterministic: most charts are built from
+            stored tables and views, not fresh model guesses. That keeps dashboard
+            numbers stable when users switch folders, years, tracks, or workspace scope.
+          </p>
           <ul className="mt-6 space-y-3">
             {feature.sections[0].bullets.map((bullet) => (
               <SellingPoint key={bullet}>{bullet}</SellingPoint>
@@ -186,6 +248,20 @@ function ResearchDashboardPage({ feature }: { feature: MarketingFeature }) {
             </MotionReveal>
           ))}
         </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+        <TechNoteGrid
+          eyebrow="DASHBOARD LOGIC"
+          title="Fast views come from normalized research tables."
+          copy="The dashboard reads analyzed paper rows, keyword rows, concept rows, and track rows, then aggregates them into views the user can filter instantly. AI helps create the source signals; the dashboard keeps the math predictable."
+          items={[
+            "Workspace-wide scope is the default for Home and high-level metrics.",
+            "Topic and keyword charts are aggregated from persisted analysis rows.",
+            "Year and track filters reuse the same data shape as library and chart mode.",
+            "The dashboard acts as the stable source for chat-generated visualizations.",
+          ]}
+        />
       </section>
 
       <FinalCTA />
@@ -212,7 +288,8 @@ function AIResearchChatPage({ feature }: { feature: MarketingFeature }) {
             </h1>
             <p className="mt-6 text-base leading-8 text-[#a3a3a3] sm:text-lg">
               {feature.description} It should feel like a serious assistant:
-              attached-file context, chart mode, web citations, and deeper research steps when the question calls for it.
+              attached-file context, chart mode, web citations, and deeper
+              research steps when the question calls for it.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <MarketingCTA />
@@ -239,6 +316,52 @@ function AIResearchChatPage({ feature }: { feature: MarketingFeature }) {
               </ul>
             </MotionReveal>
           ))}
+        </div>
+      </section>
+
+      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <TechNoteGrid
+          eyebrow="CHAT LOGIC"
+          title="The assistant routes simple chat, chart requests, web search, and deep research differently."
+          copy="A normal answer can use recent messages and attached papers. Chart mode adds a planning step that decides which analyzed data to visualize. Web search stays opt-in so citations and cost stay visible."
+          items={[
+            "Attached library files define the first context window for paper-specific questions.",
+            "Chart requests use an LLM planner first, then deterministic chart data builders.",
+            "Web search is treated as a tool result with citation links, not hidden background browsing.",
+            "Failed or unanalyzed attachments can be sent back into the analysis queue before charting.",
+          ]}
+        />
+        <DeepResearchGraphShowcase />
+      </section>
+
+      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-16 sm:px-6">
+        <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-[0.82fr_1.18fr]">
+          <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
+            <p className="font-mono text-xs text-[#8f8f8f]">DEEP RESEARCH</p>
+            <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
+              For bigger questions, chat becomes a graph-style research run.
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+              Deep research works like a LangGraph-style state graph: resolve the
+              user's intent, create a plan, execute scoped tools, verify evidence
+              coverage, then synthesize the final answer. The important bit for
+              users is simple: it does not jump straight to a polished paragraph;
+              it checks what it knows first.
+            </p>
+          </MotionReveal>
+          <MotionReveal delay={0.1} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
+            <p className="font-mono text-xs text-[#8f8f8f]">WHY IT MATTERS</p>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              {[
+                "Plans are stored so the user can see what the research run is doing.",
+                "Tool steps can fetch papers, read sections, search keywords, or inspect dashboard summaries.",
+                "Verification catches weak evidence before synthesis.",
+                "The final report is grounded in retrieved paper snippets and visible citations.",
+              ].map((item) => (
+                <SellingPoint key={item}>{item}</SellingPoint>
+              ))}
+            </div>
+          </MotionReveal>
         </div>
       </section>
 
@@ -270,7 +393,8 @@ function CloudQueuePage({ feature }: { feature: MarketingFeature }) {
               </h1>
               <p className="mt-6 text-base leading-8 text-[#a3a3a3] sm:text-lg">
                 {feature.description} The animation here focuses on the real handoff:
-                upload record, Cloud Task, worker claim, persistence, and continuation.
+                upload record, Cloud Task, worker claim, heartbeat, persistence,
+                and continuation.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
                 <MarketingCTA />
@@ -288,6 +412,12 @@ function CloudQueuePage({ feature }: { feature: MarketingFeature }) {
           <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
             <h2 className="text-2xl font-semibold leading-tight text-white">{feature.sections[1].title}</h2>
             <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{feature.sections[1].copy}</p>
+            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
+              Technically, the web app creates ingestion runs, then Google Cloud
+              Tasks calls the worker endpoint. The worker claims one run at a time,
+              updates heartbeats, saves results, and triggers the next task when
+              more papers are waiting.
+            </p>
             <ul className="mt-6 space-y-3">
               {feature.sections[1].bullets.map((bullet) => (
                 <SellingPoint key={bullet}>{bullet}</SellingPoint>
@@ -306,6 +436,20 @@ function CloudQueuePage({ feature }: { feature: MarketingFeature }) {
             </MotionReveal>
           ))}
         </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
+        <TechNoteGrid
+          eyebrow="QUEUE LOGIC"
+          title="Background analysis is designed to be boring in the best way."
+          copy="Long-running paper analysis should not depend on an open browser tab. The queue keeps the work durable and visible while still protecting the worker from too many concurrent runs."
+          items={[
+            "Cloud Tasks triggers the worker endpoint when queued work exists.",
+            "The worker claims one run, processes it, persists results, then releases the lock.",
+            "Heartbeats make stuck processing runs visible and recoverable.",
+            "Retry records let failed papers be requeued from the library instead of reuploaded.",
+          ]}
+        />
       </section>
 
       <FinalCTA />

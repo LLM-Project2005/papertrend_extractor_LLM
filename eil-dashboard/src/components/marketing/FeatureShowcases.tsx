@@ -118,6 +118,55 @@ export function PaperAnalysisShowcase() {
   );
 }
 
+export function AnalysisFullPipelineShowcase() {
+  const transition = useLoopTransition();
+  const pipeline = [
+    ["Upload", "PDF + owner scope"],
+    ["Queue", "claim active run"],
+    ["Storage", "download object"],
+    ["Extract", "text or OCR"],
+    ["Segment", "sections + spans"],
+    ["Metadata", "title + year"],
+    ["Author keywords", "declared terms"],
+    ["Keywords", "candidate phrases"],
+    ["Concepts", "grouped themes"],
+    ["Topics", "human labels"],
+    ["Tracks", "EL / ELI / LAE"],
+    ["Persist", "workspace tables"],
+  ];
+
+  return (
+    <Frame label="analysis.pipeline/full-run">
+      <div className="bg-black p-5">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {pipeline.map(([title, detail], index) => (
+            <motion.div
+              key={title}
+              className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"
+              animate={transition ? { borderColor: index % 4 === 1 ? ["#1f1f1f", "#00dfd8"] : "#1f1f1f" } : undefined}
+              transition={transition ? { ...transition, delay: (index % 4) * 0.1 } : undefined}
+            >
+              <p className="font-mono text-xs text-[#8f8f8f]">{String(index + 1).padStart(2, "0")}</p>
+              <h3 className="mt-4 text-sm font-semibold text-white">{title}</h3>
+              <p className="mt-2 text-xs leading-5 text-[#a3a3a3]">{detail}</p>
+            </motion.div>
+          ))}
+        </div>
+        <div className="mt-4 rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
+          <p className="font-mono text-xs text-[#8f8f8f]">OUTPUT</p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            {["papers", "paper_keywords", "paper_content"].map((table) => (
+              <div key={table} className="rounded-md border border-[#2a2a2a] bg-[#030303] px-3 py-2 font-mono text-xs text-[#d0d0d0]">
+                {table}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
 export function ResearchDashboardShowcase() {
   const transition = useLoopTransition();
   const bars = [42, 68, 51, 88, 73, 95, 80];
@@ -205,10 +254,37 @@ export function AIResearchChatShowcase() {
   const transition = useLoopTransition();
 
   return (
-    <Frame label="chat.session/attached-paper">
-      <div className="grid gap-px bg-[#1f1f1f] lg:grid-cols-[1fr_0.78fr]">
-        <div className="bg-black p-5">
-          <div className="space-y-4">
+    <Frame label="workspace.chat/simplified">
+      <div className="grid min-h-[520px] gap-px bg-[#1f1f1f] lg:grid-cols-[190px_1fr]">
+        <aside className="hidden bg-[#050505] p-4 lg:block">
+          <div className="rounded-md border border-[#1f1f1f] bg-[#030303] px-3 py-2 text-sm text-white">
+            New chat
+          </div>
+          <div className="mt-4 space-y-2">
+            {["Webquest topic chart", "Compare two papers", "Research gaps"].map((item) => (
+              <div key={item} className="truncate rounded-md px-3 py-2 text-xs text-[#a3a3a3]">
+                {item}
+              </div>
+            ))}
+          </div>
+        </aside>
+
+        <div className="flex min-h-[520px] flex-col bg-black">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#1f1f1f] bg-[#050505] px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-white">Webquest topic chart</p>
+              <p className="mt-1 font-mono text-xs text-[#8f8f8f]">attached-paper session</p>
+            </div>
+            <div className="flex gap-2">
+              {["Chart mode", "Deep research"].map((mode) => (
+                <span key={mode} className="rounded-md border border-[#2a2a2a] bg-[#030303] px-2.5 py-1 text-xs text-[#d0d0d0]">
+                  {mode}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <div className="flex-1 space-y-4 p-5">
             <motion.div
               className="ml-auto max-w-[82%] rounded-lg border border-[#2a2a2a] bg-white p-4 text-[#111111]"
               initial={{ opacity: 0.76, y: 8 }}
@@ -225,10 +301,10 @@ export function AIResearchChatShowcase() {
             <div className="max-w-[88%] rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
               <div className="flex items-center gap-2">
                 <SparkIcon className="h-4 w-4 text-[#f9cb28]" />
-                <span className="font-mono text-xs text-[#8f8f8f]">Chart mode</span>
+                <span className="font-mono text-xs text-[#8f8f8f]">AI response with chart tool</span>
               </div>
               <p className="mt-3 text-sm leading-6 text-[#d0d0d0]">
-                The strongest topic cluster is inquiry-based learning, followed by collaboration and assessment design.
+                The strongest cluster is inquiry-based learning, followed by collaboration and assessment design.
               </p>
               <div className="mt-4 flex h-32 items-end gap-2 rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
                 {[82, 64, 48, 35].map((height, index) => (
@@ -243,27 +319,72 @@ export function AIResearchChatShowcase() {
               </div>
             </div>
           </div>
-        </div>
 
-        <div className="bg-[#050505] p-5">
-          <div className="rounded-lg border border-[#1f1f1f] bg-[#030303] p-4">
+          <div className="border-t border-[#1f1f1f] bg-[#050505] p-4">
+            <div className="flex items-center gap-3 rounded-lg border border-[#1f1f1f] bg-[#030303] px-4 py-3">
+              <span className="text-[#8f8f8f]">+</span>
+              <span className="flex-1 text-sm text-[#8f8f8f]">Ask anything about attached papers...</span>
+              <span className="rounded-md bg-white px-3 py-1.5 text-xs font-medium text-[#111111]">Send</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+export function DeepResearchGraphShowcase() {
+  const transition = useLoopTransition();
+  const nodes = [
+    ["Intent", "resolve paper + scope"],
+    ["Plan", "LLM creates steps"],
+    ["Tools", "search + dashboard + sections"],
+    ["Verify", "coverage and evidence"],
+    ["Synthesize", "grounded report"],
+  ];
+
+  return (
+    <Frame label="deep.research/graph-style-flow">
+      <div className="bg-black p-5">
+        <div className="grid gap-3 lg:grid-cols-5">
+          {nodes.map(([title, detail], index) => (
+            <motion.div
+              key={title}
+              className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"
+              animate={transition ? { borderColor: index === 2 ? ["#1f1f1f", "#f9cb28"] : "#1f1f1f" } : undefined}
+              transition={transition}
+            >
+              <p className="font-mono text-xs text-[#8f8f8f]">node {index + 1}</p>
+              <h3 className="mt-4 text-sm font-semibold text-white">{title}</h3>
+              <p className="mt-2 text-xs leading-5 text-[#a3a3a3]">{detail}</p>
+            </motion.div>
+          ))}
+        </div>
+        <div className="mt-4 grid gap-4 lg:grid-cols-[0.72fr_1.28fr]">
+          <div className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
             <div className="flex items-center gap-2">
               <ChatIcon className="h-4 w-4 text-[#00dfd8]" />
-              <p className="font-mono text-xs text-[#8f8f8f]">DEEP RESEARCH</p>
+              <p className="font-mono text-xs text-[#8f8f8f]">PLAN</p>
             </div>
-            <div className="mt-5 space-y-3">
-              {["Read attached paper", "Build chart", "Compare with workspace", "Draft next questions"].map((step, index) => (
+            <div className="mt-4 space-y-2">
+              {["Read methods", "Compare findings", "Check limitations"].map((item) => (
+                <div key={item} className="rounded-md border border-[#1f1f1f] bg-[#030303] px-3 py-2 text-xs text-[#d0d0d0]">
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
+            <p className="font-mono text-xs text-[#8f8f8f]">EVIDENCE PACK</p>
+            <div className="mt-4 space-y-2">
+              {[78, 63, 86].map((width, index) => (
                 <motion.div
-                  key={step}
-                  className="flex items-center gap-3 rounded-md border border-[#1f1f1f] bg-[#050505] p-3"
-                  animate={transition ? { borderColor: index === 1 ? ["#1f1f1f", "#f9cb28"] : "#1f1f1f" } : undefined}
-                  transition={transition}
-                >
-                  <span className="flex h-5 w-5 items-center justify-center rounded-sm bg-[#111111] font-mono text-[10px] text-[#8f8f8f]">
-                    {index + 1}
-                  </span>
-                  <span className="text-sm text-[#d0d0d0]">{step}</span>
-                </motion.div>
+                  key={width}
+                  className="h-2 rounded-sm bg-gradient-to-r from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]"
+                  initial={{ width: `${width - 22}%` }}
+                  animate={transition ? { width: [`${width - 22}%`, `${width}%`] } : undefined}
+                  transition={transition ? { ...transition, delay: index * 0.1 } : undefined}
+                />
               ))}
             </div>
           </div>
