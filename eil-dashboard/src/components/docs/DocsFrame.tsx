@@ -31,7 +31,7 @@ function calloutClasses(tone: DocsCallout["tone"]) {
 
 function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
   return (
-    <aside className="sticky top-20 hidden h-[calc(100vh-5rem)] w-[260px] flex-none self-start overflow-y-hidden overscroll-contain pr-4 hover:overflow-y-auto focus-within:overflow-y-auto lg:block">
+    <aside className="fixed left-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))] top-20 z-20 hidden h-[calc(100vh-5rem)] w-[260px] overflow-y-hidden overscroll-contain pr-4 hover:overflow-y-auto focus-within:overflow-y-auto lg:block">
       <div className="space-y-2">
         <Link
           href="/docs/search"
@@ -156,10 +156,10 @@ export function DocsArticle({ page }: { page: DocsPage }) {
   const relatedDocs = getRelatedDocs(page);
 
   return (
-    <div className="mx-auto flex max-w-7xl gap-8 px-4 pb-20 pt-28 sm:px-6">
+    <div className="mx-auto max-w-7xl px-4 pb-20 pt-28 sm:px-6">
       <DocsSidebar activeSlug={page.slug} />
 
-      <article className="min-w-0 flex-1">
+      <article className="min-w-0 lg:ml-[292px] xl:mr-[252px]">
         <div className="mb-8 rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505] lg:hidden">
           <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
             Documentation
