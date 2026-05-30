@@ -588,6 +588,7 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     prompt=str(body.get("message") or ""),
                     selected_run_ids=list(body.get("selectedRunIds") or []),
                     attachment_names=list(body.get("attachmentNames") or []),
+                    source_policy=dict(body.get("sourcePolicy") or {}),
                 )
                 logger.info("workspace usage summary %s", consume_usage_summary())
                 _json_response(self, 200, plan)

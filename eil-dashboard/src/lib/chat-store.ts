@@ -148,6 +148,7 @@ export async function replaceDeepResearchPlan(
     summary: string;
     requiresAnalysis: boolean;
     pendingRunCount: number;
+    sourcePolicy?: Record<string, unknown>;
     steps: Array<{
       position: number;
       title: string;
@@ -256,6 +257,7 @@ export async function replaceDeepResearchPlan(
       sessionId,
       requiresAnalysis: input.requiresAnalysis,
       pendingRunCount: input.pendingRunCount,
+      sourcePolicy: input.sourcePolicy ?? null,
     },
   });
 

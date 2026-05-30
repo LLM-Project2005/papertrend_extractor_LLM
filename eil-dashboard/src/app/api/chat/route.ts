@@ -118,6 +118,29 @@ interface ChatGenerationOptions {
   presencePenalty?: number;
 }
 
+type DeepResearchScope = "attached" | "current_folder" | "project" | "workspace";
+type DeepResearchQualityMode = "strict_budget" | "balanced" | "quality";
+
+interface DeepResearchBudgetPolicy {
+  maxLibraryPapers: number;
+  maxWebSearches: number;
+  maxSources: number;
+  maxGapRounds: number;
+  maxVerificationRounds: number;
+  qualityMode: DeepResearchQualityMode;
+}
+
+interface DeepResearchSourcePolicy {
+  scope: DeepResearchScope;
+  includeAttached: boolean;
+  includeCurrentScope: boolean;
+  includeWorkspace: boolean;
+  allowWeb: boolean;
+  allowCharts: boolean;
+  allowCode: boolean;
+  budget: DeepResearchBudgetPolicy;
+}
+
 interface ChatRequestBody {
   message?: string;
   messages?: Array<{ role: "user" | "assistant"; content: string }>;
@@ -154,9 +177,66 @@ interface ChatRequestBody {
   toolMode?: ChatToolMode;
   chartRequest?: ChartRequest;
   webSearchEnabled?: boolean;
+  researchSourcePolicy?: Partial<DeepResearchSourcePolicy> & {
+    budget?: Partial<DeepResearchBudgetPolicy>;
+  };
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
+}
+
+const STRICT_RESEARCH_BUDGET: DeepResearchBudgetPolicy = {
+  maxLibraryPapers: 8,
+  maxWebSearches: 5,
+  maxSources: 12,
+  maxGapRounds: 1,
+  maxVerificationRounds: 1,
+  qualityMode: "strict_budget",
+};
+
+function normalizeResearchSourcePolicy(
+  value: ChatRequestBody["researchSourcePolicy"] | undefined,
+  selectedRunIds: string[] = []
+): DeepResearchSourcePolicy {
+  const rawScope = String(value?.scope ?? "").trim();
+  const scope: DeepResearchScope =
+    rawScope === "workspace" ||
+    rawScope === "project" ||
+    rawScope === "current_folder" ||
+    rawScope === "attached"
+      ? rawScope
+      : selectedRunIds.length > 0
+        ? "attached"
+        : "project";
+  const rawBudget = (value?.budget ?? {}) as Partial<DeepResearchBudgetPolicy>;
+  const qualityMode =
+    rawBudget.qualityMode === "quality" || rawBudget.qualityMode === "balanced"
+      ? rawBudget.qualityMode
+      : "strict_budget";
+  return {
+    scope,
+    includeAttached: value?.includeAttached ?? true,
+    includeCurrentScope: value?.includeCurrentScope ?? true,
+    includeWorkspace: value?.includeWorkspace ?? scope === "workspace",
+    allowWeb: value?.allowWeb ?? false,
+    allowCharts: value?.allowCharts ?? true,
+    allowCode: false,
+    budget: {
+      maxLibraryPapers: clampValue(Number(rawBudget.maxLibraryPapers ?? STRICT_RESEARCH_BUDGET.maxLibraryPapers), 1, 24),
+      maxWebSearches: clampValue(Number(rawBudget.maxWebSearches ?? STRICT_RESEARCH_BUDGET.maxWebSearches), 0, 10),
+      maxSources: clampValue(Number(rawBudget.maxSources ?? STRICT_RESEARCH_BUDGET.maxSources), 2, 32),
+      maxGapRounds: clampValue(Number(rawBudget.maxGapRounds ?? STRICT_RESEARCH_BUDGET.maxGapRounds), 0, 3),
+      maxVerificationRounds: clampValue(Number(rawBudget.maxVerificationRounds ?? STRICT_RESEARCH_BUDGET.maxVerificationRounds), 1, 3),
+      qualityMode,
+    },
+  };
+}
+
+function folderForResearchPolicy(
+  folderId: string | "all" | undefined,
+  policy: DeepResearchSourcePolicy
+) {
+  return policy.scope === "workspace" || policy.scope === "project" ? "all" : folderId;
 }
 
 function normalizeIdList(values: string[] = []) {
@@ -2486,14 +2566,29 @@ function buildLocalTodoInput(args: {
   promptAnalysis: Record<string, unknown>;
   projectId?: string;
   selectedRunIds?: string[];
+  sourcePolicy?: DeepResearchSourcePolicy;
   todoId: string;
   title: string;
-  phaseClass: "research" | "verification" | "synthesis";
+  phaseClass:
+    | "source_selection"
+    | "intent_resolution"
+    | "research"
+    | "evidence_review"
+    | "gap_check"
+    | "verification"
+    | "synthesis"
+    | "critic"
+    | "finalize";
   requiredClass:
+    | "preflight"
     | "required_before_verification"
     | "optional_context"
+    | "evidence_review"
+    | "gap_check"
     | "verification"
-    | "synthesis";
+    | "synthesis"
+    | "critic"
+    | "finalize";
   purpose: string;
   expectedOutput: string;
   completionCondition: string;
@@ -2519,6 +2614,8 @@ function buildLocalTodoInput(args: {
     completionCondition: args.completionCondition,
     projectId: args.projectId ?? "",
     selectedRunIds: args.selectedRunIds ?? [],
+    sourcePolicy: args.sourcePolicy,
+    budget: args.sourcePolicy?.budget,
     promptAnalysis: args.promptAnalysis,
     queryBundle: buildLocalQueryBundle(
       args.query,
@@ -2549,15 +2646,30 @@ function buildLocalTodo(
     promptAnalysis: Record<string, unknown>;
     projectId?: string;
     selectedRunIds?: string[];
+    sourcePolicy?: DeepResearchSourcePolicy;
     title: string;
     description: string;
     toolName: string;
-    phaseClass: "research" | "verification" | "synthesis";
+    phaseClass:
+      | "source_selection"
+      | "intent_resolution"
+      | "research"
+      | "evidence_review"
+      | "gap_check"
+      | "verification"
+      | "synthesis"
+      | "critic"
+      | "finalize";
     requiredClass:
+      | "preflight"
       | "required_before_verification"
       | "optional_context"
+      | "evidence_review"
+      | "gap_check"
       | "verification"
-      | "synthesis";
+      | "synthesis"
+      | "critic"
+      | "finalize";
     purpose: string;
     expectedOutput: string;
     completionCondition: string;
@@ -2577,6 +2689,7 @@ function buildLocalTodo(
       promptAnalysis: config.promptAnalysis,
       projectId: config.projectId,
       selectedRunIds: config.selectedRunIds,
+      sourcePolicy: config.sourcePolicy,
       todoId: `initial-${position}-${slugifyTodo(config.title)}`,
       title: config.title,
       phaseClass: config.phaseClass,
@@ -2673,7 +2786,8 @@ async function buildLocalResearchPlan(
   folderId: string | "all" | undefined,
   projectId: string | undefined,
   selectedRunIds: string[] = [],
-  attachmentNames: string[] = []
+  attachmentNames: string[] = [],
+  sourcePolicy: DeepResearchSourcePolicy = normalizeResearchSourcePolicy(undefined, selectedRunIds)
 ) {
   const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId, selectedRunIds);
   const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds, attachmentNames);
@@ -2705,11 +2819,39 @@ async function buildLocalResearchPlan(
         promptAnalysis,
         projectId,
         selectedRunIds,
+        sourcePolicy,
       })
     );
   };
 
   let summary = `Research "${normalizedQuery}" inside the selected scope, verify coverage, and draft a grounded report.`;
+
+  addStep({
+    title: "Confirm research sources and budget",
+    description: "Lock the selected sources, enabled tools, and strict-budget limits before research starts.",
+    toolName: "source_selection",
+    phaseClass: "source_selection",
+    requiredClass: "preflight",
+    purpose: "Make the run source-aware and budget-bound.",
+    expectedOutput: "A source and budget summary for the run.",
+    completionCondition: "The selected source policy is recorded.",
+    query: normalizedQuery,
+  });
+
+  addStep({
+    title: "Resolve research intent",
+    description: "Resolve target paper, output style, requested sections, and whether outside context is allowed.",
+    toolName: "resolve_intent",
+    phaseClass: "intent_resolution",
+    requiredClass: "preflight",
+    purpose: "Convert the prompt into an executable research intent.",
+    expectedOutput: "A concrete intent and target-resolution summary.",
+    completionCondition: "The run has a grounded intent analysis.",
+    query: normalizedQuery,
+    targetTitle: candidateTitle,
+    targetPaperId,
+    requestedSections,
+  });
 
   if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
     if (promptAnalysis.target_in_scope) {
@@ -2918,6 +3060,19 @@ async function buildLocalResearchPlan(
     summary = `Retrieve the most relevant in-scope papers for "${normalizedQuery}" and verify whether their sections fully support the requested answer.`;
   }
 
+  if (sourcePolicy.allowWeb && sourcePolicy.budget.maxWebSearches > 0) {
+    addStep({
+      title: "Search opt-in web context",
+      description: "Use a small web-search budget to gather outside context only where it can improve the report.",
+      toolName: "web_search",
+      phaseClass: "research",
+      requiredClass: "optional_context",
+      purpose: "Add external context with clickable web citations when the user allowed it.",
+      expectedOutput: "A small set of web findings with source URLs.",
+      completionCondition: "Web context is captured or skipped with a reason.",
+      query: normalizedQuery,
+    });
+  }
   addStep({
     title: "Verify coverage before synthesis",
     description: "Check target resolution, requested sections, citation coverage, and evidence-gap disclosure before drafting the report.",
@@ -3012,6 +3167,11 @@ async function planDeepResearch(
     .map((attachment) => String(attachment?.name ?? "").trim())
     .filter(Boolean);
   const selectedRunIds = body.selectedRunIds ?? [];
+  const researchSourcePolicy = normalizeResearchSourcePolicy(
+    body.researchSourcePolicy,
+    selectedRunIds
+  );
+  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
   if (!prompt) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
@@ -3036,7 +3196,7 @@ async function planDeepResearch(
     await appendWorkspaceMessage(supabase, {
       threadId: thread.id,
       ownerUserId,
-      folderId: body.folderId,
+      folderId: researchFolderId,
       role: "user",
       content: prompt,
       messageKind: "chat",
@@ -3044,6 +3204,7 @@ async function planDeepResearch(
         chatMode: "deep_research",
         attachments: body.attachments ?? [],
         selectedRunIds: body.selectedRunIds ?? [],
+        researchSourcePolicy,
       },
     });
   }
@@ -3082,10 +3243,11 @@ async function planDeepResearch(
       }>;
     }>("/research-plan", {
       ownerUserId,
-      folderId: body.folderId,
+      folderId: researchFolderId,
       projectId: body.projectId,
       selectedRunIds,
       attachmentNames,
+      sourcePolicy: researchSourcePolicy,
       message: prompt,
     });
   } catch {
@@ -3093,7 +3255,7 @@ async function planDeepResearch(
   }
 
   const pendingRunCount = await countPendingRuns(
-    body.folderId,
+    researchFolderId,
     body.projectId,
     ownerUserId,
     body.selectedRunIds ?? []
@@ -3104,15 +3266,16 @@ async function planDeepResearch(
       prompt,
       pendingRunCount,
       ownerUserId,
-      body.folderId,
+      researchFolderId,
       body.projectId,
       selectedRunIds,
-      attachmentNames
+      attachmentNames,
+      researchSourcePolicy
     ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,
     ownerUserId,
-    folderId: body.folderId,
+    folderId: researchFolderId,
     sessionId: reusableSessionId,
     prompt,
     title: String(plan.title || buildThreadTitle(prompt)),
@@ -3125,6 +3288,7 @@ async function planDeepResearch(
       typeof plan.pending_run_count === "number"
         ? plan.pending_run_count
         : pendingRunCount,
+    sourcePolicy: researchSourcePolicy as unknown as Record<string, unknown>,
     steps: (plan.steps ?? []).map((step, index) => ({
       position: Number(step.position ?? index + 1),
       title: String(step.title || `Step ${index + 1}`),

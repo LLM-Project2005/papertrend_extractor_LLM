@@ -3,9 +3,34 @@ export type ChatMode = "normal" | "deep_research";
 export interface DeepResearchCitationRef {
   source_id: string;
   source_label: string;
+  source_type?: "paper" | "web" | "workspace";
+  paper_id?: number | string | null;
+  url?: string | null;
   locator?: string | null;
   snippet?: string | null;
   confidence?: "high" | "medium" | "low";
+  claim_ids?: string[];
+  retrieved_at?: string | null;
+}
+
+export interface DeepResearchBudgetPolicy {
+  maxLibraryPapers: number;
+  maxWebSearches: number;
+  maxSources: number;
+  maxGapRounds: number;
+  maxVerificationRounds: number;
+  qualityMode: "strict_budget" | "balanced" | "quality";
+}
+
+export interface DeepResearchSourcePolicy {
+  scope: "attached" | "current_folder" | "project" | "workspace";
+  includeAttached: boolean;
+  includeCurrentScope: boolean;
+  includeWorkspace: boolean;
+  allowWeb: boolean;
+  allowCharts: boolean;
+  allowCode: boolean;
+  budget: DeepResearchBudgetPolicy;
 }
 
 export interface DeepResearchQueryBundle {
@@ -70,13 +95,29 @@ export interface DeepResearchStepInputPayload {
   targetPaperId?: number | string;
   requestedSections?: string[];
   exclusionIds?: Array<number | string>;
-  phaseClass?: "research" | "verification" | "synthesis";
+  phaseClass?:
+    | "source_selection"
+    | "intent_resolution"
+    | "research"
+    | "evidence_review"
+    | "gap_check"
+    | "verification"
+    | "synthesis"
+    | "critic"
+    | "finalize";
   requiredClass?:
+    | "preflight"
     | "required_before_verification"
     | "optional_context"
+    | "evidence_review"
+    | "gap_check"
     | "verification"
-    | "synthesis";
-  origin?: "initial" | "replanned" | "verification_generated";
+    | "synthesis"
+    | "critic"
+    | "finalize";
+  sourcePolicy?: DeepResearchSourcePolicy;
+  budget?: DeepResearchBudgetPolicy;
+  origin?: "initial" | "replanned" | "verification_generated" | "graph_stage";
   purpose?: string;
   expectedOutput?: string;
   completionCondition?: string;
@@ -100,7 +141,16 @@ export interface DeepResearchStepOutputPayload {
     | "tool_failure"
     | "obsolete"
     | "blocked"
-    | "conflicting_evidence";
+    | "conflicting_evidence"
+    | "source_policy"
+    | "intent_resolution"
+    | "web_context"
+    | "web_skipped"
+    | "web_miss"
+    | "evidence_review"
+    | "gap_check"
+    | "critic"
+    | "finalize";
   diagnostics?: Record<string, unknown>;
   raw?:
     | {
@@ -108,6 +158,7 @@ export interface DeepResearchStepOutputPayload {
         rankedMatches?: DeepResearchRankedMatch[];
         evidenceItems?: DeepResearchEvidenceItem[];
         diagnostics?: DeepResearchStepDiagnostics;
+        citationLedger?: DeepResearchCitationRef[];
       }
     | unknown;
   status_reason?: string | null;

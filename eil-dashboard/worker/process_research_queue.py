@@ -214,6 +214,7 @@ def _extract_scope_from_steps(steps: Iterable[Dict[str, Any]]) -> Dict[str, Any]
     project_id = ""
     prompt_analysis: Dict[str, Any] = {}
     selected_run_ids: List[str] = []
+    source_policy: Dict[str, Any] = {}
     for step in steps:
         payload = step.get("input_payload") if isinstance(step.get("input_payload"), dict) else {}
         if not project_id:
@@ -226,13 +227,50 @@ def _extract_scope_from_steps(steps: Iterable[Dict[str, Any]]) -> Dict[str, Any]
             ]
         if not prompt_analysis and isinstance(payload.get("promptAnalysis"), dict):
             prompt_analysis = dict(payload.get("promptAnalysis") or {})
-        if project_id and prompt_analysis and selected_run_ids:
+        if not source_policy and isinstance(payload.get("sourcePolicy"), dict):
+            source_policy = dict(payload.get("sourcePolicy") or {})
+        if project_id and prompt_analysis and selected_run_ids and source_policy:
             break
     return {
         "project_id": project_id,
         "selected_run_ids": selected_run_ids,
         "prompt_analysis": prompt_analysis,
+        "source_policy": source_policy,
     }
+
+
+def _message_citations_from_research(citations: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    converted: List[Dict[str, Any]] = []
+    for index, citation in enumerate(citations, start=1):
+        if not isinstance(citation, dict):
+            continue
+        source_type = str(citation.get("source_type") or "").strip().lower()
+        url = str(citation.get("url") or "").strip()
+        paper_id = citation.get("paper_id") or citation.get("source_id") or f"Source {index}"
+        title = str(citation.get("source_label") or citation.get("title") or f"Source {index}").strip()
+        if source_type == "web" or url:
+            converted.append(
+                {
+                    "paperId": f"Web {len(converted) + 1}",
+                    "title": title,
+                    "year": "",
+                    "href": url,
+                    "reason": str(citation.get("snippet") or citation.get("locator") or "Web source used by deep research."),
+                    "sourceType": "web",
+                }
+            )
+            continue
+        converted.append(
+            {
+                "paperId": paper_id,
+                "title": title,
+                "year": "",
+                "href": f"/workspace/library?paperId={paper_id}",
+                "reason": str(citation.get("snippet") or citation.get("locator") or "Library source used by deep research."),
+                "sourceType": "paper",
+            }
+        )
+    return converted[:24]
 
 
 def _requeue_waiting_sessions(client: SupabaseRestClient, limit: int) -> int:
@@ -394,6 +432,8 @@ def _session_initial_state(client: SupabaseRestClient, session: Dict[str, Any]) 
         "session_id": str(session.get("id") or ""),
         "prompt": str(session.get("prompt") or ""),
         "prompt_analysis": prompt_analysis,
+        "source_policy": dict(scope.get("source_policy") or {}),
+        "research_budget": dict((scope.get("source_policy") or {}).get("budget") or {}),
         "plan_summary": str(session.get("plan_summary") or ""),
         "requires_analysis": bool(session.get("requires_analysis")),
         "pending_run_count": int(session.get("pending_run_count") or 0),
@@ -442,6 +482,8 @@ def _save_final_report(
     session: Dict[str, Any],
     final_report: str,
     completion_kind: str = "full",
+    citations: Optional[List[Dict[str, Any]]] = None,
+    diagnostics: Optional[Dict[str, Any]] = None,
 ) -> None:
     thread_id = str(session.get("thread_id") or "")
     owner_user_id = str(session.get("owner_user_id") or "")
@@ -456,10 +498,11 @@ def _save_final_report(
             "role": "assistant",
             "message_kind": "deep_research_report",
             "content": final_report,
-            "citations": [],
+            "citations": _message_citations_from_research(citations or []),
             "metadata": {
                 "sessionId": session.get("id"),
                 "completion_kind": completion_kind if completion_kind == "partial" else "full",
+                "researchDiagnostics": diagnostics or {},
             },
             "updated_at": now_iso(),
         }
@@ -516,7 +559,14 @@ def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict
             "requires_analysis": False,
         },
     )
-    _save_final_report(client, session, final_report, completion_kind=completion_kind)
+    _save_final_report(
+        client,
+        session,
+        final_report,
+        completion_kind=completion_kind,
+        citations=list(final_state.get("final_citations") or final_state.get("citation_ledger") or []),
+        diagnostics=dict(final_state.get("research_diagnostics") or {}),
+    )
     return {"status": "completed", "completion_kind": completion_kind, "usage_summary": usage_summary}
 
 
