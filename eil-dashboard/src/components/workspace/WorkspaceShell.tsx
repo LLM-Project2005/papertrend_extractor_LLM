@@ -68,11 +68,11 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
 const SEARCH_PAGE_ITEMS = [
   {
     id: "workspaces",
-    label: "Start page",
-    description: "Return to workspaces and switch workspace context",
+    label: "Workspaces",
+    description: "Return to the workspace/project picker",
     href: "/workspaces",
     icon: HomeIcon,
-    keywords: ["workspaces", "organizations", "home", "homepage", "start"],
+    keywords: ["switch project", "project picker", "workspaces", "organizations", "home", "start"],
     featured: true,
   },
   {
@@ -81,7 +81,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Open the project home and status view",
     href: "/workspace/home",
     icon: HomeIcon,
-    keywords: ["overview", "home", "project"],
+    keywords: ["overview", "home", "project", "activity", "status", "recent papers"],
     featured: true,
   },
   {
@@ -90,7 +90,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Open research trends and analytics",
     href: "/workspace/dashboard",
     icon: ChartIcon,
-    keywords: ["analytics", "trends", "insights"],
+    keywords: ["analytics", "trends", "insights", "adaptive dashboard", "topic chart", "keyword chart", "tracks"],
     featured: true,
   },
   {
@@ -99,7 +99,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Open grounded research chat",
     href: "/workspace/chat",
     icon: ChatIcon,
-    keywords: ["assistant", "conversation", "qa"],
+    keywords: ["assistant", "conversation", "qa", "ai chat", "deep research", "deep agent", "chart mode", "web search"],
     featured: true,
   },
   {
@@ -108,7 +108,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Manage files, imports, and analyzed papers",
     href: "/workspace/library",
     icon: FolderIcon,
-    keywords: ["papers", "files", "imports", "documents"],
+    keywords: ["papers", "files", "imports", "documents", "upload", "analyze paper", "search library", "paper detail"],
     featured: true,
   },
   {
@@ -117,7 +117,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Browse previous analysis runs and revisit files",
     href: "/workspace/logs",
     icon: FileIcon,
-    keywords: ["history", "analysis", "jobs", "processing"],
+    keywords: ["history", "analysis", "jobs", "processing", "queue", "run logs"],
     featured: true,
   },
   {
@@ -126,7 +126,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Adjust workspace preferences and identity",
     href: "/workspace/settings",
     icon: SettingsIcon,
-    keywords: ["preferences", "configuration"],
+    keywords: ["preferences", "configuration", "configure workspace", "workspace settings"],
   },
   {
     id: "profile",
@@ -134,7 +134,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Manage your account details",
     href: "/workspace/profile",
     icon: UserIcon,
-    keywords: ["account", "user"],
+    keywords: ["account", "user", "avatar", "profile settings"],
   },
 ];
 
@@ -466,7 +466,7 @@ export default function WorkspaceShell({
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-[#f2f2f2]">
       <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95">
-        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
@@ -494,11 +494,8 @@ export default function WorkspaceShell({
             />
           </div>
 
-          <div className="order-3 w-full min-w-0 lg:order-2 lg:max-w-[560px] lg:flex-1">
+          <div className="ml-auto flex items-center gap-2">
             <WorkspaceGlobalSearch pageItems={SEARCH_PAGE_ITEMS} />
-          </div>
-
-          <div className="ml-auto flex items-center gap-2 lg:order-3">
             <ThemeToggle compact />
             <WorkspaceProfileMenu />
           </div>
@@ -524,7 +521,7 @@ export default function WorkspaceShell({
         </div>
       ) : null}
 
-      <div className="min-h-screen pt-[116px] lg:pl-14 lg:pt-16">
+      <div className="min-h-screen pt-16 lg:pl-14">
         <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
           {workspaceLoading ? (
             <WorkspaceLoadingState />
