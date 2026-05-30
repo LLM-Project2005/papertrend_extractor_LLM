@@ -234,7 +234,7 @@ export default function StartWorkspaceClient() {
                     <span
                       className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-normal ${
                         item.status === "ready"
-                          ? "bg-emerald-100 text-emerald-700 dark:bg-[#193126] dark:text-[#7ed9a8]"
+                          ? "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300"
                           : "bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#8f8f8f]"
                       }`}
                     >
@@ -317,7 +317,7 @@ export default function StartWorkspaceClient() {
               <div key={item.title} className="flex items-start gap-3">
                 <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center">
                   {item.done ? (
-                    <CheckCircleIcon className="h-5 w-5 text-emerald-600" />
+                    <CheckCircleIcon className="h-5 w-5 text-blue-600 dark:text-blue-300" />
                   ) : (
                     <CircleIcon className="h-5 w-5 text-slate-300 dark:text-[#4c4c4c]" />
                   )}

@@ -13,7 +13,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (hydrated && user) {
-      router.replace(getStoredWorkspaceRoute() ?? "/organizations");
+      router.replace(getStoredWorkspaceRoute() ?? "/workspaces");
     }
   }, [hydrated, router, user]);
 
@@ -21,8 +21,8 @@ export default function LoginPage() {
     <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 dark:bg-black dark:text-white">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-center gap-10">
         <div className="mt-12 flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1f9d63] text-white">
-            <LogoMarkIcon className="h-6 w-6" />
+          <span className="flex h-12 w-12 items-center justify-center text-slate-950 dark:text-white">
+            <LogoMarkIcon className="h-9 w-9" />
           </span>
           <div>
             <p className="text-xl font-semibold">Papertrend</p>
@@ -34,7 +34,7 @@ export default function LoginPage() {
           <AuthPanel
             eyebrow="Sign in"
             title="Welcome back"
-            description="Continue with Google or Facebook to open your organizations and projects."
+            description="Continue with Google or Facebook to open your workspaces and projects."
           />
         </div>
       </div>

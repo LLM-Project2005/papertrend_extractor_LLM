@@ -422,7 +422,7 @@ export default function AnalysisStatusCard({
                     </button>
                   ) : null}
                   {run.status === "succeeded" ? (
-                    <CheckCircleIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-300" />
+                    <CheckCircleIcon className="h-4 w-4 text-blue-600 dark:text-blue-300" />
                   ) : (
                     <CircleIcon className="h-4 w-4 text-slate-400 dark:text-[#666666]" />
                   )}

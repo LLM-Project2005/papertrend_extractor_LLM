@@ -31,7 +31,7 @@ export async function GET(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "Failed to load organizations.",
+            : "Failed to load workspaces.",
       },
       { status: 500 }
     );
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 
     if (!body.name?.trim()) {
       return NextResponse.json(
-        { error: "Organization name is required." },
+        { error: "Workspace name is required." },
         { status: 400 }
       );
     }
@@ -72,7 +72,7 @@ export async function POST(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "Failed to create organization.",
+            : "Failed to create workspace.",
       },
       { status: 500 }
     );

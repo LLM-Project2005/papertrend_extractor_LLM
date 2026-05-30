@@ -17,7 +17,7 @@ export async function ensureWorkspaceOrganization(
 ): Promise<WorkspaceOrganizationRow> {
   const payload = {
     owner_user_id: ownerUserId,
-    name: sanitizeWorkspaceName(name, "Untitled organization"),
+    name: sanitizeWorkspaceName(name, "Untitled workspace"),
     type,
     updated_at: new Date().toISOString(),
   };
@@ -29,7 +29,7 @@ export async function ensureWorkspaceOrganization(
     .single();
 
   if (error || !data) {
-    throw new Error(error?.message ?? "Failed to save organization.");
+    throw new Error(error?.message ?? "Failed to save workspace.");
   }
 
   return data as WorkspaceOrganizationRow;

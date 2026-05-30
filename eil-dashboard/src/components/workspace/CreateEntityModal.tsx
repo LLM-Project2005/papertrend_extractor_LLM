@@ -76,7 +76,7 @@ export default function CreateEntityModal({
               onChange={(event) => onValueChange(event.target.value)}
               placeholder={fieldPlaceholder}
               autoFocus
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666666]"
+              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666666] dark:focus:border-white"
             />
           </label>
 
@@ -100,7 +100,7 @@ export default function CreateEntityModal({
           <button
             type="submit"
             disabled={busy}
-            className="rounded-xl bg-[#1f9d63] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#198451] disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
           >
             {busy ? busyLabel : submitLabel}
           </button>

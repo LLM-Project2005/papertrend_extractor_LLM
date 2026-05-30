@@ -379,7 +379,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       };
 
       if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load organizations.");
+        throw new Error(payload.error ?? "Failed to load workspaces.");
       }
 
       const nextOrganizations = sortByName(payload.organizations ?? []);
@@ -648,7 +648,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const createOrganization = useCallback(
     async (name: string, type: WorkspaceOrganizationRow["type"]) => {
       if (!user || !session?.access_token) {
-        throw new Error("Sign in before creating organizations.");
+        throw new Error("Sign in before creating workspaces.");
       }
 
       const response = await fetch("/api/workspace/organizations", {
@@ -666,7 +666,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       };
 
       if (!response.ok || !payload.organization) {
-        throw new Error(payload.error ?? "Failed to create organization.");
+        throw new Error(payload.error ?? "Failed to create workspace.");
       }
 
       setOrganizations((current) =>
@@ -690,7 +690,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         options?.organizationId ?? selectedOrganizationIdState ?? null;
 
       if (!user || !session?.access_token || !organizationId) {
-        throw new Error("Select an organization before creating projects.");
+        throw new Error("Select a workspace before creating projects.");
       }
 
       const response = await fetch("/api/workspace/projects", {

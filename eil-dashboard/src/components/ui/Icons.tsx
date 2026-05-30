@@ -24,12 +24,17 @@ function BaseIcon({
 
 export function LogoMarkIcon({ className }: IconProps) {
   return (
-    <BaseIcon className={className}>
-      <path d="M6 6h12v12H6z" />
-      <path d="M9 9h6v6H9z" />
-      <path d="M6 12h3" />
-      <path d="M15 12h3" />
-    </BaseIcon>
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 64 64"
+      fill="none"
+      className={className}
+    >
+      <path fill="currentColor" d="M29.2 4.4 7.4 47 29.2 35.7V4.4Z" />
+      <path fill="currentColor" d="M34.8 4.4 56.6 47 34.8 35.7V4.4Z" />
+      <path fill="currentColor" d="m35.3 40.5 22.5 9.9-22.9 10.7-10-18.7 10.4-1.9Z" />
+      <path fill="currentColor" d="m6.6 50.6 13.6-7.1 10.7 17.6L6.6 50.6Z" />
+    </svg>
   );
 }
 

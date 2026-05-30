@@ -62,3 +62,132 @@ body {
 .app-muted {
   @apply text-slate-500 dark:text-[#a3a3a3];
 }
+
+.marketing-grid {
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+  background-position: 0 0, 0 0;
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.92), transparent 78%);
+  animation: marketing-grid-drift 18s linear infinite;
+}
+
+.dark .marketing-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+}
+
+.marketing-shell {
+  background-color: #ffffff;
+  color: #020617;
+}
+
+.dark .marketing-shell {
+  background-color: #000000;
+  color: #ffffff;
+}
+
+:root:not(.dark) .marketing-shell :where(.bg-black),
+:root:not(.dark) .marketing-shell :where(.bg-\[\#030303\]) {
+  background-color: #f8fafc;
+}
+
+:root:not(.dark) .marketing-shell :where(.bg-\[\#050505\]) {
+  background-color: #ffffff;
+}
+
+:root:not(.dark) .marketing-shell :where(.bg-\[\#0a0a0a\]),
+:root:not(.dark) .marketing-shell :where(.bg-\[\#111111\]) {
+  background-color: #f1f5f9;
+}
+
+:root:not(.dark) .marketing-shell :where(.bg-\[\#1f1f1f\]) {
+  background-color: #e2e8f0;
+}
+
+:root:not(.dark) .marketing-shell :where(.bg-\[\#120f05\]) {
+  background-color: #fffbeb;
+}
+
+:root:not(.dark) .marketing-shell :where(.border-\[\#1f1f1f\]),
+:root:not(.dark) .marketing-shell :where(.border-\[\#2a2a2a\]),
+:root:not(.dark) .marketing-shell :where(.border-\[\#3a3a3a\]) {
+  border-color: #e2e8f0;
+}
+
+:root:not(.dark) .marketing-shell :where(.text-white),
+:root:not(.dark) .marketing-shell :where(.text-\[\#ececec\]),
+:root:not(.dark) .marketing-shell :where(.text-\[\#f3f3f3\]) {
+  color: #020617;
+}
+
+:root:not(.dark) .marketing-shell :where(.text-\[\#d0d0d0\]) {
+  color: #334155;
+}
+
+:root:not(.dark) .marketing-shell :where(.text-\[\#a3a3a3\]),
+:root:not(.dark) .marketing-shell :where(.text-\[\#9c9c9c\]) {
+  color: #475569;
+}
+
+:root:not(.dark) .marketing-shell :where(.text-\[\#8f8f8f\]),
+:root:not(.dark) .marketing-shell :where(.text-\[\#6f6f6f\]) {
+  color: #64748b;
+}
+
+:root:not(.dark) .marketing-shell :where(.bg-gradient-to-br.text-white),
+:root:not(.dark) .marketing-shell :where(.bg-gradient-to-r.text-white),
+:root:not(.dark) .marketing-shell :where(.bg-gradient-to-t.text-white),
+:root:not(.dark) .marketing-shell :where(.bg-slate-950.text-white),
+:root:not(.dark) .marketing-shell :where(.bg-slate-900.text-white),
+:root:not(.dark) .marketing-shell :where(.text-white[class*="from-"]) {
+  color: #ffffff;
+}
+
+.marketing-scanline {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(0, 124, 240, 0.04) 38%,
+    rgba(0, 223, 216, 0.16) 50%,
+    rgba(255, 0, 128, 0.06) 62%,
+    transparent 100%
+  );
+  transform: translateY(-100%);
+  animation: marketing-scanline 4.8s ease-in-out infinite;
+}
+
+@keyframes marketing-grid-drift {
+  from {
+    background-position: 0 0, 0 0;
+  }
+  to {
+    background-position: 48px 48px, 48px 48px;
+  }
+}
+
+@keyframes marketing-scanline {
+  0% {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  28% {
+    opacity: 1;
+  }
+  68% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marketing-grid,
+  .marketing-scanline {
+    animation: none;
+  }
+}

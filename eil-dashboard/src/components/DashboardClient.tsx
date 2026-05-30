@@ -612,7 +612,7 @@ export default function DashboardClient({
           ))}
           {isRoutePending ? (
             <span
-              className="my-auto h-2 w-2 flex-none animate-pulse rounded-full bg-emerald-500"
+              className="my-auto h-2 w-2 flex-none animate-pulse rounded-full bg-slate-950 dark:bg-white"
               title="Changing view"
             />
           ) : null}
