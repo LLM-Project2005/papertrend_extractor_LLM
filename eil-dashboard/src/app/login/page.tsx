@@ -13,7 +13,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (hydrated && user) {
-      router.replace(getStoredWorkspaceRoute() ?? "/organizations");
+      router.replace(getStoredWorkspaceRoute() ?? "/workspaces");
     }
   }, [hydrated, router, user]);
 
@@ -34,7 +34,7 @@ export default function LoginPage() {
           <AuthPanel
             eyebrow="Sign in"
             title="Welcome back"
-            description="Continue with Google or Facebook to open your organizations and projects."
+            description="Continue with Google or Facebook to open your workspaces and projects."
           />
         </div>
       </div>

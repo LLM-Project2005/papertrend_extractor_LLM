@@ -40,10 +40,10 @@ function getRedirectTo(): string | undefined {
     process.env.NEXT_PUBLIC_SITE_URL?.trim().replace(/\/$/, "") || null;
 
   if (typeof window === "undefined") {
-    return configuredSiteUrl ? `${configuredSiteUrl}/organizations` : undefined;
+    return configuredSiteUrl ? `${configuredSiteUrl}/workspaces` : undefined;
   }
 
-  return `${window.location.origin}/organizations`;
+  return `${window.location.origin}/workspaces`;
 }
 
 function getUserMetadata(user: User): { full_name: string | null; avatar_url: string | null } {

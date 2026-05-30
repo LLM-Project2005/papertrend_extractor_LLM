@@ -26,7 +26,7 @@ interface SearchResult {
   id: string;
   label: string;
   description: string;
-  category: "Pages" | "Organizations" | "Projects" | "Folders";
+  category: "Pages" | "Workspaces" | "Projects" | "Folders";
   icon: ComponentType<{ className?: string }>;
   featured?: boolean;
   searchText: string;
@@ -35,7 +35,7 @@ interface SearchResult {
 
 const CATEGORY_ORDER: SearchResult["category"][] = [
   "Pages",
-  "Organizations",
+  "Workspaces",
   "Projects",
   "Folders",
 ];
@@ -92,7 +92,7 @@ export default function WorkspaceGlobalSearch({
     [allProjects]
   );
   const organizationIcon =
-    pageItems.find((item) => item.id === "organizations")?.icon ?? SearchIcon;
+    pageItems.find((item) => item.id === "workspaces")?.icon ?? SearchIcon;
   const projectIcon =
     pageItems.find((item) => item.id === "project-overview")?.icon ?? SearchIcon;
   const folderIcon =
@@ -117,14 +117,14 @@ export default function WorkspaceGlobalSearch({
       ...organizations.map((organization) => ({
         id: `organization:${organization.id}`,
         label: organization.name,
-        description: "Open this organization and its projects",
-        category: "Organizations" as const,
+        description: "Open this workspace and its projects",
+        category: "Workspaces" as const,
         icon: organizationIcon,
         featured: currentOrganization?.id === organization.id,
         searchText: `${organization.name} ${organization.type.replace(/_/g, " ")}`,
         onSelect: () => {
           setSelectedOrganizationId(organization.id);
-          router.push("/organizations");
+          router.push("/workspaces");
         },
       })),
       ...allProjects.map((project) => {

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
-  ChevronDownIcon,
+  HomeIcon,
   LogoutIcon,
   SettingsIcon,
   UserIcon,
@@ -24,7 +24,13 @@ function getInitials(value: string) {
   return parts.map((part) => part[0]?.toUpperCase() ?? "").join("");
 }
 
-export default function WorkspaceProfileMenu() {
+interface WorkspaceProfileMenuProps {
+  variant?: "workspace" | "marketing";
+}
+
+export default function WorkspaceProfileMenu({
+  variant = "workspace",
+}: WorkspaceProfileMenuProps) {
   const { hydrated, user, profile, isAdmin, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -64,9 +70,10 @@ export default function WorkspaceProfileMenu() {
 
   if (!hydrated) {
     return (
-      <div className="flex h-10 items-center rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3]">
-        Loading account...
-      </div>
+      <div
+        className="h-10 w-10 rounded-full border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]"
+        aria-label="Loading account"
+      />
     );
   }
 
@@ -74,9 +81,10 @@ export default function WorkspaceProfileMenu() {
     return (
       <Link
         href="/login"
-        className="inline-flex h-10 items-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        aria-label="Sign in"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
       >
-        Sign in
+        <UserIcon className="h-4 w-4" />
       </Link>
     );
   }
@@ -86,11 +94,12 @@ export default function WorkspaceProfileMenu() {
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-10 items-center gap-3 rounded-xl border border-slate-200 bg-white px-2.5 pr-3 text-left text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-left text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-label="Open account menu"
       >
-        <span className="flex h-7 w-7 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700 dark:bg-[#0a0a0a] dark:text-[#f2f2f2]">
+        <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700 dark:bg-[#0a0a0a] dark:text-[#f2f2f2]">
           {identity.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -102,12 +111,6 @@ export default function WorkspaceProfileMenu() {
             identity.initials
           )}
         </span>
-        <span className="hidden min-w-0 sm:block">
-          <span className="block max-w-[150px] truncate text-sm font-medium">
-            {identity.name}
-          </span>
-        </span>
-        <ChevronDownIcon className="h-4 w-4 text-slate-400 dark:text-[#8f8f8f]" />
       </button>
 
       {open ? (
@@ -133,14 +136,25 @@ export default function WorkspaceProfileMenu() {
               <UserIcon className="h-4 w-4" />
               <span>Profile settings</span>
             </Link>
-            <Link
-              href="/workspace/settings"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-            >
-              <SettingsIcon className="h-4 w-4" />
-              <span>Workspace settings</span>
-            </Link>
+            {variant === "marketing" ? (
+              <Link
+                href="/workspaces"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+              >
+                <HomeIcon className="h-4 w-4" />
+                <span>Workspace</span>
+              </Link>
+            ) : (
+              <Link
+                href="/workspace/settings"
+                onClick={() => setOpen(false)}
+                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+              >
+                <SettingsIcon className="h-4 w-4" />
+                <span>Workspace settings</span>
+              </Link>
+            )}
           </div>
 
           <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3 dark:border-red-900/50 dark:bg-red-950/20">

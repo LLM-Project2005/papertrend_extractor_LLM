@@ -67,12 +67,12 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
 
 const SEARCH_PAGE_ITEMS = [
   {
-    id: "organizations",
+    id: "workspaces",
     label: "Start page",
-    description: "Return to organizations and switch workspace context",
-    href: "/organizations",
+    description: "Return to workspaces and switch workspace context",
+    href: "/workspaces",
     icon: HomeIcon,
-    keywords: ["organizations", "home", "homepage", "start"],
+    keywords: ["workspaces", "organizations", "home", "homepage", "start"],
     featured: true,
   },
   {
@@ -153,12 +153,12 @@ function WorkspaceBreadcrumb({
     <div className="min-w-0">
       <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
-          href="/organizations"
-          onClick={() => onNavigate?.("/organizations")}
+          href="/workspaces"
+          onClick={() => onNavigate?.("/workspaces")}
           prefetch={false}
           className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
-          {organizationName || "Organizations"}
+          {organizationName || "Workspaces"}
         </Link>
         <span className="text-slate-300 dark:text-[#4f4f4f]">&gt;</span>
         <span className="truncate text-slate-500 dark:text-[#9b9b9b]">
@@ -538,14 +538,14 @@ export default function WorkspaceShell({
                   Select a project to open the workspace
                 </h1>
                 <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
-                  Projects sit inside organizations. Pick one to continue into the
+                  Projects sit inside workspaces. Pick one to continue into the
                   overview, dashboard, chat, library, and analysis history.
                 </p>
                 <Link
-                  href="/organizations"
+                  href="/workspaces"
                   className="mt-8 inline-flex items-center rounded-xl bg-[#1f9d63] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#198451]"
                 >
-                  Open organizations
+                  Open workspaces
                 </Link>
               </div>
             </div>

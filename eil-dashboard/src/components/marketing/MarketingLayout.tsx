@@ -4,6 +4,7 @@ import MarketingCTA from "@/components/marketing/MarketingCTA";
 import { footerLinks, marketingFeatures } from "@/components/marketing/marketing-content";
 import { LogoMarkIcon } from "@/components/ui/Icons";
 import ThemeToggle from "@/components/theme/ThemeToggle";
+import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 
 interface MarketingNavProps {
   activeSlug?: string;
@@ -39,6 +40,7 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
         <div className="flex items-center gap-2">
           <ThemeToggle compact />
           <MarketingCTA className="hidden sm:inline-flex" />
+          <WorkspaceProfileMenu variant="marketing" />
         </div>
       </div>
     </header>
