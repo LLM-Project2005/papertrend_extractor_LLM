@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 96" role="img" aria-labelledby="title">
+  <title id="title">Papertrend logo</title>
+  <g transform="translate(12 12) scale(1.125)">
+    <path fill="#000" d="M29.2 4.4 7.4 47 29.2 35.7V4.4Z"/>
+    <path fill="#000" d="M34.8 4.4 56.6 47 34.8 35.7V4.4Z"/>
+    <path fill="#000" d="m35.3 40.5 22.5 9.9-22.9 10.7-10-18.7 10.4-1.9Z"/>
+    <path fill="#000" d="m6.6 50.6 13.6-7.1 10.7 17.6L6.6 50.6Z"/>
+  </g>
+  <text x="104" y="61" fill="#000" font-family="Geist, Inter, Arial, sans-serif" font-size="46" font-weight="700" letter-spacing="0">Papertrend</text>
+</svg>

@@ -239,8 +239,8 @@ function MobileSidebar({
       <div className="sticky top-0 border-b border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
-            <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-950 dark:border-[#2a2a2a] dark:bg-white dark:text-black">
-              <LogoMarkIcon className="h-5 w-5" />
+            <span className="flex h-10 w-10 items-center justify-center text-slate-950 dark:text-white">
+              <LogoMarkIcon className="h-7 w-7" />
             </span>
             <WorkspaceBreadcrumb
               organizationName={organizationName}
@@ -481,10 +481,10 @@ export default function WorkspaceShell({
               href="/"
               prefetch={false}
               onClick={() => handleNavigate("/")}
-              className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-950 transition-transform hover:scale-[1.02] dark:border-[#2a2a2a] dark:bg-white dark:text-black"
+              className="flex h-10 w-10 items-center justify-center text-slate-950 transition-transform hover:scale-[1.04] dark:text-white"
               aria-label="Go to front page"
             >
-              <LogoMarkIcon className="h-5 w-5" />
+              <LogoMarkIcon className="h-7 w-7" />
             </Link>
 
             <WorkspaceBreadcrumb

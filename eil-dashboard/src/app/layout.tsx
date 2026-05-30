@@ -8,6 +8,11 @@ export const metadata: Metadata = {
   title: "Papertrend Workspace",
   description:
     "Landing, onboarding, analytics, chat, and import tooling for reusable research-paper workspaces",
+  icons: {
+    icon: [{ url: "/brand/papertrend-mark.svg", type: "image/svg+xml" }],
+    shortcut: "/brand/papertrend-mark.svg",
+    apple: "/brand/papertrend-mark.svg",
+  },
 };
 
 export default function RootLayout({

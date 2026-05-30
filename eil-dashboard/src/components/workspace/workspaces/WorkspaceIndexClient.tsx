@@ -93,8 +93,8 @@ export default function WorkspaceIndexClient() {
       <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-6 py-4">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-950 dark:border-[#2a2a2a] dark:bg-white dark:text-black">
-              <LogoMarkIcon className="h-5 w-5" />
+            <span className="flex h-9 w-9 items-center justify-center text-slate-950 dark:text-white">
+              <LogoMarkIcon className="h-7 w-7" />
             </span>
             <span className="text-lg font-semibold">Workspaces</span>
           </div>

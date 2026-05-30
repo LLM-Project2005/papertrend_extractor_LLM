@@ -15,8 +15,8 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
     <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur-xl dark:border-[#1f1f1f] dark:bg-black/90">
       <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="Papertrend home">
-          <span className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-slate-200 bg-white text-black dark:border-[#2a2a2a]">
-            <LogoMarkIcon className="h-5 w-5" />
+          <span className="flex h-9 w-9 flex-none items-center justify-center text-slate-950 dark:text-white">
+            <LogoMarkIcon className="h-7 w-7" />
           </span>
           <span className="text-sm font-semibold text-slate-950 dark:text-white">Papertrend</span>
         </Link>
@@ -66,8 +66,8 @@ export function MarketingFooter() {
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1fr_1.2fr]">
         <div>
           <Link href="/" className="inline-flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-black dark:border-[#2a2a2a]">
-              <LogoMarkIcon className="h-5 w-5" />
+            <span className="flex h-9 w-9 items-center justify-center text-slate-950 dark:text-white">
+              <LogoMarkIcon className="h-7 w-7" />
             </span>
             <span className="text-sm font-semibold text-slate-950 dark:text-white">Papertrend</span>
           </Link>
