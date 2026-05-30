@@ -367,7 +367,7 @@ The frontend is a Next.js 14 TypeScript application in eil-dashboard.
 
 Primary responsibilities:
 
-- Authentication and workspace navigation
+- Authentication and workspace navigation 
 - Dashboard visualization and filters
 - Library and folder analysis UX
 - Chat and deep research interaction
