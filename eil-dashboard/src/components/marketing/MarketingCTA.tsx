@@ -16,11 +16,11 @@ interface MarketingCTAProps {
 
 const variantClasses = {
   primary:
-    "bg-white text-[#171717] hover:bg-[#f2f2f2] shadow-[0_0_0_1px_rgba(255,255,255,0.18)]",
+    "bg-slate-950 text-white hover:bg-slate-800 shadow-[0_0_0_1px_rgba(15,23,42,0.08)] dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.18)]",
   secondary:
-    "border border-[#2a2a2a] bg-[#050505] text-white hover:border-[#4d4d4d] hover:bg-[#0a0a0a]",
+    "border border-slate-200 bg-white text-slate-950 hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]",
   ghost:
-    "border border-transparent bg-transparent text-[#d0d0d0] hover:bg-[#0a0a0a] hover:text-white",
+    "border border-transparent bg-transparent text-slate-700 hover:bg-slate-100 hover:text-slate-950 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white",
 };
 
 export default function MarketingCTA({
