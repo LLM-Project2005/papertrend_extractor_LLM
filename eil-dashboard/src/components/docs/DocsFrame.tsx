@@ -15,6 +15,7 @@ import {
   SearchIcon,
   SparkIcon,
 } from "@/components/ui/Icons";
+import DocsOnThisPage from "@/components/docs/DocsOnThisPage";
 
 function calloutClasses(tone: DocsCallout["tone"]) {
   if (tone === "warning") {
@@ -30,11 +31,18 @@ function calloutClasses(tone: DocsCallout["tone"]) {
 
 function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
   return (
-    <aside className="hidden w-[260px] flex-none lg:block">
-      <div className="sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pr-4">
+    <aside className="sticky top-20 hidden h-[calc(100vh-5rem)] w-[260px] flex-none self-start overflow-y-hidden overscroll-contain pr-4 hover:overflow-y-auto focus-within:overflow-y-auto lg:block">
+      <div className="space-y-2">
+        <Link
+          href="/docs/search"
+          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        >
+          <SearchIcon className="h-4 w-4" />
+          Search docs
+        </Link>
         <Link
           href="/docs"
-          className={`mb-4 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             activeSlug
               ? "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
               : "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
@@ -43,58 +51,35 @@ function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
           <FileIcon className="h-4 w-4" />
           Documentation
         </Link>
-
-        <div className="space-y-5">
-          {docsCategories.map((category) => (
-            <nav key={category.id} aria-label={category.label}>
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
-                {category.label}
-              </p>
-              <div className="mt-2 space-y-1">
-                {category.pages.map((page) => {
-                  const active = page.slug === activeSlug;
-
-                  return (
-                    <Link
-                      key={page.slug}
-                      href={`/docs/${page.slug}`}
-                      className={`block rounded-lg px-3 py-2 text-sm leading-5 transition-colors ${
-                        active
-                          ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
-                          : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                      }`}
-                    >
-                      {page.title}
-                    </Link>
-                  );
-                })}
-              </div>
-            </nav>
-          ))}
-        </div>
       </div>
-    </aside>
-  );
-}
 
-function OnThisPage({ sections }: { sections: DocsSection[] }) {
-  return (
-    <aside className="hidden w-[220px] flex-none xl:block">
-      <div className="sticky top-20 border-l border-slate-200 pl-5 dark:border-[#1f1f1f]">
-        <p className="text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
-          On this page
-        </p>
-        <nav className="mt-3 space-y-2">
-          {sections.map((section) => (
-            <a
-              key={section.id}
-              href={`#${section.id}`}
-              className="block text-sm leading-5 text-slate-500 transition-colors hover:text-slate-950 dark:text-[#8f8f8f] dark:hover:text-white"
-            >
-              {section.title}
-            </a>
-          ))}
-        </nav>
+      <div className="mt-5 space-y-5">
+        {docsCategories.map((category) => (
+          <nav key={category.id} aria-label={category.label}>
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
+              {category.label}
+            </p>
+            <div className="mt-2 space-y-1">
+              {category.pages.map((page) => {
+                const active = page.slug === activeSlug;
+
+                return (
+                  <Link
+                    key={page.slug}
+                    href={`/docs/${page.slug}`}
+                    className={`block rounded-lg px-3 py-2 text-sm leading-5 transition-colors ${
+                      active
+                        ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                    }`}
+                  >
+                    {page.title}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        ))}
       </div>
     </aside>
   );
@@ -251,7 +236,7 @@ export function DocsArticle({ page }: { page: DocsPage }) {
         ) : null}
       </article>
 
-      <OnThisPage sections={page.sections} />
+      <DocsOnThisPage sections={page.sections} />
     </div>
   );
 }
