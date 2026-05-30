@@ -194,7 +194,7 @@ export default function TrendAnalysis({ trends, planCharts }: Props) {
           <div className="mt-5 grid gap-6 xl:grid-cols-2">
             {orderedCharts.includes("emerging_topics") && emerging.length > 0 ? (
               <div>
-                <p className="mb-3 text-sm font-medium text-emerald-700 dark:text-emerald-400">
+                <p className="mb-3 text-sm font-medium text-blue-700 dark:text-blue-300">
                   Emerging
                 </p>
                 <div className="h-[320px]">

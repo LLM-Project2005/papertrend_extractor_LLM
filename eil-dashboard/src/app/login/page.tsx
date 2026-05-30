@@ -21,7 +21,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 dark:bg-black dark:text-white">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-center gap-10">
         <div className="mt-12 flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1f9d63] text-white">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-950 dark:border-[#2a2a2a] dark:bg-white dark:text-black">
             <LogoMarkIcon className="h-6 w-6" />
           </span>
           <div>

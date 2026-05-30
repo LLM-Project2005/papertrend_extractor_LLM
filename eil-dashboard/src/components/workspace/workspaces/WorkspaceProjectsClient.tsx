@@ -148,7 +148,7 @@ export default function WorkspaceProjectsClient() {
                 setError(null);
                 setShowCreateModal(true);
               }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#1f9d63] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#198451]"
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
             >
               <PlusIcon className="h-4 w-4" />
               <span>New project</span>

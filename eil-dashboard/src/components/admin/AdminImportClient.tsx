@@ -270,7 +270,7 @@ function badgeToneForEntry(item: LibraryEntry) {
     return "bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-300";
   }
   if (item.typeFilter === "image") {
-    return "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-300";
+    return "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300";
   }
   if (item.sourceFilter === "google-drive") {
     return "bg-sky-100 text-sky-600 dark:bg-sky-950/30 dark:text-sky-300";
@@ -1872,7 +1872,7 @@ export default function AdminImportClient() {
       </div>
 
       {message ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
           {message}
         </div>
       ) : null}

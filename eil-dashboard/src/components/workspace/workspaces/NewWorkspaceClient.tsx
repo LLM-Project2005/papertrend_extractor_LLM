@@ -90,7 +90,7 @@ export default function NewWorkspaceClient() {
                 value={name}
                 onChange={(event) => setName(event.target.value)}
                 placeholder="Workspace name"
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666]"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666] dark:focus:border-white"
               />
             </div>
 
@@ -101,7 +101,7 @@ export default function NewWorkspaceClient() {
                 onChange={(event) =>
                   setType(event.target.value as WorkspaceOrganizationRow["type"])
                 }
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:focus:border-white"
               >
                 {ORGANIZATION_TYPES.map((option) => (
                   <option key={option} value={option}>
@@ -128,7 +128,7 @@ export default function NewWorkspaceClient() {
             <button
               type="submit"
               disabled={busy}
-              className="rounded-xl bg-[#1f9d63] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#198451] disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
             >
               {busy ? "Creating..." : "Create workspace"}
             </button>

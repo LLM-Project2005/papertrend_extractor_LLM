@@ -107,7 +107,7 @@ export default function WorkspaceIndexClient() {
               setError(null);
               setShowCreateModal(true);
             }}
-            className="rounded-xl bg-[#1f9d63] px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#198451]"
+            className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
           >
             New workspace
           </button>
@@ -192,7 +192,7 @@ export default function WorkspaceIndexClient() {
             onChange={(event) =>
               setType(event.target.value as WorkspaceOrganizationRow["type"])
             }
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-[#1f9d63] dark:border-[#1f1f1f] dark:bg-black dark:text-white"
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:focus:border-white"
           >
             {ORGANIZATION_TYPES.map((option) => (
               <option key={option} value={option}>

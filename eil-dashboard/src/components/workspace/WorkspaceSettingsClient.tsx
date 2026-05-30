@@ -391,7 +391,7 @@ export default function WorkspaceSettingsClient() {
         ) : null}
 
         {message ? (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-[#214834] dark:bg-[#182920] dark:text-[#7ed9a8]">
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
             {message}
           </div>
         ) : null}
