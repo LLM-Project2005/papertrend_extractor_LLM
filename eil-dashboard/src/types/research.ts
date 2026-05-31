@@ -23,13 +23,14 @@ export interface DeepResearchBudgetPolicy {
 }
 
 export interface DeepResearchSourcePolicy {
-  scope: "attached" | "current_folder" | "project" | "workspace";
+  scope: "auto" | "attached" | "current_folder" | "project" | "workspace";
   includeAttached: boolean;
   includeCurrentScope: boolean;
   includeWorkspace: boolean;
   allowWeb: boolean;
   allowCharts: boolean;
   allowCode: boolean;
+  agentDirected?: boolean;
   budget: DeepResearchBudgetPolicy;
 }
 

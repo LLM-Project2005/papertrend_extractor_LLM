@@ -118,7 +118,7 @@ interface ChatGenerationOptions {
   presencePenalty?: number;
 }
 
-type DeepResearchScope = "attached" | "current_folder" | "project" | "workspace";
+type DeepResearchScope = "auto" | "attached" | "current_folder" | "project" | "workspace";
 type DeepResearchQualityMode = "strict_budget" | "balanced" | "quality";
 
 interface DeepResearchBudgetPolicy {
@@ -138,6 +138,7 @@ interface DeepResearchSourcePolicy {
   allowWeb: boolean;
   allowCharts: boolean;
   allowCode: boolean;
+  agentDirected?: boolean;
   budget: DeepResearchBudgetPolicy;
 }
 
@@ -203,11 +204,12 @@ function normalizeResearchSourcePolicy(
     rawScope === "workspace" ||
     rawScope === "project" ||
     rawScope === "current_folder" ||
-    rawScope === "attached"
+    rawScope === "attached" ||
+    rawScope === "auto"
       ? rawScope
       : selectedRunIds.length > 0
         ? "attached"
-        : "project";
+        : "auto";
   const rawBudget = (value?.budget ?? {}) as Partial<DeepResearchBudgetPolicy>;
   const qualityMode =
     rawBudget.qualityMode === "quality" || rawBudget.qualityMode === "balanced"
@@ -221,6 +223,7 @@ function normalizeResearchSourcePolicy(
     allowWeb: value?.allowWeb ?? false,
     allowCharts: value?.allowCharts ?? true,
     allowCode: false,
+    agentDirected: true,
     budget: {
       maxLibraryPapers: clampValue(Number(rawBudget.maxLibraryPapers ?? STRICT_RESEARCH_BUDGET.maxLibraryPapers), 1, 24),
       maxWebSearches: clampValue(Number(rawBudget.maxWebSearches ?? STRICT_RESEARCH_BUDGET.maxWebSearches), 0, 10),
@@ -236,7 +239,7 @@ function folderForResearchPolicy(
   folderId: string | "all" | undefined,
   policy: DeepResearchSourcePolicy
 ) {
-  return policy.scope === "workspace" || policy.scope === "project" ? "all" : folderId;
+  return policy.scope === "workspace" || policy.scope === "project" || policy.scope === "auto" ? "all" : folderId;
 }
 
 function normalizeIdList(values: string[] = []) {
@@ -3323,11 +3326,17 @@ async function continueDeepResearch(
   }
 
   const supabase = getSupabaseAdmin();
+  const selectedRunIds = normalizeIdList(body.selectedRunIds ?? []);
+  const researchSourcePolicy = normalizeResearchSourcePolicy(
+    body.researchSourcePolicy,
+    selectedRunIds
+  );
+  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
   const pendingRunCount = await countPendingRuns(
-    body.folderId,
+    researchFolderId,
     body.projectId,
     ownerUserId,
-    body.selectedRunIds ?? []
+    selectedRunIds
   );
   const nextStatus = pendingRunCount > 0 ? "waiting_on_analysis" : "queued";
 

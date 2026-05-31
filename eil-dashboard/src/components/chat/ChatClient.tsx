@@ -173,7 +173,7 @@ type ChatGenerationParameters = {
   presencePenalty: number;
 };
 
-type DeepResearchScope = "attached" | "current_folder" | "project" | "workspace";
+type DeepResearchScope = "auto" | "attached" | "current_folder" | "project" | "workspace";
 type DeepResearchQualityMode = "strict_budget" | "balanced" | "quality";
 
 interface DeepResearchBudgetPolicy {
@@ -193,6 +193,7 @@ interface DeepResearchSourcePolicy {
   allowWeb: boolean;
   allowCharts: boolean;
   allowCode: boolean;
+  agentDirected: boolean;
   budget: DeepResearchBudgetPolicy;
 }
 
@@ -215,13 +216,14 @@ const STRICT_RESEARCH_BUDGET: DeepResearchBudgetPolicy = {
 };
 
 const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
-  scope: "project",
+  scope: "auto",
   includeAttached: true,
   includeCurrentScope: true,
   includeWorkspace: false,
   allowWeb: false,
   allowCharts: true,
   allowCode: false,
+  agentDirected: true,
   budget: STRICT_RESEARCH_BUDGET,
 };
 
@@ -1312,14 +1314,10 @@ export default function ChatClient() {
       scope:
         selectedRunIds.length > 0
           ? "attached"
-          : researchSourcePolicy.includeWorkspace
-            ? "workspace"
-            : chatScopeFolderId !== "all"
-              ? "current_folder"
-              : "project",
+          : "auto",
       includeAttached: true,
-      includeCurrentScope:
-        researchSourcePolicy.includeWorkspace || researchSourcePolicy.includeCurrentScope,
+      includeCurrentScope: true,
+      agentDirected: true,
       allowWeb: researchSourcePolicy.allowWeb || webSearchEnabled,
       allowCode: false,
       budget: {
@@ -3030,10 +3028,11 @@ export default function ChatClient() {
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-[#ececec]">
                         <SparkIcon className="h-3.5 w-3.5" />
-                        Deep research sources
+                        Agent-directed research
                       </span>
                       <span>
-                        Strict budget: {effectiveResearchSourcePolicy.budget.maxLibraryPapers} papers,{" "}
+                        The agent infers scope and tool strategy. Strict budget:{" "}
+                        {effectiveResearchSourcePolicy.budget.maxLibraryPapers} papers,{" "}
                         {effectiveResearchSourcePolicy.budget.maxWebSearches} web searches,{" "}
                         {effectiveResearchSourcePolicy.budget.maxSources} sources
                       </span>
@@ -3042,21 +3041,10 @@ export default function ChatClient() {
                       <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
                         {selectedRunIds.length > 0
                           ? `${selectedRunIds.length} attached file${selectedRunIds.length === 1 ? "" : "s"}`
-                          : "Chat/library context"}
+                          : "Auto scope"}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => toggleResearchPolicy("includeWorkspace")}
-                        className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
-                          effectiveResearchSourcePolicy.includeWorkspace
-                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                        }`}
-                      >
-                        All workspace
-                      </button>
                       <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
-                        {chatScopeFolderId !== "all" ? activeFolderLabel : "Current project"}
+                        Library + analytics
                       </span>
                       <button
                         type="button"

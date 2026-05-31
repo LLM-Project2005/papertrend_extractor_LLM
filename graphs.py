@@ -64,6 +64,13 @@ def _route_research_after_step(state: DeepResearchState) -> str:
     return "execute_step"
 
 
+def _route_research_after_gap_check(state: DeepResearchState) -> str:
+    status = str(state.get("status") or "")
+    if status == "research_step_completed":
+        return "execute_step"
+    return "synthesize"
+
+
 @lru_cache(maxsize=1)
 def build_ingestion_graph():
     workflow = StateGraph(IngestionState)
@@ -163,7 +170,14 @@ def build_deep_research_graph():
         },
     )
     workflow.add_edge("evidence_review", "gap_check")
-    workflow.add_edge("gap_check", "synthesize")
+    workflow.add_conditional_edges(
+        "gap_check",
+        _route_research_after_gap_check,
+        {
+            "execute_step": "execute_step",
+            "synthesize": "synthesize",
+        },
+    )
     workflow.add_edge("synthesize", "critic")
     workflow.add_edge("critic", "finalize")
     workflow.add_edge("finalize", END)

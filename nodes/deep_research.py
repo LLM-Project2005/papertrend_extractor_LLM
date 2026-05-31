@@ -265,7 +265,19 @@ UNRESOLVED_SECTION_MESSAGES = {
 
 class DeepResearchIntentResolutionSchema(BaseModel):
     rewritten_prompt: str = Field(default="", description="Prompt rewritten to resolve deictic references to concrete titles.")
-    intent_label: Literal["single_paper", "comparison", "survey", "topic_review", "evidence_audit"] = Field(
+    intent_label: Literal[
+        "single_paper",
+        "comparison",
+        "survey",
+        "topic_review",
+        "evidence_audit",
+        "corpus_synthesis",
+        "gap_analysis",
+        "trend_analysis",
+        "methodology_review",
+        "chart_data_analysis",
+        "web_context_review",
+    ] = Field(
         default="topic_review",
         description="Primary request intent class.",
     )
@@ -274,6 +286,22 @@ class DeepResearchIntentResolutionSchema(BaseModel):
     requested_sections: List[str] = Field(default_factory=list, description="Requested report sections when explicitly implied.")
     compare: bool = Field(default=False, description="Whether the request is comparative across papers.")
     survey: bool = Field(default=False, description="Whether the request is broad survey/review style.")
+    source_scope: Literal["auto", "attached", "current_folder", "project", "workspace"] = Field(
+        default="auto",
+        description="Best source scope for this run. Prefer auto/workspace/project for corpus prompts.",
+    )
+    use_workspace_analytics: bool = Field(default=True, description="Whether dashboard/topic/keyword analytics are useful.")
+    use_library_retrieval: bool = Field(default=True, description="Whether uploaded/analyzed paper retrieval is useful.")
+    use_web: bool = Field(default=False, description="Whether recent/external web context is useful.")
+    use_charts: bool = Field(default=False, description="Whether chart/data calculations are useful.")
+    tool_strategy: List[str] = Field(
+        default_factory=list,
+        description="High-level tool strategy in natural language, not final answer prose.",
+    )
+    research_questions: List[str] = Field(
+        default_factory=list,
+        description="Subquestions the agent should answer during research.",
+    )
     confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Resolver confidence score.")
 
 
@@ -309,7 +337,7 @@ def _normalize_source_policy(raw_policy: Optional[Dict[str, Any]], selected_run_
     raw = raw_policy if isinstance(raw_policy, dict) else {}
     raw_budget = raw.get("budget") if isinstance(raw.get("budget"), dict) else {}
     raw_scope = str(raw.get("scope") or "").strip()
-    scope = raw_scope if raw_scope in {"attached", "current_folder", "project", "workspace"} else (
+    scope = raw_scope if raw_scope in {"auto", "attached", "current_folder", "project", "workspace"} else (
         "attached" if list(selected_run_ids or []) else "project"
     )
     quality_mode = str(raw_budget.get("qualityMode") or "strict_budget").strip()
@@ -328,6 +356,7 @@ def _normalize_source_policy(raw_policy: Optional[Dict[str, Any]], selected_run_
         "includeAttached": bool(raw.get("includeAttached", True)),
         "includeCurrentScope": bool(raw.get("includeCurrentScope", True)),
         "includeWorkspace": bool(raw.get("includeWorkspace", scope == "workspace")),
+        "agentDirected": bool(raw.get("agentDirected", scope == "auto")),
         "allowWeb": bool(raw.get("allowWeb", False)),
         "allowCharts": bool(raw.get("allowCharts", True)),
         "allowCode": False,
@@ -340,6 +369,49 @@ def _source_policy_from_state(state: DeepResearchState) -> Dict[str, Any]:
         state.get("source_policy") if isinstance(state.get("source_policy"), dict) else {},
         list(state.get("selected_run_ids") or []),
     )
+
+
+def _apply_director_to_source_policy(
+    policy: Dict[str, Any],
+    director: Optional[Dict[str, Any]],
+    selected_run_ids: Optional[Sequence[str]] = None,
+) -> Dict[str, Any]:
+    next_policy = _normalize_source_policy(policy, selected_run_ids)
+    if not isinstance(director, dict):
+        return next_policy
+
+    raw_scope = str(director.get("source_scope") or "auto").strip()
+    if raw_scope in {"attached", "current_folder", "project", "workspace"}:
+        if list(selected_run_ids or []) and raw_scope not in {"workspace", "project"}:
+            next_policy["scope"] = "attached"
+        else:
+            next_policy["scope"] = raw_scope
+    elif str(next_policy.get("scope") or "") == "auto":
+        label = str(director.get("intent_label") or "").strip()
+        if list(selected_run_ids or []):
+            next_policy["scope"] = "attached"
+        elif label in {"corpus_synthesis", "gap_analysis", "trend_analysis", "survey"}:
+            next_policy["scope"] = "workspace"
+        else:
+            next_policy["scope"] = "project"
+
+    next_policy["includeWorkspace"] = next_policy["scope"] == "workspace" or bool(
+        next_policy.get("includeWorkspace")
+    )
+    next_policy["includeCurrentScope"] = True
+    next_policy["includeAttached"] = True
+    next_policy["allowCharts"] = bool(next_policy.get("allowCharts", True)) or bool(director.get("use_charts"))
+    next_policy["agentDirected"] = True
+
+    budget = dict(next_policy.get("budget") or {})
+    if not bool(next_policy.get("allowWeb")) and bool(director.get("use_web")):
+        # Web remains permission-gated. The director can recommend it, but not spend web budget silently.
+        budget["webRecommended"] = True
+        budget["maxWebSearches"] = 0
+    elif bool(next_policy.get("allowWeb")):
+        budget["maxWebSearches"] = max(1, int(budget.get("maxWebSearches") or 5))
+    next_policy["budget"] = budget
+    return next_policy
 
 
 def _research_budget_from_state(state: DeepResearchState) -> Dict[str, Any]:
@@ -711,10 +783,103 @@ def _extract_quoted_title(prompt: str) -> str:
     return ""
 
 
+def _is_corpus_level_prompt(prompt: str) -> bool:
+    lowered = f" {_normalize_space(prompt).lower()} "
+    corpus_terms = (
+        "workspace",
+        "library",
+        "corpus",
+        "all papers",
+        "all analyzed",
+        "analysed papers",
+        "analyzed papers",
+        "across my",
+        "across all",
+        "selected folder",
+        "current project",
+        "research gaps",
+        "major gaps",
+        "gap across",
+        "trends",
+        "trend",
+        "overrepresented",
+        "underexplored",
+        "underrepresented",
+        "top topics",
+        "top keywords",
+        "landscape",
+    )
+    return any(term in lowered for term in corpus_terms)
+
+
+def _looks_like_single_paper_request(prompt: str) -> bool:
+    lowered = f" {_normalize_space(prompt).lower()} "
+    if _extract_quoted_title(prompt):
+        return True
+    paper_target_markers = (
+        "this paper",
+        "that paper",
+        "the paper",
+        "attached paper",
+        "this file",
+        "attached file",
+        "this document",
+        "paper titled",
+        "paper called",
+        "article titled",
+        "file named",
+        "document named",
+    )
+    if any(marker in lowered for marker in paper_target_markers):
+        return True
+    return bool(
+        re.search(
+            r"(?i)\b(deep research analysis|analysis|analyze|analyse|review|summari[sz]e)\s+(?:of|on|for)\s+(?:the\s+)?(?:paper|article|file|document)\b",
+            prompt,
+        )
+    )
+
+
+def _is_probable_instruction_fragment(value: str) -> bool:
+    normalized = _normalize_title(value)
+    if not normalized:
+        return True
+    tokens = set(_tokenize(normalized))
+    intent_tokens = {
+        "gap",
+        "gaps",
+        "trend",
+        "trends",
+        "workspace",
+        "library",
+        "corpus",
+        "analyzed",
+        "analysed",
+        "papers",
+        "evidence",
+        "topic",
+        "topics",
+        "keyword",
+        "keywords",
+        "overrepresented",
+        "underexplored",
+        "underrepresented",
+        "major",
+        "research",
+        "explain",
+        "find",
+        "grounded",
+    }
+    return bool(tokens and len(tokens & intent_tokens) / max(1, len(tokens)) >= 0.35)
+
+
 def _extract_candidate_title(prompt: str) -> str:
     quoted = _extract_quoted_title(prompt)
     if quoted:
         return quoted
+
+    if _is_corpus_level_prompt(prompt) and not _looks_like_single_paper_request(prompt):
+        return ""
 
     normalized = _normalize_space(prompt)
     truncated = re.split(
@@ -723,18 +888,20 @@ def _extract_candidate_title(prompt: str) -> str:
         maxsplit=1,
     )[0]
     patterns = [
-        r"(?i)\bdeep research analysis of\s+(.+)$",
-        r"(?i)\banalysis of\s+(.+)$",
-        r"(?i)\banalyze\s+(.+)$",
-        r"(?i)\banalyse\s+(.+)$",
-        r"(?i)\bresearch\s+(.+)$",
+        r"(?i)\b(?:deep research analysis|analysis|review|summar[yi]ze|summarise)\s+(?:of|on|for)\s+(?:the\s+)?(?:paper|article|file|document)\s+(.+)$",
+        r"(?i)\b(?:analyze|analyse)\s+(?:the\s+)?(?:paper|article|file|document)\s+(.+)$",
+        r"(?i)\b(?:paper|article|file|document)\s+(?:titled|called|named)\s+(.+)$",
     ]
     for pattern in patterns:
         match = re.search(pattern, truncated)
         if not match:
             continue
         candidate = _normalize_space(match.group(1)).strip(" .,:;")
-        if len(candidate) >= 12 and not _is_placeholder_title(candidate):
+        if (
+            len(candidate) >= 12
+            and not _is_placeholder_title(candidate)
+            and not _is_probable_instruction_fragment(candidate)
+        ):
             return candidate
     return ""
 
@@ -804,7 +971,7 @@ def _normalize_search_query(prompt: str, candidate_title: str) -> str:
         normalized,
     )
     normalized = re.split(
-        r"(?i)\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b",
+        r"(?i)\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan|use only grounded evidence|use only evidence)\b",
         normalized,
         maxsplit=1,
     )[0]
@@ -1150,6 +1317,7 @@ def _analyze_prompt(
         if str(run_id).strip()
     }
     explicit_selected_scope = bool(selected_scope_ids)
+    corpus_level_prompt = _is_corpus_level_prompt(prompt) and not _looks_like_single_paper_request(prompt)
     candidate_title = _extract_candidate_title(prompt)
     quoted_title = _extract_quoted_title(prompt)
     author_hint = _extract_author_hint(prompt)
@@ -1161,12 +1329,16 @@ def _analyze_prompt(
     ]
     if explicit_selected_scope and not selected_scope_papers:
         selected_scope_papers = list(papers)
-    if not candidate_title and len(attachment_titles) == 1:
+    if corpus_level_prompt:
+        candidate_title = ""
+    if not candidate_title and not corpus_level_prompt and len(attachment_titles) == 1:
         candidate_title = attachment_titles[0]
-    if not candidate_title and len(selected_scope_papers) == 1:
+    if not candidate_title and not corpus_level_prompt and len(selected_scope_papers) == 1:
         candidate_title = _normalize_space(str(selected_scope_papers[0].get("title") or ""))
     if _is_placeholder_title(candidate_title):
-        if len(selected_scope_papers) == 1:
+        if corpus_level_prompt:
+            candidate_title = ""
+        elif len(selected_scope_papers) == 1:
             candidate_title = _normalize_space(str(selected_scope_papers[0].get("title") or ""))
         elif len(attachment_titles) == 1:
             candidate_title = attachment_titles[0]
@@ -1179,7 +1351,7 @@ def _analyze_prompt(
     survey = any(
         token in lowered
         for token in ("survey", "review", "overview", "landscape", "corpus", "literature")
-    )
+    ) or corpus_level_prompt
     methodology_focus = any(
         token in lowered for token in ("method", "methods", "methodology", "participants", "sample")
     )
@@ -1194,6 +1366,7 @@ def _analyze_prompt(
         "single_paper": bool(candidate_title),
         "compare": compare,
         "survey": survey,
+        "corpus_level": corpus_level_prompt,
         "methodology_focus": methodology_focus,
         "findings_focus": findings_focus,
         "limitations_focus": limitations_focus,
@@ -1304,7 +1477,15 @@ def _analyze_prompt(
     analysis["ranked_matches"] = ranked_matches
     analysis["target_paper_id"] = int(target_paper.get("paperId") or 0) if target_paper else 0
     analysis["target_paper_title"] = str(target_paper.get("title") or "") if target_paper else ""
-    if analysis["single_paper"]:
+    if corpus_level_prompt:
+        analysis["target_in_scope"] = False
+        analysis["target_paper_id"] = 0
+        analysis["target_paper_title"] = ""
+        analysis["candidate_title"] = ""
+        analysis["single_paper"] = False
+        analysis["primary_intent"] = "corpus_synthesis"
+        analysis["target_entity_type"] = "workspace"
+    elif analysis["single_paper"]:
         analysis["primary_intent"] = "paper_lookup"
         analysis["target_entity_type"] = "paper"
     elif compare:
@@ -1335,7 +1516,9 @@ def _analyze_prompt(
     )
     analysis["scope_mode"] = "trivial" if trivial else ("broad" if survey else "medium")
 
-    if analysis["single_paper"]:
+    if corpus_level_prompt:
+        analysis["target_resolution_status"] = "not_applicable"
+    elif analysis["single_paper"]:
         if target_paper:
             analysis["target_resolution_status"] = "exact_match"
         elif ranked_matches:
@@ -1377,8 +1560,14 @@ def _build_intent_resolution_prompt(
         "Rules:\n"
         "- target_paper_id must be one of the provided paper_id values or 0.\n"
         "- candidate_title must be empty when unresolved.\n"
+        "- For corpus/workspace/library prompts such as research gaps, trends, overrepresented topics, underexplored areas, or 'across my analyzed papers', set intent_label to survey/topic_review/evidence_audit, target_paper_id to 0, and candidate_title to empty.\n"
+        "- Only set candidate_title when the user clearly asks for one paper/file/article/document by title, attachment, or deictic reference.\n"
         "- requested_sections should only include known section keys.\n"
         "- rewritten_prompt should preserve the user's intent while replacing ambiguous references.\n"
+        "- source_scope should be your best autonomous scope choice; use workspace for corpus/gap/trend questions unless the user attached or selected specific files.\n"
+        "- use_web should be true only when external/current/recent context would materially improve the research.\n"
+        "- tool_strategy should name a flexible research strategy such as reading sections, using topic/keyword analytics, comparing papers, checking gaps, or web context.\n"
+        "- research_questions should break the prompt into 2-5 concrete subquestions.\n"
         "\n"
         f"User prompt: {prompt}\n"
         f"Selected run ids: {selected_ids}\n"
@@ -1432,6 +1621,9 @@ def _resolve_prompt_intent_with_llm(
     candidate_title = _normalize_space(str(payload.get("candidate_title") or ""))
     if _is_placeholder_title(candidate_title):
         candidate_title = ""
+    if _is_corpus_level_prompt(prompt) and not _looks_like_single_paper_request(prompt):
+        candidate_title = ""
+        target_paper_id = 0
 
     rewritten_prompt = _normalize_space(str(payload.get("rewritten_prompt") or ""))
     if rewritten_prompt and _is_placeholder_title(rewritten_prompt):
@@ -1445,6 +1637,21 @@ def _resolve_prompt_intent_with_llm(
         "requested_sections": requested_sections,
         "compare": bool(payload.get("compare")),
         "survey": bool(payload.get("survey")),
+        "source_scope": str(payload.get("source_scope") or "auto"),
+        "use_workspace_analytics": bool(payload.get("use_workspace_analytics", True)),
+        "use_library_retrieval": bool(payload.get("use_library_retrieval", True)),
+        "use_web": bool(payload.get("use_web", False)),
+        "use_charts": bool(payload.get("use_charts", False)),
+        "tool_strategy": [
+            _normalize_space(str(item))
+            for item in list(payload.get("tool_strategy") or [])[:8]
+            if _normalize_space(str(item))
+        ],
+        "research_questions": [
+            _normalize_space(str(item))
+            for item in list(payload.get("research_questions") or [])[:6]
+            if _normalize_space(str(item))
+        ],
         "confidence": confidence,
     }
 
@@ -1480,6 +1687,37 @@ def _merge_prompt_intent(
         selected_run_ids=selected_run_ids,
         attachment_names=attachment_names,
     )
+    resolved_label = str(resolved_intent.get("intent_label") or "topic_review")
+    corpus_level_prompt = _is_corpus_level_prompt(rewritten_prompt or prompt) and not _looks_like_single_paper_request(
+        rewritten_prompt or prompt
+    )
+    if corpus_level_prompt or resolved_label in {
+        "survey",
+        "topic_review",
+        "evidence_audit",
+        "corpus_synthesis",
+        "gap_analysis",
+        "trend_analysis",
+        "methodology_review",
+        "chart_data_analysis",
+        "web_context_review",
+    }:
+        next_analysis["single_paper"] = False
+        next_analysis["candidate_title"] = ""
+        next_analysis["target_in_scope"] = False
+        next_analysis["target_paper_id"] = 0
+        next_analysis["target_paper_title"] = ""
+        next_analysis["target_resolution_status"] = "not_applicable" if corpus_level_prompt else "unresolved"
+        next_analysis["primary_intent"] = (
+            "corpus_synthesis"
+            if corpus_level_prompt and resolved_label == "topic_review"
+            else resolved_label
+        )
+        next_analysis["target_entity_type"] = (
+            "workspace"
+            if corpus_level_prompt or resolved_label in {"corpus_synthesis", "gap_analysis", "trend_analysis"}
+            else "topic"
+        )
 
     intent_sections = [
         _normalize_space(str(section)).lower()
@@ -1492,7 +1730,14 @@ def _merge_prompt_intent(
         next_analysis["requested_output_mode"] = "structured_sections"
 
     next_analysis["compare"] = bool(resolved_intent.get("compare", next_analysis.get("compare")))
-    next_analysis["survey"] = bool(resolved_intent.get("survey", next_analysis.get("survey")))
+    next_analysis["survey"] = bool(resolved_intent.get("survey", next_analysis.get("survey"))) or corpus_level_prompt
+    next_analysis["source_scope"] = str(resolved_intent.get("source_scope") or "auto")
+    next_analysis["use_workspace_analytics"] = bool(resolved_intent.get("use_workspace_analytics", True))
+    next_analysis["use_library_retrieval"] = bool(resolved_intent.get("use_library_retrieval", True))
+    next_analysis["use_web"] = bool(resolved_intent.get("use_web", False))
+    next_analysis["use_charts"] = bool(resolved_intent.get("use_charts", False))
+    next_analysis["tool_strategy"] = list(resolved_intent.get("tool_strategy") or [])
+    next_analysis["research_questions"] = list(resolved_intent.get("research_questions") or [])
 
     target_paper_id = int(resolved_intent.get("target_paper_id") or 0)
     by_id = {
@@ -1500,7 +1745,7 @@ def _merge_prompt_intent(
         for paper in list(papers or [])
         if int(paper.get("paper_id") or 0) > 0
     }
-    if target_paper_id in by_id:
+    if target_paper_id in by_id and resolved_label == "single_paper" and not corpus_level_prompt:
         resolved_paper = by_id[target_paper_id]
         resolved_title = _normalize_space(str(resolved_paper.get("title") or ""))
         next_analysis["single_paper"] = True
@@ -1539,6 +1784,9 @@ def _merge_prompt_intent(
         "rewritten_prompt": rewritten_prompt,
         "candidate_title": candidate_title,
         "target_paper_id": target_paper_id,
+        "source_scope": str(resolved_intent.get("source_scope") or "auto"),
+        "tool_strategy": list(resolved_intent.get("tool_strategy") or []),
+        "research_questions": list(resolved_intent.get("research_questions") or []),
     }
     return next_analysis
 
@@ -1571,6 +1819,24 @@ def _build_planning_snapshot(
         attachment_names,
         heuristic_analysis,
         resolved_intent,
+    )
+    director = resolved_intent or {
+        "intent_label": str(prompt_analysis.get("primary_intent") or "topic_review"),
+        "source_scope": "workspace"
+        if bool(prompt_analysis.get("corpus_level")) or str(prompt_analysis.get("primary_intent") or "") in {"corpus_synthesis", "gap_analysis", "trend_analysis"}
+        else ("attached" if list(selected_run_ids or []) else "project"),
+        "use_workspace_analytics": bool(prompt_analysis.get("corpus_level") or prompt_analysis.get("survey")),
+        "use_library_retrieval": True,
+        "use_web": False,
+        "use_charts": bool(prompt_analysis.get("corpus_level")),
+        "tool_strategy": list(prompt_analysis.get("tool_strategy") or []),
+        "research_questions": list(prompt_analysis.get("research_questions") or []),
+        "confidence": 0.55,
+    }
+    directed_source_policy = _apply_director_to_source_policy(
+        normalized_source_policy,
+        director,
+        selected_run_ids,
     )
     filtered = _ensure_target_paper_in_filtered_scope(owner_user_id, filtered, prompt_analysis)
     papers = list(filtered.get("papers_full") or [])
@@ -1612,8 +1878,9 @@ def _build_planning_snapshot(
             for name in list(attachment_names or [])
             if _normalize_space(str(name or ""))
         ],
-        "source_policy": normalized_source_policy,
-        "research_budget": dict(normalized_source_policy.get("budget") or {}),
+        "source_policy": directed_source_policy,
+        "research_budget": dict(directed_source_policy.get("budget") or {}),
+        "research_director": director,
         "mode": dataset.get("mode", "live"),
         "paper_count": len(papers),
         "pending_run_count": _pending_runs(owner_user_id, folder_id, project_id, selected_run_ids),
@@ -1973,6 +2240,17 @@ def _build_deterministic_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
             extra={"limit": 6},
         )
         add_step(
+            "Search corpus concepts",
+            "Inspect topic and keyword signals so overrepresented and underexplored areas are based on the analyzed library, not title matching.",
+            "keyword_search",
+            phase_class="research",
+            required_class="optional_context",
+            purpose="Expand the corpus-level evidence with grounded topic and keyword patterns.",
+            expected_output="Relevant concept, topic, and keyword signals from the workspace.",
+            completion_condition="Corpus concept signals are captured or no useful expansion is found.",
+            tool_query=normalized_query,
+        )
+        add_step(
             "Read the most relevant sections",
             "Inspect the sections that carry the evidence the user asked for.",
             "read_paper_sections",
@@ -2090,10 +2368,10 @@ def _build_deterministic_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _planner_mode() -> str:
-    mode = _normalize_space(str(os.getenv("DEEP_RESEARCH_PLAN_MODE") or "hybrid")).lower()
-    if mode in {"deterministic", "hybrid", "llm"}:
+    mode = _normalize_space(str(os.getenv("DEEP_RESEARCH_PLAN_MODE") or "llm_native")).lower()
+    if mode in {"deterministic", "hybrid", "llm", "llm_native"}:
         return mode
-    return "hybrid"
+    return "llm_native"
 
 
 def _safe_plan_dict(plan_obj: Any) -> Dict[str, Any]:
@@ -2183,6 +2461,7 @@ def _build_llm_planner_prompt(
     mode = _normalize_space(str(snapshot.get("mode") or "live"))
     source_policy = snapshot.get("source_policy") if isinstance(snapshot.get("source_policy"), dict) else {}
     budget = source_policy.get("budget") if isinstance(source_policy.get("budget"), dict) else {}
+    research_director = snapshot.get("research_director") if isinstance(snapshot.get("research_director"), dict) else {}
     ranked_matches = list(prompt_analysis.get("ranked_matches") or [])[:5]
     ranked_lines = "\n".join(
         f"- id={int(item.get('paperId') or 0)} | title={_normalize_space(str(item.get('title') or ''))} | score={int(item.get('score') or 0)}"
@@ -2206,6 +2485,10 @@ def _build_llm_planner_prompt(
         "All steps must use only allowed local tools.\n"
         "Do not use world knowledge. Use scoped corpus signals only.\n"
         "Make the plan specific to the resolved target document when one exists.\n"
+        "For corpus/workspace/library prompts, do not invent a paper title and do not add 'verify whether the paper exists' steps.\n"
+        "A candidate title of '(none)' means the plan should analyze the corpus, not resolve a document.\n"
+        "Think like a research director: choose the smallest powerful sequence of tools that can answer the user well.\n"
+        "Vary the plan by task. Gap/trend questions should use analytics and concept search; paper review should read sections; comparison should retrieve and read comparable evidence.\n"
         "\n"
         "Hard constraints:\n"
         f"- Allowed tool_name values: {allowed_tools}\n"
@@ -2222,6 +2505,7 @@ def _build_llm_planner_prompt(
         f"- Pending run count: {pending_run_count}\n"
         f"- Paper count in scope: {int(snapshot.get('paper_count') or 0)}\n"
         f"- Source policy: {json.dumps(source_policy, ensure_ascii=True)}\n"
+        f"- Research director output: {json.dumps(research_director, ensure_ascii=True)}\n"
         f"- Strict budget: max_library_papers={budget.get('maxLibraryPapers', 8)}, max_web_searches={budget.get('maxWebSearches', 5)}, max_sources={budget.get('maxSources', 12)}\n"
         f"- Candidate title: {candidate_title or '(none)'}\n"
         f"- Target paper id: {target_paper_id}\n"
@@ -2252,6 +2536,9 @@ def _normalize_llm_plan(
     normalized_query = _normalize_space(str(prompt_analysis.get("normalized_query") or prompt))
     requested_sections = list(prompt_analysis.get("requested_sections") or [])
     candidate_title = _normalize_space(str(prompt_analysis.get("candidate_title") or ""))
+    corpus_level_prompt = bool(prompt_analysis.get("corpus_level")) or (
+        _is_corpus_level_prompt(prompt) and not _looks_like_single_paper_request(prompt)
+    )
     target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
     needs_analysis = int(snapshot.get("pending_run_count") or 0) > 0
     raw_steps = list(raw_plan.get("steps") or [])[:MAX_PLANNING_STEPS]
@@ -2263,6 +2550,9 @@ def _normalize_llm_plan(
         tool_name = _coerce_tool_name(step.get("tool_name"))
         title = _normalize_space(str(step.get("title") or f"Step {index}")) or f"Step {index}"
         description = _normalize_space(str(step.get("description") or "Research this requirement."))
+        if corpus_level_prompt and re.search(r"(?i)\b(verify whether|exists? in|named paper|target paper|scope-gap)\b", f"{title} {description}"):
+            title = "Map corpus evidence"
+            description = "Summarize the available workspace evidence for the user's corpus-level request."
         step_input = step.get("tool_input") if isinstance(step.get("tool_input"), dict) else {}
         template = _step_template(tool_name)
         phase_class = str(step_input.get("phaseClass") or template["phase_class"])
@@ -2281,8 +2571,8 @@ def _normalize_llm_plan(
             for section in list(step_input.get("requestedSections") or requested_sections)
             if _normalize_space(str(section))
         ]
-        target_title = _normalize_space(str(step_input.get("targetTitle") or candidate_title))
-        resolved_target_paper_id = int(step_input.get("targetPaperId") or target_paper_id or 0)
+        target_title = "" if corpus_level_prompt else _normalize_space(str(step_input.get("targetTitle") or candidate_title))
+        resolved_target_paper_id = 0 if corpus_level_prompt else int(step_input.get("targetPaperId") or target_paper_id or 0)
 
         extra: Dict[str, Any] = {}
         if tool_name in {"list_folder_papers", "fetch_papers", "read_paper_sections"}:
@@ -2372,6 +2662,34 @@ def _normalize_llm_plan(
         "Record selected source surface and strict-budget limits before retrieval starts.",
     )
 
+    if corpus_level_prompt and not any(
+        str(step.get("tool_name") or "") in {"get_dashboard_summary", "keyword_search"}
+        for step in normalized_steps
+    ):
+        template = _step_template("keyword_search")
+        todo_id = "initial-agent-corpus-concept-search"
+        normalized_steps.insert(
+            min(2, len(normalized_steps)),
+            _todo_step(
+                1,
+                title="Search corpus concepts",
+                description="Use topic and keyword signals to guide the corpus-level research strategy.",
+                tool_name="keyword_search",
+                tool_input=_todo_input(
+                    snapshot,
+                    todo_id=todo_id,
+                    title="Search corpus concepts",
+                    phase_class=template["phase_class"],
+                    required_class=template["required_class"],
+                    purpose="Ground the corpus-level plan in analyzed topic and keyword patterns.",
+                    expected_output="Relevant topic and keyword signals from the workspace.",
+                    completion_condition="Corpus concept signals are captured or no useful expansion is found.",
+                    tool_query=normalized_query,
+                    requested_sections=requested_sections,
+                ),
+            ),
+        )
+
     def ensure_terminal_step(tool_name: str, title: str, description: str) -> None:
         existing = next((step for step in normalized_steps if str(step.get("tool_name") or "") == tool_name), None)
         if existing:
@@ -2444,6 +2762,11 @@ def _score_plan_quality(plan: Dict[str, Any], snapshot: Dict[str, Any]) -> Tuple
         if _normalize_space(str(section))
     }
     single_paper = bool(prompt_analysis.get("single_paper"))
+    corpus_level = bool(prompt_analysis.get("corpus_level")) or str(prompt_analysis.get("primary_intent") or "") in {
+        "corpus_synthesis",
+        "gap_analysis",
+        "trend_analysis",
+    }
     target_in_scope = bool(prompt_analysis.get("target_in_scope"))
     target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
     compare = bool(prompt_analysis.get("compare"))
@@ -2514,10 +2837,31 @@ def _score_plan_quality(plan: Dict[str, Any], snapshot: Dict[str, Any]) -> Tuple
             score -= 10
             notes.append("weak_comparison_support")
 
+    if corpus_level:
+        text = " ".join(
+            f"{str(step.get('title') or '')} {str(step.get('description') or '')}"
+            for step in steps
+        ).lower()
+        if "verify whether" in text or "named paper" in text or "target paper" in text:
+            score -= 30
+            notes.append("corpus_prompt_treated_as_paper_lookup")
+        has_analytics = any(
+            str(step.get("tool_name") or "") in {"get_dashboard_summary", "keyword_search"}
+            for step in steps
+        )
+        if not has_analytics:
+            score -= 12
+            notes.append("missing_corpus_analytics")
+
     return max(0, score), notes
 
 
-def _build_hybrid_plan(snapshot: Dict[str, Any], deterministic_plan: Dict[str, Any]) -> Dict[str, Any]:
+def _build_hybrid_plan(
+    snapshot: Dict[str, Any],
+    deterministic_plan: Dict[str, Any],
+    *,
+    llm_native: bool = False,
+) -> Dict[str, Any]:
     structured_planner = research_planning_llm.with_structured_output(DeepResearchPlanSchema, method="json_schema")
     prompt = _build_llm_planner_prompt(snapshot, deterministic_plan)
 
@@ -2546,8 +2890,10 @@ def _build_hybrid_plan(snapshot: Dict[str, Any], deterministic_plan: Dict[str, A
             second_score,
             second_notes,
         )
-        if second_score >= MIN_ACCEPTABLE_PLAN_SCORE:
+        if second_score >= MIN_ACCEPTABLE_PLAN_SCORE or (llm_native and second_score >= 55):
             return second_plan
+        if llm_native and first_score >= 55:
+            return first_plan
     except Exception as error:
         logger.warning("deep research hybrid planner failed; falling back deterministic: %s", error)
 
@@ -2578,6 +2924,8 @@ def generate_deep_research_plan(
         plan = deterministic_plan
     elif mode == "llm":
         plan = _build_hybrid_plan(snapshot, deterministic_plan)
+    elif mode == "llm_native":
+        plan = _build_hybrid_plan(snapshot, deterministic_plan, llm_native=True)
     else:
         plan = _build_hybrid_plan(snapshot, deterministic_plan)
     score, notes = _score_plan_quality(plan, snapshot)
@@ -3348,6 +3696,8 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
             enabled.append("current project or folder")
         if bool(policy.get("allowWeb")):
             enabled.append("opt-in web search")
+        elif bool((budget or {}).get("webRecommended")):
+            enabled.append("web recommended but not permitted")
         if bool(policy.get("allowCharts")):
             enabled.append("charts/data analysis")
         detail = (
@@ -3355,7 +3705,8 @@ def _summarize_step_result(step: Dict[str, Any], raw_output: Dict[str, Any]) -> 
             + ", ".join(enabled)
             + f". Strict budget: up to {int(budget.get('maxLibraryPapers') or 8)} library papers, "
             + f"{int(budget.get('maxWebSearches') or 0)} web searches, "
-            + f"{int(budget.get('maxSources') or 12)} total sources."
+            + f"{int(budget.get('maxSources') or 12)} total sources. "
+            + ("The agent will choose the scope automatically." if bool(policy.get("agentDirected")) else "")
         )
         return _build_step_output(
             "Deep research source and budget policy is set.",
@@ -4917,6 +5268,64 @@ def research_gap_check_node(state: DeepResearchState) -> Dict[str, Any]:
     completion_kind = "partial" if str(raw_output.get("decision") or "") == "partial" else str(state.get("completion_kind") or "full")
     diagnostics = dict(state.get("research_diagnostics") or {})
     diagnostics["gapCheck"] = raw_output
+    budget = _research_budget_from_state(state)
+    gap_rounds = sum(
+        1
+        for step in steps
+        if isinstance(step.get("tool_input"), dict)
+        and str(step.get("tool_input", {}).get("origin") or "") == "gap_generated"
+    )
+    source_counts = raw_output.get("sourceCounts") if isinstance(raw_output.get("sourceCounts"), dict) else {}
+    can_expand = (
+        str(raw_output.get("decision") or "") == "partial"
+        and gap_rounds < int(budget.get("maxGapRounds") or 1)
+        and int(source_counts.get("paper") or 0) < 2
+    )
+    if can_expand:
+        query = str((state.get("prompt_analysis") or {}).get("normalized_query") or state.get("prompt") or "")
+        steps, _ = _append_runtime_step(
+            state,
+            steps,
+            title="Expand evidence after gap check",
+            description="Retrieve another small set of in-scope papers because the first pass left the report under-supported.",
+            tool_name="fetch_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Close evidence gaps surfaced by the citation-ledger review.",
+            expected_output="Additional library sources that can support or constrain the final report.",
+            completion_condition="Additional sources are retrieved or the evidence gap is confirmed under budget.",
+            origin="gap_generated",
+            tool_query=query,
+            exclusion_ids=[
+                int(citation.get("paper_id") or citation.get("source_id") or 0)
+                for citation in list(state.get("citation_ledger") or [])
+                if str(citation.get("paper_id") or citation.get("source_id") or "").isdigit()
+            ],
+            extra={"limit": 4},
+        )
+        steps, _ = _append_runtime_step(
+            state,
+            steps,
+            title="Read expanded evidence",
+            description="Inspect the additional papers for direct evidence before synthesis resumes.",
+            tool_name="read_paper_sections",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Extract direct evidence from the expanded source set.",
+            expected_output="Section-level evidence from additional in-scope papers.",
+            completion_condition="Expanded evidence is extracted or confirmed unavailable.",
+            origin="gap_generated",
+            tool_query=query,
+            extra={"limit": 4},
+        )
+        return {
+            "steps": steps,
+            "step_results": step_results,
+            "completion_kind": "partial",
+            "research_diagnostics": diagnostics,
+            "session_phase": "gap_retrieval",
+            "status": "research_step_completed",
+        }
     return {
         "steps": steps,
         "step_results": step_results,
