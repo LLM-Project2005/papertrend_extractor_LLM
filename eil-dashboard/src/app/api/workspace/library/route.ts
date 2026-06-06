@@ -4,6 +4,14 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 
+function parseBoundedInt(value: string | null, fallback: number, min: number, max: number): number {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+  return Math.min(Math.max(parsed, min), max);
+}
+
 export async function GET(request: Request) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) {
@@ -15,6 +23,10 @@ export async function GET(request: Request) {
     const projectId = searchParams.get("projectId");
     const includeTrashed = searchParams.get("includeTrashed") === "true";
     const logMode = searchParams.get("view") === "logs";
+    const limit = parseBoundedInt(searchParams.get("limit"), logMode ? 100 : 200, 1, 500);
+    const page = parseBoundedInt(searchParams.get("page"), 1, 1, 10_000);
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
 
     const supabase = getSupabaseAdmin();
     let folderIds: string[] = [];
@@ -38,7 +50,8 @@ export async function GET(request: Request) {
       .from("ingestion_runs")
       .select("*")
       .eq("owner_user_id", user.id)
-      .order("updated_at", { ascending: false });
+      .order("updated_at", { ascending: false })
+      .range(from, to);
 
     if (folderIds.length > 0) {
       query = query.in("folder_id", folderIds);
@@ -59,7 +72,14 @@ export async function GET(request: Request) {
       throw new Error(error.message);
     }
 
-    return NextResponse.json({ runs: data ?? [] });
+    return NextResponse.json({
+      runs: data ?? [],
+      pagination: {
+        page,
+        limit,
+        hasMore: (data?.length ?? 0) === limit,
+      },
+    });
   } catch (error) {
     return NextResponse.json(
       {

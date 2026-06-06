@@ -87,15 +87,15 @@ Run from the repository root:
   --region asia-southeast1 `
   --source . `
   --allow-unauthenticated `
-  --memory 2Gi `
+  --memory 1Gi `
   --cpu 1 `
-  --no-cpu-throttling `
+  --cpu-throttling `
   --timeout 900 `
   --concurrency 4 `
   --min-instances 0 `
   --max-instances 2 `
   --set-build-env-vars GOOGLE_RUNTIME_VERSION=3.13,GOOGLE_ENTRYPOINT="python node_service.py --host 0.0.0.0 --port 8080" `
-  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=budget-structured,NODE_SERVICE_ASYNC_MAX_RUNS=1,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2,CLOUD_TASKS_PROJECT_ID=research-trend-analysis,CLOUD_TASKS_LOCATION=asia-southeast1,CLOUD_TASKS_QUEUE=papertrend-ingestion-staging,CLOUD_TASKS_MAX_TASKS_PER_REQUEST=50,CLOUD_TASKS_TASK_SPACING_SECONDS=15 `
+  --set-env-vars NODE_SERVICE_HOST=0.0.0.0,NODE_SERVICE_PORT=8080,NODE_SERVICE_LOG_LEVEL=INFO,MODEL_GATEWAY=openrouter,MODEL_POLICY_PRESET=budget-structured,NODE_SERVICE_ASYNC_MAX_RUNS=1,WORKER_HEARTBEAT_INTERVAL_SECONDS=60,WORKER_HEARTBEAT_TIMEOUT_SECONDS=10,WORKER_HEARTBEAT_ATTEMPTS=2,CLOUD_TASKS_PROJECT_ID=research-trend-analysis,CLOUD_TASKS_LOCATION=asia-southeast1,CLOUD_TASKS_QUEUE=papertrend-ingestion-staging,CLOUD_TASKS_MAX_TASKS_PER_REQUEST=50,CLOUD_TASKS_TASK_SPACING_SECONDS=15,LOGIN_RATE_LIMIT_ATTEMPTS=5,LOGIN_RATE_LIMIT_WINDOW_SECONDS=900,AI_DAILY_MESSAGE_LIMIT=100,AI_DAILY_DEEP_RESEARCH_LIMIT=10,MAX_UPLOAD_BYTES=26214400,MAX_PDF_PAGES=80,APP_ALLOWED_ORIGINS=https://papertrend-extractor-llm-git-test-pchantarusorn-9175s-projects.vercel.app `
   --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,SUPABASE_URL=SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest
 ```
 
@@ -118,6 +118,8 @@ Notes:
 - Staging uses lighter heartbeat settings to reduce Supabase retry noise during
   long extraction steps: `WORKER_HEARTBEAT_INTERVAL_SECONDS=60`,
   `WORKER_HEARTBEAT_TIMEOUT_SECONDS=10`, and `WORKER_HEARTBEAT_ATTEMPTS=2`.
+- Staging uses request-based CPU billing (`--cpu-throttling`) and `1Gi` memory
+  to keep beta idle cost low. Move back to `2Gi` only if OCR-heavy PDFs fail.
 
 ## 6. Health Check
 

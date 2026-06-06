@@ -1,10 +1,17 @@
 import { NextResponse } from "next/server";
 import {
   getAuthenticatedUserFromRequest,
-  isAuthorizedAdminRequest,
+  isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  MAX_FILES_PER_BATCH,
+  hasPdfMagic,
+  sanitizeStorageFileName,
+  sha256Buffer,
+  validatePdfUploadMetadata,
+} from "@/lib/upload-safety";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
@@ -50,12 +57,8 @@ function trimStatusInputPayload(inputPayload: unknown): Record<string, unknown> 
   return Object.keys(trimmed).length > 0 ? trimmed : null;
 }
 
-function sanitizeFileName(fileName: string): string {
-  return fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
-}
-
 export async function GET(request: Request) {
-  if (!(await isAuthorizedAdminRequest(request))) {
+  if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -97,7 +100,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAuthorizedAdminRequest(request))) {
+  if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -114,6 +117,12 @@ export async function POST(request: Request) {
 
     if (files.length === 0) {
       return NextResponse.json({ error: "Upload at least one PDF file." }, { status: 400 });
+    }
+    if (files.length > MAX_FILES_PER_BATCH) {
+      return NextResponse.json(
+        { error: `Upload at most ${MAX_FILES_PER_BATCH} files per batch.` },
+        { status: 400 }
+      );
     }
     if (!projectId) {
       return NextResponse.json({ error: "project_id is required." }, { status: 400 });
@@ -149,12 +158,18 @@ export async function POST(request: Request) {
     const createdRuns: Array<Record<string, unknown>> = [];
     for (const file of files) {
       const lowerName = file.name.toLowerCase();
-      if (!lowerName.endsWith(".pdf")) {
+      const validationError = validatePdfUploadMetadata(file);
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 });
+      }
+      const fileBuffer = Buffer.from(await file.arrayBuffer());
+      if (!hasPdfMagic(fileBuffer)) {
         return NextResponse.json(
-          { error: `Only PDF uploads are supported in v1. Invalid file: ${file.name}` },
+          { error: `The file is not a valid PDF: ${file.name}` },
           { status: 400 }
         );
       }
+      const fileSha256 = sha256Buffer(fileBuffer);
 
       const { data: runData, error: insertError } = await supabase
         .from("ingestion_runs")
@@ -177,6 +192,7 @@ export async function POST(request: Request) {
             source_kind: sourceKind,
             original_size: file.size,
             mime_type: file.type || "application/pdf",
+            sha256: fileSha256,
             analysis_mode: "automatic",
             analysis_label: AUTO_ANALYSIS_LABEL,
             progress_stage: "queued",
@@ -192,8 +208,7 @@ export async function POST(request: Request) {
         throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
       }
 
-      const storagePath = `pending/${folder}/${runData.id}/${sanitizeFileName(file.name)}`;
-      const fileBuffer = Buffer.from(await file.arrayBuffer());
+      const storagePath = `pending/${folder}/${runData.id}/${sanitizeStorageFileName(file.name)}`;
       const { error: uploadError } = await supabase.storage
         .from("paper-uploads")
         .upload(storagePath, fileBuffer, {
@@ -227,6 +242,24 @@ export async function POST(request: Request) {
 
       if (updateError) {
         throw new Error(`Uploaded ${file.name} but failed to update run metadata.`);
+      }
+
+      const { error: fingerprintError } = await supabase.from("file_fingerprints").upsert(
+        {
+          owner_user_id: user?.id ?? null,
+          sha256: fileSha256,
+          file_size_bytes: file.size,
+          mime_type: file.type || "application/pdf",
+          source_filename: file.name,
+          latest_run_id: runData.id,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "owner_user_id,sha256" }
+      );
+      if (fingerprintError) {
+        console.warn("[admin.import] file fingerprint skipped", {
+          reason: fingerprintError.message,
+        });
       }
 
       createdRuns.push(updatedRun ?? runData);

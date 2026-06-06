@@ -29,6 +29,7 @@ export interface AuthContextValue {
     password: string,
     metadata?: { full_name?: string }
   ) => Promise<void>;
+  resetPassword: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   saveUserProfile: (updates: {

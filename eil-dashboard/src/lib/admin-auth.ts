@@ -85,5 +85,34 @@ export async function isAuthorizedAdminRequest(request: Request): Promise<boolea
     return true;
   }
 
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (!user) {
+    return false;
+  }
+
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from("user_profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) {
+    return false;
+  }
+
+  return data?.role === "admin";
+}
+
+export async function isAuthorizedUserOrAdminRequest(request: Request): Promise<boolean> {
+  const expectedSecret = getAdminImportSecret();
+  const url = new URL(request.url);
+  const providedSecret =
+    request.headers.get("x-admin-secret") ?? url.searchParams.get("admin_secret") ?? "";
+
+  if (expectedSecret && providedSecret && safeEqual(providedSecret, expectedSecret)) {
+    return true;
+  }
+
   return Boolean(await getAuthenticatedUserFromRequest(request));
 }

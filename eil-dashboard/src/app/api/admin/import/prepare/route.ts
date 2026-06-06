@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
 import {
   getAuthenticatedUserFromRequest,
-  isAuthorizedAdminRequest,
+  isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import {
+  MAX_FILES_PER_BATCH,
+  sanitizeStorageFileName,
+  validatePdfUploadMetadata,
+} from "@/lib/upload-safety";
 
 export const runtime = "nodejs";
 
 const AUTO_ANALYSIS_PROVIDER = "Automatic task routing";
 const AUTO_ANALYSIS_MODEL = "automatic-task-routing";
 const AUTO_ANALYSIS_LABEL = "Automatic per-task model routing";
-
-function sanitizeFileName(fileName: string): string {
-  return fileName.replace(/[^a-zA-Z0-9._-]+/g, "-");
-}
 
 type PrepareUploadFile = {
   fileIndex: number;
@@ -24,7 +25,7 @@ type PrepareUploadFile = {
 };
 
 export async function POST(request: Request) {
-  if (!(await isAuthorizedAdminRequest(request))) {
+  if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -52,14 +53,17 @@ export async function POST(request: Request) {
     if (files.length === 0) {
       return NextResponse.json({ error: "Upload at least one PDF file." }, { status: 400 });
     }
+    if (files.length > MAX_FILES_PER_BATCH) {
+      return NextResponse.json(
+        { error: `Upload at most ${MAX_FILES_PER_BATCH} files per batch.` },
+        { status: 400 }
+      );
+    }
 
     for (const file of files) {
-      const lowerName = String(file.name || "").toLowerCase();
-      if (!lowerName.endsWith(".pdf")) {
-        return NextResponse.json(
-          { error: `Only PDF uploads are supported in v1. Invalid file: ${file.name}` },
-          { status: 400 }
-        );
+      const validationError = validatePdfUploadMetadata(file);
+      if (validationError) {
+        return NextResponse.json({ error: validationError }, { status: 400 });
       }
     }
 
@@ -140,7 +144,7 @@ export async function POST(request: Request) {
         throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
       }
 
-      const storagePath = `pending/${folder}/${runData.id}/${sanitizeFileName(file.name)}`;
+      const storagePath = `pending/${folder}/${runData.id}/${sanitizeStorageFileName(file.name)}`;
       const { data: signedUpload, error: signedUploadError } = await supabase.storage
         .from("paper-uploads")
         .createSignedUploadUrl(storagePath);

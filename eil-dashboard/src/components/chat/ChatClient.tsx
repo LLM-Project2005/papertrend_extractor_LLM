@@ -672,6 +672,19 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
   );
 }
 
+function safeCitationHref(href: string): string {
+  const value = String(href || "").trim();
+  if (value.startsWith("/workspace/") || value.startsWith("/docs/")) {
+    return value;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "#";
+  } catch {
+    return "#";
+  }
+}
+
 const chatChartTooltipTheme = {
   contentStyle: {
     backgroundColor: "#111827",
@@ -2892,7 +2905,7 @@ export default function ChatClient() {
                               {message.citations.map((citation) => (
                                 <Link
                                   key={`${message.id}-${citation.paperId}`}
-                                  href={citation.href}
+                                  href={safeCitationHref(citation.href)}
                                   className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
                                 >
                                   {citation.sourceType === "web" ? (

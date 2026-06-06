@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import {
   appendWorkspaceMessage,
@@ -22,6 +23,11 @@ import {
   triggerWorkerQueueWithRetries,
 } from "@/lib/worker-queue-start";
 import { triggerResearchQueue, triggerWorkerQueue } from "@/lib/worker-trigger";
+import {
+  GuardError,
+  assertAndRecordAiUsage,
+  type AiUsageKind,
+} from "@/lib/security-guards";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
@@ -184,6 +190,86 @@ interface ChatRequestBody {
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
+}
+
+const ChatRequestBodySchema = z
+  .object({
+    message: z.string().max(12_000).optional(),
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().max(12_000),
+        })
+      )
+      .max(24)
+      .optional(),
+    model: z.string().max(120).optional(),
+    attachments: z
+      .array(
+        z.object({
+          name: z.string().max(240),
+          type: z.string().max(120).optional(),
+          size: z.number().nonnegative().max(100 * 1024 * 1024).optional(),
+          url: z.string().max(5_000).optional(),
+          previewUrl: z.string().max(5_000).optional(),
+          dataUrl: z.string().max(2_000_000).optional(),
+          runId: z.string().max(80).optional(),
+          status: z.string().max(80).optional(),
+          sourceLabel: z.string().max(120).optional(),
+          extension: z.string().max(20).optional(),
+        })
+      )
+      .max(10)
+      .optional(),
+    generationParameters: z
+      .object({
+        temperature: z.number().optional(),
+        topP: z.number().optional(),
+        topK: z.number().optional(),
+        maxTokens: z.number().optional(),
+        frequencyPenalty: z.number().optional(),
+        presencePenalty: z.number().optional(),
+      })
+      .optional(),
+    selectedYears: z.array(z.string().max(20)).max(80).optional(),
+    selectedTracks: z.array(z.string().max(20)).max(20).optional(),
+    searchQuery: z.string().max(1_000).optional(),
+    queryLanguage: z.string().max(20).optional(),
+    selectedRunIds: z.array(z.string().max(80)).max(50).optional(),
+    threadId: z.string().max(80).optional(),
+    editMessageId: z.string().max(80).optional(),
+    folderId: z.string().max(80).optional(),
+    projectId: z.string().max(80).optional(),
+    toolMode: z.enum(["auto", "web_search", "chart", "none"]).optional(),
+    chartRequest: z.record(z.string(), z.unknown()).optional(),
+    webSearchEnabled: z.boolean().optional(),
+    researchSourcePolicy: z.record(z.string(), z.unknown()).optional(),
+    chatMode: z.enum(["normal", "deep_research"]).optional(),
+    action: z.enum(["message", "plan", "continue"]).optional(),
+    sessionId: z.string().max(80).optional(),
+  })
+  .passthrough();
+
+function parseChatRequestBody(value: unknown): ChatRequestBody {
+  const parsed = ChatRequestBodySchema.safeParse(value);
+  if (!parsed.success) {
+    throw new GuardError("Malformed chat request.", 400);
+  }
+  return parsed.data as ChatRequestBody;
+}
+
+function usageKindForRequest(body: ChatRequestBody): AiUsageKind {
+  if (body.chatMode === "deep_research") {
+    return "deep_research";
+  }
+  if (body.toolMode === "web_search" || body.webSearchEnabled) {
+    return "web_search";
+  }
+  if (body.toolMode === "chart" || body.chartRequest) {
+    return "chart";
+  }
+  return "chat_message";
 }
 
 const STRICT_RESEARCH_BUDGET: DeepResearchBudgetPolicy = {
@@ -3712,11 +3798,20 @@ async function normalChat(
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as ChatRequestBody;
+    const body = parseChatRequestBody(await request.json().catch(() => ({})));
     const user = await getAuthenticatedUserFromRequest(request);
     const ownerUserId = user?.id ?? null;
     const chatMode = body.chatMode ?? "normal";
     const action = body.action ?? (chatMode === "deep_research" ? "plan" : "message");
+
+    if (ownerUserId) {
+      await assertAndRecordAiUsage(ownerUserId, usageKindForRequest(body), {
+        chatMode,
+        action,
+        toolMode: body.toolMode ?? "auto",
+        webSearchEnabled: Boolean(body.webSearchEnabled),
+      });
+    }
 
     if (chatMode === "deep_research") {
       if (!ownerUserId) {
@@ -3733,8 +3828,11 @@ export async function POST(request: Request) {
 
     return await normalChat(request, body, ownerUserId);
   } catch (error) {
+    if (error instanceof GuardError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Chat request failed." },
+      { error: "Chat request failed." },
       { status: 500 }
     );
   }

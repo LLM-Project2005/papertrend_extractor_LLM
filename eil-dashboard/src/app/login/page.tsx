@@ -1,21 +1,27 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import AuthPanel from "@/components/auth/AuthPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { getStoredWorkspaceRoute } from "@/lib/workspace-session";
 import { LogoMarkIcon } from "@/components/ui/Icons";
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { hydrated, user } = useAuth();
 
   useEffect(() => {
     if (hydrated && user) {
-      router.replace(getStoredWorkspaceRoute() ?? "/workspaces");
+      const returnTo = searchParams.get("returnTo");
+      const safeReturnTo =
+        returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")
+          ? returnTo
+          : getStoredWorkspaceRoute() ?? "/workspaces";
+      router.replace(safeReturnTo);
     }
-  }, [hydrated, router, user]);
+  }, [hydrated, router, searchParams, user]);
 
   return (
     <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 dark:bg-black dark:text-white">
@@ -39,5 +45,21 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 dark:bg-black dark:text-white">
+          <div className="mx-auto flex max-w-5xl items-center justify-center">
+            <p className="mt-24 text-sm text-slate-500 dark:text-[#9b9b9b]">Loading</p>
+          </div>
+        </main>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

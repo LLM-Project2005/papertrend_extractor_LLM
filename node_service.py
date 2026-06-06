@@ -99,11 +99,31 @@ def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[s
     handler.send_response(status)
     handler.send_header("Content-Type", "application/json; charset=utf-8")
     handler.send_header("Content-Length", str(len(body)))
-    handler.send_header("Access-Control-Allow-Origin", "*")
-    handler.send_header("Access-Control-Allow-Headers", "Content-Type")
+    cors_origin = _cors_origin_for_request(handler)
+    if cors_origin:
+        handler.send_header("Access-Control-Allow-Origin", cors_origin)
+        handler.send_header("Vary", "Origin")
+    handler.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
     handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
     handler.end_headers()
     handler.wfile.write(body)
+
+
+def _allowed_origins() -> set[str]:
+    raw = os.getenv("APP_ALLOWED_ORIGINS", "").strip()
+    return {origin.rstrip("/") for origin in raw.split(",") if origin.strip()}
+
+
+def _cors_origin_for_request(handler: BaseHTTPRequestHandler) -> str:
+    origin = (handler.headers.get("Origin") or "").strip().rstrip("/")
+    if not origin:
+        return ""
+    allowed = _allowed_origins()
+    if origin in allowed:
+        return origin
+    if not allowed and origin.startswith(("http://localhost:", "http://127.0.0.1:")):
+        return origin
+    return ""
 
 
 def _is_authorized_worker_request(handler: BaseHTTPRequestHandler) -> bool:
@@ -466,7 +486,15 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
         _json_response(self, 404, {"error": "Not found."})
 
     def do_POST(self) -> None:  # noqa: N802
+        if not _is_authorized_worker_request(self):
+            _json_response(self, 401, {"error": "Unauthorized"})
+            return
+
         length = int(self.headers.get("Content-Length", "0") or 0)
+        max_body_bytes = _int_env("NODE_SERVICE_MAX_BODY_BYTES", 2_000_000, 1_024)
+        if length > max_body_bytes:
+            _json_response(self, 413, {"error": "Request body is too large."})
+            return
         raw_body = self.rfile.read(length) if length > 0 else b"{}"
         try:
             body = json.loads(raw_body.decode("utf-8") or "{}")
@@ -476,9 +504,6 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
 
         try:
             if self.path == "/process-queue":
-                if not _is_authorized_worker_request(self):
-                    _json_response(self, 401, {"error": "Unauthorized"})
-                    return
                 max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
                 run_async = bool(body.get("async", True))
                 force_start = bool(body.get("force", False))
@@ -532,17 +557,11 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 return
 
             if self.path == "/enqueue-ingestion-tasks":
-                if not _is_authorized_worker_request(self):
-                    _json_response(self, 401, {"error": "Unauthorized"})
-                    return
                 task_result = _enqueue_ingestion_tasks(self, body)
                 _json_response(self, 202 if task_result.get("enqueued") else 503, task_result)
                 return
 
             if self.path == "/process-research-queue":
-                if not _is_authorized_worker_request(self):
-                    _json_response(self, 401, {"error": "Unauthorized"})
-                    return
                 max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
                 run_async = bool(body.get("async", True))
                 force_start = bool(body.get("force", False))
@@ -573,9 +592,6 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 return
 
             if self.path == "/debug/reset-queue-lock":
-                if not _is_authorized_worker_request(self):
-                    _json_response(self, 401, {"error": "Unauthorized"})
-                    return
                 _json_response(self, 200, _reset_queue_worker_gate())
                 return
 
