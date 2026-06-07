@@ -5456,6 +5456,112 @@ def _section_report(
     return f"{evidence} [Paper {paper_id}]"
 
 
+def _paper_identifier(paper: Dict[str, Any]) -> int:
+    try:
+        return int(paper.get("paper_id") or paper.get("paperId") or 0)
+    except Exception:
+        return 0
+
+
+def _paper_reference_label(paper: Dict[str, Any]) -> str:
+    paper_id = _paper_identifier(paper)
+    title = _normalize_space(str(paper.get("title") or "Untitled paper")) or "Untitled paper"
+    year = _normalize_space(str(paper.get("year") or "")) or "Unknown year"
+    suffix = f" [Paper {paper_id}]" if paper_id > 0 else ""
+    return f"{title} ({year}){suffix}"
+
+
+def _citation_reference_label(citation: Dict[str, Any]) -> str:
+    source_type = str(citation.get("source_type") or "").strip().lower()
+    label = _normalize_space(str(citation.get("source_label") or citation.get("title") or citation.get("url") or "Source"))
+    paper_id = str(citation.get("paper_id") or citation.get("source_id") or "").strip()
+    if source_type == "paper" and paper_id.isdigit():
+        return f"{label} [Paper {paper_id}]"
+    url = str(citation.get("url") or "").strip()
+    if url:
+        return f"{label} ({url})"
+    return label
+
+
+def _report_title_from_state(state: DeepResearchState, step_results: Sequence[Dict[str, Any]]) -> str:
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    if prompt_analysis.get("single_paper"):
+        paper = _target_paper(state, step_results)
+        title = str((paper or {}).get("title") or prompt_analysis.get("candidate_title") or "Selected Paper")
+        return f"Deep Research Report: {title}"
+
+    intent = str(prompt_analysis.get("primary_intent") or "").strip()
+    if intent == "gap_analysis":
+        return "Research Gap Analysis of the Selected Corpus"
+    if intent == "trend_synthesis":
+        return "Trend Synthesis of the Selected Corpus"
+    if intent == "multi_paper_comparison":
+        return "Comparative Deep Research Report"
+    if intent == "methodology_review":
+        return "Methodology Review of the Selected Corpus"
+    return "Deep Research Report"
+
+
+def _source_count_sentence(citations: Sequence[Dict[str, Any]], papers: Sequence[Dict[str, Any]]) -> str:
+    counts = _source_counts(citations)
+    paper_count = int(counts.get("paper") or 0) or len(papers)
+    web_count = int(counts.get("web") or 0)
+    if web_count:
+        return f"This report is grounded in {paper_count} library paper source(s) and {web_count} web source(s) available in the run."
+    return f"This report is grounded in {paper_count} in-scope library paper source(s) available in the run."
+
+
+def _term_values(value: Any) -> List[str]:
+    if isinstance(value, list):
+        return [
+            _normalize_space(str(item))
+            for item in value
+            if _normalize_space(str(item))
+        ]
+    text = _normalize_space(str(value or ""))
+    if not text:
+        return []
+    return [
+        part.strip()
+        for part in re.split(r"[,;/|]", text)
+        if part.strip()
+    ]
+
+
+def _top_terms_from_papers(papers: Sequence[Dict[str, Any]], keys: Sequence[str], limit: int = 5) -> List[Tuple[str, int]]:
+    counts: Dict[str, int] = {}
+    labels: Dict[str, str] = {}
+    for paper in papers:
+        for key in keys:
+            for term in _term_values(paper.get(key)):
+                normalized = term.lower()
+                if not normalized:
+                    continue
+                counts[normalized] = counts.get(normalized, 0) + 1
+                labels.setdefault(normalized, term)
+    ranked = sorted(counts.items(), key=lambda item: (-item[1], labels.get(item[0], item[0])))
+    return [(labels.get(key, key), count) for key, count in ranked[:limit]]
+
+
+def _fallback_research_questions(prompt_analysis: Dict[str, Any]) -> List[str]:
+    intent = str(prompt_analysis.get("primary_intent") or "")
+    if intent == "gap_analysis":
+        return [
+            "Which underrepresented learner groups, contexts, or institutional settings would most change the interpretation of the current corpus?",
+            "Which pedagogical effects remain untested over longer time horizons?",
+            "Which assessment, teacher-practice, or curriculum-level mechanisms are implied by the corpus but not directly studied?",
+        ]
+    if intent == "trend_synthesis":
+        return [
+            "Which themes are increasing across the corpus, and which are stable or declining?",
+            "Which topic combinations appear together often enough to justify a focused review?",
+        ]
+    return [
+        "Which claim has the strongest direct support in the selected evidence?",
+        "Which important claim would require more papers or web sources before being treated as settled?",
+    ]
+
+
 def _section_report_from_evidence_items(
     paper: Dict[str, Any],
     step_results: Sequence[Dict[str, Any]],
@@ -5515,7 +5621,15 @@ def _single_paper_report(state: DeepResearchState, step_results: Sequence[Dict[s
     }
     paper_id = int(paper.get("paper_id") or paper.get("paperId") or 0)
     title = str(paper.get("title") or prompt_analysis.get("candidate_title") or "Named paper")
-    lines = [f'Focused report on "{title}" [Paper {paper_id}].']
+    lines = [
+        f"# {_report_title_from_state(state, step_results)}",
+        "",
+        "## Executive Summary",
+        f'This focused report is grounded in the selected paper "{title}" [Paper {paper_id}]. It only uses extracted in-scope evidence and marks unsupported sections narrowly instead of filling gaps with generic claims.',
+        "",
+        "## Evidence Base",
+        _paper_reference_label(paper),
+    ]
     for section in requested_sections:
         lines.append(f"## {labels.get(section, section.title())}")
         lines.append(_section_report_from_evidence_items(paper, step_results, section))
@@ -5532,6 +5646,8 @@ def _single_paper_report(state: DeepResearchState, step_results: Sequence[Dict[s
         )
         lines.append("## Supporting Context")
         lines.append(f"Additional in-scope context was available from {support_text}.")
+    lines.append("## Limits")
+    lines.append("Claims above should be read as scoped to the selected paper and any explicitly retrieved supporting evidence, not as a statement about the wider literature unless web search was enabled.")
     return "\n\n".join(lines)
 
 
@@ -5543,10 +5659,8 @@ def _general_report(state: DeepResearchState, step_results: Sequence[Dict[str, A
     if not papers:
         return f"{plan_summary or prompt}\n\nThe current scope did not return grounded paper evidence for this request."
 
-    evidence_base = ", ".join(
-        f'{str(paper.get("title") or "Untitled")} [Paper {int(paper.get("paperId") or paper.get("paper_id") or 0)}]'
-        for paper in papers[:5]
-    )
+    ledger = [citation for citation in list(state.get("citation_ledger") or []) if isinstance(citation, dict)]
+    evidence_base = "\n".join(f"- {_paper_reference_label(paper)}" for paper in papers[:8])
     observations = [
         str(step.get("detail") or step.get("summary") or "").strip()
         for step in step_results
@@ -5554,7 +5668,29 @@ def _general_report(state: DeepResearchState, step_results: Sequence[Dict[str, A
     ]
     warnings = list((state.get("verification_result") or {}).get("warnings") or [])
     requested_sections = list(prompt_analysis.get("requested_sections") or [])
-    lines = [plan_summary or prompt, "", "## Evidence Base", evidence_base]
+    topic_terms = _top_terms_from_papers(papers, ("topic", "topics", "primary_topic", "concept_label"), limit=5)
+    keyword_terms = _top_terms_from_papers(papers, ("keyword", "keywords", "normalized_keyword"), limit=5)
+    source_sentence = _source_count_sentence(ledger, papers)
+    title = _report_title_from_state(state, step_results)
+    intent = str(prompt_analysis.get("primary_intent") or "")
+    lines = [
+        f"# {title}",
+        "",
+        "## Executive Summary",
+        f"{source_sentence} The answer should be read as a scoped analysis of the selected Papertrend corpus, not a claim about the whole research field.",
+    ]
+    if plan_summary:
+        lines.append(plan_summary)
+    lines.extend(["", "## Evidence Base", evidence_base])
+    if topic_terms or keyword_terms:
+        lines.append("")
+        lines.append("## Corpus Signals")
+        if topic_terms:
+            topic_text = ", ".join(f"{term} ({count})" for term, count in topic_terms)
+            lines.append(f"- Repeated topic signals: {topic_text}.")
+        if keyword_terms:
+            keyword_text = ", ".join(f"{term} ({count})" for term, count in keyword_terms)
+            lines.append(f"- Repeated keyword signals: {keyword_text}.")
     if warnings:
         lines.extend(["", "## Evidence Gaps", *[f"- {warning}" for warning in warnings]])
     if requested_sections:
@@ -5586,8 +5722,34 @@ def _general_report(state: DeepResearchState, step_results: Sequence[Dict[str, A
                     )
                 )
     else:
-        lines.extend(["", "## Grounded Findings"])
-        lines.extend(f"- {observation}" for observation in observations[:6])
+        if intent == "gap_analysis":
+            lines.extend(["", "## Overrepresented Areas"])
+            if topic_terms or keyword_terms:
+                repeated = topic_terms or keyword_terms
+                lines.extend(
+                    f"- {term} appears repeatedly across {count} retrieved source(s), so it is a stronger corpus signal than one-off themes."
+                    for term, count in repeated[:4]
+                )
+            else:
+                lines.append("- The strongest overrepresented areas should be inferred from repeated paper titles and retrieved evidence, not from unsupported assumptions.")
+            lines.extend(["", "## Underexplored Areas"])
+            lines.append("- Underexplored areas are those that the current retrieved corpus does not directly support or supports with only thin evidence; the report should phrase these as corpus-limited gaps.")
+            lines.extend(["", "## Major Research Gaps"])
+            grounded_observations = [observation for observation in observations if observation and len(observation) > 40]
+            if grounded_observations:
+                lines.extend(f"- {observation}" for observation in grounded_observations[:4])
+            else:
+                lines.append("- The retrieved sources are sufficient to identify candidate gaps, but not enough to claim field-wide absence without broader web/literature search.")
+            lines.extend(["", "## Suggested Next Studies"])
+            lines.extend(f"- {question}" for question in _fallback_research_questions(prompt_analysis))
+        else:
+            lines.extend(["", "## Grounded Findings"])
+            lines.extend(f"- {observation}" for observation in observations[:6])
+    if ledger:
+        lines.extend(["", "## Source Trace"])
+        lines.extend(f"- {_citation_reference_label(citation)}" for citation in ledger[:8])
+    lines.extend(["", "## Limits"])
+    lines.append("This report uses only sources retrieved during this run. If web search was disabled, external literature, recent studies, and uncatalogued papers are intentionally excluded.")
     return "\n".join(lines)
 
 
@@ -5619,6 +5781,27 @@ def _compact_evidence_pack(
 
     return {
         "requested_sections": requested_sections,
+        "source_counts": _source_counts(list(state.get("citation_ledger") or [])),
+        "readable_sources": [
+            _citation_reference_label(citation)
+            for citation in list(state.get("citation_ledger") or [])[:12]
+            if isinstance(citation, dict)
+        ],
+        "report_quality_contract": {
+            "default_length": "700-1200 words unless the user explicitly asks for a short answer",
+            "required_style": "clear academic prose with concrete evidence counts, readable headings, and no raw tool output",
+            "claim_policy": "cite every substantive claim with [Paper <id>] or a named web source; use corpus-limited language when evidence is absent",
+            "gap_policy": "when describing a gap, explain whether it is absent, thinly supported, narrow in scope, short-term only, or missing cross-context evidence",
+            "recommended_gap_sections": [
+                "Executive Summary",
+                "Evidence Base",
+                "Overrepresented Areas",
+                "Underexplored Areas",
+                "Major Research Gaps",
+                "Suggested Next Studies",
+                "Limits",
+            ],
+        },
         "papers": [
             {
                 "paperId": paper.get("paperId") or paper.get("paper_id"),
@@ -5897,11 +6080,17 @@ def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
                 (
                     "You are synthesizing a deep research report from a workspace-scoped research corpus.\n"
                     "Use only the supplied evidence pack.\n"
-                    "Return prose only.\n"
-                    "Every paragraph must be grounded in the supplied evidence snippets.\n"
+                    "Return prose only, with markdown headings.\n"
+                    "Write at deep-research quality: clear title, executive summary, evidence counts, source-aware analysis, and practical implications.\n"
+                    "Default to 700-1200 words unless the user explicitly asked for a short answer.\n"
+                    "Every substantive paragraph must be grounded in the supplied evidence snippets or citation ledger.\n"
                     "If a requested section is unsupported, say so narrowly instead of filling with generic prose.\n"
                     "Do not echo raw JSON, do not invent papers, and say plainly when evidence is thin.\n"
                     "Mention paper IDs inline as [Paper <id>] when available and name web sources plainly when used.\n"
+                    "When discussing corpus gaps, avoid field-wide claims such as 'the literature lacks' unless web search was enabled; say 'not observed in the retrieved Papertrend corpus' instead.\n"
+                    "For gap-analysis requests, use sections close to: Executive Summary, Evidence Base, Overrepresented Areas, Underexplored Areas, Major Research Gaps, Suggested Next Studies, Limits.\n"
+                    "For each gap, explain why it is a gap: absent evidence, thin evidence, narrow population/context, short-term-only design, missing comparison, or missing teacher/institution/system perspective.\n"
+                    "Include concrete future research questions or study designs when useful.\n"
                     f"User request:\n{prompt}\n\n"
                     f"Plan summary:\n{plan_summary}\n\n"
                     f"Prompt analysis:\n{json.dumps(prompt_analysis, ensure_ascii=False)}\n\n"
@@ -5920,7 +6109,12 @@ def research_synthesis_node(state: DeepResearchState) -> Dict[str, Any]:
                         "Use only the supplied evidence snippets, section findings, and verification warnings.\n"
                         "Ground each paragraph in the evidence pack and abstain narrowly when support is missing.\n"
                         "Exclude all raw data.\n"
-                        "Follow the requested headings when present.\n"
+                        "Follow the requested headings when present; otherwise create useful headings for the user's intent.\n"
+                        "Start with a specific title and an executive summary.\n"
+                        "Include source counts, readable evidence-base language, and scoped limitations.\n"
+                        "For corpus/gap reports, distinguish overrepresented areas, underexplored areas, and future research directions.\n"
+                        "Cite substantive claims with [Paper <id>] or a named web source.\n"
+                        "Use 'not observed in the retrieved corpus' rather than broad absence claims when web search is disabled.\n"
                         "Use paragraphs and flat bullets only.\n"
                         "Do not emit JSON, tables, field names, or tool-call phrasing.\n"
                         f"User request:\n{prompt}\n\n"

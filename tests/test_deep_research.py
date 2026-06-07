@@ -8,6 +8,7 @@ from nodes.deep_research import (
     _build_deterministic_plan,
     _build_verification_result,
     _execute_tool,
+    _general_report,
     _next_pending_step,
     _score_paper_match,
     _section_report,
@@ -359,6 +360,61 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertEqual(analysis["candidate_title"], "")
         self.assertIn(analysis["primary_intent"], {"gap_analysis", "corpus_synthesis"})
 
+    def test_gap_fallback_report_uses_deep_research_sections_and_source_trace(self) -> None:
+        state = {
+            "prompt": "Find the major research gaps across my analyzed workspace papers.",
+            "plan_summary": "Map repeated corpus themes and identify thinly supported areas.",
+            "prompt_analysis": {
+                "single_paper": False,
+                "primary_intent": "gap_analysis",
+                "requested_sections": [],
+            },
+            "citation_ledger": [
+                {
+                    "source_id": "11",
+                    "source_label": "Teacher Feedback Practices in EFL Writing",
+                    "source_type": "paper",
+                    "paper_id": 11,
+                    "confidence": "high",
+                }
+            ],
+            "verification_result": {"warnings": ["Only one retrieval pass was available."]},
+        }
+        step_results = [
+            {
+                "summary": "Retrieved corpus evidence.",
+                "detail": "The strongest evidence clusters around short-term classroom interventions and learner writing outcomes.",
+                "raw": {
+                    "papers": [
+                        {
+                            "paperId": 11,
+                            "title": "Teacher Feedback Practices in EFL Writing",
+                            "year": "2023",
+                            "topic": "writing pedagogy",
+                            "keyword": "feedback",
+                        },
+                        {
+                            "paperId": 12,
+                            "title": "Network-Based Collaborative Learning",
+                            "year": "2024",
+                            "topic": "collaborative learning",
+                            "keyword": "task-based learning",
+                        },
+                    ]
+                },
+            }
+        ]
+
+        report = _general_report(state, step_results)
+
+        self.assertIn("# Research Gap Analysis", report)
+        self.assertIn("## Executive Summary", report)
+        self.assertIn("## Overrepresented Areas", report)
+        self.assertIn("## Underexplored Areas", report)
+        self.assertIn("## Suggested Next Studies", report)
+        self.assertIn("Teacher Feedback Practices in EFL Writing (2023) [Paper 11]", report)
+        self.assertIn("## Source Trace", report)
+
 
 class DeepResearchExecutionContractTests(unittest.TestCase):
     def test_verification_marks_missing_named_paper_as_partial_only(self) -> None:
@@ -473,7 +529,8 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
             state,
         )
 
-        self.assertIn("Focused report on", synthesis["report"])
+        self.assertIn("# Deep Research Report:", synthesis["report"])
+        self.assertIn("## Executive Summary", synthesis["report"])
         self.assertNotIn("not currently in the selected workspace scope", synthesis["report"])
 
     def test_section_report_prefers_clean_objective_and_methodology_evidence(self) -> None:
