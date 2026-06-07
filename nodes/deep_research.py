@@ -814,7 +814,8 @@ def _is_corpus_level_prompt(prompt: str) -> bool:
 
 def _looks_like_single_paper_request(prompt: str) -> bool:
     lowered = f" {_normalize_space(prompt).lower()} "
-    if _extract_quoted_title(prompt):
+    quoted_title = _extract_quoted_title(prompt)
+    if quoted_title and not _is_probable_instruction_fragment(quoted_title):
         return True
     paper_target_markers = (
         "this paper",
@@ -875,7 +876,7 @@ def _is_probable_instruction_fragment(value: str) -> bool:
 
 def _extract_candidate_title(prompt: str) -> str:
     quoted = _extract_quoted_title(prompt)
-    if quoted:
+    if quoted and not _is_probable_instruction_fragment(quoted):
         return quoted
 
     if _is_corpus_level_prompt(prompt) and not _looks_like_single_paper_request(prompt):
@@ -1348,10 +1349,26 @@ def _analyze_prompt(
     normalized_query = _normalize_search_query(prompt, candidate_title)
     lowered = prompt.lower()
     compare = any(token in lowered for token in ("compare", "comparison", "versus", " vs ", "contrast"))
+    gap_analysis = any(
+        token in lowered
+        for token in (
+            "gap",
+            "gaps",
+            "underexplored",
+            "underrepresented",
+            "overrepresented",
+            "missing perspective",
+            "neglected",
+        )
+    )
+    trend_analysis = any(
+        token in lowered
+        for token in ("trend", "trends", "timeline", "over time", "year by year", "chronolog")
+    )
     survey = any(
         token in lowered
         for token in ("survey", "review", "overview", "landscape", "corpus", "literature")
-    ) or corpus_level_prompt
+    ) or corpus_level_prompt or gap_analysis or trend_analysis
     methodology_focus = any(
         token in lowered for token in ("method", "methods", "methodology", "participants", "sample")
     )
@@ -1367,6 +1384,8 @@ def _analyze_prompt(
         "compare": compare,
         "survey": survey,
         "corpus_level": corpus_level_prompt,
+        "gap_analysis": gap_analysis,
+        "trend_analysis": trend_analysis,
         "methodology_focus": methodology_focus,
         "findings_focus": findings_focus,
         "limitations_focus": limitations_focus,
@@ -1483,7 +1502,12 @@ def _analyze_prompt(
         analysis["target_paper_title"] = ""
         analysis["candidate_title"] = ""
         analysis["single_paper"] = False
-        analysis["primary_intent"] = "corpus_synthesis"
+        if gap_analysis:
+            analysis["primary_intent"] = "gap_analysis"
+        elif trend_analysis:
+            analysis["primary_intent"] = "trend_analysis"
+        else:
+            analysis["primary_intent"] = "corpus_synthesis"
         analysis["target_entity_type"] = "workspace"
     elif analysis["single_paper"]:
         analysis["primary_intent"] = "paper_lookup"
@@ -2078,7 +2102,73 @@ def _build_deterministic_plan(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         requested=requested_sections,
     )
 
-    if prompt_analysis.get("single_paper") and prompt_analysis.get("candidate_title"):
+    if str(prompt_analysis.get("primary_intent") or "") in {
+        "gap_analysis",
+        "trend_analysis",
+        "corpus_synthesis",
+    }:
+        add_step(
+            "Map the workspace evidence base",
+            "Build a high-level map of analyzed papers, topic coverage, keyword coverage, and year distribution before choosing retrieval paths.",
+            "get_dashboard_summary",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Use workspace analytics as the first evidence layer for corpus-level research.",
+            expected_output="A corpus snapshot with topic, keyword, track, and year coverage signals.",
+            completion_condition="The workspace evidence base is summarized or an evidence gap is recorded.",
+            tool_query=normalized_query,
+            extra={"focus": "gaps" if prompt_analysis.get("primary_intent") == "gap_analysis" else "trends"},
+        )
+        add_step(
+            "Decompose the research question",
+            "Split the broad request into focused retrieval queries for dominant patterns, weakly represented areas, and possible missing perspectives.",
+            "keyword_search",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Create subqueries from the user intent instead of treating the prompt as a paper title.",
+            expected_output="Focused topic and keyword routes for deeper retrieval.",
+            completion_condition="Subqueries are available or the corpus has too little analyzable text.",
+            tool_query=normalized_query,
+        )
+        add_step(
+            "Retrieve representative and edge-case papers",
+            "Pull papers that represent the strongest clusters plus papers that may reveal underexplored or contradictory areas.",
+            "fetch_papers",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Ground corpus-level claims in actual papers, not only aggregate counts.",
+            expected_output="A balanced shortlist of representative and low-coverage papers.",
+            completion_condition="Representative papers are retrieved within the strict source budget.",
+            tool_query=normalized_query,
+            extra={"limit": 8},
+        )
+        add_step(
+            "Read evidence for gaps and coverage",
+            "Inspect sections from the retrieved papers to confirm what is overrepresented, underexplored, or only weakly supported.",
+            "read_paper_sections",
+            phase_class="research",
+            required_class="required_before_verification",
+            purpose="Turn aggregate patterns into source-grounded findings.",
+            expected_output="Section-level evidence for coverage patterns and research-gap claims.",
+            completion_condition="Gap and coverage evidence is extracted or narrowly marked unsupported.",
+            tool_query=normalized_query,
+            requested=requested_sections,
+            extra={"limit": 5},
+        )
+        if prompt_analysis.get("primary_intent") == "gap_analysis":
+            summary = (
+                "Analyze research gaps across the scoped workspace corpus, compare overrepresented and underexplored areas, "
+                "then ground every claim in retrieved paper evidence."
+            )
+        elif prompt_analysis.get("primary_intent") == "trend_analysis":
+            summary = (
+                "Analyze trends across the scoped workspace corpus using analytics first, then verify the trend narrative with paper-level evidence."
+            )
+        else:
+            summary = (
+                "Synthesize the scoped workspace corpus by combining analytics, targeted retrieval, section evidence, and gap checking."
+            )
+    elif prompt_analysis.get("single_paper") and prompt_analysis.get("candidate_title"):
         candidate_title = str(prompt_analysis.get("candidate_title") or "")
         target_paper_id = int(prompt_analysis.get("target_paper_id") or 0)
         if prompt_analysis.get("target_in_scope"):

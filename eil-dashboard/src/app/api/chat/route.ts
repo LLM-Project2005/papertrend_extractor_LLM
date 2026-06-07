@@ -2173,7 +2173,7 @@ type LocalPlanPaper = {
 };
 
 const LOCAL_PAYLOAD_VERSION = 3;
-const LOCAL_PLANNER_VERSION = "hybrid-v2";
+const LOCAL_PLANNER_VERSION = "hybrid-v3";
 const SECTION_TO_QUERY: Record<string, string> = {
   objective: "research objective",
   theoretical_background: "theoretical background",
@@ -2223,25 +2223,126 @@ function extractQuotedTitle(prompt: string) {
   return (matches?.[1] ?? matches?.[2] ?? "").trim();
 }
 
+function isCorpusLevelPrompt(prompt: string) {
+  const lowered = ` ${prompt.replace(/\s+/g, " ").toLowerCase()} `;
+  const corpusTerms = [
+    "workspace",
+    "library",
+    "corpus",
+    "all papers",
+    "all analyzed",
+    "all analysed",
+    "analyzed workspace",
+    "analysed workspace",
+    "analyzed papers",
+    "analysed papers",
+    "across my",
+    "across all",
+    "selected folder",
+    "current project",
+    "research gaps",
+    "major gaps",
+    "gap across",
+    "gaps across",
+    "overrepresented",
+    "underexplored",
+    "underrepresented",
+    "trends",
+    "trend",
+    "top topics",
+    "top keywords",
+    "landscape",
+  ];
+  return corpusTerms.some((term) => lowered.includes(term));
+}
+
+function looksLikeSinglePaperRequest(prompt: string) {
+  const lowered = ` ${prompt.replace(/\s+/g, " ").toLowerCase()} `;
+  const quotedTitle = extractQuotedTitle(prompt);
+  if (quotedTitle && !isProbableInstructionFragment(quotedTitle)) return true;
+  const paperTargetMarkers = [
+    "this paper",
+    "that paper",
+    "the paper",
+    "attached paper",
+    "this file",
+    "that file",
+    "attached file",
+    "this document",
+    "that document",
+    "paper titled",
+    "paper called",
+    "article titled",
+    "file named",
+    "document named",
+  ];
+  if (paperTargetMarkers.some((marker) => lowered.includes(marker))) {
+    return true;
+  }
+  return /\b(deep research analysis|analysis|analyze|analyse|review|summari[sz]e)\s+(of|on|for)\s+(the\s+)?(paper|article|file|document)\b/i.test(
+    prompt
+  );
+}
+
+function isProbableInstructionFragment(value: string) {
+  const tokens = new Set(tokenize(value));
+  if (tokens.size === 0) return true;
+  const intentTokens = new Set([
+    "gap",
+    "gaps",
+    "trend",
+    "trends",
+    "workspace",
+    "library",
+    "corpus",
+    "analyzed",
+    "analysed",
+    "papers",
+    "evidence",
+    "topic",
+    "topics",
+    "keyword",
+    "keywords",
+    "overrepresented",
+    "underexplored",
+    "underrepresented",
+    "major",
+    "research",
+    "explain",
+    "find",
+    "grounded",
+  ]);
+  let overlap = 0;
+  tokens.forEach((token) => {
+    if (intentTokens.has(token)) overlap += 1;
+  });
+  return overlap / Math.max(1, tokens.size) >= 0.35;
+}
+
 function extractCandidateTitle(prompt: string) {
   const quoted = extractQuotedTitle(prompt);
-  if (quoted) return quoted;
+  if (quoted && !isProbableInstructionFragment(quoted)) return quoted;
+  if (isCorpusLevelPrompt(prompt) && !looksLikeSinglePaperRequest(prompt)) {
+    return "";
+  }
   const truncated = prompt
     .replace(/\s+/g, " ")
     .trim()
     .split(/\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b/i)[0]
     .trim();
   const patterns = [
-    /\bdeep research analysis of\s+(.+)$/i,
-    /\banalysis of\s+(.+)$/i,
-    /\banalyze\s+(.+)$/i,
-    /\banalyse\s+(.+)$/i,
-    /\bresearch\s+(.+)$/i,
+    /\b(?:deep research analysis|analysis|review|summari[sz]e)\s+(?:of|on|for)\s+(?:the\s+)?(?:paper|article|file|document)\s+(.+)$/i,
+    /\b(?:analyze|analyse)\s+(?:the\s+)?(?:paper|article|file|document)\s+(.+)$/i,
+    /\b(?:paper|article|file|document)\s+(?:titled|called|named)\s+(.+)$/i,
   ];
   for (const pattern of patterns) {
     const match = truncated.match(pattern);
     const candidate = (match?.[1] ?? "").trim().replace(/[.,:;]+$/, "");
-    if (candidate.length >= 12 && !isPlaceholderTitle(candidate)) {
+    if (
+      candidate.length >= 12 &&
+      !isPlaceholderTitle(candidate) &&
+      !isProbableInstructionFragment(candidate)
+    ) {
       return candidate;
     }
   }
@@ -2482,6 +2583,7 @@ function buildLocalPromptAnalysis(
   selectedRunIds: string[] = [],
   attachmentNames: string[] = []
 ) {
+  const corpusLevelPrompt = isCorpusLevelPrompt(prompt) && !looksLikeSinglePaperRequest(prompt);
   let candidateTitle = extractCandidateTitle(prompt);
   const quotedTitle = extractQuotedTitle(prompt);
   const authorHint = extractAuthorHint(prompt);
@@ -2492,14 +2594,19 @@ function buildLocalPromptAnalysis(
   if (selectedRunIds.length > 0 && selectedScopePapers.length === 0) {
     selectedScopePapers = [...papers];
   }
-  if (!candidateTitle && attachmentTitles.length === 1) {
+  if (corpusLevelPrompt) {
+    candidateTitle = "";
+  }
+  if (!candidateTitle && !corpusLevelPrompt && attachmentTitles.length === 1) {
     candidateTitle = attachmentTitles[0];
   }
-  if (!candidateTitle && selectedScopePapers.length === 1) {
+  if (!candidateTitle && !corpusLevelPrompt && selectedScopePapers.length === 1) {
     candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
   }
   if (isPlaceholderTitle(candidateTitle)) {
-    if (selectedScopePapers.length === 1) {
+    if (corpusLevelPrompt) {
+      candidateTitle = "";
+    } else if (selectedScopePapers.length === 1) {
       candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
     } else if (attachmentTitles.length === 1) {
       candidateTitle = attachmentTitles[0];
@@ -2511,7 +2618,13 @@ function buildLocalPromptAnalysis(
   const lowered = prompt.toLowerCase();
   const requestedSections = detectRequestedSections(prompt);
   const compare = /\b(compare|comparison|versus|contrast)\b/i.test(prompt);
-  const survey = /\b(survey|review|overview|landscape|corpus|literature)\b/i.test(prompt);
+  const gapAnalysis = /\b(gap|gaps|underexplored|underrepresented|overrepresented|missing|neglected)\b/i.test(prompt);
+  const trendAnalysis = /\b(trend|trends|timeline|over time|year by year|chronolog)\b/i.test(prompt);
+  const survey =
+    corpusLevelPrompt ||
+    gapAnalysis ||
+    trendAnalysis ||
+    /\b(survey|review|overview|landscape|corpus|literature)\b/i.test(prompt);
   const evidenceExtraction =
     requestedSections.length > 0 || /\b(evidence|cite|quote)\b/i.test(prompt);
   const rankedMatches = papers
@@ -2576,9 +2689,12 @@ function buildLocalPromptAnalysis(
     !survey &&
     (!candidateTitle || Boolean(target));
   return {
-    single_paper: Boolean(candidateTitle),
+    single_paper: Boolean(candidateTitle) && !corpusLevelPrompt,
     compare,
     survey,
+    corpus_level: corpusLevelPrompt,
+    gap_analysis: gapAnalysis,
+    trend_analysis: trendAnalysis,
     methodology_focus: /\b(method|methods|methodology|participants|sample)\b/i.test(prompt),
     findings_focus: /\b(findings|results|outcomes)\b/i.test(prompt),
     limitations_focus: /\b(limitation|limitations|constraint|weakness)\b/i.test(prompt),
@@ -2589,17 +2705,23 @@ function buildLocalPromptAnalysis(
     normalized_query: normalizedQuery || prompt.trim(),
     requested_sections: requestedSections,
     attachment_titles: attachmentTitles,
-    target_in_scope: Boolean(target),
-    target_paper_id: target?.paperId ?? 0,
+    target_in_scope: corpusLevelPrompt ? false : Boolean(target),
+    target_paper_id: corpusLevelPrompt ? 0 : target?.paperId ?? 0,
     ranked_matches: rankedMatches,
-    primary_intent: candidateTitle
+    primary_intent: corpusLevelPrompt
+      ? gapAnalysis
+        ? "gap_analysis"
+        : trendAnalysis
+          ? "trend_analysis"
+          : "corpus_synthesis"
+      : candidateTitle
       ? "paper_lookup"
       : compare
         ? "comparison"
         : evidenceExtraction
           ? "evidence_audit"
           : "topic_review",
-    target_entity_type: candidateTitle ? "paper" : "topic",
+    target_entity_type: corpusLevelPrompt ? "workspace" : candidateTitle ? "paper" : "topic",
     requested_output_mode:
       requestedSections.length > 0
         ? "structured_sections"
@@ -2608,8 +2730,10 @@ function buildLocalPromptAnalysis(
           : survey
             ? "narrative_review"
             : "plain_summary",
-    scope_mode: trivial ? "trivial" : survey ? "broad" : "medium",
-    target_resolution_status: candidateTitle
+    scope_mode: corpusLevelPrompt ? "broad" : trivial ? "trivial" : survey ? "broad" : "medium",
+    target_resolution_status: corpusLevelPrompt
+      ? "not_applicable"
+      : candidateTitle
       ? target
         ? "exact_match"
         : rankedMatches.length > 0
@@ -2942,7 +3066,63 @@ async function buildLocalResearchPlan(
     requestedSections,
   });
 
-  if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
+  if (
+    promptAnalysis.primary_intent === "gap_analysis" ||
+    promptAnalysis.primary_intent === "trend_analysis" ||
+    promptAnalysis.primary_intent === "corpus_synthesis"
+  ) {
+    addStep({
+      title: "Map the workspace evidence base",
+      description: "Build a high-level map of the analyzed papers, topic coverage, keyword coverage, and year distribution before choosing retrieval paths.",
+      toolName: "get_dashboard_summary",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Use workspace analytics as the first evidence layer for corpus-level research.",
+      expectedOutput: "A corpus snapshot with topic, keyword, track, and year coverage signals.",
+      completionCondition: "The workspace evidence base is summarized or an evidence gap is recorded.",
+      query: normalizedQuery,
+    });
+    addStep({
+      title: "Decompose the research question",
+      description: "Split the broad request into focused retrieval queries for dominant patterns, weakly represented areas, and possible missing perspectives.",
+      toolName: "keyword_search",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Create subqueries from the user intent instead of treating the prompt as a paper title.",
+      expectedOutput: "Focused topic and keyword routes for deeper retrieval.",
+      completionCondition: "Subqueries are available or the corpus has too little analyzable text.",
+      query: normalizedQuery,
+    });
+    addStep({
+      title: "Retrieve representative and edge-case papers",
+      description: "Pull papers that represent the strongest clusters plus papers that may reveal underexplored or contradictory areas.",
+      toolName: "fetch_papers",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Ground corpus-level claims in actual papers, not only aggregate counts.",
+      expectedOutput: "A balanced shortlist of representative and low-coverage papers.",
+      completionCondition: "Representative papers are retrieved within the strict source budget.",
+      query: normalizedQuery,
+    });
+    addStep({
+      title: "Read evidence for gaps and coverage",
+      description: "Inspect sections from the retrieved papers to confirm what is overrepresented, underexplored, or only weakly supported.",
+      toolName: "read_paper_sections",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Turn aggregate patterns into source-grounded findings.",
+      expectedOutput: "Section-level evidence for coverage patterns and research-gap claims.",
+      completionCondition: "Gap and coverage evidence is extracted or narrowly marked unsupported.",
+      query: normalizedQuery,
+      requestedSections,
+    });
+    summary =
+      promptAnalysis.primary_intent === "gap_analysis"
+        ? `Analyze research gaps across the scoped workspace corpus, compare overrepresented and underexplored areas, then ground every claim in retrieved paper evidence.`
+        : promptAnalysis.primary_intent === "trend_analysis"
+          ? `Analyze trends across the scoped workspace corpus using analytics first, then verify the trend narrative with paper-level evidence.`
+          : `Synthesize the scoped workspace corpus by combining analytics, targeted retrieval, section evidence, and gap checking.`;
+  } else if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
     if (promptAnalysis.target_in_scope) {
       addStep({
         title: "Confirm the target paper in scope",
