@@ -305,6 +305,45 @@ class DeepResearchIntentResolutionSchema(BaseModel):
     confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Resolver confidence score.")
 
 
+class DeepResearchQueryDecompositionSchema(BaseModel):
+    primary_query: str = Field(default="", description="Best concise query for the main task.")
+    subqueries: List[str] = Field(
+        default_factory=list,
+        description="Focused retrieval subqueries for different aspects of the task.",
+    )
+    evidence_targets: List[str] = Field(
+        default_factory=list,
+        description="Kinds of evidence to look for, such as methods, gaps, findings, populations, or contradictions.",
+    )
+    rationale: str = Field(default="", description="Short reason for this decomposition.")
+
+
+class DeepResearchRerankItem(BaseModel):
+    paper_id: int = Field(description="Paper id from the supplied candidate list.")
+    relevance_score: int = Field(default=0, ge=0, le=100)
+    evidence_role: Literal[
+        "primary",
+        "supporting",
+        "edge_case",
+        "contradictory",
+        "background",
+        "exclude",
+    ] = "supporting"
+    rationale: str = ""
+
+
+class DeepResearchRerankSchema(BaseModel):
+    items: List[DeepResearchRerankItem] = Field(default_factory=list)
+
+
+class DeepResearchReflectionSchema(BaseModel):
+    decision: Literal["proceed", "retrieve_more", "partial"] = "proceed"
+    missing_evidence: List[str] = Field(default_factory=list)
+    suggested_queries: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.5, ge=0.0, le=1.0)
+
+
 def _get_supabase_url() -> str:
     return (os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL") or "").rstrip("/")
 
@@ -1072,6 +1111,132 @@ def _normalize_query_bundle(
         or None,
         "requested_sections": requested_sections,
         "exclusion_ids": exclusion_ids,
+    }
+
+
+def _fallback_decomposed_queries(prompt_analysis: Dict[str, Any], fallback_query: str) -> List[str]:
+    queries: List[str] = []
+    for item in list(prompt_analysis.get("research_questions") or []):
+        normalized = _normalize_space(str(item))
+        if normalized:
+            queries.append(normalized)
+    for item in list(prompt_analysis.get("tool_strategy") or []):
+        normalized = _normalize_space(str(item))
+        if normalized:
+            queries.append(normalized)
+    primary_intent = str(prompt_analysis.get("primary_intent") or "")
+    base_query = _normalize_space(str(prompt_analysis.get("normalized_query") or fallback_query))
+    if primary_intent == "gap_analysis":
+        queries.extend(
+            [
+                f"dominant topics in {base_query}",
+                f"underexplored topics in {base_query}",
+                f"methods populations contexts missing from {base_query}",
+                f"contradictory or weakly supported findings in {base_query}",
+            ]
+        )
+    elif primary_intent == "trend_analysis":
+        queries.extend(
+            [
+                f"yearly trends in {base_query}",
+                f"topic changes over time in {base_query}",
+                f"emerging and declining keywords in {base_query}",
+            ]
+        )
+    elif bool(prompt_analysis.get("compare")):
+        queries.extend(
+            [
+                f"comparison dimensions for {base_query}",
+                f"methods and findings comparison for {base_query}",
+            ]
+        )
+    elif bool(prompt_analysis.get("single_paper")):
+        target = str(prompt_analysis.get("candidate_title") or base_query)
+        queries.extend([target, f"methods findings limitations implications {target}"])
+
+    deduped: List[str] = []
+    seen: set[str] = set()
+    for query in queries:
+        normalized = _normalize_space(query)
+        key = normalized.lower()
+        if not normalized or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(normalized[:220])
+    return deduped[:6]
+
+
+def _decompose_research_queries_with_llm(
+    prompt: str,
+    prompt_analysis: Dict[str, Any],
+    papers: Sequence[Dict[str, Any]],
+    analytics: Dict[str, Any],
+) -> Dict[str, Any]:
+    fallback_primary = _normalize_space(str(prompt_analysis.get("normalized_query") or prompt))
+    fallback_subqueries = _fallback_decomposed_queries(prompt_analysis, fallback_primary)
+    fallback = {
+        "primary_query": fallback_primary,
+        "subqueries": fallback_subqueries[:5],
+        "evidence_targets": [],
+        "rationale": "Fallback decomposition from resolved intent.",
+        "source": "fallback",
+    }
+    try:
+        structured_llm = research_planning_llm.with_structured_output(
+            DeepResearchQueryDecompositionSchema,
+            method="json_schema",
+        )
+        paper_catalog = [
+            {
+                "paper_id": int(paper.get("paper_id") or 0),
+                "title": _normalize_space(str(paper.get("title") or "")),
+                "year": str(paper.get("year") or "Unknown"),
+            }
+            for paper in list(papers or [])[:24]
+            if _normalize_space(str(paper.get("title") or ""))
+        ]
+        response = structured_llm.invoke(
+            (
+                "You are the query decomposition director for a deep research agent.\n"
+                "Break the user request into focused retrieval subqueries. Do not use keyword matching; reason from the intent.\n"
+                "The agent can retrieve from analyzed papers, paper sections, keywords/topics, dashboard analytics, typologies, and optional web.\n"
+                "For gap analysis, include subqueries for dominant areas, underexplored areas, methods/populations/context gaps, and contradictory findings.\n"
+                "For a single paper, include section-focused subqueries only for that paper.\n"
+                "Return concise retrieval queries, not final-answer prose.\n\n"
+                f"User prompt:\n{prompt}\n\n"
+                f"Resolved intent:\n{json.dumps(_json_safe_prompt_analysis(prompt_analysis), ensure_ascii=False)}\n\n"
+                f"Workspace analytics overview:\n{json.dumps(analytics.get('overview', {}), ensure_ascii=False)}\n\n"
+                f"Top scoped papers:\n{json.dumps(paper_catalog, ensure_ascii=False)}"
+            )
+        )
+        payload = response.model_dump() if hasattr(response, "model_dump") else dict(response or {})
+    except Exception as error:
+        logger.warning("deep research query decomposition failed: %s", error)
+        return fallback
+
+    primary_query = _normalize_space(str(payload.get("primary_query") or fallback_primary)) or fallback_primary
+    subqueries: List[str] = []
+    seen: set[str] = set()
+    for query in list(payload.get("subqueries") or []):
+        normalized = _normalize_space(str(query))
+        key = normalized.lower()
+        if not normalized or key in seen:
+            continue
+        seen.add(key)
+        subqueries.append(normalized[:220])
+    if not subqueries:
+        subqueries = fallback_subqueries[:5]
+
+    return {
+        "primary_query": primary_query[:220],
+        "subqueries": subqueries[:6],
+        "evidence_targets": [
+            _normalize_space(str(item))[:120]
+            for item in list(payload.get("evidence_targets") or [])[:8]
+            if _normalize_space(str(item))
+        ],
+        "rationale": _normalize_space(str(payload.get("rationale") or ""))[:400],
+        "source": "llm",
     }
 
 
@@ -1864,6 +2029,18 @@ def _build_planning_snapshot(
     )
     filtered = _ensure_target_paper_in_filtered_scope(owner_user_id, filtered, prompt_analysis)
     papers = list(filtered.get("papers_full") or [])
+    query_decomposition = _decompose_research_queries_with_llm(
+        prompt,
+        prompt_analysis,
+        papers,
+        analytics,
+    )
+    prompt_analysis["query_decomposition"] = query_decomposition
+    prompt_analysis["decomposed_queries"] = list(query_decomposition.get("subqueries") or [])
+    if query_decomposition.get("subqueries"):
+        prompt_analysis["research_questions"] = list(query_decomposition.get("subqueries") or [])
+    if query_decomposition.get("primary_query"):
+        prompt_analysis["normalized_query"] = str(query_decomposition.get("primary_query") or prompt_analysis.get("normalized_query") or prompt)[:180]
     logger.info(
         "deep research planning snapshot owner=%s project=%s folder=%s paper_count=%s target_paper_id=%s target_in_scope=%s candidate_title=%s",
         owner_user_id,
@@ -1887,7 +2064,10 @@ def _build_planning_snapshot(
     )
     safe_prompt_analysis = _json_safe_prompt_analysis(prompt_analysis)
     resolved_query_bundle = _normalize_query_bundle(
-        {},
+        {
+            "primary_query": query_decomposition.get("primary_query"),
+            "supporting_queries": query_decomposition.get("subqueries"),
+        },
         prompt_analysis=safe_prompt_analysis,
         fallback_query=prompt,
         target_title=str(safe_prompt_analysis.get("candidate_title") or ""),
@@ -1950,6 +2130,11 @@ def _todo_input(
             requested,
             target_title=target_title or str(prompt_analysis.get("candidate_title") or ""),
             exclusion_ids=exclusions,
+            supporting_queries=list(
+                prompt_analysis.get("decomposed_queries")
+                or prompt_analysis.get("research_questions")
+                or []
+            ),
             author_hint=str(prompt_analysis.get("author_hint") or ""),
         ),
         prompt_analysis=safe_prompt_analysis,
@@ -3071,13 +3256,25 @@ def _rank_papers(
         for run_id in list(state.get("selected_run_ids") or [])
         if str(run_id).strip()
     }
+    retrieval_queries = [
+        str(resolved_bundle.get("primary_query") or query),
+        *[str(item) for item in list(resolved_bundle.get("supporting_queries") or [])],
+    ]
+    section_query = str(resolved_bundle.get("section_query") or "")
+    if section_query:
+        retrieval_queries.append(section_query)
+    retrieval_queries = [
+        _normalize_space(item)
+        for item in retrieval_queries
+        if _normalize_space(item)
+    ][:8]
     ranked = [
         {
             "paper": paper,
-            "match": _score_paper_match(
-                paper,
-                str(resolved_bundle.get("primary_query") or query),
-                str(resolved_bundle.get("exact_title_query") or target_title),
+            "match": _aggregate_paper_match(
+                paper=paper,
+                queries=retrieval_queries,
+                target_title=str(resolved_bundle.get("exact_title_query") or target_title),
                 author_hint=str(resolved_bundle.get("author_hint") or ""),
                 requested_sections=list(resolved_bundle.get("requested_sections") or []),
                 selected_scope_anchor=str(paper.get("ingestion_run_id") or "").strip() in selected_run_ids,
@@ -3112,7 +3309,135 @@ def _rank_papers(
         ),
         reverse=True,
     )
-    return ranked
+    return _llm_rerank_papers(state, resolved_bundle, ranked)
+
+
+def _aggregate_paper_match(
+    *,
+    paper: Dict[str, Any],
+    queries: Sequence[str],
+    target_title: str,
+    author_hint: str,
+    requested_sections: Sequence[str],
+    selected_scope_anchor: bool,
+) -> Dict[str, Any]:
+    primary_query = _normalize_space(str(next(iter(queries or []), "")))
+    base = _score_paper_match(
+        paper,
+        primary_query,
+        target_title,
+        author_hint=author_hint,
+        requested_sections=requested_sections,
+        selected_scope_anchor=selected_scope_anchor,
+    )
+    component_scores = [int(base.get("score") or 0)]
+    supporting_hits: List[str] = []
+    for query in list(queries or [])[1:]:
+        match = _score_paper_match(
+            paper,
+            query,
+            "",
+            author_hint=author_hint,
+            requested_sections=requested_sections,
+            selected_scope_anchor=selected_scope_anchor,
+        )
+        score = int(match.get("score") or 0)
+        component_scores.append(score)
+        if score > 0:
+            supporting_hits.append(query[:120])
+    base["score"] = max(component_scores or [0]) + sum(max(0, score) for score in component_scores[1:]) // 3
+    components = dict(base.get("score_components") or {})
+    components["supporting_query_bonus"] = sum(max(0, score) for score in component_scores[1:]) // 3
+    base["score_components"] = components
+    if supporting_hits:
+        base["supporting_query_hits"] = supporting_hits[:4]
+    return base
+
+
+def _llm_rerank_papers(
+    state: DeepResearchState,
+    query_bundle: Dict[str, Any],
+    ranked: Sequence[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not ranked:
+        return []
+    if str(os.getenv("DEEP_RESEARCH_ENABLE_LLM_RERANK") or "true").strip().lower() in {"0", "false", "no"}:
+        return list(ranked)
+    top_candidates = list(ranked)[:12]
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    try:
+        structured_llm = research_subtask_llm.with_structured_output(
+            DeepResearchRerankSchema,
+            method="json_schema",
+        )
+        candidate_payload = [
+            {
+                "paper_id": int(row["paper"].get("paper_id") or 0),
+                "title": str(row["paper"].get("title") or ""),
+                "year": str(row["paper"].get("year") or "Unknown"),
+                "heuristic_score": int(row["match"].get("score") or 0),
+                "abstract": str(row["paper"].get("abstract_claims") or "")[:700],
+                "methods": str(row["paper"].get("methods") or "")[:450],
+                "results": str(row["paper"].get("results") or "")[:450],
+                "conclusion": str(row["paper"].get("conclusion") or "")[:450],
+            }
+            for row in top_candidates
+        ]
+        response = structured_llm.invoke(
+            (
+                "You are a retrieval reranker for a deep research agent.\n"
+                "Choose papers that best support the user request and include representative, edge-case, or contradictory sources when useful.\n"
+                "Do not invent paper ids. Use only ids from candidates. Mark irrelevant papers as exclude.\n\n"
+                f"User prompt:\n{state.get('prompt') or ''}\n\n"
+                f"Resolved intent:\n{json.dumps(_json_safe_prompt_analysis(prompt_analysis), ensure_ascii=False)}\n\n"
+                f"Query bundle:\n{json.dumps(query_bundle, ensure_ascii=False)}\n\n"
+                f"Candidate papers:\n{json.dumps(candidate_payload, ensure_ascii=False)}"
+            )
+        )
+        payload = response.model_dump() if hasattr(response, "model_dump") else dict(response or {})
+    except Exception as error:
+        logger.warning("deep research paper rerank failed: %s", error)
+        return list(ranked)
+
+    by_id = {int(row["paper"].get("paper_id") or 0): row for row in top_candidates}
+    reranked: List[Dict[str, Any]] = []
+    seen: set[int] = set()
+    for item in list(payload.get("items") or []):
+        if hasattr(item, "model_dump"):
+            item = item.model_dump()
+        if not isinstance(item, dict):
+            continue
+        paper_id = int(item.get("paper_id") or 0)
+        if paper_id in seen or paper_id not in by_id:
+            continue
+        role = str(item.get("evidence_role") or "supporting")
+        if role == "exclude":
+            seen.add(paper_id)
+            continue
+        row = {
+            **by_id[paper_id],
+            "match": {
+                **dict(by_id[paper_id].get("match") or {}),
+                "llm_relevance_score": int(item.get("relevance_score") or 0),
+                "evidence_role": role,
+                "llm_rationale": _normalize_space(str(item.get("rationale") or ""))[:240],
+            },
+        }
+        reranked.append(row)
+        seen.add(paper_id)
+
+    for row in top_candidates:
+        paper_id = int(row["paper"].get("paper_id") or 0)
+        if paper_id and paper_id not in seen:
+            reranked.append(row)
+            seen.add(paper_id)
+
+    remaining = [
+        row
+        for row in list(ranked)[len(top_candidates):]
+        if int(row["paper"].get("paper_id") or 0) not in seen
+    ]
+    return [*reranked, *remaining]
 
 
 def _list_folder_papers_tool(
@@ -3683,6 +4008,84 @@ def _build_citation_ledger(state: DeepResearchState, step_results: Sequence[Dict
     return ordered[:max_sources]
 
 
+def _reflect_on_evidence_with_llm(
+    state: DeepResearchState,
+    ledger: Sequence[Dict[str, Any]],
+    deterministic_warnings: Sequence[str],
+) -> Optional[Dict[str, Any]]:
+    if str(os.getenv("DEEP_RESEARCH_ENABLE_LLM_REFLECTION") or "true").strip().lower() in {"0", "false", "no"}:
+        return None
+    prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
+    evidence_items = _step_evidence_items(list(state.get("step_results") or []))
+    compact_ledger = [
+        {
+            "source_id": citation.get("source_id"),
+            "source_label": citation.get("source_label") or citation.get("title"),
+            "source_type": citation.get("source_type"),
+            "paper_id": citation.get("paper_id"),
+            "url": citation.get("url"),
+            "snippet": citation.get("snippet"),
+            "confidence": citation.get("confidence"),
+        }
+        for citation in list(ledger or [])[:16]
+        if isinstance(citation, dict)
+    ]
+    compact_evidence = [
+        {
+            "paperId": item.get("paperId"),
+            "title": item.get("title"),
+            "requested_section": item.get("requested_section"),
+            "snippet": item.get("snippet"),
+            "supports_section": item.get("supports_section"),
+        }
+        for item in evidence_items[:24]
+        if isinstance(item, dict)
+    ]
+    try:
+        structured_llm = research_subtask_llm.with_structured_output(
+            DeepResearchReflectionSchema,
+            method="json_schema",
+        )
+        response = structured_llm.invoke(
+            (
+                "You are the reflection and gap-check node for a strict-budget deep research agent.\n"
+                "Decide whether the gathered evidence is enough to answer the user request.\n"
+                "Use retrieve_more only when one more small retrieval pass is likely to materially improve the answer under budget.\n"
+                "Use partial when evidence is too thin, web is needed but disabled, or claims would overreach.\n"
+                "Return missing evidence and suggested retrieval queries when useful.\n\n"
+                f"User prompt:\n{state.get('prompt') or ''}\n\n"
+                f"Resolved intent:\n{json.dumps(_json_safe_prompt_analysis(prompt_analysis), ensure_ascii=False)}\n\n"
+                f"Current deterministic warnings:\n{json.dumps(list(deterministic_warnings), ensure_ascii=False)}\n\n"
+                f"Citation ledger:\n{json.dumps(compact_ledger, ensure_ascii=False)}\n\n"
+                f"Evidence snippets:\n{json.dumps(compact_evidence, ensure_ascii=False)}"
+            )
+        )
+        payload = response.model_dump() if hasattr(response, "model_dump") else dict(response or {})
+    except Exception as error:
+        logger.warning("deep research evidence reflection failed: %s", error)
+        return None
+
+    return {
+        "decision": str(payload.get("decision") or "proceed"),
+        "missing_evidence": [
+            _normalize_space(str(item))[:220]
+            for item in list(payload.get("missing_evidence") or [])[:8]
+            if _normalize_space(str(item))
+        ],
+        "suggested_queries": [
+            _normalize_space(str(item))[:220]
+            for item in list(payload.get("suggested_queries") or [])[:6]
+            if _normalize_space(str(item))
+        ],
+        "warnings": [
+            _normalize_space(str(item))[:260]
+            for item in list(payload.get("warnings") or [])[:8]
+            if _normalize_space(str(item))
+        ],
+        "confidence": float(payload.get("confidence") or 0.5),
+    }
+
+
 def _build_gap_check_result(state: DeepResearchState, ledger: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
     prompt = str(state.get("prompt") or "").lower()
     prompt_analysis = state.get("prompt_analysis") if isinstance(state.get("prompt_analysis"), dict) else {}
@@ -3709,11 +4112,23 @@ def _build_gap_check_result(state: DeepResearchState, ledger: Sequence[Dict[str,
         warnings.extend(str(item) for item in list(verification.get("warnings") or []))
         decision = "partial"
 
+    reflection = _reflect_on_evidence_with_llm(state, ledger, warnings)
+    if reflection:
+        reflection_decision = str(reflection.get("decision") or "proceed")
+        if reflection_decision == "partial":
+            decision = "partial"
+        elif reflection_decision == "retrieve_more" and decision != "partial":
+            decision = "retrieve_more"
+        for warning in list(reflection.get("warnings") or []):
+            if warning and warning not in warnings:
+                warnings.append(warning)
+
     return {
         "decision": decision,
         "warnings": warnings,
         "sourceCounts": counts,
         "budget": _research_budget_from_state(state),
+        "reflection": reflection or {},
     }
 
 
@@ -5366,13 +5781,27 @@ def research_gap_check_node(state: DeepResearchState) -> Dict[str, Any]:
         and str(step.get("tool_input", {}).get("origin") or "") == "gap_generated"
     )
     source_counts = raw_output.get("sourceCounts") if isinstance(raw_output.get("sourceCounts"), dict) else {}
+    reflection = raw_output.get("reflection") if isinstance(raw_output.get("reflection"), dict) else {}
+    reflection_suggested_queries = [
+        _normalize_space(str(item))
+        for item in list(reflection.get("suggested_queries") or [])
+        if _normalize_space(str(item))
+    ]
     can_expand = (
-        str(raw_output.get("decision") or "") == "partial"
+        str(raw_output.get("decision") or "") in {"partial", "retrieve_more"}
         and gap_rounds < int(budget.get("maxGapRounds") or 1)
-        and int(source_counts.get("paper") or 0) < 2
+        and (
+            int(source_counts.get("paper") or 0) < 2
+            or str(raw_output.get("decision") or "") == "retrieve_more"
+            or bool(reflection_suggested_queries)
+        )
     )
     if can_expand:
-        query = str((state.get("prompt_analysis") or {}).get("normalized_query") or state.get("prompt") or "")
+        query = (
+            reflection_suggested_queries[0]
+            if reflection_suggested_queries
+            else str((state.get("prompt_analysis") or {}).get("normalized_query") or state.get("prompt") or "")
+        )
         steps, _ = _append_runtime_step(
             state,
             steps,

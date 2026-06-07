@@ -310,6 +310,43 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertNotIn("Verify whether", plan["summary"])
         self.assertNotIn("exists in the selected scope", plan["summary"])
 
+    def test_decomposed_queries_flow_into_plan_tool_payloads(self) -> None:
+        prompt = "Find research gaps across my analyzed workspace papers."
+        analysis = _analyze_prompt(prompt, [], [])
+        analysis["decomposed_queries"] = [
+            "dominant topics in the workspace",
+            "underexplored methods and populations",
+            "contradictory findings across papers",
+        ]
+        snapshot = {
+            "prompt": prompt,
+            "project_id": "project-1",
+            "pending_run_count": 0,
+            "paper_count": 12,
+            "prompt_analysis": analysis,
+            "source_policy": {
+                "scope": "workspace",
+                "includeWorkspace": True,
+                "allowWeb": False,
+                "allowCharts": True,
+                "budget": {
+                    "maxLibraryPapers": 8,
+                    "maxWebSearches": 0,
+                    "maxSources": 12,
+                    "maxGapRounds": 1,
+                    "maxVerificationRounds": 1,
+                    "qualityMode": "strict_budget",
+                },
+            },
+        }
+
+        plan = _build_deterministic_plan(snapshot)
+        retrieval_step = next(step for step in plan["steps"] if step["tool_name"] == "fetch_papers")
+        bundle = retrieval_step["tool_input"]["queryBundle"]
+
+        self.assertIn("dominant topics in the workspace", bundle["supporting_queries"])
+        self.assertIn("underexplored methods and populations", bundle["supporting_queries"])
+
     def test_quoted_corpus_instruction_is_not_treated_as_paper_title(self) -> None:
         prompt = (
             'Verify whether "gaps across my analyzed workspace papers. Use only grounded '
