@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { useAuth } from "@/components/auth/AuthProvider";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
   ChartIcon,
@@ -304,6 +305,8 @@ export default function WorkspaceShell({
 }) {
   useLongTaskLogger("workspace");
   const pathname = usePathname();
+  const router = useRouter();
+  const { hydrated: authHydrated, user } = useAuth();
   const {
     currentOrganization,
     currentProject,
@@ -318,6 +321,15 @@ export default function WorkspaceShell({
   const [navigating, setNavigating] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const isChatPage = pathname.startsWith("/workspace/chat");
+
+  useEffect(() => {
+    if (!authHydrated || user) {
+      return;
+    }
+    const returnTo = encodeURIComponent(pathname || "/workspace/home");
+    router.replace(`/login?returnTo=${returnTo}`);
+  }, [authHydrated, pathname, router, user]);
+
   const handleAnalysisUnauthorized = useCallback(() => {
     console.warn("[workspace] clearing stale analysis session after auth rejection");
     clearAnalysisSession();
@@ -533,7 +545,7 @@ export default function WorkspaceShell({
 
       <div className="min-h-screen pt-16 lg:pl-14">
         <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
-          {workspaceLoading ? (
+          {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
           ) : hasActiveProject ? (
             children

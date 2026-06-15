@@ -27,7 +27,8 @@ export async function listWorkspaceThreads(
     .from("workspace_threads")
     .select("*")
     .eq("owner_user_id", ownerUserId)
-    .order("updated_at", { ascending: false });
+    .order("updated_at", { ascending: false })
+    .limit(100);
   if (error) {
     throw new Error(error.message);
   }
@@ -148,6 +149,7 @@ export async function replaceDeepResearchPlan(
     summary: string;
     requiresAnalysis: boolean;
     pendingRunCount: number;
+    sourcePolicy?: Record<string, unknown>;
     steps: Array<{
       position: number;
       title: string;
@@ -256,6 +258,7 @@ export async function replaceDeepResearchPlan(
       sessionId,
       requiresAnalysis: input.requiresAnalysis,
       pendingRunCount: input.pendingRunCount,
+      sourcePolicy: input.sourcePolicy ?? null,
     },
   });
 
@@ -315,7 +318,8 @@ export async function getWorkspaceThreadDetail(
     .select("*")
     .eq("thread_id", threadId)
     .eq("owner_user_id", ownerUserId)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: false })
+    .limit(200);
   if (messagesError) {
     throw new Error(messagesError.message);
   }
@@ -338,7 +342,7 @@ export async function getWorkspaceThreadDetail(
 
   return {
     thread: thread as WorkspaceThreadSummary,
-    messages: ((messages ?? []) as WorkspaceMessageRecord[]).map((message) => ({
+    messages: ((messages ?? []) as WorkspaceMessageRecord[]).reverse().map((message) => ({
       ...message,
       citations: Array.isArray((message as { citations?: unknown[] }).citations)
         ? ((message as { citations?: unknown[] }).citations as WorkspaceMessageRecord["citations"])

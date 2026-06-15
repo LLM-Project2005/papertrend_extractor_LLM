@@ -1,10 +1,11 @@
-import { getPythonNodeServiceUrl } from "@/lib/server-env";
+import { getPythonNodeServiceUrl, getWorkerWebhookSecret } from "@/lib/server-env";
 
 export async function callPythonNodeService<TResponse>(
   path: string,
   body: unknown
 ): Promise<TResponse | null> {
   const baseUrl = getPythonNodeServiceUrl();
+  const workerWebhookSecret = getWorkerWebhookSecret();
   if (!baseUrl) {
     return null;
   }
@@ -17,6 +18,7 @@ export async function callPythonNodeService<TResponse>(
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(workerWebhookSecret ? { Authorization: `Bearer ${workerWebhookSecret}` } : {}),
       },
       body: JSON.stringify(body),
       signal: controller.signal,

@@ -43,6 +43,17 @@ function getRedirectTo(): string | undefined {
     return configuredSiteUrl ? `${configuredSiteUrl}/workspaces` : undefined;
   }
 
+  const currentUrl = new URL(window.location.href);
+  const returnTo = currentUrl.searchParams.get("returnTo");
+  if (
+    currentUrl.pathname === "/login" &&
+    returnTo &&
+    returnTo.startsWith("/") &&
+    !returnTo.startsWith("//")
+  ) {
+    return `${window.location.origin}/login?returnTo=${encodeURIComponent(returnTo)}`;
+  }
+
   return `${window.location.origin}/workspaces`;
 }
 
@@ -58,6 +69,24 @@ function getUserMetadata(user: User): { full_name: string | null; avatar_url: st
       null,
     avatar_url: metadata.avatar_url ?? metadata.picture ?? null,
   };
+}
+
+async function postPasswordAuth<TPayload>(
+  path: string,
+  payload: Record<string, unknown>
+): Promise<TPayload> {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = (await response.json().catch(() => ({}))) as TPayload & {
+    error?: string;
+  };
+  if (!response.ok) {
+    throw new Error(data.error ?? "Authentication request failed.");
+  }
+  return data;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -271,11 +300,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("Supabase auth is not configured.");
         }
 
-        const { error } = await supabase.auth.signInWithPassword({
+        const data = await postPasswordAuth<{
+          session?: { access_token?: string; refresh_token?: string } | null;
+        }>("/api/auth/password-login", {
           email,
           password,
         });
 
+        if (!data.session?.access_token || !data.session.refresh_token) {
+          throw new Error("Password sign-in did not return a session.");
+        }
+        const { error } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
         if (error) {
           throw error;
         }
@@ -285,18 +323,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           throw new Error("Supabase auth is not configured.");
         }
 
-        const { error } = await supabase.auth.signUp({
+        const data = await postPasswordAuth<{
+          session?: { access_token?: string; refresh_token?: string } | null;
+        }>("/api/auth/password-signup", {
           email,
           password,
-          options: {
-            emailRedirectTo: getRedirectTo(),
-            data: metadata,
-          },
+          fullName: metadata?.full_name,
+          returnTo: "/workspaces",
         });
 
-        if (error) {
-          throw error;
+        if (data.session?.access_token && data.session.refresh_token) {
+          const { error } = await supabase.auth.setSession({
+            access_token: data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          });
+          if (error) {
+            throw error;
+          }
         }
+      },
+      resetPassword: async (email) => {
+        await postPasswordAuth("/api/auth/password-reset", {
+          email,
+          returnTo: "/login",
+        });
       },
       signOut: async () => {
         if (!supabase) {

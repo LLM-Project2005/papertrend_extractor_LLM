@@ -163,13 +163,20 @@ class DeepResearchPlanStep(BaseModel):
     title: str = Field(description="Short action title for the step.")
     description: str = Field(description="What this step will do.")
     tool_name: Literal[
+        "source_selection",
+        "resolve_intent",
         "list_folder_papers",
         "get_dashboard_summary",
         "keyword_search",
         "fetch_papers",
         "read_paper_sections",
+        "web_search",
+        "review_evidence",
+        "gap_check",
         "verify_research",
         "synthesize_report",
+        "critique_report",
+        "finalize_report",
     ] = Field(description="Corpus-grounded tool to use for the step.")
     tool_input: Dict[str, Any] = Field(
         default_factory=dict,
@@ -292,6 +299,8 @@ class DeepResearchState(TypedDict, total=False):
     prompt: str
     prompt_analysis: Dict[str, Any]
     query_bundle: Dict[str, Any]
+    source_policy: Dict[str, Any]
+    research_budget: Dict[str, Any]
     title: str
     plan_summary: str
     requires_analysis: bool
@@ -303,6 +312,8 @@ class DeepResearchState(TypedDict, total=False):
     verification_result: Dict[str, Any]
     final_report: str
     final_citations: List[Dict[str, Any]]
+    citation_ledger: List[Dict[str, Any]]
+    critic_result: Dict[str, Any]
     evidence_items: List[Dict[str, Any]]
     research_diagnostics: Dict[str, Any]
     completion_kind: str

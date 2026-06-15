@@ -173,6 +173,30 @@ type ChatGenerationParameters = {
   presencePenalty: number;
 };
 
+type DeepResearchScope = "auto" | "attached" | "current_folder" | "project" | "workspace";
+type DeepResearchQualityMode = "strict_budget" | "balanced" | "quality";
+
+interface DeepResearchBudgetPolicy {
+  maxLibraryPapers: number;
+  maxWebSearches: number;
+  maxSources: number;
+  maxGapRounds: number;
+  maxVerificationRounds: number;
+  qualityMode: DeepResearchQualityMode;
+}
+
+interface DeepResearchSourcePolicy {
+  scope: DeepResearchScope;
+  includeAttached: boolean;
+  includeCurrentScope: boolean;
+  includeWorkspace: boolean;
+  allowWeb: boolean;
+  allowCharts: boolean;
+  allowCode: boolean;
+  agentDirected: boolean;
+  budget: DeepResearchBudgetPolicy;
+}
+
 const DEFAULT_CHAT_PARAMETERS: ChatGenerationParameters = {
   temperature: 0.4,
   topP: 0.95,
@@ -180,6 +204,27 @@ const DEFAULT_CHAT_PARAMETERS: ChatGenerationParameters = {
   maxTokens: 1200,
   frequencyPenalty: 0,
   presencePenalty: 0,
+};
+
+const STRICT_RESEARCH_BUDGET: DeepResearchBudgetPolicy = {
+  maxLibraryPapers: 8,
+  maxWebSearches: 5,
+  maxSources: 12,
+  maxGapRounds: 1,
+  maxVerificationRounds: 1,
+  qualityMode: "strict_budget",
+};
+
+const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
+  scope: "auto",
+  includeAttached: true,
+  includeCurrentScope: true,
+  includeWorkspace: false,
+  allowWeb: false,
+  allowCharts: true,
+  allowCode: false,
+  agentDirected: true,
+  budget: STRICT_RESEARCH_BUDGET,
 };
 
 const MODEL_OPTIONS = [
@@ -625,6 +670,19 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
       })}
     </div>
   );
+}
+
+function safeCitationHref(href: string): string {
+  const value = String(href || "").trim();
+  if (value.startsWith("/workspace/") || value.startsWith("/docs/")) {
+    return value;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "#";
+  } catch {
+    return "#";
+  }
 }
 
 const chatChartTooltipTheme = {
@@ -1192,6 +1250,8 @@ export default function ChatClient() {
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [chartModeEnabled, setChartModeEnabled] = useState(false);
+  const [researchSourcePolicy, setResearchSourcePolicy] =
+    useState<DeepResearchSourcePolicy>(DEFAULT_RESEARCH_SOURCE_POLICY);
   const [chartSuggestionDismissedFor, setChartSuggestionDismissedFor] = useState("");
   const [parameterMenuOpen, setParameterMenuOpen] = useState(false);
   const [chatParameters, setChatParameters] = useState<ChatGenerationParameters>(
@@ -1260,6 +1320,29 @@ export default function ChatClient() {
   const selectedRunIds = useMemo(
     () => selectedLibraryRuns.map((run) => run.id),
     [selectedLibraryRuns]
+  );
+  const effectiveResearchSourcePolicy = useMemo<DeepResearchSourcePolicy>(
+    () => ({
+      ...researchSourcePolicy,
+      scope:
+        selectedRunIds.length > 0
+          ? "attached"
+          : "auto",
+      includeAttached: true,
+      includeCurrentScope: true,
+      agentDirected: true,
+      allowWeb: researchSourcePolicy.allowWeb || webSearchEnabled,
+      allowCode: false,
+      budget: {
+        ...STRICT_RESEARCH_BUDGET,
+        ...researchSourcePolicy.budget,
+        maxWebSearches:
+          researchSourcePolicy.allowWeb || webSearchEnabled
+            ? researchSourcePolicy.budget.maxWebSearches
+            : 0,
+      },
+    }),
+    [chatScopeFolderId, researchSourcePolicy, selectedRunIds.length, webSearchEnabled]
   );
   const selectedAttachments = useMemo(
     () =>
@@ -1979,6 +2062,35 @@ export default function ChatClient() {
     }));
   }
 
+  function toggleResearchPolicy(key: "includeWorkspace" | "allowWeb" | "allowCharts") {
+    setResearchSourcePolicy((current) => {
+      if (key === "includeWorkspace") {
+        const enabled = !current.includeWorkspace;
+        return {
+          ...current,
+          includeWorkspace: enabled,
+          includeCurrentScope: true,
+          scope: enabled ? "workspace" : selectedRunIds.length > 0 ? "attached" : "project",
+        };
+      }
+      if (key === "allowWeb") {
+        const enabled = !current.allowWeb;
+        return {
+          ...current,
+          allowWeb: enabled,
+          budget: {
+            ...current.budget,
+            maxWebSearches: enabled ? STRICT_RESEARCH_BUDGET.maxWebSearches : 0,
+          },
+        };
+      }
+      return {
+        ...current,
+        allowCharts: !current.allowCharts,
+      };
+    });
+  }
+
   async function handlePlanResearch() {
     const prompt = draft.trim();
     if (!prompt) return;
@@ -1996,6 +2108,7 @@ export default function ChatClient() {
         chatMode: "deep_research",
         attachments: selectedAttachments,
         selectedRunIds,
+        researchSourcePolicy: effectiveResearchSourcePolicy,
       }),
     ];
     setMessages(optimisticMessages);
@@ -2013,6 +2126,7 @@ export default function ChatClient() {
           activeThread?.mode === "deep_research" ? deepSession?.id : undefined,
         chatMode: "deep_research",
         action: "plan",
+        researchSourcePolicy: effectiveResearchSourcePolicy,
       });
       applyPayload(payload);
     } catch (nextError) {
@@ -2041,6 +2155,7 @@ export default function ChatClient() {
         sessionId: deepSession.id,
         chatMode: "deep_research",
         action: "continue",
+        researchSourcePolicy: effectiveResearchSourcePolicy,
       });
       applyPayload(payload);
       await refreshThreads(activeThread.id);
@@ -2565,6 +2680,16 @@ export default function ChatClient() {
                           step.output_payload?.summary?.trim() ||
                           step.description?.trim() ||
                           "";
+                        const sourceCounts =
+                          step.output_payload?.diagnostics &&
+                          typeof step.output_payload.diagnostics === "object" &&
+                          "source_counts" in step.output_payload.diagnostics
+                            ? (step.output_payload.diagnostics.source_counts as {
+                                paper?: number;
+                                web?: number;
+                                total?: number;
+                              })
+                            : null;
                         return (
                           <div
                             key={step.id}
@@ -2605,6 +2730,13 @@ export default function ChatClient() {
                                     Added
                                   </span>
                                 ) : null}
+                                {step.input_payload?.phaseClass ? (
+                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#8e8e8e]">
+                                    {String(step.input_payload.phaseClass)
+                                      .replace(/_/g, " ")
+                                      .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                                  </span>
+                                ) : null}
                                 {isObsolete ? (
                                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]">
                                     Obsolete
@@ -2629,6 +2761,13 @@ export default function ChatClient() {
                               {statusReason ? (
                                 <p className="text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
                                   {statusReason}
+                                </p>
+                              ) : null}
+                              {sourceCounts ? (
+                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+                                  Sources: {sourceCounts.total ?? 0} total,{" "}
+                                  {sourceCounts.paper ?? 0} library,{" "}
+                                  {sourceCounts.web ?? 0} web
                                 </p>
                               ) : null}
                             </div>
@@ -2766,7 +2905,7 @@ export default function ChatClient() {
                               {message.citations.map((citation) => (
                                 <Link
                                   key={`${message.id}-${citation.paperId}`}
-                                  href={citation.href}
+                                  href={safeCitationHref(citation.href)}
                                   className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
                                 >
                                   {citation.sourceType === "web" ? (
@@ -2897,6 +3036,61 @@ export default function ChatClient() {
                   </div>
                 ) : null}
 
+                {deepResearchEnabled ? (
+                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-[#ececec]">
+                        <SparkIcon className="h-3.5 w-3.5" />
+                        Agent-directed research
+                      </span>
+                      <span>
+                        The agent infers scope and tool strategy. Strict budget:{" "}
+                        {effectiveResearchSourcePolicy.budget.maxLibraryPapers} papers,{" "}
+                        {effectiveResearchSourcePolicy.budget.maxWebSearches} web searches,{" "}
+                        {effectiveResearchSourcePolicy.budget.maxSources} sources
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
+                        {selectedRunIds.length > 0
+                          ? `${selectedRunIds.length} attached file${selectedRunIds.length === 1 ? "" : "s"}`
+                          : "Auto scope"}
+                      </span>
+                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
+                        Library + analytics
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (effectiveResearchSourcePolicy.allowWeb) setWebSearchEnabled(false);
+                          toggleResearchPolicy("allowWeb");
+                        }}
+                        className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
+                          effectiveResearchSourcePolicy.allowWeb
+                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                        }`}
+                      >
+                        Web search
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleResearchPolicy("allowCharts")}
+                        className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
+                          effectiveResearchSourcePolicy.allowCharts
+                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]"
+                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                        }`}
+                      >
+                        Charts/data
+                      </button>
+                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-400 dark:border-[#1f1f1f] dark:bg-black dark:text-[#6f6f6f]">
+                        Code analysis later
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+
                 <textarea
                   ref={composerRef}
                   value={draft}
@@ -3006,8 +3200,19 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={() => {
-                              setDeepResearchEnabled((current) => !current);
+                              const nextEnabled = !deepResearchEnabled;
+                              setDeepResearchEnabled(nextEnabled);
                               setChartModeEnabled(false);
+                              if (nextEnabled && webSearchEnabled) {
+                                setResearchSourcePolicy((current) => ({
+                                  ...current,
+                                  allowWeb: true,
+                                  budget: {
+                                    ...current.budget,
+                                    maxWebSearches: STRICT_RESEARCH_BUDGET.maxWebSearches,
+                                  },
+                                }));
+                              }
                               setMenuOpen(false);
                             }}
                             className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${

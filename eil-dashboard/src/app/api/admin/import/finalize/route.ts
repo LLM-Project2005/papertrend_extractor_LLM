@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getAuthenticatedUserFromRequest,
-  isAuthorizedAdminRequest,
+  isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
@@ -18,6 +18,15 @@ type UploadFinalizeItem = {
   fileName?: string;
   errorMessage?: string;
 };
+
+function isSafePendingStoragePath(storagePath: string, runId: string): boolean {
+  return (
+    storagePath.startsWith("pending/") &&
+    storagePath.includes(`/${runId}/`) &&
+    !storagePath.includes("..") &&
+    !storagePath.includes("\\")
+  );
+}
 
 function buildNotStartedResult(reason: string): WorkerQueueStartResult {
   return {
@@ -37,7 +46,7 @@ function buildNotStartedResult(reason: string): WorkerQueueStartResult {
 }
 
 export async function POST(request: Request) {
-  if (!(await isAuthorizedAdminRequest(request))) {
+  if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -87,7 +96,11 @@ export async function POST(request: Request) {
     }
 
     const validRunIds = new Set((runRows ?? []).map((row) => String(row.id ?? "")).filter(Boolean));
-    const validUploadedItems = uploaded.filter((item) => validRunIds.has(String(item.runId)));
+    const validUploadedItems = uploaded.filter((item) => {
+      const runId = String(item.runId);
+      const storagePath = String(item.storagePath ?? "");
+      return validRunIds.has(runId) && isSafePendingStoragePath(storagePath, runId);
+    });
     const validFailedItems = failed.filter((item) => validRunIds.has(String(item.runId)));
 
     const timestamp = new Date().toISOString();

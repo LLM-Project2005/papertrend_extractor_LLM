@@ -8,6 +8,7 @@ from nodes.deep_research import (
     _build_deterministic_plan,
     _build_verification_result,
     _execute_tool,
+    _general_report,
     _next_pending_step,
     _score_paper_match,
     _section_report,
@@ -145,9 +146,13 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertGreaterEqual(len(plan["steps"]), 4)
         self.assertEqual(plan["steps"][-2]["tool_name"], INTERNAL_VERIFY_TOOL)
         self.assertEqual(plan["steps"][-1]["tool_name"], INTERNAL_SYNTHESIZE_TOOL)
-        self.assertEqual(plan["steps"][0]["tool_input"]["payload_version"], 3)
-        self.assertEqual(plan["steps"][0]["tool_input"]["requiredClass"], "required_before_verification")
-        self.assertIn("queryBundle", plan["steps"][0]["tool_input"])
+        first_retrieval_step = next(
+            step
+            for step in plan["steps"]
+            if step["tool_input"]["requiredClass"] == "required_before_verification"
+        )
+        self.assertEqual(first_retrieval_step["tool_input"]["payload_version"], 3)
+        self.assertIn("queryBundle", first_retrieval_step["tool_input"])
 
     def test_large_target_paper_id_is_serialized_safely_in_plan_payload(self) -> None:
         large_paper_id = 1115913522557912292
@@ -244,6 +249,171 @@ class DeepResearchPlanningTests(unittest.TestCase):
         self.assertIn("AI models for coding", plan["summary"])
         self.assertEqual(plan["steps"][-2]["tool_name"], INTERNAL_VERIFY_TOOL)
         self.assertEqual(plan["steps"][-1]["tool_name"], INTERNAL_SYNTHESIZE_TOOL)
+
+    def test_workspace_gap_prompt_is_not_treated_as_missing_paper(self) -> None:
+        prompt = (
+            "Find the major research gaps across my analyzed workspace papers. "
+            "Use only grounded evidence from the library and explain which topics are "
+            "overrepresented or underexplored."
+        )
+        papers = [
+            {
+                "paper_id": 11,
+                "title": "English Learning Motivation in Digital Classrooms",
+                "year": "2024",
+                "ingestion_run_id": "run-11",
+            },
+            {
+                "paper_id": 12,
+                "title": "Teacher Feedback Practices in EFL Writing",
+                "year": "2023",
+                "ingestion_run_id": "run-12",
+            },
+        ]
+
+        analysis = _analyze_prompt(prompt, papers, [])
+
+        self.assertFalse(analysis["single_paper"])
+        self.assertEqual(analysis["primary_intent"], "gap_analysis")
+        self.assertEqual(analysis["target_entity_type"], "workspace")
+        self.assertEqual(analysis["target_resolution_status"], "not_applicable")
+        self.assertEqual(analysis["candidate_title"], "")
+
+        snapshot = {
+            "prompt": prompt,
+            "project_id": "project-1",
+            "pending_run_count": 0,
+            "paper_count": len(papers),
+            "prompt_analysis": analysis,
+            "source_policy": {
+                "scope": "auto",
+                "includeWorkspace": True,
+                "allowWeb": False,
+                "allowCharts": True,
+                "budget": {
+                    "maxLibraryPapers": 8,
+                    "maxWebSearches": 0,
+                    "maxSources": 12,
+                    "maxGapRounds": 1,
+                    "maxVerificationRounds": 1,
+                    "qualityMode": "strict_budget",
+                },
+            },
+        }
+
+        plan = _build_deterministic_plan(snapshot)
+        tool_names = [step["tool_name"] for step in plan["steps"]]
+
+        self.assertIn("get_dashboard_summary", tool_names[:4])
+        self.assertIn("keyword_search", tool_names[:4])
+        self.assertIn("fetch_papers", tool_names)
+        self.assertIn("read_paper_sections", tool_names)
+        self.assertNotIn("Verify whether", plan["summary"])
+        self.assertNotIn("exists in the selected scope", plan["summary"])
+
+    def test_decomposed_queries_flow_into_plan_tool_payloads(self) -> None:
+        prompt = "Find research gaps across my analyzed workspace papers."
+        analysis = _analyze_prompt(prompt, [], [])
+        analysis["decomposed_queries"] = [
+            "dominant topics in the workspace",
+            "underexplored methods and populations",
+            "contradictory findings across papers",
+        ]
+        snapshot = {
+            "prompt": prompt,
+            "project_id": "project-1",
+            "pending_run_count": 0,
+            "paper_count": 12,
+            "prompt_analysis": analysis,
+            "source_policy": {
+                "scope": "workspace",
+                "includeWorkspace": True,
+                "allowWeb": False,
+                "allowCharts": True,
+                "budget": {
+                    "maxLibraryPapers": 8,
+                    "maxWebSearches": 0,
+                    "maxSources": 12,
+                    "maxGapRounds": 1,
+                    "maxVerificationRounds": 1,
+                    "qualityMode": "strict_budget",
+                },
+            },
+        }
+
+        plan = _build_deterministic_plan(snapshot)
+        retrieval_step = next(step for step in plan["steps"] if step["tool_name"] == "fetch_papers")
+        bundle = retrieval_step["tool_input"]["queryBundle"]
+
+        self.assertIn("dominant topics in the workspace", bundle["supporting_queries"])
+        self.assertIn("underexplored methods and populations", bundle["supporting_queries"])
+
+    def test_quoted_corpus_instruction_is_not_treated_as_paper_title(self) -> None:
+        prompt = (
+            'Verify whether "gaps across my analyzed workspace papers. Use only grounded '
+            'evidence from the library" exists in the selected scope.'
+        )
+
+        analysis = _analyze_prompt(prompt, [], [])
+
+        self.assertFalse(analysis["single_paper"])
+        self.assertEqual(analysis["candidate_title"], "")
+        self.assertIn(analysis["primary_intent"], {"gap_analysis", "corpus_synthesis"})
+
+    def test_gap_fallback_report_uses_deep_research_sections_and_source_trace(self) -> None:
+        state = {
+            "prompt": "Find the major research gaps across my analyzed workspace papers.",
+            "plan_summary": "Map repeated corpus themes and identify thinly supported areas.",
+            "prompt_analysis": {
+                "single_paper": False,
+                "primary_intent": "gap_analysis",
+                "requested_sections": [],
+            },
+            "citation_ledger": [
+                {
+                    "source_id": "11",
+                    "source_label": "Teacher Feedback Practices in EFL Writing",
+                    "source_type": "paper",
+                    "paper_id": 11,
+                    "confidence": "high",
+                }
+            ],
+            "verification_result": {"warnings": ["Only one retrieval pass was available."]},
+        }
+        step_results = [
+            {
+                "summary": "Retrieved corpus evidence.",
+                "detail": "The strongest evidence clusters around short-term classroom interventions and learner writing outcomes.",
+                "raw": {
+                    "papers": [
+                        {
+                            "paperId": 11,
+                            "title": "Teacher Feedback Practices in EFL Writing",
+                            "year": "2023",
+                            "topic": "writing pedagogy",
+                            "keyword": "feedback",
+                        },
+                        {
+                            "paperId": 12,
+                            "title": "Network-Based Collaborative Learning",
+                            "year": "2024",
+                            "topic": "collaborative learning",
+                            "keyword": "task-based learning",
+                        },
+                    ]
+                },
+            }
+        ]
+
+        report = _general_report(state, step_results)
+
+        self.assertIn("# Research Gap Analysis", report)
+        self.assertIn("## Executive Summary", report)
+        self.assertIn("## Overrepresented Areas", report)
+        self.assertIn("## Underexplored Areas", report)
+        self.assertIn("## Suggested Next Studies", report)
+        self.assertIn("Teacher Feedback Practices in EFL Writing (2023) [Paper 11]", report)
+        self.assertIn("## Source Trace", report)
 
 
 class DeepResearchExecutionContractTests(unittest.TestCase):
@@ -359,7 +529,8 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
             state,
         )
 
-        self.assertIn("Focused report on", synthesis["report"])
+        self.assertIn("# Deep Research Report:", synthesis["report"])
+        self.assertIn("## Executive Summary", synthesis["report"])
         self.assertNotIn("not currently in the selected workspace scope", synthesis["report"])
 
     def test_section_report_prefers_clean_objective_and_methodology_evidence(self) -> None:

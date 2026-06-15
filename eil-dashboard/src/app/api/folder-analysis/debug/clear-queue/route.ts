@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  getAuthenticatedUserFromRequest,
   isAuthorizedAdminRequest,
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -13,9 +12,7 @@ type ClearQueueBody = {
 };
 
 export async function POST(request: Request) {
-  const user = await getAuthenticatedUserFromRequest(request);
-  const isAdmin = await isAuthorizedAdminRequest(request);
-  if (!user && !isAdmin) {
+  if (!(await isAuthorizedAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -33,9 +30,6 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: true })
       .limit(100);
 
-    if (user) {
-      query = query.eq("owner_user_id", user.id);
-    }
     if (folderJobId) {
       query = query.eq("folder_analysis_job_id", folderJobId);
     }

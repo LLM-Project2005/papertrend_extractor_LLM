@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { GoogleIcon, FacebookIcon, UserIcon } from "@/components/ui/Icons";
 
@@ -28,9 +28,24 @@ export default function AuthPanel({
   eyebrow = "Account",
   description = "Choose a sign-in provider to continue into your research workspace.",
 }: AuthPanelProps) {
-  const { hydrated, user, profile, isAdmin, signInWithProvider, signOut } = useAuth();
+  const {
+    hydrated,
+    user,
+    profile,
+    isAdmin,
+    signInWithProvider,
+    signInWithPassword,
+    signUpWithPassword,
+    resetPassword,
+    signOut,
+  } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [passwordMode, setPasswordMode] = useState<"signin" | "signup">("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
 
   const displayName = useMemo(() => {
     return (
@@ -67,6 +82,44 @@ export default function AuthPanel({
         <p className="text-sm text-slate-500 dark:text-[#9b9b9b]">Loading sign-in...</p>
       </section>
     );
+  }
+
+  async function handlePasswordSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      if (passwordMode === "signup") {
+        await signUpWithPassword(email, password, { full_name: fullName });
+        setNotice("Check your email if confirmation is required, or continue if your session opened.");
+      } else {
+        await signInWithPassword(email, password);
+      }
+    } catch (passwordError) {
+      setError(passwordError instanceof Error ? passwordError.message : "Password authentication failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handlePasswordReset() {
+    if (!email.trim()) {
+      setError("Enter your email first, then request a reset link.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await resetPassword(email);
+      setNotice("If that email can receive reset mail, a reset link is on the way.");
+    } catch (resetError) {
+      setError(resetError instanceof Error ? resetError.message : "Password reset failed.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   if (user) {
@@ -146,9 +199,99 @@ export default function AuthPanel({
         })}
       </div>
 
+      <div className="my-5 flex items-center gap-3 text-xs text-slate-400 dark:text-[#6f6f6f]">
+        <span className="h-px flex-1 bg-slate-200 dark:bg-[#1f1f1f]" />
+        <span>Password</span>
+        <span className="h-px flex-1 bg-slate-200 dark:bg-[#1f1f1f]" />
+      </div>
+
+      <form className="space-y-3" onSubmit={handlePasswordSubmit}>
+        {passwordMode === "signup" ? (
+          <label className="block">
+            <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-[#a3a3a3]">
+              Name
+            </span>
+            <input
+              value={fullName}
+              onChange={(event) => setFullName(event.target.value)}
+              maxLength={120}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+              placeholder="Your name"
+            />
+          </label>
+        ) : null}
+
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-[#a3a3a3]">
+            Email
+          </span>
+          <input
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            required
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+            placeholder="you@example.com"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-[#a3a3a3]">
+            Password
+          </span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete={passwordMode === "signup" ? "new-password" : "current-password"}
+            minLength={8}
+            maxLength={256}
+            required
+            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+            placeholder="At least 8 characters"
+          />
+        </label>
+
+        <button
+          type="submit"
+          disabled={busy}
+          className="inline-flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
+        >
+          {passwordMode === "signup" ? "Create account" : "Sign in with password"}
+        </button>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => {
+              setPasswordMode((mode) => (mode === "signin" ? "signup" : "signin"));
+              setError(null);
+              setNotice(null);
+            }}
+            className="font-medium text-slate-600 hover:text-slate-950 dark:text-[#cfcfcf] dark:hover:text-white"
+          >
+            {passwordMode === "signup" ? "Already have an account?" : "Create password account"}
+          </button>
+          <button
+            type="button"
+            onClick={handlePasswordReset}
+            disabled={busy}
+            className="font-medium text-slate-500 hover:text-slate-950 disabled:opacity-60 dark:text-[#9b9b9b] dark:hover:text-white"
+          >
+            Reset password
+          </button>
+        </div>
+      </form>
+
       {error ? (
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
           {error}
+        </div>
+      ) : null}
+      {notice ? (
+        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+          {notice}
         </div>
       ) : null}
     </section>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import {
   appendWorkspaceMessage,
@@ -22,6 +23,11 @@ import {
   triggerWorkerQueueWithRetries,
 } from "@/lib/worker-queue-start";
 import { triggerResearchQueue, triggerWorkerQueue } from "@/lib/worker-trigger";
+import {
+  GuardError,
+  assertAndRecordAiUsage,
+  type AiUsageKind,
+} from "@/lib/security-guards";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
@@ -118,6 +124,30 @@ interface ChatGenerationOptions {
   presencePenalty?: number;
 }
 
+type DeepResearchScope = "auto" | "attached" | "current_folder" | "project" | "workspace";
+type DeepResearchQualityMode = "strict_budget" | "balanced" | "quality";
+
+interface DeepResearchBudgetPolicy {
+  maxLibraryPapers: number;
+  maxWebSearches: number;
+  maxSources: number;
+  maxGapRounds: number;
+  maxVerificationRounds: number;
+  qualityMode: DeepResearchQualityMode;
+}
+
+interface DeepResearchSourcePolicy {
+  scope: DeepResearchScope;
+  includeAttached: boolean;
+  includeCurrentScope: boolean;
+  includeWorkspace: boolean;
+  allowWeb: boolean;
+  allowCharts: boolean;
+  allowCode: boolean;
+  agentDirected?: boolean;
+  budget: DeepResearchBudgetPolicy;
+}
+
 interface ChatRequestBody {
   message?: string;
   messages?: Array<{ role: "user" | "assistant"; content: string }>;
@@ -154,9 +184,148 @@ interface ChatRequestBody {
   toolMode?: ChatToolMode;
   chartRequest?: ChartRequest;
   webSearchEnabled?: boolean;
+  researchSourcePolicy?: Partial<DeepResearchSourcePolicy> & {
+    budget?: Partial<DeepResearchBudgetPolicy>;
+  };
   chatMode?: "normal" | "deep_research";
   action?: "message" | "plan" | "continue";
   sessionId?: string;
+}
+
+const ChatRequestBodySchema = z
+  .object({
+    message: z.string().max(12_000).optional(),
+    messages: z
+      .array(
+        z.object({
+          role: z.enum(["user", "assistant"]),
+          content: z.string().max(12_000),
+        })
+      )
+      .max(24)
+      .optional(),
+    model: z.string().max(120).optional(),
+    attachments: z
+      .array(
+        z.object({
+          name: z.string().max(240),
+          type: z.string().max(120).optional(),
+          size: z.number().nonnegative().max(100 * 1024 * 1024).optional(),
+          url: z.string().max(5_000).optional(),
+          previewUrl: z.string().max(5_000).optional(),
+          dataUrl: z.string().max(2_000_000).optional(),
+          runId: z.string().max(80).optional(),
+          status: z.string().max(80).optional(),
+          sourceLabel: z.string().max(120).optional(),
+          extension: z.string().max(20).optional(),
+        })
+      )
+      .max(10)
+      .optional(),
+    generationParameters: z
+      .object({
+        temperature: z.number().optional(),
+        topP: z.number().optional(),
+        topK: z.number().optional(),
+        maxTokens: z.number().optional(),
+        frequencyPenalty: z.number().optional(),
+        presencePenalty: z.number().optional(),
+      })
+      .optional(),
+    selectedYears: z.array(z.string().max(20)).max(80).optional(),
+    selectedTracks: z.array(z.string().max(20)).max(20).optional(),
+    searchQuery: z.string().max(1_000).optional(),
+    queryLanguage: z.string().max(20).optional(),
+    selectedRunIds: z.array(z.string().max(80)).max(50).optional(),
+    threadId: z.string().max(80).optional(),
+    editMessageId: z.string().max(80).optional(),
+    folderId: z.string().max(80).optional(),
+    projectId: z.string().max(80).optional(),
+    toolMode: z.enum(["auto", "web_search", "chart", "none"]).optional(),
+    chartRequest: z.record(z.string(), z.unknown()).optional(),
+    webSearchEnabled: z.boolean().optional(),
+    researchSourcePolicy: z.record(z.string(), z.unknown()).optional(),
+    chatMode: z.enum(["normal", "deep_research"]).optional(),
+    action: z.enum(["message", "plan", "continue"]).optional(),
+    sessionId: z.string().max(80).optional(),
+  })
+  .passthrough();
+
+function parseChatRequestBody(value: unknown): ChatRequestBody {
+  const parsed = ChatRequestBodySchema.safeParse(value);
+  if (!parsed.success) {
+    throw new GuardError("Malformed chat request.", 400);
+  }
+  return parsed.data as ChatRequestBody;
+}
+
+function usageKindForRequest(body: ChatRequestBody): AiUsageKind {
+  if (body.chatMode === "deep_research") {
+    return "deep_research";
+  }
+  if (body.toolMode === "web_search" || body.webSearchEnabled) {
+    return "web_search";
+  }
+  if (body.toolMode === "chart" || body.chartRequest) {
+    return "chart";
+  }
+  return "chat_message";
+}
+
+const STRICT_RESEARCH_BUDGET: DeepResearchBudgetPolicy = {
+  maxLibraryPapers: 8,
+  maxWebSearches: 5,
+  maxSources: 12,
+  maxGapRounds: 1,
+  maxVerificationRounds: 1,
+  qualityMode: "strict_budget",
+};
+
+function normalizeResearchSourcePolicy(
+  value: ChatRequestBody["researchSourcePolicy"] | undefined,
+  selectedRunIds: string[] = []
+): DeepResearchSourcePolicy {
+  const rawScope = String(value?.scope ?? "").trim();
+  const scope: DeepResearchScope =
+    rawScope === "workspace" ||
+    rawScope === "project" ||
+    rawScope === "current_folder" ||
+    rawScope === "attached" ||
+    rawScope === "auto"
+      ? rawScope
+      : selectedRunIds.length > 0
+        ? "attached"
+        : "auto";
+  const rawBudget = (value?.budget ?? {}) as Partial<DeepResearchBudgetPolicy>;
+  const qualityMode =
+    rawBudget.qualityMode === "quality" || rawBudget.qualityMode === "balanced"
+      ? rawBudget.qualityMode
+      : "strict_budget";
+  return {
+    scope,
+    includeAttached: value?.includeAttached ?? true,
+    includeCurrentScope: value?.includeCurrentScope ?? true,
+    includeWorkspace: value?.includeWorkspace ?? scope === "workspace",
+    allowWeb: value?.allowWeb ?? false,
+    allowCharts: value?.allowCharts ?? true,
+    allowCode: false,
+    agentDirected: true,
+    budget: {
+      maxLibraryPapers: clampValue(Number(rawBudget.maxLibraryPapers ?? STRICT_RESEARCH_BUDGET.maxLibraryPapers), 1, 24),
+      maxWebSearches: clampValue(Number(rawBudget.maxWebSearches ?? STRICT_RESEARCH_BUDGET.maxWebSearches), 0, 10),
+      maxSources: clampValue(Number(rawBudget.maxSources ?? STRICT_RESEARCH_BUDGET.maxSources), 2, 32),
+      maxGapRounds: clampValue(Number(rawBudget.maxGapRounds ?? STRICT_RESEARCH_BUDGET.maxGapRounds), 0, 3),
+      maxVerificationRounds: clampValue(Number(rawBudget.maxVerificationRounds ?? STRICT_RESEARCH_BUDGET.maxVerificationRounds), 1, 3),
+      qualityMode,
+    },
+  };
+}
+
+function folderForResearchPolicy(
+  folderId: string | "all" | undefined,
+  policy: DeepResearchSourcePolicy
+) {
+  return policy.scope === "workspace" || policy.scope === "project" || policy.scope === "auto" ? "all" : folderId;
 }
 
 function normalizeIdList(values: string[] = []) {
@@ -2004,7 +2173,7 @@ type LocalPlanPaper = {
 };
 
 const LOCAL_PAYLOAD_VERSION = 3;
-const LOCAL_PLANNER_VERSION = "hybrid-v2";
+const LOCAL_PLANNER_VERSION = "hybrid-v3";
 const SECTION_TO_QUERY: Record<string, string> = {
   objective: "research objective",
   theoretical_background: "theoretical background",
@@ -2054,25 +2223,126 @@ function extractQuotedTitle(prompt: string) {
   return (matches?.[1] ?? matches?.[2] ?? "").trim();
 }
 
+function isCorpusLevelPrompt(prompt: string) {
+  const lowered = ` ${prompt.replace(/\s+/g, " ").toLowerCase()} `;
+  const corpusTerms = [
+    "workspace",
+    "library",
+    "corpus",
+    "all papers",
+    "all analyzed",
+    "all analysed",
+    "analyzed workspace",
+    "analysed workspace",
+    "analyzed papers",
+    "analysed papers",
+    "across my",
+    "across all",
+    "selected folder",
+    "current project",
+    "research gaps",
+    "major gaps",
+    "gap across",
+    "gaps across",
+    "overrepresented",
+    "underexplored",
+    "underrepresented",
+    "trends",
+    "trend",
+    "top topics",
+    "top keywords",
+    "landscape",
+  ];
+  return corpusTerms.some((term) => lowered.includes(term));
+}
+
+function looksLikeSinglePaperRequest(prompt: string) {
+  const lowered = ` ${prompt.replace(/\s+/g, " ").toLowerCase()} `;
+  const quotedTitle = extractQuotedTitle(prompt);
+  if (quotedTitle && !isProbableInstructionFragment(quotedTitle)) return true;
+  const paperTargetMarkers = [
+    "this paper",
+    "that paper",
+    "the paper",
+    "attached paper",
+    "this file",
+    "that file",
+    "attached file",
+    "this document",
+    "that document",
+    "paper titled",
+    "paper called",
+    "article titled",
+    "file named",
+    "document named",
+  ];
+  if (paperTargetMarkers.some((marker) => lowered.includes(marker))) {
+    return true;
+  }
+  return /\b(deep research analysis|analysis|analyze|analyse|review|summari[sz]e)\s+(of|on|for)\s+(the\s+)?(paper|article|file|document)\b/i.test(
+    prompt
+  );
+}
+
+function isProbableInstructionFragment(value: string) {
+  const tokens = new Set(tokenize(value));
+  if (tokens.size === 0) return true;
+  const intentTokens = new Set([
+    "gap",
+    "gaps",
+    "trend",
+    "trends",
+    "workspace",
+    "library",
+    "corpus",
+    "analyzed",
+    "analysed",
+    "papers",
+    "evidence",
+    "topic",
+    "topics",
+    "keyword",
+    "keywords",
+    "overrepresented",
+    "underexplored",
+    "underrepresented",
+    "major",
+    "research",
+    "explain",
+    "find",
+    "grounded",
+  ]);
+  let overlap = 0;
+  tokens.forEach((token) => {
+    if (intentTokens.has(token)) overlap += 1;
+  });
+  return overlap / Math.max(1, tokens.size) >= 0.35;
+}
+
 function extractCandidateTitle(prompt: string) {
   const quoted = extractQuotedTitle(prompt);
-  if (quoted) return quoted;
+  if (quoted && !isProbableInstructionFragment(quoted)) return quoted;
+  if (isCorpusLevelPrompt(prompt) && !looksLikeSinglePaperRequest(prompt)) {
+    return "";
+  }
   const truncated = prompt
     .replace(/\s+/g, " ")
     .trim()
     .split(/\b(first create|then identify|finish with|using the selected folder scope|step-by-step plan)\b/i)[0]
     .trim();
   const patterns = [
-    /\bdeep research analysis of\s+(.+)$/i,
-    /\banalysis of\s+(.+)$/i,
-    /\banalyze\s+(.+)$/i,
-    /\banalyse\s+(.+)$/i,
-    /\bresearch\s+(.+)$/i,
+    /\b(?:deep research analysis|analysis|review|summari[sz]e)\s+(?:of|on|for)\s+(?:the\s+)?(?:paper|article|file|document)\s+(.+)$/i,
+    /\b(?:analyze|analyse)\s+(?:the\s+)?(?:paper|article|file|document)\s+(.+)$/i,
+    /\b(?:paper|article|file|document)\s+(?:titled|called|named)\s+(.+)$/i,
   ];
   for (const pattern of patterns) {
     const match = truncated.match(pattern);
     const candidate = (match?.[1] ?? "").trim().replace(/[.,:;]+$/, "");
-    if (candidate.length >= 12 && !isPlaceholderTitle(candidate)) {
+    if (
+      candidate.length >= 12 &&
+      !isPlaceholderTitle(candidate) &&
+      !isProbableInstructionFragment(candidate)
+    ) {
       return candidate;
     }
   }
@@ -2313,6 +2583,7 @@ function buildLocalPromptAnalysis(
   selectedRunIds: string[] = [],
   attachmentNames: string[] = []
 ) {
+  const corpusLevelPrompt = isCorpusLevelPrompt(prompt) && !looksLikeSinglePaperRequest(prompt);
   let candidateTitle = extractCandidateTitle(prompt);
   const quotedTitle = extractQuotedTitle(prompt);
   const authorHint = extractAuthorHint(prompt);
@@ -2323,14 +2594,19 @@ function buildLocalPromptAnalysis(
   if (selectedRunIds.length > 0 && selectedScopePapers.length === 0) {
     selectedScopePapers = [...papers];
   }
-  if (!candidateTitle && attachmentTitles.length === 1) {
+  if (corpusLevelPrompt) {
+    candidateTitle = "";
+  }
+  if (!candidateTitle && !corpusLevelPrompt && attachmentTitles.length === 1) {
     candidateTitle = attachmentTitles[0];
   }
-  if (!candidateTitle && selectedScopePapers.length === 1) {
+  if (!candidateTitle && !corpusLevelPrompt && selectedScopePapers.length === 1) {
     candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
   }
   if (isPlaceholderTitle(candidateTitle)) {
-    if (selectedScopePapers.length === 1) {
+    if (corpusLevelPrompt) {
+      candidateTitle = "";
+    } else if (selectedScopePapers.length === 1) {
       candidateTitle = String(selectedScopePapers[0].title ?? "").trim();
     } else if (attachmentTitles.length === 1) {
       candidateTitle = attachmentTitles[0];
@@ -2342,7 +2618,13 @@ function buildLocalPromptAnalysis(
   const lowered = prompt.toLowerCase();
   const requestedSections = detectRequestedSections(prompt);
   const compare = /\b(compare|comparison|versus|contrast)\b/i.test(prompt);
-  const survey = /\b(survey|review|overview|landscape|corpus|literature)\b/i.test(prompt);
+  const gapAnalysis = /\b(gap|gaps|underexplored|underrepresented|overrepresented|missing|neglected)\b/i.test(prompt);
+  const trendAnalysis = /\b(trend|trends|timeline|over time|year by year|chronolog)\b/i.test(prompt);
+  const survey =
+    corpusLevelPrompt ||
+    gapAnalysis ||
+    trendAnalysis ||
+    /\b(survey|review|overview|landscape|corpus|literature)\b/i.test(prompt);
   const evidenceExtraction =
     requestedSections.length > 0 || /\b(evidence|cite|quote)\b/i.test(prompt);
   const rankedMatches = papers
@@ -2407,9 +2689,12 @@ function buildLocalPromptAnalysis(
     !survey &&
     (!candidateTitle || Boolean(target));
   return {
-    single_paper: Boolean(candidateTitle),
+    single_paper: Boolean(candidateTitle) && !corpusLevelPrompt,
     compare,
     survey,
+    corpus_level: corpusLevelPrompt,
+    gap_analysis: gapAnalysis,
+    trend_analysis: trendAnalysis,
     methodology_focus: /\b(method|methods|methodology|participants|sample)\b/i.test(prompt),
     findings_focus: /\b(findings|results|outcomes)\b/i.test(prompt),
     limitations_focus: /\b(limitation|limitations|constraint|weakness)\b/i.test(prompt),
@@ -2420,17 +2705,23 @@ function buildLocalPromptAnalysis(
     normalized_query: normalizedQuery || prompt.trim(),
     requested_sections: requestedSections,
     attachment_titles: attachmentTitles,
-    target_in_scope: Boolean(target),
-    target_paper_id: target?.paperId ?? 0,
+    target_in_scope: corpusLevelPrompt ? false : Boolean(target),
+    target_paper_id: corpusLevelPrompt ? 0 : target?.paperId ?? 0,
     ranked_matches: rankedMatches,
-    primary_intent: candidateTitle
+    primary_intent: corpusLevelPrompt
+      ? gapAnalysis
+        ? "gap_analysis"
+        : trendAnalysis
+          ? "trend_analysis"
+          : "corpus_synthesis"
+      : candidateTitle
       ? "paper_lookup"
       : compare
         ? "comparison"
         : evidenceExtraction
           ? "evidence_audit"
           : "topic_review",
-    target_entity_type: candidateTitle ? "paper" : "topic",
+    target_entity_type: corpusLevelPrompt ? "workspace" : candidateTitle ? "paper" : "topic",
     requested_output_mode:
       requestedSections.length > 0
         ? "structured_sections"
@@ -2439,8 +2730,10 @@ function buildLocalPromptAnalysis(
           : survey
             ? "narrative_review"
             : "plain_summary",
-    scope_mode: trivial ? "trivial" : survey ? "broad" : "medium",
-    target_resolution_status: candidateTitle
+    scope_mode: corpusLevelPrompt ? "broad" : trivial ? "trivial" : survey ? "broad" : "medium",
+    target_resolution_status: corpusLevelPrompt
+      ? "not_applicable"
+      : candidateTitle
       ? target
         ? "exact_match"
         : rankedMatches.length > 0
@@ -2486,14 +2779,29 @@ function buildLocalTodoInput(args: {
   promptAnalysis: Record<string, unknown>;
   projectId?: string;
   selectedRunIds?: string[];
+  sourcePolicy?: DeepResearchSourcePolicy;
   todoId: string;
   title: string;
-  phaseClass: "research" | "verification" | "synthesis";
+  phaseClass:
+    | "source_selection"
+    | "intent_resolution"
+    | "research"
+    | "evidence_review"
+    | "gap_check"
+    | "verification"
+    | "synthesis"
+    | "critic"
+    | "finalize";
   requiredClass:
+    | "preflight"
     | "required_before_verification"
     | "optional_context"
+    | "evidence_review"
+    | "gap_check"
     | "verification"
-    | "synthesis";
+    | "synthesis"
+    | "critic"
+    | "finalize";
   purpose: string;
   expectedOutput: string;
   completionCondition: string;
@@ -2519,6 +2827,8 @@ function buildLocalTodoInput(args: {
     completionCondition: args.completionCondition,
     projectId: args.projectId ?? "",
     selectedRunIds: args.selectedRunIds ?? [],
+    sourcePolicy: args.sourcePolicy,
+    budget: args.sourcePolicy?.budget,
     promptAnalysis: args.promptAnalysis,
     queryBundle: buildLocalQueryBundle(
       args.query,
@@ -2549,15 +2859,30 @@ function buildLocalTodo(
     promptAnalysis: Record<string, unknown>;
     projectId?: string;
     selectedRunIds?: string[];
+    sourcePolicy?: DeepResearchSourcePolicy;
     title: string;
     description: string;
     toolName: string;
-    phaseClass: "research" | "verification" | "synthesis";
+    phaseClass:
+      | "source_selection"
+      | "intent_resolution"
+      | "research"
+      | "evidence_review"
+      | "gap_check"
+      | "verification"
+      | "synthesis"
+      | "critic"
+      | "finalize";
     requiredClass:
+      | "preflight"
       | "required_before_verification"
       | "optional_context"
+      | "evidence_review"
+      | "gap_check"
       | "verification"
-      | "synthesis";
+      | "synthesis"
+      | "critic"
+      | "finalize";
     purpose: string;
     expectedOutput: string;
     completionCondition: string;
@@ -2577,6 +2902,7 @@ function buildLocalTodo(
       promptAnalysis: config.promptAnalysis,
       projectId: config.projectId,
       selectedRunIds: config.selectedRunIds,
+      sourcePolicy: config.sourcePolicy,
       todoId: `initial-${position}-${slugifyTodo(config.title)}`,
       title: config.title,
       phaseClass: config.phaseClass,
@@ -2673,7 +2999,8 @@ async function buildLocalResearchPlan(
   folderId: string | "all" | undefined,
   projectId: string | undefined,
   selectedRunIds: string[] = [],
-  attachmentNames: string[] = []
+  attachmentNames: string[] = [],
+  sourcePolicy: DeepResearchSourcePolicy = normalizeResearchSourcePolicy(undefined, selectedRunIds)
 ) {
   const papers = await loadScopedPlanPapers(ownerUserId, folderId, projectId, selectedRunIds);
   const promptAnalysis = buildLocalPromptAnalysis(prompt, papers, selectedRunIds, attachmentNames);
@@ -2705,13 +3032,97 @@ async function buildLocalResearchPlan(
         promptAnalysis,
         projectId,
         selectedRunIds,
+        sourcePolicy,
       })
     );
   };
 
   let summary = `Research "${normalizedQuery}" inside the selected scope, verify coverage, and draft a grounded report.`;
 
-  if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
+  addStep({
+    title: "Confirm research sources and budget",
+    description: "Lock the selected sources, enabled tools, and strict-budget limits before research starts.",
+    toolName: "source_selection",
+    phaseClass: "source_selection",
+    requiredClass: "preflight",
+    purpose: "Make the run source-aware and budget-bound.",
+    expectedOutput: "A source and budget summary for the run.",
+    completionCondition: "The selected source policy is recorded.",
+    query: normalizedQuery,
+  });
+
+  addStep({
+    title: "Resolve research intent",
+    description: "Resolve target paper, output style, requested sections, and whether outside context is allowed.",
+    toolName: "resolve_intent",
+    phaseClass: "intent_resolution",
+    requiredClass: "preflight",
+    purpose: "Convert the prompt into an executable research intent.",
+    expectedOutput: "A concrete intent and target-resolution summary.",
+    completionCondition: "The run has a grounded intent analysis.",
+    query: normalizedQuery,
+    targetTitle: candidateTitle,
+    targetPaperId,
+    requestedSections,
+  });
+
+  if (
+    promptAnalysis.primary_intent === "gap_analysis" ||
+    promptAnalysis.primary_intent === "trend_analysis" ||
+    promptAnalysis.primary_intent === "corpus_synthesis"
+  ) {
+    addStep({
+      title: "Map the workspace evidence base",
+      description: "Build a high-level map of the analyzed papers, topic coverage, keyword coverage, and year distribution before choosing retrieval paths.",
+      toolName: "get_dashboard_summary",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Use workspace analytics as the first evidence layer for corpus-level research.",
+      expectedOutput: "A corpus snapshot with topic, keyword, track, and year coverage signals.",
+      completionCondition: "The workspace evidence base is summarized or an evidence gap is recorded.",
+      query: normalizedQuery,
+    });
+    addStep({
+      title: "Decompose the research question",
+      description: "Split the broad request into focused retrieval queries for dominant patterns, weakly represented areas, and possible missing perspectives.",
+      toolName: "keyword_search",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Create subqueries from the user intent instead of treating the prompt as a paper title.",
+      expectedOutput: "Focused topic and keyword routes for deeper retrieval.",
+      completionCondition: "Subqueries are available or the corpus has too little analyzable text.",
+      query: normalizedQuery,
+    });
+    addStep({
+      title: "Retrieve representative and edge-case papers",
+      description: "Pull papers that represent the strongest clusters plus papers that may reveal underexplored or contradictory areas.",
+      toolName: "fetch_papers",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Ground corpus-level claims in actual papers, not only aggregate counts.",
+      expectedOutput: "A balanced shortlist of representative and low-coverage papers.",
+      completionCondition: "Representative papers are retrieved within the strict source budget.",
+      query: normalizedQuery,
+    });
+    addStep({
+      title: "Read evidence for gaps and coverage",
+      description: "Inspect sections from the retrieved papers to confirm what is overrepresented, underexplored, or only weakly supported.",
+      toolName: "read_paper_sections",
+      phaseClass: "research",
+      requiredClass: "required_before_verification",
+      purpose: "Turn aggregate patterns into source-grounded findings.",
+      expectedOutput: "Section-level evidence for coverage patterns and research-gap claims.",
+      completionCondition: "Gap and coverage evidence is extracted or narrowly marked unsupported.",
+      query: normalizedQuery,
+      requestedSections,
+    });
+    summary =
+      promptAnalysis.primary_intent === "gap_analysis"
+        ? `Analyze research gaps across the scoped workspace corpus, compare overrepresented and underexplored areas, then ground every claim in retrieved paper evidence.`
+        : promptAnalysis.primary_intent === "trend_analysis"
+          ? `Analyze trends across the scoped workspace corpus using analytics first, then verify the trend narrative with paper-level evidence.`
+          : `Synthesize the scoped workspace corpus by combining analytics, targeted retrieval, section evidence, and gap checking.`;
+  } else if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
     if (promptAnalysis.target_in_scope) {
       addStep({
         title: "Confirm the target paper in scope",
@@ -2918,6 +3329,19 @@ async function buildLocalResearchPlan(
     summary = `Retrieve the most relevant in-scope papers for "${normalizedQuery}" and verify whether their sections fully support the requested answer.`;
   }
 
+  if (sourcePolicy.allowWeb && sourcePolicy.budget.maxWebSearches > 0) {
+    addStep({
+      title: "Search opt-in web context",
+      description: "Use a small web-search budget to gather outside context only where it can improve the report.",
+      toolName: "web_search",
+      phaseClass: "research",
+      requiredClass: "optional_context",
+      purpose: "Add external context with clickable web citations when the user allowed it.",
+      expectedOutput: "A small set of web findings with source URLs.",
+      completionCondition: "Web context is captured or skipped with a reason.",
+      query: normalizedQuery,
+    });
+  }
   addStep({
     title: "Verify coverage before synthesis",
     description: "Check target resolution, requested sections, citation coverage, and evidence-gap disclosure before drafting the report.",
@@ -3012,6 +3436,11 @@ async function planDeepResearch(
     .map((attachment) => String(attachment?.name ?? "").trim())
     .filter(Boolean);
   const selectedRunIds = body.selectedRunIds ?? [];
+  const researchSourcePolicy = normalizeResearchSourcePolicy(
+    body.researchSourcePolicy,
+    selectedRunIds
+  );
+  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
   if (!prompt) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
@@ -3036,7 +3465,7 @@ async function planDeepResearch(
     await appendWorkspaceMessage(supabase, {
       threadId: thread.id,
       ownerUserId,
-      folderId: body.folderId,
+      folderId: researchFolderId,
       role: "user",
       content: prompt,
       messageKind: "chat",
@@ -3044,6 +3473,7 @@ async function planDeepResearch(
         chatMode: "deep_research",
         attachments: body.attachments ?? [],
         selectedRunIds: body.selectedRunIds ?? [],
+        researchSourcePolicy,
       },
     });
   }
@@ -3082,10 +3512,11 @@ async function planDeepResearch(
       }>;
     }>("/research-plan", {
       ownerUserId,
-      folderId: body.folderId,
+      folderId: researchFolderId,
       projectId: body.projectId,
       selectedRunIds,
       attachmentNames,
+      sourcePolicy: researchSourcePolicy,
       message: prompt,
     });
   } catch {
@@ -3093,7 +3524,7 @@ async function planDeepResearch(
   }
 
   const pendingRunCount = await countPendingRuns(
-    body.folderId,
+    researchFolderId,
     body.projectId,
     ownerUserId,
     body.selectedRunIds ?? []
@@ -3104,15 +3535,16 @@ async function planDeepResearch(
       prompt,
       pendingRunCount,
       ownerUserId,
-      body.folderId,
+      researchFolderId,
       body.projectId,
       selectedRunIds,
-      attachmentNames
+      attachmentNames,
+      researchSourcePolicy
     ));
   const session = await replaceDeepResearchPlan(supabase, {
     threadId: thread.id,
     ownerUserId,
-    folderId: body.folderId,
+    folderId: researchFolderId,
     sessionId: reusableSessionId,
     prompt,
     title: String(plan.title || buildThreadTitle(prompt)),
@@ -3125,6 +3557,7 @@ async function planDeepResearch(
       typeof plan.pending_run_count === "number"
         ? plan.pending_run_count
         : pendingRunCount,
+    sourcePolicy: researchSourcePolicy as unknown as Record<string, unknown>,
     steps: (plan.steps ?? []).map((step, index) => ({
       position: Number(step.position ?? index + 1),
       title: String(step.title || `Step ${index + 1}`),
@@ -3159,11 +3592,17 @@ async function continueDeepResearch(
   }
 
   const supabase = getSupabaseAdmin();
+  const selectedRunIds = normalizeIdList(body.selectedRunIds ?? []);
+  const researchSourcePolicy = normalizeResearchSourcePolicy(
+    body.researchSourcePolicy,
+    selectedRunIds
+  );
+  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
   const pendingRunCount = await countPendingRuns(
-    body.folderId,
+    researchFolderId,
     body.projectId,
     ownerUserId,
-    body.selectedRunIds ?? []
+    selectedRunIds
   );
   const nextStatus = pendingRunCount > 0 ? "waiting_on_analysis" : "queued";
 
@@ -3539,11 +3978,20 @@ async function normalChat(
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as ChatRequestBody;
+    const body = parseChatRequestBody(await request.json().catch(() => ({})));
     const user = await getAuthenticatedUserFromRequest(request);
     const ownerUserId = user?.id ?? null;
     const chatMode = body.chatMode ?? "normal";
     const action = body.action ?? (chatMode === "deep_research" ? "plan" : "message");
+
+    if (ownerUserId) {
+      await assertAndRecordAiUsage(ownerUserId, usageKindForRequest(body), {
+        chatMode,
+        action,
+        toolMode: body.toolMode ?? "auto",
+        webSearchEnabled: Boolean(body.webSearchEnabled),
+      });
+    }
 
     if (chatMode === "deep_research") {
       if (!ownerUserId) {
@@ -3560,8 +4008,11 @@ export async function POST(request: Request) {
 
     return await normalChat(request, body, ownerUserId);
   } catch (error) {
+    if (error instanceof GuardError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Chat request failed." },
+      { error: "Chat request failed." },
       { status: 500 }
     );
   }

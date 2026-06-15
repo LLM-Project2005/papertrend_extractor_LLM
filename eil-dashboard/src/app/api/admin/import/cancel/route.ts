@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
-import { isAuthorizedAdminRequest } from "@/lib/admin-auth";
+import {
+  getAuthenticatedUserFromRequest,
+  isAuthorizedUserOrAdminRequest,
+} from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  if (!(await isAuthorizedAdminRequest(request))) {
+  if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
+    const user = await getAuthenticatedUserFromRequest(request);
     const { run_ids } = (await request.json()) as { run_ids?: unknown };
     const runIds = Array.isArray(run_ids)
       ? [...new Set(run_ids.filter((value): value is string => typeof value === "string" && value.trim().length > 0))]
@@ -24,11 +28,17 @@ export async function POST(request: Request) {
 
     const supabase = getSupabaseAdmin();
     const timestamp = new Date().toISOString();
-    const { data: activeRuns, error: activeRunsError } = await supabase
+    let activeRunsQuery = supabase
       .from("ingestion_runs")
       .select("*")
       .in("id", runIds)
       .in("status", ["queued", "processing"]);
+
+    if (user?.id) {
+      activeRunsQuery = activeRunsQuery.eq("owner_user_id", user.id);
+    }
+
+    const { data: activeRuns, error: activeRunsError } = await activeRunsQuery;
 
     if (activeRunsError) {
       throw new Error(activeRunsError.message);
@@ -58,6 +68,7 @@ export async function POST(request: Request) {
           },
         })
         .eq("id", run.id)
+        .eq("owner_user_id", run.owner_user_id)
         .in("status", ["queued", "processing"])
         .select("*")
         .maybeSingle();

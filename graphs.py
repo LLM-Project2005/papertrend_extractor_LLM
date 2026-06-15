@@ -8,7 +8,11 @@ from nodes.cleaner import clean_and_route_node
 from nodes.conversation import conversation_node
 from nodes.dataset_builder import build_dataset_node
 from nodes.deep_research import (
+    research_critic_node,
+    research_evidence_review_node,
     research_execute_step_node,
+    research_finalize_node,
+    research_gap_check_node,
     research_preflight_node,
     research_synthesis_node,
 )
@@ -51,11 +55,20 @@ def _route_research_after_step(state: DeepResearchState) -> str:
     status = str(state.get("status") or "")
     if status == "waiting_on_analysis":
         return "finish"
+    if status == "research_ready_for_evidence_review":
+        return "evidence_review"
     if status == "research_ready_for_synthesis":
         return "synthesize"
     if status == "research_completed":
         return "finish"
     return "execute_step"
+
+
+def _route_research_after_gap_check(state: DeepResearchState) -> str:
+    status = str(state.get("status") or "")
+    if status == "research_step_completed":
+        return "execute_step"
+    return "synthesize"
 
 
 @lru_cache(maxsize=1)
@@ -131,7 +144,11 @@ def build_deep_research_graph():
     workflow = StateGraph(DeepResearchState)
     workflow.add_node("preflight", research_preflight_node)
     workflow.add_node("execute_step", research_execute_step_node)
+    workflow.add_node("evidence_review", research_evidence_review_node)
+    workflow.add_node("gap_check", research_gap_check_node)
     workflow.add_node("synthesize", research_synthesis_node)
+    workflow.add_node("critic", research_critic_node)
+    workflow.add_node("finalize", research_finalize_node)
 
     workflow.set_entry_point("preflight")
     workflow.add_conditional_edges(
@@ -147,11 +164,23 @@ def build_deep_research_graph():
         _route_research_after_step,
         {
             "execute_step": "execute_step",
+            "evidence_review": "evidence_review",
             "synthesize": "synthesize",
             "finish": END,
         },
     )
-    workflow.add_edge("synthesize", END)
+    workflow.add_edge("evidence_review", "gap_check")
+    workflow.add_conditional_edges(
+        "gap_check",
+        _route_research_after_gap_check,
+        {
+            "execute_step": "execute_step",
+            "synthesize": "synthesize",
+        },
+    )
+    workflow.add_edge("synthesize", "critic")
+    workflow.add_edge("critic", "finalize")
+    workflow.add_edge("finalize", END)
     return workflow.compile()
 
 
