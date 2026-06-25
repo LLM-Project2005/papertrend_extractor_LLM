@@ -359,7 +359,7 @@ export default function WorkspaceShell({
     useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
-    pollIntervalMs: 8000,
+    pollIntervalMs: 3000,
     onUnauthorized: handleAnalysisUnauthorized,
   });
 

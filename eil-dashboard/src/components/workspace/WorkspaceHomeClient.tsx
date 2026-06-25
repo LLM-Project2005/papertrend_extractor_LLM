@@ -294,7 +294,7 @@ export default function WorkspaceHomeClient() {
   } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
-    pollIntervalMs: 8000,
+    pollIntervalMs: 3000,
   });
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);

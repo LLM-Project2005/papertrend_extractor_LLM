@@ -42,6 +42,9 @@ AUTO_ANALYSIS_PROVIDER = "Automatic task routing"
 AUTO_ANALYSIS_MODEL = "automatic-task-routing"
 AUTO_ANALYSIS_LABEL = "Automatic per-task model routing"
 USER_STALE_REQUEUE_AFTER_SECONDS = 180
+FOLDER_PROGRESS_SYNC_INTERVAL_SECONDS = 5.0
+GRAPH_PROGRESS_PATCH_INTERVAL_SECONDS = 3.0
+GRAPH_PROGRESS_ALWAYS_PATCH_NODES = {"extract", "segment", "build_dataset"}
 
 
 def _int_env(name: str, default: int, minimum: int = 1) -> int:
@@ -85,7 +88,7 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
         "message": "Inferring title and publication metadata",
         "detail": "Resolving the paper title, year, and key document metadata from the extracted content.",
     },
-    "author_keywords": {
+    "extract_author_keywords": {
         "stage": "extracting_author_keywords",
         "message": "Extracting author-provided keywords",
         "detail": "Looking for explicit keyword lists supplied by the paper authors.",
@@ -664,6 +667,49 @@ def ensure_run_active(client: SupabaseRestClient, run_id: str) -> None:
         )
 
 
+def elapsed_seconds(started: float) -> float:
+    return round(time.perf_counter() - started, 3)
+
+
+def seconds_since_iso(value: Any) -> Optional[float]:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return round((datetime_from_iso(now_iso()) - datetime_from_iso(text)).total_seconds(), 3)
+    except Exception:
+        return None
+
+
+def merge_analysis_metrics(run: Dict[str, Any], patch: Dict[str, Any]) -> Dict[str, Any]:
+    payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
+    existing = payload.get("analysis_metrics") if isinstance(payload.get("analysis_metrics"), dict) else {}
+    return {**existing, **patch}
+
+
+def should_sync_folder_progress(run: Dict[str, Any], force: bool = False) -> bool:
+    if force:
+        return True
+    if not str(run.get("folder_analysis_job_id") or "").strip():
+        return False
+    payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
+    elapsed = seconds_since_iso(payload.get("folder_progress_synced_at"))
+    return elapsed is None or elapsed >= FOLDER_PROGRESS_SYNC_INTERVAL_SECONDS
+
+
+def should_patch_graph_progress(run: Dict[str, Any], node_name: str) -> bool:
+    if node_name in GRAPH_PROGRESS_ALWAYS_PATCH_NODES:
+        return True
+    payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
+    metrics = payload.get("analysis_metrics") if isinstance(payload.get("analysis_metrics"), dict) else {}
+    elapsed = seconds_since_iso(metrics.get("graph_progress_patched_at"))
+    return elapsed is None or elapsed >= GRAPH_PROGRESS_PATCH_INTERVAL_SECONDS
+
+
+def update_local_input_payload(run: Dict[str, Any], patch: Dict[str, Any]) -> None:
+    run["input_payload"] = merge_input_payload(run, patch)
+
+
 def update_run_progress(
     client: SupabaseRestClient,
     run: Dict[str, Any],
@@ -672,17 +718,27 @@ def update_run_progress(
     stage: str,
     message: str,
     detail: str,
+    metrics_patch: Optional[Dict[str, Any]] = None,
+    sync_folder: bool = True,
+    force_folder_sync: bool = False,
 ) -> None:
+    sync_folder_now = sync_folder and should_sync_folder_progress(run, force_folder_sync)
+    patch: Dict[str, Any] = {
+        "analysis_mode": "automatic",
+        "analysis_label": AUTO_ANALYSIS_LABEL,
+        "progress_stage": stage,
+        "progress_message": message,
+        "progress_detail": detail,
+        "progress_updated_at": now_iso(),
+    }
+    if sync_folder_now:
+        patch["folder_progress_synced_at"] = now_iso()
+    if metrics_patch:
+        patch["analysis_metrics"] = merge_analysis_metrics(run, metrics_patch)
+
     input_payload = merge_input_payload(
         run,
-        {
-            "analysis_mode": "automatic",
-            "analysis_label": AUTO_ANALYSIS_LABEL,
-            "progress_stage": stage,
-            "progress_message": message,
-            "progress_detail": detail,
-            "progress_updated_at": now_iso(),
-        },
+        patch,
     )
     client.update_run(
         run_id,
@@ -695,7 +751,8 @@ def update_run_progress(
     run["input_payload"] = input_payload
     run["provider"] = str(run.get("provider") or AUTO_ANALYSIS_PROVIDER)
     run["model"] = str(run.get("model") or AUTO_ANALYSIS_MODEL)
-    sync_folder_analysis_job(client, run)
+    if sync_folder_now:
+        sync_folder_analysis_job(client, run)
 
 
 def update_run_graph_progress(
@@ -705,6 +762,7 @@ def update_run_graph_progress(
     node_name: str,
     node_update: Dict[str, Any],
     merged_state: Dict[str, Any],
+    graph_started: Optional[float] = None,
 ) -> None:
     progress = INGESTION_NODE_PROGRESS.get(node_name)
     if not progress:
@@ -723,6 +781,28 @@ def update_run_graph_progress(
         keyword_count = len((merged_state.get("dataset") or {}).get("keywords") or [])
         detail = f"{progress['detail']} Current keyword rows prepared: {keyword_count}."
 
+    metrics_patch: Dict[str, Any] = {}
+    if graph_started is not None:
+        payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
+        existing_metrics = payload.get("analysis_metrics") if isinstance(payload.get("analysis_metrics"), dict) else {}
+        completed_nodes = list(existing_metrics.get("completed_graph_nodes") or [])
+        completed_nodes.append(
+            {
+                "node": node_name,
+                "offset_seconds": elapsed_seconds(graph_started),
+                "status": node_update.get("status"),
+            }
+        )
+        metrics_patch["completed_graph_nodes"] = completed_nodes[-40:]
+        if should_patch_graph_progress(run, node_name):
+            metrics_patch["graph_progress_patched_at"] = now_iso()
+        else:
+            update_local_input_payload(
+                run,
+                {"analysis_metrics": merge_analysis_metrics(run, metrics_patch)},
+            )
+            return
+
     update_run_progress(
         client,
         run,
@@ -730,6 +810,8 @@ def update_run_graph_progress(
         stage=progress["stage"],
         message=progress["message"],
         detail=detail,
+        metrics_patch=metrics_patch or None,
+        sync_folder=False,
     )
 
 
@@ -808,6 +890,7 @@ def resume_waiting_research_sessions_for_folder(
 
 
 def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str, Any]) -> None:
+    run_started = time.perf_counter()
     run_id = str(run["id"])
     storage_path = str(run.get("source_path") or "")
     if not storage_path:
@@ -815,6 +898,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
 
     input_payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
     source_kind = str(input_payload.get("source_kind") or "pdf-upload")
+    queue_wait_seconds = seconds_since_iso(run.get("created_at"))
 
     with processing_heartbeat(client, run_id, config.heartbeat_interval_seconds):
         with tempfile.TemporaryDirectory(prefix="papertrend-run-") as temp_dir:
@@ -826,7 +910,13 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 stage="preparing",
                 message="Preparing file for analysis",
                 detail="The worker has claimed this run and is getting the source ready.",
+                metrics_patch={
+                    "queue_wait_seconds": queue_wait_seconds,
+                    "worker_started_at": now_iso(),
+                },
+                force_folder_sync=True,
             )
+            download_started = time.perf_counter()
             if source_kind == "google-drive":
                 connector_user_id = str(input_payload.get("connector_user_id") or "")
                 if not connector_user_id:
@@ -859,6 +949,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     extra={"run_id": run_id, "storage_path": storage_path},
                 )
                 client.download_storage_object(storage_path, local_pdf)
+            download_seconds = elapsed_seconds(download_started)
 
             ensure_run_active(client, run_id)
             update_run_progress(
@@ -868,14 +959,20 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 stage="starting_analysis",
                 message="Starting the analysis pipeline",
                 detail="The worker is entering the paper analysis graph and will update progress as each stage completes.",
+                metrics_patch={
+                    "download_seconds": download_seconds,
+                    "analysis_started_at": now_iso(),
+                    "completed_graph_nodes": [],
+                },
+                force_folder_sync=True,
             )
+            graph_started = time.perf_counter()
             result = process_pdf_run(
                 run=run,
                 client=client,
                 config=config,
                 pdf_path=local_pdf,
                 progress_callback=lambda node_name, node_update, merged_state: (
-                    ensure_run_active(client, run_id),
                     update_run_graph_progress(
                         client,
                         run,
@@ -883,10 +980,12 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                         node_name,
                         node_update,
                         merged_state,
+                        graph_started,
                     ),
                 ),
                 checkpoint_callback=lambda: ensure_run_active(client, run_id),
             )
+            graph_seconds = elapsed_seconds(graph_started)
             logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(result.raw_text)})
             logger.info(
                 "model usage summary",
@@ -907,8 +1006,20 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 stage="saving",
                 message="Saving results to the workspace",
                 detail="Writing the extracted paper, keywords, tracks, and related analysis back into Supabase.",
+                metrics_patch={
+                    "graph_seconds": graph_seconds,
+                    "model_usage": {
+                        "call_count": result.usage_summary.get("call_count"),
+                        "total_prompt_tokens": result.usage_summary.get("total_prompt_tokens"),
+                        "total_completion_tokens": result.usage_summary.get("total_completion_tokens"),
+                        "estimated_cost_usd": result.usage_summary.get("estimated_cost_usd"),
+                    },
+                },
+                force_folder_sync=True,
             )
+            save_started = time.perf_counter()
             persist_dataset(client, result.dataset)
+            save_seconds = elapsed_seconds(save_started)
             logger.info(
                 "dataset persisted",
                 extra={
@@ -919,6 +1030,33 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             )
 
             ensure_run_active(client, run_id)
+            final_input_payload = merge_input_payload(
+                run,
+                {
+                    "analysis_mode": "automatic",
+                    "analysis_label": AUTO_ANALYSIS_LABEL,
+                    "pipeline": PIPELINE_NAME,
+                    "paper_id": result.dataset["paper_id"],
+                    "year": result.dataset.get("year"),
+                    "year_resolution": result.dataset.get("year_resolution"),
+                    "raw_text_length": len(result.raw_text),
+                    "keyword_count": len(result.dataset["keywords"]),
+                    "analysis_metrics": merge_analysis_metrics(
+                        run,
+                        {
+                            "save_seconds": save_seconds,
+                            "total_worker_seconds": elapsed_seconds(run_started),
+                            "completed_at": now_iso(),
+                        },
+                    ),
+                    "progress_stage_sequence": list(INGESTION_NODE_PROGRESS.keys()),
+                    "progress_stage": "completed",
+                    "progress_message": "Analysis complete",
+                    "progress_detail": "This paper is ready to use across the dashboard, paper library, and chat.",
+                    "progress_updated_at": now_iso(),
+                    "folder_progress_synced_at": now_iso(),
+                },
+            )
             client.update_run(
                 run_id,
                 {
@@ -927,26 +1065,13 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "error_message": None,
                     "provider": str(run.get("provider") or AUTO_ANALYSIS_PROVIDER),
                     "model": str(run.get("model") or AUTO_ANALYSIS_MODEL),
-                    "input_payload": merge_input_payload(
-                        run,
-                        {
-                            "analysis_mode": "automatic",
-                            "analysis_label": AUTO_ANALYSIS_LABEL,
-                            "pipeline": PIPELINE_NAME,
-                            "paper_id": result.dataset["paper_id"],
-                            "year": result.dataset.get("year"),
-                            "year_resolution": result.dataset.get("year_resolution"),
-                            "raw_text_length": len(result.raw_text),
-                            "keyword_count": len(result.dataset["keywords"]),
-                            "progress_stage_sequence": list(INGESTION_NODE_PROGRESS.keys()),
-                            "progress_stage": "completed",
-                            "progress_message": "Analysis complete",
-                            "progress_detail": "This paper is ready to use across the dashboard, paper library, and chat.",
-                            "progress_updated_at": now_iso(),
-                        },
-                    ),
+                    "input_payload": final_input_payload,
                 },
             )
+            run["status"] = "succeeded"
+            run["completed_at"] = now_iso()
+            run["input_payload"] = final_input_payload
+            sync_folder_analysis_job(client, run)
 
 
 def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:

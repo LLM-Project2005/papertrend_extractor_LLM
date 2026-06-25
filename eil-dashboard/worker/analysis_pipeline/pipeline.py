@@ -17,6 +17,19 @@ GraphProgressCallback = Callable[[str, Dict[str, Any], Dict[str, Any]], None]
 GraphCheckpointCallback = Callable[[], None]
 
 
+def _merge_graph_update(merged_state: Dict[str, Any], node_update: Dict[str, Any]) -> None:
+    for key, value in node_update.items():
+        if key in {"errors", "messages"}:
+            merged_state[key] = [
+                *(merged_state.get(key) or []),
+                *(value or []),
+            ]
+            continue
+        if key == "status" and value is None:
+            continue
+        merged_state[key] = value
+
+
 def process_pdf_run(
     run: Dict[str, Any],
     client: Any,
@@ -55,7 +68,7 @@ def process_pdf_run(
             for node_name, node_update in chunk.items():
                 if not isinstance(node_update, dict):
                     continue
-                merged_state.update(node_update)
+                _merge_graph_update(merged_state, node_update)
                 if progress_callback:
                     progress_callback(node_name, node_update, dict(merged_state))
         final_state = merged_state

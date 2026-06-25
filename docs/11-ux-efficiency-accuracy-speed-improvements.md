@@ -41,7 +41,7 @@ This flow is useful because it separates user interaction from heavy analysis. T
 
 ## 2. Current Ingestion Graph
 
-The current ingestion graph is sequential. It is simple and reliable because each node runs after the previous node finishes.
+The current ingestion graph now uses a fan-out and join pattern after segmentation. The early PDF preparation steps remain sequential because each one depends on the previous result. After segmentation, independent analysis tasks run as parallel branches, and the dataset builder waits for the required branches to finish.
 
 ```mermaid
 flowchart LR
@@ -50,29 +50,34 @@ flowchart LR
     C -- "yes" --> D["translate"]
     C -- "no" --> E["segment"]
     D --> E
-    E --> F["metadata"]
-    F --> G["extract_author_keywords"]
-    G --> H["mine_keywords"]
-    H --> I["group_topics"]
-    I --> J["label_trends"]
-    J --> K["classify_tracks"]
-    K --> L["classify_typology"]
-    L --> M["extract_facets"]
-    M --> N["build_dataset"]
+    E --> F1["metadata"]
+    E --> F2["extract_author_keywords"]
+    E --> F3["mine_keywords"]
+    E --> F4["classify_typology"]
+    E --> F5["extract_facets"]
+    F3 --> G1["group_topics"]
+    G1 --> G2["label_trends"]
+    G2 --> G3["classify_tracks"]
+    F1 --> H["join required branches"]
+    F2 --> H
+    F4 --> H
+    F5 --> H
+    G3 --> H
+    H --> I["build_dataset"]
 ```
 
 ### Strength
 
-The current graph is easy to debug. If one node fails, it is clear where the failure occurred.
+The graph still preserves a readable pipeline shape, but it no longer makes unrelated LLM calls wait behind each other. Track classification intentionally stays after topic labeling because the current track classifier uses labeled topic context.
 
 ### Limitation
 
-Several nodes do not truly depend on each other. For example, after segmentation, metadata extraction, author keyword extraction, track classification, research typology, and facet extraction can often run independently. Keeping all of them sequential increases total processing time.
+The remaining speed limitation is that the keyword path is still sequential: generated keywords must be mined before grouping, labels must be produced before track classification, and the final dataset cannot be built until every required branch completes.
 
 
-## 3. Proposed Faster Ingestion Graph
+## 3. Further Parallelization Opportunity
 
-The main speed improvement is to use a fan-out and join pattern after segmentation. Once the paper has clean segmented text, independent analysis nodes can run in parallel. The dataset builder then waits until all branches complete.
+The implemented graph keeps track classification after topic labeling for accuracy. A more aggressive future version could classify tracks directly from sections in parallel with topic labeling, then optionally reconcile the early track classification after topic labels become available.
 
 ```mermaid
 flowchart TD
@@ -85,26 +90,27 @@ flowchart TD
     E --> F1["metadata"]
     E --> F2["extract_author_keywords"]
     E --> F3["mine_keywords"]
-    E --> F4["classify_tracks"]
+    E --> F4["classify_tracks from sections"]
     E --> F5["classify_typology"]
     E --> F6["extract_facets"]
 
     F3 --> G1["group_topics"]
     G1 --> G2["label_trends"]
+    G2 --> G3["optional track reconciliation"]
 
     F1 --> H["join results"]
     F2 --> H
-    G2 --> H
     F4 --> H
     F5 --> H
     F6 --> H
+    G3 --> H
 
     H --> I["build_dataset"]
 ```
 
 ### Expected impact
 
-This change improves speed because the longest LLM calls no longer have to wait for unrelated classification tasks. It also makes the graph more scalable in Cloud Run because parallel branches can use model time more efficiently. The tradeoff is that error handling becomes more important: the join step must know which branches succeeded, which failed, and which outputs can be safely omitted.
+This future change could reduce latency further, but it has a higher accuracy risk because the current track classifier benefits from topic labels. It should only be implemented after measuring whether section-only track classification matches the current topic-aware classifier.
 
 
 ## 4. Improved User Experience Flow
