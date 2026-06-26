@@ -58,6 +58,31 @@ def _float_env(name: str, default_value: float, minimum: float = 0.0) -> float:
     return max(value, minimum)
 
 
+def _body_bool(value: Any, default_value: bool) -> bool:
+    if value is None:
+        return default_value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "y", "on"}:
+        return True
+    if text in {"0", "false", "no", "n", "off"}:
+        return False
+    return default_value
+
+
+def _is_managed_queue_trigger(handler: BaseHTTPRequestHandler) -> bool:
+    task_source = (handler.headers.get("X-Papertrend-Task-Source") or "").strip().lower()
+    user_agent = (handler.headers.get("User-Agent") or "").strip().lower()
+    return (
+        task_source in {"cloud-tasks", "cloud-scheduler"}
+        or "google-cloud-tasks" in user_agent
+        or "google-cloud-scheduler" in user_agent
+    )
+
+
 def _active_thread_state(
     thread: Optional[threading.Thread],
     started_at: float,
@@ -252,7 +277,7 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
 
     for index in range(task_count):
         payload = {
-            "async": True,
+            "async": False,
             "maxRuns": max_runs_per_task,
             "reason": f"{reason}-task-{index + 1}",
             "force": force_start,
@@ -344,6 +369,48 @@ def _run_queue_batch_background(max_runs: int, *, force: bool = False) -> Dict[s
         "active_batch_age_seconds": active_state["age_seconds"],
         "forced_batch_count": _FORCED_QUEUE_BATCH_COUNT,
     }
+
+
+def _run_queue_batch_foreground(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
+    global _QUEUE_PROCESS_THREAD, _QUEUE_PROCESS_STARTED_AT, _FORCED_QUEUE_BATCH_COUNT
+
+    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_QUEUE_STALE_LOCK_SECONDS", 1200)
+    current_thread = threading.current_thread()
+    with _QUEUE_THREAD_GUARD:
+        active_state = _active_thread_state(
+            _QUEUE_PROCESS_THREAD,
+            _QUEUE_PROCESS_STARTED_AT,
+            stale_after_seconds,
+        )
+        if active_state["alive"] and not (force or active_state["stale"]):
+            return {
+                "ok": False,
+                "already_running": True,
+                "stale_lock_recovered": False,
+                "active_batch_age_seconds": active_state["age_seconds"],
+            }
+        if active_state["alive"] and (force or active_state["stale"]):
+            _FORCED_QUEUE_BATCH_COUNT += 1
+        _QUEUE_PROCESS_THREAD = current_thread
+        _QUEUE_PROCESS_STARTED_AT = time.monotonic()
+
+    try:
+        summary = _run_queue_batch(max_runs=max_runs)
+        summary.update(
+            {
+                "ok": True,
+                "already_running": False,
+                "stale_lock_recovered": bool(active_state["alive"] and (force or active_state["stale"])),
+                "active_batch_age_seconds": active_state["age_seconds"],
+                "forced_batch_count": _FORCED_QUEUE_BATCH_COUNT,
+            }
+        )
+        return summary
+    finally:
+        with _QUEUE_THREAD_GUARD:
+            if _QUEUE_PROCESS_THREAD is current_thread:
+                _QUEUE_PROCESS_THREAD = None
+                _QUEUE_PROCESS_STARTED_AT = 0.0
 
 
 def _run_research_batch_background(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
@@ -505,9 +572,10 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
         try:
             if self.path == "/process-queue":
                 max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
-                run_async = bool(body.get("async", True))
-                force_start = bool(body.get("force", False))
-                retry_on_busy = bool(body.get("retryOnBusy", False))
+                managed_trigger = _is_managed_queue_trigger(self)
+                run_async = _body_bool(body.get("async"), default_value=not managed_trigger)
+                force_start = _body_bool(body.get("force"), default_value=False)
+                retry_on_busy = _body_bool(body.get("retryOnBusy"), default_value=managed_trigger)
                 if run_async:
                     async_max_runs = min(
                         max_runs,
@@ -551,9 +619,25 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                     )
                     return
 
-                summary = _run_queue_batch(max_runs=max_runs)
+                summary = _run_queue_batch_foreground(max_runs=max_runs, force=force_start)
+                if retry_on_busy and bool(summary.get("already_running")):
+                    _json_response(
+                        self,
+                        429,
+                        {
+                            "ok": False,
+                            "queued": False,
+                            "already_running": True,
+                            "reason": "worker_already_running_retry_later",
+                            "max_runs": max_runs,
+                            "force": force_start,
+                            "retry_on_busy": True,
+                            "active_batch_age_seconds": summary.get("active_batch_age_seconds"),
+                        },
+                    )
+                    return
                 logger.info("worker queue batch %s", summary)
-                _json_response(self, 200, summary)
+                _json_response(self, 200 if summary.get("ok", True) else 202, summary)
                 return
 
             if self.path == "/enqueue-ingestion-tasks":
