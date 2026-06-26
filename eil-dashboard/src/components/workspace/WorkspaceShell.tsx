@@ -320,6 +320,7 @@ export default function WorkspaceShell({
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [navigating, setNavigating] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [statusPanelOpen, setStatusPanelOpen] = useState(false);
   const isChatPage = pathname.startsWith("/workspace/chat");
 
   useEffect(() => {
@@ -395,6 +396,12 @@ export default function WorkspaceShell({
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
     : [];
+  const activeRunCount = activeRuns.filter(
+    (run) => run.status === "queued" || run.status === "processing"
+  ).length;
+  const failedRunCount = activeRuns.filter((run) => run.status === "failed").length;
+  const completedRunCount = activeRuns.filter((run) => run.status === "succeeded").length;
+  const statusBadgeCount = activeRunCount || failedRunCount || completedRunCount;
 
   async function handleCancelRun(runId: string) {
     try {
@@ -575,19 +582,52 @@ export default function WorkspaceShell({
         (analysisSession.minimized ||
           !ALL_NAV_ITEMS.some((item) => pathname.startsWith(item.href)) ||
           pathname !== "/workspace/home") ? (
-          <div className="fixed bottom-4 right-4 z-40 w-[min(360px,calc(100vw-2rem))]">
-            <AnalysisStatusCard
-              runs={activeRuns}
-              folderJob={folderJob}
-              compact
-              onExpand={() => setAnalysisMinimized(false)}
-              onClear={clearAnalysisSession}
-              onCancelRun={handleCancelRun}
-              onCancelAll={handleCancelAllRuns}
-              onRetryQueue={handleRetryQueue}
-              onStartProcessing={handleStartProcessing}
-              onDebugClearQueue={handleDebugClearQueue}
-            />
+          <div className="fixed bottom-4 right-4 z-40">
+            {statusPanelOpen ? (
+              <div className="w-[min(360px,calc(100vw-2rem))]">
+                <AnalysisStatusCard
+                  runs={activeRuns}
+                  folderJob={folderJob}
+                  compact
+                  onExpand={() => setAnalysisMinimized(false)}
+                  onClear={clearAnalysisSession}
+                  onCancelRun={handleCancelRun}
+                  onCancelAll={handleCancelAllRuns}
+                  onRetryQueue={handleRetryQueue}
+                  onStartProcessing={handleStartProcessing}
+                  onDebugClearQueue={handleDebugClearQueue}
+                />
+                <button
+                  type="button"
+                  onClick={() => setStatusPanelOpen(false)}
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-xl transition hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b8b8b8] dark:hover:text-white"
+                >
+                  Hide status
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setStatusPanelOpen(true)}
+                className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-xl transition hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                aria-label="Open analysis progress"
+                title="Open analysis progress"
+              >
+                <FileIcon className="h-5 w-5" />
+                {statusBadgeCount > 0 ? (
+                  <span
+                    className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white ${
+                      failedRunCount > 0 ? "bg-red-600" : "bg-blue-600"
+                    }`}
+                  >
+                    {Math.min(statusBadgeCount, 9)}
+                  </span>
+                ) : null}
+                {activeRunCount > 0 ? (
+                  <span className="absolute inset-0 rounded-full border border-blue-500/50 motion-safe:animate-ping" />
+                ) : null}
+              </button>
+            )}
           </div>
         ) : null}
       </div>

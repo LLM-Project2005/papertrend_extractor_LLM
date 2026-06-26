@@ -466,6 +466,7 @@ export default function AdminImportClient() {
   const [loading, setLoading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoOpenedRunIdRef = useRef<string | null>(null);
+  const autoOpenedUploadActionRef = useRef(false);
   const requestedRunId = searchParams.get("runId");
 
   const requestHeaders = useMemo<Record<string, string>>(() => {
@@ -549,6 +550,20 @@ export default function AdminImportClient() {
 
     return () => window.clearInterval(interval);
   }, [currentProject?.id, requestHeaders, session?.access_token]);
+
+  useEffect(() => {
+    if (
+      autoOpenedUploadActionRef.current ||
+      searchParams.get("action") !== "upload" ||
+      !currentProject?.id ||
+      !session?.access_token
+    ) {
+      return;
+    }
+
+    autoOpenedUploadActionRef.current = true;
+    window.requestAnimationFrame(() => fileInputRef.current?.click());
+  }, [currentProject?.id, searchParams, session?.access_token]);
 
   useEffect(() => {
     if (!currentProject?.id || !session?.access_token || succeededRunIds.length === 0) {
@@ -860,6 +875,11 @@ export default function AdminImportClient() {
       return;
     }
 
+    if (pdfFiles.length > 1) {
+      setError("For beta stability, upload one PDF at a time. Batch and folder uploads are temporarily disabled.");
+      return;
+    }
+
     if (oversizedFiles.length > 0) {
       const names = oversizedFiles
         .slice(0, 3)
@@ -1041,7 +1061,7 @@ export default function AdminImportClient() {
             : `Created Library folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
           : ignoredCount > 0
             ? `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"}.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-            : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
+            : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis. You can track live progress on Home.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
       );
       if (failedUploadCount > 0 && !queueWarning) {
         setError(`${failedUploadCount} file${failedUploadCount === 1 ? "" : "s"} failed to upload. Check internet connection and retry.`);
@@ -1061,7 +1081,7 @@ export default function AdminImportClient() {
     const selectedFiles = Array.from(event.target.files ?? []).filter(Boolean);
     event.target.value = "";
     if (selectedFiles.length === 0) return;
-    void queueUploads(selectedFiles, "files");
+    void queueUploads(selectedFiles.slice(0, 1), "files");
   }
 
   function openFolderPicker() {
@@ -1341,16 +1361,6 @@ export default function AdminImportClient() {
             <span className="flex items-center gap-3">
               <UploadIcon className="h-4 w-4" />
               <span>Upload file</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={openFolderPicker}
-            className={itemClass}
-          >
-            <span className="flex items-center gap-3">
-              <FolderIcon className="h-4 w-4" />
-              <span>Upload folder</span>
             </span>
           </button>
         </div>
@@ -1753,7 +1763,6 @@ export default function AdminImportClient() {
         ref={fileInputRef}
         type="file"
         accept=".pdf,application/pdf"
-        multiple
         className="hidden"
         onChange={handleFilePickerChange}
       />
