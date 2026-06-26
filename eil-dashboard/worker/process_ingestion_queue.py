@@ -138,8 +138,14 @@ class SupabaseRestClient:
         base_headers = {
             "apikey": service_key,
             "Authorization": f"Bearer {service_key}",
+            "Connection": "close",
         }
-        self.session = build_retrying_session(base_headers)
+        self.session = build_retrying_session(
+            base_headers,
+            attempts=_int_env("WORKER_SUPABASE_RETRY_ATTEMPTS", 8, 1),
+            backoff_seconds=_float_env("WORKER_SUPABASE_RETRY_BACKOFF_SECONDS", 1.25, 0.0),
+            retry_methods=("GET", "HEAD", "OPTIONS", "PATCH", "POST"),
+        )
         self.heartbeat_timeout_seconds = _float_env("WORKER_HEARTBEAT_TIMEOUT_SECONDS", 10.0, 1.0)
         # requests.Session is not guaranteed to be thread-safe. Heartbeat runs on a
         # background thread, so it uses an isolated short-lived PATCH retry policy.
@@ -519,7 +525,16 @@ def force_requeue_runs(
 
 def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConfig) -> int:
     recovered = 0
-    for run in client.list_processing_runs(limit=config.stale_processing_limit):
+    try:
+        processing_runs = client.list_processing_runs(limit=config.stale_processing_limit)
+    except Exception as error:
+        logger.warning(
+            "skipping stale processing recovery after transient Supabase failure: %s",
+            str(error),
+        )
+        return 0
+
+    for run in processing_runs:
         if not _is_stale(run, config.stale_processing_after_seconds):
             continue
         run_id = str(run.get("id") or "")
@@ -577,7 +592,16 @@ def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConf
 
 def recover_invalid_succeeded_runs(client: SupabaseRestClient, config: WorkerConfig) -> int:
     recovered = 0
-    for run in client.list_recent_succeeded_runs(config.invalid_success_scan_limit):
+    try:
+        recent_succeeded_runs = client.list_recent_succeeded_runs(config.invalid_success_scan_limit)
+    except Exception as error:
+        logger.warning(
+            "skipping invalid success recovery after transient Supabase failure: %s",
+            str(error),
+        )
+        return 0
+
+    for run in recent_succeeded_runs:
         run_id = str(run.get("id") or "")
         if not run_id:
             continue

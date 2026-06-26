@@ -79,7 +79,7 @@ def _reset_queue_worker_gate() -> Dict[str, Any]:
         active_state = _active_thread_state(
             _QUEUE_PROCESS_THREAD,
             _QUEUE_PROCESS_STARTED_AT,
-            _batch_stale_after_seconds("NODE_SERVICE_QUEUE_STALE_LOCK_SECONDS", 180),
+            _batch_stale_after_seconds("NODE_SERVICE_QUEUE_STALE_LOCK_SECONDS", 1200),
         )
         _QUEUE_PROCESS_THREAD = None
         _QUEUE_PROCESS_STARTED_AT = 0.0
@@ -297,7 +297,7 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
 def _run_queue_batch_background(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
     global _QUEUE_PROCESS_THREAD, _QUEUE_PROCESS_STARTED_AT, _FORCED_QUEUE_BATCH_COUNT
 
-    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_QUEUE_STALE_LOCK_SECONDS", 180)
+    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_QUEUE_STALE_LOCK_SECONDS", 1200)
     with _QUEUE_THREAD_GUARD:
         active_state = _active_thread_state(
             _QUEUE_PROCESS_THREAD,
@@ -349,7 +349,7 @@ def _run_queue_batch_background(max_runs: int, *, force: bool = False) -> Dict[s
 def _run_research_batch_background(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
     global _RESEARCH_PROCESS_THREAD, _RESEARCH_PROCESS_STARTED_AT, _FORCED_RESEARCH_BATCH_COUNT
 
-    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_RESEARCH_STALE_LOCK_SECONDS", 180)
+    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_RESEARCH_STALE_LOCK_SECONDS", 1200)
     with _RESEARCH_THREAD_GUARD:
         active_state = _active_thread_state(
             _RESEARCH_PROCESS_THREAD,

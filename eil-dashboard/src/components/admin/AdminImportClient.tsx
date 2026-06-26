@@ -18,9 +18,11 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/ui/Modal";
 import {
+  ArrowRightIcon,
   CheckIcon,
   ChartIcon,
   ChevronDownIcon,
+  CloseIcon,
   DownloadIcon,
   DriveIcon,
   FileIcon,
@@ -464,6 +466,11 @@ export default function AdminImportClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [queuedNotice, setQueuedNotice] = useState<{
+    count: number;
+    fileName: string;
+    warning?: string | null;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const autoOpenedUploadActionRef = useRef(false);
@@ -1048,6 +1055,15 @@ export default function AdminImportClient() {
           folder: targetFolderName,
           folderId: nextFolderId,
           folderJob: nextFolderJob,
+        });
+        setQueuedNotice({
+          count: successfulRuns.length,
+          fileName:
+            successfulRuns[0]?.display_name ||
+            successfulRuns[0]?.source_filename ||
+            pdfFiles[0]?.name ||
+            "Selected PDF",
+          warning: queueWarning,
         });
       }
       if (nextFolderId && (mode === "folder" || selectedFolderId !== "all")) {
@@ -1889,6 +1905,58 @@ export default function AdminImportClient() {
         <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
           {error}
         </div>
+      ) : null}
+
+      {queuedNotice ? (
+        <Modal onClose={() => setQueuedNotice(null)}>
+          <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="flex items-start justify-between gap-4">
+              <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
+                <CheckIcon className="h-6 w-6" />
+              </span>
+              <button
+                type="button"
+                onClick={() => setQueuedNotice(null)}
+                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+                aria-label="Close upload confirmation"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
+            <h2 className="mt-5 text-2xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
+              File queued for analysis
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
+              {queuedNotice.fileName} was uploaded and added to the worker queue.
+              The Home page shows the live analysis timeline.
+            </p>
+            {queuedNotice.warning ? (
+              <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                {queuedNotice.warning}
+              </p>
+            ) : null}
+            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setQueuedNotice(null)}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#b8b8b8]"
+              >
+                Stay in Library
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setQueuedNotice(null);
+                  router.push("/workspace/home");
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+              >
+                <span>View progress on Home</span>
+                <ArrowRightIcon className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </Modal>
       ) : null}
 
       <section className="app-surface overflow-visible">
