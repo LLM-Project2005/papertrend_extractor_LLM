@@ -480,15 +480,21 @@ def _recovery_payload(
 
 def _is_stale(run: Dict[str, Any], threshold_seconds: int) -> bool:
     payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
-    progress_updated_at = str(payload.get("progress_updated_at") or run.get("updated_at") or "").strip()
-    if not progress_updated_at:
+    timestamp_candidates = [
+        str(payload.get("progress_updated_at") or "").strip(),
+        str(run.get("updated_at") or "").strip(),
+    ]
+    parsed_timestamps = []
+    for timestamp in timestamp_candidates:
+        if not timestamp:
+            continue
+        try:
+            parsed_timestamps.append(datetime_from_iso(timestamp))
+        except Exception:
+            continue
+    if not parsed_timestamps:
         return False
-    try:
-        age_seconds = (
-            datetime_from_iso(now_iso()) - datetime_from_iso(progress_updated_at)
-        ).total_seconds()
-    except Exception:
-        return False
+    age_seconds = (datetime_from_iso(now_iso()) - max(parsed_timestamps)).total_seconds()
     return age_seconds >= threshold_seconds
 
 
