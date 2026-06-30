@@ -97,14 +97,23 @@ def build_ingestion_graph():
     )
     workflow.add_edge("translate", "segment")
     workflow.add_edge("segment", "metadata")
-    workflow.add_edge("metadata", "extract_author_keywords")
-    workflow.add_edge("extract_author_keywords", "mine_keywords")
+    workflow.add_edge("segment", "extract_author_keywords")
+    workflow.add_edge("segment", "mine_keywords")
+    workflow.add_edge("segment", "classify_typology")
+    workflow.add_edge("segment", "extract_facets")
     workflow.add_edge("mine_keywords", "group_topics")
     workflow.add_edge("group_topics", "label_trends")
     workflow.add_edge("label_trends", "classify_tracks")
-    workflow.add_edge("classify_tracks", "classify_typology")
-    workflow.add_edge("classify_typology", "extract_facets")
-    workflow.add_edge("extract_facets", "build_dataset")
+    workflow.add_edge(
+        [
+            "metadata",
+            "extract_author_keywords",
+            "classify_tracks",
+            "classify_typology",
+            "extract_facets",
+        ],
+        "build_dataset",
+    )
     workflow.add_edge("build_dataset", END)
     return workflow.compile()
 

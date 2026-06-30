@@ -53,24 +53,30 @@ Importance:
 
 ## 3.1 Ingestion Graph
 
-Nominal sequence:
+Nominal flow:
 
 1. extract
 2. clean
 3. conditional translate
 4. segment
-5. metadata
-6. mine keywords
-7. group topics
-8. label topics
-9. classify tracks
-10. extract facets
-11. build dataset
+5. fan out independent analysis branches:
+   - metadata
+   - author keyword extraction
+   - generated keyword mining
+   - research typology classification
+   - facet extraction
+6. group generated keywords
+7. label grouped topics
+8. classify tracks using the labeled topic context
+9. join required branches
+10. build dataset
 
 Routing behavior:
 
 - Clean stage routes to translate when language heuristics indicate non-English content.
 - Otherwise routes directly to segmentation.
+- After segmentation, independent LLM tasks run as parallel graph branches.
+- Dataset assembly waits for metadata, author keywords, track classification, typology, facets, and the keyword/topic path before building normalized rows.
 
 Output:
 

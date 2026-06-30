@@ -864,6 +864,7 @@ def build_visualization_analytics(filtered: Dict[str, Any]) -> Dict[str, Any]:
     trends = filtered.get("trends") or []
     tracks_single = filtered.get("tracksSingle") or []
     tracks_multi = filtered.get("tracksMulti") or []
+    concepts = filtered.get("concepts") or filtered.get("concept_rows") or []
     author_keywords = filtered.get("authorKeywords") or []
     typologies = filtered.get("typologies") or []
     selected_years = filtered.get("selectedYears") or []

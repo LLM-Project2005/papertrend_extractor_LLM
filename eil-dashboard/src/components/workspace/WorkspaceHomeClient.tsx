@@ -8,7 +8,7 @@ import { useIngestionRuns } from "@/hooks/useIngestionRuns";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
-import { getRunStageCaption } from "@/lib/ingestion-status";
+import { getRunStageCaption, getRunStageMessage } from "@/lib/ingestion-status";
 import {
   ArrowRightIcon,
   ChartIcon,
@@ -239,10 +239,17 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
   const stuck = isRunStuck(run);
   const timestamp = getRunTimestamp(run);
   const statusLabel = stuck ? "needs attention" : run.status;
+  const stageMessage = getRunStageMessage(run);
 
   return (
     <div className="flex items-start gap-3 rounded-lg border border-[#ebebeb] bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#bdbdbd]">
+      <span
+        className={`mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border ${
+          run.status === "processing"
+            ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200"
+            : "border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#bdbdbd]"
+        }`}
+      >
         <FileIcon className="h-4 w-4" />
       </span>
       <div className="min-w-0 flex-1">
@@ -259,6 +266,9 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
             {statusLabel}
           </span>
         </div>
+        <p className="mt-1 text-sm font-medium text-[#171717] dark:text-[#f2f2f2]">
+          {stageMessage}
+        </p>
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#4d4d4d] dark:text-[#8f8f8f]">
           {getRunStageCaption(run)}
         </p>
@@ -294,7 +304,7 @@ export default function WorkspaceHomeClient() {
   } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
     folderJobId: analysisSession?.folderJobId ?? undefined,
-    pollIntervalMs: 8000,
+    pollIntervalMs: 3000,
   });
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
@@ -488,7 +498,6 @@ export default function WorkspaceHomeClient() {
     startAnalysisSession(createdRuns, context);
     setLibraryRuns((current) => [...createdRuns, ...current]);
     void refreshFolders();
-    setShowAnalyzeModal(false);
   }
 
   async function handleCancelRun(runId: string) {
@@ -770,7 +779,7 @@ export default function WorkspaceHomeClient() {
                 Operations
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
-                Recent activity
+                Analysis timeline
               </h2>
             </div>
             <Link
@@ -786,7 +795,7 @@ export default function WorkspaceHomeClient() {
               <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
                 <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#a1a1a1] border-t-transparent dark:border-[#8e8e8e]" />
                 <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
-                  Loading recent activity
+                  Loading analysis timeline
                 </p>
               </div>
             ) : libraryError ? (

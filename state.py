@@ -8,6 +8,10 @@ from pydantic import BaseModel, Field
 TRACK_KEYS = ("EL", "ELI", "LAE", "Other")
 
 
+def keep_latest(_current: Any, update: Any) -> Any:
+    return update if update is not None else _current
+
+
 class SectionIndices(BaseModel):
     start: int = Field(description="Starting character index in the source section.")
     end: int = Field(description="Ending character index in the source section.")
@@ -253,8 +257,8 @@ class IngestionState(TypedDict, total=False):
     research_typology: Dict[str, Any]
     concept_rows: List[Dict[str, Any]]
     dataset: Dict[str, Any]
-    errors: List[str]
-    status: str
+    errors: Annotated[List[str], operator.add]
+    status: Annotated[str, keep_latest]
     total_clusters_processed: int
 
 
