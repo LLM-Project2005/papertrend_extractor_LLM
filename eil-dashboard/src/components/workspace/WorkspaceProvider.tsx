@@ -95,6 +95,8 @@ interface WorkspaceContextValue {
     options?: { organizationId?: string | null; description?: string | null }
   ) => Promise<WorkspaceProjectRow>;
   createFolder: (folderName: string) => Promise<ResearchFolderRow>;
+  renameProject: (projectId: string, name: string) => Promise<WorkspaceProjectRow>;
+  renameFolder: (folderId: string, name: string) => Promise<ResearchFolderRow>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
@@ -676,6 +678,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ])
       );
       setSelectedOrganizationIdState(payload.organization.id);
+      setProfile((current) => ({
+        ...current,
+        name: payload.organization!.name,
+        updatedAt: new Date().toISOString(),
+      }));
       return payload.organization;
     },
     [session?.access_token, user]
@@ -776,6 +783,76 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return payload.folder;
     },
     [selectedProjectIdState, session?.access_token, user]
+  );
+
+  const renameProject = useCallback(
+    async (projectId: string, name: string) => {
+      if (!user || !session?.access_token) {
+        throw new Error("Sign in before renaming projects.");
+      }
+
+      const response = await fetch("/api/workspace/projects", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ projectId, name }),
+      });
+
+      const payload = (await response.json()) as {
+        project?: WorkspaceProjectRow;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? "Failed to rename project.");
+      }
+
+      setProjects((current) =>
+        sortByName(current.map((project) => (project.id === projectId ? payload.project! : project)))
+      );
+      setAllProjects((current) =>
+        sortByName(current.map((project) => (project.id === projectId ? payload.project! : project)))
+      );
+      return payload.project;
+    },
+    [session?.access_token, user]
+  );
+
+  const renameFolder = useCallback(
+    async (folderId: string, name: string) => {
+      if (!user || !session?.access_token) {
+        throw new Error("Sign in before renaming folders.");
+      }
+
+      const response = await fetch("/api/workspace/folders", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ folderId, name }),
+      });
+
+      const payload = (await response.json()) as {
+        folder?: ResearchFolderRow;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.folder) {
+        throw new Error(payload.error ?? "Failed to rename folder.");
+      }
+
+      setFolders((current) =>
+        sortByName(current.map((folder) => (folder.id === folderId ? payload.folder! : folder)))
+      );
+      setAllFolders((current) =>
+        sortByName(current.map((folder) => (folder.id === folderId ? payload.folder! : folder)))
+      );
+      return payload.folder;
+    },
+    [session?.access_token, user]
   );
 
   useEffect(() => {
@@ -1073,6 +1150,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       createOrganization,
       createProject,
       createFolder,
+      renameProject,
+      renameFolder,
     }),
     [
       analysisSession,
@@ -1081,6 +1160,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       createProject,
       currentOrganization,
       currentProject,
+      renameFolder,
+      renameProject,
       allFolders,
       allProjects,
       folders,

@@ -6,23 +6,12 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { LogoMarkIcon } from "@/components/ui/Icons";
-import type { WorkspaceOrganizationRow } from "@/types/database";
-
-const ORGANIZATION_TYPES: Array<WorkspaceOrganizationRow["type"]> = [
-  "personal",
-  "academic",
-  "research_lab",
-  "department",
-  "company",
-  "other",
-];
 
 export default function NewWorkspaceClient() {
   const router = useRouter();
   const { hydrated, user } = useAuth();
   const { createOrganization, setSelectedOrganizationId } = useWorkspaceProfile();
   const [name, setName] = useState("");
-  const [type, setType] = useState<WorkspaceOrganizationRow["type"]>("personal");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -43,7 +32,7 @@ export default function NewWorkspaceClient() {
     setError(null);
 
     try {
-      const organization = await createOrganization(name, type);
+      const organization = await createOrganization(name, "personal");
       setSelectedOrganizationId(organization.id);
       router.push(`/workspaces/${organization.id}/projects`);
     } catch (submitError) {
@@ -92,23 +81,6 @@ export default function NewWorkspaceClient() {
                 placeholder="Workspace name"
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666] dark:focus:border-white"
               />
-            </div>
-
-            <div className="grid gap-3">
-              <label className="text-sm font-medium text-slate-700 dark:text-white">Type</label>
-              <select
-                value={type}
-                onChange={(event) =>
-                  setType(event.target.value as WorkspaceOrganizationRow["type"])
-                }
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:focus:border-white"
-              >
-                {ORGANIZATION_TYPES.map((option) => (
-                  <option key={option} value={option}>
-                    {option.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
             </div>
 
             {error ? (

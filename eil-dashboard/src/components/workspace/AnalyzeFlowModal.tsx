@@ -8,14 +8,11 @@ import Modal from "@/components/ui/Modal";
 import {
   ArrowRightIcon,
   CheckCircleIcon,
-  CloudIcon,
   CloseIcon,
   DriveIcon,
   FileIcon,
   FolderIcon,
-  OneDriveIcon,
   PaperIcon,
-  SharePointIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
@@ -42,7 +39,13 @@ interface DriveBreadcrumb {
   name: string;
 }
 
-const SOURCE_OPTIONS = [
+const SOURCE_OPTIONS: Array<{
+  id: ImportSource;
+  label: string;
+  status: "ready" | "planned";
+  icon: typeof UploadIcon;
+  description: string;
+}> = [
   {
     id: "pdf-upload",
     label: "PDF upload",
@@ -50,35 +53,7 @@ const SOURCE_OPTIONS = [
     icon: UploadIcon,
     description: "Upload paper PDFs directly into the workspace queue.",
   },
-  {
-    id: "google-drive",
-    label: "Google Drive",
-    status: "ready",
-    icon: DriveIcon,
-    description: "Connect Google Drive, browse PDFs, and queue them without local upload.",
-  },
-  {
-    id: "onedrive",
-    label: "OneDrive",
-    status: "planned",
-    icon: OneDriveIcon,
-    description: "Planned connector for institution-managed document libraries.",
-  },
-  {
-    id: "sharepoint",
-    label: "SharePoint",
-    status: "planned",
-    icon: SharePointIcon,
-    description: "Planned connector for Microsoft document repositories.",
-  },
-  {
-    id: "cloud-storage",
-    label: "Cloud storage",
-    status: "planned",
-    icon: CloudIcon,
-    description: "Planned connector for buckets and external archives.",
-  },
-] as const;
+];
 
 const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -134,7 +109,7 @@ export default function AnalyzeFlowModal({
   const [driveSearch, setDriveSearch] = useState("");
   const [selectedDriveFileIds, setSelectedDriveFileIds] = useState<string[]>([]);
   const [driveFolderTrail, setDriveFolderTrail] = useState<DriveBreadcrumb[]>([
-    { id: "root", name: "My Drive" },
+    { id: "root", name: "Library" },
   ]);
   const [queuedSummary, setQueuedSummary] = useState<{
     count: number;
@@ -635,7 +610,7 @@ export default function AnalyzeFlowModal({
               Single PDF upload
             </p>
             <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
-              Google Drive and batch uploads are temporarily hidden for beta stability.
+              External connectors and batch uploads are temporarily hidden for beta stability.
               Upload one paper at a time and track progress from Home.
             </p>
           </div>

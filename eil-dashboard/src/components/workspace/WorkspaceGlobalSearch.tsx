@@ -399,10 +399,7 @@ export default function WorkspaceGlobalSearch({
         category: "Workspaces" as const,
         icon: workspaceIcon,
         featured: currentOrganization?.id === organization.id,
-        searchText: `${organization.name} ${organization.type.replace(
-          /_/g,
-          " "
-        )} workspace switch project organization`,
+        searchText: `${organization.name} workspace switch project`,
         onSelect: () => {
           setSelectedOrganizationId(organization.id);
           router.push("/workspaces");

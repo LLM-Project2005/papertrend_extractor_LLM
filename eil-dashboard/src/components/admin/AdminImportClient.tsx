@@ -113,7 +113,6 @@ const MODIFIED_OPTIONS: Array<{ id: ModifiedFilter; label: string }> = [
 const SOURCE_OPTIONS: Array<{ id: SourceFilter; label: string }> = [
   { id: "all", label: "All sources" },
   { id: "upload", label: "Upload" },
-  { id: "google-drive", label: "Google Drive" },
   { id: "workspace", label: "Workspace folders" },
 ];
 
@@ -438,6 +437,7 @@ export default function AdminImportClient() {
     selectedFolderId,
     setSelectedFolderId,
     createFolder,
+    renameFolder,
     refreshFolders,
     startAnalysisSession,
   } = useWorkspaceProfile();
@@ -1098,6 +1098,25 @@ export default function AdminImportClient() {
     event.target.value = "";
     if (selectedFiles.length === 0) return;
     void queueUploads(selectedFiles.slice(0, 1), "files");
+  }
+
+  async function handleRenameActiveFolder() {
+    if (!activeFolder) return;
+
+    const nextName = window.prompt("Rename folder", activeFolder.name);
+    if (!nextName?.trim() || nextName.trim() === activeFolder.name) {
+      return;
+    }
+
+    try {
+      await renameFolder(activeFolder.id, nextName.trim());
+      setMessage(`Renamed folder to "${nextName.trim()}".`);
+      setError(null);
+    } catch (renameError) {
+      setError(
+        renameError instanceof Error ? renameError.message : "Failed to rename folder."
+      );
+    }
   }
 
   function openFolderPicker() {
@@ -1794,7 +1813,7 @@ export default function AdminImportClient() {
                     onClick={() => setSelectedFolderId("all")}
                     className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   >
-                    My Drive
+                    Library
                   </button>
                   <span>/</span>
                   <span className="font-medium text-slate-900 dark:text-white">
@@ -1802,16 +1821,27 @@ export default function AdminImportClient() {
                   </span>
                 </>
               ) : (
-                <span>My Drive</span>
+                <span>Library</span>
               )}
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-              {activeFolder?.name ?? "My Drive"}
+              {activeFolder?.name ?? "Library"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
               Browse folders and research files together inside{" "}
-              {currentProject?.name ?? "this project"} with a Drive-style layout.
+              {currentProject?.name ?? "this project"} with a Library-style layout.
             </p>
+            {activeFolder ? (
+              <button
+                type="button"
+                onClick={() => {
+                  void handleRenameActiveFolder();
+                }}
+                className="mt-4 inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              >
+                Rename folder
+              </button>
+            ) : null}
           </div>
 
           <div className="flex w-full max-w-2xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">

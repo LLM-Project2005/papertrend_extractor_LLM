@@ -21,6 +21,7 @@ export default function WorkspaceProjectsClient() {
     refreshOrganizations,
     refreshProjects,
     createProject,
+    renameProject,
     setSelectedOrganizationId,
     setSelectedProjectId,
   } = useWorkspaceProfile();
@@ -90,6 +91,22 @@ export default function WorkspaceProjectsClient() {
       );
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function handleRenameProject(projectId: string, currentName: string) {
+    const nextName = window.prompt("Rename project", currentName);
+    if (!nextName?.trim() || nextName.trim() === currentName) {
+      return;
+    }
+
+    try {
+      await renameProject(projectId, nextName.trim());
+      setError(null);
+    } catch (renameError) {
+      setError(
+        renameError instanceof Error ? renameError.message : "Failed to rename project."
+      );
     }
   }
 
@@ -164,19 +181,21 @@ export default function WorkspaceProjectsClient() {
 
         <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {visibleProjects.map((project) => (
-            <button
+            <article
               key={project.id}
-              type="button"
-              onClick={() => {
-                flushSync(() => {
-                  setSelectedProjectId(project.id);
-                });
-                router.push("/workspace/home");
-              }}
-              className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
               <div className="flex items-start justify-between gap-4">
-                <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    flushSync(() => {
+                      setSelectedProjectId(project.id);
+                    });
+                    router.push("/workspace/home");
+                  }}
+                  className="min-w-0 flex-1 text-left"
+                >
                   <p className="text-2xl font-semibold text-slate-900 dark:text-white">{project.name}</p>
                   {project.description ? (
                     <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
@@ -188,10 +207,20 @@ export default function WorkspaceProjectsClient() {
                       and analysis flow.
                     </p>
                   )}
-                </div>
-                <MoreHorizontalIcon className="h-4 w-4 text-slate-400 dark:text-[#666666]" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleRenameProject(project.id, project.name);
+                  }}
+                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#666666] dark:hover:bg-[#111111] dark:hover:text-white"
+                  aria-label={`Rename ${project.name}`}
+                  title="Rename project"
+                >
+                  <MoreHorizontalIcon className="h-4 w-4" />
+                </button>
               </div>
-            </button>
+            </article>
           ))}
         </div>
 

@@ -76,3 +76,49 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function PATCH(request: Request) {
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = (await request.json()) as { folderId?: string; name?: string };
+    if (!body.folderId?.trim()) {
+      return NextResponse.json({ error: "folderId is required." }, { status: 400 });
+    }
+    if (!body.name?.trim()) {
+      return NextResponse.json({ error: "Folder name is required." }, { status: 400 });
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { data, error } = await supabase
+      .from("research_folders")
+      .update({
+        name: body.name.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", body.folderId.trim())
+      .eq("owner_user_id", user.id)
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data) {
+      return NextResponse.json({ error: "Folder not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ folder: data });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to rename folder.",
+      },
+      { status: 500 }
+    );
+  }
+}

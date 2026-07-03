@@ -87,3 +87,59 @@ export async function POST(request: Request) {
     );
   }
 }
+
+export async function PATCH(request: Request) {
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = (await request.json()) as {
+      projectId?: string;
+      name?: string;
+      description?: string | null;
+    };
+
+    if (!body.projectId?.trim()) {
+      return NextResponse.json({ error: "projectId is required." }, { status: 400 });
+    }
+    if (!body.name?.trim()) {
+      return NextResponse.json({ error: "Project name is required." }, { status: 400 });
+    }
+
+    const supabase = getSupabaseAdmin();
+    const patch: { name: string; description?: string | null; updated_at: string } = {
+      name: body.name.trim(),
+      updated_at: new Date().toISOString(),
+    };
+    if (body.description !== undefined) {
+      patch.description = body.description;
+    }
+
+    const { data, error } = await supabase
+      .from("workspace_projects")
+      .update(patch)
+      .eq("id", body.projectId.trim())
+      .eq("owner_user_id", user.id)
+      .select("*")
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data) {
+      return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ project: data });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to rename project.",
+      },
+      { status: 500 }
+    );
+  }
+}

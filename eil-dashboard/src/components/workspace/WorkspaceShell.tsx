@@ -73,7 +73,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Return to the workspace/project picker",
     href: "/workspaces",
     icon: HomeIcon,
-    keywords: ["switch project", "project picker", "workspaces", "organizations", "home", "start"],
+    keywords: ["switch project", "project picker", "workspaces", "home", "start"],
     featured: true,
   },
   {

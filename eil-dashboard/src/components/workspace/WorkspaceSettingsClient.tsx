@@ -153,25 +153,6 @@ export default function WorkspaceSettingsClient() {
                 <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Organization
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Faculty, lab, department, or research team name.
-                    </p>
-                  </div>
-                  <input
-                    value={profile.organization}
-                    onChange={(event) => {
-                      updateProfile({ organization: event.target.value });
-                      setSavedMessage();
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                  />
-                </label>
-
-                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
                       Research domain
                     </p>
                     <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">

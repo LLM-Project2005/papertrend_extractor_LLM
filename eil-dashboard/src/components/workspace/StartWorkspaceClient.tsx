@@ -47,7 +47,6 @@ export default function StartWorkspaceClient() {
   const router = useRouter();
   const { profile, hydrated, updateProfile } = useWorkspaceProfile();
   const [name, setName] = useState(profile.name);
-  const [organization, setOrganization] = useState(profile.organization);
   const [domain, setDomain] = useState(profile.domain);
   const [goal, setGoal] = useState<WorkspaceGoal>(profile.goal);
   const [primarySource, setPrimarySource] = useState<WorkspaceSource>(
@@ -72,7 +71,6 @@ export default function StartWorkspaceClient() {
     }
 
     setName(profile.name);
-    setOrganization(profile.organization);
     setDomain(profile.domain);
     setGoal(profile.goal);
     setPrimarySource(profile.primarySource);
@@ -92,7 +90,6 @@ export default function StartWorkspaceClient() {
 
     updateProfile({
       name: name.trim() || profile.name,
-      organization: organization.trim() || profile.organization,
       domain: domain.trim() || profile.domain,
       goal,
       primarySource,
@@ -107,8 +104,8 @@ export default function StartWorkspaceClient() {
   const checklist = [
     {
       title: "Workspace profile",
-      detail: "Set the name, organization, and domain.",
-      done: Boolean(name.trim() && organization.trim() && domain.trim()),
+      detail: "Set the workspace name and research domain.",
+      done: Boolean(name.trim() && domain.trim()),
     },
     {
       title: "First intake path",
@@ -147,28 +144,16 @@ export default function StartWorkspaceClient() {
 
             <label className="block">
               <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d0d0d0]">
-                Team or organization
+                Research domain
               </span>
               <input
-                value={organization}
-                onChange={(event) => setOrganization(event.target.value)}
+                value={domain}
+                onChange={(event) => setDomain(event.target.value)}
                 className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
-                placeholder="Department, lab, or faculty"
+                placeholder="Education, engineering, health sciences, policy, ..."
               />
             </label>
           </div>
-
-          <label className="mt-4 block">
-            <span className="mb-2 block text-sm font-medium text-slate-700 dark:text-[#d0d0d0]">
-              Research domain
-            </span>
-            <input
-              value={domain}
-              onChange={(event) => setDomain(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a] dark:focus:ring-white/5"
-              placeholder="Education, engineering, health sciences, policy, ..."
-            />
-          </label>
         </div>
 
         <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
@@ -289,10 +274,7 @@ export default function StartWorkspaceClient() {
           <h2 className="mt-3 text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
             {name || profile.name}
           </h2>
-          <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-            {organization || profile.organization}
-          </p>
-          <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">{domain || profile.domain}</p>
+          <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">{domain || profile.domain}</p>
 
           <dl className="mt-6 space-y-4 text-sm">
             <div className="flex items-start justify-between gap-4">

@@ -6,16 +6,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { LogoMarkIcon, SearchIcon } from "@/components/ui/Icons";
-import type { WorkspaceOrganizationRow } from "@/types/database";
-
-const ORGANIZATION_TYPES: Array<WorkspaceOrganizationRow["type"]> = [
-  "personal",
-  "academic",
-  "research_lab",
-  "department",
-  "company",
-  "other",
-];
 
 export default function WorkspaceIndexClient() {
   const router = useRouter();
@@ -29,7 +19,6 @@ export default function WorkspaceIndexClient() {
   const [query, setQuery] = useState("");
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [draftName, setDraftName] = useState("");
-  const [type, setType] = useState<WorkspaceOrganizationRow["type"]>("personal");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -68,9 +57,8 @@ export default function WorkspaceIndexClient() {
     setError(null);
 
     try {
-      const organization = await createOrganization(draftName, type);
+      const organization = await createOrganization(draftName, "personal");
       setDraftName("");
-      setType("personal");
       setShowCreateModal(false);
       router.push(`/workspaces/${organization.id}/projects`);
     } catch (createError) {
@@ -103,7 +91,6 @@ export default function WorkspaceIndexClient() {
             type="button"
             onClick={() => {
               setDraftName("");
-              setType("personal");
               setError(null);
               setShowCreateModal(true);
             }}
@@ -147,8 +134,8 @@ export default function WorkspaceIndexClient() {
               className="rounded-2xl border border-slate-200 bg-white p-6 text-left shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
               <p className="text-xl font-semibold text-slate-900 dark:text-white">{organization.name}</p>
-              <p className="mt-2 text-sm capitalize text-slate-500 dark:text-[#9c9c9c]">
-                {organization.type.replace(/_/g, " ")}
+              <p className="mt-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
+                Project workspace
               </p>
             </button>
           ))}
@@ -184,24 +171,7 @@ export default function WorkspaceIndexClient() {
           setError(null);
         }}
         onSubmit={handleCreateOrganization}
-      >
-        <label className="grid gap-3">
-          <span className="text-sm font-medium text-slate-700 dark:text-white">Type</span>
-          <select
-            value={type}
-            onChange={(event) =>
-              setType(event.target.value as WorkspaceOrganizationRow["type"])
-            }
-            className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:focus:border-white"
-          >
-            {ORGANIZATION_TYPES.map((option) => (
-              <option key={option} value={option}>
-                {option.replace(/_/g, " ")}
-              </option>
-            ))}
-          </select>
-        </label>
-      </CreateEntityModal>
+      />
     </main>
   );
 }
