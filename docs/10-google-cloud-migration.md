@@ -360,6 +360,8 @@ Next coding tasks after you finish Phase 1A setup:
    - Verified: a smoke test created a signed URL, uploaded a temporary object to
      `research-trend-analysis-papertrend-uploads-staging`, confirmed it existed,
      and deleted it.
+   - Browser uploads require bucket CORS. Applied `gcs-cors.papertrend.json` to
+     allow signed URL `PUT` uploads from the web app.
    - Vercel should call this endpoint through the existing worker secret; do not
      put service-account JSON keys into Vercel.
 3. Add Cloud SQL repository layer behind `DATABASE_PROVIDER=cloud-sql`.
