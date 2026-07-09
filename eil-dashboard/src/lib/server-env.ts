@@ -14,6 +14,47 @@ export function getSupabaseAnonKey(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY ?? "";
 }
 
+export type DatabaseProvider = "supabase" | "cloud-sql";
+export type StorageProvider = "supabase" | "gcs";
+
+function normalizeProvider(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase().replace(/_/g, "-");
+}
+
+export function getDatabaseProvider(): DatabaseProvider {
+  const provider = normalizeProvider(
+    process.env.DATABASE_PROVIDER ?? process.env.INFRA_PROVIDER
+  );
+  return provider === "cloud-sql" || provider === "google" ? "cloud-sql" : "supabase";
+}
+
+export function getStorageProvider(): StorageProvider {
+  const provider = normalizeProvider(
+    process.env.STORAGE_PROVIDER ?? process.env.INFRA_PROVIDER
+  );
+  return provider === "gcs" || provider === "google" ? "gcs" : "supabase";
+}
+
+export function getGoogleCloudProjectId(): string {
+  return process.env.GOOGLE_CLOUD_PROJECT_ID ?? process.env.GCLOUD_PROJECT ?? "";
+}
+
+export function getGoogleCloudRegion(): string {
+  return process.env.GOOGLE_CLOUD_REGION ?? "asia-southeast1";
+}
+
+export function getGcsUploadBucket(): string {
+  return process.env.GCS_UPLOAD_BUCKET ?? "";
+}
+
+export function getCloudSqlInstanceConnectionName(): string {
+  return process.env.CLOUD_SQL_INSTANCE_CONNECTION_NAME ?? "";
+}
+
+export function getDatabaseUrl(): string {
+  return process.env.DATABASE_URL ?? "";
+}
+
 export function getAdminImportSecret(): string {
   return (
     process.env.ADMIN_IMPORT_SECRET ??

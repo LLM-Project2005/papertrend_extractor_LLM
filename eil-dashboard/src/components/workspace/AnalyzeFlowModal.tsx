@@ -325,6 +325,7 @@ export default function AnalyzeFlowModal({
             runId: string;
             storagePath: string;
             signedUrl: string;
+            uploadHeaders?: Record<string, string>;
             fileName: string;
           }>;
           error?: string;
@@ -367,7 +368,7 @@ export default function AnalyzeFlowModal({
               method: "PUT",
               headers: {
                 "Content-Type": file.type || "application/pdf",
-                "x-upsert": "false",
+                ...(uploadTarget.uploadHeaders ?? { "x-upsert": "false" }),
               },
               body: file,
             });

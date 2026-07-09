@@ -34,6 +34,15 @@ _RESEARCH_PROCESS_STARTED_AT = 0.0
 _FORCED_QUEUE_BATCH_COUNT = 0
 _FORCED_RESEARCH_BATCH_COUNT = 0
 
+try:
+    import google.auth
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+    from google.cloud import storage as gcs_storage
+except Exception:  # pragma: no cover - only required for GCS signed upload mode
+    google = None  # type: ignore[assignment]
+    GoogleAuthRequest = None  # type: ignore[assignment]
+    gcs_storage = None  # type: ignore[assignment]
+
 
 def _batch_stale_after_seconds(env_name: str, default_seconds: int) -> float:
     try:
@@ -161,6 +170,129 @@ def _is_authorized_worker_request(handler: BaseHTTPRequestHandler) -> bool:
     if not expected:
         return False
     return handler.headers.get("Authorization") == f"Bearer {expected}"
+
+
+def _safe_gcs_object_name(value: str) -> str:
+    object_name = value.strip().lstrip("/")
+    parts = [part for part in object_name.split("/") if part]
+    if (
+        not object_name
+        or object_name.endswith("/")
+        or len(object_name) > 1024
+        or any(part in {".", ".."} for part in parts)
+        or "\\" in object_name
+    ):
+        raise ValueError("Invalid GCS object path.")
+    return "/".join(parts)
+
+
+def _create_gcs_signed_upload(body: Dict[str, Any]) -> Dict[str, Any]:
+    if gcs_storage is None or GoogleAuthRequest is None:
+        raise RuntimeError("GCS signing support is not installed.")
+
+    bucket_name = (
+        str(body.get("bucket") or "").strip()
+        or os.getenv("GCS_UPLOAD_BUCKET", "").strip()
+    )
+    object_name = _safe_gcs_object_name(str(body.get("objectName") or body.get("storagePath") or ""))
+    content_type = str(body.get("contentType") or "application/pdf").strip() or "application/pdf"
+    expires_minutes = min(max(int(body.get("expiresMinutes") or 30), 1), 60)
+
+    if not bucket_name:
+        raise RuntimeError("GCS_UPLOAD_BUCKET is not configured.")
+    if not content_type.startswith("application/pdf"):
+        raise ValueError("Only PDF uploads can be signed.")
+
+    credentials, project_id = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(GoogleAuthRequest())
+    service_account_email = (
+        os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL", "").strip()
+        or getattr(credentials, "service_account_email", "")
+        or ""
+    )
+    if not service_account_email:
+        raise RuntimeError(
+            "Could not resolve the signing service account email. Set GOOGLE_SERVICE_ACCOUNT_EMAIL."
+        )
+
+    storage_client = gcs_storage.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT_ID") or project_id)
+    blob = storage_client.bucket(bucket_name).blob(object_name)
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expires_minutes),
+        method="PUT",
+        content_type=content_type,
+        service_account_email=service_account_email,
+        access_token=credentials.token,
+    )
+    return {
+        "ok": True,
+        "bucket": bucket_name,
+        "objectName": object_name,
+        "storagePath": f"gs://{bucket_name}/{object_name}",
+        "signedUrl": signed_url,
+        "method": "PUT",
+        "headers": {"Content-Type": content_type},
+        "expiresMinutes": expires_minutes,
+    }
+
+
+def _check_cloudsql_schema() -> Dict[str, Any]:
+    try:
+        import psycopg
+    except Exception as error:
+        raise RuntimeError("psycopg is not installed.") from error
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if not database_url:
+        raise RuntimeError("DATABASE_URL is not configured.")
+
+    required_tables = [
+        "papers",
+        "ingestion_runs",
+        "paper_content",
+        "workspace_threads",
+        "workspace_messages",
+        "file_fingerprints",
+        "workspace_analytics_cache",
+    ]
+    required_views = ["trends_flat", "papers_full", "author_keywords_flat"]
+    with psycopg.connect(database_url, connect_timeout=10) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT table_type, count(*)
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                GROUP BY table_type
+                """
+            )
+            type_counts = {str(row[0]): int(row[1]) for row in cursor.fetchall()}
+
+            cursor.execute(
+                """
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = ANY(%s)
+                ORDER BY table_name
+                """,
+                (required_tables + required_views,),
+            )
+            present = {str(row[0]) for row in cursor.fetchall()}
+
+    return {
+        "ok": True,
+        "databaseProvider": os.getenv("DATABASE_PROVIDER", ""),
+        "storageProvider": os.getenv("STORAGE_PROVIDER", ""),
+        "tableTypeCounts": type_counts,
+        "requiredTablesPresent": sorted(name for name in required_tables if name in present),
+        "requiredTablesMissing": sorted(name for name in required_tables if name not in present),
+        "requiredViewsPresent": sorted(name for name in required_views if name in present),
+        "requiredViewsMissing": sorted(name for name in required_views if name not in present),
+    }
 
 
 def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
@@ -643,6 +775,15 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
             if self.path == "/enqueue-ingestion-tasks":
                 task_result = _enqueue_ingestion_tasks(self, body)
                 _json_response(self, 202 if task_result.get("enqueued") else 503, task_result)
+                return
+
+            if self.path == "/gcs/signed-upload":
+                upload_result = _create_gcs_signed_upload(body)
+                _json_response(self, 201, upload_result)
+                return
+
+            if self.path == "/debug/cloudsql-schema":
+                _json_response(self, 200, _check_cloudsql_schema())
                 return
 
             if self.path == "/process-research-queue":

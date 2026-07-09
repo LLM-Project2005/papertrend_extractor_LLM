@@ -20,11 +20,14 @@ type UploadFinalizeItem = {
 };
 
 function isSafePendingStoragePath(storagePath: string, runId: string): boolean {
+  const normalizedPath = storagePath.startsWith("gs://")
+    ? storagePath.replace(/^gs:\/\/[^/]+\//, "")
+    : storagePath;
   return (
-    storagePath.startsWith("pending/") &&
-    storagePath.includes(`/${runId}/`) &&
-    !storagePath.includes("..") &&
-    !storagePath.includes("\\")
+    normalizedPath.startsWith("pending/") &&
+    normalizedPath.includes(`/${runId}/`) &&
+    !normalizedPath.includes("..") &&
+    !normalizedPath.includes("\\")
   );
 }
 

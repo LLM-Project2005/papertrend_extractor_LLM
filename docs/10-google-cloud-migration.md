@@ -1,5 +1,437 @@
 # Google Cloud Migration Plan
 
+This document has two parts:
+
+1. **Phase 1: Google Cloud backend + Cloud SQL + GCS while the frontend stays on Vercel.**
+2. The older Cloud Run worker staging notes that are already used by the project.
+
+Phase 1 is intentionally staged. We prepare Cloud SQL and Cloud Storage first,
+keep Supabase as the default runtime path, then flip providers only after the
+Google resources are proven. This avoids losing beta data during the migration.
+
+## Phase 1 Goal
+
+Build the Google Cloud foundation for:
+
+- Cloud SQL for PostgreSQL as the future application database.
+- Cloud Storage as the future upload bucket.
+- Cloud Run as the worker/backend runtime.
+- Vercel as the frontend host for now.
+
+Keep for Phase 1:
+
+- Supabase Auth.
+- Supabase as the default live database/storage path until the migration is
+  verified.
+- Existing Vercel frontend deployment.
+
+Do not do yet:
+
+- Replace Supabase Auth with Google Identity Platform/Firebase Auth.
+- Move every Next.js API route to Cloud Run.
+- Delete Supabase.
+- Delete Vercel.
+
+Important architecture note: Vercel cannot use the same private Cloud SQL
+connection path as Cloud Run. Cloud Run can use the Cloud SQL connector. A
+Vercel-hosted API route would need a public/TLS Cloud SQL connection or a
+Google-hosted backend proxy. For a clean full-Google future, the best final
+shape is:
+
+```text
+Frontend + API routes on Cloud Run/App Hosting
+        -> Cloud SQL through connector/private networking
+        -> Cloud Storage
+        -> Cloud Run worker
+```
+
+For Phase 1, we keep Vercel frontend and avoid turning on Cloud SQL for live
+traffic until the access path is deliberately chosen.
+
+## Phase 1A: Google Cloud Console Setup
+
+These are the steps you do in Google Cloud Console.
+
+### 1. Pick The Project And Region
+
+Recommended beta values:
+
+- Project: your current `research-trend-analysis` project, unless professor
+  creates a new funded project.
+- Region: `asia-southeast1`, because the worker already runs there.
+- Cloud SQL connection name:
+  `research-trend-analysis:asia-southeast1:papertrend-pg`.
+
+Why: Google recommends keeping Cloud Run and Cloud SQL in the same region for
+lower latency, lower networking cost, and lower cross-region risk.
+
+### 2. Enable Required APIs
+
+Go to:
+
+```text
+Google Cloud Console -> APIs & Services -> Library
+```
+
+Enable these APIs:
+
+- Cloud SQL Admin API
+- Cloud Run Admin API
+- Cloud Build API
+- Artifact Registry API
+- Cloud Storage API
+- Secret Manager API
+- Cloud Tasks API
+- Cloud Scheduler API
+- IAM Service Account Credentials API
+
+CLI equivalent:
+
+```powershell
+gcloud services enable `
+  sqladmin.googleapis.com `
+  run.googleapis.com `
+  cloudbuild.googleapis.com `
+  artifactregistry.googleapis.com `
+  storage.googleapis.com `
+  secretmanager.googleapis.com `
+  cloudtasks.googleapis.com `
+  cloudscheduler.googleapis.com `
+  iamcredentials.googleapis.com `
+  --project YOUR_PROJECT_ID
+```
+
+### 3. Create The Cloud SQL Instance
+
+Go to:
+
+```text
+Google Cloud Console -> SQL -> Create instance -> Choose PostgreSQL
+```
+
+Use low-cost beta settings first. The active beta instance was recreated with:
+
+- Instance ID: `papertrend-pg`
+- Database version: PostgreSQL 15.
+- Region: `asia-southeast1`.
+- Zonal availability: single zone for beta.
+- Machine: `db-g1-small`.
+- Storage: SSD, `10 GB`.
+- Automatic storage increase: disabled for cost control.
+- Backups: disabled for the initial staging foundation. Enable low-retention
+  backups before storing production data.
+- High availability: off for beta; enable later if uptime matters more than cost.
+
+Avoid performance-optimized presets for beta. The first trial instance was
+created as `db-perf-optimized-N-8` with `100 GB`; that is much larger than
+Papertrend needs for this migration stage.
+
+Connectivity decision:
+
+- For Cloud Run worker/backend: use the Cloud SQL connector and instance
+  connection name.
+- For Vercel API routes: do not enable live Cloud SQL traffic yet unless we
+  intentionally choose public IP + TLS, because Vercel does not provide a stable
+  private Cloud SQL network path.
+- If testing public IP temporarily: require SSL/TLS, use a low-privilege app
+  database user, and do not expose an admin database user.
+
+After creation, copy:
+
+```text
+SQL -> papertrend-pg -> Overview -> Connection name
+```
+
+It looks like:
+
+```text
+project-id:asia-southeast1:papertrend-pg
+```
+
+For this project, the current value is:
+
+```text
+research-trend-analysis:asia-southeast1:papertrend-pg
+```
+
+### 4. Create Database And App User
+
+Inside the Cloud SQL instance:
+
+```text
+SQL -> papertrend-pg -> Databases -> Create database
+```
+
+Create:
+
+```text
+papertrend
+```
+
+Then:
+
+```text
+SQL -> papertrend-pg -> Users -> Add user account
+```
+
+Create:
+
+```text
+Username: papertrend_app
+Password: generated password
+```
+
+Do not use the built-in postgres user from the application.
+
+For password safety, create or reset `papertrend_app` in the Console and store
+the password in Secret Manager as part of the `DATABASE_URL` secret. Do not paste
+database passwords into chat, source files, or shell history.
+
+### 5. Create The Upload Bucket In Cloud Storage
+
+Go to:
+
+```text
+Google Cloud Console -> Cloud Storage -> Buckets -> Create
+```
+
+Use:
+
+- Bucket name: `papertrend-uploads-staging` or
+  `YOUR_PROJECT_ID-papertrend-uploads-staging`.
+- Location type: Region.
+- Region: `asia-southeast1`.
+- Storage class: Standard.
+- Public access prevention: On.
+- Uniform bucket-level access: On.
+- Soft delete: optional. Keep low retention if enabled.
+- Versioning: Off for beta unless you need file history.
+
+This bucket replaces Supabase Storage later. For Phase 1, it can remain empty
+until signed upload/download code is turned on.
+
+Existing buckets seen in this project:
+
+- `research-trend-analysis-sql-init-...`: appears to be an old one-off Cloud SQL
+  import/init bucket from the March 2026 SQL setup. The app does not reference
+  it in code. Candidate for deletion only after checking it contains no needed
+  exports/backups.
+- `research-trend-analysis_cloudbuild`: Cloud Build staging/build artifact
+  bucket. Keep it while Cloud Build deploys Cloud Run from source.
+- `run-sources-research-trend-analysis-...`: Cloud Run source deploy bucket for
+  uploaded source archives. Keep it while using Cloud Run source deploy.
+
+Do not reuse those buckets for user uploads. Create a dedicated private bucket
+such as `research-trend-analysis-papertrend-uploads-staging` so lifecycle,
+permissions, and deletion rules are cleanly separated from build artifacts.
+
+### 6. Create Runtime Service Account
+
+Go to:
+
+```text
+IAM & Admin -> Service Accounts -> Create service account
+```
+
+Create:
+
+```text
+Name: papertrend-app-runtime
+ID: papertrend-app-runtime
+```
+
+Grant the minimum useful beta roles:
+
+- Cloud SQL Client
+- Secret Manager Secret Accessor
+- Storage Object User on the upload bucket
+- Cloud Tasks Enqueuer if this service creates tasks
+- Logs Writer
+
+For signed upload URLs from server code, the signer may also need Service
+Account Token Creator on the service account used for signing. Google lists
+Storage Object User/Creator/Viewer as relevant signed URL roles, and Token
+Creator for signing with service account credentials.
+
+Avoid downloading a JSON key. Cloud Run should use the service account directly.
+
+### 7. Create Or Update Secrets
+
+Go to:
+
+```text
+Security -> Secret Manager -> Create secret
+```
+
+Create/update:
+
+- `DATABASE_URL`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `WORKER_WEBHOOK_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+
+For Phase 1, `DATABASE_URL` can be stored but should not be activated in live
+code until Cloud SQL access is tested.
+
+### 8. Attach Cloud SQL To Cloud Run Worker
+
+Go to:
+
+```text
+Cloud Run -> papertrend-node-service-staging -> Edit & deploy new revision
+```
+
+Set:
+
+- Runtime service account: `papertrend-app-runtime`.
+- Connections -> Cloud SQL connections -> Add connection:
+  `project-id:asia-southeast1:papertrend-pg`.
+- Environment variables:
+  - `INFRA_PROVIDER=supabase`
+  - `DATABASE_PROVIDER=supabase`
+  - `STORAGE_PROVIDER=supabase`
+  - `GOOGLE_CLOUD_PROJECT_ID=YOUR_PROJECT_ID`
+  - `GOOGLE_CLOUD_REGION=asia-southeast1`
+  - `GCS_UPLOAD_BUCKET=papertrend-uploads-staging`
+  - `CLOUD_SQL_INSTANCE_CONNECTION_NAME=research-trend-analysis:asia-southeast1:papertrend-pg`
+- Secrets:
+  - keep existing Supabase/model/worker secrets
+  - add `DATABASE_URL` secret, but do not switch `DATABASE_PROVIDER` yet
+
+This gives the worker access to the future Google resources without changing
+today's processing path.
+
+### 9. Vercel Environment For Phase 1
+
+In Vercel:
+
+```text
+Project -> Settings -> Environment Variables
+```
+
+Keep:
+
+- `DATABASE_PROVIDER=supabase`
+- `STORAGE_PROVIDER=supabase`
+- Supabase URL/anon/service vars
+- `WORKER_SERVICE_URL=<Cloud Run staging URL>`
+- `WORKER_WEBHOOK_SECRET=<same secret>`
+
+Add as non-active future config:
+
+- `GOOGLE_CLOUD_PROJECT_ID`
+- `GOOGLE_CLOUD_REGION`
+- `GCS_UPLOAD_BUCKET`
+- `CLOUD_SQL_INSTANCE_CONNECTION_NAME`
+
+Do not set Vercel to `DATABASE_PROVIDER=cloud-sql` until we either move the API
+backend to Cloud Run or explicitly configure a safe public/TLS database path.
+
+## Phase 1B: Code Work Codex Handles
+
+Current status in this repo:
+
+- Added provider switches:
+  - `INFRA_PROVIDER`
+  - `DATABASE_PROVIDER`
+  - `STORAGE_PROVIDER`
+- Added Google resource config:
+  - `GOOGLE_CLOUD_PROJECT_ID`
+  - `GOOGLE_CLOUD_REGION`
+  - `GCS_UPLOAD_BUCKET`
+  - `CLOUD_SQL_INSTANCE_CONNECTION_NAME`
+  - `DATABASE_URL`
+- Defaults remain Supabase, so beta behavior does not change until explicitly
+  flipped.
+
+Next coding tasks after you finish Phase 1A setup:
+
+1. Add worker GCS download support behind `STORAGE_PROVIDER=gcs`.
+   - Implemented: the worker can now download `gs://bucket/object` paths, or
+     object paths from `GCS_UPLOAD_BUCKET` when `storage_provider` is `gcs`.
+2. Add GCS signed upload URL support behind `STORAGE_PROVIDER=gcs`.
+   - Implemented: Cloud Run exposes `POST /gcs/signed-upload`, protected by
+     `WORKER_WEBHOOK_SECRET`, and signs short-lived GCS upload URLs with
+     `papertrend-app-runtime`.
+   - Verified: a smoke test created a signed URL, uploaded a temporary object to
+     `research-trend-analysis-papertrend-uploads-staging`, confirmed it existed,
+     and deleted it.
+   - Vercel should call this endpoint through the existing worker secret; do not
+     put service-account JSON keys into Vercel.
+3. Add Cloud SQL repository layer behind `DATABASE_PROVIDER=cloud-sql`.
+4. Run Supabase schema export/import into Cloud SQL staging.
+   - Implemented: generated `eil-dashboard/cloudsql/schema.sql`, a Cloud
+     SQL-compatible schema that removes Supabase-only `auth.users` foreign keys,
+     storage bucket setup, RLS policies, and auth triggers.
+   - Imported into Cloud SQL database `papertrend`.
+   - Verified through protected Cloud Run endpoint `/debug/cloudsql-schema`:
+     24 base tables, 8 views, and required tables/views present.
+5. Run dual-write or verification scripts until Cloud SQL results match
+   Supabase results.
+6. Decide whether Vercel APIs stay temporary or move to Cloud Run before the DB
+   switch.
+
+## Phase 1C: What To Send Codex After Console Setup
+
+Send these values, not passwords:
+
+- Google Cloud project ID.
+- Region.
+- Cloud Run staging service URL.
+- Cloud SQL instance connection name.
+- Cloud SQL database name.
+- Cloud SQL app username.
+- GCS bucket name.
+- Runtime service account email.
+- Whether Cloud SQL public IP is enabled or disabled.
+
+Do not paste:
+
+- Database password.
+- Supabase service role key.
+- Worker webhook secret.
+- OpenRouter/OpenAI key.
+- Downloaded service account JSON.
+
+## Phase 1D: Verification Checklist
+
+Before any provider switch:
+
+- Cloud Run staging `/health` returns OK.
+- Cloud Run staging uses
+  `papertrend-app-runtime@research-trend-analysis.iam.gserviceaccount.com`.
+- Cloud Run staging has the Cloud SQL connection annotation:
+  `research-trend-analysis:asia-southeast1:papertrend-pg`.
+- Cloud Run staging reads required runtime secrets from Secret Manager.
+- Cloud SQL `papertrend-pg` is beta-sized:
+  - PostgreSQL 15
+  - `db-g1-small`
+  - `10 GB`
+  - zonal
+  - storage auto-resize disabled
+  - backups disabled for staging
+- GCS upload bucket exists:
+  `research-trend-analysis-papertrend-uploads-staging`.
+- Supabase upload/analysis remains the active live path with
+  `DATABASE_PROVIDER=supabase` and `STORAGE_PROVIDER=supabase`.
+- No secrets are committed. Rotate any secret that was ever stored as a plain
+  Cloud Run environment variable on a legacy service.
+- `npx tsc --noEmit` passes.
+- Worker queue smoke test passes.
+
+Rollback:
+
+- Keep `DATABASE_PROVIDER=supabase`.
+- Keep `STORAGE_PROVIDER=supabase`.
+- Remove Cloud SQL connection from Cloud Run only if it causes deploy issues.
+- Leave Supabase data untouched until full migration is verified.
+
+---
+
 This runbook moves the Python backend/worker surface to Google Cloud first,
 while keeping the Vercel frontend and Supabase database/auth/storage in place.
 

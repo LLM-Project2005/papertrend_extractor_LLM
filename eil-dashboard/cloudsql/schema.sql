@@ -1,0 +1,863 @@
+-- ==================================================================
+-- Papertrend - Cloud SQL PostgreSQL Schema
+-- ==================================================================
+-- Run this against the Cloud SQL PostgreSQL database.
+-- This schema is additive-only so preview work can share the same
+-- Cloud SQL database without breaking the current production contract.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
+-- This Cloud SQL schema intentionally omits Supabase RLS policies, auth.users
+-- foreign keys, storage bucket creation, and auth triggers. Authorization must
+-- be enforced by the application service layer until Google-native auth is added.
+
+-- ------------------------------------------------------------------
+-- 1. Papers
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS papers (
+  id          BIGINT PRIMARY KEY,
+  owner_user_id UUID,
+  folder_id   UUID,
+  year        TEXT NOT NULL,
+  year_confidence NUMERIC,
+  year_source TEXT,
+  year_evidence TEXT,
+  year_candidates JSONB NOT NULL DEFAULT '[]'::jsonb,
+  title       TEXT NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 1a. Organizations and projects
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS workspace_organizations (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  name          TEXT NOT NULL,
+  type          TEXT NOT NULL DEFAULT 'personal'
+                CHECK (type IN ('personal', 'academic', 'research_lab', 'department', 'company', 'other')),
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (owner_user_id, name)
+);
+
+CREATE TABLE IF NOT EXISTS workspace_projects (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  organization_id UUID NOT NULL REFERENCES workspace_organizations(id) ON DELETE CASCADE,
+  owner_user_id   UUID NOT NULL,
+  name            TEXT NOT NULL,
+  description     TEXT,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (organization_id, name)
+);
+
+-- ------------------------------------------------------------------
+-- 1b. Research folders
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS research_folders (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  organization_id UUID REFERENCES workspace_organizations(id) ON DELETE CASCADE,
+  project_id    UUID REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  name          TEXT NOT NULL,
+  description   TEXT,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (owner_user_id, project_id, name)
+);
+
+-- ------------------------------------------------------------------
+-- 1c. User Profiles
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_profiles (
+  id                 UUID PRIMARY KEY,
+  email              TEXT UNIQUE,
+  full_name          TEXT,
+  avatar_url         TEXT,
+  role               TEXT NOT NULL DEFAULT 'member'
+                     CHECK (role IN ('member', 'admin')),
+  workspace_profile  JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at         TIMESTAMPTZ DEFAULT now(),
+  updated_at         TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 1d. Google Drive Connections
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS google_drive_connections (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL,
+  provider          TEXT NOT NULL DEFAULT 'google_drive'
+                    CHECK (provider = 'google_drive'),
+  external_email    TEXT,
+  external_user_id  TEXT,
+  access_token      TEXT,
+  refresh_token     TEXT,
+  token_type        TEXT,
+  scope             TEXT,
+  expires_at        TIMESTAMPTZ,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (user_id, provider)
+);
+
+-- ------------------------------------------------------------------
+-- 2. Paper Keywords / Trends
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_keywords (
+  id                 BIGSERIAL PRIMARY KEY,
+  paper_id           BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id      UUID,
+  folder_id          UUID,
+  topic              TEXT NOT NULL,
+  keyword            TEXT NOT NULL,
+  keyword_frequency  INT DEFAULT 1,
+  evidence           TEXT,
+  created_at         TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 3. Track Classification - Single Choice
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_tracks_single (
+  paper_id    BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID,
+  folder_id   UUID,
+  el          SMALLINT DEFAULT 0 CHECK (el IN (0, 1)),
+  eli         SMALLINT DEFAULT 0 CHECK (eli IN (0, 1)),
+  lae         SMALLINT DEFAULT 0 CHECK (lae IN (0, 1)),
+  other       SMALLINT DEFAULT 0 CHECK (other IN (0, 1)),
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 4. Track Classification - Multi Label
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_tracks_multi (
+  paper_id    BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID,
+  folder_id   UUID,
+  el          SMALLINT DEFAULT 0 CHECK (el IN (0, 1)),
+  eli         SMALLINT DEFAULT 0 CHECK (eli IN (0, 1)),
+  lae         SMALLINT DEFAULT 0 CHECK (lae IN (0, 1)),
+  other       SMALLINT DEFAULT 0 CHECK (other IN (0, 1)),
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 5. Ingestion Runs
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS ingestion_runs (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id    UUID,
+  folder_id        UUID,
+  folder_analysis_job_id UUID,
+  source_type      TEXT NOT NULL CHECK (source_type IN ('batch', 'upload')),
+  status           TEXT NOT NULL DEFAULT 'queued'
+                   CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
+  source_filename  TEXT,
+  display_name     TEXT,
+  source_path      TEXT,
+  source_extension TEXT,
+  mime_type        TEXT,
+  file_size_bytes  BIGINT,
+  provider         TEXT,
+  model            TEXT,
+  is_favorite      BOOLEAN NOT NULL DEFAULT false,
+  copied_from_run_id UUID REFERENCES ingestion_runs(id),
+  trashed_at       TIMESTAMPTZ,
+  input_payload    JSONB DEFAULT '{}'::jsonb,
+  error_message    TEXT,
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now(),
+  completed_at     TIMESTAMPTZ
+);
+
+-- ------------------------------------------------------------------
+-- 5b. Folder analysis jobs
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS folder_analysis_jobs (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id      UUID NOT NULL,
+  folder_id          UUID NOT NULL REFERENCES research_folders(id) ON DELETE CASCADE,
+  status             TEXT NOT NULL DEFAULT 'queued'
+                     CHECK (status IN ('queued', 'processing', 'succeeded', 'failed')),
+  total_runs         INT NOT NULL DEFAULT 0,
+  queued_runs        INT NOT NULL DEFAULT 0,
+  processing_runs    INT NOT NULL DEFAULT 0,
+  succeeded_runs     INT NOT NULL DEFAULT 0,
+  failed_runs        INT NOT NULL DEFAULT 0,
+  progress_stage     TEXT,
+  progress_message   TEXT,
+  progress_detail    TEXT,
+  created_at         TIMESTAMPTZ DEFAULT now(),
+  updated_at         TIMESTAMPTZ DEFAULT now(),
+  completed_at       TIMESTAMPTZ
+);
+
+-- ------------------------------------------------------------------
+-- 6. Paper Content - Canonical section store
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_content (
+  paper_id          BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id     UUID,
+  folder_id         UUID,
+  raw_text          TEXT,
+  abstract          TEXT,
+  abstract_claims   TEXT,
+  body              TEXT,
+  methods           TEXT,
+  results           TEXT,
+  conclusion        TEXT,
+  source_filename   TEXT,
+  source_path       TEXT,
+  ingestion_run_id  UUID REFERENCES ingestion_runs(id),
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE paper_content
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS raw_text TEXT,
+  ADD COLUMN IF NOT EXISTS abstract TEXT,
+  ADD COLUMN IF NOT EXISTS abstract_claims TEXT,
+  ADD COLUMN IF NOT EXISTS body TEXT,
+  ADD COLUMN IF NOT EXISTS methods TEXT,
+  ADD COLUMN IF NOT EXISTS results TEXT,
+  ADD COLUMN IF NOT EXISTS conclusion TEXT,
+  ADD COLUMN IF NOT EXISTS source_filename TEXT,
+  ADD COLUMN IF NOT EXISTS source_path TEXT,
+  ADD COLUMN IF NOT EXISTS ingestion_run_id UUID REFERENCES ingestion_runs(id);
+
+-- ------------------------------------------------------------------
+-- 7. Canonical keyword concepts
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_keyword_concepts (
+  id                BIGSERIAL PRIMARY KEY,
+  paper_id          BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id     UUID,
+  folder_id         UUID,
+  concept_label     TEXT NOT NULL,
+  matched_terms     JSONB NOT NULL DEFAULT '[]'::jsonb,
+  related_keywords  JSONB NOT NULL DEFAULT '[]'::jsonb,
+  total_frequency   INT NOT NULL DEFAULT 1,
+  first_section     TEXT,
+  first_span_start  INT NOT NULL DEFAULT 0,
+  first_span_end    INT NOT NULL DEFAULT 0,
+  first_evidence    TEXT,
+  evidence_snippets JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_at        TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 5c. Trash helpers are stored directly on ingestion_runs via trashed_at
+-- ------------------------------------------------------------------
+
+-- ------------------------------------------------------------------
+-- 8. Higher-level analytical facets
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_analysis_facets (
+  id          BIGSERIAL PRIMARY KEY,
+  paper_id    BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID,
+  folder_id   UUID,
+  facet_type  TEXT NOT NULL
+              CHECK (facet_type IN ('objective_verb', 'contribution_type')),
+  label       TEXT NOT NULL,
+  evidence    TEXT,
+  created_at  TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 8b. Author-provided keywords
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_author_keywords (
+  id                 BIGSERIAL PRIMARY KEY,
+  paper_id           BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id      UUID,
+  folder_id          UUID,
+  keyword            TEXT NOT NULL,
+  normalized_keyword TEXT NOT NULL,
+  evidence           TEXT,
+  source_section     TEXT,
+  position           INT NOT NULL DEFAULT 1,
+  created_at         TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 8c. Research typology classification
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS paper_research_typologies (
+  paper_id              BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id         UUID,
+  folder_id             UUID,
+  primary_group_number  SMALLINT NOT NULL CHECK (primary_group_number BETWEEN 1 AND 4),
+  primary_group_name    TEXT NOT NULL,
+  secondary_group_number SMALLINT CHECK (secondary_group_number BETWEEN 1 AND 4),
+  secondary_group_name  TEXT,
+  stated_purpose        TEXT,
+  primary_contribution  TEXT,
+  group_match           TEXT,
+  boundary_rule         TEXT,
+  verdict               TEXT,
+  classifier_source     TEXT,
+  created_at            TIMESTAMPTZ DEFAULT now()
+);
+
+-- ------------------------------------------------------------------
+-- 9. Workspace threads and research sessions
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS workspace_threads (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  folder_id     UUID REFERENCES research_folders(id) ON DELETE CASCADE,
+  mode          TEXT NOT NULL DEFAULT 'normal'
+                CHECK (mode IN ('normal', 'deep_research')),
+  title         TEXT NOT NULL,
+  summary       TEXT,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS workspace_messages (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id       UUID NOT NULL REFERENCES workspace_threads(id) ON DELETE CASCADE,
+  owner_user_id   UUID NOT NULL,
+  folder_id       UUID REFERENCES research_folders(id) ON DELETE CASCADE,
+  role            TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  message_kind    TEXT NOT NULL DEFAULT 'chat'
+                  CHECK (message_kind IN ('chat', 'deep_research_plan', 'deep_research_report', 'status')),
+  content         TEXT NOT NULL DEFAULT '',
+  citations       JSONB NOT NULL DEFAULT '[]'::jsonb,
+  metadata        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS deep_research_sessions (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  thread_id             UUID NOT NULL REFERENCES workspace_threads(id) ON DELETE CASCADE,
+  owner_user_id         UUID NOT NULL,
+  folder_id             UUID REFERENCES research_folders(id) ON DELETE CASCADE,
+  status                TEXT NOT NULL DEFAULT 'planned'
+                        CHECK (status IN ('planned', 'queued', 'waiting_on_analysis', 'processing', 'completed', 'failed', 'canceled')),
+  prompt                TEXT NOT NULL,
+  plan_summary          TEXT,
+  final_report          TEXT,
+  requires_analysis     BOOLEAN NOT NULL DEFAULT false,
+  pending_run_count     INT NOT NULL DEFAULT 0,
+  last_error            TEXT,
+  created_at            TIMESTAMPTZ DEFAULT now(),
+  updated_at            TIMESTAMPTZ DEFAULT now(),
+  completed_at          TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS deep_research_steps (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id      UUID NOT NULL REFERENCES deep_research_sessions(id) ON DELETE CASCADE,
+  owner_user_id   UUID NOT NULL,
+  position        INT NOT NULL,
+  title           TEXT NOT NULL,
+  description     TEXT,
+  tool_name       TEXT,
+  status          TEXT NOT NULL DEFAULT 'planned'
+                  CHECK (status IN ('planned', 'processing', 'completed', 'failed', 'waiting')),
+  input_payload   JSONB NOT NULL DEFAULT '{}'::jsonb,
+  output_payload  JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at      TIMESTAMPTZ DEFAULT now(),
+  updated_at      TIMESTAMPTZ DEFAULT now(),
+  UNIQUE (session_id, position)
+);
+
+ALTER TABLE papers
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS year_confidence NUMERIC,
+  ADD COLUMN IF NOT EXISTS year_source TEXT,
+  ADD COLUMN IF NOT EXISTS year_evidence TEXT,
+  ADD COLUMN IF NOT EXISTS year_candidates JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+ALTER TABLE paper_keywords
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID;
+
+ALTER TABLE paper_tracks_single
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID;
+
+ALTER TABLE paper_tracks_multi
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID;
+
+ALTER TABLE ingestion_runs
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_analysis_job_id UUID,
+  ADD COLUMN IF NOT EXISTS display_name TEXT,
+  ADD COLUMN IF NOT EXISTS source_extension TEXT,
+  ADD COLUMN IF NOT EXISTS mime_type TEXT,
+  ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT,
+  ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS copied_from_run_id UUID REFERENCES ingestion_runs(id),
+  ADD COLUMN IF NOT EXISTS trashed_at TIMESTAMPTZ;
+
+ALTER TABLE research_folders
+  ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES workspace_organizations(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES workspace_projects(id) ON DELETE CASCADE;
+
+ALTER TABLE paper_keyword_concepts
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID;
+
+ALTER TABLE paper_analysis_facets
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID;
+
+ALTER TABLE paper_author_keywords
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS normalized_keyword TEXT,
+  ADD COLUMN IF NOT EXISTS evidence TEXT,
+  ADD COLUMN IF NOT EXISTS source_section TEXT,
+  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1;
+
+ALTER TABLE paper_research_typologies
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS secondary_group_number SMALLINT,
+  ADD COLUMN IF NOT EXISTS secondary_group_name TEXT,
+  ADD COLUMN IF NOT EXISTS stated_purpose TEXT,
+  ADD COLUMN IF NOT EXISTS primary_contribution TEXT,
+  ADD COLUMN IF NOT EXISTS group_match TEXT,
+  ADD COLUMN IF NOT EXISTS boundary_rule TEXT,
+  ADD COLUMN IF NOT EXISTS verdict TEXT,
+  ADD COLUMN IF NOT EXISTS classifier_source TEXT;
+
+DO $$
+BEGIN
+  ALTER TABLE papers
+    ADD CONSTRAINT papers_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_keywords
+    ADD CONSTRAINT paper_keywords_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_tracks_single
+    ADD CONSTRAINT paper_tracks_single_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_tracks_multi
+    ADD CONSTRAINT paper_tracks_multi_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE ingestion_runs
+    ADD CONSTRAINT ingestion_runs_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE ingestion_runs
+    ADD CONSTRAINT ingestion_runs_copied_from_run_id_fkey
+    FOREIGN KEY (copied_from_run_id) REFERENCES ingestion_runs(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE ingestion_runs
+    ADD CONSTRAINT ingestion_runs_folder_analysis_job_id_fkey
+    FOREIGN KEY (folder_analysis_job_id) REFERENCES folder_analysis_jobs(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_content
+    ADD CONSTRAINT paper_content_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_keyword_concepts
+    ADD CONSTRAINT paper_keyword_concepts_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_analysis_facets
+    ADD CONSTRAINT paper_analysis_facets_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_author_keywords
+    ADD CONSTRAINT paper_author_keywords_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE paper_research_typologies
+    ADD CONSTRAINT paper_research_typologies_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+-- ------------------------------------------------------------------
+-- INDEXES
+-- ------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_papers_year ON papers(year);
+CREATE INDEX IF NOT EXISTS idx_papers_owner_user_id ON papers(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_papers_folder_id ON papers(folder_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_organizations_owner_user_id ON workspace_organizations(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_projects_organization_id ON workspace_projects(organization_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_projects_owner_user_id ON workspace_projects(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_research_folders_owner_user_id ON research_folders(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_research_folders_organization_id ON research_folders(organization_id);
+CREATE INDEX IF NOT EXISTS idx_research_folders_project_id ON research_folders(project_id);
+CREATE INDEX IF NOT EXISTS idx_research_folders_name ON research_folders(owner_user_id, project_id, name);
+CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
+CREATE INDEX IF NOT EXISTS idx_google_drive_connections_user_id ON google_drive_connections(user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_paper_id ON paper_keywords(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_owner_user_id ON paper_keywords(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_folder_id ON paper_keywords(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_keyword ON paper_keywords(keyword);
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_topic ON paper_keywords(topic);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_status ON ingestion_runs(status);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_owner_user_id ON ingestion_runs(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_folder_id ON ingestion_runs(folder_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_folder_analysis_job_id ON ingestion_runs(folder_analysis_job_id);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_display_name ON ingestion_runs(display_name);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_is_favorite ON ingestion_runs(is_favorite);
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_trashed_at ON ingestion_runs(trashed_at);
+CREATE INDEX IF NOT EXISTS idx_folder_analysis_jobs_owner_user_id ON folder_analysis_jobs(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_folder_analysis_jobs_folder_id ON folder_analysis_jobs(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_content_run_id ON paper_content(ingestion_run_id);
+CREATE INDEX IF NOT EXISTS idx_paper_content_owner_user_id ON paper_content(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_content_folder_id ON paper_content(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_paper_id ON paper_keyword_concepts(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_owner_user_id ON paper_keyword_concepts(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_folder_id ON paper_keyword_concepts(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_keyword_concepts_label ON paper_keyword_concepts(concept_label);
+CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_paper_id ON paper_analysis_facets(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_owner_user_id ON paper_analysis_facets(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_folder_id ON paper_analysis_facets(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_analysis_facets_type ON paper_analysis_facets(facet_type);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_paper_id ON paper_author_keywords(paper_id);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_owner_user_id ON paper_author_keywords(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_folder_id ON paper_author_keywords(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_author_keywords_keyword ON paper_author_keywords(normalized_keyword);
+CREATE INDEX IF NOT EXISTS idx_paper_research_typologies_owner_user_id ON paper_research_typologies(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_research_typologies_folder_id ON paper_research_typologies(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_research_typologies_primary ON paper_research_typologies(primary_group_number);
+CREATE INDEX IF NOT EXISTS idx_workspace_threads_owner_user_id ON workspace_threads(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_threads_folder_id ON workspace_threads(folder_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_messages_thread_id ON workspace_messages(thread_id);
+CREATE INDEX IF NOT EXISTS idx_workspace_messages_owner_user_id ON workspace_messages(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_deep_research_sessions_thread_id ON deep_research_sessions(thread_id);
+CREATE INDEX IF NOT EXISTS idx_deep_research_sessions_owner_user_id ON deep_research_sessions(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_deep_research_sessions_folder_id ON deep_research_sessions(folder_id);
+CREATE INDEX IF NOT EXISTS idx_deep_research_sessions_status ON deep_research_sessions(status);
+CREATE INDEX IF NOT EXISTS idx_deep_research_steps_session_id ON deep_research_steps(session_id);
+
+-- ------------------------------------------------------------------
+-- 10. Security, usage, cache, and fingerprint helpers
+-- ------------------------------------------------------------------
+-- Papertrend beta hardening: rate limits, AI usage, cache tables, and hot-path indexes.
+-- Safe to run multiple times.
+
+CREATE TABLE IF NOT EXISTS security_rate_limit_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bucket TEXT NOT NULL,
+  subject_hash TEXT NOT NULL,
+  ip_hash TEXT,
+  owner_user_id UUID,
+  action TEXT NOT NULL DEFAULT 'attempt',
+  allowed BOOLEAN NOT NULL DEFAULT true,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS ai_usage_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  usage_kind TEXT NOT NULL CHECK (
+    usage_kind IN ('chat_message', 'web_search', 'chart', 'deep_research')
+  ),
+  units INT NOT NULL DEFAULT 1 CHECK (units > 0),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS workspace_analytics_cache (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('workspace', 'project', 'folder', 'custom')),
+  scope_key TEXT NOT NULL,
+  version_hash TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, scope_type, scope_key)
+);
+
+CREATE TABLE IF NOT EXISTS file_fingerprints (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID,
+  sha256 TEXT NOT NULL CHECK (length(sha256) = 64),
+  file_size_bytes BIGINT NOT NULL DEFAULT 0,
+  mime_type TEXT,
+  source_filename TEXT,
+  latest_run_id UUID REFERENCES ingestion_runs(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, sha256)
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_rate_limit_lookup
+  ON security_rate_limit_events(bucket, subject_hash, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ai_usage_owner_kind_created
+  ON ai_usage_events(owner_user_id, usage_kind, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_analytics_cache_owner_scope
+  ON workspace_analytics_cache(owner_user_id, scope_type, scope_key);
+
+CREATE INDEX IF NOT EXISTS idx_file_fingerprints_owner_sha
+  ON file_fingerprints(owner_user_id, sha256);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_owner_status_updated
+  ON ingestion_runs(owner_user_id, status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_owner_folder_status_updated
+  ON ingestion_runs(owner_user_id, folder_id, status, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_ingestion_runs_job_status
+  ON ingestion_runs(folder_analysis_job_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_threads_owner_updated
+  ON workspace_threads(owner_user_id, updated_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_workspace_messages_thread_created
+  ON workspace_messages(thread_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_paper_content_owner_run
+  ON paper_content(owner_user_id, ingestion_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_owner_folder_topic
+  ON paper_keywords(owner_user_id, folder_id, topic);
+
+CREATE INDEX IF NOT EXISTS idx_paper_keywords_owner_folder_keyword
+  ON paper_keywords(owner_user_id, folder_id, keyword);
+
+-- ------------------------------------------------------------------
+-- VIEWS consumed by the Next.js app
+-- ------------------------------------------------------------------
+DROP VIEW IF EXISTS trends_flat;
+CREATE VIEW trends_flat AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
+  p.title,
+  pk.topic,
+  pk.keyword,
+  pk.keyword_frequency,
+  pk.evidence
+FROM papers p
+JOIN paper_keywords pk ON pk.paper_id = p.id;
+
+DROP VIEW IF EXISTS tracks_single_flat;
+CREATE VIEW tracks_single_flat AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
+  p.title,
+  ts.el,
+  ts.eli,
+  ts.lae,
+  ts.other
+FROM papers p
+JOIN paper_tracks_single ts ON ts.paper_id = p.id;
+
+DROP VIEW IF EXISTS tracks_multi_flat;
+CREATE VIEW tracks_multi_flat AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
+  p.title,
+  tm.el,
+  tm.eli,
+  tm.lae,
+  tm.other
+FROM papers p
+JOIN paper_tracks_multi tm ON tm.paper_id = p.id;
+
+DROP VIEW IF EXISTS papers_full;
+CREATE VIEW papers_full AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.year_confidence,
+  p.year_source,
+  p.year_evidence,
+  p.year_candidates,
+  p.title,
+  pc.abstract,
+  COALESCE(pc.abstract_claims, pc.abstract) AS abstract_claims,
+  pc.methods,
+  pc.results,
+  pc.body,
+  pc.conclusion,
+  pc.raw_text,
+  pc.source_filename,
+  pc.source_path,
+  pc.ingestion_run_id
+FROM papers p
+LEFT JOIN paper_content pc ON pc.paper_id = p.id;
+
+DROP VIEW IF EXISTS concepts_flat;
+CREATE VIEW concepts_flat AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.title,
+  pkc.concept_label,
+  pkc.matched_terms,
+  pkc.related_keywords,
+  pkc.total_frequency,
+  pkc.first_section,
+  pkc.first_span_start,
+  pkc.first_span_end,
+  pkc.first_evidence,
+  pkc.evidence_snippets
+FROM papers p
+JOIN paper_keyword_concepts pkc ON pkc.paper_id = p.id;
+
+DROP VIEW IF EXISTS paper_facets_flat;
+CREATE VIEW paper_facets_flat AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.title,
+  paf.facet_type,
+  paf.label,
+  paf.evidence
+FROM papers p
+JOIN paper_analysis_facets paf ON paf.paper_id = p.id;
+
+DROP VIEW IF EXISTS author_keywords_flat;
+CREATE VIEW author_keywords_flat AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.title,
+  pak.keyword,
+  pak.normalized_keyword,
+  pak.evidence,
+  pak.source_section,
+  pak.position,
+  ts.el,
+  ts.eli,
+  ts.lae,
+  ts.other
+FROM papers p
+JOIN paper_author_keywords pak ON pak.paper_id = p.id
+LEFT JOIN paper_tracks_single ts ON ts.paper_id = p.id;
+
+DROP VIEW IF EXISTS research_typologies_flat;
+CREATE VIEW research_typologies_flat AS
+SELECT
+  p.id AS paper_id,
+  p.owner_user_id,
+  p.folder_id,
+  p.year,
+  p.title,
+  prt.primary_group_number,
+  prt.primary_group_name,
+  prt.secondary_group_number,
+  prt.secondary_group_name,
+  prt.stated_purpose,
+  prt.primary_contribution,
+  prt.group_match,
+  prt.boundary_rule,
+  prt.verdict,
+  prt.classifier_source
+FROM papers p
+JOIN paper_research_typologies prt ON prt.paper_id = p.id;

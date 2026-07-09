@@ -35,6 +35,11 @@ from analysis_pipeline import (
 )
 from supabase_http import build_retrying_session
 
+try:
+    from google.cloud import storage as gcs_storage
+except ImportError:  # pragma: no cover - only required when STORAGE_PROVIDER=gcs
+    gcs_storage = None
+
 
 logger = logging.getLogger("papertrend_worker")
 
@@ -45,6 +50,35 @@ USER_STALE_REQUEUE_AFTER_SECONDS = 180
 FOLDER_PROGRESS_SYNC_INTERVAL_SECONDS = 5.0
 GRAPH_PROGRESS_PATCH_INTERVAL_SECONDS = 3.0
 GRAPH_PROGRESS_ALWAYS_PATCH_NODES = {"extract", "segment", "build_dataset"}
+
+
+def parse_gcs_source_path(source_path: str, default_bucket: str) -> tuple[str, str]:
+    value = source_path.strip()
+    if value.startswith("gs://"):
+        parsed = urllib.parse.urlparse(value)
+        bucket = parsed.netloc
+        object_name = parsed.path.lstrip("/")
+    else:
+        bucket = default_bucket
+        object_name = value
+
+    if not bucket:
+        raise RuntimeError("GCS storage is enabled but GCS_UPLOAD_BUCKET is missing.")
+    if not object_name or object_name.startswith("/") or ".." in object_name.split("/"):
+        raise RuntimeError("The queued run has an invalid GCS object path.")
+    return bucket, object_name
+
+
+def download_gcs_object(config: WorkerConfig, source_path: str, destination: Path) -> None:
+    if gcs_storage is None:
+        raise RuntimeError(
+            "google-cloud-storage is not installed. Install worker dependencies before using GCS."
+        )
+
+    bucket_name, object_name = parse_gcs_source_path(source_path, config.gcs_upload_bucket)
+    client = gcs_storage.Client(project=config.google_cloud_project_id or None)
+    blob = client.bucket(bucket_name).blob(object_name)
+    blob.download_to_filename(str(destination))
 
 
 def _int_env(name: str, default: int, minimum: int = 1) -> int:
@@ -928,6 +962,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
 
     input_payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
     source_kind = str(input_payload.get("source_kind") or "pdf-upload")
+    storage_provider = str(input_payload.get("storage_provider") or config.storage_provider)
+    storage_provider = storage_provider.strip().lower().replace("_", "-")
     queue_wait_seconds = seconds_since_iso(run.get("created_at"))
 
     with processing_heartbeat(client, run_id, config.heartbeat_interval_seconds):
@@ -965,6 +1001,20 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     extra={"run_id": run_id, "file_id": storage_path},
                 )
                 download_google_drive_file(access_token, storage_path, local_pdf)
+            elif storage_provider == "gcs" or storage_path.startswith("gs://"):
+                update_run_progress(
+                    client,
+                    run,
+                    run_id,
+                    stage="downloading",
+                    message="Downloading source file",
+                    detail="Fetching the uploaded PDF from Cloud Storage before extraction begins.",
+                )
+                logger.info(
+                    "downloading gcs object",
+                    extra={"run_id": run_id, "storage_path": storage_path},
+                )
+                download_gcs_object(config, storage_path, local_pdf)
             else:
                 update_run_progress(
                     client,
@@ -975,7 +1025,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     detail="Fetching the uploaded PDF from Supabase Storage before extraction begins.",
                 )
                 logger.info(
-                    "downloading storage object",
+                    "downloading supabase storage object",
                     extra={"run_id": run_id, "storage_path": storage_path},
                 )
                 client.download_storage_object(storage_path, local_pdf)

@@ -4,6 +4,12 @@ import {
   isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
+import {
+  getGcsUploadBucket,
+  getStorageProvider,
+  getWorkerServiceUrl,
+  getWorkerWebhookSecret,
+} from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
   MAX_FILES_PER_BATCH,
@@ -23,6 +29,58 @@ type PrepareUploadFile = {
   size: number;
   type?: string | null;
 };
+
+async function createGcsSignedUploadUrl({
+  storagePath,
+  contentType,
+}: {
+  storagePath: string;
+  contentType: string;
+}): Promise<{
+  signedUrl: string;
+  storagePath: string;
+  headers?: Record<string, string>;
+}> {
+  const workerServiceUrl = getWorkerServiceUrl();
+  const workerSecret = getWorkerWebhookSecret();
+  const bucket = getGcsUploadBucket();
+  if (!workerServiceUrl || !workerSecret || !bucket) {
+    throw new Error(
+      "GCS upload signing is not configured. Check WORKER_SERVICE_URL, WORKER_WEBHOOK_SECRET, and GCS_UPLOAD_BUCKET."
+    );
+  }
+
+  const response = await fetch(`${workerServiceUrl}/gcs/signed-upload`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${workerSecret}`,
+    },
+    body: JSON.stringify({
+      bucket,
+      objectName: storagePath,
+      contentType,
+      expiresMinutes: 30,
+    }),
+  });
+
+  const payload = (await response.json().catch(() => null)) as {
+    signedUrl?: string;
+    storagePath?: string;
+    headers?: Record<string, string>;
+    error?: string;
+  } | null;
+
+  if (!response.ok || !payload?.signedUrl || !payload.storagePath) {
+    throw new Error(payload?.error ?? "Failed to create GCS signed upload URL.");
+  }
+
+  return {
+    signedUrl: payload.signedUrl,
+    storagePath: payload.storagePath,
+    headers: payload.headers,
+  };
+}
 
 export async function POST(request: Request) {
   if (!(await isAuthorizedUserOrAdminRequest(request))) {
@@ -101,6 +159,7 @@ export async function POST(request: Request) {
       storagePath: string;
       token: string;
       signedUrl: string;
+      uploadHeaders?: Record<string, string>;
       fileName: string;
     }> = [];
 
@@ -144,15 +203,32 @@ export async function POST(request: Request) {
         throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
       }
 
-      const storagePath = `pending/${folder}/${runData.id}/${sanitizeStorageFileName(file.name)}`;
-      const { data: signedUpload, error: signedUploadError } = await supabase.storage
-        .from("paper-uploads")
-        .createSignedUploadUrl(storagePath);
+      const objectPath = `pending/${folder}/${runData.id}/${sanitizeStorageFileName(file.name)}`;
+      let storagePath = objectPath;
+      let token = "";
+      let signedUrl = "";
+      let uploadHeaders: Record<string, string> | undefined;
 
-      if (signedUploadError || !signedUpload) {
-        throw new Error(
-          signedUploadError?.message ?? `Failed to create signed upload URL for ${file.name}`
-        );
+      if (getStorageProvider() === "gcs") {
+        const signedUpload = await createGcsSignedUploadUrl({
+          storagePath: objectPath,
+          contentType: file.type || "application/pdf",
+        });
+        storagePath = signedUpload.storagePath;
+        signedUrl = signedUpload.signedUrl;
+        uploadHeaders = signedUpload.headers;
+      } else {
+        const { data: signedUpload, error: signedUploadError } = await supabase.storage
+          .from("paper-uploads")
+          .createSignedUploadUrl(objectPath);
+
+        if (signedUploadError || !signedUpload) {
+          throw new Error(
+            signedUploadError?.message ?? `Failed to create signed upload URL for ${file.name}`
+          );
+        }
+        token = signedUpload.token;
+        signedUrl = signedUpload.signedUrl;
       }
 
       createdRuns.push(runData);
@@ -160,8 +236,9 @@ export async function POST(request: Request) {
         fileIndex: file.fileIndex,
         runId: String(runData.id),
         storagePath,
-        token: signedUpload.token,
-        signedUrl: signedUpload.signedUrl,
+        token,
+        signedUrl,
+        uploadHeaders,
         fileName: file.name,
       });
     }
