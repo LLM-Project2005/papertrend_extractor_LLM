@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/Icons";
 import type { IngestionRunRow, RunAnalysisDetail } from "@/types/database";
 
-type PaperExplorerTab = "overview" | "keywords" | "topics" | "preview";
+type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
 
 type Props = {
   run: IngestionRunRow;
@@ -31,6 +31,7 @@ type Props = {
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "keywords", label: "Keywords" },
+  { id: "evidence", label: "Evidence" },
   { id: "topics", label: "Topics" },
   { id: "preview", label: "Preview" },
 ];
@@ -61,6 +62,121 @@ function splitIntoBullets(value: string | null | undefined, maxItems = 3): strin
   return [cleaned.slice(0, 260)];
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeSearchText(value: string | null | undefined): string {
+  return cleanDisplayText(value).toLowerCase();
+}
+
+function findContextWindow(text: string, index: number, radius = 340): string {
+  const start = Math.max(0, index - radius);
+  const end = Math.min(text.length, index + radius);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < text.length ? "..." : "";
+  return cleanDisplayText(`${prefix}${text.slice(start, end)}${suffix}`);
+}
+
+function findKeywordContext(
+  rawText: string | null | undefined,
+  keyword: string,
+  evidence: string
+) {
+  const text = cleanDisplayText(rawText);
+  if (!text) {
+    return { context: "", matchType: "no_full_text" as const };
+  }
+
+  const lowerText = text.toLowerCase();
+  const evidenceProbe = cleanDisplayText(evidence).slice(0, 180).toLowerCase();
+  if (evidenceProbe.length >= 24) {
+    const evidenceIndex = lowerText.indexOf(evidenceProbe);
+    if (evidenceIndex >= 0) {
+      return {
+        context: findContextWindow(text, evidenceIndex + Math.floor(evidenceProbe.length / 2)),
+        matchType: "evidence_match" as const,
+      };
+    }
+  }
+
+  const keywordProbe = cleanDisplayText(keyword).toLowerCase();
+  if (keywordProbe.length >= 3) {
+    const keywordIndex = lowerText.indexOf(keywordProbe);
+    if (keywordIndex >= 0) {
+      return {
+        context: findContextWindow(text, keywordIndex + Math.floor(keywordProbe.length / 2)),
+        matchType: "keyword_match" as const,
+      };
+    }
+  }
+
+  return { context: "", matchType: "stored_evidence_only" as const };
+}
+
+function inferEvidenceSection(
+  detail: RunAnalysisDetail | null,
+  evidence: string,
+  context: string
+): string {
+  const probe = normalizeSearchText(evidence || context).slice(0, 120);
+  if (!probe) {
+    return "Section not resolved";
+  }
+
+  const sections: Array<[string, string | null | undefined]> = [
+    ["Abstract / claims", detail?.abstract_claims],
+    ["Methods", detail?.methods],
+    ["Results", detail?.results],
+    ["Conclusion", detail?.conclusion],
+    ["Full text", detail?.raw_text],
+  ];
+
+  for (const [label, value] of sections) {
+    if (normalizeSearchText(value).includes(probe)) {
+      return label;
+    }
+  }
+
+  return "Full text";
+}
+
+function HighlightedText({
+  text,
+  terms,
+}: {
+  text: string;
+  terms: string[];
+}) {
+  const activeTerms = terms.map(cleanDisplayText).filter((term) => term.length >= 3);
+  if (!text || activeTerms.length === 0) {
+    return <>{text}</>;
+  }
+
+  const pattern = new RegExp(`(${activeTerms.map(escapeRegExp).join("|")})`, "ig");
+  const parts = text.split(pattern);
+
+  return (
+    <>
+      {parts.map((part, index) => {
+        const isMatch = activeTerms.some(
+          (term) => part.toLowerCase() === term.toLowerCase()
+        );
+        return isMatch ? (
+          <mark
+            key={`${part}-${index}`}
+            className="rounded bg-amber-100 px-1 text-amber-900 dark:bg-amber-400/20 dark:text-amber-100"
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={`${part}-${index}`}>{part}</span>
+        );
+      })}
+    </>
+  );
+}
+
 function buildTrackBadges(detail: RunAnalysisDetail | null): string[] {
   return [
     ...new Set([
@@ -83,6 +199,21 @@ function summarizeFacetGroups(detail: RunAnalysisDetail | null) {
     label,
     items: [...new Set(items)].slice(0, 6),
   }));
+}
+
+function buildKeywordEvidenceRows(detail: RunAnalysisDetail | null) {
+  return (detail?.keywords ?? []).map((keyword, index) => {
+    const evidence = cleanDisplayText(keyword.evidence);
+    const match = findKeywordContext(detail?.raw_text, keyword.keyword, evidence);
+    return {
+      ...keyword,
+      index,
+      evidence,
+      context: match.context,
+      matchType: match.matchType,
+      section: inferEvidenceSection(detail, evidence, match.context),
+    };
+  });
 }
 
 function titleOf(run: IngestionRunRow) {
@@ -153,6 +284,18 @@ export default function PaperAnalysisExplorerModal({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const trackBadges = useMemo(() => buildTrackBadges(detail), [detail]);
   const facetGroups = useMemo(() => summarizeFacetGroups(detail), [detail]);
+  const keywordEvidenceRows = useMemo(
+    () => buildKeywordEvidenceRows(detail),
+    [detail]
+  );
+  const fullTextEvidenceMatchCount = useMemo(
+    () =>
+      keywordEvidenceRows.filter(
+        (row) =>
+          row.matchType === "evidence_match" || row.matchType === "keyword_match"
+      ).length,
+    [keywordEvidenceRows]
+  );
 
   useEffect(() => {
     setActiveTab("overview");
@@ -532,6 +675,114 @@ export default function PaperAnalysisExplorerModal({
                     <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                         No grounded keyword rows were available for this paper.
+                      </p>
+                    </div>
+                  )}
+                </section>
+              ) : null}
+
+              {activeTab === "evidence" ? (
+                <section className="space-y-4">
+                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                          Keyword evidence audit
+                        </p>
+                        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+                          Review the stored rationale for each keyword alongside the closest
+                          full-text context the system can locate.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
+                          {keywordEvidenceRows.length} keywords
+                        </span>
+                        <span className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
+                          {fullTextEvidenceMatchCount} full-text matches
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {keywordEvidenceRows.length > 0 ? (
+                    keywordEvidenceRows.map((row) => (
+                      <article
+                        key={`${row.keyword}-${row.index}`}
+                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
+                                {row.keyword}
+                              </p>
+                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
+                                {row.frequency}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                              {row.topic || "Unclassified topic"} | {row.section}
+                            </p>
+                          </div>
+                          <span
+                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
+                              row.matchType === "evidence_match"
+                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"
+                                : row.matchType === "keyword_match"
+                                  ? "bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200"
+                                  : "bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200"
+                            }`}
+                          >
+                            {row.matchType === "evidence_match"
+                              ? "Evidence found"
+                              : row.matchType === "keyword_match"
+                                ? "Keyword found"
+                                : row.matchType === "no_full_text"
+                                  ? "No full text"
+                                  : "Stored evidence only"}
+                          </span>
+                        </div>
+
+                        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]">
+                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                              Stored rationale
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
+                              {row.evidence ? (
+                                <HighlightedText
+                                  text={row.evidence}
+                                  terms={[row.keyword]}
+                                />
+                              ) : (
+                                "No supporting keyword evidence was stored."
+                              )}
+                            </p>
+                          </div>
+
+                          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]">
+                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                              Full-text context
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
+                              {row.context ? (
+                                <HighlightedText
+                                  text={row.context}
+                                  terms={[row.keyword]}
+                                />
+                              ) : (
+                                "No matching full-text context could be located for this keyword."
+                              )}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+                    ))
+                  ) : (
+                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                      <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                        No keyword evidence rows were available for this paper.
                       </p>
                     </div>
                   )}

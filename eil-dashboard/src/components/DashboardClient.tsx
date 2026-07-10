@@ -35,6 +35,7 @@ type DashboardDrilldownTarget = {
   year?: string;
   topic?: string;
   keyword?: string;
+  paperIds?: string[];
 };
 
 function stableSerialize(value: unknown): string {
@@ -297,6 +298,8 @@ export default function DashboardClient({
     if (target.year) params.set("year", target.year);
     if (target.topic) params.set("topic", target.topic);
     if (target.keyword) params.set("keyword", target.keyword);
+    const paperIds = [...new Set(target.paperIds ?? [])].filter(Boolean);
+    if (paperIds.length > 0) params.set("paperIds", paperIds.join(","));
     if (selectedFolderIds.length === 1) {
       params.set("folder", selectedFolderIds[0]);
     }
@@ -755,6 +758,7 @@ export default function DashboardClient({
               projectId={selectedProjectId ?? undefined}
               selectedYears={selectedYears}
               selectedTracks={selectedTracks}
+              onDrilldown={openPaperDrilldown}
             />
           ) : null}
           {currentTabKey === "adaptive" ? (

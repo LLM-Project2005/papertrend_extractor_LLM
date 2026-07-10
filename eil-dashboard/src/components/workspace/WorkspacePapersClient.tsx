@@ -45,12 +45,21 @@ export default function WorkspacePapersClient() {
     const topic = (searchParams.get("topic") ?? "").trim();
     const keyword = (searchParams.get("keyword") ?? "").trim();
     const folder = (searchParams.get("folder") ?? "").trim();
-    const query = keyword || topic || "";
-    const active = Boolean(track || year || query || folder);
+    const paperIds = [
+      ...new Set(
+        (searchParams.get("paperIds") ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      ),
+    ];
+    const query = paperIds.length > 0 ? "" : keyword || topic || "";
+    const active = Boolean(track || year || query || folder || paperIds.length > 0);
     const parts = [
       track ? `Track: ${track}` : "",
       year ? `Year: ${year}` : "",
       keyword ? `Keyword: ${keyword}` : topic ? `Topic: ${topic}` : "",
+      paperIds.length > 0 ? `${paperIds.length} linked paper${paperIds.length === 1 ? "" : "s"}` : "",
     ].filter(Boolean);
 
     return {
@@ -61,8 +70,9 @@ export default function WorkspacePapersClient() {
       year,
       query,
       folder,
+      paperIds,
       label: parts.join(" | "),
-      signature: [track, year, topic, keyword, folder].join("|"),
+      signature: [track, year, topic, keyword, folder, paperIds.join(",")].join("|"),
     };
   }, [searchParams]);
 
@@ -88,10 +98,13 @@ export default function WorkspacePapersClient() {
     }
     if (drilldown.query) {
       setSearchQuery(drilldown.query);
+    } else if (drilldown.paperIds.length > 0) {
+      setSearchQuery("");
     }
   }, [
     drilldown.active,
     drilldown.folder,
+    drilldown.paperIds,
     drilldown.query,
     drilldown.signature,
     drilldown.track,
@@ -117,8 +130,18 @@ export default function WorkspacePapersClient() {
       return { trends: [], tracksSingle: [], tracksMulti: [] };
     }
 
-    return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
-  }, [data, searchQuery, selectedTracks, selectedYears]);
+    const base = filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
+    if (drilldown.paperIds.length === 0) {
+      return base;
+    }
+
+    const allowedPaperIds = new Set(drilldown.paperIds);
+    return {
+      trends: base.trends.filter((row) => allowedPaperIds.has(row.paper_id)),
+      tracksSingle: base.tracksSingle.filter((row) => allowedPaperIds.has(row.paper_id)),
+      tracksMulti: base.tracksMulti.filter((row) => allowedPaperIds.has(row.paper_id)),
+    };
+  }, [data, drilldown.paperIds, searchQuery, selectedTracks, selectedYears]);
 
   if (loading || !data) {
     return (

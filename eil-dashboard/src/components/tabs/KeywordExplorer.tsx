@@ -30,6 +30,7 @@ interface Props {
   folderIds?: string[];
   projectId?: string | "all";
   planCharts?: VisualizationPlanChart[];
+  onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
 }
 
 const TreemapCell = (props: {
@@ -40,11 +41,15 @@ const TreemapCell = (props: {
   name: string;
   value: number;
   index: number;
+  onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
 }) => {
-  const { x, y, width, height, name, value, index } = props;
+  const { x, y, width, height, name, value, index, onDrilldown } = props;
   if (width < 4 || height < 4) return null;
   return (
-    <g>
+    <g
+      className={onDrilldown ? "cursor-pointer" : undefined}
+      onClick={() => onDrilldown?.({ topic: name })}
+    >
       <rect
         x={x}
         y={y}
@@ -90,6 +95,7 @@ export default function KeywordExplorer({
   folderIds = [],
   projectId = "all",
   planCharts,
+  onDrilldown,
 }: Props) {
   const { session } = useAuth();
   const [query, setQuery] = useState("");
@@ -103,6 +109,19 @@ export default function KeywordExplorer({
     (chart) => chart.chart_key === "keyword_heatmap"
   )?.config;
   const plannerHeatN = heatmapConfig?.heat_n ?? 15;
+  const paperIdsByKeyword = useMemo(() => {
+    const map = new Map<string, Set<PaperId>>();
+    for (const row of trends) {
+      const keyword = String(row.keyword || "").trim();
+      if (!keyword) {
+        continue;
+      }
+      const bucket = map.get(keyword) ?? new Set<PaperId>();
+      bucket.add(row.paper_id);
+      map.set(keyword, bucket);
+    }
+    return map;
+  }, [trends]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -222,6 +241,7 @@ export default function KeywordExplorer({
         keyword: family.canonicalTopic,
         totalFreq: family.totalKeywordFrequency,
         papers: family.paperIds.length,
+        paperIds: family.paperIds,
         years: family.years.join(", "),
         topics: family.aliases.join(", "),
         representativeKeywords: family.representativeKeywords,
@@ -712,7 +732,18 @@ export default function KeywordExplorer({
                 data={treeData}
                 dataKey="value"
                 nameKey="name"
-                content={<TreemapCell x={0} y={0} width={0} height={0} name="" value={0} index={0} />}
+                content={
+                  <TreemapCell
+                    x={0}
+                    y={0}
+                    width={0}
+                    height={0}
+                    name=""
+                    value={0}
+                    index={0}
+                    onDrilldown={onDrilldown}
+                  />
+                }
               />
             </ResponsiveContainer>
           </div>
@@ -741,17 +772,50 @@ export default function KeywordExplorer({
                   className="border-t border-slate-200 hover:bg-slate-50 dark:border-[#1f1f1f] dark:hover:bg-[#0a0a0a]"
                 >
                   <td className="px-3 py-2 font-medium text-slate-900 dark:text-white">
-                    {row.keyword}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onDrilldown?.({ topic: row.keyword, paperIds: row.paperIds })
+                      }
+                      className="text-left font-semibold text-slate-900 underline-offset-4 transition-colors hover:text-slate-600 hover:underline disabled:cursor-default disabled:no-underline dark:text-white dark:hover:text-slate-300"
+                      disabled={!onDrilldown}
+                      title="Open papers for this topic family"
+                    >
+                      {row.keyword}
+                    </button>
                   </td>
                   <td className="px-3 py-2 text-right">{row.totalFreq}</td>
                   <td className="px-3 py-2 text-right">{row.papers}</td>
                     <td className="px-3 py-2 text-slate-500 dark:text-slate-400">
                       {row.years}
                     </td>
-                    <td className="max-w-xs truncate px-3 py-2 text-slate-500 dark:text-slate-400">
-                      {[row.topics, row.representativeKeywords.join(", ")]
-                        .filter(Boolean)
-                        .join(" • ")}
+                    <td className="max-w-md px-3 py-2 text-slate-500 dark:text-slate-400">
+                      <div className="space-y-2">
+                        {row.topics ? (
+                          <p className="line-clamp-2 text-xs leading-5">{row.topics}</p>
+                        ) : null}
+                        {row.representativeKeywords.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {row.representativeKeywords.slice(0, 8).map((keyword) => (
+                              <button
+                                key={`${row.keyword}-${keyword}`}
+                                type="button"
+                                onClick={() =>
+                                  onDrilldown?.({
+                                    keyword,
+                                    paperIds: [...(paperIdsByKeyword.get(keyword) ?? [])],
+                                  })
+                                }
+                                className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                                disabled={!onDrilldown}
+                                title="Open papers for this keyword"
+                              >
+                                {keyword}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
