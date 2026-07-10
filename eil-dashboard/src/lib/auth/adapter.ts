@@ -1,5 +1,5 @@
-import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
-import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
+import type { App } from "firebase-admin/app";
+import type { DecodedIdToken } from "firebase-admin/auth";
 import type { User } from "@supabase/supabase-js";
 import {
   getAuthProvider,
@@ -115,10 +115,15 @@ function firebaseIdentity(token: DecodedIdToken): AuthIdentity {
 
 let firebaseApp: App | null = null;
 
-function getFirebaseApp(): App {
+async function getFirebaseApp(): Promise<App> {
   if (firebaseApp) {
     return firebaseApp;
   }
+
+  // Load Firebase Admin only when a Firebase-authenticated request arrives.
+  // This keeps Next/Vercel from evaluating the package while initializing
+  // every route that imports this adapter.
+  const { cert, getApps, initializeApp } = await import("firebase-admin/app");
 
   const projectId = getFirebaseProjectId();
   const clientEmail = getFirebaseClientEmail();
@@ -155,7 +160,8 @@ const supabaseAdapter: AuthAdapter = {
 const firebaseAdapter: AuthAdapter = {
   provider: "firebase",
   async verifyBackendToken(token) {
-    const decodedToken = await getAuth(getFirebaseApp()).verifyIdToken(
+    const { getAuth } = await import("firebase-admin/auth");
+    const decodedToken = await getAuth(await getFirebaseApp()).verifyIdToken(
       token,
       getFirebaseCheckRevoked()
     );
