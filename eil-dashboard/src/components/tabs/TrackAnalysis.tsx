@@ -27,6 +27,12 @@ interface Props {
   tracksMulti: TrackRow[];
   selectedTracks: string[];
   planCharts?: VisualizationPlanChart[];
+  onDrilldown?: (target: {
+    track?: string;
+    year?: string;
+    topic?: string;
+    keyword?: string;
+  }) => void;
 }
 
 const trackField = (track: string) =>
@@ -38,6 +44,7 @@ export default function TrackAnalysis({
   tracksMulti,
   selectedTracks,
   planCharts,
+  onDrilldown,
 }: Props) {
   const orderedCharts =
     planCharts?.map((chart) => chart.chart_key).filter(
@@ -137,6 +144,12 @@ export default function TrackAnalysis({
                     dataKey={track}
                     stackId="tracks"
                     fill={TRACK_COLORS[track as TrackKey]}
+                    onClick={(entry) => {
+                      if (entry && "year" in entry) {
+                        onDrilldown?.({ track, year: String(entry.year) });
+                      }
+                    }}
+                    className={onDrilldown ? "cursor-pointer" : undefined}
                   />
                 ))}
               </BarChart>
@@ -202,6 +215,15 @@ export default function TrackAnalysis({
                           fill={TRACK_COLORS[track as TrackKey]}
                           radius={[0, 6, 6, 0]}
                           barSize={16}
+                          onClick={(entry) => {
+                            if (entry && "topic" in entry) {
+                              onDrilldown?.({
+                                track,
+                                topic: String(entry.topic),
+                              });
+                            }
+                          }}
+                          className={onDrilldown ? "cursor-pointer" : undefined}
                         />
                       </BarChart>
                     </ResponsiveContainer>

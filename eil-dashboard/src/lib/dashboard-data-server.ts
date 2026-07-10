@@ -5,6 +5,7 @@ import {
   filterTopicFamiliesByPaperIds,
   loadOrBuildProjectCorpusTopicCache,
 } from "@/lib/corpus-topic-cache";
+import { materializeDashboardSummaryCache } from "@/lib/dashboard-summary-cache";
 import type {
   DashboardData,
   DashboardDataMode,
@@ -846,6 +847,16 @@ export async function loadDashboardDataServer(
       dashboardServerCache.set(cacheKey, {
         timestamp: Date.now(),
         data,
+      });
+      void materializeDashboardSummaryCache(data, {
+        ownerUserId: ownerUserId ?? "",
+        projectId,
+        folderIds: normalizedFolderIds,
+      }).catch((error) => {
+        console.warn(
+          "dashboard summary cache refresh skipped",
+          error instanceof Error ? error.message : String(error)
+        );
       });
       return data;
     })
