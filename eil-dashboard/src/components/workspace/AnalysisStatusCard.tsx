@@ -14,6 +14,74 @@ import {
   CloseIcon,
 } from "@/components/ui/Icons";
 
+type StageStatus = "done" | "active" | "waiting" | "failed";
+
+type TimelineStage = {
+  key: string;
+  label: string;
+  stages: string[];
+  graphNodes?: string[];
+};
+
+const TIMELINE_STAGES: TimelineStage[] = [
+  {
+    key: "uploading",
+    label: "Upload",
+    stages: ["uploading"],
+  },
+  {
+    key: "queued",
+    label: "Queued",
+    stages: ["queued", "queued_waiting_for_worker", "queued_but_unstarted"],
+  },
+  {
+    key: "download",
+    label: "Download",
+    stages: ["preparing", "downloading"],
+  },
+  {
+    key: "extract",
+    label: "Extract",
+    stages: ["starting_analysis", "extracting", "extracting_text", "cleaning_text"],
+    graphNodes: ["extract", "clean"],
+  },
+  {
+    key: "segment",
+    label: "Sections",
+    stages: ["translating_text", "structuring_sections"],
+    graphNodes: ["translate", "segment"],
+  },
+  {
+    key: "metadata",
+    label: "Metadata",
+    stages: ["inferring_metadata", "extracting_author_keywords"],
+    graphNodes: ["metadata", "extract_author_keywords"],
+  },
+  {
+    key: "concepts",
+    label: "Keywords",
+    stages: ["extracting_keywords", "grouping_topics", "labeling_topics"],
+    graphNodes: ["mine_keywords", "group_topics", "label_trends"],
+  },
+  {
+    key: "classify",
+    label: "Classify",
+    stages: ["classifying_tracks", "classifying_typology", "extracting_facets"],
+    graphNodes: ["classify_tracks", "classify_typology", "extract_facets"],
+  },
+  {
+    key: "save",
+    label: "Save",
+    stages: ["building_dataset", "saving"],
+    graphNodes: ["build_dataset"],
+  },
+  {
+    key: "done",
+    label: "Done",
+    stages: ["completed"],
+  },
+];
+
 function summarizeRuns(runs: IngestionRunRow[]) {
   return runs.reduce(
     (summary, run) => {
@@ -25,6 +93,201 @@ function summarizeRuns(runs: IngestionRunRow[]) {
       return summary;
     },
     { total: 0, queued: 0, processing: 0, succeeded: 0, failed: 0 }
+  );
+}
+
+function readPayloadString(run: IngestionRunRow, key: string): string {
+  const value = run.input_payload?.[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readMetrics(run: IngestionRunRow): Record<string, unknown> {
+  const value = run.input_payload?.analysis_metrics;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function readCompletedGraphNodes(run: IngestionRunRow): Set<string> {
+  const metrics = readMetrics(run);
+  const rawNodes = metrics.completed_graph_nodes;
+  if (!Array.isArray(rawNodes)) {
+    return new Set();
+  }
+  return new Set(
+    rawNodes
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object" && "node" in item) {
+          const node = (item as { node?: unknown }).node;
+          return typeof node === "string" ? node : "";
+        }
+        return "";
+      })
+      .filter(Boolean)
+  );
+}
+
+function getStageIndex(run: IngestionRunRow): number {
+  if (run.status === "succeeded") return TIMELINE_STAGES.length - 1;
+  const stage = readPayloadString(run, "progress_stage").toLowerCase();
+  const explicitIndex = TIMELINE_STAGES.findIndex((item) =>
+    item.stages.includes(stage)
+  );
+  if (explicitIndex >= 0) return explicitIndex;
+  if (run.status === "processing") return Math.max(1, explicitIndex);
+  return 0;
+}
+
+function getTimelineStatus(
+  run: IngestionRunRow,
+  stage: TimelineStage,
+  index: number
+): StageStatus {
+  if (run.status === "failed") {
+    const currentIndex = getStageIndex(run);
+    if (index < currentIndex) return "done";
+    return index === currentIndex ? "failed" : "waiting";
+  }
+  if (run.status === "succeeded") return "done";
+  const currentIndex = getStageIndex(run);
+  const completedNodes = readCompletedGraphNodes(run);
+  if (index < currentIndex) return "done";
+  if (
+    index === currentIndex &&
+    (run.status === "processing" || run.status === "queued")
+  ) {
+    return "active";
+  }
+  if (stage.graphNodes?.every((node) => completedNodes.has(node))) {
+    return "done";
+  }
+  return "waiting";
+}
+
+function formatSeconds(value: unknown): string {
+  const seconds = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return "";
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+  if (seconds < 60) return `${seconds.toFixed(seconds < 10 ? 1 : 0)}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.round(seconds % 60);
+  return `${minutes}m ${remaining}s`;
+}
+
+function RunTimeline({ run }: { run: IngestionRunRow }) {
+  return (
+    <div className="mt-4 overflow-x-auto pb-2 pt-1">
+      <div className="grid min-w-[760px] grid-cols-10">
+        {TIMELINE_STAGES.map((stage, index) => {
+          const status = getTimelineStatus(run, stage, index);
+          const previousStatus =
+            index > 0
+              ? getTimelineStatus(run, TIMELINE_STAGES[index - 1], index - 1)
+              : null;
+          const lineDone =
+            status === "done" ||
+            status === "active" ||
+            status === "failed" ||
+            previousStatus === "done";
+          const dotTone =
+            status === "done"
+              ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-[#111111]"
+              : status === "active"
+                ? "border-slate-900 bg-white text-slate-900 shadow-[0_0_0_4px_rgba(15,23,42,0.08)] dark:border-white dark:bg-[#050505] dark:text-white dark:shadow-[0_0_0_4px_rgba(255,255,255,0.12)]"
+                : status === "failed"
+                  ? "border-red-400 bg-red-50 text-red-700 dark:border-red-500/70 dark:bg-red-950/30 dark:text-red-200"
+                  : "border-slate-200 bg-white text-slate-300 dark:border-[#242424] dark:bg-[#050505] dark:text-[#555555]";
+          const labelTone =
+            status === "waiting"
+              ? "text-slate-400 dark:text-[#666666]"
+              : "text-slate-700 dark:text-[#d4d4d4]";
+          const stateLabel =
+            status === "done" ? "Done" : status === "active" ? "Now" : status;
+          return (
+            <div
+              key={stage.key}
+              className="relative flex min-h-[58px] flex-col items-center px-1 text-center"
+            >
+              {index > 0 ? (
+                <span
+                  className={`absolute left-0 right-1/2 top-3 h-px ${
+                    lineDone
+                      ? "bg-slate-300 dark:bg-[#5f5f5f]"
+                      : "bg-slate-200 dark:bg-[#1f1f1f]"
+                  }`}
+                />
+              ) : null}
+              {index < TIMELINE_STAGES.length - 1 ? (
+                <span
+                  className={`absolute left-1/2 right-0 top-3 h-px ${
+                    status === "done"
+                      ? "bg-slate-300 dark:bg-[#5f5f5f]"
+                      : "bg-slate-200 dark:bg-[#1f1f1f]"
+                  }`}
+                />
+              ) : null}
+              <span
+                className={`relative z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border ${dotTone}`}
+                title={`${stage.label}: ${stateLabel}`}
+                aria-label={`${stage.label}: ${stateLabel}`}
+              >
+                {status === "done" ? (
+                  <CheckCircleIcon className="h-4 w-4" />
+                ) : status === "failed" ? (
+                  <CloseIcon className="h-3.5 w-3.5" />
+                ) : (
+                  <CircleIcon
+                    className={`h-3.5 w-3.5 ${
+                      status === "active" ? "animate-pulse" : ""
+                    }`}
+                  />
+                )}
+              </span>
+              <span
+                className={`mt-2 text-[11px] font-semibold uppercase tracking-normal ${labelTone}`}
+              >
+                {stage.label}
+              </span>
+              <span className="mt-0.5 text-[10px] capitalize text-slate-400 dark:text-[#777777]">
+                {stateLabel}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RunMetrics({ run }: { run: IngestionRunRow }) {
+  const metrics = readMetrics(run);
+  const queueWait = formatSeconds(metrics.queue_wait_seconds);
+  const download = formatSeconds(metrics.download_seconds);
+  const graph = formatSeconds(metrics.graph_seconds);
+  const save = formatSeconds(metrics.save_seconds);
+  const total = formatSeconds(metrics.total_worker_seconds);
+  const completedNodes = readCompletedGraphNodes(run).size;
+  const values = [
+    queueWait ? ["Queue", queueWait] : null,
+    download ? ["Download", download] : null,
+    graph ? ["Graph", graph] : null,
+    save ? ["Save", save] : null,
+    total ? ["Total", total] : null,
+    completedNodes > 0 ? ["Nodes", `${completedNodes}`] : null,
+  ].filter(Boolean) as Array<[string, string]>;
+  if (values.length === 0) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      {values.map(([label, value]) => (
+        <span
+          key={label}
+          className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-[11px] text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#a3a3a3]"
+        >
+          {label}: {value}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -407,6 +670,7 @@ export default function AnalysisStatusCard({
                       )}
                     </p>
                   ) : null}
+                  <RunMetrics run={run} />
                 </div>
                 <div className="flex items-center gap-2">
                   {onCancelRun &&
@@ -436,6 +700,7 @@ export default function AnalysisStatusCard({
                   {run.error_message}
                 </p>
               ) : null}
+              <RunTimeline run={run} />
             </article>
           ))
         )}

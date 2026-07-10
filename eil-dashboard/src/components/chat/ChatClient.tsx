@@ -66,8 +66,11 @@ import type {
 } from "@/types/database";
 import type {
   ChatMode,
+  DeepResearchCitationRef,
+  DeepResearchEvidenceItem,
   ChatThreadDetail,
   DeepResearchSessionRecord,
+  DeepResearchStepRecord,
   WorkspaceMessageRecord,
   WorkspaceThreadSummary,
 } from "@/types/research";
@@ -1166,6 +1169,196 @@ function splitReportBlocks(report?: string | null) {
     .filter(Boolean);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(
+    new Set(values.map((value) => value.trim()).filter(Boolean))
+  );
+}
+
+function readStringArray(record: Record<string, unknown> | null, key: string) {
+  const value = record?.[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function extractStepRawRecord(step: DeepResearchStepRecord) {
+  return asRecord(step.output_payload?.raw);
+}
+
+function extractStepDiagnostics(step: DeepResearchStepRecord) {
+  const raw = extractStepRawRecord(step);
+  return [
+    asRecord(step.output_payload?.diagnostics),
+    asRecord(raw?.diagnostics),
+    asRecord(raw?.verification),
+  ].filter(Boolean) as Record<string, unknown>[];
+}
+
+function extractStepWarnings(step: DeepResearchStepRecord) {
+  return uniqueStrings(
+    extractStepDiagnostics(step).flatMap((diagnostics) => [
+      ...readStringArray(diagnostics, "verification_warnings"),
+      ...readStringArray(diagnostics, "warnings"),
+    ])
+  );
+}
+
+function extractStepUnresolvedSections(step: DeepResearchStepRecord) {
+  return uniqueStrings(
+    extractStepDiagnostics(step).flatMap((diagnostics) => [
+      ...readStringArray(diagnostics, "unresolved_sections"),
+      ...readStringArray(diagnostics, "missing_sections"),
+    ])
+  );
+}
+
+function extractStepEvidenceItems(step: DeepResearchStepRecord) {
+  const raw = extractStepRawRecord(step);
+  const rawItems = raw?.evidenceItems;
+  if (!Array.isArray(rawItems)) return [] as DeepResearchEvidenceItem[];
+  return rawItems.filter((item): item is DeepResearchEvidenceItem => {
+    const record = asRecord(item);
+    return Boolean(record?.title && record?.snippet);
+  });
+}
+
+function extractStepCitations(step: DeepResearchStepRecord) {
+  const raw = extractStepRawRecord(step);
+  const outputCitations = step.output_payload?.citations ?? [];
+  const rawLedgerValue = raw?.citationLedger;
+  const rawLedger = Array.isArray(rawLedgerValue)
+    ? (rawLedgerValue as DeepResearchCitationRef[])
+    : [];
+  return [...outputCitations, ...rawLedger].filter((citation) =>
+    Boolean(citation?.source_id || citation?.source_label || citation?.url)
+  );
+}
+
+function formatResearchPhase(value?: string | null) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function buildResearchEvidenceSummary(session?: DeepResearchSessionRecord | null) {
+  const steps = session?.steps ?? [];
+  const citations = steps.flatMap(extractStepCitations);
+  const uniqueCitations = new Map<string, DeepResearchCitationRef>();
+  citations.forEach((citation) => {
+    const key =
+      citation.source_id ||
+      citation.url ||
+      String(citation.paper_id ?? "") ||
+      citation.source_label;
+    if (key && !uniqueCitations.has(key)) {
+      uniqueCitations.set(key, citation);
+    }
+  });
+  const evidenceItems = steps.flatMap(extractStepEvidenceItems);
+  const warnings = uniqueStrings(steps.flatMap(extractStepWarnings));
+  const unresolvedSections = uniqueStrings(
+    steps.flatMap(extractStepUnresolvedSections)
+  );
+  const partialSteps = steps.filter(
+    (step) => step.output_payload?.completion_kind === "partial"
+  ).length;
+  const sourceTotals = Array.from(uniqueCitations.values()).reduce(
+    (summary, citation) => {
+      const type = citation.source_type ?? "workspace";
+      summary.total += 1;
+      if (type === "paper") summary.paper += 1;
+      else if (type === "web") summary.web += 1;
+      else summary.workspace += 1;
+      return summary;
+    },
+    { total: 0, paper: 0, web: 0, workspace: 0 }
+  );
+
+  return {
+    sourceTotals,
+    evidenceCount: evidenceItems.length,
+    supportedEvidenceCount: evidenceItems.filter(
+      (item) => item.supports_section
+    ).length,
+    warnings,
+    unresolvedSections,
+    partialSteps,
+  };
+}
+
+function ResearchEvidenceSummary({
+  summary,
+}: {
+  summary: ReturnType<typeof buildResearchEvidenceSummary>;
+}) {
+  const completionLabel =
+    summary.partialSteps > 0 ? `${summary.partialSteps} partial` : "No partial steps";
+  const metrics = [
+    ["Sources", String(summary.sourceTotals.total)],
+    ["Library", String(summary.sourceTotals.paper)],
+    [
+      "Evidence",
+      `${summary.supportedEvidenceCount}/${summary.evidenceCount}`,
+    ],
+    ["Completion", completionLabel],
+  ];
+  const visibleWarnings = summary.warnings.slice(0, 3);
+  const visibleUnresolved = summary.unresolvedSections.slice(0, 4);
+  const hasVisibleSignal =
+    summary.sourceTotals.total > 0 ||
+    summary.evidenceCount > 0 ||
+    summary.partialSteps > 0 ||
+    visibleWarnings.length > 0 ||
+    visibleUnresolved.length > 0;
+
+  if (!hasVisibleSignal) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]">
+      <div className="grid gap-3 sm:grid-cols-4">
+        {metrics.map(([label, value]) => (
+          <div key={label}>
+            <p className="text-[11px] font-medium uppercase tracking-normal text-slate-400 dark:text-[#777777]">
+              {label}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-[#ececec]">
+              {value}
+            </p>
+          </div>
+        ))}
+      </div>
+      {visibleWarnings.length > 0 || visibleUnresolved.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {visibleWarnings.map((warning) => (
+            <span
+              key={`warning-${warning}`}
+              className="rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"
+            >
+              {warning}
+            </span>
+          ))}
+          {visibleUnresolved.map((section) => (
+            <span
+              key={`unresolved-${section}`}
+              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]"
+            >
+              Missing: {section}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function buildResearchProgress(session?: DeepResearchSessionRecord | null) {
   const steps = session?.steps ?? [];
   const completedSteps = steps.filter(
@@ -1407,6 +1600,10 @@ export default function ChatClient() {
   );
   const researchProgress = useMemo(
     () => buildResearchProgress(deepSession),
+    [deepSession]
+  );
+  const researchEvidenceSummary = useMemo(
+    () => buildResearchEvidenceSummary(deepSession),
     [deepSession]
   );
   const hasContent = visibleMessages.length > 0 || Boolean(deepSession);
@@ -2546,6 +2743,8 @@ export default function ChatClient() {
                       </button>
                     </div>
 
+                    <ResearchEvidenceSummary summary={researchEvidenceSummary} />
+
                     <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#030303] dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
                       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
                         <div className="flex items-center gap-3">
@@ -2658,6 +2857,8 @@ export default function ChatClient() {
                     </div>
 
                     <div className="mt-6 space-y-4">
+                      <ResearchEvidenceSummary summary={researchEvidenceSummary} />
+
                       {researchProgress.steps.map((step) => {
                         const isObsolete = step.output_payload?.result_kind === "obsolete";
                         const isBlocked =
@@ -2680,6 +2881,12 @@ export default function ChatClient() {
                           step.output_payload?.summary?.trim() ||
                           step.description?.trim() ||
                           "";
+                        const stepWarnings = extractStepWarnings(step);
+                        const unresolvedSections = extractStepUnresolvedSections(step);
+                        const stepEvidenceItems = extractStepEvidenceItems(step).slice(0, 2);
+                        const citationCount = extractStepCitations(step).length;
+                        const completionKind = step.output_payload?.completion_kind;
+                        const phaseLabel = formatResearchPhase(step.input_payload?.phaseClass);
                         const sourceCounts =
                           step.output_payload?.diagnostics &&
                           typeof step.output_payload.diagnostics === "object" &&
@@ -2730,11 +2937,14 @@ export default function ChatClient() {
                                     Added
                                   </span>
                                 ) : null}
-                                {step.input_payload?.phaseClass ? (
+                                {phaseLabel ? (
                                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#8e8e8e]">
-                                    {String(step.input_payload.phaseClass)
-                                      .replace(/_/g, " ")
-                                      .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                                    {phaseLabel}
+                                  </span>
+                                ) : null}
+                                {completionKind === "partial" ? (
+                                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-amber-700 dark:text-amber-200">
+                                    Partial
                                   </span>
                                 ) : null}
                                 {isObsolete ? (
@@ -2769,6 +2979,62 @@ export default function ChatClient() {
                                   {sourceCounts.paper ?? 0} library,{" "}
                                   {sourceCounts.web ?? 0} web
                                 </p>
+                              ) : null}
+                              {citationCount > 0 ? (
+                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+                                  Evidence ledger: {citationCount} citation
+                                  {citationCount === 1 ? "" : "s"}
+                                </p>
+                              ) : null}
+                              {stepWarnings.length > 0 ||
+                              unresolvedSections.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {stepWarnings.slice(0, 2).map((warning) => (
+                                    <span
+                                      key={`${step.id}-warning-${warning}`}
+                                      className="rounded-full border border-amber-300/50 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"
+                                    >
+                                      {warning}
+                                    </span>
+                                  ))}
+                                  {unresolvedSections.slice(0, 3).map((section) => (
+                                    <span
+                                      key={`${step.id}-missing-${section}`}
+                                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]"
+                                    >
+                                      Missing: {section}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {stepEvidenceItems.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  {stepEvidenceItems.map((item, evidenceIndex) => (
+                                    <div
+                                      key={`${step.id}-evidence-${item.paperId}-${evidenceIndex}`}
+                                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-normal text-slate-400 dark:text-[#777777]">
+                                        <span>{item.section || item.requested_section}</span>
+                                        <span className="text-slate-300 dark:text-white/20">
+                                          |
+                                        </span>
+                                        <span>
+                                          Relevance{" "}
+                                          {Number.isFinite(item.relevance_score)
+                                            ? item.relevance_score.toFixed(2)
+                                            : "n/a"}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-700 dark:text-[#d4d4d4]">
+                                        {item.title}
+                                      </p>
+                                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-[#a3a3a3]">
+                                        {item.snippet}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
                               ) : null}
                             </div>
                           </div>

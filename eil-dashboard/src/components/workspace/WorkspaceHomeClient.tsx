@@ -496,7 +496,13 @@ export default function WorkspaceHomeClient() {
     }
   ) {
     startAnalysisSession(createdRuns, context);
-    setLibraryRuns((current) => [...createdRuns, ...current]);
+    setLibraryRuns((current) => {
+      const merged = new Map(current.map((run) => [run.id, run]));
+      createdRuns.forEach((run) => merged.set(run.id, run));
+      return [...merged.values()].sort(
+        (left, right) => getRunTimeMs(right) - getRunTimeMs(left)
+      );
+    });
     void refreshFolders();
   }
 

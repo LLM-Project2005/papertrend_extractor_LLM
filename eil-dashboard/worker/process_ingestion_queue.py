@@ -52,6 +52,7 @@ USER_STALE_REQUEUE_AFTER_SECONDS = 180
 FOLDER_PROGRESS_SYNC_INTERVAL_SECONDS = 5.0
 GRAPH_PROGRESS_PATCH_INTERVAL_SECONDS = 3.0
 GRAPH_PROGRESS_ALWAYS_PATCH_NODES = {"extract", "segment", "build_dataset"}
+INGESTION_GRAPH_MODE = "parallel_fanout_v1"
 
 
 def parse_gcs_source_path(source_path: str, default_bucket: str) -> tuple[str, str]:
@@ -178,6 +179,56 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
         "detail": "Preparing the final normalized records that will be written back into Supabase.",
     },
 }
+
+RUN_STAGE_TO_LIFECYCLE: Dict[str, str] = {
+    "uploading": "uploading",
+    "queued": "queued",
+    "preparing": "preparing",
+    "downloading": "downloading",
+    "starting_analysis": "processing",
+    "extracting_text": "processing",
+    "cleaning_text": "processing",
+    "translating_text": "processing",
+    "structuring_sections": "processing",
+    "inferring_metadata": "processing",
+    "extracting_author_keywords": "processing",
+    "extracting_keywords": "processing",
+    "grouping_topics": "processing",
+    "labeling_topics": "processing",
+    "classifying_tracks": "processing",
+    "classifying_typology": "processing",
+    "extracting_facets": "processing",
+    "building_dataset": "processing",
+    "saving": "saving",
+    "completed": "succeeded",
+    "failed": "failed",
+    "canceled": "canceled",
+}
+
+RUN_LIFECYCLE_RANK: Dict[str, int] = {
+    "created": 0,
+    "uploading": 10,
+    "uploaded": 20,
+    "queued": 30,
+    "preparing": 40,
+    "downloading": 50,
+    "processing": 60,
+    "saving": 70,
+    "succeeded": 80,
+    "failed": 90,
+    "canceled": 90,
+}
+RUN_TERMINAL_LIFECYCLES = {"succeeded", "failed", "canceled"}
+
+
+def build_lifecycle_payload(stage: str, lifecycle_state: Optional[str] = None) -> Dict[str, Any]:
+    state = lifecycle_state or RUN_STAGE_TO_LIFECYCLE.get(stage, "processing")
+    return {
+        "lifecycle_state": state,
+        "lifecycle_rank": RUN_LIFECYCLE_RANK.get(state, RUN_LIFECYCLE_RANK["processing"]),
+        "lifecycle_is_terminal": state in RUN_TERMINAL_LIFECYCLES,
+        "lifecycle_updated_at": now_iso(),
+    }
 
 
 class SupabaseRestClient:
@@ -517,12 +568,14 @@ def _recovery_payload(
         {
             "analysis_mode": "automatic",
             "analysis_label": AUTO_ANALYSIS_LABEL,
+            "ingestion_graph_mode": INGESTION_GRAPH_MODE,
             counter_key: counter,
             "last_recovered_at": now_iso(),
             "progress_stage": "queued",
             "progress_message": stage_message,
             "progress_detail": detail,
             "progress_updated_at": now_iso(),
+            **build_lifecycle_payload("queued"),
         },
     )
 
@@ -609,11 +662,13 @@ def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConf
                         {
                             "analysis_mode": "automatic",
                             "analysis_label": AUTO_ANALYSIS_LABEL,
+                            "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                             "progress_stage": "failed",
                             "progress_message": "Analysis failed",
                             "progress_detail": "The worker stalled repeatedly, so the run was stopped for manual review.",
                             "recovery_count": recovery_attempts,
                             "last_recovered_at": now_iso(),
+                            **build_lifecycle_payload("failed"),
                         },
                     ),
                 },
@@ -680,12 +735,14 @@ def recover_invalid_succeeded_runs(client: SupabaseRestClient, config: WorkerCon
                     {
                         "analysis_mode": "automatic",
                         "analysis_label": AUTO_ANALYSIS_LABEL,
+                        "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                         "completion_recovery_count": completion_recovery_count + 1,
                         "last_recovered_at": now_iso(),
                         "progress_stage": "queued",
                         "progress_message": "Requeued after incomplete analysis",
                         "progress_detail": "The previous run reported success without extracted text or keyword output, so it was returned to the queue automatically.",
                         "progress_updated_at": now_iso(),
+                        **build_lifecycle_payload("queued"),
                     },
                 ),
             },
@@ -805,10 +862,12 @@ def update_run_progress(
     patch: Dict[str, Any] = {
         "analysis_mode": "automatic",
         "analysis_label": AUTO_ANALYSIS_LABEL,
+        "ingestion_graph_mode": INGESTION_GRAPH_MODE,
         "progress_stage": stage,
         "progress_message": message,
         "progress_detail": detail,
         "progress_updated_at": now_iso(),
+        **build_lifecycle_payload(stage),
     }
     if sync_folder_now:
         patch["folder_progress_synced_at"] = now_iso()
@@ -1137,6 +1196,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "analysis_mode": "automatic",
                     "analysis_label": AUTO_ANALYSIS_LABEL,
                     "pipeline": PIPELINE_NAME,
+                    "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                     "paper_id": result.dataset["paper_id"],
                     "year": result.dataset.get("year"),
                     "year_resolution": result.dataset.get("year_resolution"),
@@ -1156,6 +1216,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "progress_detail": "This paper is ready to use across the dashboard, paper library, and chat.",
                     "progress_updated_at": now_iso(),
                     "folder_progress_synced_at": now_iso(),
+                    **build_lifecycle_payload("completed"),
                 },
             )
             client.update_run(
@@ -1248,11 +1309,13 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
                                 "analysis_mode": "automatic",
                                 "analysis_label": AUTO_ANALYSIS_LABEL,
                                 "pipeline": PIPELINE_NAME,
+                                "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                                 "last_error_stage": "processing",
                                 "progress_stage": "failed",
                                 "progress_message": "Analysis failed",
                                 "progress_detail": message[:400],
                                 "progress_updated_at": now_iso(),
+                                **build_lifecycle_payload("failed"),
                             },
                         ),
                     },

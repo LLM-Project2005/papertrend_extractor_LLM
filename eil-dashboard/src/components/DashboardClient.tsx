@@ -30,6 +30,13 @@ const ADAPTIVE_PLAN_CACHE_PREFIX = "adaptive-plan-cache:v1";
 const ADAPTIVE_SIGNATURE_SAMPLE_SIZE = 1200;
 const ADAPTIVE_RENDER_ROW_LIMIT = 10000;
 
+type DashboardDrilldownTarget = {
+  track?: string;
+  year?: string;
+  topic?: string;
+  keyword?: string;
+};
+
 function stableSerialize(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
@@ -281,6 +288,21 @@ export default function DashboardClient({
       } else {
         params.set("data", mode);
       }
+    });
+  };
+
+  const openPaperDrilldown = (target: DashboardDrilldownTarget) => {
+    const params = new URLSearchParams();
+    if (target.track) params.set("track", target.track);
+    if (target.year) params.set("year", target.year);
+    if (target.topic) params.set("topic", target.topic);
+    if (target.keyword) params.set("keyword", target.keyword);
+    if (selectedFolderIds.length === 1) {
+      params.set("folder", selectedFolderIds[0]);
+    }
+    const nextQuery = params.toString();
+    startRouteTransition(() => {
+      router.push(nextQuery ? `/workspace/papers?${nextQuery}` : "/workspace/papers");
     });
   };
 
@@ -707,10 +729,14 @@ export default function DashboardClient({
               tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
               useMock={data?.useMock ?? true}
+              onDrilldown={openPaperDrilldown}
             />
           ) : null}
           {currentTabKey === "trend_analysis" ? (
-            <TrendAnalysis trends={filteredData.trends} />
+            <TrendAnalysis
+              trends={filteredData.trends}
+              onDrilldown={openPaperDrilldown}
+            />
           ) : null}
           {currentTabKey === "track_analysis" ? (
             <TrackAnalysis
@@ -718,6 +744,7 @@ export default function DashboardClient({
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
+              onDrilldown={openPaperDrilldown}
             />
           ) : null}
           {currentTabKey === "keyword_explorer" ? (
