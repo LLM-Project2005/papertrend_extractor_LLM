@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
+import { getAuthenticatedIdentityFromRequest, identityToLegacyUser } from "@/lib/auth/adapter";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -12,13 +12,38 @@ const ProfileUpdateSchema = z.object({
 });
 
 async function getOwner(request: Request) {
-  return getAuthenticatedUserFromRequest(request, { timeoutMs: 8_000 });
+  const identity = await getAuthenticatedIdentityFromRequest(request, {
+    timeoutMs: 8_000,
+  });
+  if (!identity) {
+    return { user: null, error: "Authentication required.", status: 401 };
+  }
+
+  if (identity.mappingStatus === "lookup_failed") {
+    return {
+      user: null,
+      error: "The Firebase owner mapping service is temporarily unavailable.",
+      status: 503,
+    };
+  }
+
+  const user = identityToLegacyUser(identity);
+  if (!user) {
+    return {
+      user: null,
+      error: "This Firebase account is not linked to a Papertrend owner account yet.",
+      status: 403,
+    };
+  }
+
+  return { user, error: null, status: 200 };
 }
 
 export async function GET(request: Request) {
-  const user = await getOwner(request);
+  const owner = await getOwner(request);
+  const user = owner.user;
   if (!user) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: owner.error }, { status: owner.status });
   }
 
   const { data, error } = await getSupabaseAdmin()
@@ -38,9 +63,10 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  const user = await getOwner(request);
+  const owner = await getOwner(request);
+  const user = owner.user;
   if (!user) {
-    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+    return NextResponse.json({ error: owner.error }, { status: owner.status });
   }
 
   const parsed = ProfileUpdateSchema.safeParse(await request.json().catch(() => ({})));

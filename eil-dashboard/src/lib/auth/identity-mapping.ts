@@ -44,13 +44,22 @@ export async function resolveExternalIdentityOwner(
     .eq("external_subject", identity.subject)
     .maybeSingle();
 
-  if (error || !data?.owner_user_id) {
+  if (error) {
+    console.error("Firebase owner mapping lookup failed.", {
+      code: error.code ?? null,
+      message: error.message,
+    });
+    return { ...identity, mappingStatus: "lookup_failed" };
+  }
+
+  if (!data?.owner_user_id) {
     return identity;
   }
 
   return {
     ...identity,
     ownerUserId: data.owner_user_id,
+    mappingStatus: "mapped",
     email: identity.email ?? data.email ?? null,
   };
 }

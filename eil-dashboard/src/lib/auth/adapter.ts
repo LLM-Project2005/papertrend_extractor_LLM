@@ -38,6 +38,7 @@ export interface AuthIdentity {
    * deliberately not put here until an explicit Cloud SQL mapping exists.
    */
   ownerUserId: string | null;
+  mappingStatus?: "not_required" | "unresolved" | "mapped" | "lookup_failed";
   supabaseUser?: User;
 }
 
@@ -89,6 +90,7 @@ function supabaseIdentity(user: User): AuthIdentity {
     provider: "supabase",
     subject: user.id,
     ownerUserId: user.id,
+    mappingStatus: "not_required",
     email: user.email ?? null,
     claims: {
       appMetadata: toClaims(user.app_metadata),
@@ -107,6 +109,7 @@ function firebaseIdentity(token: DecodedIdToken): AuthIdentity {
     email: token.email ?? null,
     claims: toClaims(token),
     userMetadata: {},
+    mappingStatus: "unresolved",
   };
 }
 
