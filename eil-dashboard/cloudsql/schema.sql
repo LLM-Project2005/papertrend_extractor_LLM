@@ -83,6 +83,42 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 -- ------------------------------------------------------------------
+-- 1e. Provider-neutral identity mappings
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auth_identity_mappings (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id     UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL CHECK (provider IN ('supabase', 'firebase')),
+  external_subject  TEXT NOT NULL,
+  email             TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (provider, external_subject),
+  UNIQUE (provider, owner_user_id)
+);
+
+CREATE OR REPLACE FUNCTION public.prevent_auth_identity_key_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id
+     OR OLD.provider IS DISTINCT FROM NEW.provider
+     OR OLD.external_subject IS DISTINCT FROM NEW.external_subject THEN
+    RAISE EXCEPTION 'auth identity mapping keys are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS auth_identity_mapping_key_guard
+  ON public.auth_identity_mappings;
+CREATE TRIGGER auth_identity_mapping_key_guard
+BEFORE UPDATE ON public.auth_identity_mappings
+FOR EACH ROW
+EXECUTE FUNCTION public.prevent_auth_identity_key_change();
+
+-- ------------------------------------------------------------------
 -- 1d. Google Drive Connections
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS google_drive_connections (
@@ -568,6 +604,8 @@ CREATE INDEX IF NOT EXISTS idx_research_folders_organization_id ON research_fold
 CREATE INDEX IF NOT EXISTS idx_research_folders_project_id ON research_folders(project_id);
 CREATE INDEX IF NOT EXISTS idx_research_folders_name ON research_folders(owner_user_id, project_id, name);
 CREATE INDEX IF NOT EXISTS idx_user_profiles_role ON user_profiles(role);
+CREATE INDEX IF NOT EXISTS idx_auth_identity_mappings_owner ON auth_identity_mappings(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_auth_identity_mappings_provider_subject ON auth_identity_mappings(provider, external_subject);
 CREATE INDEX IF NOT EXISTS idx_google_drive_connections_user_id ON google_drive_connections(user_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_paper_id ON paper_keywords(paper_id);
 CREATE INDEX IF NOT EXISTS idx_paper_keywords_owner_user_id ON paper_keywords(owner_user_id);

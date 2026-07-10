@@ -2,13 +2,13 @@ import { timingSafeEqual } from "crypto";
 import { getAdminImportSecret } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { User } from "@supabase/supabase-js";
+import {
+  getAuthenticatedIdentityFromRequest,
+  identityToLegacyUser,
+  RequestAuthTimeoutError,
+} from "@/lib/auth/adapter";
 
-export class RequestAuthTimeoutError extends Error {
-  constructor(message = "Authentication provider timed out.") {
-    super(message);
-    this.name = "RequestAuthTimeoutError";
-  }
-}
+export { RequestAuthTimeoutError } from "@/lib/auth/adapter";
 
 function safeEqual(left: string, right: string): boolean {
   const leftBuffer = Buffer.from(left);
@@ -19,54 +19,16 @@ function safeEqual(left: string, right: string): boolean {
   return timingSafeEqual(leftBuffer, rightBuffer);
 }
 
-function getBearerToken(request: Request): string {
-  const authorization = request.headers.get("authorization") ?? "";
-  return authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-}
-
-async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-
-  try {
-    return await Promise.race([
-      work,
-      new Promise<T>((_, reject) => {
-        timeoutHandle = setTimeout(() => {
-          reject(new RequestAuthTimeoutError());
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeoutHandle) {
-      clearTimeout(timeoutHandle);
-    }
-  }
-}
-
 export async function getAuthenticatedUserFromRequest(
   request: Request,
   options?: { timeoutMs?: number; throwOnTimeout?: boolean }
 ): Promise<User | null> {
-  const accessToken = getBearerToken(request);
-  if (!accessToken) {
-    return null;
-  }
-
   try {
-    const supabase = getSupabaseAdmin();
-    const {
-      data: { user },
-      error: userError,
-    } = await withTimeout(
-      supabase.auth.getUser(accessToken),
-      options?.timeoutMs ?? 8000
-    );
-
-    if (userError || !user) {
-      return null;
-    }
-
-    return user;
+    const identity = await getAuthenticatedIdentityFromRequest(request, {
+      timeoutMs: options?.timeoutMs,
+      throwOnTimeout: options?.throwOnTimeout,
+    });
+    return identity ? identityToLegacyUser(identity) : null;
   } catch (error) {
     if (options?.throwOnTimeout && error instanceof RequestAuthTimeoutError) {
       throw error;

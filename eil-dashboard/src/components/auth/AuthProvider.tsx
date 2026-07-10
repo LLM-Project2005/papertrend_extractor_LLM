@@ -11,10 +11,25 @@ import {
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
-import type { AuthContextValue, UserProfileRecord } from "@/types/auth";
+import {
+  firebaseUserToPapertrendUser,
+  firebaseUserToSession,
+  getClientAuthProvider,
+  getFirebaseAuth,
+  getFirebaseAuthConfigurationError,
+  sendFirebasePasswordReset,
+  signInWithFirebasePassword,
+  signInWithFirebaseProvider,
+  signOutFirebase,
+  signUpWithFirebasePassword,
+  subscribeToFirebaseTokens,
+  updateFirebaseUserProfile,
+} from "@/lib/firebase-client";
+import type { AuthContextValue, AuthSession, UserProfileRecord } from "@/types/auth";
 import type { WorkspaceProfile } from "@/types/workspace";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const configuredAuthProvider = getClientAuthProvider();
 
 async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
   let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -57,6 +72,16 @@ function getRedirectTo(): string | undefined {
   return `${window.location.origin}/workspaces`;
 }
 
+function toAppSession(session: Session): AuthSession {
+  return {
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+    expires_at: session.expires_at,
+    user: session.user,
+    provider: "supabase",
+  };
+}
+
 function getUserMetadata(user: User): { full_name: string | null; avatar_url: string | null } {
   const metadata = user.user_metadata ?? {};
 
@@ -91,12 +116,37 @@ async function postPasswordAuth<TPayload>(
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfileRecord | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
 
-  const loadProfile = useCallback(async (activeUser: User | null) => {
-    if (!supabase || !activeUser) {
+  const loadProfile = useCallback(async (activeUser: User | null, accessToken?: string) => {
+    if (!activeUser) {
+      setProfile(null);
+      return;
+    }
+
+    if (configuredAuthProvider === "firebase") {
+      if (!accessToken) {
+        setProfile(null);
+        return;
+      }
+      const response = await fetch("/api/auth/profile", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        error?: string;
+        profile?: UserProfileRecord | null;
+      };
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not load the Firebase profile.");
+      }
+      setProfile(payload.profile ?? null);
+      return;
+    }
+
+    if (!supabase) {
       setProfile(null);
       return;
     }
@@ -129,6 +179,81 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (configuredAuthProvider === "firebase") {
+      const configurationError = getFirebaseAuthConfigurationError();
+      let mounted = true;
+      let unsubscribe: (() => void) | null = null;
+
+      void (async () => {
+        const firebaseAuth = await getFirebaseAuth();
+        if (configurationError || !firebaseAuth) {
+          if (mounted) {
+            setAuthError(configurationError ?? "Firebase authentication is not configured.");
+            setHydrated(true);
+          }
+          return;
+        }
+
+        unsubscribe = await subscribeToFirebaseTokens(firebaseAuth, async (firebaseUser) => {
+          if (!mounted) {
+            return;
+          }
+
+          if (!firebaseUser) {
+            setAuthError(null);
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setHydrated(true);
+            return;
+          }
+
+          try {
+            const firebaseSession = await firebaseUserToSession(firebaseUser, firebaseUser.uid);
+            const response = await fetch("/api/auth/profile", {
+              headers: { Authorization: `Bearer ${firebaseSession.access_token}` },
+            });
+            const payload = (await response.json().catch(() => ({}))) as {
+              error?: string;
+              ownerUserId?: string;
+              profile?: UserProfileRecord | null;
+            };
+            if (!response.ok || !payload.ownerUserId) {
+              throw new Error(
+                payload.error ??
+                  "This Firebase account is not linked to a Papertrend owner account yet."
+              );
+            }
+
+            const mappedUser = firebaseUserToPapertrendUser(firebaseUser, payload.ownerUserId);
+            setAuthError(null);
+            setSession({ ...firebaseSession, user: mappedUser });
+            setUser(mappedUser);
+            setProfile(payload.profile ?? null);
+            setHydrated(true);
+          } catch (error) {
+            if (!mounted) {
+              return;
+            }
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setAuthError(
+              error instanceof Error
+                ? error.message
+                : "The Firebase account could not be linked to Papertrend."
+            );
+            setHydrated(true);
+          }
+        });
+      })();
+
+      return () => {
+        mounted = false;
+        unsubscribe?.();
+      };
+    }
+
     if (!supabase) {
       setHydrated(true);
       return;
@@ -142,12 +267,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        setSession(data.session);
+        setAuthError(null);
+        setSession(data.session ? toAppSession(data.session) : null);
         setUser(data.session?.user ?? null);
         setHydrated(true);
 
         if (data.session?.user) {
-          loadProfile(data.session.user).catch(() => {
+          loadProfile(data.session.user, data.session.access_token).catch(() => {
             if (mounted) {
               setProfile(null);
             }
@@ -158,6 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (mounted) {
+          setAuthError(null);
           setSession(null);
           setUser(null);
           setProfile(null);
@@ -168,12 +295,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_, nextSession) => {
-      setSession(nextSession);
+      setAuthError(null);
+      setSession(nextSession ? toAppSession(nextSession) : null);
       setUser(nextSession?.user ?? null);
       setHydrated(true);
 
       if (nextSession?.user) {
-        loadProfile(nextSession.user).catch(() => {
+        loadProfile(nextSession.user, nextSession.access_token).catch(() => {
           setProfile(null);
         });
       } else {
@@ -188,12 +316,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadProfile]);
 
   const refreshProfile = useCallback(async () => {
-    await loadProfile(user);
-  }, [loadProfile, user]);
+    await loadProfile(user, session?.access_token);
+  }, [loadProfile, session?.access_token, user]);
 
   const saveWorkspaceProfile = useCallback(
     async (workspaceProfile: WorkspaceProfile) => {
-      if (!supabase || !user) {
+      if (!user) {
         return;
       }
 
@@ -212,6 +340,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             : workspaceProfile.projectCorpusTopicCacheByProject,
       };
 
+      if (configuredAuthProvider === "firebase") {
+        if (!session?.access_token) {
+          throw new Error("Firebase authentication is not ready.");
+        }
+        const response = await fetch("/api/auth/profile", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ workspace_profile: mergedWorkspaceProfile }),
+        });
+        if (!response.ok) {
+          const payload = (await response.json().catch(() => ({}))) as { error?: string };
+          throw new Error(payload.error ?? "Could not save the workspace profile.");
+        }
+        await refreshProfile();
+        return;
+      }
+
+      if (!supabase) {
+        return;
+      }
+
       const { error } = await supabase
         .from("user_profiles")
         .update({
@@ -223,12 +375,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw error;
       }
     },
-    [profile?.workspace_profile, user]
+    [profile?.workspace_profile, refreshProfile, session?.access_token, user]
   );
 
   const saveUserProfile = useCallback(
     async (updates: { full_name?: string; avatar_url?: string }) => {
-      if (!supabase || !user) {
+      if (!user) {
         throw new Error("Supabase auth is not configured.");
       }
 
@@ -236,6 +388,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         full_name: updates.full_name?.trim() || null,
         avatar_url: updates.avatar_url?.trim() || null,
       };
+
+      if (configuredAuthProvider === "firebase") {
+        const firebaseAuth = await getFirebaseAuth();
+        if (!firebaseAuth?.currentUser || !session?.access_token) {
+          throw new Error("Firebase authentication is not ready.");
+        }
+        if (updates.full_name !== undefined) {
+          await updateFirebaseUserProfile(firebaseAuth.currentUser, {
+            displayName: payload.full_name,
+            photoURL: payload.avatar_url,
+          });
+        }
+        const response = await fetch("/api/auth/profile", {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+          const responsePayload = (await response.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(responsePayload.error ?? "Could not save the user profile.");
+        }
+        await refreshProfile();
+        return;
+      }
+
+      if (!supabase) {
+        throw new Error("Supabase auth is not configured.");
+      }
 
       const { error: profileError } = await supabase
         .from("user_profiles")
@@ -254,9 +439,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw userError;
       }
 
-      await loadProfile(user);
+      await loadProfile(user, session?.access_token);
     },
-    [loadProfile, user]
+    [loadProfile, refreshProfile, session?.access_token, user]
   );
 
   const value = useMemo<AuthContextValue>(
@@ -266,7 +451,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       profile,
       isAdmin: profile?.role === "admin",
+      authError,
       signInWithProvider: async (provider) => {
+        if (configuredAuthProvider === "firebase") {
+          const firebaseAuth = await getFirebaseAuth();
+          if (!firebaseAuth) {
+            throw new Error(getFirebaseAuthConfigurationError() ?? "Firebase authentication is not configured.");
+          }
+          await signInWithFirebaseProvider(firebaseAuth, provider);
+          return;
+        }
+
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }
@@ -296,6 +491,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signInWithPassword: async (email, password) => {
+        if (configuredAuthProvider === "firebase") {
+          const firebaseAuth = await getFirebaseAuth();
+          if (!firebaseAuth) {
+            throw new Error(getFirebaseAuthConfigurationError() ?? "Firebase authentication is not configured.");
+          }
+          await signInWithFirebasePassword(firebaseAuth, email, password);
+          return;
+        }
+
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }
@@ -319,6 +523,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       signUpWithPassword: async (email, password, metadata) => {
+        if (configuredAuthProvider === "firebase") {
+          const firebaseAuth = await getFirebaseAuth();
+          if (!firebaseAuth) {
+            throw new Error(getFirebaseAuthConfigurationError() ?? "Firebase authentication is not configured.");
+          }
+          await signUpWithFirebasePassword(firebaseAuth, email, password, metadata?.full_name);
+          return;
+        }
+
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }
@@ -343,12 +556,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       },
       resetPassword: async (email) => {
+        if (configuredAuthProvider === "firebase") {
+          const firebaseAuth = await getFirebaseAuth();
+          if (!firebaseAuth) {
+            throw new Error(getFirebaseAuthConfigurationError() ?? "Firebase authentication is not configured.");
+          }
+          await sendFirebasePasswordReset(firebaseAuth, email);
+          return;
+        }
+
         await postPasswordAuth("/api/auth/password-reset", {
           email,
           returnTo: "/login",
         });
       },
       signOut: async () => {
+        if (configuredAuthProvider === "firebase") {
+          const firebaseAuth = await getFirebaseAuth();
+          if (!firebaseAuth) {
+            throw new Error(getFirebaseAuthConfigurationError() ?? "Firebase authentication is not configured.");
+          }
+          await signOutFirebase(firebaseAuth);
+          return;
+        }
+
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }
@@ -364,6 +595,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       hydrated,
+      authError,
       profile,
       refreshProfile,
       saveUserProfile,

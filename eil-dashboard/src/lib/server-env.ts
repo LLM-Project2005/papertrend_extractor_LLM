@@ -14,6 +14,39 @@ export function getSupabaseAnonKey(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY ?? "";
 }
 
+export type AuthProvider = "supabase" | "firebase";
+
+export function getAuthProvider(): AuthProvider {
+  const provider = (process.env.AUTH_PROVIDER ?? "supabase").trim().toLowerCase();
+  if (provider === "supabase" || provider === "") {
+    return "supabase";
+  }
+  if (provider === "firebase" || provider === "identity-platform") {
+    return "firebase";
+  }
+  throw new Error("Unsupported AUTH_PROVIDER configuration.");
+}
+
+export function getFirebaseProjectId(): string {
+  return process.env.FIREBASE_PROJECT_ID ?? "";
+}
+
+export function getFirebaseClientEmail(): string {
+  return process.env.FIREBASE_CLIENT_EMAIL ?? "";
+}
+
+export function getFirebasePrivateKey(): string {
+  return process.env.FIREBASE_PRIVATE_KEY ?? "";
+}
+
+export function getFirebaseCheckRevoked(): boolean {
+  const configured = process.env.FIREBASE_CHECK_REVOKED;
+  if (configured === undefined) {
+    return getAuthProvider() === "firebase";
+  }
+  return configured.trim().toLowerCase() === "true";
+}
+
 export type DatabaseProvider = "supabase" | "cloud-sql";
 export type StorageProvider = "supabase" | "gcs";
 

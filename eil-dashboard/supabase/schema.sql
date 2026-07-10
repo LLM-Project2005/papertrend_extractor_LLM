@@ -79,6 +79,51 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 -- ------------------------------------------------------------------
+-- 1e. Provider-neutral identity mappings (server-only transition table)
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auth_identity_mappings (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL CHECK (provider IN ('supabase', 'firebase')),
+  external_subject  TEXT NOT NULL,
+  email             TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (provider, external_subject),
+  UNIQUE (provider, owner_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_identity_mappings_owner
+  ON auth_identity_mappings(owner_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_auth_identity_mappings_provider_subject
+  ON auth_identity_mappings(provider, external_subject);
+
+ALTER TABLE auth_identity_mappings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_identity_mappings FORCE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.prevent_auth_identity_mapping_key_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id
+     OR OLD.provider IS DISTINCT FROM NEW.provider
+     OR OLD.external_subject IS DISTINCT FROM NEW.external_subject THEN
+    RAISE EXCEPTION 'auth identity mapping keys are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS auth_identity_mapping_key_guard
+  ON public.auth_identity_mappings;
+CREATE TRIGGER auth_identity_mapping_key_guard
+BEFORE UPDATE ON public.auth_identity_mappings
+FOR EACH ROW
+EXECUTE FUNCTION public.prevent_auth_identity_mapping_key_change();
+
+-- ------------------------------------------------------------------
 -- 1d. Google Drive Connections
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS google_drive_connections (

@@ -1,5 +1,15 @@
-import type { Session, User } from "@supabase/supabase-js";
+import type { User } from "@supabase/supabase-js";
 import type { WorkspaceProfile } from "@/types/workspace";
+
+export type AuthProviderName = "supabase" | "firebase";
+
+export interface AuthSession {
+  access_token: string;
+  refresh_token: string | null;
+  expires_at?: number | null;
+  user: User;
+  provider: AuthProviderName;
+}
 
 export type AppRole = "member" | "admin";
 
@@ -16,10 +26,11 @@ export interface UserProfileRecord {
 
 export interface AuthContextValue {
   hydrated: boolean;
-  session: Session | null;
+  session: AuthSession | null;
   user: User | null;
   profile: UserProfileRecord | null;
   isAdmin: boolean;
+  authError: string | null;
   signInWithProvider: (
     provider: "google" | "facebook"
   ) => Promise<void>;

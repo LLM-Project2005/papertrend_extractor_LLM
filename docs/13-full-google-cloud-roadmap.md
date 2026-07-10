@@ -10,8 +10,8 @@ Google Cloud replacements are proven one boundary at a time.
 | Phase 0 - inventory and rollback | Complete | Supabase, Vercel, worker, queue, storage, secrets, and schema have been mapped. |
 | Phase 1 - Google foundation | Complete | Cloud SQL, GCS, Cloud Run, Secret Manager, Tasks, and Scheduler exist in staging. |
 | Phase 2 - GCS and worker path | Complete | Browser upload, GCS object verification, queueing, GCS download, and analysis work end to end. |
-| Phase 3 - security and parity preparation | In progress | OIDC trigger security and staging relational count parity are complete; authorization, storage inventory, and controlled mirroring remain. |
-| Phase 4 - identity migration | Not started | Supabase Auth is still the live identity provider. |
+| Phase 3 - security and parity preparation | Complete | OIDC trigger security, storage inventory, owner authorization checks, controlled mirroring, and staging parity checks are complete; Supabase remains authoritative. |
+| Phase 4 - identity migration | In progress (4A foundation) | Supabase Auth remains live; the provider-neutral server adapter and Cloud SQL mapping schema are prepared, but Firebase is not enabled. |
 | Phase 5 - Google-hosted backend | Not started | Next.js API routes still run on Vercel and use Supabase. |
 | Phase 6 - Cloud SQL cutover | Not started | Cloud SQL is a staging copy, not the live source of truth. |
 | Phase 7 - frontend hosting | Not started | Vercel remains the frontend host. |
@@ -145,8 +145,9 @@ the live provider.
 
 ## Phase 4 - Identity Migration
 
-Supabase Auth has not been replaced yet. Do not remove it until this phase is
-complete.
+Supabase Auth has not been replaced yet. Phase 4A is now implemented as a
+safe preparation layer; do not remove Supabase until the migration and
+cross-user tests below are complete.
 
 Recommended target: Firebase Authentication / Google Identity Platform with
 email/password and Google sign-in. Firebase's Admin SDK verifies the ID token
@@ -154,16 +155,67 @@ on the backend and provides the stable UID used for authorization. [Firebase ID 
 
 Implementation order:
 
-1. Create an auth adapter interface with `getCurrentUser()` and
-   `verifyBackendToken()`; keep a Supabase implementation first.
-2. Add the Google identity implementation behind a feature flag.
-3. Add `auth_provider` and an immutable external UID mapping table in Cloud SQL
-   staging. Never overwrite a user's existing owner ID during migration.
-4. Migrate test accounts only; verify login, refresh, logout, password reset,
+1. **Completed: provider-neutral server adapter.** `src/lib/auth/adapter.ts`
+   verifies Supabase tokens through the existing Admin API and exposes a
+   Firebase Admin verifier behind `AUTH_PROVIDER=firebase`. Existing routes
+   still receive the same Supabase `User` shape when the default is used.
+2. **Completed: Cloud SQL identity mapping schema.**
+   `cloudsql/phase4_identity_mapping.sql` adds an immutable external-subject
+   mapping table. It is additive and has not been applied to live traffic.
+3. **Completed: fail-closed Firebase boundary.** A verified Firebase UID is
+   intentionally not treated as a Papertrend owner UUID. Until a mapping
+   exists, `requireOwnerMapping` rejects it rather than allowing an unscoped
+   query.
+4. Apply the mapping migration to Cloud SQL staging and add the repository
+   lookup/write path. Never overwrite a user's existing owner ID during
+   migration.
+5. Migrate test accounts only; verify login, refresh, logout, password reset,
    Google login, expiry, and revoked-session behavior.
-5. Make all private API routes use the adapter rather than calling Supabase
+6. Make all private API routes use the adapter rather than calling Supabase
    Auth directly.
-6. Run cross-user authorization tests before migrating real beta users.
+7. Run cross-user authorization tests before migrating real beta users.
+
+Current safety state:
+
+- `AUTH_PROVIDER` defaults to `supabase`; the current browser login and all
+  private API routes therefore continue to work through Supabase.
+- No Firebase project, client credentials, or Firebase redirect is required for
+  this commit. Do not set `AUTH_PROVIDER=firebase` yet.
+- If Firebase is selected without all server credentials, token verification
+  fails closed. If a Firebase token is valid but has no Cloud SQL mapping, it
+  still cannot become an owner-scoped identity.
+- The Firebase Admin SDK is server-only by import location; never place its
+  private key or service-account JSON in a `NEXT_PUBLIC_*` variable or browser
+  bundle.
+
+Phase 4B implementation is now prepared, but it still needs a manual staging
+configuration before it can be called complete:
+
+1. Enable Firebase Authentication / Identity Platform APIs for the Google
+   Cloud project and create or link the Firebase project.
+2. Enable email/password and Google sign-in, then register the Papertrend web
+   app. Add the resulting public web config only to preview environment
+   variables: `NEXT_PUBLIC_FIREBASE_API_KEY`,
+   `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, and
+   `NEXT_PUBLIC_FIREBASE_APP_ID`.
+3. Run `supabase/migrations/20260710_phase4b_auth_identity_mappings.sql` in the
+   staging Supabase SQL editor. The table is backend-only and has no browser
+   policies.
+4. Deploy a preview with server `AUTH_PROVIDER=firebase` and client
+   `NEXT_PUBLIC_AUTH_PROVIDER=firebase`, plus Firebase Admin secrets in the
+   server environment. Keep production on `supabase`.
+5. While still signed in to the existing Supabase test account, link the
+   verified Firebase account through `/api/auth/firebase/link`. The endpoint
+   requires both tokens and matching verified email; it never accepts an owner
+   UUID from the browser.
+6. Test login, refresh, logout, password reset, Google login, unmapped-account
+   rejection, expired/revoked token rejection, and cross-user access before
+   considering Phase 4B complete.
+
+The Cloud SQL mapping schema is also prepared in
+`cloudsql/phase4_identity_mapping.sql`. Apply it to staging only after the
+mapping rows and owner UUIDs have been reconciled; it is not a Supabase SQL
+file and must not be pasted into the Supabase editor.
 
 Do not build password hashing or session management manually.
 
