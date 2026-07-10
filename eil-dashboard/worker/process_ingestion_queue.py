@@ -37,8 +37,10 @@ from supabase_http import build_retrying_session
 
 try:
     from google.cloud import storage as gcs_storage
+    from google.api_core.retry import Retry as GoogleRetry
 except ImportError:  # pragma: no cover - only required when STORAGE_PROVIDER=gcs
     gcs_storage = None
+    GoogleRetry = None  # type: ignore[assignment]
 
 
 logger = logging.getLogger("papertrend_worker")
@@ -78,7 +80,20 @@ def download_gcs_object(config: WorkerConfig, source_path: str, destination: Pat
     bucket_name, object_name = parse_gcs_source_path(source_path, config.gcs_upload_bucket)
     client = gcs_storage.Client(project=config.google_cloud_project_id or None)
     blob = client.bucket(bucket_name).blob(object_name)
-    blob.download_to_filename(str(destination))
+    retry_policy = GoogleRetry(deadline=90) if GoogleRetry is not None else None
+    try:
+        blob.download_to_filename(
+            str(destination),
+            timeout=90,
+            retry=retry_policy,
+            raw_download=True,
+            checksum=None,
+        )
+    except TypeError:
+        blob.download_to_filename(str(destination), timeout=90)
+
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError("The Cloud Storage download completed but produced an empty file.")
 
 
 def _int_env(name: str, default: int, minimum: int = 1) -> int:
@@ -816,7 +831,13 @@ def update_run_progress(
     run["provider"] = str(run.get("provider") or AUTO_ANALYSIS_PROVIDER)
     run["model"] = str(run.get("model") or AUTO_ANALYSIS_MODEL)
     if sync_folder_now:
-        sync_folder_analysis_job(client, run)
+        try:
+            sync_folder_analysis_job(client, run)
+        except Exception as error:
+            logger.warning(
+                "folder progress sync skipped after transient failure",
+                extra={"run_id": run_id, "error_message": str(error)[:500]},
+            )
 
 
 def update_run_graph_progress(

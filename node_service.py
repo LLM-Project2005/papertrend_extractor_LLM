@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -236,6 +237,42 @@ def _create_gcs_signed_upload(body: Dict[str, Any]) -> Dict[str, Any]:
         "method": "PUT",
         "headers": {"Content-Type": content_type},
         "expiresMinutes": expires_minutes,
+    }
+
+
+def _check_gcs_object_status(body: Dict[str, Any]) -> Dict[str, Any]:
+    if gcs_storage is None:
+        raise RuntimeError("GCS support is not installed.")
+
+    storage_path = str(body.get("storagePath") or "").strip()
+    object_name_input = str(body.get("objectName") or "").strip()
+    bucket_name = str(body.get("bucket") or "").strip() or os.getenv("GCS_UPLOAD_BUCKET", "").strip()
+    if storage_path.startswith("gs://"):
+        parsed = urllib.parse.urlparse(storage_path)
+        bucket_name = parsed.netloc
+        object_name = _safe_gcs_object_name(parsed.path)
+    else:
+        object_name = _safe_gcs_object_name(object_name_input or storage_path)
+
+    if not bucket_name:
+        raise RuntimeError("GCS_UPLOAD_BUCKET is not configured.")
+
+    storage_client = gcs_storage.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT_ID") or None)
+    blob = storage_client.bucket(bucket_name).blob(object_name)
+    exists = blob.exists()
+    size = None
+    updated = None
+    if exists:
+        blob.reload()
+        size = blob.size
+        updated = blob.updated.isoformat() if blob.updated else None
+    return {
+        "ok": True,
+        "exists": exists,
+        "bucket": bucket_name,
+        "objectName": object_name,
+        "size": size,
+        "updated": updated,
     }
 
 
@@ -780,6 +817,10 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
             if self.path == "/gcs/signed-upload":
                 upload_result = _create_gcs_signed_upload(body)
                 _json_response(self, 201, upload_result)
+                return
+
+            if self.path == "/gcs/object-status":
+                _json_response(self, 200, _check_gcs_object_status(body))
                 return
 
             if self.path == "/debug/cloudsql-schema":

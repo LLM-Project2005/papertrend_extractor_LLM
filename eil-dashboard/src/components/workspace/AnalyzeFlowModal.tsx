@@ -375,7 +375,10 @@ export default function AnalyzeFlowModal({
 
             if (!uploadResponse.ok) {
               const body = await uploadResponse.text();
-              throw new Error(body || `Storage upload failed with status ${uploadResponse.status}.`);
+              throw new Error(
+                body ||
+                  `Storage upload failed with status ${uploadResponse.status} ${uploadResponse.statusText}.`
+              );
             }
 
             uploaded.push({
@@ -422,6 +425,10 @@ export default function AnalyzeFlowModal({
             finalizePayload?.error ??
               `Failed to finalize direct upload (status ${finalizeResponse.status}).`
           );
+        }
+
+        if (finalizePayload?.warning) {
+          console.warn("[AnalyzeFlowModal] upload finalized with warning", finalizePayload.warning);
         }
 
         setUploadStage("Worker requested");

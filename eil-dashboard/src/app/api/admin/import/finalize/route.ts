@@ -9,6 +9,7 @@ import {
   triggerWorkerQueueWithRetries,
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
+import { getWorkerServiceUrl, getWorkerWebhookSecret } from "@/lib/server-env";
 
 export const runtime = "nodejs";
 
@@ -29,6 +30,34 @@ function isSafePendingStoragePath(storagePath: string, runId: string): boolean {
     !normalizedPath.includes("..") &&
     !normalizedPath.includes("\\")
   );
+}
+
+async function gcsObjectExists(storagePath: string): Promise<boolean> {
+  if (!storagePath.startsWith("gs://")) {
+    return false;
+  }
+  const workerServiceUrl = getWorkerServiceUrl();
+  const workerSecret = getWorkerWebhookSecret();
+  if (!workerServiceUrl || !workerSecret) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`${workerServiceUrl}/gcs/object-status`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${workerSecret}`,
+      },
+      body: JSON.stringify({ storagePath }),
+    });
+    const payload = (await response.json().catch(() => null)) as {
+      exists?: boolean;
+    } | null;
+    return response.ok && Boolean(payload?.exists);
+  } catch {
+    return false;
+  }
 }
 
 function buildNotStartedResult(reason: string): WorkerQueueStartResult {
@@ -105,10 +134,31 @@ export async function POST(request: Request) {
       return validRunIds.has(runId) && isSafePendingStoragePath(storagePath, runId);
     });
     const validFailedItems = failed.filter((item) => validRunIds.has(String(item.runId)));
+    const recoveredUploadedItems: UploadFinalizeItem[] = [];
+    const remainingFailedItems: UploadFinalizeItem[] = [];
+
+    for (const item of validFailedItems) {
+      const runId = String(item.runId);
+      const storagePath = String(item.storagePath ?? "");
+      if (
+        isSafePendingStoragePath(storagePath, runId) &&
+        storagePath.startsWith("gs://") &&
+        (await gcsObjectExists(storagePath))
+      ) {
+        recoveredUploadedItems.push({
+          ...item,
+          errorMessage: undefined,
+        });
+      } else {
+        remainingFailedItems.push(item);
+      }
+    }
+
+    const queueableUploadedItems = [...validUploadedItems, ...recoveredUploadedItems];
 
     const timestamp = new Date().toISOString();
 
-    for (const item of validUploadedItems) {
+    for (const item of queueableUploadedItems) {
       const row = (runRows ?? []).find((entry) => String(entry.id) === String(item.runId));
       const basePayload =
         row?.input_payload && typeof row.input_payload === "object" && !Array.isArray(row.input_payload)
@@ -139,7 +189,7 @@ export async function POST(request: Request) {
       }
     }
 
-    for (const item of validFailedItems) {
+    for (const item of remainingFailedItems) {
       const row = (runRows ?? []).find((entry) => String(entry.id) === String(item.runId));
       const basePayload =
         row?.input_payload && typeof row.input_payload === "object" && !Array.isArray(row.input_payload)
@@ -169,8 +219,8 @@ export async function POST(request: Request) {
       }
     }
 
-    const queuedCount = validUploadedItems.length;
-    const failedCount = validFailedItems.length;
+    const queuedCount = queueableUploadedItems.length;
+    const failedCount = remainingFailedItems.length;
 
     const { data: folderJobAfterUpdate, error: folderJobUpdateError } = await supabase
       .from("folder_analysis_jobs")
@@ -228,7 +278,7 @@ export async function POST(request: Request) {
 
       await persistWorkerStartState({
         supabase,
-        runIds: validUploadedItems.map((item) => item.runId),
+        runIds: queueableUploadedItems.map((item) => item.runId),
         folderJobId,
         result: queueStart,
       });
