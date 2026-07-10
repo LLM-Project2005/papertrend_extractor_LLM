@@ -875,7 +875,7 @@ export default function DashboardClient({
                           type="button"
                           onClick={() => {
                             setDrilldownTarget(null);
-                            router.push(`/workspace/papers?paperId=${paper.paperId}`);
+                            router.push(`/workspace/library?paperId=${paper.paperId}`);
                           }}
                           className="inline-flex h-9 flex-none items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
                         >
