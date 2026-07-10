@@ -16,6 +16,7 @@ async function getOwner(request: Request) {
   try {
     identity = await getAuthenticatedIdentityFromRequest(request, {
       timeoutMs: 8_000,
+      throwOnConfiguration: true,
     });
   } catch (error) {
     console.error("Profile authentication failed unexpectedly.", {

@@ -123,22 +123,31 @@ async function getFirebaseApp(): Promise<App> {
   // Load Firebase Admin only when a Firebase-authenticated request arrives.
   // This keeps Next/Vercel from evaluating the package while initializing
   // every route that imports this adapter.
-  const { cert, getApps, initializeApp } = await import("firebase-admin/app");
+  try {
+    const { cert, getApps, initializeApp } = await import("firebase-admin/app");
 
-  const projectId = getFirebaseProjectId();
-  const clientEmail = getFirebaseClientEmail();
-  const privateKey = getFirebasePrivateKey().replace(/\\n/g, "\n");
+    const projectId = getFirebaseProjectId();
+    const clientEmail = getFirebaseClientEmail();
+    const privateKey = getFirebasePrivateKey().replace(/\\n/g, "\n");
 
-  if (!projectId || !clientEmail || !privateKey) {
+    if (!projectId || !clientEmail || !privateKey) {
+      throw new AuthConfigurationError(
+        "Firebase authentication is selected but its server credentials are not configured."
+      );
+    }
+
+    firebaseApp = getApps()[0] ?? initializeApp({
+      credential: cert({ projectId, clientEmail, privateKey }),
+    });
+    return firebaseApp;
+  } catch (error) {
+    if (error instanceof AuthConfigurationError) {
+      throw error;
+    }
     throw new AuthConfigurationError(
-      "Firebase authentication is selected but its server credentials are not configured."
+      "Firebase server credentials could not initialize the Admin SDK."
     );
   }
-
-  firebaseApp = getApps()[0] ?? initializeApp({
-    credential: cert({ projectId, clientEmail, privateKey }),
-  });
-  return firebaseApp;
 }
 
 const supabaseAdapter: AuthAdapter = {
@@ -188,6 +197,21 @@ export async function getAuthenticatedIdentityFromRequest(
     // this authentication boundary instead of becoming an unhandled promise.
     return identity ? await resolveExternalIdentityOwner(identity) : null;
   } catch (error) {
+    let provider = "unknown";
+    try {
+      provider = getAuthProvider();
+    } catch {
+      // Keep diagnostics safe even when AUTH_PROVIDER itself is malformed.
+    }
+    const errorDetails = error && typeof error === "object"
+      ? error as { code?: unknown; name?: unknown; message?: unknown }
+      : null;
+    console.error("Backend authentication verification failed.", {
+      provider,
+      code: typeof errorDetails?.code === "string" ? errorDetails.code : null,
+      name: typeof errorDetails?.name === "string" ? errorDetails.name : null,
+      message: typeof errorDetails?.message === "string" ? errorDetails.message : "Unknown authentication error",
+    });
     if (error instanceof RequestAuthTimeoutError && options?.throwOnTimeout) {
       throw error;
     }
