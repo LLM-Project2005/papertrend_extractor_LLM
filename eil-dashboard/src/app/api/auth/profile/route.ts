@@ -12,9 +12,21 @@ const ProfileUpdateSchema = z.object({
 });
 
 async function getOwner(request: Request) {
-  const identity = await getAuthenticatedIdentityFromRequest(request, {
-    timeoutMs: 8_000,
-  });
+  let identity;
+  try {
+    identity = await getAuthenticatedIdentityFromRequest(request, {
+      timeoutMs: 8_000,
+    });
+  } catch (error) {
+    console.error("Profile authentication failed unexpectedly.", {
+      message: error instanceof Error ? error.message : "Unknown authentication error",
+    });
+    return {
+      user: null,
+      error: "Authentication service is temporarily unavailable.",
+      status: 503,
+    };
+  }
   if (!identity) {
     return { user: null, error: "Authentication required.", status: 401 };
   }
@@ -46,11 +58,24 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: owner.error }, { status: owner.status });
   }
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("user_profiles")
-    .select("*")
-    .eq("id", user.id)
-    .maybeSingle();
+  let result;
+  try {
+    result = await getSupabaseAdmin()
+      .from("user_profiles")
+      .select("*")
+      .eq("id", user.id)
+      .maybeSingle();
+  } catch (error) {
+    console.error("Profile storage lookup failed unexpectedly.", {
+      message: error instanceof Error ? error.message : "Unknown profile lookup error",
+    });
+    return NextResponse.json(
+      { error: "Profile service is temporarily unavailable." },
+      { status: 503 }
+    );
+  }
+
+  const { data, error } = result;
 
   if (error) {
     return NextResponse.json({ error: "Could not load the user profile." }, { status: 500 });
@@ -74,12 +99,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "No valid profile changes were provided." }, { status: 400 });
   }
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("user_profiles")
-    .update(parsed.data)
-    .eq("id", user.id)
-    .select("*")
-    .maybeSingle();
+  let result;
+  try {
+    result = await getSupabaseAdmin()
+      .from("user_profiles")
+      .update(parsed.data)
+      .eq("id", user.id)
+      .select("*")
+      .maybeSingle();
+  } catch (error) {
+    console.error("Profile storage update failed unexpectedly.", {
+      message: error instanceof Error ? error.message : "Unknown profile update error",
+    });
+    return NextResponse.json(
+      { error: "Profile service is temporarily unavailable." },
+      { status: 503 }
+    );
+  }
+
+  const { data, error } = result;
 
   if (error) {
     return NextResponse.json({ error: "Could not save the user profile." }, { status: 500 });

@@ -37,29 +37,36 @@ export async function resolveExternalIdentityOwner(
     return identity;
   }
 
-  const { data, error } = await getSupabaseAdmin()
-    .from("auth_identity_mappings")
-    .select("owner_user_id,email")
-    .eq("provider", identity.provider)
-    .eq("external_subject", identity.subject)
-    .maybeSingle();
+  try {
+    const { data, error } = await getSupabaseAdmin()
+      .from("auth_identity_mappings")
+      .select("owner_user_id,email")
+      .eq("provider", identity.provider)
+      .eq("external_subject", identity.subject)
+      .maybeSingle();
 
-  if (error) {
+    if (error) {
+      console.error("Firebase owner mapping lookup failed.", {
+        code: error.code ?? null,
+        message: error.message,
+      });
+      return { ...identity, mappingStatus: "lookup_failed" };
+    }
+
+    if (!data?.owner_user_id) {
+      return identity;
+    }
+
+    return {
+      ...identity,
+      ownerUserId: data.owner_user_id,
+      mappingStatus: "mapped",
+      email: identity.email ?? data.email ?? null,
+    };
+  } catch (error) {
     console.error("Firebase owner mapping lookup failed.", {
-      code: error.code ?? null,
-      message: error.message,
+      message: error instanceof Error ? error.message : "Unknown mapping lookup error",
     });
     return { ...identity, mappingStatus: "lookup_failed" };
   }
-
-  if (!data?.owner_user_id) {
-    return identity;
-  }
-
-  return {
-    ...identity,
-    ownerUserId: data.owner_user_id,
-    mappingStatus: "mapped",
-    email: identity.email ?? data.email ?? null,
-  };
 }

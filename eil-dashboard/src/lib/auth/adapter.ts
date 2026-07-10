@@ -178,7 +178,9 @@ export async function getAuthenticatedIdentityFromRequest(
 
   try {
     const identity = await getConfiguredAdapter().verifyBackendToken(token, options);
-    return identity ? resolveExternalIdentityOwner(identity) : null;
+    // Await the mapping lookup so Supabase/configuration failures stay inside
+    // this authentication boundary instead of becoming an unhandled promise.
+    return identity ? await resolveExternalIdentityOwner(identity) : null;
   } catch (error) {
     if (error instanceof RequestAuthTimeoutError && options?.throwOnTimeout) {
       throw error;
