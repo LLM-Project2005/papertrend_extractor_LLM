@@ -339,6 +339,17 @@ export default function AnalyzeFlowModal({
         }
 
         setUploadStage("Uploading PDF to secure storage");
+        const preparedRuns = (preparePayload.runs ?? []) as IngestionRunRow[];
+        if (preparedRuns.length > 0) {
+          onCreated?.(preparedRuns, {
+            folder: folder.trim() || defaultFolder,
+            folderId: preparePayload.folderJob.folder_id ?? null,
+            folderJob: preparePayload.folderJob,
+            sourceKind: selectedSource,
+          });
+          onClose();
+        }
+
         const uploaded: Array<{
           runId: string;
           storagePath: string;
@@ -435,23 +446,22 @@ export default function AnalyzeFlowModal({
         const queuedRuns = (finalizePayload?.runs ?? []).filter(
           (run) => run.status !== "failed"
         );
+        const finalizedRuns = finalizePayload?.runs ?? [];
         const folderJob = finalizePayload?.folderJob ?? null;
         const queueWarning = finalizePayload?.warning ?? null;
-
-        if (queuedRuns.length === 0) {
-          throw new Error("All selected files failed during upload.");
-        }
 
         if (adminSecret.trim() && typeof window !== "undefined") {
           window.localStorage.setItem("eil_admin_secret", adminSecret.trim());
         }
 
-        onCreated?.(queuedRuns, {
-          folder: folder.trim() || defaultFolder,
-          folderId: folderJob?.folder_id ?? null,
-          folderJob,
-          sourceKind: selectedSource,
-        });
+        if (finalizedRuns.length > 0) {
+          onCreated?.(finalizedRuns, {
+            folder: folder.trim() || defaultFolder,
+            folderId: folderJob?.folder_id ?? null,
+            folderJob,
+            sourceKind: selectedSource,
+          });
+        }
 
         setQueuedSummary({
           count: queuedRuns.length,
@@ -930,7 +940,7 @@ export default function AnalyzeFlowModal({
             <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
               <span className="font-medium">{uploadStage || "Queueing file"}</span>
               <span className="ml-2 text-blue-700/80 dark:text-blue-200/80">
-                Please keep this window open.
+                You can hide this window and follow progress from Home.
               </span>
             </div>
           ) : null}
@@ -946,7 +956,7 @@ export default function AnalyzeFlowModal({
               onClick={handleClose}
               className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#b8b8b8]"
             >
-              Cancel
+              {uploading ? "Hide" : "Cancel"}
             </button>
             <button
               type="button"

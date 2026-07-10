@@ -25,6 +25,12 @@ interface Props {
   selectedTracks: string[];
   useMock: boolean;
   visibleCharts?: VisualizationChartKey[];
+  onDrilldown?: (target: {
+    track?: string;
+    year?: string;
+    topic?: string;
+    keyword?: string;
+  }) => void;
 }
 
 export default function Overview({
@@ -34,6 +40,7 @@ export default function Overview({
   selectedTracks,
   useMock,
   visibleCharts,
+  onDrilldown,
 }: Props) {
   const { theme, hydrated } = useTheme();
   const isDark = hydrated && theme === "dark";
@@ -142,6 +149,12 @@ export default function Overview({
                     outerRadius={84}
                     paddingAngle={2}
                     stroke={isDark ? "#1f1f1f" : "#ffffff"}
+                    onClick={(entry) => {
+                      if (entry && "name" in entry) {
+                        onDrilldown?.({ track: String(entry.name) });
+                      }
+                    }}
+                    className={onDrilldown ? "cursor-pointer" : undefined}
                   >
                     {items.map((item) => (
                       <Cell key={item.name} fill={TRACK_COLORS[item.name as TrackKey]} />
@@ -157,9 +170,11 @@ export default function Overview({
             {items.map((item) => {
               const share = total > 0 ? Math.round((item.value / total) * 100) : 0;
               return (
-                <div
+                <button
                   key={item.name}
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                  type="button"
+                  onClick={() => onDrilldown?.({ track: item.name })}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -189,7 +204,7 @@ export default function Overview({
                       }}
                     />
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -223,7 +238,17 @@ export default function Overview({
                 <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke={chartAxis} />
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke={chartAxis} />
                 <Tooltip {...tooltipTheme} />
-                <Bar dataKey="papers" fill={barFill} radius={[8, 8, 0, 0]} />
+                <Bar
+                  dataKey="papers"
+                  fill={barFill}
+                  radius={[8, 8, 0, 0]}
+                  onClick={(entry) => {
+                    if (entry && "year" in entry) {
+                      onDrilldown?.({ year: String(entry.year) });
+                    }
+                  }}
+                  className={onDrilldown ? "cursor-pointer" : undefined}
+                />
               </BarChart>
             </ResponsiveContainer>
           </div>

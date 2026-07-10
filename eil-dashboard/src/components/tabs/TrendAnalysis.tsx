@@ -21,9 +21,10 @@ import type { VisualizationPlanChart } from "@/types/visualization";
 interface Props {
   trends: TrendRow[];
   planCharts?: VisualizationPlanChart[];
+  onDrilldown?: (target: { topic?: string; year?: string }) => void;
 }
 
-export default function TrendAnalysis({ trends, planCharts }: Props) {
+export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props) {
   const [topN, setTopN] = useState(10);
   const [heatN, setHeatN] = useState(15);
   const orderedCharts =
@@ -172,6 +173,12 @@ export default function TrendAnalysis({ trends, planCharts }: Props) {
                     stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
                     fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
                     fillOpacity={0.55}
+                    onClick={(entry) => {
+                      const year =
+                        entry && "year" in entry ? String(entry.year) : undefined;
+                      onDrilldown?.({ topic, year });
+                    }}
+                    className={onDrilldown ? "cursor-pointer" : undefined}
                   />
                 ))}
               </AreaChart>
@@ -210,7 +217,17 @@ export default function TrendAnalysis({ trends, planCharts }: Props) {
                         stroke="#94a3b8"
                       />
                       <Tooltip />
-                      <Bar dataKey="change" fill="#10b981" radius={[0, 6, 6, 0]} />
+                      <Bar
+                        dataKey="change"
+                        fill="#10b981"
+                        radius={[0, 6, 6, 0]}
+                        onClick={(entry) => {
+                          if (entry && "topic" in entry) {
+                            onDrilldown?.({ topic: String(entry.topic) });
+                          }
+                        }}
+                        className={onDrilldown ? "cursor-pointer" : undefined}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -235,7 +252,17 @@ export default function TrendAnalysis({ trends, planCharts }: Props) {
                         stroke="#94a3b8"
                       />
                       <Tooltip />
-                      <Bar dataKey="change" fill="#f43f5e" radius={[0, 6, 6, 0]} />
+                      <Bar
+                        dataKey="change"
+                        fill="#f43f5e"
+                        radius={[0, 6, 6, 0]}
+                        onClick={(entry) => {
+                          if (entry && "topic" in entry) {
+                            onDrilldown?.({ topic: String(entry.topic) });
+                          }
+                        }}
+                        className={onDrilldown ? "cursor-pointer" : undefined}
+                      />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
