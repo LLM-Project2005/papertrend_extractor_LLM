@@ -1,5 +1,6 @@
 import argparse
 from datetime import datetime, timedelta, timezone
+import hmac
 import json
 import logging
 import os
@@ -39,10 +40,12 @@ try:
     import google.auth
     from google.auth.transport.requests import Request as GoogleAuthRequest
     from google.cloud import storage as gcs_storage
+    from google.oauth2 import id_token as google_id_token
 except Exception:  # pragma: no cover - only required for GCS signed upload mode
     google = None  # type: ignore[assignment]
     GoogleAuthRequest = None  # type: ignore[assignment]
     gcs_storage = None  # type: ignore[assignment]
+    google_id_token = None  # type: ignore[assignment]
 
 
 def _batch_stale_after_seconds(env_name: str, default_seconds: int) -> float:
@@ -169,8 +172,45 @@ def _is_authorized_worker_request(handler: BaseHTTPRequestHandler) -> bool:
         or ""
     ).strip()
     if not expected:
+        shared_secret_authorized = False
+    else:
+        supplied = handler.headers.get("Authorization") or ""
+        shared_secret_authorized = hmac.compare_digest(supplied, f"Bearer {expected}")
+    if shared_secret_authorized:
+        return True
+
+    # Google-managed Cloud Tasks and Scheduler calls can use an OIDC identity
+    # token. Keep the shared secret fallback for Vercel and older queued tasks.
+    authorization = handler.headers.get("Authorization") or ""
+    if not authorization.startswith("Bearer "):
         return False
-    return handler.headers.get("Authorization") == f"Bearer {expected}"
+    token = authorization[7:].strip()
+    audience = os.getenv("WORKER_OIDC_AUDIENCE", "").strip()
+    allowed_accounts = {
+        value.strip().lower()
+        for value in os.getenv("WORKER_OIDC_SERVICE_ACCOUNTS", "").split(",")
+        if value.strip()
+    }
+    if not token or not audience or not allowed_accounts:
+        return False
+    if google_id_token is None or GoogleAuthRequest is None:
+        return False
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            token,
+            GoogleAuthRequest(),
+            audience=audience,
+        )
+        issuer = str(claims.get("iss") or "")
+        email = str(claims.get("email") or "").strip().lower()
+        return (
+            issuer in {"https://accounts.google.com", "accounts.google.com"}
+            and email in allowed_accounts
+            and claims.get("email_verified", True) is not False
+        )
+    except Exception as error:
+        logger.warning("worker OIDC verification failed: %s", type(error).__name__)
+        return False
 
 
 def _safe_gcs_object_name(value: str) -> str:
@@ -276,62 +316,6 @@ def _check_gcs_object_status(body: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _check_cloudsql_schema() -> Dict[str, Any]:
-    try:
-        import psycopg
-    except Exception as error:
-        raise RuntimeError("psycopg is not installed.") from error
-
-    database_url = os.getenv("DATABASE_URL", "").strip()
-    if not database_url:
-        raise RuntimeError("DATABASE_URL is not configured.")
-
-    required_tables = [
-        "papers",
-        "ingestion_runs",
-        "paper_content",
-        "workspace_threads",
-        "workspace_messages",
-        "file_fingerprints",
-        "workspace_analytics_cache",
-    ]
-    required_views = ["trends_flat", "papers_full", "author_keywords_flat"]
-    with psycopg.connect(database_url, connect_timeout=10) as connection:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT table_type, count(*)
-                FROM information_schema.tables
-                WHERE table_schema = 'public'
-                GROUP BY table_type
-                """
-            )
-            type_counts = {str(row[0]): int(row[1]) for row in cursor.fetchall()}
-
-            cursor.execute(
-                """
-                SELECT table_name
-                FROM information_schema.tables
-                WHERE table_schema = 'public'
-                  AND table_name = ANY(%s)
-                ORDER BY table_name
-                """,
-                (required_tables + required_views,),
-            )
-            present = {str(row[0]) for row in cursor.fetchall()}
-
-    return {
-        "ok": True,
-        "databaseProvider": os.getenv("DATABASE_PROVIDER", ""),
-        "storageProvider": os.getenv("STORAGE_PROVIDER", ""),
-        "tableTypeCounts": type_counts,
-        "requiredTablesPresent": sorted(name for name in required_tables if name in present),
-        "requiredTablesMissing": sorted(name for name in required_tables if name not in present),
-        "requiredViewsPresent": sorted(name for name in required_views if name in present),
-        "requiredViewsMissing": sorted(name for name in required_views if name not in present),
-    }
-
-
 def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
     from analysis_pipeline import load_config
     from process_ingestion_queue import SupabaseRestClient, process_batch
@@ -409,6 +393,11 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
         or ""
     ).strip()
     target_base_url = _worker_base_url_from_request(handler)
+    oidc_service_account = os.getenv("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT", "").strip()
+    oidc_audience = (
+        os.getenv("WORKER_OIDC_AUDIENCE", "").strip()
+        or target_base_url
+    )
 
     missing = [
         name
@@ -416,11 +405,12 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
             "CLOUD_TASKS_PROJECT_ID": project_id,
             "CLOUD_TASKS_LOCATION": location_id,
             "CLOUD_TASKS_QUEUE": queue_id,
-            "WORKER_WEBHOOK_SECRET": worker_secret,
             "CLOUD_TASKS_TARGET_BASE_URL": target_base_url,
         }.items()
         if not value
     ]
+    if not worker_secret and not oidc_service_account:
+        missing.append("WORKER_WEBHOOK_SECRET or CLOUD_TASKS_OIDC_SERVICE_ACCOUNT")
     if missing:
         return {
             "ok": False,
@@ -453,17 +443,25 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
             "retryOnBusy": True,
             "source": "cloud-tasks",
         }
-        task: Dict[str, Any] = {
-            "http_request": {
-                "http_method": tasks_v2.HttpMethod.POST,
-                "url": target_url,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {worker_secret}",
-                    "X-Papertrend-Task-Source": "cloud-tasks",
-                },
-                "body": json.dumps(payload).encode("utf-8"),
+        http_request: Dict[str, Any] = {
+            "http_method": tasks_v2.HttpMethod.POST,
+            "url": target_url,
+            "headers": {
+                "Content-Type": "application/json",
+                "X-Papertrend-Task-Source": "cloud-tasks",
+            },
+            "body": json.dumps(payload).encode("utf-8"),
+        }
+        if oidc_service_account:
+            http_request["oidc_token"] = {
+                "service_account_email": oidc_service_account,
+                "audience": oidc_audience,
             }
+        else:
+            http_request["headers"]["Authorization"] = f"Bearer {worker_secret}"
+
+        task: Dict[str, Any] = {
+            "http_request": http_request,
         }
 
         delay_seconds = initial_delay_seconds + (index * spacing_seconds)
@@ -484,6 +482,7 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
         "requested_task_count": requested_task_count,
         "max_runs_per_task": max_runs_per_task,
         "target_path": "/process-queue",
+        "auth_mode": "oidc" if oidc_service_account else "shared-secret",
         "task_names": task_names,
     }
 
@@ -821,10 +820,6 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
 
             if self.path == "/gcs/object-status":
                 _json_response(self, 200, _check_gcs_object_status(body))
-                return
-
-            if self.path == "/debug/cloudsql-schema":
-                _json_response(self, 200, _check_cloudsql_schema())
                 return
 
             if self.path == "/process-research-queue":

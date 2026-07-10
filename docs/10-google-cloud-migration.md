@@ -370,7 +370,7 @@ Next coding tasks after you finish Phase 1A setup:
      SQL-compatible schema that removes Supabase-only `auth.users` foreign keys,
      storage bucket setup, RLS policies, and auth triggers.
    - Imported into Cloud SQL database `papertrend`.
-   - Verified through protected Cloud Run endpoint `/debug/cloudsql-schema`:
+   - Verified through a protected, one-off Cloud Run migration/parity job:
      24 base tables, 8 views, and required tables/views present.
 5. Run dual-write or verification scripts until Cloud SQL results match
    Supabase results.

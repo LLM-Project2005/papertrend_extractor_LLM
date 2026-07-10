@@ -1,0 +1,16 @@
+steps:
+  - id: build-migration-image
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - cloudsql-migration.Dockerfile
+      - -t
+      - ${_IMAGE}
+      - .
+
+images:
+  - ${_IMAGE}
+
+options:
+  logging: CLOUD_LOGGING_ONLY
