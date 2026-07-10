@@ -91,10 +91,30 @@ validated every required file and updated its database references.
 The migration jobs use the `papertrend_app` database user and `DATABASE_URL`
 from Secret Manager. They do not use the PostgreSQL superuser.
 
-## Phase 3C: Controlled Dual-Write
+## Phase 3C: Authorization And Controlled Dual-Write
 
-Parity has passed, so this is the next implementation stage. Add an opt-in
-dual-write mode for newly created records:
+The first implementation slice is now present but disabled in deployment:
+
+- `eil-dashboard/worker/cloudsql_authorization.py` validates trusted owner UUIDs,
+  rejects cross-owner rows, and sets the transaction-local Cloud SQL owner
+  context.
+- `eil-dashboard/worker/cloudsql_mirror.py` mirrors one completed ingestion run
+  only when `CLOUDSQL_DUAL_WRITE_ENABLED=true` and the owner appears in
+  `CLOUDSQL_DUAL_WRITE_OWNER_IDS`.
+- A mirror failure is recorded in the authoritative Supabase run payload and
+  does not fail the analysis result.
+- The deployment defaults are deliberately `false` with an empty allowlist.
+- Cloud SQL RLS is still not applied. The explicit application checks must be
+  validated first; the prepared RLS migration must not be run against live
+  traffic yet.
+
+The controlled staging acceptance test has completed. A previously completed
+owner-scoped result was replayed idempotently through the mirror with no LLM
+call, the mirror wrote the expected owner-scoped rows, and the final parity
+check passed. The temporary service override was then disabled; repository
+defaults remain safe for normal uploads.
+
+When the first internal owner is explicitly enabled, the intended behavior is:
 
 - Supabase remains the authoritative write and read path.
 - Cloud SQL receives a best-effort mirrored record.
@@ -103,9 +123,14 @@ dual-write mode for newly created records:
 - Mirror operations are idempotent and keyed by the existing row IDs.
 - Private paper text is not logged when a mirror fails.
 
-Dual-write should run on one internal test account first, then a small beta
-cohort. Do not enable it globally until retry and reconciliation behavior have
-been tested.
+Dual-write may now be repeated for one internal test account after each code
+change, then expanded to a small beta cohort. Do not enable it globally until
+retry and reconciliation behavior have been tested across multiple cycles.
+
+The first owner-scoped shadow summary has also passed. The fixed dashboard and
+library aggregates for papers, content, keywords, concepts, facets, ingestion
+runs, and folders matched between Supabase and Cloud SQL. This was an offline
+read-only job, not a live request shadow.
 
 ## Phase 3D: Read Shadowing And Cutover Decision
 

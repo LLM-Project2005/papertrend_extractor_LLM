@@ -1010,6 +1010,52 @@ def sync_folder_analysis_job(client: SupabaseRestClient, run: Dict[str, Any]) ->
     client.update_folder_analysis_job(folder_job_id, patch)
 
 
+def mirror_completed_dataset(
+    client: SupabaseRestClient,
+    run: Dict[str, Any],
+    dataset: Dict[str, Any],
+) -> None:
+    """Best-effort Cloud SQL mirror; never changes the authoritative result."""
+
+    from cloudsql_mirror import cloudsql_dual_write_enabled, mirror_ingestion_dataset
+
+    if not cloudsql_dual_write_enabled():
+        return
+
+    owner_user_id = str(run.get("owner_user_id") or "").strip()
+    if not owner_user_id:
+        summary: Dict[str, Any] = {
+            "state": "skipped",
+            "reason": "missing_owner_user_id",
+        }
+    else:
+        try:
+            summary = mirror_ingestion_dataset(
+                database_url=os.getenv("DATABASE_URL", ""),
+                run=run,
+                dataset=dataset,
+            )
+        except Exception as error:
+            summary = {
+                "state": "failed",
+                "error_type": type(error).__name__,
+            }
+            logger.error(
+                "cloud sql dual-write failed without blocking the authoritative result",
+                extra={"run_id": str(run.get("id") or ""), "error_type": type(error).__name__},
+            )
+
+    mirrored_payload = merge_input_payload(
+        run,
+        {
+            "cloudsql_mirror": summary,
+            "cloudsql_mirror_updated_at": now_iso(),
+        },
+    )
+    client.update_run(str(run["id"]), {"input_payload": mirrored_payload})
+    run["input_payload"] = mirrored_payload
+
+
 def resume_waiting_research_sessions_for_folder(
     client: SupabaseRestClient,
     run: Dict[str, Any],
@@ -1234,6 +1280,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             run["completed_at"] = now_iso()
             run["input_payload"] = final_input_payload
             sync_folder_analysis_job(client, run)
+            mirror_completed_dataset(client, run, result.dataset)
 
 
 def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:

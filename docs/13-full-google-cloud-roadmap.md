@@ -132,6 +132,17 @@ Required tests:
 - Service operations have an explicit purpose and cannot accept arbitrary
   owner IDs from the browser.
 
+The first application slice is implemented in the trusted worker:
+`eil-dashboard/worker/cloudsql_authorization.py` centralizes UUID and owner
+context checks, while `eil-dashboard/worker/cloudsql_mirror.py` rejects any
+row whose owner differs from the verified run owner. The mirror is disabled by
+default and requires an explicit owner allowlist before it can write.
+
+The read-only shadow tool `scripts/verify_cloudsql_shadow.py` also requires an
+owner UUID and compares only fixed aggregate summaries. Its first owner-scoped
+run passed with no mismatches. This does not activate Cloud SQL RLS or change
+the live provider.
+
 ## Phase 4 - Identity Migration
 
 Supabase Auth has not been replaced yet. Do not remove it until this phase is
@@ -176,6 +187,14 @@ Vercel as the rollback deployment until all API routes have parity. Do not
 expose database credentials to browser code or `NEXT_PUBLIC_*` variables.
 
 ## Phase 6 - Cloud SQL Dual-Write, Shadow Reads, And Cutover
+
+The guarded dual-write hook and offline shadow summary are implemented. A
+previously completed owner-scoped result was replayed through the mirror without
+an LLM call; the mirror succeeded and the final owner-scoped parity check
+passed. The temporary staging override was then disabled, and the repository
+deployment default remains disabled. A real new upload can be used as an
+additional product-flow test later, but it is not required to enable the
+provider switch.
 
 1. Keep Supabase authoritative and mirror new writes to Cloud SQL using stable
    IDs and idempotent upserts.
