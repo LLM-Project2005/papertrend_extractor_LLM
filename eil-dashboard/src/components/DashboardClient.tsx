@@ -9,13 +9,14 @@ import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
+import Modal from "@/components/ui/Modal";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
-import { TRACK_COLS, type TrackKey } from "@/lib/constants";
+import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { createDefaultVisualizationPlan } from "@/lib/visualization-plan";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import type { DashboardDataMode } from "@/types/database";
+import type { DashboardDataMode, PaperId, TrackRow, TrendRow } from "@/types/database";
 import type { VisualizationPlan } from "@/types/visualization";
 
 const TAB_DEFINITIONS = [
@@ -35,6 +36,17 @@ type DashboardDrilldownTarget = {
   year?: string;
   topic?: string;
   keyword?: string;
+  paperIds?: string[];
+};
+
+type DashboardDrilldownPaper = {
+  paperId: PaperId;
+  title: string;
+  year: string;
+  topics: string[];
+  keywords: string[];
+  tracks: string[];
+  evidence: string;
 };
 
 function stableSerialize(value: unknown): string {
@@ -56,6 +68,56 @@ function normalizeTabKey(value: string | null): string | null {
   }
 
   return value.replace(/-/g, "_");
+}
+
+function normalizeTrackKey(value: string | null | undefined): TrackKey | null {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  const direct = TRACK_COLS.find((track) => track === normalized);
+  if (direct) {
+    return direct as TrackKey;
+  }
+
+  return (
+    TRACK_COLS.find((track) =>
+      normalized.startsWith(`${track} `) || normalized.startsWith(`${track} -`)
+    ) as TrackKey | undefined
+  ) ?? null;
+}
+
+function trackLabelsForRow(row: TrackRow | undefined): string[] {
+  if (!row) {
+    return [];
+  }
+
+  return TRACK_COLS.filter((track) => {
+    const field = track.toLowerCase() as keyof TrackRow;
+    return Number(row[field] ?? 0) > 0;
+  }).map((track) => `${track} - ${TRACK_NAMES[track as TrackKey]}`);
+}
+
+function matchesTrack(row: TrackRow | undefined, track: TrackKey | null): boolean {
+  if (!track) {
+    return true;
+  }
+  if (!row) {
+    return false;
+  }
+  const field = track.toLowerCase() as keyof TrackRow;
+  return Number(row[field] ?? 0) > 0;
+}
+
+function buildDashboardDrilldownTitle(target: DashboardDrilldownTarget | null): string {
+  if (!target) {
+    return "Associated papers";
+  }
+
+  const parts = [
+    target.track ? `Track: ${target.track}` : "",
+    target.year ? `Year: ${target.year}` : "",
+    target.keyword ? `Keyword: ${target.keyword}` : target.topic ? `Topic: ${target.topic}` : "",
+  ].filter(Boolean);
+
+  return parts.length > 0 ? parts.join(" | ") : "Associated papers";
 }
 
 function parseSelectedFolderIds(
@@ -167,6 +229,7 @@ export default function DashboardClient({
     }
   );
   const [filterOpen, setFilterOpen] = useState(false);
+  const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
   const [planState, setPlanState] = useState<{
     plan: VisualizationPlan;
     source: "agent" | "fallback";
@@ -292,18 +355,7 @@ export default function DashboardClient({
   };
 
   const openPaperDrilldown = (target: DashboardDrilldownTarget) => {
-    const params = new URLSearchParams();
-    if (target.track) params.set("track", target.track);
-    if (target.year) params.set("year", target.year);
-    if (target.topic) params.set("topic", target.topic);
-    if (target.keyword) params.set("keyword", target.keyword);
-    if (selectedFolderIds.length === 1) {
-      params.set("folder", selectedFolderIds[0]);
-    }
-    const nextQuery = params.toString();
-    startRouteTransition(() => {
-      router.push(nextQuery ? `/workspace/papers?${nextQuery}` : "/workspace/papers");
-    });
+    setDrilldownTarget(target);
   };
 
   const filteredData = useMemo(() => {
@@ -313,6 +365,99 @@ export default function DashboardClient({
 
     return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
   }, [data, searchQuery, selectedTracks, selectedYears]);
+
+  const drilldownPapers = useMemo<DashboardDrilldownPaper[]>(() => {
+    if (!drilldownTarget) {
+      return [];
+    }
+
+    const explicitPaperIds = new Set((drilldownTarget.paperIds ?? []).filter(Boolean));
+    const hasExplicitPaperIds = explicitPaperIds.size > 0;
+    const track = normalizeTrackKey(drilldownTarget.track);
+    const singleByPaper = new Map(filteredData.tracksSingle.map((row) => [row.paper_id, row]));
+    const multiByPaper = new Map(filteredData.tracksMulti.map((row) => [row.paper_id, row]));
+    const trendsByPaper = filteredData.trends.reduce<Record<string, TrendRow[]>>(
+      (accumulator, row) => {
+        (accumulator[row.paper_id] ??= []).push(row);
+        return accumulator;
+      },
+      {}
+    );
+
+    const paperIds = new Set<PaperId>([
+      ...filteredData.trends.map((row) => row.paper_id),
+      ...filteredData.tracksSingle.map((row) => row.paper_id),
+      ...filteredData.tracksMulti.map((row) => row.paper_id),
+    ]);
+
+    return [...paperIds]
+      .flatMap((paperId) => {
+        if (hasExplicitPaperIds && !explicitPaperIds.has(paperId)) {
+          return [];
+        }
+
+        const trendRows = trendsByPaper[paperId] ?? [];
+        const singleTrack = singleByPaper.get(paperId);
+        const multiTrack = multiByPaper.get(paperId);
+        const representative = trendRows[0] ?? singleTrack ?? multiTrack;
+        if (!representative) {
+          return [];
+        }
+
+        if (drilldownTarget.year && representative.year !== drilldownTarget.year) {
+          return [];
+        }
+
+        if (
+          track &&
+          !matchesTrack(singleTrack, track) &&
+          !matchesTrack(multiTrack, track)
+        ) {
+          return [];
+        }
+
+        if (!hasExplicitPaperIds) {
+          if (
+            drilldownTarget.keyword &&
+            !trendRows.some((row) => row.keyword === drilldownTarget.keyword)
+          ) {
+            return [];
+          }
+          if (
+            drilldownTarget.topic &&
+            !trendRows.some((row) => row.topic === drilldownTarget.topic)
+          ) {
+            return [];
+          }
+        }
+
+        const matchingEvidence =
+          trendRows.find((row) =>
+            drilldownTarget.keyword
+              ? row.keyword === drilldownTarget.keyword
+              : drilldownTarget.topic
+                ? row.topic === drilldownTarget.topic
+                : false
+          )?.evidence || trendRows.find((row) => row.evidence)?.evidence || "";
+
+        return [
+          {
+            paperId,
+            title: representative.title || "Untitled paper",
+            year: representative.year || "Unknown year",
+            topics: [...new Set(trendRows.map((row) => row.topic).filter(Boolean))].slice(0, 6),
+            keywords: [...new Set(trendRows.map((row) => row.keyword).filter(Boolean))].slice(0, 8),
+            tracks: [...new Set([...trackLabelsForRow(singleTrack), ...trackLabelsForRow(multiTrack)])],
+            evidence: matchingEvidence,
+          },
+        ];
+      })
+      .sort(
+        (left, right) =>
+          String(right.year).localeCompare(String(left.year)) ||
+          left.title.localeCompare(right.title)
+      );
+  }, [drilldownTarget, filteredData.tracksMulti, filteredData.tracksSingle, filteredData.trends]);
 
   const adaptivePlanSignature = useMemo(() => {
     if (!data || !isAdaptiveTab) {
@@ -683,6 +828,140 @@ export default function DashboardClient({
           />
         )}
 
+        {drilldownTarget ? (
+          <Modal onClose={() => setDrilldownTarget(null)}>
+            <div className="max-h-[88vh] w-[min(920px,94vw)] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+              <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-5 dark:border-[#1f1f1f] dark:bg-[#030303] sm:px-6">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                      Dashboard drilldown
+                    </p>
+                    <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                      {buildDashboardDrilldownTitle(drilldownTarget)}
+                    </h2>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-[#a3a3a3]">
+                      {drilldownPapers.length} associated paper{drilldownPapers.length === 1 ? "" : "s"} in the current dashboard scope.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDrilldownTarget(null)}
+                    className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+                    aria-label="Close drilldown"
+                  >
+                    <CloseIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-3 px-5 py-5 sm:px-6">
+                {drilldownPapers.length > 0 ? (
+                  drilldownPapers.map((paper) => (
+                    <article
+                      key={paper.paperId}
+                      className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold leading-6 text-slate-900 dark:text-[#f2f2f2]">
+                            {paper.title}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-500 dark:text-[#a3a3a3]">
+                            {paper.year}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDrilldownTarget(null);
+                            router.push(`/workspace/library?paperId=${paper.paperId}`);
+                          }}
+                          className="inline-flex h-9 flex-none items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                        >
+                          Open paper
+                        </button>
+                      </div>
+
+                      {paper.tracks.length > 0 ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {paper.tracks.map((track) => (
+                            <span
+                              key={`${paper.paperId}-${track}`}
+                              className="rounded-full bg-white px-3 py-1.5 text-xs text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]"
+                            >
+                              {track}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {paper.topics.length > 0 || paper.keywords.length > 0 ? (
+                        <div className="mt-3 grid gap-3 lg:grid-cols-2">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                              Topics
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {paper.topics.length > 0 ? (
+                                paper.topics.map((topic) => (
+                                  <span
+                                    key={`${paper.paperId}-${topic}`}
+                                    className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#cfcfcf]"
+                                  >
+                                    {topic}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-slate-500 dark:text-[#a3a3a3]">
+                                  No topic rows
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                              Keywords
+                            </p>
+                            <div className="mt-2 flex flex-wrap gap-1.5">
+                              {paper.keywords.length > 0 ? (
+                                paper.keywords.map((keyword) => (
+                                  <span
+                                    key={`${paper.paperId}-${keyword}`}
+                                    className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#cfcfcf]"
+                                  >
+                                    {keyword}
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-xs text-slate-500 dark:text-[#a3a3a3]">
+                                  No keyword rows
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {paper.evidence ? (
+                        <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
+                          {paper.evidence}
+                        </p>
+                      ) : null}
+                    </article>
+                  ))
+                ) : (
+                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
+                      No papers matched this dashboard item in the current filter scope.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Modal>
+        ) : null}
+
         <div className="hidden xl:block">
           <div
             className={`fixed right-6 top-[124px] z-40 hidden w-full max-w-sm xl:block ${
@@ -755,6 +1034,7 @@ export default function DashboardClient({
               projectId={selectedProjectId ?? undefined}
               selectedYears={selectedYears}
               selectedTracks={selectedTracks}
+              onDrilldown={openPaperDrilldown}
             />
           ) : null}
           {currentTabKey === "adaptive" ? (

@@ -15,6 +15,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
 import { supabase } from "@/lib/supabase";
 import Modal from "@/components/ui/Modal";
 import {
@@ -129,6 +130,11 @@ const FOLDER_PLACEMENT_OPTIONS: Array<{ id: FolderPlacement; label: string }> = 
 
 function titleOf(run: IngestionRunRow) {
   return run.display_name || run.source_filename || run.id;
+}
+
+function paperIdOfRun(run: IngestionRunRow): string {
+  const payloadPaperId = normalizePaperId(run.input_payload?.paper_id);
+  return payloadPaperId || paperIdFromRunId(run.id);
 }
 
 function extOf(run: IngestionRunRow) {
@@ -475,6 +481,7 @@ export default function AdminImportClient() {
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const autoOpenedUploadActionRef = useRef(false);
   const requestedRunId = searchParams.get("runId");
+  const requestedPaperId = normalizePaperId(searchParams.get("paperId"));
 
   const requestHeaders = useMemo<Record<string, string>>(() => {
     const headers: Record<string, string> = {};
@@ -748,25 +755,33 @@ export default function AdminImportClient() {
   }
 
   useEffect(() => {
-    if (!requestedRunId) {
+    const requestedKey = requestedRunId
+      ? `run:${requestedRunId}`
+      : requestedPaperId
+        ? `paper:${requestedPaperId}`
+        : "";
+
+    if (!requestedKey) {
       autoOpenedRunIdRef.current = null;
       return;
     }
 
-    if (autoOpenedRunIdRef.current === requestedRunId) {
+    if (autoOpenedRunIdRef.current === requestedKey) {
       return;
     }
 
-    const matchingRun = runs.find((run) => run.id === requestedRunId);
+    const matchingRun = requestedRunId
+      ? runs.find((run) => run.id === requestedRunId)
+      : runs.find((run) => paperIdOfRun(run) === requestedPaperId);
     if (!matchingRun) {
       return;
     }
 
-    autoOpenedRunIdRef.current = requestedRunId;
+    autoOpenedRunIdRef.current = requestedKey;
     void handleOpenPrimaryFileAction(matchingRun).finally(() => {
       router.replace("/workspace/library", { scroll: false });
     });
-  }, [requestedRunId, router, runs]);
+  }, [requestedPaperId, requestedRunId, router, runs]);
 
   async function handleOpenRunInNewTab(run: IngestionRunRow) {
     const url = await getRunOpenUrl(run);
