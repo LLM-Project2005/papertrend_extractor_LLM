@@ -2,6 +2,10 @@ export function getSupabaseUrl(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
 }
 
+function normalizeConfiguredValue(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^['"]|['"]$/g, "");
+}
+
 export function getSupabaseServiceRoleKey(): string {
   return (
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
@@ -24,7 +28,7 @@ export function getAuthProvider(): AuthProvider {
     process.env.AUTH_PROVIDER ??
     process.env.NEXT_PUBLIC_AUTH_PROVIDER ??
     "supabase"
-  ).trim().toLowerCase();
+  ).trim().replace(/^['"]|['"]$/g, "").toLowerCase();
   if (provider === "supabase" || provider === "") {
     return "supabase";
   }
@@ -35,11 +39,11 @@ export function getAuthProvider(): AuthProvider {
 }
 
 export function getFirebaseProjectId(): string {
-  return process.env.FIREBASE_PROJECT_ID ?? "";
+  return normalizeConfiguredValue(process.env.FIREBASE_PROJECT_ID);
 }
 
 export function getFirebaseClientEmail(): string {
-  return process.env.FIREBASE_CLIENT_EMAIL ?? "";
+  return normalizeConfiguredValue(process.env.FIREBASE_CLIENT_EMAIL);
 }
 
 export function getFirebasePrivateKey(): string {
@@ -51,7 +55,7 @@ export function getFirebaseCheckRevoked(): boolean {
   if (configured === undefined) {
     return getAuthProvider() === "firebase";
   }
-  return configured.trim().toLowerCase() === "true";
+  return normalizeConfiguredValue(configured).toLowerCase() === "true";
 }
 
 export type DatabaseProvider = "supabase" | "cloud-sql";
