@@ -17,7 +17,14 @@ export function getSupabaseAnonKey(): string {
 export type AuthProvider = "supabase" | "firebase";
 
 export function getAuthProvider(): AuthProvider {
-  const provider = (process.env.AUTH_PROVIDER ?? "supabase").trim().toLowerCase();
+  // Keep the server switch authoritative, but allow Preview deployments that
+  // only set the matching public switch to avoid silently verifying a Firebase
+  // token with the Supabase adapter.
+  const provider = (
+    process.env.AUTH_PROVIDER ??
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER ??
+    "supabase"
+  ).trim().toLowerCase();
   if (provider === "supabase" || provider === "") {
     return "supabase";
   }

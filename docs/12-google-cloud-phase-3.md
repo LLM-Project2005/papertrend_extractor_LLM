@@ -22,7 +22,7 @@ it is not the live database yet.
 ## Phase 2 Completion
 
 Completed and verified:
-
+ 
 - Cloud Run staging is healthy and serves the current staging revision at 100%
   traffic.
 - The runtime uses `papertrend-app-runtime` and the Cloud SQL connector.

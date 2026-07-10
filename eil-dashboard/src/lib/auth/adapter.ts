@@ -115,6 +115,14 @@ function firebaseIdentity(token: DecodedIdToken): AuthIdentity {
 
 let firebaseApp: App | null = null;
 
+function normalizeFirebasePrivateKey(value: string): string {
+  return value
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n/g, "\n");
+}
+
 async function getFirebaseApp(): Promise<App> {
   if (firebaseApp) {
     return firebaseApp;
@@ -128,7 +136,7 @@ async function getFirebaseApp(): Promise<App> {
 
     const projectId = getFirebaseProjectId();
     const clientEmail = getFirebaseClientEmail();
-    const privateKey = getFirebasePrivateKey().replace(/\\n/g, "\n");
+    const privateKey = normalizeFirebasePrivateKey(getFirebasePrivateKey());
 
     if (!projectId || !clientEmail || !privateKey) {
       throw new AuthConfigurationError(
