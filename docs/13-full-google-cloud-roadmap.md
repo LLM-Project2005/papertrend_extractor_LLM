@@ -11,7 +11,7 @@ Google Cloud replacements are proven one boundary at a time.
 | Phase 1 - Google foundation | Complete | Cloud SQL, GCS, Cloud Run, Secret Manager, Tasks, and Scheduler exist in staging. |
 | Phase 2 - GCS and worker path | Complete | Browser upload, GCS object verification, queueing, GCS download, and analysis work end to end. |
 | Phase 3 - security and parity preparation | Complete | OIDC trigger security, storage inventory, owner authorization checks, controlled mirroring, and staging parity checks are complete; Supabase remains authoritative. |
-| Phase 4 - identity migration | In progress (4A foundation) | Supabase Auth remains live; the provider-neutral server adapter and Cloud SQL mapping schema are prepared, but Firebase is not enabled. |
+| Phase 4 - identity migration | 4B staging parity passed; checkpoint added | Firebase Preview authentication, owner mapping, refresh/logout behavior, and cross-user checks pass; production remains on Supabase. |
 | Phase 5 - Google-hosted backend | Not started | Next.js API routes still run on Vercel and use Supabase. |
 | Phase 6 - Cloud SQL cutover | Not started | Cloud SQL is a staging copy, not the live source of truth. |
 | Phase 7 - frontend hosting | Not started | Vercel remains the frontend host. |
@@ -178,9 +178,11 @@ Implementation order:
 Current safety state:
 
 - `AUTH_PROVIDER` defaults to `supabase`; the current browser login and all
-  private API routes therefore continue to work through Supabase.
-- No Firebase project, client credentials, or Firebase redirect is required for
-  this commit. Do not set `AUTH_PROVIDER=firebase` yet.
+  production private API routes therefore continue to work through Supabase.
+  The test Preview explicitly uses `AUTH_PROVIDER=firebase` and
+  `NEXT_PUBLIC_AUTH_PROVIDER=firebase` for parity testing.
+- Firebase credentials are configured only in Preview server/client
+  environments; production remains on Supabase until the next migration gate.
 - If Firebase is selected without all server credentials, token verification
   fails closed. If a Firebase token is valid but has no Cloud SQL mapping, it
   still cannot become an owner-scoped identity.
@@ -188,8 +190,8 @@ Current safety state:
   private key or service-account JSON in a `NEXT_PUBLIC_*` variable or browser
   bundle.
 
-Phase 4B implementation is now prepared, but it still needs a manual staging
-configuration before it can be called complete:
+Phase 4B staging configuration and manual parity testing are complete for the
+test environment:
 
 1. Enable Firebase Authentication / Identity Platform APIs for the Google
    Cloud project and create or link the Firebase project.
@@ -208,9 +210,16 @@ configuration before it can be called complete:
    verified Firebase account through `/api/auth/firebase/link`. The endpoint
    requires both tokens and matching verified email; it never accepts an owner
    UUID from the browser.
-6. Test login, refresh, logout, password reset, Google login, unmapped-account
-   rejection, expired/revoked token rejection, and cross-user access before
-   considering Phase 4B complete.
+6. Login, refresh, logout, password reset, Google login, unmapped-account
+   rejection, expired/revoked token rejection, and cross-user access passed in
+   the staging test account.
+
+The remaining repeatable checkpoint is the API smoke test in
+`docs/14-firebase-auth-parity.md`. It checks unauthenticated rejection,
+mapped-user access, invalid-token rejection, and optional second-user
+isolation across profile, projects, folders, library, and chat list routes.
+Keep production on `AUTH_PROVIDER=supabase` until that smoke test and the
+manual acceptance checklist are recorded against the current Preview build.
 
 The Cloud SQL mapping schema is also prepared in
 `cloudsql/phase4_identity_mapping.sql`. Apply it to staging only after the
