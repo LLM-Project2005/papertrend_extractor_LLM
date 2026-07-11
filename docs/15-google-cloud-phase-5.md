@@ -27,14 +27,15 @@ Complete these steps in `research-trend-analysis`:
 
 1. Enable Artifact Registry, Cloud Build, and Cloud Run APIs if they are not
    already enabled.
-2. Create an Artifact Registry Docker repository named `papertrend` in
-   `asia-southeast1`.
+2. The existing `cloud-run-source-deploy` Artifact Registry repository is
+   sufficient. No separate Docker repository is required; Cloud Run source
+   deploy builds the container with Google Cloud buildpacks.
 3. Create these Secret Manager secrets, or confirm they already exist:
    `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `WORKER_WEBHOOK_SECRET`,
    `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `FIREBASE_PROJECT_ID`,
    `FIREBASE_CLIENT_EMAIL`, and `FIREBASE_PRIVATE_KEY`.
 4. Grant the `papertrend-app-runtime` service account Secret Manager Secret
-   Accessor on those secrets and Artifact Registry Reader if required.
+   Accessor on those secrets.
 5. Confirm that the worker service URL and GCS bucket in
    `cloudbuild.web.staging.yaml` match your current resources.
 6. In the Cloud Build trigger, provide the six `_NEXT_PUBLIC_*` substitution
@@ -79,7 +80,7 @@ frontend, OAuth redirects, and rollback process are stable.
 
 ## Phase 5 Exit Criteria
 
-- Cloud Build produces a reproducible Next.js standalone image.
+- Cloud Run source deploy produces a reproducible Next.js service image.
 - `/api/health` works on the Cloud Run URL.
 - Firebase auth parity passes directly against Cloud Run.
 - Profile, projects, folders, library, dashboard, chat, upload finalization,

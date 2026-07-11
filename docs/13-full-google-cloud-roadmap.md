@@ -12,7 +12,7 @@ Google Cloud replacements are proven one boundary at a time.
 | Phase 2 - GCS and worker path | Complete | Browser upload, GCS object verification, queueing, GCS download, and analysis work end to end. |
 | Phase 3 - security and parity preparation | Complete | OIDC trigger security, storage inventory, owner authorization checks, controlled mirroring, and staging parity checks are complete; Supabase remains authoritative. |
 | Phase 4 - identity migration | 4B staging parity passed; checkpoint added | Firebase Preview authentication, owner mapping, refresh/logout behavior, and cross-user checks pass; production remains on Supabase. |
-| Phase 5 - Google-hosted backend | Staging package ready; not deployed | A standalone Next.js Cloud Run image, health route, and Cloud Build manifest are prepared; Vercel remains the live rollback path. |
+| Phase 5 - Google-hosted backend | Source-deploy package ready; not deployed | A Cloud Run source-deploy manifest and health route are prepared; Vercel remains the live rollback path. |
 | Phase 6 - Cloud SQL cutover | Not started | Cloud SQL is a staging copy, not the live source of truth. |
 | Phase 7 - frontend hosting | Not started | Vercel remains the frontend host. |
 
@@ -234,8 +234,8 @@ Before Cloud SQL becomes live, move the server-side Next.js API surface to a
 Google-hosted runtime. Vercel cannot use the same private Cloud SQL connector
 path as Cloud Run.
 
-The first staging implementation is in `eil-dashboard/Dockerfile`,
-`cloudbuild.web.staging.yaml`, and `docs/15-google-cloud-phase-5.md`. It serves
+The first staging implementation is in `cloudbuild.web.staging.yaml` and
+`docs/15-google-cloud-phase-5.md`. It serves
 the complete Next.js app and API on Cloud Run while keeping Supabase as the
 staging database, GCS as the staged storage path, Firebase as the Preview auth
 provider, and the existing worker unchanged. No traffic cutover has happened.
@@ -249,7 +249,7 @@ Browser -> Next.js/API on Cloud Run
                  -> Cloud Run worker / Cloud Tasks
 ```
 
-Start with a staging Cloud Run service using Next.js standalone output. Keep
+Start with a staging Cloud Run service using Google Cloud buildpacks. Keep
 Vercel as the rollback deployment until all API routes have parity. Do not
 expose database credentials to browser code or `NEXT_PUBLIC_*` variables.
 
