@@ -1017,7 +1017,11 @@ def mirror_completed_dataset(
 ) -> None:
     """Best-effort Cloud SQL mirror; never changes the authoritative result."""
 
-    from cloudsql_mirror import cloudsql_dual_write_enabled, mirror_ingestion_dataset
+    from cloudsql_mirror import (
+        cloudsql_dual_write_enabled,
+        mirror_ingestion_dataset,
+        shadow_ingestion_dataset,
+    )
 
     if not cloudsql_dual_write_enabled():
         return
@@ -1035,6 +1039,25 @@ def mirror_completed_dataset(
                 run=run,
                 dataset=dataset,
             )
+            if summary.get("state") == "mirrored":
+                try:
+                    summary["shadow"] = shadow_ingestion_dataset(
+                        database_url=os.getenv("DATABASE_URL", ""),
+                        run=run,
+                        dataset=dataset,
+                    )
+                except Exception as error:
+                    summary["shadow"] = {
+                        "state": "failed",
+                        "error_type": type(error).__name__,
+                    }
+                    logger.error(
+                        "cloud sql shadow read failed after mirror",
+                        extra={
+                            "run_id": str(run.get("id") or ""),
+                            "error_type": type(error).__name__,
+                        },
+                    )
         except Exception as error:
             summary = {
                 "state": "failed",

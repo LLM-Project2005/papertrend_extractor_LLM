@@ -13,7 +13,7 @@ Google Cloud replacements are proven one boundary at a time.
 | Phase 3 - security and parity preparation | Complete | OIDC trigger security, storage inventory, owner authorization checks, controlled mirroring, and staging parity checks are complete; Supabase remains authoritative. |
 | Phase 4 - identity migration | 4B staging parity passed; checkpoint added | Firebase Preview authentication, owner mapping, refresh/logout behavior, and cross-user checks pass; production remains on Supabase. |
 | Phase 5 - Google-hosted backend | Source-deploy package ready; not deployed | A Cloud Run source-deploy manifest and health route are prepared; Vercel remains the live rollback path. |
-| Phase 6 - Cloud SQL cutover | Not started | Cloud SQL is a staging copy, not the live source of truth. |
+| Phase 6 - Cloud SQL dual-write and shadow verification | Pilot implementation ready; flags disabled | Supabase remains authoritative while one-owner mirror and read-back comparisons are tested. |
 | Phase 7 - frontend hosting | Not started | Vercel remains the frontend host. |
 
 The attached earlier plan was correct about the major work, but its numbering
@@ -255,13 +255,13 @@ expose database credentials to browser code or `NEXT_PUBLIC_*` variables.
 
 ## Phase 6 - Cloud SQL Dual-Write, Shadow Reads, And Cutover
 
-The guarded dual-write hook and offline shadow summary are implemented. A
-previously completed owner-scoped result was replayed through the mirror without
-an LLM call; the mirror succeeded and the final owner-scoped parity check
-passed. The temporary staging override was then disabled, and the repository
-deployment default remains disabled. A real new upload can be used as an
-additional product-flow test later, but it is not required to enable the
-provider switch.
+The guarded dual-write hook, offline parity check, and controlled read-back
+shadow verification are implemented. A previously completed owner-scoped
+result was replayed through the mirror without an LLM call; the mirror
+succeeded and the final owner-scoped parity check passed. The new shadow path
+can compare stable row digests after a real mirrored upload. The temporary
+staging override remains disabled until an internal owner is explicitly
+selected.
 
 1. Keep Supabase authoritative and mirror new writes to Cloud SQL using stable
    IDs and idempotent upserts.

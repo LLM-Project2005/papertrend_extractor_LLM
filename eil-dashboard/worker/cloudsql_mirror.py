@@ -9,6 +9,10 @@ It never accepts an owner ID from a browser request and never logs row data.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any, Iterable
 
 from cloudsql_authorization import normalize_owner_id, require_owned_row
@@ -44,6 +48,14 @@ TABLE_OWNER_COLUMNS = {
 }
 
 
+def shadow_owner_allowlist() -> set[str]:
+    return {
+        normalize_owner_id(value, "CLOUDSQL_SHADOW_OWNER_IDS")
+        for value in os.getenv("CLOUDSQL_SHADOW_OWNER_IDS", "").split(",")
+        if value.strip()
+    }
+
+
 def mirror_owner_allowlist() -> set[str]:
     return {
         normalize_owner_id(value, "CLOUDSQL_DUAL_WRITE_OWNER_IDS")
@@ -64,6 +76,20 @@ def cloudsql_dual_write_enabled() -> bool:
 def should_mirror_owner(owner_user_id: str) -> bool:
     normalized_owner = normalize_owner_id(owner_user_id)
     return cloudsql_dual_write_enabled() and normalized_owner in mirror_owner_allowlist()
+
+
+def cloudsql_shadow_read_enabled() -> bool:
+    return os.getenv("CLOUDSQL_SHADOW_READ_ENABLED", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def should_shadow_owner(owner_user_id: str) -> bool:
+    normalized_owner = normalize_owner_id(owner_user_id)
+    return cloudsql_shadow_read_enabled() and normalized_owner in shadow_owner_allowlist()
 
 
 def _validate_owned_rows(
@@ -172,6 +198,162 @@ def _delete_child_rows(connection: Any, paper_id: int, owner_user_id: str) -> No
                 ).format(table=sql.Identifier(table)),
                 (paper_id, normalized_owner),
             )
+
+
+def _canonical_value(value: Any) -> Any:
+    """Convert JSON and PostgreSQL values into stable, comparable values."""
+
+    if isinstance(value, Decimal):
+        if value == value.to_integral_value():
+            return int(value)
+        return float(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _canonical_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonical_value(item) for item in value]
+    return value
+
+
+def _rows_digest(rows: Iterable[dict[str, Any]], columns: list[str]) -> str:
+    serialized = [
+        json.dumps(
+            {column: _canonical_value(row.get(column)) for column in columns},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        for row in rows
+    ]
+    serialized.sort()
+    digest = hashlib.sha256()
+    for row in serialized:
+        digest.update(row.encode("utf-8"))
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _shadow_filter(table: str, paper_id: int, run_id: str) -> tuple[str, tuple[Any, ...]]:
+    if table == "ingestion_runs":
+        return "id = %s AND owner_user_id = %s", (run_id,)
+    return "paper_id = %s AND owner_user_id = %s", (paper_id,)
+
+
+def shadow_ingestion_dataset(
+    *,
+    database_url: str,
+    run: dict[str, Any],
+    dataset: dict[str, Any],
+) -> dict[str, Any]:
+    """Read the mirrored paper back and compare stable row digests.
+
+    This is deliberately independent from the live request path. It only runs
+    for an explicit owner allowlist and reports diagnostics without changing
+    the authoritative Supabase result.
+    """
+
+    owner_user_id = normalize_owner_id(run.get("owner_user_id"), "run.owner_user_id")
+    if not should_shadow_owner(owner_user_id):
+        return {
+            "state": "skipped",
+            "reason": "disabled_or_owner_not_allowlisted",
+        }
+    if not str(database_url or "").strip():
+        raise ValueError("DATABASE_URL is required when Cloud SQL shadow reads are enabled.")
+
+    import psycopg
+    from psycopg import sql
+
+    paper_id = int(dataset["paper_id"])
+    run_id = str(run["id"])
+    expected_tables: dict[str, list[dict[str, Any]]] = {
+        "ingestion_runs": [dict(run)],
+        "papers": list(dataset.get("papers") or []),
+        "paper_keywords": list(dataset.get("keywords") or []),
+        "paper_tracks_single": list(dataset.get("tracks_single") or []),
+        "paper_tracks_multi": list(dataset.get("tracks_multi") or []),
+        "paper_content": list(dataset.get("paper_content") or []),
+        "paper_keyword_concepts": list(dataset.get("keyword_concepts") or []),
+        "paper_analysis_facets": list(dataset.get("paper_facets") or []),
+        "paper_author_keywords": list(dataset.get("author_keywords") or []),
+        "paper_research_typologies": list(dataset.get("research_typologies") or []),
+    }
+
+    comparisons: dict[str, dict[str, Any]] = {}
+    mismatches: list[str] = []
+    with psycopg.connect(database_url.strip(), connect_timeout=10) as connection:
+        with connection.transaction():
+            with connection.cursor() as cursor:
+                set_transaction_owner(cursor, owner_user_id)
+            available_columns = _available_columns(connection)
+            with connection.cursor() as cursor:
+                for table, expected_rows in expected_tables.items():
+                    columns = sorted(
+                        {
+                            column
+                            for row in expected_rows
+                            for column in row
+                            if column in available_columns.get(table, set())
+                        }
+                    )
+                    if not columns:
+                        columns = sorted(
+                            {
+                                *TABLE_PRIMARY_KEYS[table],
+                                TABLE_OWNER_COLUMNS[table],
+                            }
+                            & available_columns.get(table, set())
+                        )
+                    for key in TABLE_PRIMARY_KEYS[table]:
+                        if key not in columns:
+                            raise RuntimeError(
+                                f"Cloud SQL shadow schema cannot compare the {table} key."
+                            )
+                    if not columns:
+                        raise RuntimeError(f"Cloud SQL shadow schema is missing table {table}.")
+
+                    select_columns = sql.SQL(", ").join(
+                        sql.Identifier(column) for column in columns
+                    )
+                    where_clause, filter_values = _shadow_filter(table, paper_id, run_id)
+                    values = filter_values + (owner_user_id,)
+                    cursor.execute(
+                        sql.SQL("SELECT {columns} FROM public.{table} WHERE {where_clause}").format(
+                            columns=select_columns,
+                            table=sql.Identifier(table),
+                            where_clause=sql.SQL(where_clause),
+                        ),
+                        values,
+                    )
+                    actual_rows = [
+                        dict(zip(columns, row, strict=True))
+                        for row in cursor.fetchall()
+                    ]
+                    expected_digest = _rows_digest(expected_rows, columns)
+                    actual_digest = _rows_digest(actual_rows, columns)
+                    matches = (
+                        len(expected_rows) == len(actual_rows)
+                        and expected_digest == actual_digest
+                    )
+                    comparisons[table] = {
+                        "expected_rows": len(expected_rows),
+                        "actual_rows": len(actual_rows),
+                        "expected_digest": expected_digest,
+                        "actual_digest": actual_digest,
+                        "matches": matches,
+                    }
+                    if not matches:
+                        mismatches.append(table)
+
+    return {
+        "state": "verified" if not mismatches else "mismatch",
+        "owner_scoped": True,
+        "paper_id": paper_id,
+        "run_id": run_id,
+        "mismatches": mismatches,
+        "tables": comparisons,
+    }
 
 
 def mirror_ingestion_dataset(
