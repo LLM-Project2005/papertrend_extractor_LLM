@@ -1052,7 +1052,8 @@ def mirror_completed_dataset(
                         "error_type": type(error).__name__,
                     }
                     logger.error(
-                        "cloud sql shadow read failed after mirror",
+                        "cloud sql shadow read failed after mirror error_type=%s",
+                        type(error).__name__,
                         extra={
                             "run_id": str(run.get("id") or ""),
                             "error_type": type(error).__name__,
@@ -1064,7 +1065,9 @@ def mirror_completed_dataset(
                 "error_type": type(error).__name__,
             }
             logger.error(
-                "cloud sql dual-write failed without blocking the authoritative result",
+                "cloud sql dual-write failed without blocking the authoritative result "
+                "error_type=%s",
+                type(error).__name__,
                 extra={"run_id": str(run.get("id") or ""), "error_type": type(error).__name__},
             )
 

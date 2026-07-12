@@ -47,6 +47,10 @@ TABLE_OWNER_COLUMNS = {
     for table in TABLE_PRIMARY_KEYS
 }
 
+OPTIONAL_MIRROR_TABLES = frozenset(
+    {"paper_author_keywords", "paper_research_typologies"}
+)
+
 
 def shadow_owner_allowlist() -> set[str]:
     return {
@@ -185,12 +189,21 @@ def _upsert_rows(
     return len(rows)
 
 
-def _delete_child_rows(connection: Any, paper_id: int, owner_user_id: str) -> None:
+def _delete_child_rows(
+    connection: Any,
+    paper_id: int,
+    owner_user_id: str,
+    available_columns: dict[str, set[str]],
+) -> None:
     from psycopg import sql
 
     normalized_owner = normalize_owner_id(owner_user_id)
     with connection.cursor() as cursor:
         for table in CHILD_TABLES:
+            if table not in available_columns:
+                if table in OPTIONAL_MIRROR_TABLES:
+                    continue
+                raise RuntimeError(f"Cloud SQL mirror schema is missing table {table}.")
             cursor.execute(
                 sql.SQL(
                     "DELETE FROM public.{table} "
@@ -289,6 +302,16 @@ def shadow_ingestion_dataset(
             available_columns = _available_columns(connection)
             with connection.cursor() as cursor:
                 for table, expected_rows in expected_tables.items():
+                    if table not in available_columns:
+                        if table in OPTIONAL_MIRROR_TABLES and not expected_rows:
+                            comparisons[table] = {
+                                "state": "skipped",
+                                "reason": "optional_table_missing",
+                            }
+                            continue
+                        raise RuntimeError(
+                            f"Cloud SQL shadow schema is missing table {table}."
+                        )
                     columns = sorted(
                         {
                             column
@@ -415,7 +438,12 @@ def mirror_ingestion_dataset(
                     (owner_user_id,),
                 )
             columns = _available_columns(connection)
-            _delete_child_rows(connection, paper_id, owner_user_id)
+            for table, rows in validated_tables.items():
+                if table not in columns and (
+                    table not in OPTIONAL_MIRROR_TABLES or rows
+                ):
+                    raise RuntimeError(f"Cloud SQL mirror schema is missing table {table}.")
+            _delete_child_rows(connection, paper_id, owner_user_id, columns)
             for table, rows in validated_tables.items():
                 mirrored[table] = _upsert_rows(
                     connection,

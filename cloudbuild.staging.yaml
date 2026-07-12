@@ -16,6 +16,8 @@ steps:
       - ${_REGION}
       - --source
       - .
+      - --add-cloudsql-instances
+      - research-trend-analysis:asia-southeast1:papertrend-pg
       - --allow-unauthenticated
       - --memory
       - 1Gi
