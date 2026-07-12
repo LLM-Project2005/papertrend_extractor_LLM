@@ -11,11 +11,16 @@ from __future__ import annotations
 import os
 import hashlib
 import json
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Iterable
 
-from cloudsql_authorization import normalize_owner_id, require_owned_row
+from cloudsql_authorization import (
+    normalize_owner_id,
+    require_owned_row,
+    set_transaction_owner,
+)
 
 
 CHILD_TABLES = (
@@ -220,12 +225,20 @@ def _delete_child_rows(
 def _canonical_value(value: Any) -> Any:
     """Convert JSON and PostgreSQL values into stable, comparable values."""
 
+    if isinstance(value, uuid.UUID):
+        return str(value)
     if isinstance(value, Decimal):
         if value == value.to_integral_value():
             return int(value)
         return float(value)
     if isinstance(value, (datetime, date)):
         return value.isoformat()
+    if isinstance(value, str) and "T" in value:
+        try:
+            normalized = value.replace("Z", "+00:00")
+            return datetime.fromisoformat(normalized).isoformat()
+        except ValueError:
+            pass
     if isinstance(value, dict):
         return {str(key): _canonical_value(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
@@ -251,9 +264,27 @@ def _rows_digest(rows: Iterable[dict[str, Any]], columns: list[str]) -> str:
     return digest.hexdigest()
 
 
+def _differing_columns(
+    expected_rows: Iterable[dict[str, Any]],
+    actual_rows: Iterable[dict[str, Any]],
+    columns: list[str],
+) -> list[str]:
+    """Identify mismatching columns without returning their values."""
+
+    expected = list(expected_rows)
+    actual = list(actual_rows)
+    differing: list[str] = []
+    for column in columns:
+        if _rows_digest(expected, [column]) != _rows_digest(actual, [column]):
+            differing.append(column)
+    return differing
+
+
 def _shadow_filter(table: str, paper_id: int, run_id: str) -> tuple[str, tuple[Any, ...]]:
     if table == "ingestion_runs":
         return "id = %s AND owner_user_id = %s", (run_id,)
+    if table == "papers":
+        return "id = %s AND owner_user_id = %s", (paper_id,)
     return "paper_id = %s AND owner_user_id = %s", (paper_id,)
 
 
@@ -371,6 +402,11 @@ def shadow_ingestion_dataset(
                         "matches": matches,
                     }
                     if not matches:
+                        comparisons[table]["differing_columns"] = _differing_columns(
+                            expected_rows,
+                            actual_rows,
+                            columns,
+                        )
                         mismatches.append(table)
 
     return {

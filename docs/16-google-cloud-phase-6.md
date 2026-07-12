@@ -84,6 +84,10 @@ continue serving the Supabase path during this phase.
 10. Disable both flags and deploy a rollback revision. Confirm the same user
     can still use the Supabase path.
 
+If a completed run has a failed mirror diagnostic, use
+`scripts/test_cloudsql_mirror_replay.py` with that run ID. It reuses the
+already-persisted Supabase result and does not call an LLM or reprocess the PDF.
+
 ## Reconciliation Cycles
 
 Complete three separate cycles. Each cycle should include at least one normal

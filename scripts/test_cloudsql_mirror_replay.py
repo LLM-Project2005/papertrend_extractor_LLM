@@ -22,7 +22,8 @@ if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
 
 from cloudsql_authorization import normalize_owner_id  # noqa: E402
-from cloudsql_mirror import mirror_ingestion_dataset  # noqa: E402
+from cloudsql_mirror import mirror_ingestion_dataset, shadow_ingestion_dataset  # noqa: E402
+from process_ingestion_queue import SupabaseRestClient  # noqa: E402
 
 try:
     from dotenv import load_dotenv
@@ -109,6 +110,8 @@ def main() -> int:
             raise RuntimeError("No succeeded owner-scoped ingestion run was found.")
         run = runs[0]
         run_id = str(run.get("id") or "")
+        dependency_client = SupabaseRestClient(supabase_url, service_key)
+        dependencies = dependency_client.collect_cloudsql_mirror_dependencies(run)
 
         content_rows = fetch_rows(
             session,
@@ -167,12 +170,33 @@ def main() -> int:
                 "author_keywords": dataset["paper_author_keywords"],
                 "research_typologies": dataset["paper_research_typologies"],
             },
+            dependencies=dependencies,
         )
+        shadow = None
+        if result.get("state") == "mirrored":
+            shadow = shadow_ingestion_dataset(
+                database_url=database_url,
+                run=run,
+                dataset={
+                    "paper_id": paper_id,
+                    "papers": dataset["papers"],
+                    "keywords": dataset["paper_keywords"],
+                    "tracks_single": dataset["paper_tracks_single"],
+                    "tracks_multi": dataset["paper_tracks_multi"],
+                    "paper_content": dataset["paper_content"],
+                    "keyword_concepts": dataset["paper_keyword_concepts"],
+                    "paper_facets": dataset["paper_analysis_facets"],
+                    "author_keywords": dataset["paper_author_keywords"],
+                    "research_typologies": dataset["paper_research_typologies"],
+                },
+            )
         report = {
-            "ok": result.get("state") == "mirrored",
+            "ok": result.get("state") == "mirrored"
+            and (shadow is None or shadow.get("state") == "verified"),
             "state": result.get("state"),
             "owner_scoped": True,
             "tables": result.get("tables", {}),
+            "shadow": shadow,
         }
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["ok"] else 2

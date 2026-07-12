@@ -1120,6 +1120,15 @@ def cloudsql_error_details(error: BaseException) -> Dict[str, str]:
     constraint_name = getattr(diagnostic, "constraint_name", None)
     if constraint_name:
         details["constraint"] = str(constraint_name)
+    if isinstance(error, RuntimeError):
+        message = str(error)
+        if message.startswith("Supabase mirror dependency is missing:"):
+            dependency = message.split(":", 1)[1].strip().split(" ", 1)[0]
+            details["reason"] = f"missing_dependency:{dependency}"
+        elif message.startswith("Cloud SQL"):
+            # These messages are generated locally and contain only table/schema
+            # names, never SQL text, credentials, or paper contents.
+            details["reason"] = message
     return details
 
 

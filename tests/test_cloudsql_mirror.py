@@ -10,6 +10,7 @@ sys.path.insert(0, str(WORKER_ROOT))
 
 from cloudsql_authorization import require_owned_row  # noqa: E402
 from cloudsql_mirror import (  # noqa: E402
+    _canonical_value,
     cloudsql_shadow_read_enabled,
     cloudsql_dual_write_enabled,
     mirror_ingestion_dataset,
@@ -78,6 +79,12 @@ class CloudSqlMirrorTests(unittest.TestCase):
     def test_missing_owner_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
             require_owned_row("papers", {"owner_user_id": None}, OWNER_ID)
+
+    def test_canonical_value_normalizes_database_timestamp_formats(self) -> None:
+        self.assertEqual(
+            _canonical_value("2026-07-12T11:01:51.134Z"),
+            "2026-07-12T11:01:51.134000+00:00",
+        )
 
     def test_collects_fk_dependencies_in_parent_order(self) -> None:
         rows = {
