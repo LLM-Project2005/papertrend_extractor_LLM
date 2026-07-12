@@ -48,6 +48,10 @@ TABLES = (
 )
 
 
+class OptionalRelationUnavailable(RuntimeError):
+    """Raised when replay cannot prove that an optional source relation is complete."""
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--supabase-url", default=os.getenv("SUPABASE_URL"))
@@ -83,7 +87,9 @@ def fetch_rows(
         "paper_author_keywords",
         "paper_research_typologies",
     }:
-        return []
+        raise OptionalRelationUnavailable(
+            f"Supabase relation {table} is unavailable through REST; replay stopped before writing Cloud SQL."
+        )
     response.raise_for_status()
     payload = response.json()
     if not isinstance(payload, list):

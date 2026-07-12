@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import patch
 
@@ -86,6 +87,10 @@ class CloudSqlMirrorTests(unittest.TestCase):
             _canonical_value("2026-07-12T11:01:51.134Z"),
             "2026-07-12T11:01:51.134000+00:00",
         )
+
+    def test_canonical_value_normalizes_integral_float_and_decimal_values(self) -> None:
+        self.assertEqual(_canonical_value(0.0), 0)
+        self.assertEqual(_canonical_value(Decimal("0.00")), 0)
 
     def test_collects_fk_dependencies_in_parent_order(self) -> None:
         rows = {

@@ -11,6 +11,7 @@ from __future__ import annotations
 import os
 import hashlib
 import json
+import math
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -266,6 +267,12 @@ def _canonical_value(value: Any) -> Any:
         if value == value.to_integral_value():
             return int(value)
         return float(value)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return str(value)
+        if value.is_integer():
+            return int(value)
+        return value
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     if isinstance(value, str) and "T" in value:
