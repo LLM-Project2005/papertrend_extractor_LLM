@@ -1,6 +1,10 @@
 [
   {
-    "origin": ["*"],
+    "origin": [
+      "https://papertrend-extractor-llm-git-test-pchantarusorn-9175s-projects.vercel.app",
+      "http://localhost:3000",
+      "http://127.0.0.1:3000"
+    ],
     "method": ["PUT", "GET", "HEAD", "OPTIONS"],
     "responseHeader": ["Content-Type", "x-goog-resumable"],
     "maxAgeSeconds": 3600
