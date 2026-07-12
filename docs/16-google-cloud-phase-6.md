@@ -22,6 +22,15 @@ and SHA-256 digests for the mirrored tables. Only diagnostic metadata is saved
 to the authoritative Supabase run payload; paper text and credentials are not
 logged.
 
+Before mirroring a run, the worker also fetches the run's owner-scoped foreign
+key dependencies from Supabase and inserts them in dependency order:
+organization, project, folder, folder analysis job, copied source run, current
+run, then paper results. This prevents a valid Supabase run from failing in the
+empty Cloud SQL database simply because its folder or analysis job has not been
+mirrored yet. A mirror failure remains non-blocking, and its diagnostic payload
+contains only an error type, SQLSTATE, and constraint name when the database
+driver provides them.
+
 ## One-Owner Pilot
 
 Choose one internal test account and copy its existing Supabase owner UUID.
@@ -66,6 +75,9 @@ continue serving the Supabase path during this phase.
    - state: mirrored means the write completed;
    - shadow.state: verified means the read-back digests match;
    - shadow.state: mismatch requires investigation before expanding scope.
+   - state: failed with error_type ForeignKeyViolation on an older revision
+     means that revision did not sync parent dependencies; deploy the current
+     worker revision and retry one new upload.
 7. Repeat with a retry and a failed/recovered run if available.
 8. Run scripts/verify_cloudsql_parity.py for the owner again.
 9. Run scripts/verify_cloudsql_shadow.py for the owner and folder summaries.

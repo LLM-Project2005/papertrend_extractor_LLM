@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -329,6 +330,104 @@ class SupabaseRestClient:
         response.raise_for_status()
         rows = response.json()
         return rows[0] if rows else None
+
+    def get_owned_row(
+        self,
+        table: str,
+        row_id: str,
+        owner_user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch one trusted owner-scoped dependency for the Cloud SQL mirror."""
+
+        normalized_id = str(row_id or "").strip()
+        normalized_owner = str(owner_user_id or "").strip()
+        if not normalized_id or not normalized_owner:
+            return None
+        response = self.session.get(
+            self._rest_url(table),
+            params={
+                "select": "*",
+                "id": f"eq.{normalized_id}",
+                "owner_user_id": f"eq.{normalized_owner}",
+                "limit": "1",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else None
+
+    def collect_cloudsql_mirror_dependencies(
+        self,
+        run: Dict[str, Any],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Collect the run's parent rows in foreign-key insertion order.
+
+        The mirror only needs a small dependency closure: organization/project
+        parents for folders, folders for jobs/runs, jobs for runs, and copied
+        source runs. Every lookup is scoped to the run owner before it can be
+        sent to Cloud SQL.
+        """
+
+        owner_user_id = str(run.get("owner_user_id") or "").strip()
+        if not owner_user_id:
+            return {}
+        try:
+            owner_user_id = str(uuid.UUID(owner_user_id))
+        except ValueError as error:
+            raise ValueError("run.owner_user_id must be a valid UUID.") from error
+
+        dependencies: Dict[str, List[Dict[str, Any]]] = {
+            "workspace_organizations": [],
+            "workspace_projects": [],
+            "research_folders": [],
+            "folder_analysis_jobs": [],
+            "ingestion_runs": [],
+        }
+        seen: set[tuple[str, str]] = set()
+        pending: list[tuple[str, str]] = []
+
+        def enqueue(table: str, row_id: Any) -> None:
+            value = str(row_id or "").strip()
+            if value:
+                pending.append((table, value))
+
+        def add_dependency(table: str, row_id: str) -> None:
+            identity = (table, row_id)
+            if identity in seen:
+                return
+            seen.add(identity)
+            row = self.get_owned_row(table, row_id, owner_user_id)
+            if not row:
+                raise RuntimeError(
+                    f"Supabase mirror dependency is missing: {table} {row_id}."
+                )
+            dependencies[table].append(row)
+
+            if table == "workspace_projects":
+                enqueue("workspace_organizations", row.get("organization_id"))
+            elif table == "research_folders":
+                enqueue("workspace_organizations", row.get("organization_id"))
+                enqueue("workspace_projects", row.get("project_id"))
+            elif table == "folder_analysis_jobs":
+                enqueue("research_folders", row.get("folder_id"))
+            elif table == "ingestion_runs":
+                enqueue("research_folders", row.get("folder_id"))
+                enqueue("folder_analysis_jobs", row.get("folder_analysis_job_id"))
+                enqueue("ingestion_runs", row.get("copied_from_run_id"))
+
+        # The current run is already included in the mirror payload. Visit it
+        # only to discover its parents and copied-from chain.
+        seen.add(("ingestion_runs", str(run.get("id") or "").strip()))
+        enqueue("research_folders", run.get("folder_id"))
+        enqueue("folder_analysis_jobs", run.get("folder_analysis_job_id"))
+        enqueue("ingestion_runs", run.get("copied_from_run_id"))
+
+        while pending:
+            table, row_id = pending.pop(0)
+            add_dependency(table, row_id)
+
+        return dependencies
 
     def update_run(self, run_id: str, patch: Dict[str, Any]) -> None:
         payload = {"updated_at": now_iso(), **patch}
@@ -1010,6 +1109,20 @@ def sync_folder_analysis_job(client: SupabaseRestClient, run: Dict[str, Any]) ->
     client.update_folder_analysis_job(folder_job_id, patch)
 
 
+def cloudsql_error_details(error: BaseException) -> Dict[str, str]:
+    """Return safe database diagnostics without logging secrets or row data."""
+
+    details: Dict[str, str] = {"error_type": type(error).__name__}
+    sqlstate = getattr(error, "sqlstate", None)
+    if sqlstate:
+        details["sqlstate"] = str(sqlstate)
+    diagnostic = getattr(error, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    if constraint_name:
+        details["constraint"] = str(constraint_name)
+    return details
+
+
 def mirror_completed_dataset(
     client: SupabaseRestClient,
     run: Dict[str, Any],
@@ -1034,10 +1147,12 @@ def mirror_completed_dataset(
         }
     else:
         try:
+            dependencies = client.collect_cloudsql_mirror_dependencies(run)
             summary = mirror_ingestion_dataset(
                 database_url=os.getenv("DATABASE_URL", ""),
                 run=run,
                 dataset=dataset,
+                dependencies=dependencies,
             )
             if summary.get("state") == "mirrored":
                 try:
@@ -1047,28 +1162,35 @@ def mirror_completed_dataset(
                         dataset=dataset,
                     )
                 except Exception as error:
+                    error_details = cloudsql_error_details(error)
                     summary["shadow"] = {
                         "state": "failed",
-                        "error_type": type(error).__name__,
+                        **error_details,
                     }
                     logger.error(
-                        "cloud sql shadow read failed after mirror error_type=%s",
-                        type(error).__name__,
+                        "cloud sql shadow read failed after mirror "
+                        "error_type=%s sqlstate=%s constraint=%s",
+                        error_details.get("error_type"),
+                        error_details.get("sqlstate", ""),
+                        error_details.get("constraint", ""),
                         extra={
                             "run_id": str(run.get("id") or ""),
-                            "error_type": type(error).__name__,
+                            **error_details,
                         },
                     )
         except Exception as error:
+            error_details = cloudsql_error_details(error)
             summary = {
                 "state": "failed",
-                "error_type": type(error).__name__,
+                **error_details,
             }
             logger.error(
                 "cloud sql dual-write failed without blocking the authoritative result "
-                "error_type=%s",
-                type(error).__name__,
-                extra={"run_id": str(run.get("id") or ""), "error_type": type(error).__name__},
+                "error_type=%s sqlstate=%s constraint=%s",
+                error_details.get("error_type"),
+                error_details.get("sqlstate", ""),
+                error_details.get("constraint", ""),
+                extra={"run_id": str(run.get("id") or ""), **error_details},
             )
 
     mirrored_payload = merge_input_payload(

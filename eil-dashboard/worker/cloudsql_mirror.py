@@ -30,6 +30,10 @@ CHILD_TABLES = (
 )
 
 TABLE_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
+    "workspace_organizations": ("id",),
+    "workspace_projects": ("id",),
+    "research_folders": ("id",),
+    "folder_analysis_jobs": ("id",),
     "ingestion_runs": ("id",),
     "papers": ("id",),
     "paper_keywords": ("id",),
@@ -384,8 +388,14 @@ def mirror_ingestion_dataset(
     database_url: str,
     run: dict[str, Any],
     dataset: dict[str, Any],
+    dependencies: dict[str, list[dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
-    """Mirror one completed run; callers must treat errors as non-blocking."""
+    """Mirror one completed run; callers must treat errors as non-blocking.
+
+    ``dependencies`` contains the owner-scoped parent rows required by the run's
+    foreign keys. They are deliberately supplied by the trusted worker after
+    being fetched from Supabase; browser input never controls this collection.
+    """
 
     owner_user_id = normalize_owner_id(run.get("owner_user_id"), "run.owner_user_id")
     if not should_mirror_owner(owner_user_id):
@@ -396,9 +406,36 @@ def mirror_ingestion_dataset(
     if not str(database_url or "").strip():
         raise ValueError("DATABASE_URL is required when Cloud SQL dual-write is enabled.")
 
+    dependency_rows = dependencies or {}
     run_row = dict(run)
     validated_tables: dict[str, list[dict[str, Any]]] = {
-        "ingestion_runs": _validate_owned_rows("ingestion_runs", [run_row], owner_user_id),
+        # Insert parents before the run and paper rows. This keeps the mirror's
+        # relational shape intact instead of nulling folder/job references.
+        "workspace_organizations": _validate_owned_rows(
+            "workspace_organizations",
+            dependency_rows.get("workspace_organizations") or [],
+            owner_user_id,
+        ),
+        "workspace_projects": _validate_owned_rows(
+            "workspace_projects",
+            dependency_rows.get("workspace_projects") or [],
+            owner_user_id,
+        ),
+        "research_folders": _validate_owned_rows(
+            "research_folders",
+            dependency_rows.get("research_folders") or [],
+            owner_user_id,
+        ),
+        "folder_analysis_jobs": _validate_owned_rows(
+            "folder_analysis_jobs",
+            dependency_rows.get("folder_analysis_jobs") or [],
+            owner_user_id,
+        ),
+        "ingestion_runs": _validate_owned_rows(
+            "ingestion_runs",
+            [*(dependency_rows.get("ingestion_runs") or []), run_row],
+            owner_user_id,
+        ),
         "papers": _validate_owned_rows("papers", dataset.get("papers") or [], owner_user_id),
         "paper_keywords": _validate_owned_rows("paper_keywords", dataset.get("keywords") or [], owner_user_id),
         "paper_tracks_single": _validate_owned_rows(

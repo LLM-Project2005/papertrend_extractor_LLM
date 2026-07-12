@@ -16,6 +16,7 @@ from cloudsql_mirror import (  # noqa: E402
     should_shadow_owner,
     should_mirror_owner,
 )
+from process_ingestion_queue import SupabaseRestClient  # noqa: E402
 
 
 OWNER_ID = "15e7b1bd-7939-44c1-bd31-1adb77b82f90"
@@ -77,6 +78,76 @@ class CloudSqlMirrorTests(unittest.TestCase):
     def test_missing_owner_fails_closed(self) -> None:
         with self.assertRaises(ValueError):
             require_owned_row("papers", {"owner_user_id": None}, OWNER_ID)
+
+    def test_collects_fk_dependencies_in_parent_order(self) -> None:
+        rows = {
+            ("research_folders", "10000000-0000-0000-0000-000000000001"): {
+                "id": "10000000-0000-0000-0000-000000000001",
+                "owner_user_id": OWNER_ID,
+                "organization_id": "20000000-0000-0000-0000-000000000001",
+                "project_id": "30000000-0000-0000-0000-000000000001",
+            },
+            ("workspace_projects", "30000000-0000-0000-0000-000000000001"): {
+                "id": "30000000-0000-0000-0000-000000000001",
+                "owner_user_id": OWNER_ID,
+                "organization_id": "20000000-0000-0000-0000-000000000001",
+            },
+            ("workspace_organizations", "20000000-0000-0000-0000-000000000001"): {
+                "id": "20000000-0000-0000-0000-000000000001",
+                "owner_user_id": OWNER_ID,
+            },
+            ("folder_analysis_jobs", "40000000-0000-0000-0000-000000000001"): {
+                "id": "40000000-0000-0000-0000-000000000001",
+                "owner_user_id": OWNER_ID,
+                "folder_id": "10000000-0000-0000-0000-000000000001",
+            },
+            ("ingestion_runs", "50000000-0000-0000-0000-000000000001"): {
+                "id": "50000000-0000-0000-0000-000000000001",
+                "owner_user_id": OWNER_ID,
+                "folder_id": "10000000-0000-0000-0000-000000000001",
+                "folder_analysis_job_id": None,
+                "copied_from_run_id": None,
+            },
+        }
+
+        class DependencyClient(SupabaseRestClient):
+            def __init__(self) -> None:
+                pass
+
+            def get_owned_row(self, table: str, row_id: str, owner_user_id: str):  # type: ignore[no-untyped-def]
+                return rows.get((table, row_id))
+
+        client = DependencyClient()
+        dependencies = client.collect_cloudsql_mirror_dependencies(
+            {
+                "id": "50000000-0000-0000-0000-000000000002",
+                "owner_user_id": OWNER_ID,
+                "folder_id": "10000000-0000-0000-0000-000000000001",
+                "folder_analysis_job_id": "40000000-0000-0000-0000-000000000001",
+                "copied_from_run_id": "50000000-0000-0000-0000-000000000001",
+            }
+        )
+
+        self.assertEqual(
+            [row["id"] for row in dependencies["workspace_organizations"]],
+            ["20000000-0000-0000-0000-000000000001"],
+        )
+        self.assertEqual(
+            [row["id"] for row in dependencies["workspace_projects"]],
+            ["30000000-0000-0000-0000-000000000001"],
+        )
+        self.assertEqual(
+            [row["id"] for row in dependencies["research_folders"]],
+            ["10000000-0000-0000-0000-000000000001"],
+        )
+        self.assertEqual(
+            [row["id"] for row in dependencies["folder_analysis_jobs"]],
+            ["40000000-0000-0000-0000-000000000001"],
+        )
+        self.assertEqual(
+            [row["id"] for row in dependencies["ingestion_runs"]],
+            ["50000000-0000-0000-0000-000000000001"],
+        )
 
 
 if __name__ == "__main__":
