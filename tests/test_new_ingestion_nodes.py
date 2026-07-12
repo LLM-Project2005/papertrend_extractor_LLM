@@ -30,10 +30,12 @@ except Exception:
 
 from nodes.author_keywords import extract_author_keywords_node
 from nodes.dataset_builder import build_dataset_node
+from nodes.keyword_extractor import grounded_keyword_extractor_node
 from nodes.keyword_search import keyword_search_node
 from nodes.research_typology import classify_research_typology_node
 from nodes.segmentation import _slice_span
 from graphs import build_ingestion_graph
+from state import KeywordCandidate, KeywordCandidateSchema
 
 
 class NewIngestionNodeTests(unittest.TestCase):
@@ -86,6 +88,69 @@ class NewIngestionNodeTests(unittest.TestCase):
         )
 
         self.assertEqual(result["author_keywords"], [])
+
+    def test_keyword_extractor_retries_with_compact_prompt_after_truncated_json(self) -> None:
+        first_attempt = Mock()
+        first_attempt.invoke.side_effect = ValueError("Invalid JSON: EOF while parsing a value")
+        second_attempt = Mock()
+        second_attempt.invoke.return_value = KeywordCandidateSchema(
+            candidates=[
+                KeywordCandidate(
+                    keyword="peer feedback",
+                    count=3,
+                    evidence="Peer feedback improved the students' writing.",
+                    matched_terms=["peer feedback"],
+                    section="abstract_claims",
+                )
+            ]
+        )
+
+        llm = Mock()
+        llm.with_structured_output.side_effect = [first_attempt, second_attempt]
+        llm.with_overrides.return_value = llm
+
+        with patch("nodes.keyword_extractor.keyword_extraction_llm", llm):
+            result = grounded_keyword_extractor_node(
+                {
+                    "final_json": {
+                        "title": "Peer feedback in EFL writing",
+                        "abstract_claims": "Peer feedback improved the students' writing.",
+                    }
+                }
+            )
+
+        self.assertEqual(result["status"], "keywords_ready")
+        self.assertEqual(result["errors"], [])
+        self.assertEqual(result["keyword_candidates"][0]["keyword"], "peer feedback")
+        self.assertEqual(llm.with_structured_output.call_count, 2)
+
+    def test_keyword_extractor_uses_grounded_fallback_when_model_is_truncated_twice(self) -> None:
+        runnable = Mock()
+        runnable.invoke.side_effect = ValueError("Invalid JSON: EOF while parsing a value")
+        llm = Mock()
+        llm.with_structured_output.return_value = runnable
+        llm.with_overrides.return_value = llm
+
+        with patch("nodes.keyword_extractor.keyword_extraction_llm", llm):
+            result = grounded_keyword_extractor_node(
+                {
+                    "final_json": {
+                        "title": "Peer feedback and self-regulated learning",
+                        "abstract_claims": (
+                            "Peer feedback supported self-regulated learning. "
+                            "The study examined peer feedback in EFL writing classrooms."
+                        ),
+                        "methods": "The intervention used peer feedback and writing assessment.",
+                    }
+                }
+            )
+
+        self.assertEqual(result["status"], "keywords_ready")
+        self.assertTrue(result["keyword_candidates"])
+        self.assertIn("grounded fallback", result["errors"][0])
+        self.assertTrue(
+            any("peer feedback" in row["keyword"].casefold() for row in result["keyword_candidates"])
+        )
 
     def test_research_typology_uses_boundary_fallback_for_intervention_measurement_overlap(self) -> None:
         with patch("nodes.research_typology.research_typology_llm") as llm:
