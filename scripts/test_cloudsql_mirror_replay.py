@@ -22,7 +22,11 @@ if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
 
 from cloudsql_authorization import normalize_owner_id  # noqa: E402
-from cloudsql_mirror import mirror_ingestion_dataset, shadow_ingestion_dataset  # noqa: E402
+from cloudsql_mirror import (  # noqa: E402
+    GENERATED_ID_TABLES,
+    mirror_ingestion_dataset,
+    shadow_ingestion_dataset,
+)
 from process_ingestion_queue import SupabaseRestClient  # noqa: E402
 
 try:
@@ -51,6 +55,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--database-url", default=os.getenv("DATABASE_URL"))
     parser.add_argument("--owner-user-id", required=True)
     parser.add_argument("--run-id", default="")
+    parser.add_argument(
+        "--simulate-live-dataset",
+        action="store_true",
+        help="Omit database-generated child IDs to emulate the live analysis dataset.",
+    )
     return parser.parse_args()
 
 
@@ -154,6 +163,13 @@ def main() -> int:
                 },
             )
             dataset[table] = rows
+
+        if args.simulate_live_dataset:
+            for table in GENERATED_ID_TABLES:
+                dataset[table] = [
+                    {key: value for key, value in row.items() if key != "id"}
+                    for row in dataset[table]
+                ]
 
         result = mirror_ingestion_dataset(
             database_url=database_url,

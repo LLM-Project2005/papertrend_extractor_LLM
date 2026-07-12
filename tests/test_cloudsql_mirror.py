@@ -11,6 +11,7 @@ sys.path.insert(0, str(WORKER_ROOT))
 from cloudsql_authorization import require_owned_row  # noqa: E402
 from cloudsql_mirror import (  # noqa: E402
     _canonical_value,
+    _upsert_rows,
     cloudsql_shadow_read_enabled,
     cloudsql_dual_write_enabled,
     mirror_ingestion_dataset,
@@ -155,6 +156,56 @@ class CloudSqlMirrorTests(unittest.TestCase):
             [row["id"] for row in dependencies["ingestion_runs"]],
             ["50000000-0000-0000-0000-000000000001"],
         )
+
+    def test_live_generated_id_rows_advance_sequence_before_insert(self) -> None:
+        class RecordingCursor:
+            def __init__(self) -> None:
+                self.calls: list[tuple[str, tuple[object, ...]]] = []
+
+            def __enter__(self):  # type: ignore[no-untyped-def]
+                return self
+
+            def __exit__(self, *_args):  # type: ignore[no-untyped-def]
+                return None
+
+            def execute(self, statement, parameters=None):  # type: ignore[no-untyped-def]
+                self.calls.append(("execute", (statement, parameters)))
+
+            def executemany(self, statement, values):  # type: ignore[no-untyped-def]
+                self.calls.append(("executemany", (statement, values)))
+
+        class RecordingConnection:
+            def __init__(self) -> None:
+                self.cursor_instance = RecordingCursor()
+
+            def cursor(self):  # type: ignore[no-untyped-def]
+                return self.cursor_instance
+
+        connection = RecordingConnection()
+        inserted = _upsert_rows(
+            connection,
+            "paper_keywords",
+            [
+                {
+                    "paper_id": 123,
+                    "owner_user_id": OWNER_ID,
+                    "keyword": "self-regulated learning",
+                }
+            ],
+            {"id", "paper_id", "owner_user_id", "keyword"},
+        )
+
+        self.assertEqual(inserted, 1)
+        self.assertEqual(
+            [call[0] for call in connection.cursor_instance.calls],
+            ["execute", "executemany"],
+        )
+        sequence_parameters = connection.cursor_instance.calls[0][1][1]
+        self.assertEqual(sequence_parameters, ("public.paper_keywords", "id"))
+        inserted_values = connection.cursor_instance.calls[1][1][1]
+        self.assertEqual(len(inserted_values), 1)
+        self.assertEqual(len(inserted_values[0]), 3)
+        self.assertIn("self-regulated learning", inserted_values[0])
 
 
 if __name__ == "__main__":

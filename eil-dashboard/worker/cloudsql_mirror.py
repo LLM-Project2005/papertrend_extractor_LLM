@@ -60,6 +60,15 @@ OPTIONAL_MIRROR_TABLES = frozenset(
     {"paper_author_keywords", "paper_research_typologies"}
 )
 
+GENERATED_ID_TABLES = frozenset(
+    {
+        "paper_keywords",
+        "paper_keyword_concepts",
+        "paper_analysis_facets",
+        "paper_author_keywords",
+    }
+)
+
 
 def shadow_owner_allowlist() -> set[str]:
     return {
@@ -159,25 +168,37 @@ def _upsert_rows(
     columns = sorted(
         {column for row in rows for column in row if column in available_columns}
     )
-    if not columns or any(key not in columns for key in keys):
+    if not columns:
         raise RuntimeError(f"Cloud SQL schema cannot accept the {table} mirror.")
 
     quoted_columns = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
     placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in columns)
     conflict_keys = sql.SQL(", ").join(sql.Identifier(key) for key in keys)
-    updates = [column for column in columns if column not in keys]
-    if updates:
-        update_clause = sql.SQL(", ").join(
-            sql.SQL("{column} = EXCLUDED.{column}").format(
-                column=sql.Identifier(column)
-            )
-            for column in updates
-        )
-        conflict_clause = sql.SQL("DO UPDATE SET {updates}").format(
-            updates=update_clause
-        )
-    else:
+    has_primary_keys = all(key in columns for key in keys)
+    can_generate_id = (
+        table in GENERATED_ID_TABLES
+        and keys == ("id",)
+        and "id" not in columns
+    )
+    if not has_primary_keys and not can_generate_id:
+        raise RuntimeError(f"Cloud SQL schema cannot accept the {table} mirror.")
+
+    if can_generate_id:
         conflict_clause = sql.SQL("DO NOTHING")
+    else:
+        updates = [column for column in columns if column not in keys]
+        if updates:
+            update_clause = sql.SQL(", ").join(
+                sql.SQL("{column} = EXCLUDED.{column}").format(
+                    column=sql.Identifier(column)
+                )
+                for column in updates
+            )
+            conflict_clause = sql.SQL("DO UPDATE SET {updates}").format(
+                updates=update_clause
+            )
+        else:
+            conflict_clause = sql.SQL("DO NOTHING")
 
     statement = sql.SQL(
         "INSERT INTO public.{table} ({columns}) VALUES ({placeholders}) "
@@ -194,6 +215,20 @@ def _upsert_rows(
         for row in rows
     ]
     with connection.cursor() as cursor:
+        if can_generate_id:
+            # Earlier parity/replay imports may have supplied explicit IDs and
+            # left BIGSERIAL sequences behind. Advance the sequence before the
+            # live-shaped insert so generated IDs cannot collide with another
+            # mirrored paper. The pilot queue is serialized.
+            cursor.execute(
+                sql.SQL(
+                    "SELECT setval("
+                    "pg_get_serial_sequence(%s, %s), "
+                    "COALESCE((SELECT MAX(id) FROM public.{table}), 0) + 1, "
+                    "false)"
+                ).format(table=sql.Identifier(table)),
+                (f"public.{table}", "id"),
+            )
         cursor.executemany(statement, values)
     return len(rows)
 
@@ -363,8 +398,13 @@ def shadow_ingestion_dataset(
                             }
                             & available_columns.get(table, set())
                         )
+                    can_compare_generated_id = (
+                        table in GENERATED_ID_TABLES
+                        and TABLE_PRIMARY_KEYS[table] == ("id",)
+                        and not any("id" in row for row in expected_rows)
+                    )
                     for key in TABLE_PRIMARY_KEYS[table]:
-                        if key not in columns:
+                        if key not in columns and not can_compare_generated_id:
                             raise RuntimeError(
                                 f"Cloud SQL shadow schema cannot compare the {table} key."
                             )
