@@ -12,9 +12,11 @@ Google Cloud replacements are proven one boundary at a time.
 | Phase 2 - GCS and worker path | Complete | Browser upload, GCS object verification, queueing, GCS download, and analysis work end to end. |
 | Phase 3 - security and parity preparation | Complete | OIDC trigger security, storage inventory, owner authorization checks, controlled mirroring, and staging parity checks are complete; Supabase remains authoritative. |
 | Phase 4 - identity migration | 4B staging parity passed; checkpoint added | Firebase Preview authentication, owner mapping, refresh/logout behavior, and cross-user checks pass; production remains on Supabase. |
-| Phase 5 - Google-hosted backend | Source-deploy package ready; not deployed | A Cloud Run source-deploy manifest and health route are prepared; Vercel remains the live rollback path. |
-| Phase 6 - Cloud SQL dual-write and shadow verification | Pilot implementation ready; flags disabled | Supabase remains authoritative while one-owner mirror and read-back comparisons are tested. |
-| Phase 7 - frontend hosting | Not started | Vercel remains the frontend host. |
+| Phase 5 - Google-hosted backend | Staging deployed and health-checked | Cloud Run serves the Next.js web/API staging service; Vercel remains the live rollback path. |
+| Phase 6 - Cloud SQL dual-write and shadow verification | Reconciliation gate passed | One-owner live cycles mirror and shadow-verify successfully; Supabase remains authoritative. |
+| Phase 7 - frontend hosting | Staging in progress | The Google-hosted frontend is available at its Cloud Run URL; Vercel remains the production host until full parity testing is complete. |
+| Phase 8 - final data and service cutover | 8A readiness in progress | Backups, storage migration, Cloud SQL application repositories, production deployment, and a reversible cutover remain. See `docs/18-google-cloud-phase-8.md`. |
+| Phase 9 - operations and cost controls | Not started | Monitoring, backup policy, queue recovery, quotas, billing alerts, and rollback drills follow the cutover. |
 
 The attached earlier plan was correct about the major work, but its numbering
 made it look as if Auth and RLS had already been replaced. They have not.

@@ -1,5 +1,17 @@
 # Google Cloud Phase 6: Cloud SQL Dual-Write And Shadow Verification
 
+## Validation Status
+
+The one-owner reconciliation gate has passed. Fresh live uploads have
+completed with `state: mirrored` and `shadow.state: verified`, including the
+full paper, content, keyword, facet, author-keyword, typology, track, and run
+relations. An earlier `year_confidence` mismatch was a numeric representation
+difference (`0.0` versus `0`) and is normalized by the parity comparator.
+
+Supabase remains authoritative. Cloud SQL is not serving application reads or
+writes yet. The required on-demand Cloud SQL backup completed successfully as
+backup `1783872481797` on 2026-07-12.
+
 Phase 6 adds a controlled Cloud SQL experiment without changing the live
 database provider. Supabase remains authoritative for authentication, reads,
 writes, queue state, chat, dashboard data, and analysis results.
