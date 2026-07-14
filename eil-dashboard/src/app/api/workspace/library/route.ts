@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
+import { cloudSqlLibraryRepository } from "@/lib/cloudsql/library-repository";
+import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -27,6 +29,25 @@ export async function GET(request: Request) {
     const page = parseBoundedInt(searchParams.get("page"), 1, 1, 10_000);
     const from = (page - 1) * limit;
     const to = from + limit - 1;
+
+    if (getDatabaseProvider() === "cloud-sql") {
+      const runs = await cloudSqlLibraryRepository.listRuns(user.id, {
+        projectId,
+        includeTrashed,
+        logsOnly: logMode,
+        limit,
+        offset: from,
+      });
+
+      return NextResponse.json({
+        runs,
+        pagination: {
+          page,
+          limit,
+          hasMore: runs.length === limit,
+        },
+      });
+    }
 
     const supabase = getSupabaseAdmin();
     let folderIds: string[] = [];

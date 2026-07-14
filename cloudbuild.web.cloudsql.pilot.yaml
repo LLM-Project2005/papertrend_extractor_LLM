@@ -4,6 +4,9 @@
 # papertrend-web-staging or the Vercel production deployment. Only the
 # profile/workspace repository slice currently supports DATABASE_PROVIDER=cloud-sql;
 # other application paths continue using their existing Supabase integrations.
+# The public NEXT_PUBLIC_* substitutions below are placeholders. A direct
+# `gcloud builds submit` must override them with the real Firebase/Supabase web
+# configuration; the normal Cloud Build trigger may already do that for you.
 
 steps:
   - id: deploy-cloudsql-web-pilot

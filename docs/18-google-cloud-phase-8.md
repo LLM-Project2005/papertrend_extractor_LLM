@@ -165,6 +165,8 @@ Implementation has started with the first vertical slice:
 - Cloud SQL Firebase identity-mapping lookup;
 - profile reads/updates;
 - workspace organization, project, and folder reads/writes;
+- owner-scoped library run listing with project, status, trash, and pagination
+  filters;
 - the existing Supabase implementations remain selected by default.
 
 This is the main engineering gate before any provider flip.
@@ -227,13 +229,24 @@ Before submitting this build, confirm the following manually:
 
 Submit the isolated pilot from the repository root:
 
+The config contains placeholders for the public web configuration so they are
+not accidentally committed. If you submit manually, replace the seven values
+below with the same public values already used by the Firebase web app and the
+test deployment. These are browser configuration values, not private keys. Do
+not put Firebase Admin credentials or database passwords in substitutions.
+
 ```powershell
 $gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
 
 & $gcloud builds submit . `
   --project=research-trend-analysis `
-  --config=cloudbuild.web.cloudsql.pilot.yaml
+  --config=cloudbuild.web.cloudsql.pilot.yaml `
+  --substitutions="_NEXT_PUBLIC_AUTH_PROVIDER=firebase,_NEXT_PUBLIC_FIREBASE_API_KEY=YOUR_FIREBASE_WEB_API_KEY,_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=research-trend-analysis.firebaseapp.com,_NEXT_PUBLIC_FIREBASE_PROJECT_ID=research-trend-analysis,_NEXT_PUBLIC_FIREBASE_APP_ID=YOUR_FIREBASE_WEB_APP_ID,_NEXT_PUBLIC_SUPABASE_URL=https://itnfkeqwgtkbmajqxwdm.supabase.co,_NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY"
 ```
+
+Do not leave `YOUR_FIREBASE_WEB_API_KEY`, `YOUR_FIREBASE_WEB_APP_ID`, or
+`YOUR_SUPABASE_ANON_KEY` in the command. If your Cloud Build trigger already
+defines these substitutions, use the trigger instead of the manual command.
 
 Then retrieve its URL and test only the pilot service:
 
@@ -324,6 +337,7 @@ For the current Phase 8C work, you only need to:
    the pilot owner-isolation tests pass and the remaining repositories are
    implemented.
 
-The next coding slice after this pilot is the remaining repository boundary for
-library, ingestion, dashboard, chat, and deep-research routes, followed by
-repository contract tests and a controlled provider comparison.
+The next coding slice after the library read is the library mutation/detail
+boundary, followed by ingestion, dashboard, chat, and deep-research
+repositories. Repository contract tests and a controlled provider comparison
+remain required before any production provider change.
