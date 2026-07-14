@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { ensureWorkspaceOrganization } from "@/lib/workspace-organizations";
+import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import type { WorkspaceOrganizationRow } from "@/types/database";
 
 export const runtime = "nodejs";
@@ -13,18 +12,8 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("workspace_organizations")
-      .select("*")
-      .eq("owner_user_id", user.id)
-      .order("name", { ascending: true });
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return NextResponse.json({ organizations: data ?? [] });
+    const organizations = await getWorkspaceRepository().listOrganizations(user.id);
+    return NextResponse.json({ organizations });
   } catch (error) {
     return NextResponse.json(
       {
@@ -57,9 +46,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const supabase = getSupabaseAdmin();
-    const organization = await ensureWorkspaceOrganization(
-      supabase,
+    const organization = await getWorkspaceRepository().ensureOrganization(
       user.id,
       body.name,
       body.type ?? "personal"

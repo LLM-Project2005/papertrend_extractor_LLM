@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedIdentityFromRequest, identityToLegacyUser } from "@/lib/auth/adapter";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getProfileRepository } from "@/lib/profile-repository";
 
 export const runtime = "nodejs";
 
@@ -61,11 +61,7 @@ export async function GET(request: Request) {
 
   let result;
   try {
-    result = await getSupabaseAdmin()
-      .from("user_profiles")
-      .select("*")
-      .eq("id", user.id)
-      .maybeSingle();
+    result = await getProfileRepository().get(user.id);
   } catch (error) {
     console.error("Profile storage lookup failed unexpectedly.", {
       message: error instanceof Error ? error.message : "Unknown profile lookup error",
@@ -76,16 +72,11 @@ export async function GET(request: Request) {
     );
   }
 
-  const { data, error } = result;
-
-  if (error) {
-    return NextResponse.json({ error: "Could not load the user profile." }, { status: 500 });
-  }
-  if (!data) {
+  if (!result) {
     return NextResponse.json({ error: "The authenticated account is not linked to Papertrend." }, { status: 403 });
   }
 
-  return NextResponse.json({ ownerUserId: user.id, profile: data });
+  return NextResponse.json({ ownerUserId: user.id, profile: result });
 }
 
 export async function PATCH(request: Request) {
@@ -102,12 +93,7 @@ export async function PATCH(request: Request) {
 
   let result;
   try {
-    result = await getSupabaseAdmin()
-      .from("user_profiles")
-      .update(parsed.data)
-      .eq("id", user.id)
-      .select("*")
-      .maybeSingle();
+    result = await getProfileRepository().update(user.id, parsed.data);
   } catch (error) {
     console.error("Profile storage update failed unexpectedly.", {
       message: error instanceof Error ? error.message : "Unknown profile update error",
@@ -118,14 +104,9 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const { data, error } = result;
-
-  if (error) {
-    return NextResponse.json({ error: "Could not save the user profile." }, { status: 500 });
-  }
-  if (!data) {
+  if (!result) {
     return NextResponse.json({ error: "The authenticated account is not linked to Papertrend." }, { status: 403 });
   }
 
-  return NextResponse.json({ ownerUserId: user.id, profile: data });
+  return NextResponse.json({ ownerUserId: user.id, profile: result });
 }

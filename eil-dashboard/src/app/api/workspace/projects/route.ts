@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import { createWorkspaceProject } from "@/lib/workspace-organizations";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getWorkspaceRepository } from "@/lib/workspace-repository";
 
 export const runtime = "nodejs";
 
@@ -15,24 +14,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const organizationId = searchParams.get("organizationId");
 
-    const supabase = getSupabaseAdmin();
-    let query = supabase
-      .from("workspace_projects")
-      .select("*")
-      .eq("owner_user_id", user.id)
-      .order("name", { ascending: true });
-
-    if (organizationId) {
-      query = query.eq("organization_id", organizationId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return NextResponse.json({ projects: data ?? [] });
+    const projects = await getWorkspaceRepository().listProjects(user.id, organizationId);
+    return NextResponse.json({ projects });
   } catch (error) {
     return NextResponse.json(
       {
@@ -67,9 +50,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project name is required." }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
-    const project = await createWorkspaceProject(
-      supabase,
+    const project = await getWorkspaceRepository().createProject(
       user.id,
       body.organizationId.trim(),
       body.name,
@@ -108,31 +89,23 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Project name is required." }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
-    const patch: { name: string; description?: string | null; updated_at: string } = {
+    const patch: { name: string; description?: string | null } = {
       name: body.name.trim(),
-      updated_at: new Date().toISOString(),
     };
     if (body.description !== undefined) {
       patch.description = body.description;
     }
 
-    const { data, error } = await supabase
-      .from("workspace_projects")
-      .update(patch)
-      .eq("id", body.projectId.trim())
-      .eq("owner_user_id", user.id)
-      .select("*")
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-    if (!data) {
+    const project = await getWorkspaceRepository().updateProject(
+      user.id,
+      body.projectId.trim(),
+      patch
+    );
+    if (!project) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ project: data });
+    return NextResponse.json({ project });
   } catch (error) {
     return NextResponse.json(
       {

@@ -42,6 +42,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--owner-user-id", default="")
     parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
     parser.add_argument("--max-objects", type=int, default=MAX_OBJECTS)
+    parser.add_argument(
+        "--require-full-copy",
+        action="store_true",
+        help="Fail unless every Supabase Storage object also exists in GCS.",
+    )
     return parser.parse_args()
 
 
@@ -238,6 +243,7 @@ def run_inventory(
     owner_user_id: str,
     page_size: int,
     max_objects: int,
+    require_full_copy: bool = False,
 ) -> dict[str, Any]:
     normalized_owner = normalize_owner_id(owner_user_id)
     require_config(
@@ -276,8 +282,13 @@ def run_inventory(
     )
     missing_gcs = sorted(gcs_refs.difference(gcs_objects))
     missing_supabase = sorted(supabase_refs.difference(supabase_objects))
+    missing_in_gcs = sorted(supabase_objects.difference(gcs_objects))
+    extra_in_gcs = sorted(set(gcs_objects).difference(supabase_objects))
+    base_ok = not missing_gcs and not missing_supabase and supabase_error is None
+    full_copy_ok = not missing_in_gcs
     return {
-        "ok": not missing_gcs and not missing_supabase and supabase_error is None,
+        "ok": base_ok and (full_copy_ok if require_full_copy else True),
+        "full_copy_required": require_full_copy,
         "owner_user_id": normalized_owner or None,
         "runs": {"total": len(runs), "source_categories": categories},
         "gcs": {
@@ -296,6 +307,12 @@ def run_inventory(
             "missing_references": len(missing_supabase),
             "listing_error": supabase_error,
         },
+        "storage_copy": {
+            "source_object_count": len(supabase_objects),
+            "matched_in_gcs": len(supabase_objects) - len(missing_in_gcs),
+            "missing_in_gcs": len(missing_in_gcs),
+            "extra_in_gcs": len(extra_in_gcs),
+        },
     }
 
 
@@ -313,6 +330,7 @@ def main() -> int:
             owner_user_id=str(args.owner_user_id or ""),
             page_size=page_size,
             max_objects=max_objects,
+            require_full_copy=bool(args.require_full_copy),
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0 if report["ok"] else 2

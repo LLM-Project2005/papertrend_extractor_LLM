@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import { ensureResearchFolder } from "@/lib/research-folders";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getWorkspaceRepository } from "@/lib/workspace-repository";
 
 export const runtime = "nodejs";
 
@@ -12,26 +11,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = getSupabaseAdmin();
     const { searchParams } = new URL(request.url);
     const projectId = searchParams.get("projectId");
-    let query = supabase
-      .from("research_folders")
-      .select("*")
-      .eq("owner_user_id", user.id)
-      .order("name", { ascending: true });
-
-    if (projectId) {
-      query = query.eq("project_id", projectId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return NextResponse.json({ folders: data ?? [] });
+    const folders = await getWorkspaceRepository().listFolders(user.id, projectId);
+    return NextResponse.json({ folders });
   } catch (error) {
     return NextResponse.json(
       {
@@ -58,9 +41,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "projectId is required." }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
-    const folder = await ensureResearchFolder(
-      supabase,
+    const folder = await getWorkspaceRepository().ensureFolder(
       user.id,
       body.projectId.trim(),
       body.name
@@ -92,26 +73,16 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: "Folder name is required." }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("research_folders")
-      .update({
-        name: body.name.trim(),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", body.folderId.trim())
-      .eq("owner_user_id", user.id)
-      .select("*")
-      .maybeSingle();
-
-    if (error) {
-      throw new Error(error.message);
-    }
-    if (!data) {
+    const folder = await getWorkspaceRepository().updateFolder(
+      user.id,
+      body.folderId.trim(),
+      body.name.trim()
+    );
+    if (!folder) {
       return NextResponse.json({ error: "Folder not found." }, { status: 404 });
     }
 
-    return NextResponse.json({ folder: data });
+    return NextResponse.json({ folder });
   } catch (error) {
     return NextResponse.json(
       {

@@ -1,5 +1,7 @@
 import type { AuthIdentity } from "@/lib/auth/adapter";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { resolveCloudSqlIdentityOwner } from "@/lib/cloudsql/identity-repository";
 
 export interface AuthIdentityMappingKey {
   provider: AuthIdentity["provider"];
@@ -38,6 +40,22 @@ export async function resolveExternalIdentityOwner(
   }
 
   try {
+    if (getDatabaseProvider() === "cloud-sql") {
+      const data = await resolveCloudSqlIdentityOwner(
+        identity.provider,
+        identity.subject
+      );
+      if (!data?.ownerUserId) {
+        return identity;
+      }
+      return {
+        ...identity,
+        ownerUserId: data.ownerUserId,
+        mappingStatus: "mapped",
+        email: identity.email ?? data.email ?? null,
+      };
+    }
+
     const { data, error } = await getSupabaseAdmin()
       .from("auth_identity_mappings")
       .select("owner_user_id,email")

@@ -6,7 +6,7 @@ system.
 
 ## Current Status
 
-Phase 8A, cutover readiness, is in progress.
+Phase 8C, the first Cloud SQL application slice, is in progress.
 
 Completed before this phase:
 
@@ -18,9 +18,10 @@ Completed before this phase:
 
 Not complete yet:
 
-- The Next.js API still uses Supabase repositories. `DATABASE_PROVIDER=cloud-sql`
-  is not a complete web database migration; it is only a provider setting and
-  worker-side configuration today.
+- The Next.js API still uses Supabase repositories for most routes.
+  `DATABASE_PROVIDER=cloud-sql` is currently limited to the profile and
+  workspace organization/project/folder repository slice below; it is not a
+  complete web database migration.
 - Historical files are not fully in GCS. The last inventory found Supabase
   Storage objects that still need a non-destructive copy and validation.
 - Cloud SQL automated backups are disabled. The current on-demand backup is a
@@ -29,7 +30,7 @@ Not complete yet:
   below pass.
 
 Do not change production `DATABASE_PROVIDER`, delete Supabase data, or delete
-Vercel during Phase 8A.
+Vercel during Phase 8.
 
 ## Target Architecture
 
@@ -103,7 +104,17 @@ python scripts/verify_storage_parity.py
 ```
 
 This compares referenced Supabase/GCS paths and aggregate manifests. It does
-not copy or delete files.
+not copy or delete files. After the copy step, run it again with
+`--require-full-copy` to verify that every legacy Supabase Storage object has a
+same-named object in GCS:
+
+```powershell
+python scripts/verify_storage_parity.py --require-full-copy
+```
+
+The command may report extra GCS objects because the bucket already contained
+new GCS-native uploads. Extra objects are informational; `missing_in_gcs: 0`
+is the required migration result.
 
 ## Phase 8B: Non-Destructive Storage Copy
 
@@ -147,6 +158,15 @@ object has a verified destination and a path-mapping plan exists.
 
 ## Phase 8C: Complete The Cloud SQL Application Layer
 
+Implementation has started with the first vertical slice:
+
+- server-only PostgreSQL pooling through `DATABASE_URL`;
+- transaction-local `app.current_user_id` owner context;
+- Cloud SQL Firebase identity-mapping lookup;
+- profile reads/updates;
+- workspace organization, project, and folder reads/writes;
+- the existing Supabase implementations remain selected by default.
+
 This is the main engineering gate before any provider flip.
 
 1. Implement a server-only Cloud SQL repository for every route currently using
@@ -161,6 +181,79 @@ This is the main engineering gate before any provider flip.
    codes and owner-scoped results.
 
 Until this section is complete, a production Cloud SQL switch is blocked.
+
+### Manual staging preparation
+
+Before testing the new Cloud SQL provider path, you must complete these
+staging-only actions:
+
+1. Confirm `auth_identity_mappings` exists in the Cloud SQL `papertrend`
+   database. The table is included in `eil-dashboard/cloudsql/schema.sql`.
+2. Export or inspect the existing Firebase mapping rows in Supabase without
+   exposing the Firebase private key. The mapping contains only provider, UID,
+   email, and the existing Papertrend owner UUID.
+3. Run the relational migration tool for the selected test owner after taking a
+   Cloud SQL backup. The tool now includes `auth_identity_mappings` in its
+   allowlist and remains non-destructive unless `--apply` is supplied.
+4. Keep `DATABASE_PROVIDER=supabase` on production and on the current Vercel
+   deployment. Use a separate Cloud Run revision/environment for Cloud SQL
+   testing only.
+5. Do not apply the owner-RLS migration to a live service until the repository
+   test confirms every transaction sets the owner context. Applying `FORCE ROW
+   LEVEL SECURITY` too early would intentionally make queries fail closed.
+
+### Isolated Cloud SQL web pilot
+
+The repository includes `cloudbuild.web.cloudsql.pilot.yaml`. It deploys a new
+service named `papertrend-web-cloudsql-pilot` and does not change
+`papertrend-web-staging`. It attaches the Cloud SQL instance and reads the
+server-only `DATABASE_URL` from Secret Manager. The pilot is intentionally
+limited: profile and workspace organization/project/folder routes use Cloud
+SQL, while routes that do not yet have a Cloud SQL repository continue using
+their existing Supabase implementation.
+
+Before submitting this build, confirm the following manually:
+
+1. The Cloud SQL `papertrend` database contains the schema from
+   `eil-dashboard/cloudsql/schema.sql`.
+2. The `papertrend_app` user can connect and has the required table access.
+3. Secret Manager contains a current `DATABASE_URL` version with the
+   `papertrend_app` credentials. Do not paste the value into a terminal log or
+   commit it.
+4. The runtime service account has **Cloud SQL Client** and **Secret Manager
+   Secret Accessor** for the referenced secrets.
+5. The selected Firebase test user has a matching row in Cloud SQL
+   `public.auth_identity_mappings`.
+
+Submit the isolated pilot from the repository root:
+
+```powershell
+$gcloud = "$env:LOCALAPPDATA\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd"
+
+& $gcloud builds submit . `
+  --project=research-trend-analysis `
+  --config=cloudbuild.web.cloudsql.pilot.yaml
+```
+
+Then retrieve its URL and test only the pilot service:
+
+```powershell
+$pilotUrl = (& $gcloud run services describe papertrend-web-cloudsql-pilot `
+  --project=research-trend-analysis `
+  --region=asia-southeast1 `
+  --format="value(status.url)").Trim()
+
+$pilotUrl
+Invoke-WebRequest -UseBasicParsing "$pilotUrl/api/health" |
+  Select-Object -ExpandProperty Content
+```
+
+Open the pilot URL in a private browser session and verify the mapped Firebase
+user can log in, read the profile, list projects/folders, and update only their
+own profile/project/folder records. Confirm a second mapped user cannot see the
+first user's records. Keep the existing staging and Vercel URLs as rollback
+paths. Do not call the pilot production, and do not apply Cloud SQL `FORCE RLS`
+until these owner-scoped checks pass.
 
 ## Phase 8D: Prepare A Separate Production Deployment
 
@@ -219,14 +312,18 @@ successfully and the professor approves decommissioning.
 
 ## Manual Actions For You Now
 
-For the current Phase 8A work, you only need to:
+For the current Phase 8C work, you only need to:
 
 1. Keep production on Vercel + Supabase.
 2. Run the read-only storage inventory.
 3. Review the dry-run storage copy report.
 4. Create/record a fresh Cloud SQL backup.
-5. Do not run `--apply` or change `DATABASE_PROVIDER` until the Cloud SQL web
-   repository layer is implemented and tested.
+5. Keep the existing `papertrend-web-staging` service on Supabase and use the
+   isolated pilot configuration for Cloud SQL testing only.
+6. Do not apply Cloud SQL `FORCE RLS` or decommission Supabase/Vercel until
+   the pilot owner-isolation tests pass and the remaining repositories are
+   implemented.
 
-The next coding slice is Phase 8C: the server-side repository boundary and its
-contract tests. That is required before a safe full-Google cutover.
+The next coding slice after this pilot is the remaining repository boundary for
+library, ingestion, dashboard, chat, and deep-research routes, followed by
+repository contract tests and a controlled provider comparison.

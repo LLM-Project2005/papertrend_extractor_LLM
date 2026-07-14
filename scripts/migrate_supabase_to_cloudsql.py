@@ -30,6 +30,7 @@ except ImportError:  # pragma: no cover - optional for Cloud Run
 # are absent from the current Supabase project are reported and skipped.
 TABLE_ORDER = (
     "user_profiles",
+    "auth_identity_mappings",
     "google_drive_connections",
     "workspace_organizations",
     "workspace_projects",
@@ -60,6 +61,7 @@ class SourceTableMissing(RuntimeError):
 
 PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "user_profiles": ("id",),
+    "auth_identity_mappings": ("id",),
     "google_drive_connections": ("id",),
     "workspace_organizations": ("id",),
     "workspace_projects": ("id",),
