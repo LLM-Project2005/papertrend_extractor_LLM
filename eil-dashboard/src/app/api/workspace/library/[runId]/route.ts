@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
+import { cloudSqlLibraryRepository } from "@/lib/cloudsql/library-repository";
+import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
@@ -23,6 +25,40 @@ export async function PATCH(
     const action = body.action;
     if (!action) {
       return NextResponse.json({ error: "Action is required." }, { status: 400 });
+    }
+
+    if (getDatabaseProvider() === "cloud-sql") {
+      const now = new Date().toISOString();
+      let patch: {
+        displayName?: string;
+        isFavorite?: boolean;
+        folderId?: string | null;
+        trashedAt?: string | null;
+      } = {};
+
+      if (action === "rename") {
+        if (typeof body.value !== "string" || !body.value.trim()) {
+          return NextResponse.json({ error: "New file name is required." }, { status: 400 });
+        }
+        patch = { displayName: body.value.trim() };
+      } else if (action === "favorite") {
+        patch = { isFavorite: Boolean(body.value) };
+      } else if (action === "move") {
+        if (!body.folderId) {
+          return NextResponse.json({ error: "folderId is required." }, { status: 400 });
+        }
+        patch = { folderId: body.folderId };
+      } else if (action === "trash") {
+        patch = { trashedAt: now };
+      } else if (action === "restore") {
+        patch = { trashedAt: null };
+      }
+
+      const run = await cloudSqlLibraryRepository.updateRun(user.id, runId, patch);
+      if (!run) {
+        return NextResponse.json({ error: "Library file not found." }, { status: 404 });
+      }
+      return NextResponse.json({ run });
     }
 
     const supabase = getSupabaseAdmin();
@@ -86,6 +122,11 @@ export async function POST(
     const action = body.action;
     if (!action) {
       return NextResponse.json({ error: "Action is required." }, { status: 400 });
+    }
+
+    if (getDatabaseProvider() === "cloud-sql" && action === "copy") {
+      const run = await cloudSqlLibraryRepository.copyRun(user.id, runId);
+      return NextResponse.json({ run }, { status: 201 });
     }
 
     const supabase = getSupabaseAdmin();

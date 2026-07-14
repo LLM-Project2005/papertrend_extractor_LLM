@@ -167,6 +167,8 @@ Implementation has started with the first vertical slice:
 - workspace organization, project, and folder reads/writes;
 - owner-scoped library run listing with project, status, trash, and pagination
   filters;
+- owner-scoped library rename, favorite, move, trash, restore, and copy
+  mutations;
 - the existing Supabase implementations remain selected by default.
 
 This is the main engineering gate before any provider flip.
@@ -337,7 +339,7 @@ For the current Phase 8C work, you only need to:
    the pilot owner-isolation tests pass and the remaining repositories are
    implemented.
 
-The next coding slice after the library read is the library mutation/detail
-boundary, followed by ingestion, dashboard, chat, and deep-research
+The next coding slice after the library mutations is the library detail and
+GCS signed-URL boundary, followed by ingestion, dashboard, chat, and deep-research
 repositories. Repository contract tests and a controlled provider comparison
 remain required before any production provider change.
