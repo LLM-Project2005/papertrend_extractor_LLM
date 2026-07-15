@@ -89,6 +89,10 @@ type ItemMenuState = {
   left: number;
 };
 
+type RenameTarget =
+  | { kind: "file"; run: IngestionRunRow }
+  | { kind: "folder"; folder: ResearchFolderRow };
+
 type RunAnalysisResponse = {
   run?: IngestionRunRow;
   analysis?: RunAnalysisDetail;
@@ -467,6 +471,10 @@ export default function AdminImportClient() {
   const [itemMenuState, setItemMenuState] = useState<ItemMenuState | null>(null);
   const [moveRun, setMoveRun] = useState<IngestionRunRow | null>(null);
   const [movingRun, setMovingRun] = useState(false);
+  const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [renameError, setRenameError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState("");
   const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
@@ -832,16 +840,10 @@ export default function AdminImportClient() {
   }
 
   async function handleRenameRun(run: IngestionRunRow) {
-    const nextName = window.prompt("Rename file", titleOf(run));
-    if (!nextName?.trim()) return;
-    const updatedRun = await patchRun(run.id, {
-      action: "rename",
-      value: nextName.trim(),
-    });
-    if (analysisRun?.id === updatedRun.id) {
-      setAnalysisRun(updatedRun);
-    }
-    setMessage(`Renamed "${nextName.trim()}".`);
+    setItemMenuState(null);
+    setRenameTarget({ kind: "file", run });
+    setRenameDraft(titleOf(run));
+    setRenameError(null);
   }
 
   async function handleToggleFavorite(run: IngestionRunRow) {
@@ -1149,20 +1151,53 @@ export default function AdminImportClient() {
 
   async function handleRenameActiveFolder() {
     if (!activeFolder) return;
+    setRenameTarget({ kind: "folder", folder: activeFolder });
+    setRenameDraft(activeFolder.name);
+    setRenameError(null);
+  }
 
-    const nextName = window.prompt("Rename folder", activeFolder.name);
-    if (!nextName?.trim() || nextName.trim() === activeFolder.name) {
+  async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renameTarget) return;
+
+    const nextName = renameDraft.trim();
+    const currentName =
+      renameTarget.kind === "file" ? titleOf(renameTarget.run) : renameTarget.folder.name;
+    if (!nextName) {
+      setRenameError("A name is required.");
+      return;
+    }
+    if (nextName === currentName) {
+      setRenameTarget(null);
       return;
     }
 
+    setRenaming(true);
+    setRenameError(null);
     try {
-      await renameFolder(activeFolder.id, nextName.trim());
-      setMessage(`Renamed folder to "${nextName.trim()}".`);
+      if (renameTarget.kind === "file") {
+        const updatedRun = await patchRun(renameTarget.run.id, {
+          action: "rename",
+          value: nextName,
+        });
+        if (analysisRun?.id === updatedRun.id) {
+          setAnalysisRun(updatedRun);
+        }
+        setMessage(`Renamed file to "${nextName}".`);
+      } else {
+        await renameFolder(renameTarget.folder.id, nextName);
+        setMessage(`Renamed folder to "${nextName}".`);
+      }
       setError(null);
-    } catch (renameError) {
-      setError(
-        renameError instanceof Error ? renameError.message : "Failed to rename folder."
+      setRenameTarget(null);
+    } catch (renameActionError) {
+      setRenameError(
+        renameActionError instanceof Error
+          ? renameActionError.message
+          : "Failed to rename."
       );
+    } finally {
+      setRenaming(false);
     }
   }
 
@@ -1935,6 +1970,23 @@ export default function AdminImportClient() {
               <span>New</span>
             </button>
 
+            <button
+              type="button"
+              onClick={() => {
+                setShowTrash((current) => !current);
+                setSelectedFolderId("all");
+                setQuery("");
+              }}
+              className={`inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border px-5 text-sm font-semibold transition ${
+                showTrash
+                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black"
+                  : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              }`}
+            >
+              <TrashIcon className="h-4 w-4" />
+              <span>{showTrash ? "Back to library" : "Trash"}</span>
+            </button>
+
             <label className="relative block min-w-0 flex-1">
               <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#808080]" />
               <input
@@ -1976,22 +2028,6 @@ export default function AdminImportClient() {
               className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
             >
               {loading ? "Refreshing..." : "Refresh"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowTrash((current) => !current);
-                setSelectedFolderId("all");
-                setQuery("");
-              }}
-              className={`inline-flex items-center gap-2 rounded-[16px] border px-4 py-2.5 text-sm font-medium transition ${
-                showTrash
-                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black"
-                  : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-              }`}
-            >
-              <TrashIcon className="h-4 w-4" />
-              <span>{showTrash ? "Back to library" : "Trash"}</span>
             </button>
             <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 dark:border-[#1f1f1f] dark:bg-[#050505]">
               <button
@@ -2574,6 +2610,33 @@ export default function AdminImportClient() {
           setShowFolderModal(false);
         }}
         onSubmit={handleCreateFolder}
+      />
+
+      <CreateEntityModal
+        open={Boolean(renameTarget)}
+        title={renameTarget?.kind === "folder" ? "Rename folder" : "Rename file"}
+        description={
+          renameTarget?.kind === "folder"
+            ? "Choose a clear name for this workspace folder."
+            : "Choose a clear name for this research file."
+        }
+        value={renameDraft}
+        fieldLabel={renameTarget?.kind === "folder" ? "Folder name" : "File name"}
+        fieldPlaceholder={
+          renameTarget?.kind === "folder" ? "For example: Syntax papers" : "File name"
+        }
+        submitLabel="Save name"
+        busyLabel="Saving..."
+        busy={renaming}
+        error={renameError}
+        onValueChange={setRenameDraft}
+        onClose={() => {
+          if (renaming) return;
+          setRenameTarget(null);
+          setRenameDraft("");
+          setRenameError(null);
+        }}
+        onSubmit={handleRenameSubmit}
       />
 
       {moveRun ? (
