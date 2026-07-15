@@ -76,6 +76,23 @@ export async function PATCH(
       if (!body.folderId) {
         return NextResponse.json({ error: "folderId is required." }, { status: 400 });
       }
+
+      const { data: targetFolder, error: folderError } = await supabase
+        .from("research_folders")
+        .select("id")
+        .eq("id", body.folderId)
+        .eq("owner_user_id", user.id)
+        .maybeSingle();
+
+      if (folderError) {
+        throw new Error(folderError.message);
+      }
+      if (!targetFolder) {
+        return NextResponse.json(
+          { error: "That folder is no longer available. Refresh and try again." },
+          { status: 404 }
+        );
+      }
       patch = { ...patch, folder_id: body.folderId };
     } else if (action === "trash") {
       patch = { ...patch, trashed_at: now };
@@ -97,12 +114,11 @@ export async function PATCH(
 
     return NextResponse.json({ run: data });
   } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to update library file.";
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to update library file.",
-      },
-      { status: 500 }
+      { error: message },
+      { status: message === "Folder not found." ? 404 : 500 }
     );
   }
 }
