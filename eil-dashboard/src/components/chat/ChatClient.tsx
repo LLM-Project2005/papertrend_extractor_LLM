@@ -1456,6 +1456,7 @@ export default function ChatClient() {
   );
   const { allYears } = useDashboardData(chatScopeFolderId, projectFolderIds, {
     projectId: selectedProjectId,
+    enabled: Boolean(selectedProjectId),
   });
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);

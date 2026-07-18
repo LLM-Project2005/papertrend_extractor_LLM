@@ -777,18 +777,6 @@ async function loadDashboardDataServerUncached(
       });
     }
 
-    const hasExplicitFolderSelection = (requestedFolderIds?.length ?? 0) > 0;
-    if (mode === "auto" && projectId && !hasExplicitFolderSelection) {
-      const ownerWideData = await loadScopedDashboardData(ownerUserId, null);
-      if (hasAnyDashboardRows(ownerWideData)) {
-        return withDiagnostics(ownerWideData, {
-          dataSource: "legacy_fallback",
-          recoveredFromLegacyScope: true,
-          scopeDescription,
-        });
-      }
-    }
-
     return withDiagnostics(scopedData, {
       dataSource: "empty",
       recoveredFromLegacyScope: false,

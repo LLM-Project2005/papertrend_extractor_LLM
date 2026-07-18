@@ -294,6 +294,7 @@ export default function WorkspaceHomeClient() {
   } = useWorkspaceProfile();
   const { data, loading } = useDashboardData("all", [], {
     projectId: currentProject?.id ?? null,
+    enabled: Boolean(currentProject?.id),
   });
   const {
     runs,
@@ -441,7 +442,7 @@ export default function WorkspaceHomeClient() {
   }, []);
 
   useEffect(() => {
-    if (!session?.access_token) {
+    if (!session?.access_token || !currentProject?.id) {
       setLibraryRuns([]);
       setLibraryLoading(false);
       setLibraryError(null);

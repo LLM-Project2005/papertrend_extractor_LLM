@@ -225,6 +225,7 @@ export default function DashboardClient({
     {
       mode: dashboardDataMode,
       projectId: selectedProjectId,
+      enabled: Boolean(selectedProjectId),
       refetchOnWindowFocus: false,
     }
   );

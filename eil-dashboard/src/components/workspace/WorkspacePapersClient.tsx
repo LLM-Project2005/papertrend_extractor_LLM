@@ -30,6 +30,7 @@ export default function WorkspacePapersClient() {
     scopedFolderIds,
     {
       projectId: selectedProjectId,
+      enabled: Boolean(selectedProjectId),
     }
   );
   const searchParams = useSearchParams();

@@ -197,28 +197,6 @@ export class CloudSqlWorkspaceRepository {
         return existing.rows[0];
       }
 
-      const legacy = await client.query<ResearchFolderRow>(
-        `
-          SELECT *
-          FROM public.research_folders
-          WHERE owner_user_id = $1 AND project_id IS NULL AND name = $2
-          LIMIT 1
-        `,
-        [ownerUserId, name]
-      );
-      if (legacy.rows[0]) {
-        const migrated = await client.query<ResearchFolderRow>(
-          `
-            UPDATE public.research_folders
-            SET organization_id = $2, project_id = $3, updated_at = now()
-            WHERE id = $1 AND owner_user_id = $4
-            RETURNING *
-          `,
-          [legacy.rows[0].id, projectRow.organization_id, projectId, ownerUserId]
-        );
-        return migrated.rows[0] ?? legacy.rows[0];
-      }
-
       try {
         const created = await client.query<ResearchFolderRow>(
           `
@@ -247,7 +225,7 @@ export class CloudSqlWorkspaceRepository {
           [ownerUserId, projectId, name]
         );
         if (!duplicate.rows[0]) {
-          throw new Error("A folder with this name already exists.");
+          throw new Error("A folder with this name already exists in the selected project.");
         }
         return duplicate.rows[0];
       }
