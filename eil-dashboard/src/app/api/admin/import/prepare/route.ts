@@ -6,11 +6,13 @@ import {
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import {
   getGcsUploadBucket,
+  getDatabaseProvider,
   getStorageProvider,
   getWorkerServiceUrl,
   getWorkerWebhookSecret,
 } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import {
   MAX_FILES_PER_BATCH,
   sanitizeStorageFileName,
@@ -29,6 +31,118 @@ type PrepareUploadFile = {
   size: number;
   type?: string | null;
 };
+
+class UploadPreparationError extends Error {
+  constructor(
+    message: string,
+    readonly status = 400
+  ) {
+    super(message);
+    this.name = "UploadPreparationError";
+  }
+}
+
+/**
+ * The Cloud SQL pilot owns workspace/project records, while ingestion still
+ * writes to Supabase. Mirror only the authenticated project's exact IDs until
+ * the ingestion repository is migrated, so the Supabase foreign keys remain
+ * valid without making Cloud SQL globally writable from this route.
+ */
+async function ensureCloudSqlPilotWorkspaceMirror(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  ownerUserId: string,
+  projectId: string
+) {
+  const { data: authData, error: authError } = await supabase.auth.admin.getUserById(
+    ownerUserId
+  );
+  if (authError || !authData.user) {
+    throw new UploadPreparationError(
+      "This Cloud SQL pilot account is not linked to a Supabase owner account yet. Upload testing requires the account to be linked before ingestion can start.",
+      403
+    );
+  }
+
+  const repository = getWorkspaceRepository();
+  const [organizations, projects] = await Promise.all([
+    repository.listOrganizations(ownerUserId),
+    repository.listProjects(ownerUserId),
+  ]);
+  const project = projects.find((candidate) => candidate.id === projectId);
+  if (!project) {
+    throw new UploadPreparationError(
+      "The selected project was not found in the Cloud SQL pilot for this account. Refresh the project list and try again.",
+      404
+    );
+  }
+
+  const organization = organizations.find(
+    (candidate) => candidate.id === project.organization_id
+  );
+  if (!organization) {
+    throw new UploadPreparationError(
+      "The selected project's workspace was not found in the Cloud SQL pilot. Refresh the project list and try again.",
+      409
+    );
+  }
+
+  const { data: existingOrganization, error: organizationLookupError } = await supabase
+    .from("workspace_organizations")
+    .select("owner_user_id")
+    .eq("id", organization.id)
+    .maybeSingle();
+  if (organizationLookupError) throw new Error(organizationLookupError.message);
+  if (
+    existingOrganization?.owner_user_id &&
+    existingOrganization.owner_user_id !== ownerUserId
+  ) {
+    throw new UploadPreparationError("The selected workspace belongs to another account.", 403);
+  }
+
+  const { data: existingProject, error: projectLookupError } = await supabase
+    .from("workspace_projects")
+    .select("owner_user_id, organization_id")
+    .eq("id", project.id)
+    .maybeSingle();
+  if (projectLookupError) throw new Error(projectLookupError.message);
+  if (
+    existingProject?.owner_user_id &&
+    (existingProject.owner_user_id !== ownerUserId ||
+      existingProject.organization_id !== organization.id)
+  ) {
+    throw new UploadPreparationError("The selected project belongs to another account.", 403);
+  }
+
+  const updatedAt = new Date().toISOString();
+  const { error: organizationUpsertError } = await supabase
+    .from("workspace_organizations")
+    .upsert(
+      {
+        id: organization.id,
+        owner_user_id: ownerUserId,
+        name: organization.name,
+        type: organization.type,
+        updated_at: organization.updated_at ?? updatedAt,
+      },
+      { onConflict: "id" }
+    );
+  if (organizationUpsertError) throw new Error(organizationUpsertError.message);
+
+  const { error: projectUpsertError } = await supabase
+    .from("workspace_projects")
+    .upsert(
+      {
+        id: project.id,
+        organization_id: organization.id,
+        owner_user_id: ownerUserId,
+        name: project.name,
+        description: project.description ?? null,
+        updated_at: project.updated_at ?? updatedAt,
+      },
+      { onConflict: "id" }
+    );
+  if (projectUpsertError) throw new Error(projectUpsertError.message);
+}
 
 async function createGcsSignedUploadUrl({
   storagePath,
@@ -123,6 +237,16 @@ export async function POST(request: Request) {
       if (validationError) {
         return NextResponse.json({ error: validationError }, { status: 400 });
       }
+    }
+
+    if (getDatabaseProvider() === "cloud-sql") {
+      if (!user?.id) {
+        throw new UploadPreparationError(
+          "An authenticated owner account is required to upload in the Cloud SQL pilot.",
+          401
+        );
+      }
+      await ensureCloudSqlPilotWorkspaceMirror(supabase, user.id, projectId);
     }
 
     const researchFolder = await ensureResearchFolder(
@@ -257,7 +381,7 @@ export async function POST(request: Request) {
       {
         error: error instanceof Error ? error.message : "Failed to prepare uploads.",
       },
-      { status: 500 }
+      { status: error instanceof UploadPreparationError ? error.status : 500 }
     );
   }
 }

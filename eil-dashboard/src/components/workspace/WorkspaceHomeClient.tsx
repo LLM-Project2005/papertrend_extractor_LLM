@@ -284,6 +284,7 @@ export default function WorkspaceHomeClient() {
   const { session } = useAuth();
   const {
     profile,
+    currentProject,
     refreshFolders,
     analysisSession,
     startAnalysisSession,
@@ -596,11 +597,14 @@ export default function WorkspaceHomeClient() {
               Workspace command center
             </p>
             <h1 className="mt-3 text-4xl font-semibold leading-[1.05] tracking-normal text-[#171717] dark:text-white">
-              {profile.name}
+              {currentProject?.name ?? profile.name}
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-[#4d4d4d] dark:text-[#a3a3a3]">
               Bring papers into analysis, watch the queue, and jump straight into AI
               workflows once the workspace has data.
+            </p>
+            <p className="mt-2 text-sm text-[#6f6f6f] dark:text-[#777777]">
+              Workspace: {profile.name}
             </p>
             <p className="mt-4 inline-flex rounded-full bg-[#fafafa] px-3 py-1 font-mono text-xs text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#030303] dark:text-[#a3a3a3] dark:ring-[#242424]">
               Showing all analyzed data across this workspace
