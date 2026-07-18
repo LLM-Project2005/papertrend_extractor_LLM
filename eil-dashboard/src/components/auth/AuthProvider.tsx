@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -120,6 +121,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfileRecord | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const firebaseProfileRequestRef = useRef<{
+    key: string;
+    promise: Promise<void>;
+  } | null>(null);
+  const firebaseProfileAttemptRef = useRef<{ key: string; at: number } | null>(null);
 
   const loadProfile = useCallback(async (activeUser: User | null, accessToken?: string) => {
     if (!activeUser) {
@@ -194,12 +200,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        unsubscribe = await subscribeToFirebaseTokens(firebaseAuth, async (firebaseUser) => {
+        const firebaseUnsubscribe = await subscribeToFirebaseTokens(firebaseAuth, async (firebaseUser) => {
           if (!mounted) {
             return;
           }
 
           if (!firebaseUser) {
+            firebaseProfileRequestRef.current = null;
+            firebaseProfileAttemptRef.current = null;
             setAuthError(null);
             setSession(null);
             setUser(null);
@@ -210,27 +218,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           try {
             const firebaseSession = await firebaseUserToSession(firebaseUser, firebaseUser.uid);
-            const response = await fetch("/api/auth/profile", {
-              headers: { Authorization: `Bearer ${firebaseSession.access_token}` },
-            });
-            const payload = (await response.json().catch(() => ({}))) as {
-              error?: string;
-              ownerUserId?: string;
-              profile?: UserProfileRecord | null;
-            };
-            if (!response.ok || !payload.ownerUserId) {
-              throw new Error(
-                payload.error ??
-                  "This Firebase account is not linked to a Papertrend owner account yet."
-              );
+            const requestKey = `${firebaseUser.uid}:${firebaseSession.access_token}`;
+            const previousAttempt = firebaseProfileAttemptRef.current;
+            const inFlightRequest = firebaseProfileRequestRef.current;
+
+            // Firebase can emit the same token event more than once. Reuse an
+            // in-flight request and suppress identical retries briefly so an
+            // auth event cannot create a request loop.
+            if (
+              inFlightRequest?.key === requestKey
+            ) {
+              await inFlightRequest.promise;
+              return;
+            }
+            if (
+              previousAttempt?.key === requestKey &&
+              Date.now() - previousAttempt.at < 30_000
+            ) {
+              return;
             }
 
-            const mappedUser = firebaseUserToPapertrendUser(firebaseUser, payload.ownerUserId);
-            setAuthError(null);
-            setSession({ ...firebaseSession, user: mappedUser });
-            setUser(mappedUser);
-            setProfile(payload.profile ?? null);
-            setHydrated(true);
+            firebaseProfileAttemptRef.current = { key: requestKey, at: Date.now() };
+            const profileRequest = (async () => {
+              const response = await fetch("/api/auth/profile", {
+                headers: { Authorization: `Bearer ${firebaseSession.access_token}` },
+              });
+              const payload = (await response.json().catch(() => ({}))) as {
+                error?: string;
+                ownerUserId?: string;
+                profile?: UserProfileRecord | null;
+              };
+              if (!response.ok || !payload.ownerUserId) {
+                throw new Error(
+                  payload.error ??
+                    "This Firebase account is not linked to a Papertrend owner account yet."
+                );
+              }
+
+              const mappedUser = firebaseUserToPapertrendUser(firebaseUser, payload.ownerUserId);
+              setAuthError(null);
+              setSession({ ...firebaseSession, user: mappedUser });
+              setUser(mappedUser);
+              setProfile(payload.profile ?? null);
+              setHydrated(true);
+            })();
+            firebaseProfileRequestRef.current = { key: requestKey, promise: profileRequest };
+            try {
+              await profileRequest;
+            } finally {
+              if (firebaseProfileRequestRef.current?.promise === profileRequest) {
+                firebaseProfileRequestRef.current = null;
+              }
+            }
           } catch (error) {
             if (!mounted) {
               return;
@@ -246,11 +285,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setHydrated(true);
           }
         });
+        if (mounted) {
+          unsubscribe = firebaseUnsubscribe;
+        } else {
+          // The dynamic Firebase import can resolve after React has already
+          // unmounted this provider (for example during a route refresh).
+          firebaseUnsubscribe();
+        }
       })();
 
       return () => {
         mounted = false;
         unsubscribe?.();
+        firebaseProfileRequestRef.current = null;
       };
     }
 
