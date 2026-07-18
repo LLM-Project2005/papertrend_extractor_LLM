@@ -136,7 +136,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [selectedTracks, setSelectedTracksState] = useState<string[]>([...TRACK_COLS]);
   const [searchQuery, setSearchQueryState] = useState("");
   const loadedKeyRef = useRef<string | null>(null);
-  const skipNextRemoteProfileSaveRef = useRef(false);
+  const profileDirtyRef = useRef(false);
   const cachedWorkspaceRef = useRef<{
     organizationId: string | null;
     projectId: string | null;
@@ -211,12 +211,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const nextKey = `${user.id}:${authProfile?.updated_at ?? "local"}`;
       if (loadedKeyRef.current !== nextKey) {
         loadedKeyRef.current = nextKey;
-        // Loading a profile from the server is hydration, not a local edit.
-        // Mark it so the persistence effect below does not PATCH the same
-        // value back and trigger an auth-profile refresh loop.
-        if (authProfile?.workspace_profile) {
-          skipNextRemoteProfileSaveRef.current = true;
-        }
+        // Remote profile hydration is not a local edit and must never start
+        // the persistence effect below.
+        profileDirtyRef.current = false;
         setProfile(remoteProfile);
       }
 
@@ -225,7 +222,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     loadedKeyRef.current = "anonymous";
-    skipNextRemoteProfileSaveRef.current = false;
+    profileDirtyRef.current = false;
     setProfile(loadWorkspaceProfile());
     setOrganizations([]);
     setProjects([]);
@@ -686,6 +683,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ])
       );
       setSelectedOrganizationIdState(payload.organization.id);
+      profileDirtyRef.current = true;
       setProfile((current) => ({
         ...current,
         name: payload.organization!.name,
@@ -963,11 +961,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (skipNextRemoteProfileSaveRef.current) {
-      skipNextRemoteProfileSaveRef.current = false;
+    if (!profileDirtyRef.current) {
       return;
     }
 
+    profileDirtyRef.current = false;
     saveWorkspaceProfileRemote(profile).catch(() => {
       // The local profile still persists in localStorage, so the workspace
       // remains usable even if the remote sync fails temporarily.
@@ -1004,6 +1002,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       searchQuery,
       hasActiveProject: Boolean(currentProject),
       updateProfile: (updates) => {
+        profileDirtyRef.current = true;
         setProfile((current) => ({
           ...current,
           ...updates,
@@ -1011,6 +1010,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }));
       },
       resetProfile: () => {
+        profileDirtyRef.current = true;
         setProfile({
           ...DEFAULT_WORKSPACE_PROFILE,
           updatedAt: new Date().toISOString(),
