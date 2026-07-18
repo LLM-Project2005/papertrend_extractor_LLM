@@ -32,9 +32,9 @@ const STUCK_RUN_MINUTES = 15;
 
 const AI_ACTIONS = [
   {
-    title: "Ask the workspace",
+    title: "Ask the project",
     description: "Start with a grounded question across analyzed papers.",
-    prompt: "What are the main findings in this workspace?",
+    prompt: "What are the main findings in this project?",
     icon: ChatIcon,
   },
   {
@@ -52,7 +52,7 @@ const AI_ACTIONS = [
   {
     title: "Compare papers",
     description: "Ask for similarities, differences, methods, and contributions.",
-    prompt: "Compare the strongest papers in this workspace.",
+    prompt: "Compare the strongest papers in this project.",
     icon: SparkIcon,
   },
   {
@@ -292,7 +292,9 @@ export default function WorkspaceHomeClient() {
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const { data, loading } = useDashboardData("all");
+  const { data, loading } = useDashboardData("all", [], {
+    projectId: currentProject?.id ?? null,
+  });
   const {
     runs,
     folderJob,
@@ -451,19 +453,25 @@ export default function WorkspaceHomeClient() {
     async function loadLibraryRuns() {
       setLibraryLoading(true);
       try {
-        const response = await fetch("/api/workspace/library?includeTrashed=false", {
+        const projectQuery = currentProject?.id
+          ? `&projectId=${encodeURIComponent(currentProject.id)}`
+          : "";
+        const response = await fetch(
+          `/api/workspace/library?includeTrashed=false${projectQuery}`,
+          {
           headers: {
             Authorization: `Bearer ${session?.access_token ?? ""}`,
           },
           signal: controller.signal,
-        });
+          }
+        );
         const payload = (await response.json()) as {
           runs?: IngestionRunRow[];
           error?: string;
         };
 
         if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to load recent workspace activity.");
+          throw new Error(payload.error ?? "Failed to load recent project activity.");
         }
 
         setLibraryRuns(payload.runs ?? []);
@@ -473,7 +481,7 @@ export default function WorkspaceHomeClient() {
           return;
         }
         setLibraryError(
-          error instanceof Error ? error.message : "Failed to load recent workspace activity."
+          error instanceof Error ? error.message : "Failed to load recent project activity."
         );
       } finally {
         if (!controller.signal.aborted) {
@@ -485,7 +493,7 @@ export default function WorkspaceHomeClient() {
     void loadLibraryRuns();
 
     return () => controller.abort();
-  }, [session?.access_token]);
+  }, [currentProject?.id, session?.access_token]);
 
   function handleAnalyzeCreated(
     createdRuns: IngestionRunRow[],
@@ -594,20 +602,17 @@ export default function WorkspaceHomeClient() {
         <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <p className={eyebrowClass}>
-              Workspace command center
+              Project command center
             </p>
             <h1 className="mt-3 text-4xl font-semibold leading-[1.05] tracking-normal text-[#171717] dark:text-white">
               {currentProject?.name ?? profile.name}
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-[#4d4d4d] dark:text-[#a3a3a3]">
               Bring papers into analysis, watch the queue, and jump straight into AI
-              workflows once the workspace has data.
-            </p>
-            <p className="mt-2 text-sm text-[#6f6f6f] dark:text-[#777777]">
-              Workspace: {profile.name}
+              workflows once this project has data.
             </p>
             <p className="mt-4 inline-flex rounded-full bg-[#fafafa] px-3 py-1 font-mono text-xs text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#030303] dark:text-[#a3a3a3] dark:ring-[#242424]">
-              Showing all analyzed data across this workspace
+              Showing all analyzed data across this project
             </p>
           </div>
 
@@ -648,7 +653,7 @@ export default function WorkspaceHomeClient() {
 
       {liveDataError ? (
         <section className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-5 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
-          Live dashboard data could not be loaded right now. The backend returned an error while assembling this workspace&apos;s analytics: {liveDataError}
+          Live dashboard data could not be loaded right now. The backend returned an error while assembling this project&apos;s analytics: {liveDataError}
         </section>
       ) : null}
 
@@ -660,7 +665,7 @@ export default function WorkspaceHomeClient() {
 
       {data?.diagnostics?.recoveredFromLegacyScope ? (
         <section className="rounded-lg border border-[#d3e5ff] bg-[#f5f9ff] px-5 py-4 text-sm text-[#0761d1] dark:border-[#14395f] dark:bg-[#07192b] dark:text-[#8bbcff]">
-          Showing recovered historical analyses because this workspace has older canonical rows available.
+          Showing recovered historical analyses because this project has older canonical rows available.
         </section>
       ) : null}
 
@@ -706,7 +711,7 @@ export default function WorkspaceHomeClient() {
         <MetricCard
           label="Topics"
           value={loading ? "..." : summary.topicCount}
-          detail="Workspace topic groups"
+          detail="Project topic groups"
           icon={<ChartIcon className="h-5 w-5" />}
         />
         <MetricCard
@@ -753,7 +758,7 @@ export default function WorkspaceHomeClient() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className={eyebrowClass}>
-                Workspace signal
+                Project signal
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
                 Compact insight preview
@@ -821,7 +826,7 @@ export default function WorkspaceHomeClient() {
                   No file activity yet
                 </p>
                 <p className="mt-1 text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
-                  Analyze papers to start building the workspace record.
+                  Analyze papers to start building the project record.
                 </p>
               </div>
             )}
@@ -877,7 +882,7 @@ export default function WorkspaceHomeClient() {
       <AnalyzeFlowModal
         open={showAnalyzeModal}
         onClose={() => setShowAnalyzeModal(false)}
-        title="Analyze documents for this workspace"
+        title="Analyze documents for this project"
         eyebrow="Analyze"
         defaultFolder="Inbox"
         onCreated={handleAnalyzeCreated}

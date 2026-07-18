@@ -1,5 +1,5 @@
-import NewWorkspaceClient from "@/components/workspace/workspaces/NewWorkspaceClient";
+import { redirect } from "next/navigation";
 
 export default function NewWorkspacePage() {
-  return <NewWorkspaceClient />;
+  redirect("/workspaces");
 }

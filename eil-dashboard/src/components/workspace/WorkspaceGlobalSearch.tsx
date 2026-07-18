@@ -42,7 +42,6 @@ type SearchCategory =
   | "Actions"
   | "Pages"
   | "Library"
-  | "Workspaces"
   | "Projects"
   | "Folders"
   | "Docs";
@@ -62,7 +61,6 @@ const CATEGORY_ORDER: SearchCategory[] = [
   "Actions",
   "Pages",
   "Library",
-  "Workspaces",
   "Projects",
   "Folders",
   "Docs",
@@ -115,18 +113,18 @@ const ACTION_ITEMS: Array<{
   {
     id: "switch-project",
     label: "Switch project",
-    description: "Choose another workspace project or create a new one.",
+    description: "Choose another project or create a new one.",
     href: "/workspaces",
     icon: HomeIcon,
-    keywords: ["switch project", "change project", "workspace", "project picker"],
+    keywords: ["switch project", "change project", "project picker"],
   },
   {
-    id: "configure-workspace",
-    label: "Configure workspace",
-    description: "Update workspace identity, defaults, and display preferences.",
+    id: "configure-project",
+    label: "Configure project",
+    description: "Update project defaults and display preferences.",
     href: "/workspace/settings",
     icon: SettingsIcon,
-    keywords: ["settings", "configure", "configuration", "workspace settings", "preferences"],
+    keywords: ["settings", "configure", "configuration", "project settings", "preferences"],
   },
   {
     id: "profile",
@@ -246,13 +244,10 @@ export default function WorkspaceGlobalSearch({
   const router = useRouter();
   const { session } = useAuth();
   const {
-    organizations,
     allProjects,
     allFolders,
-    currentOrganization,
     currentProject,
     selectedProjectId,
-    setSelectedOrganizationId,
     setSelectedProjectId,
     setSelectedFolderId,
   } = useWorkspaceProfile();
@@ -332,8 +327,6 @@ export default function WorkspaceGlobalSearch({
     () => new Map(allProjects.map((project) => [project.id, project])),
     [allProjects]
   );
-  const workspaceIcon =
-    pageItems.find((item) => item.id === "workspaces")?.icon ?? HomeIcon;
   const projectIcon =
     pageItems.find((item) => item.id === "project-overview")?.icon ?? HomeIcon;
   const folderIcon =
@@ -392,36 +385,15 @@ export default function WorkspaceGlobalSearch({
           router.push(`/workspace/library?runId=${encodeURIComponent(run.id)}`);
         },
       })),
-      ...organizations.map((organization) => ({
-        id: `organization:${organization.id}`,
-        label: organization.name,
-        description: "Open this workspace and its projects",
-        category: "Workspaces" as const,
-        icon: workspaceIcon,
-        featured: currentOrganization?.id === organization.id,
-        searchText: `${organization.name} workspace switch project`,
-        onSelect: () => {
-          setSelectedOrganizationId(organization.id);
-          router.push("/workspaces");
-        },
-      })),
       ...allProjects.map((project) => {
-        const organization = organizations.find(
-          (item) => item.id === project.organization_id
-        );
-
         return {
           id: `project:${project.id}`,
           label: project.name,
-          description: organization
-            ? `Project in ${organization.name}`
-            : "Open this project workspace",
+          description: "Open this project",
           category: "Projects" as const,
           icon: projectIcon,
           featured: currentProject?.id === project.id,
-          searchText: `${project.name} ${project.description ?? ""} ${
-            organization?.name ?? ""
-          } switch project workspace`,
+          searchText: `${project.name} ${project.description ?? ""} switch project`,
           onSelect: () => {
             setSelectedProjectId(project.id);
             setSelectedFolderId("all");
@@ -471,19 +443,15 @@ export default function WorkspaceGlobalSearch({
   }, [
     allFolders,
     allProjects,
-    currentOrganization?.id,
     currentProject?.id,
     folderIcon,
     libraryRuns,
-    organizations,
     pageItems,
     projectById,
     projectIcon,
     router,
     setSelectedFolderId,
-    setSelectedOrganizationId,
     setSelectedProjectId,
-    workspaceIcon,
   ]);
 
   const searchResults = useMemo(() => {
@@ -521,7 +489,7 @@ export default function WorkspaceGlobalSearch({
         type="button"
         onClick={() => setOpen(true)}
         className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white sm:w-[168px] sm:justify-start sm:gap-2 sm:px-3"
-        aria-label="Search workspace"
+        aria-label="Search project"
       >
         <SearchIcon className="h-4 w-4 flex-none" />
         <span className="hidden min-w-0 truncate text-sm sm:block">Search</span>

@@ -693,10 +693,10 @@ export default function DashboardClient({
                 value={dashboardDataMode}
                 onChange={(event) => updateDataMode(event.target.value as DashboardDataMode)}
                 className="bg-transparent text-sm font-medium text-slate-700 outline-none dark:text-[#f2f2f2]"
-                title="Choose whether the dashboard should recover gracefully, force workspace data, or use preview data."
+                  title="Choose whether the dashboard should recover gracefully, use project data, or use preview data."
               >
                 <option value="auto">Smart</option>
-                <option value="live">Workspace</option>
+                <option value="live">Project</option>
                 <option value="mock">Preview</option>
               </select>
             </label>
@@ -733,7 +733,7 @@ export default function DashboardClient({
               </p>
               <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
                 {planState?.plan.dashboard_title ??
-                  (data?.useMock ? "Preview adaptive workspace" : "Adaptive analytics workspace")}
+                  (data?.useMock ? "Preview adaptive project" : "Adaptive project analytics")}
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
                 {planState?.plan.summary ??

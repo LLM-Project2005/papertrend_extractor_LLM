@@ -1,28 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import { LogoMarkIcon, MoreHorizontalIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
+import { FileIcon, LogoMarkIcon, MoreHorizontalIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
 
-export default function WorkspaceProjectsClient() {
-  const params = useParams<{ workspaceId: string }>();
-  const organizationId = params.workspaceId;
+export default function ProjectIndexClient() {
   const router = useRouter();
   const { hydrated, user } = useAuth();
   const {
+    allProjects,
     organizations,
-    projects,
-    currentOrganization,
+    profile,
+    selectedOrganizationId,
+    workspaceLoading,
     refreshOrganizations,
-    refreshProjects,
+    createOrganization,
     createProject,
     renameProject,
-    setSelectedOrganizationId,
     setSelectedProjectId,
   } = useWorkspaceProfile();
   const [query, setQuery] = useState("");
@@ -30,47 +28,28 @@ export default function WorkspaceProjectsClient() {
   const [draftName, setDraftName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const initializedOrganizationRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!hydrated) {
-      return;
-    }
+    if (!hydrated) return;
     if (!user) {
       router.replace("/login");
       return;
     }
-
-    if (initializedOrganizationRef.current === organizationId) {
-      return;
-    }
-
-    initializedOrganizationRef.current = organizationId;
-    setSelectedOrganizationId(organizationId);
     refreshOrganizations().catch(() => undefined);
-    refreshProjects(organizationId).catch(() => undefined);
-  }, [
-    hydrated,
-    organizationId,
-    refreshOrganizations,
-    refreshProjects,
-    router,
-    setSelectedOrganizationId,
-    user,
-  ]);
+  }, [hydrated, refreshOrganizations, router, user]);
 
   const visibleProjects = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    if (!needle) {
-      return projects;
-    }
-    return projects.filter((project) => project.name.toLowerCase().includes(needle));
-  }, [projects, query]);
+    if (!needle) return allProjects;
+    return allProjects.filter((project) => {
+      return `${project.name} ${project.description ?? ""}`.toLowerCase().includes(needle);
+    });
+  }, [allProjects, query]);
 
   async function handleCreateProject(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    if (!draftName.trim()) {
+    const name = draftName.trim();
+    if (!name) {
       setError("Project name is required.");
       return;
     }
@@ -78,10 +57,20 @@ export default function WorkspaceProjectsClient() {
     setCreating(true);
     setError(null);
     try {
-      const project = await createProject(draftName, { organizationId });
-      flushSync(() => {
-        setSelectedProjectId(project.id);
-      });
+      // Organizations remain internal for database compatibility. Users do
+      // not need to choose one when creating a project.
+      let organizationId =
+        selectedOrganizationId ?? organizations[0]?.id ?? null;
+      if (!organizationId) {
+        const organization = await createOrganization(
+          profile.name.trim() || "Personal projects",
+          "personal"
+        );
+        organizationId = organization.id;
+      }
+
+      const project = await createProject(name, { organizationId });
+      setSelectedProjectId(project.id);
       setDraftName("");
       setShowCreateModal(false);
       router.push("/workspace/home");
@@ -96,9 +85,7 @@ export default function WorkspaceProjectsClient() {
 
   async function handleRenameProject(projectId: string, currentName: string) {
     const nextName = window.prompt("Rename project", currentName);
-    if (!nextName?.trim() || nextName.trim() === currentName) {
-      return;
-    }
+    if (!nextName?.trim() || nextName.trim() === currentName) return;
 
     try {
       await renameProject(projectId, nextName.trim());
@@ -110,30 +97,26 @@ export default function WorkspaceProjectsClient() {
     }
   }
 
-  const heading =
-    currentOrganization?.name ||
-    organizations.find((organization) => organization.id === organizationId)?.name ||
-    "Projects";
+  if (!hydrated || workspaceLoading) {
+    return <main className="min-h-screen bg-slate-50 dark:bg-black" />;
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
       <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-4">
-          <span className="flex h-9 w-9 items-center justify-center text-slate-950 dark:text-white">
+          <Link
+            href="/"
+            className="flex h-9 w-9 items-center justify-center text-slate-950 dark:text-white"
+            aria-label="Go to front page"
+          >
             <LogoMarkIcon className="h-7 w-7" />
-          </span>
+          </Link>
           <div>
-            <p className="text-sm text-slate-500 dark:text-[#8f8f8f]">Workspace</p>
-            <div className="flex items-center gap-2 text-lg font-semibold">
-              <Link
-                href="/workspaces"
-                className="text-slate-500 transition-colors hover:text-slate-900 dark:text-[#a3a3a3] dark:hover:text-white"
-              >
-                Workspaces
-              </Link>
-              <span className="text-slate-400 dark:text-[#5f5f5f]">&gt;</span>
-              <span>{heading}</span>
-            </div>
+            <p className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
+              Papertrend
+            </p>
+            <span className="text-lg font-semibold">Projects</span>
           </div>
         </div>
       </header>
@@ -141,10 +124,11 @@ export default function WorkspaceProjectsClient() {
       <section className="mx-auto max-w-7xl px-6 py-16">
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
-            <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">Projects</h1>
+            <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">
+              Your projects
+            </h1>
             <p className="mt-4 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-              Create a project for each research space you want to analyze and
-              explore.
+              Choose a project to manage its folders, papers, dashboard, and research chat.
             </p>
           </div>
 
@@ -154,7 +138,7 @@ export default function WorkspaceProjectsClient() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search for a project"
+                placeholder="Search projects"
                 className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#6f6f6f]"
               />
             </label>
@@ -189,30 +173,25 @@ export default function WorkspaceProjectsClient() {
                 <button
                   type="button"
                   onClick={() => {
-                    flushSync(() => {
-                      setSelectedProjectId(project.id);
-                    });
+                    setSelectedProjectId(project.id);
                     router.push("/workspace/home");
                   }}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <p className="text-2xl font-semibold text-slate-900 dark:text-white">{project.name}</p>
-                  {project.description ? (
-                    <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-                      {project.description}
-                    </p>
-                  ) : (
-                    <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-                      Open this project to manage the library, dashboard, chat,
-                      and analysis flow.
-                    </p>
-                  )}
+                  <div className="flex items-center gap-2 text-slate-500 dark:text-[#8f8f8f]">
+                    <FileIcon className="h-4 w-4" />
+                    <span className="text-xs font-medium uppercase tracking-normal">Project</span>
+                  </div>
+                  <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-white">
+                    {project.name}
+                  </p>
+                  <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
+                    {project.description || "Folders, papers, analytics, and research chat."}
+                  </p>
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    void handleRenameProject(project.id, project.name);
-                  }}
+                  onClick={() => void handleRenameProject(project.id, project.name)}
                   className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#666666] dark:hover:bg-[#111111] dark:hover:text-white"
                   aria-label={`Rename ${project.name}`}
                   title="Rename project"
@@ -228,26 +207,16 @@ export default function WorkspaceProjectsClient() {
           <div className="mt-16 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
             <p className="text-lg font-medium text-slate-900 dark:text-white">No projects yet</p>
             <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-              Create your first project in this workspace to open the
-              workspace.
+              Create a project to start organizing and analyzing papers.
             </p>
           </div>
         ) : null}
-
-        <div className="mt-10">
-          <Link
-            href="/workspaces"
-            className="text-sm font-medium text-slate-500 transition-colors hover:text-slate-900 dark:text-[#9c9c9c] dark:hover:text-white"
-          >
-            Back to workspaces
-          </Link>
-        </div>
       </section>
 
       <CreateEntityModal
         open={showCreateModal}
         title="Create project"
-        description="Create a new project inside this workspace and jump straight into the workspace."
+        description="Give this research space a name. Folders and files will stay inside the project."
         value={draftName}
         fieldLabel="Project name"
         fieldPlaceholder="Project name"
@@ -257,9 +226,7 @@ export default function WorkspaceProjectsClient() {
         error={error}
         onValueChange={setDraftName}
         onClose={() => {
-          if (creating) {
-            return;
-          }
+          if (creating) return;
           setShowCreateModal(false);
           setError(null);
         }}

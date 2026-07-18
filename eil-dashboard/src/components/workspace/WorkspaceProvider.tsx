@@ -703,7 +703,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         options?.organizationId ?? selectedOrganizationIdState ?? null;
 
       if (!user || !session?.access_token || !organizationId) {
-        throw new Error("Select a workspace before creating projects.");
+        throw new Error("A project owner is required before creating projects.");
       }
 
       const response = await fetch("/api/workspace/projects", {

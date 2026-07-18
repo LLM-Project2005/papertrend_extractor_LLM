@@ -143,7 +143,7 @@ export default function WorkspaceProfileMenu({
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
               >
                 <HomeIcon className="h-4 w-4" />
-                <span>Workspace</span>
+                <span>Projects</span>
               </Link>
             ) : (
               <Link
@@ -152,7 +152,7 @@ export default function WorkspaceProfileMenu({
                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
               >
                 <SettingsIcon className="h-4 w-4" />
-                <span>Workspace settings</span>
+                <span>Settings</span>
               </Link>
             )}
           </div>
