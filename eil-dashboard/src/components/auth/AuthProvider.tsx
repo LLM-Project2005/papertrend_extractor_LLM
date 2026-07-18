@@ -388,6 +388,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
 
       if (configuredAuthProvider === "firebase") {
+        const currentWorkspaceProfile = profile?.workspace_profile;
+        if (
+          currentWorkspaceProfile &&
+          JSON.stringify(currentWorkspaceProfile) === JSON.stringify(mergedWorkspaceProfile)
+        ) {
+          return;
+        }
+
         if (!session?.access_token) {
           throw new Error("Firebase authentication is not ready.");
         }
