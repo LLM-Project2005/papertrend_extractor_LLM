@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     }
 
     const accessToken = await ensureGoogleDriveAccessToken(connection);
-    const folder = sanitizeFolderName(body.folder ?? "Inbox");
+    const folder = sanitizeFolderName(body.folder ?? "Repository");
     const supabase = getSupabaseAdmin();
     const researchFolder = await ensureResearchFolder(
       supabase,

@@ -954,7 +954,7 @@ export default function AdminImportClient() {
     }
 
     const targetFolderName =
-      mode === "folder" ? getFolderUploadName(pdfFiles) : activeFolder?.name ?? "Inbox";
+      mode === "folder" ? getFolderUploadName(pdfFiles) : activeFolder?.name ?? "Repository";
 
     setLoading(true);
     try {
@@ -1332,7 +1332,7 @@ export default function AdminImportClient() {
       .map((run) => {
         const folderName = run.folder_id
           ? folderById.get(run.folder_id)?.name ?? "Folder"
-          : "Inbox";
+          : "Repository";
         const sourceLabel = sourceOf(run);
         const subtitle =
           selectedFolderId === "all"

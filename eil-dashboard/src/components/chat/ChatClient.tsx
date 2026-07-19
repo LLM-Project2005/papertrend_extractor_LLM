@@ -87,6 +87,7 @@ interface Citation {
 type ChartType = "auto" | "bar" | "line" | "pie" | "table";
 type ChartMetric =
   | "papers_per_year"
+  | "word_count"
   | "top_topics"
   | "top_keywords"
   | "track_distribution"
@@ -977,7 +978,7 @@ function sessionActive(session?: DeepResearchSessionRecord | null) {
 }
 
 function buildFolderLabel(folderId: string, folders: ResearchFolderRow[]) {
-  if (!folderId || folderId === "all") return "All folders";
+  if (!folderId || folderId === "all") return "Entire repository";
   return folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
 }
 
@@ -3502,7 +3503,7 @@ export default function ChatClient() {
                           <div className="mt-2 border-t border-slate-200 pt-2 dark:border-[#1f1f1f]">
                             <div className="flex items-center justify-between px-3 pb-2">
                               <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
-                                Folder scope
+                                Repository scope
                               </span>
                               <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-[#b4b4b4]">
                                 <FolderIcon className="h-3.5 w-3.5" />
@@ -3521,7 +3522,7 @@ export default function ChatClient() {
                                   : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                               }`}
                             >
-                              <span>All folders</span>
+                              <span>Entire repository</span>
                               {chatScopeFolderId === "all" ? (
                                 <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
                               ) : null}
@@ -4077,7 +4078,7 @@ export default function ChatClient() {
       <AnalyzeFlowModal
         open={showAnalyzeModal}
         onClose={() => setShowAnalyzeModal(false)}
-        defaultFolder={activeFolderLabel === "All folders" ? "Inbox" : activeFolderLabel}
+        defaultFolder={activeFolderLabel === "Entire repository" ? "Repository" : activeFolderLabel}
         title="Add files"
         eyebrow="Upload"
         onCreated={handleCreatedRuns}

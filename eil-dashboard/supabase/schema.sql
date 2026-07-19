@@ -271,6 +271,21 @@ ALTER TABLE paper_content
   ADD COLUMN IF NOT EXISTS source_path TEXT,
   ADD COLUMN IF NOT EXISTS ingestion_run_id UUID REFERENCES ingestion_runs(id);
 
+CREATE TABLE IF NOT EXISTS paper_term_index (
+  paper_id BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES research_folders(id) ON DELETE SET NULL,
+  ingestion_run_id UUID REFERENCES ingestion_runs(id) ON DELETE SET NULL,
+  content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+  total_words INT NOT NULL DEFAULT 0 CHECK (total_words >= 0),
+  term_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_term_index_owner_run
+  ON paper_term_index(owner_user_id, ingestion_run_id);
+
 -- ------------------------------------------------------------------
 -- 7. Canonical keyword concepts
 -- ------------------------------------------------------------------
@@ -675,6 +690,7 @@ ALTER TABLE paper_keywords ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_single ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_multi ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_content ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_term_index ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingestion_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE folder_analysis_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_keyword_concepts ENABLE ROW LEVEL SECURITY;
@@ -691,6 +707,7 @@ DROP POLICY IF EXISTS "anon_read" ON paper_keywords;
 DROP POLICY IF EXISTS "anon_read" ON paper_tracks_single;
 DROP POLICY IF EXISTS "anon_read" ON paper_tracks_multi;
 DROP POLICY IF EXISTS "anon_read" ON paper_content;
+DROP POLICY IF EXISTS "anon_read" ON paper_term_index;
 DROP POLICY IF EXISTS "anon_read" ON paper_keyword_concepts;
 DROP POLICY IF EXISTS "anon_read" ON paper_analysis_facets;
 DROP POLICY IF EXISTS "anon_read" ON paper_author_keywords;
@@ -699,6 +716,15 @@ DROP POLICY IF EXISTS "anon_read" ON paper_research_typologies;
 DO $$
 BEGIN
   CREATE POLICY "papers_select_own" ON papers
+  FOR SELECT USING (auth.uid() = owner_user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "paper_term_index_select_own" ON paper_term_index
   FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN

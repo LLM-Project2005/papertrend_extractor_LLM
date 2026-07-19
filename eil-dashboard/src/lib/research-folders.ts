@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { DEFAULT_REPOSITORY_NAME } from "@/lib/constants";
 import type { ResearchFolderRow } from "@/types/database";
 
 export function sanitizeFolderName(folderName: string): string {
@@ -6,7 +7,7 @@ export function sanitizeFolderName(folderName: string): string {
     .replace(/[^a-zA-Z0-9._/-]+/g, "-")
     .replace(/^\/+|\/+$/g, "")
     .trim();
-  return sanitized || "Inbox";
+  return sanitized || DEFAULT_REPOSITORY_NAME;
 }
 
 export async function ensureResearchFolder(

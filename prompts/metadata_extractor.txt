@@ -8,6 +8,9 @@ You extract minimal grounded metadata for a research paper.
 4. Do not invent metadata.
 5. For the year, choose only from the grounded candidates below, or return "Unknown".
 6. Do not use citation years, data-collection years, academic-year labels, or reference-list years as the publication year unless the candidate evidence clearly says it is the publication/published year.
+7. Do not use PDF creation/modification dates, upload dates, file names, folder names, received dates, accepted dates, or revised dates as the publication year.
+8. Prefer an explicit publication label such as "Published", "Publication year", "Copyright", or an official journal/proceedings date in the front matter.
+9. If two credible publication years conflict, return "Unknown" and let the year resolver flag the paper for review.
 
 ### HINTS ###
 Title hint: {title_hint}

@@ -211,7 +211,7 @@ export async function POST(request: Request) {
       files?: PrepareUploadFile[];
     };
 
-    const folder = sanitizeFolderName(String(body.folder ?? "Inbox"));
+    const folder = sanitizeFolderName(String(body.folder ?? "Repository"));
     const sourceKind = String(body.source_kind ?? "pdf-upload") || "pdf-upload";
     const projectId = String(body.project_id ?? "").trim();
     const files = Array.isArray(body.files)

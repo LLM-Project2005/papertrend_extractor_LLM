@@ -11,6 +11,7 @@
     "start": "next start",
     "lint": "next lint",
     "auth:parity": "tsx scripts/auth-parity-smoke.ts",
+    "test:repository-chat": "tsx --test tests/repository-chat.test.ts",
     "import-csv": "npx tsx scripts/import-csv.ts",
     "sync-supabase": "npx tsx scripts/import-csv.ts",
     "worker:queue": "python worker/process_ingestion_queue.py",

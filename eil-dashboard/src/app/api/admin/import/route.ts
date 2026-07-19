@@ -108,7 +108,7 @@ export async function POST(request: Request) {
     const supabase = getSupabaseAdmin();
     const user = await getAuthenticatedUserFromRequest(request);
     const formData = await request.formData();
-    const folder = sanitizeFolderName(String(formData.get("folder") ?? "Inbox"));
+    const folder = sanitizeFolderName(String(formData.get("folder") ?? "Repository"));
     const sourceKind = String(formData.get("source_kind") ?? "pdf-upload") || "pdf-upload";
     const projectId = String(formData.get("project_id") ?? "").trim();
     const files = formData

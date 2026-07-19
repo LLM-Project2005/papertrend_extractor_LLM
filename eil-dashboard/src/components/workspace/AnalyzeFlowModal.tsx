@@ -87,7 +87,7 @@ interface AnalyzeFlowModalProps {
 export default function AnalyzeFlowModal({
   open,
   onClose,
-  defaultFolder = "Inbox",
+  defaultFolder = "Repository",
   title = "Analyze workspace sources",
   eyebrow = "Analyze",
   onCreated,

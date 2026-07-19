@@ -17,6 +17,7 @@ import {
 } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
 import { callPythonNodeService } from "@/lib/python-node-service";
+import { runRepositoryChat } from "@/lib/repository-chat";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
   persistWorkerStartState,
@@ -47,6 +48,7 @@ type ChartScope = "selected_files" | "workspace";
 type ChartType = "auto" | "bar" | "line" | "pie" | "table";
 type ChartMetric =
   | "papers_per_year"
+  | "word_count"
   | "top_topics"
   | "top_keywords"
   | "track_distribution"
@@ -3753,6 +3755,77 @@ async function normalChat(
   const chartRequested =
     requestedToolMode === "chart" ||
     Boolean(body.chartRequest);
+  const selectedModel = resolveChatModel(body.model);
+
+  const repositoryEligible =
+    Boolean(ownerUserId && supabase && thread && body.projectId && body.projectId !== "all") &&
+    requestedToolMode !== "web_search" &&
+    !body.webSearchEnabled;
+  if (repositoryEligible && ownerUserId && supabase && thread && body.projectId) {
+    try {
+      const repositoryResult = await runRepositoryChat({
+        ownerUserId,
+        projectId: body.projectId,
+        folderId: body.folderId,
+        selectedRunIds: body.selectedRunIds,
+        prompt: currentMessage,
+        model: selectedModel,
+        forceChart: chartRequested,
+        history: (body.messages ?? []).slice(-12),
+      });
+      if (repositoryResult.handled) {
+        const repositoryCharts = repositoryResult.charts as ChatChartPayload[];
+        const repositoryCitations = repositoryResult.citations as Citation[];
+        const toolResults: ChatToolResult[] = repositoryCharts.length > 0
+          ? [{ type: "chart", status: "succeeded", data: { charts: repositoryCharts } }]
+          : [];
+        const metadata = {
+          mode: "grounded",
+          model: selectedModel,
+          toolResults,
+          chart: repositoryCharts[0] ?? null,
+          charts: repositoryCharts,
+          repositoryPlan: repositoryResult.plan,
+          repositoryDiagnostics: repositoryResult.diagnostics,
+        };
+
+        await appendWorkspaceMessage(supabase, {
+          threadId: thread.id,
+          ownerUserId,
+          folderId: body.folderId,
+          role: "assistant",
+          content: repositoryResult.answer,
+          messageKind: "chat",
+          citations: repositoryCitations,
+          metadata,
+        });
+        await updateWorkspaceThread(supabase, thread.id, {
+          summary: repositoryResult.answer.slice(0, 240),
+          title: thread.title || buildThreadTitle(currentMessage),
+        });
+
+        const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+        return NextResponse.json({
+          mode: "grounded",
+          answer: repositoryResult.answer,
+          citations: repositoryCitations,
+          toolResults,
+          chart: repositoryCharts[0] ?? null,
+          charts: repositoryCharts,
+          thread: detail.thread,
+          messages: detail.messages,
+          deepResearchSession: detail.deepResearchSession,
+        });
+      }
+    } catch (error) {
+      console.error("Repository chat failed; continuing with the standard chat path.", {
+        ownerUserId,
+        projectId: body.projectId,
+        folderId: body.folderId ?? null,
+        message: error instanceof Error ? error.message : "Unknown repository chat error",
+      });
+    }
+  }
 
   if (chartRequested) {
     if (!ownerUserId || !supabase || !thread) {
@@ -3835,7 +3908,6 @@ async function normalChat(
   const citations: Citation[] = [];
   let mode: "grounded" | "fallback" = "fallback";
   const generationOptions = resolveGenerationOptions(body);
-  const selectedModel = resolveChatModel(body.model);
   const webSearchRequested =
     requestedToolMode === "web_search" ||
     Boolean(body.webSearchEnabled) ||

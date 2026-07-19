@@ -3,12 +3,25 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 import requests
 
-from nodes.year_resolver import resolve_publication_year
+# Running ``python scripts/repair_unknown_years.py`` puts only the scripts
+# directory on sys.path. Add the repository root so shared pipeline modules
+# such as nodes and supabase_http resolve consistently from any shell.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from nodes.year_resolver import merge_web_year_resolution, resolve_publication_year
+from nodes.year_web_lookup import (
+    extract_doi,
+    lookup_crossref_by_doi,
+    lookup_crossref_by_title,
+    resolve_year_from_web,
+)
 from supabase_http import build_retrying_session
 
 
@@ -18,7 +31,6 @@ OPTIONAL_YEAR_AUDIT_KEYS = (
     "year_evidence",
     "year_candidates",
 )
-
 
 def _load_dotenv() -> None:
     try:
@@ -32,68 +44,18 @@ def _rest_url(base_url: str, table: str) -> str:
     return f"{base_url.rstrip('/')}/rest/v1/{table}"
 
 
-def _title_similarity(left: str, right: str) -> float:
-    return SequenceMatcher(None, (left or "").lower(), (right or "").lower()).ratio()
+# Kept as small compatibility wrappers for the diagnostic tests and any local
+# scripts that imported the old private helper names.
+def _extract_doi(value: str) -> str:
+    return extract_doi(value)
 
 
 def _crossref_year_lookup(title: str) -> Optional[Dict[str, Any]]:
-    normalized_title = " ".join((title or "").split())
-    if len(normalized_title) < 12:
-        return None
-
-    response = requests.get(
-        "https://api.crossref.org/works",
-        params={"query.title": normalized_title, "rows": "3"},
-        timeout=30,
-        headers={"User-Agent": "papertrend-year-repair/1.0"},
-    )
-    response.raise_for_status()
-    items = (((response.json() or {}).get("message") or {}).get("items") or [])
-    best: Optional[Dict[str, Any]] = None
-    best_score = 0.0
-
-    for item in items:
-        candidate_title = " ".join((item.get("title") or [""])[0].split())
-        score = _title_similarity(normalized_title, candidate_title)
-        if score > best_score:
-            best_score = score
-            best = item
-
-    if not best or best_score < 0.90:
-        return None
-
-    year = _crossref_year(best)
-    if not year:
-        return None
-
-    doi = str(best.get("DOI") or "").strip()
-    url = str(best.get("URL") or "").strip() or (f"https://doi.org/{doi}" if doi else "")
-    return {
-        "year": year,
-        "year_confidence": round(min(0.96, 0.82 + best_score * 0.14), 3),
-        "year_source": f"crossref:{doi}"[:120] if doi else "crossref",
-        "year_evidence": f"Crossref title match {best_score:.2f}: {url or normalized_title}"[:1000],
-        "year_candidates": [
-            {
-                "year": year,
-                "source": "crossref",
-                "confidence": round(min(0.96, 0.82 + best_score * 0.14), 3),
-                "evidence": url,
-                "raw_year": year,
-            }
-        ],
-    }
+    return lookup_crossref_by_title(title)
 
 
-def _crossref_year(item: Dict[str, Any]) -> str:
-    for key in ("published-print", "published-online", "issued"):
-        date_parts = ((item.get(key) or {}).get("date-parts") or [])
-        if not date_parts or not date_parts[0]:
-            continue
-        year = str(date_parts[0][0] or "").strip()
-        if year:
-            return year
-    return ""
+def _crossref_doi_lookup(doi: str) -> Optional[Dict[str, Any]]:
+    return lookup_crossref_by_doi(doi)
 
 
 def _load_unknown_papers(session: requests.Session, base_url: str, limit: int) -> List[Dict[str, Any]]:
@@ -149,15 +111,13 @@ def _resolve_paper(row: Dict[str, Any], web_lookup: bool) -> Dict[str, Any]:
     if resolution["year"] != "Unknown" or not web_lookup:
         return resolution
 
-    web_resolution = _crossref_year_lookup(str(row.get("title") or ""))
-    if web_resolution:
-        resolution = {
-            **resolution,
-            **web_resolution,
-            "year_resolution_strategy": "web_lookup_crossref",
-            "needs_review": False,
-        }
-    return resolution
+    raw_text = str(row.get("raw_text") or "")
+    web_resolution = resolve_year_from_web(
+        title=str(row.get("title") or ""),
+        raw_text=raw_text,
+        source_path=str(row.get("source_path") or ""),
+    )
+    return merge_web_year_resolution(resolution, web_resolution)
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:

@@ -1027,7 +1027,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           folderJobId: options?.folderJob?.id ?? null,
           folderId: options?.folderId ?? null,
           sourceKind: options?.sourceKind ?? "pdf-upload",
-          folder: options?.folder ?? "Inbox",
+          folder: options?.folder ?? "Repository",
           minimized: false,
           startedAt: new Date().toISOString(),
         });

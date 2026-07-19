@@ -885,7 +885,7 @@ export default function WorkspaceHomeClient() {
         onClose={() => setShowAnalyzeModal(false)}
         title="Analyze documents for this project"
         eyebrow="Analyze"
-        defaultFolder="Inbox"
+        defaultFolder="Repository"
         onCreated={handleAnalyzeCreated}
       />
     </div>
