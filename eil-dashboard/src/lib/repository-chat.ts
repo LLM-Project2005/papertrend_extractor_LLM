@@ -165,6 +165,15 @@ const STOPWORDS = new Set([
   "this", "to", "was", "were", "what", "when", "where", "which", "with",
 ]);
 const TERM_INDEX_VERSION = "papertrend-term-index-v2";
+const REPOSITORY_MEMORY_MAX_PAPERS = 80;
+const REPOSITORY_MEMORY_MAX_CHARS = 18_000;
+const REPOSITORY_PAPER_BRIEF_MAX_CHARS = 360;
+const REPOSITORY_CACHE_MAX_ROWS_PER_OWNER = 24;
+const REPOSITORY_CACHE_MAX_AGE_DAYS = 30;
+
+function promptRequestsChart(prompt: string, forceChart = false): boolean {
+  return forceChart || /\b(chart|charts|graph|graphs|plot|plots|visuali[sz]e|bar chart|line chart|pie chart|table)\b|กราฟ|แผนภูมิ/i.test(prompt);
+}
 
 function hashText(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -507,19 +516,25 @@ function buildRepositorySummary(
   topics: RepositoryContext["topicCounts"],
   totalWords: number
 ): string {
+  const prunedPapers = papers.slice(0, REPOSITORY_MEMORY_MAX_PAPERS);
   const lines = [
     "# Repository context",
     "",
     `Scope: ${scopeLabel}`,
     `Analyzed papers: ${papers.length}`,
     `Indexed words: ${totalWords}`,
+    `Memory policy: compact per-paper briefs only; full paper text is retrieved later only for the most relevant evidence. Brief list is capped at ${REPOSITORY_MEMORY_MAX_PAPERS} papers and ${REPOSITORY_MEMORY_MAX_CHARS.toLocaleString()} characters.`,
     "",
     "## Papers",
-    ...papers.map((paper) => {
+    ...prunedPapers.map((paper) => {
       const labels = [...paper.topics.keys()].slice(0, 4).join(", ");
-      return `- [Paper ${paper.paperId}] ${paper.title} (${paper.year})${labels ? ` - ${labels}` : ""}`;
+      const brief = compactPaperBrief(paper);
+      return `- [Paper ${paper.paperId}] ${paper.title} (${paper.year})${labels ? ` - ${labels}` : ""}${brief ? `\n  Brief: ${brief}` : ""}`;
     }),
   ];
+  if (papers.length > prunedPapers.length) {
+    lines.push(`- ${papers.length - prunedPapers.length} additional paper(s) omitted from memory and available through targeted retrieval.`);
+  }
   if (topics.length > 0) {
     lines.push(
       "",
@@ -527,7 +542,29 @@ function buildRepositorySummary(
       ...topics.slice(0, 12).map((topic) => `- ${topic.label}: ${topic.paperCount} paper(s), ${topic.mentions} analyzed mentions`)
     );
   }
-  return lines.join("\n");
+  return pruneRepositoryMemory(lines.join("\n"));
+}
+
+function compactPaperBrief(paper: RepositoryPaper): string {
+  const source = [paper.abstract, paper.results, paper.conclusion, paper.methods]
+    .map((value) => value.replace(/\s+/g, " ").trim())
+    .find(Boolean);
+  if (!source) return "";
+  return source.length > REPOSITORY_PAPER_BRIEF_MAX_CHARS
+    ? `${source.slice(0, REPOSITORY_PAPER_BRIEF_MAX_CHARS - 3).trim()}...`
+    : source;
+}
+
+function pruneRepositoryMemory(markdown: string): string {
+  if (markdown.length <= REPOSITORY_MEMORY_MAX_CHARS) return markdown;
+  const head = markdown.slice(0, REPOSITORY_MEMORY_MAX_CHARS);
+  const boundary = Math.max(head.lastIndexOf("\n- "), head.lastIndexOf("\n## "));
+  const pruned = head.slice(0, boundary > 0 ? boundary : REPOSITORY_MEMORY_MAX_CHARS).trimEnd();
+  return [
+    pruned,
+    "",
+    `[Repository memory pruned to ${REPOSITORY_MEMORY_MAX_CHARS.toLocaleString()} characters. Ask for a specific paper/topic to trigger targeted full-text retrieval.]`,
+  ].join("\n");
 }
 
 async function saveRepositoryCache(context: RepositoryContext): Promise<void> {
@@ -541,10 +578,17 @@ async function saveRepositoryCache(context: RepositoryContext): Promise<void> {
     selectedRunIds: context.selectedRunIds,
     paperCount: context.papers.length,
     totalWords: context.totalWords,
+    memoryPolicy: {
+      maxPapers: REPOSITORY_MEMORY_MAX_PAPERS,
+      maxCharacters: REPOSITORY_MEMORY_MAX_CHARS,
+      maxPaperBriefCharacters: REPOSITORY_PAPER_BRIEF_MAX_CHARS,
+      cacheMaxRowsPerOwner: REPOSITORY_CACHE_MAX_ROWS_PER_OWNER,
+      cacheMaxAgeDays: REPOSITORY_CACHE_MAX_AGE_DAYS,
+    },
     summaryMarkdown: context.summaryMarkdown,
     topics: context.topicCounts.slice(0, 30),
     keywords: context.keywordCounts.slice(0, 50),
-    manifest: context.papers.map((paper) => ({
+    manifest: context.papers.slice(0, REPOSITORY_MEMORY_MAX_PAPERS).map((paper) => ({
       paperId: paper.paperId,
       runId: paper.runId,
       title: paper.title,
@@ -568,6 +612,7 @@ async function saveRepositoryCache(context: RepositoryContext): Promise<void> {
           [context.ownerUserId, scopeKey, context.versionHash, JSON.stringify(payload)]
         );
       });
+      await pruneRepositoryCacheForOwner(context.ownerUserId);
       return;
     }
     const supabase = getSupabaseAdmin();
@@ -582,8 +627,76 @@ async function saveRepositoryCache(context: RepositoryContext): Promise<void> {
       },
       { onConflict: "owner_user_id,scope_type,scope_key" }
     );
+    await pruneRepositoryCacheForOwner(context.ownerUserId);
   } catch {
     // This cache is an optimization, never a prerequisite for an answer.
+  }
+}
+
+async function pruneRepositoryCacheForOwner(ownerUserId: string): Promise<void> {
+  try {
+    if (getDatabaseProvider() === "cloud-sql") {
+      await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+        await client.query(
+          `
+            DELETE FROM public.workspace_analytics_cache
+            WHERE owner_user_id = $1
+              AND scope_type = 'custom'
+              AND scope_key LIKE 'repository:v1:%'
+              AND updated_at < now() - ($2::text || ' days')::interval
+          `,
+          [ownerUserId, REPOSITORY_CACHE_MAX_AGE_DAYS]
+        );
+        await client.query(
+          `
+            DELETE FROM public.workspace_analytics_cache
+            WHERE ctid IN (
+              SELECT ctid
+              FROM public.workspace_analytics_cache
+              WHERE owner_user_id = $1
+                AND scope_type = 'custom'
+                AND scope_key LIKE 'repository:v1:%'
+              ORDER BY updated_at DESC
+              OFFSET $2
+            )
+          `,
+          [ownerUserId, REPOSITORY_CACHE_MAX_ROWS_PER_OWNER]
+        );
+      });
+      return;
+    }
+
+    const supabase = getSupabaseAdmin();
+    const staleBefore = new Date(Date.now() - REPOSITORY_CACHE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    await supabase
+      .from("workspace_analytics_cache")
+      .delete()
+      .eq("owner_user_id", ownerUserId)
+      .eq("scope_type", "custom")
+      .like("scope_key", "repository:v1:%")
+      .lt("updated_at", staleBefore);
+
+    const { data } = await supabase
+      .from("workspace_analytics_cache")
+      .select("scope_key")
+      .eq("owner_user_id", ownerUserId)
+      .eq("scope_type", "custom")
+      .like("scope_key", "repository:v1:%")
+      .order("updated_at", { ascending: false })
+      .range(REPOSITORY_CACHE_MAX_ROWS_PER_OWNER, 500);
+    const oldKeys = (data ?? [])
+      .map((row) => String((row as { scope_key?: unknown }).scope_key ?? ""))
+      .filter(Boolean);
+    if (oldKeys.length > 0) {
+      await supabase
+        .from("workspace_analytics_cache")
+        .delete()
+        .eq("owner_user_id", ownerUserId)
+        .eq("scope_type", "custom")
+        .in("scope_key", oldKeys);
+    }
+  } catch {
+    // Pruning is best-effort and should never block chat.
   }
 }
 
@@ -643,11 +756,11 @@ function quotedTerms(prompt: string): string[] {
     .slice(0, 8);
 }
 
-function fallbackPromptPlan(prompt: string, forceChart: boolean): RepositoryPromptPlan {
+export function fallbackPromptPlan(prompt: string, forceChart: boolean): RepositoryPromptPlan {
   const lower = prompt.toLowerCase();
   const countIntent = /\b(count|frequency|frequencies|occurrence|occurrences|how many times)\b|นับ|จำนวนครั้ง/i.test(prompt);
   const topicIntent = /\b(topic|topics|theme|themes|concept|concepts|summari[sz]e)\b|หัวข้อ|ประเด็น|สรุป/i.test(prompt);
-  const chartIntent = forceChart || /\b(chart|graph|plot|visuali[sz]e|bar|line)\b|กราฟ|แผนภูมิ/i.test(prompt);
+  const chartIntent = promptRequestsChart(prompt, forceChart);
   let terms = quotedTerms(prompt);
   if (countIntent && terms.length === 0) {
     const match = lower.match(/(?:count|frequency of|occurrences? of)\s+(?:the\s+)?(?:word\s+)?([\p{L}\p{N}'-]{2,64})/iu);
@@ -680,6 +793,7 @@ export async function refineRepositoryPrompt(
   forceChart = false
 ): Promise<RepositoryPromptPlan> {
   const fallback = fallbackPromptPlan(prompt, forceChart);
+  const explicitChart = promptRequestsChart(prompt, forceChart);
   try {
     const completion = await createChatCompletionResult(
       [
@@ -688,9 +802,12 @@ export async function refineRepositoryPrompt(
           content:
             "You are Papertrend's repository request director. Infer intent semantically, not through a fixed keyword taxonomy. " +
             "Return one JSON object only. Use general only when the request does not need the selected research repository. " +
-            "Use word_count for exact word or phrase occurrence calculations. Use topic_summary or topic_chart for corpus topic analysis. " +
+            "Use word_count for exact word or phrase occurrence calculations. Use topic_summary for corpus topic summaries. " +
+            "Use topic_chart only when the user explicitly asks for a chart, graph, plot, visualization, table, bar chart, line chart, or chart mode is forced. " +
             "Use repository_qa for questions, comparisons, synthesis, methods, findings, and summaries grounded in papers. " +
             "Do not answer the question and do not invent paper data. Preserve exact requested terms in terms. " +
+            "If the user asks to summarize or identify topics without chart language, set intent=topic_summary and needsChart=false. " +
+            "If the user asks for counts without chart language, set intent=word_count and needsChart=false. " +
             "Schema: {intent, refinedQuestion, terms, retrievalQueries, needsChart, chartType, reason, confidence}.",
         },
         {
@@ -716,10 +833,15 @@ export async function refineRepositoryPrompt(
     );
     const parsed = PromptPlanSchema.safeParse(extractJsonObject(completion?.content ?? ""));
     if (!parsed.success) return fallback;
+    const intent: RepositoryIntent =
+      !explicitChart && parsed.data.intent === "topic_chart"
+        ? "topic_summary"
+        : parsed.data.intent;
     return {
       ...parsed.data,
+      intent,
       terms: [...new Set(parsed.data.terms.map((term) => term.trim()).filter(Boolean))],
-      needsChart: forceChart || parsed.data.needsChart,
+      needsChart: explicitChart && (forceChart || parsed.data.needsChart || parsed.data.intent === "topic_chart"),
       source: "llm",
     };
   } catch {
@@ -840,7 +962,7 @@ function topicResult(
     "Paper count shows corpus coverage; analyzed mentions reflects keyword frequency. Read both together so one repetitive paper does not look like broad repository coverage.",
   ].join("\n");
   const charts: RepositoryChartPayload[] = [];
-  if (plan.needsChart || plan.intent === "topic_chart") {
+  if (plan.needsChart) {
     if (plan.chartType === "line") {
       const selectedTopics = topics.slice(0, 5).map((topic) => topic.label);
       const years = [...new Set(context.papers.map((paper) => paper.year))].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));

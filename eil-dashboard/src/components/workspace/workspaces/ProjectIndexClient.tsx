@@ -50,7 +50,7 @@ export default function ProjectIndexClient() {
     event.preventDefault();
     const name = draftName.trim();
     if (!name) {
-      setError("Project name is required.");
+      setError("Repository name is required.");
       return;
     }
 
@@ -58,12 +58,12 @@ export default function ProjectIndexClient() {
     setError(null);
     try {
       // Organizations remain internal for database compatibility. Users do
-      // not need to choose one when creating a project.
+      // not need to choose one when creating a repository.
       let organizationId =
         selectedOrganizationId ?? organizations[0]?.id ?? null;
       if (!organizationId) {
         const organization = await createOrganization(
-          profile.name.trim() || "Personal projects",
+          profile.name.trim() || "Personal repositories",
           "personal"
         );
         organizationId = organization.id;
@@ -76,7 +76,7 @@ export default function ProjectIndexClient() {
       router.push("/workspace/home");
     } catch (createError) {
       setError(
-        createError instanceof Error ? createError.message : "Failed to create project."
+        createError instanceof Error ? createError.message : "Failed to create repository."
       );
     } finally {
       setCreating(false);
@@ -84,7 +84,7 @@ export default function ProjectIndexClient() {
   }
 
   async function handleRenameProject(projectId: string, currentName: string) {
-    const nextName = window.prompt("Rename project", currentName);
+    const nextName = window.prompt("Rename repository", currentName);
     if (!nextName?.trim() || nextName.trim() === currentName) return;
 
     try {
@@ -92,7 +92,7 @@ export default function ProjectIndexClient() {
       setError(null);
     } catch (renameError) {
       setError(
-        renameError instanceof Error ? renameError.message : "Failed to rename project."
+        renameError instanceof Error ? renameError.message : "Failed to rename repository."
       );
     }
   }
@@ -116,7 +116,7 @@ export default function ProjectIndexClient() {
             <p className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               Papertrend
             </p>
-            <span className="text-lg font-semibold">Projects</span>
+            <span className="text-lg font-semibold">Repositories</span>
           </div>
         </div>
       </header>
@@ -125,10 +125,10 @@ export default function ProjectIndexClient() {
         <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">
-              Your projects
+              Your repositories
             </h1>
             <p className="mt-4 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-              Choose a project to manage its folders, papers, dashboard, and research chat.
+              Choose a repository to manage its folders, papers, dashboard, and research chat.
             </p>
           </div>
 
@@ -138,7 +138,7 @@ export default function ProjectIndexClient() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search projects"
+                placeholder="Search repositories"
                 className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#6f6f6f]"
               />
             </label>
@@ -152,7 +152,7 @@ export default function ProjectIndexClient() {
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
             >
               <PlusIcon className="h-4 w-4" />
-              <span>New project</span>
+              <span>New repository</span>
             </button>
           </div>
         </div>
@@ -180,7 +180,7 @@ export default function ProjectIndexClient() {
                 >
                   <div className="flex items-center gap-2 text-slate-500 dark:text-[#8f8f8f]">
                     <FileIcon className="h-4 w-4" />
-                    <span className="text-xs font-medium uppercase tracking-normal">Project</span>
+                    <span className="text-xs font-medium uppercase tracking-normal">Repository</span>
                   </div>
                   <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-white">
                     {project.name}
@@ -194,7 +194,7 @@ export default function ProjectIndexClient() {
                   onClick={() => void handleRenameProject(project.id, project.name)}
                   className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#666666] dark:hover:bg-[#111111] dark:hover:text-white"
                   aria-label={`Rename ${project.name}`}
-                  title="Rename project"
+                  title="Rename repository"
                 >
                   <MoreHorizontalIcon className="h-4 w-4" />
                 </button>
@@ -205,9 +205,9 @@ export default function ProjectIndexClient() {
 
         {visibleProjects.length === 0 ? (
           <div className="mt-16 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <p className="text-lg font-medium text-slate-900 dark:text-white">No projects yet</p>
+            <p className="text-lg font-medium text-slate-900 dark:text-white">No repositories yet</p>
             <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-              Create a project to start organizing and analyzing papers.
+              Create a repository to start organizing and analyzing papers.
             </p>
           </div>
         ) : null}
@@ -215,12 +215,12 @@ export default function ProjectIndexClient() {
 
       <CreateEntityModal
         open={showCreateModal}
-        title="Create project"
-        description="Give this research space a name. Folders and files will stay inside the project."
+        title="Create repository"
+        description="Give this research space a name. Folders and files will stay inside the repository."
         value={draftName}
-        fieldLabel="Project name"
-        fieldPlaceholder="Project name"
-        submitLabel="Create project"
+        fieldLabel="Repository name"
+        fieldPlaceholder="Repository name"
+        submitLabel="Create repository"
         busyLabel="Creating..."
         busy={creating}
         error={error}

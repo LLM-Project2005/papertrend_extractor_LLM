@@ -220,7 +220,7 @@ const STRICT_RESEARCH_BUDGET: DeepResearchBudgetPolicy = {
 };
 
 const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
-  scope: "auto",
+  scope: "project",
   includeAttached: true,
   includeCurrentScope: true,
   includeWorkspace: false,
@@ -1522,7 +1522,9 @@ export default function ChatClient() {
       scope:
         selectedRunIds.length > 0
           ? "attached"
-          : "auto",
+          : researchSourcePolicy.scope === "workspace"
+            ? "workspace"
+            : "project",
       includeAttached: true,
       includeCurrentScope: true,
       agentDirected: true,
@@ -2182,7 +2184,7 @@ export default function ChatClient() {
     const prompt =
       draft.trim() || "Create the most useful chart from my analyzed papers.";
     if (!canPersist) {
-      setError("Sign in to build charts from workspace data.");
+      setError("Sign in to build charts from repository data.");
       return;
     }
 
@@ -3322,7 +3324,9 @@ export default function ChatClient() {
                       <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
                         {selectedRunIds.length > 0
                           ? `${selectedRunIds.length} attached file${selectedRunIds.length === 1 ? "" : "s"}`
-                          : "Auto scope"}
+                          : chatScopeFolderId === "all"
+                            ? "Current repository"
+                            : activeFolderLabel}
                       </span>
                       <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
                         Library + analytics
@@ -3366,8 +3370,8 @@ export default function ChatClient() {
                   onKeyDown={handleComposerKeyDown}
                   placeholder={
                     chartModeEnabled
-                      ? "Ask for a chart, or leave blank for the best chart"
-                      : "Ask anything"
+                      ? "Ask for a repository chart, or leave blank for the best chart"
+                      : "Ask the repository"
                   }
                   rows={1}
                   className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
@@ -3976,8 +3980,8 @@ export default function ChatClient() {
                   Add from library
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-[#8e8e8e]">
-                  Choose files from {currentProject?.name ?? "this project"} to focus the
-                  chat context.
+                  Choose files from {currentProject?.name ?? "this repository"} only when you
+                  want to narrow chat below the whole repository.
                 </p>
               </div>
               <button

@@ -42,7 +42,7 @@ type SearchCategory =
   | "Actions"
   | "Pages"
   | "Library"
-  | "Projects"
+  | "Repositories"
   | "Folders"
   | "Docs";
 
@@ -61,7 +61,7 @@ const CATEGORY_ORDER: SearchCategory[] = [
   "Actions",
   "Pages",
   "Library",
-  "Projects",
+  "Repositories",
   "Folders",
   "Docs",
 ];
@@ -112,19 +112,19 @@ const ACTION_ITEMS: Array<{
   },
   {
     id: "switch-project",
-    label: "Switch project",
-    description: "Choose another project or create a new one.",
+    label: "Switch repository",
+    description: "Choose another repository or create a new one.",
     href: "/workspaces",
     icon: HomeIcon,
-    keywords: ["switch project", "change project", "project picker"],
+    keywords: ["switch repository", "change repository", "repository picker", "switch project", "change project", "project picker"],
   },
   {
     id: "configure-project",
-    label: "Configure project",
-    description: "Update project defaults and display preferences.",
+    label: "Configure repository",
+    description: "Update repository defaults and display preferences.",
     href: "/workspace/settings",
     icon: SettingsIcon,
-    keywords: ["settings", "configure", "configuration", "project settings", "preferences"],
+    keywords: ["settings", "configure", "configuration", "repository settings", "project settings", "preferences"],
   },
   {
     id: "profile",
@@ -389,11 +389,11 @@ export default function WorkspaceGlobalSearch({
         return {
           id: `project:${project.id}`,
           label: project.name,
-          description: "Open this project",
-          category: "Projects" as const,
+          description: "Open this repository",
+          category: "Repositories" as const,
           icon: projectIcon,
           featured: currentProject?.id === project.id,
-          searchText: `${project.name} ${project.description ?? ""} switch project`,
+          searchText: `${project.name} ${project.description ?? ""} switch repository project`,
           onSelect: () => {
             setSelectedProjectId(project.id);
             setSelectedFolderId("all");
@@ -489,7 +489,7 @@ export default function WorkspaceGlobalSearch({
         type="button"
         onClick={() => setOpen(true)}
         className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white sm:w-[168px] sm:justify-start sm:gap-2 sm:px-3"
-        aria-label="Search project"
+        aria-label="Search repository"
       >
         <SearchIcon className="h-4 w-4 flex-none" />
         <span className="hidden min-w-0 truncate text-sm sm:block">Search</span>
@@ -516,8 +516,8 @@ export default function WorkspaceGlobalSearch({
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search actions, papers, projects, folders, docs..."
-                aria-label="Search actions, papers, projects, folders, and documentation"
+                placeholder="Search actions, papers, repositories, folders, docs..."
+                aria-label="Search actions, papers, repositories, folders, and documentation"
                 className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
               />
             </label>

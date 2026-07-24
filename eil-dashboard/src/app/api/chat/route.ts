@@ -297,7 +297,7 @@ function normalizeResearchSourcePolicy(
       ? rawScope
       : selectedRunIds.length > 0
         ? "attached"
-        : "auto";
+        : "project";
   const rawBudget = (value?.budget ?? {}) as Partial<DeepResearchBudgetPolicy>;
   const qualityMode =
     rawBudget.qualityMode === "quality" || rawBudget.qualityMode === "balanced"
@@ -496,7 +496,7 @@ function inferChartTypeFromPrompt(message: string, metric: ChartMetric): ChartTy
 }
 
 function promptRequestsWorkspaceScope(message: string) {
-  return /\b(workspace|project|folder|folders|all folders|all papers|all analyzed|all analysed|whole corpus|entire corpus|corpus|library)\b/i.test(
+  return /\b(repository|repositories|workspace|project|folder|folders|all folders|all papers|all analyzed|all analysed|whole corpus|entire corpus|corpus|library)\b/i.test(
     message
   );
 }
@@ -1837,7 +1837,7 @@ async function loadChartDashboardData(
       projectId && projectId !== "all" ? projectId : null,
       "live"
     ),
-    scopeLabel: folderId && folderId !== "all" ? "selected folder" : "workspace",
+    scopeLabel: folderId && folderId !== "all" ? "selected folder" : "repository",
   };
 }
 
@@ -2241,6 +2241,7 @@ function isCorpusLevelPrompt(prompt: string) {
     "across my",
     "across all",
     "selected folder",
+    "current repository",
     "current project",
     "research gaps",
     "major gaps",
@@ -3074,14 +3075,14 @@ async function buildLocalResearchPlan(
     promptAnalysis.primary_intent === "corpus_synthesis"
   ) {
     addStep({
-      title: "Map the workspace evidence base",
+      title: "Map the repository evidence base",
       description: "Build a high-level map of the analyzed papers, topic coverage, keyword coverage, and year distribution before choosing retrieval paths.",
       toolName: "get_dashboard_summary",
       phaseClass: "research",
       requiredClass: "required_before_verification",
-      purpose: "Use workspace analytics as the first evidence layer for corpus-level research.",
+      purpose: "Use repository analytics as the first evidence layer for corpus-level research.",
       expectedOutput: "A corpus snapshot with topic, keyword, track, and year coverage signals.",
-      completionCondition: "The workspace evidence base is summarized or an evidence gap is recorded.",
+      completionCondition: "The repository evidence base is summarized or an evidence gap is recorded.",
       query: normalizedQuery,
     });
     addStep({
@@ -3120,10 +3121,10 @@ async function buildLocalResearchPlan(
     });
     summary =
       promptAnalysis.primary_intent === "gap_analysis"
-        ? `Analyze research gaps across the scoped workspace corpus, compare overrepresented and underexplored areas, then ground every claim in retrieved paper evidence.`
+        ? `Analyze research gaps across the scoped repository corpus, compare overrepresented and underexplored areas, then ground every claim in retrieved paper evidence.`
         : promptAnalysis.primary_intent === "trend_analysis"
-          ? `Analyze trends across the scoped workspace corpus using analytics first, then verify the trend narrative with paper-level evidence.`
-          : `Synthesize the scoped workspace corpus by combining analytics, targeted retrieval, section evidence, and gap checking.`;
+          ? `Analyze trends across the scoped repository corpus using analytics first, then verify the trend narrative with paper-level evidence.`
+          : `Synthesize the scoped repository corpus by combining analytics, targeted retrieval, section evidence, and gap checking.`;
   } else if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
     if (promptAnalysis.target_in_scope) {
       addStep({
@@ -3236,7 +3237,7 @@ async function buildLocalResearchPlan(
     });
     addStep({
       title: "Check corpus framing",
-      description: "Use workspace-level context only where it helps explain representativeness or coverage.",
+      description: "Use repository-level context only where it helps explain representativeness or coverage.",
       toolName: "get_dashboard_summary",
       phaseClass: "research",
       requiredClass: "optional_context",
@@ -3249,11 +3250,11 @@ async function buildLocalResearchPlan(
   } else if (promptAnalysis.survey || papers.length >= 8) {
     addStep({
       title: "Map the scoped corpus",
-      description: "List the in-scope papers first so the review stays grounded in the current workspace.",
+      description: "List the in-scope papers first so the review stays grounded in the current repository.",
       toolName: "list_folder_papers",
       phaseClass: "research",
       requiredClass: "required_before_verification",
-      purpose: "Establish what evidence is actually available in the workspace.",
+      purpose: "Establish what evidence is actually available in the repository.",
       expectedOutput: "A scope map of the currently available papers.",
       completionCondition: "The corpus scope is summarized.",
       query: normalizedQuery,
@@ -3283,7 +3284,7 @@ async function buildLocalResearchPlan(
     });
     addStep({
       title: "Frame coverage patterns",
-      description: "Use workspace-level trends only when they improve chronology, coverage, or topic framing.",
+      description: "Use repository-level trends only when they improve chronology, coverage, or topic framing.",
       toolName: "get_dashboard_summary",
       phaseClass: "research",
       requiredClass: "optional_context",
@@ -3296,7 +3297,7 @@ async function buildLocalResearchPlan(
   } else {
     addStep({
       title: "Check scoped coverage",
-      description: "Quickly verify the workspace coverage before drilling into the answer.",
+      description: "Quickly verify the repository coverage before drilling into the answer.",
       toolName: "list_folder_papers",
       phaseClass: "research",
       requiredClass: "required_before_verification",
@@ -3830,7 +3831,7 @@ async function normalChat(
   if (chartRequested) {
     if (!ownerUserId || !supabase || !thread) {
       return NextResponse.json(
-        { error: "Sign in to build charts from workspace data." },
+        { error: "Sign in to build charts from repository data." },
         { status: 401 }
       );
     }
