@@ -28,8 +28,8 @@ Cloud Run services can deploy. Review and approve these grants:
 - web: Cloud SQL Client, Secret Manager Secret Accessor, Logs Writer, bucket
   Object Admin, Cloud Tasks Enqueuer;
 - worker: Cloud SQL Client, Secret Manager Secret Accessor, Logs Writer,
-  bucket Object Admin;
-- web may act as the production task identity;
+  bucket Object Admin, Cloud Tasks Enqueuer;
+- web and worker may act as the production task identity;
 - production task and web identities may invoke only the production worker;
 - Cloud Build's service account may act as the web/worker runtime identities;
 - web needs Service Account Token Creator on itself only for GCS signed URLs.
