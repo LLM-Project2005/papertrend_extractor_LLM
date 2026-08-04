@@ -6,7 +6,20 @@ system.
 
 ## Current Status
 
-Phase 8C, the first Cloud SQL application slice, is in progress.
+Phase 8C, the Cloud SQL application pilot, is in progress.
+
+Status audit on 2026-08-04:
+
+- The non-destructive Supabase Storage copy completed and full-copy verification
+  reported `missing_in_gcs: 0`.
+- Two owner-mapped Firebase users passed the pilot isolation checks.
+- Fresh ingestion mirror runs reached `shadow.state=verified`.
+- Project-scoped repository chat now reads its paper evidence from Cloud SQL in
+  the pilot, but chat thread persistence and several ingestion/dashboard routes
+  still use Supabase compatibility paths.
+- Cloud SQL automated backups are still disabled.
+- A production GCS bucket and separate production web/worker services do not
+  exist yet.
 
 Completed before this phase:
 
@@ -22,8 +35,8 @@ Not complete yet:
   `DATABASE_PROVIDER=cloud-sql` is currently limited to the profile and
   workspace organization/project/folder repository slice below; it is not a
   complete web database migration.
-- Historical files are not fully in GCS. The last inventory found Supabase
-  Storage objects that still need a non-destructive copy and validation.
+- Historical files have been copied to staging GCS, but the final maintenance-
+  window delta and production-bucket copy still need validation.
 - Cloud SQL automated backups are disabled. The current on-demand backup is a
   point-in-time safety copy, not an operating backup policy.
 - Production traffic still runs on Vercel and must remain there until all gates
@@ -339,7 +352,7 @@ For the current Phase 8C work, you only need to:
    the pilot owner-isolation tests pass and the remaining repositories are
    implemented.
 
-The next coding slice after the library mutations is the library detail and
-GCS signed-URL boundary, followed by ingestion, dashboard, chat, and deep-research
-repositories. Repository contract tests and a controlled provider comparison
-remain required before any production provider change.
+The next coding slice is provider-neutral chat thread/message persistence,
+followed by ingestion, dashboard, and deep-research repositories. Repository
+contract tests and a controlled provider comparison remain required before any
+production provider change.
