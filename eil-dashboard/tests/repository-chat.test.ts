@@ -5,7 +5,11 @@ import {
   countTermInRepositoryText,
   tokenizeRepositoryText,
 } from "../src/lib/repository-text";
-import { fallbackPromptPlan } from "../src/lib/repository-chat";
+import {
+  buildRepositoryStatisticsSummary,
+  fallbackPromptPlan,
+  requestsRepositoryStatistics,
+} from "../src/lib/repository-chat";
 import {
   rankRepositoryEvidence,
   validateInlinePaperCitations,
@@ -123,4 +127,56 @@ test("retrieval candidate pools can grow beyond the original sixteen-paper windo
     40
   );
   assert.equal(candidates.length, 40);
+});
+
+test("routes repository cardinality questions to deterministic statistics", () => {
+  const prompts = [
+    "How many papers are in the repository?",
+    "What is the total number of analyzed articles in this folder?",
+    "Give me the corpus size",
+    "\u0e21\u0e35\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14\u0e01\u0e35\u0e48\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07",
+  ];
+  prompts.forEach((prompt) => {
+    assert.equal(requestsRepositoryStatistics(prompt), true, prompt);
+    assert.equal(fallbackPromptPlan(prompt, false).intent, "repository_statistics", prompt);
+  });
+});
+
+test("repository statistics distinguish total files from successfully analyzed papers", () => {
+  const papers = Array.from({ length: 35 }, (_, index) => ({
+    year: index < 3 ? "Unknown" : String(2000 + (index % 20)),
+    folderId: "folder-a",
+    totalWords: 1_000,
+  }));
+  const summary = buildRepositoryStatisticsSummary(
+    papers,
+    "EFL Repository",
+    "How many papers are in the repository?",
+    {
+      total: 40,
+      succeeded: 35,
+      queued: 0,
+      processing: 0,
+      failed: 5,
+      canceled: 0,
+      other: 0,
+    }
+  );
+  assert.match(summary, /\*\*40 total files\*\*/);
+  assert.match(summary, /\*\*35 successfully analyzed papers\*\*/);
+  assert.match(summary, /5 files failed analysis/);
+  assert.match(summary, /3 papers have an unknown publication year/);
+  assert.match(summary, /35,000 words/);
+});
+
+test("repository topic charts use whole-scope aggregation", () => {
+  const plan = fallbackPromptPlan("Display the repository topics as a bar chart", false);
+  assert.equal(plan.intent, "topic_chart");
+  assert.equal(plan.retrievalMode, "exhaustive");
+});
+
+test("word-frequency questions remain separate from repository cardinality", () => {
+  const plan = fallbackPromptPlan('Count the word "feedback" across all papers', false);
+  assert.equal(plan.intent, "word_count");
+  assert.equal(plan.retrievalMode, "exhaustive");
 });

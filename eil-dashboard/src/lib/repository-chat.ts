@@ -17,6 +17,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 export type RepositoryIntent =
   | "general"
   | "repository_qa"
+  | "repository_statistics"
   | "word_count"
   | "topic_summary"
   | "topic_chart";
@@ -66,6 +67,16 @@ interface RepositoryPaper {
   keywords: Map<string, number>;
 }
 
+export interface RepositoryRunStats {
+  total: number;
+  succeeded: number;
+  queued: number;
+  processing: number;
+  failed: number;
+  canceled: number;
+  other: number;
+}
+
 export interface RepositoryContext {
   ownerUserId: string;
   projectId: string;
@@ -78,6 +89,7 @@ export interface RepositoryContext {
   topicCounts: Array<{ label: string; paperCount: number; mentions: number }>;
   keywordCounts: Array<{ label: string; paperCount: number; mentions: number }>;
   totalWords: number;
+  runStats: RepositoryRunStats;
 }
 
 export interface RepositoryPromptPlan {
@@ -162,6 +174,7 @@ const PromptPlanSchema = z.object({
   intent: z.enum([
     "general",
     "repository_qa",
+    "repository_statistics",
     "word_count",
     "topic_summary",
     "topic_chart",
@@ -224,7 +237,29 @@ function canonicalPaperContent(row: PaperRow): string {
 }
 
 function normalizedIdList(values: string[] | undefined): string[] {
-  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))].slice(0, 50);
+  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))].slice(0, 250);
+}
+
+function buildRunStats(rows: Array<{ status?: unknown }>): RepositoryRunStats {
+  const stats: RepositoryRunStats = {
+    total: rows.length,
+    succeeded: 0,
+    queued: 0,
+    processing: 0,
+    failed: 0,
+    canceled: 0,
+    other: 0,
+  };
+  rows.forEach((row) => {
+    const status = String(row.status ?? "").trim().toLowerCase();
+    if (status === "succeeded") stats.succeeded += 1;
+    else if (status === "queued" || status === "pending") stats.queued += 1;
+    else if (status === "processing" || status === "running") stats.processing += 1;
+    else if (status === "failed") stats.failed += 1;
+    else if (status === "canceled" || status === "cancelled") stats.canceled += 1;
+    else stats.other += 1;
+  });
+  return stats;
 }
 
 function paperFromRow(row: PaperRow): RepositoryPaper {
@@ -293,6 +328,7 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
   papers: PaperRow[];
   keywords: KeywordRow[];
   scopeLabel: string;
+  runStats: RepositoryRunStats;
 }> {
   const supabase = getSupabaseAdmin();
   const { data: project, error: projectError } = await supabase
@@ -319,21 +355,28 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
     throw new Error("Folder not found in this project.");
   }
   if (folderIds.length === 0) {
-    return { papers: [], keywords: [], scopeLabel: String(project.name ?? "Project") };
+    return {
+      papers: [],
+      keywords: [],
+      scopeLabel: String(project.name ?? "Project"),
+      runStats: buildRunStats([]),
+    };
   }
 
   let runQuery = supabase
     .from("ingestion_runs")
-    .select("id,folder_id")
+    .select("id,folder_id,status")
     .eq("owner_user_id", input.ownerUserId)
-    .eq("status", "succeeded")
     .is("trashed_at", null)
     .in("folder_id", folderIds);
   const selectedRunIds = normalizedIdList(input.selectedRunIds);
   if (selectedRunIds.length > 0) runQuery = runQuery.in("id", selectedRunIds);
   const { data: runs, error: runsError } = await runQuery;
   if (runsError) throw new Error(runsError.message);
-  const runIds = (runs ?? []).map((run) => String(run.id));
+  const runStats = buildRunStats(runs ?? []);
+  const runIds = (runs ?? [])
+    .filter((run) => String(run.status ?? "").toLowerCase() === "succeeded")
+    .map((run) => String(run.id));
   if (runIds.length === 0) {
     const selectedFolder = (folders ?? [])[0];
     return {
@@ -342,6 +385,7 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
       scopeLabel: selectedRunIds.length > 0
         ? "selected papers"
         : String(selectedFolder?.name ?? project.name ?? "Repository"),
+      runStats,
     };
   }
 
@@ -370,6 +414,7 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
       : selectedFolder
         ? String(selectedFolder.name)
         : `${String(project.name ?? "Project")} repository`,
+    runStats,
   };
 }
 
@@ -377,6 +422,7 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
   papers: PaperRow[];
   keywords: KeywordRow[];
   scopeLabel: string;
+  runStats: RepositoryRunStats;
 }> {
   return withCloudSqlOwnerTransaction(input.ownerUserId, async (client) => {
     const project = await client.query<{ id: string; name: string }>(
@@ -386,7 +432,7 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
     if (!project.rows[0]) throw new Error("Project not found.");
 
     const values: unknown[] = [input.ownerUserId, input.projectId];
-    const conditions = ["ir.owner_user_id = $1", "rf.project_id = $2", "ir.status = 'succeeded'", "ir.trashed_at IS NULL"];
+    const conditions = ["ir.owner_user_id = $1", "rf.project_id = $2", "ir.trashed_at IS NULL"];
     if (input.folderId && input.folderId !== "all") {
       values.push(input.folderId);
       conditions.push(`rf.id = $${values.length}`);
@@ -396,6 +442,17 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
       values.push(selectedRunIds);
       conditions.push(`ir.id = ANY($${values.length}::uuid[])`);
     }
+
+    const runResult = await client.query<{ status: string }>(
+      `
+        SELECT ir.status
+        FROM public.ingestion_runs ir
+        JOIN public.research_folders rf ON rf.id = ir.folder_id
+        WHERE ${conditions.join(" AND ")}
+      `,
+      values
+    );
+    const runStats = buildRunStats(runResult.rows);
 
     const paperResult = await client.query<PaperRow>(
       `
@@ -416,7 +473,7 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
         JOIN public.paper_content pc ON pc.paper_id = p.id
         JOIN public.ingestion_runs ir ON ir.id = pc.ingestion_run_id
         JOIN public.research_folders rf ON rf.id = ir.folder_id
-        WHERE ${conditions.join(" AND ")}
+        WHERE ${conditions.join(" AND ")} AND ir.status = 'succeeded'
         ORDER BY p.title ASC
       `,
       values
@@ -444,7 +501,7 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
       if (!folder.rows[0]) throw new Error("Folder not found in this project.");
       scopeLabel = folder.rows[0].name;
     }
-    return { papers: paperResult.rows, keywords: keywordResult.rows, scopeLabel };
+    return { papers: paperResult.rows, keywords: keywordResult.rows, scopeLabel, runStats };
   });
 }
 
@@ -612,6 +669,7 @@ async function saveRepositoryCache(context: RepositoryContext): Promise<void> {
     folderId: context.folderId,
     selectedRunIds: context.selectedRunIds,
     paperCount: context.papers.length,
+    runStats: context.runStats,
     totalWords: context.totalWords,
     memoryPolicy: {
       maxPapers: REPOSITORY_MEMORY_MAX_PAPERS,
@@ -750,10 +808,10 @@ export async function loadRepositoryContext(input: RepositoryChatInput): Promise
   const keywordCounts = aggregateLabels(papers, "keywords");
   const totalWords = papers.reduce((sum, paper) => sum + paper.totalWords, 0);
   const versionHash = hashText(
-    papers
+    `${papers
       .map((paper) => `${paper.paperId}:${paper.contentHash}`)
       .sort()
-      .join("|")
+      .join("|")}|runs:${JSON.stringify(loaded.runStats)}`
   );
   const context: RepositoryContext = {
     ownerUserId: input.ownerUserId,
@@ -767,6 +825,7 @@ export async function loadRepositoryContext(input: RepositoryChatInput): Promise
     topicCounts,
     keywordCounts,
     totalWords,
+    runStats: loaded.runStats,
   };
   await saveRepositoryCache(context);
   return context;
@@ -791,19 +850,61 @@ function quotedTerms(prompt: string): string[] {
     .slice(0, 8);
 }
 
+function normalizeStringList(value: unknown, max: number): string[] {
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,;]\s*/)
+      : [];
+  return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))].slice(0, max);
+}
+
+function normalizePromptPlanCandidate(value: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!value) return null;
+  const chartLabel = typeof value.chartType === "string" ? value.chartType.toLowerCase() : "";
+  const chartType = chartLabel.includes("line")
+    ? "line"
+    : chartLabel.includes("pie")
+      ? "pie"
+      : chartLabel.includes("table")
+        ? "table"
+        : "bar";
+  return {
+    ...value,
+    terms: normalizeStringList(value.terms, 8),
+    retrievalQueries: normalizeStringList(value.retrievalQueries, 8),
+    evidenceNeeds: normalizeStringList(value.evidenceNeeds, 8),
+    chartType,
+  };
+}
+
+export function requestsRepositoryStatistics(prompt: string): boolean {
+  const normalized = prompt.toLowerCase().replace(/\s+/g, " ").trim();
+  return (
+    /\bhow many\s+(?:analy[sz]ed\s+)?(?:papers?|articles?|documents?|files?)\b/.test(normalized) ||
+    /\b(?:number|total|count)\s+of\s+(?:analy[sz]ed\s+)?(?:papers?|articles?|documents?|files?)\b/.test(normalized) ||
+    /\b(?:repository|folder|corpus)\s+(?:size|count|statistics|stats)\b/.test(normalized) ||
+    /(?:\u0e21\u0e35|\u0e08\u0e33\u0e19\u0e27\u0e19|\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14)\s*(?:paper|papers|\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21|\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23)\s*(?:\u0e01\u0e35\u0e48|\u0e01\u0e35\u0e48\u0e09\u0e1a\u0e31\u0e1a|\u0e40\u0e17\u0e48\u0e32\u0e44\u0e2b\u0e23\u0e48)?/.test(normalized)
+  );
+}
+
 export function fallbackPromptPlan(prompt: string, forceChart: boolean): RepositoryPromptPlan {
   const lower = prompt.toLowerCase();
   const countIntent = /\b(count|frequency|frequencies|occurrence|occurrences|how many times)\b|นับ|จำนวนครั้ง/i.test(prompt);
   const topicIntent = /\b(topic|topics|theme|themes|concept|concepts|summari[sz]e)\b|หัวข้อ|ประเด็น|สรุป/i.test(prompt);
   const chartIntent = promptRequestsChart(prompt, forceChart);
   const exhaustiveIntent = /\b(all|entire|whole|every|repository-wide|corpus-wide|across the repository|across my papers)\b|ทั้งหมด|ทั้ง repository|ทุกบทความ/i.test(prompt);
+  const repositoryAggregateIntent = topicIntent && /\b(repository|folder|corpus|project)\b|คลัง|โฟลเดอร์|โปรเจกต์/i.test(prompt);
   const comparativeIntent = /\b(compare|comparison|contrast|across|differences?|similarities|trends?|gaps?)\b|เปรียบเทียบ|แนวโน้ม|ช่องว่าง/i.test(prompt);
   let terms = quotedTerms(prompt);
   if (countIntent && terms.length === 0) {
     const match = lower.match(/(?:count|frequency of|occurrences? of)\s+(?:the\s+)?(?:word\s+)?([\p{L}\p{N}'-]{2,64})/iu);
     if (match?.[1]) terms = [match[1]];
   }
-  const intent: RepositoryIntent = countIntent
+  const statisticsIntent = requestsRepositoryStatistics(prompt);
+  const intent: RepositoryIntent = statisticsIntent
+    ? "repository_statistics"
+    : countIntent
     ? "word_count"
     : topicIntent && chartIntent
       ? "topic_chart"
@@ -817,7 +918,11 @@ export function fallbackPromptPlan(prompt: string, forceChart: boolean): Reposit
     retrievalQueries: [prompt.trim()],
     evidenceNeeds: [],
     answerLanguage: "same as user",
-    retrievalMode: exhaustiveIntent ? "exhaustive" : comparativeIntent ? "comparative" : "focused",
+    retrievalMode: statisticsIntent || exhaustiveIntent || repositoryAggregateIntent
+      ? "exhaustive"
+      : comparativeIntent
+        ? "comparative"
+        : "focused",
     needsChart: chartIntent,
     chartType: /\bline\b|กราฟเส้น/i.test(prompt) ? "line" : /\btable\b|ตาราง/i.test(prompt) ? "table" : "bar",
     reason: "Used the deterministic fallback because structured intent planning was unavailable.",
@@ -834,6 +939,7 @@ export async function refineRepositoryPrompt(
   history: RepositoryChatInput["history"] = []
 ): Promise<RepositoryPromptPlan> {
   const fallback = fallbackPromptPlan(prompt, forceChart);
+  if (process.env.REPOSITORY_CHAT_DISABLE_LLM === "true") return fallback;
   const explicitChart = promptRequestsChart(prompt, forceChart);
   try {
     const completion = await createChatCompletionResult(
@@ -844,6 +950,7 @@ export async function refineRepositoryPrompt(
             "You are Papertrend's repository request director. Infer intent semantically, not through a fixed keyword taxonomy. " +
             "Return one JSON object only. Use general only when the request does not need the selected research repository. " +
             "Use word_count for exact word or phrase occurrence calculations. Use topic_summary for corpus topic summaries. " +
+            "Use repository_statistics for deterministic corpus metadata questions such as how many papers are in the selected repository, folder, or project. " +
             "Use topic_chart only when the user explicitly asks for a chart, graph, plot, visualization, table, bar chart, line chart, or chart mode is forced. " +
             "Use repository_qa for questions, comparisons, synthesis, methods, findings, and summaries grounded in papers. " +
             "Rewrite follow-up questions so they are understandable with the recent conversation, but preserve the user's meaning. " +
@@ -879,20 +986,43 @@ export async function refineRepositoryPrompt(
       "CHAT_INTENT",
       { maxTokens: 700 }
     );
-    const parsed = PromptPlanSchema.safeParse(extractJsonObject(completion?.content ?? ""));
-    if (!parsed.success) return fallback;
-    const intent: RepositoryIntent =
-      !explicitChart && parsed.data.intent === "topic_chart"
+    const parsed = PromptPlanSchema.safeParse(
+      normalizePromptPlanCandidate(extractJsonObject(completion?.content ?? ""))
+    );
+    if (!parsed.success) {
+      if (process.env.REPOSITORY_CHAT_DEBUG === "true") {
+        console.warn("Repository planner returned invalid structured output.", {
+          content: completion?.content?.slice(0, 1_500) ?? null,
+          issues: parsed.error.issues,
+        });
+      }
+      return fallback;
+    }
+    const intent: RepositoryIntent = requestsRepositoryStatistics(prompt)
+      ? "repository_statistics"
+      : !explicitChart && parsed.data.intent === "topic_chart"
         ? "topic_summary"
         : parsed.data.intent;
+    const fallbackBreadth = fallback.retrievalMode;
+    const retrievalMode = intent === "repository_statistics" || fallbackBreadth === "exhaustive"
+      ? "exhaustive"
+      : fallbackBreadth === "comparative" && parsed.data.retrievalMode === "focused"
+        ? "comparative"
+        : parsed.data.retrievalMode;
     return {
       ...parsed.data,
       intent,
+      retrievalMode,
       terms: [...new Set(parsed.data.terms.map((term) => term.trim()).filter(Boolean))],
       needsChart: explicitChart && (forceChart || parsed.data.needsChart || parsed.data.intent === "topic_chart"),
       source: "llm",
     };
-  } catch {
+  } catch (error) {
+    if (process.env.REPOSITORY_CHAT_DEBUG === "true") {
+      console.warn("Repository planner request failed.", {
+        message: error instanceof Error ? error.message : "Unknown planner error",
+      });
+    }
     return fallback;
   }
 }
@@ -1075,6 +1205,61 @@ interface SelectedEvidence {
   repositoryCoverageCount: number;
   rerankerSource: "llm" | "fallback";
   rerankerConfidence: number;
+}
+
+export function buildRepositoryStatisticsSummary(
+  papers: Array<{ year: string; folderId: string; totalWords: number }>,
+  scopeLabel: string,
+  prompt: string,
+  runStats?: RepositoryRunStats
+): string {
+  const folderCount = new Set(papers.map((paper) => paper.folderId).filter(Boolean)).size;
+  const unknownYearCount = papers.filter(
+    (paper) => !paper.year || paper.year.trim().toLowerCase() === "unknown"
+  ).length;
+  const totalWords = papers.reduce((sum, paper) => sum + Math.max(0, paper.totalWords || 0), 0);
+  const analyzedCount = papers.length;
+  const totalFiles = Math.max(runStats?.total ?? analyzedCount, analyzedCount);
+  const pendingCount = (runStats?.queued ?? 0) + (runStats?.processing ?? 0);
+  const failedCount = runStats?.failed ?? 0;
+  const canceledCount = runStats?.canceled ?? 0;
+  const thai = /[\u0e00-\u0e7f]/.test(prompt);
+  if (thai) {
+    return [
+      totalFiles === analyzedCount
+        ? `**${scopeLabel}** \u0e21\u0e35\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e17\u0e35\u0e48\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08\u0e41\u0e25\u0e49\u0e27 **${analyzedCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07**`
+        : `**${scopeLabel}** \u0e21\u0e35\u0e44\u0e1f\u0e25\u0e4c\u0e17\u0e31\u0e49\u0e07\u0e2b\u0e21\u0e14 **${totalFiles.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c** \u0e42\u0e14\u0e22\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08\u0e41\u0e25\u0e49\u0e27 **${analyzedCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07**`,
+      failedCount > 0 ? `\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08 ${failedCount.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c` : "",
+      pendingCount > 0 ? `\u0e01\u0e33\u0e25\u0e31\u0e07\u0e23\u0e2d\u0e2b\u0e23\u0e37\u0e2d\u0e1b\u0e23\u0e30\u0e21\u0e27\u0e25\u0e1c\u0e25 ${pendingCount.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c` : "",
+      canceledCount > 0 ? `\u0e22\u0e01\u0e40\u0e25\u0e34\u0e01\u0e41\u0e25\u0e49\u0e27 ${canceledCount.toLocaleString()} \u0e44\u0e1f\u0e25\u0e4c` : "",
+      folderCount > 1 ? `\u0e04\u0e23\u0e2d\u0e1a\u0e04\u0e25\u0e38\u0e21 ${folderCount.toLocaleString()} \u0e42\u0e1f\u0e25\u0e40\u0e14\u0e2d\u0e23\u0e4c` : "",
+      unknownYearCount > 0 ? `\u0e21\u0e35 ${unknownYearCount.toLocaleString()} \u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e17\u0e35\u0e48\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e17\u0e23\u0e32\u0e1a\u0e1b\u0e35\u0e15\u0e35\u0e1e\u0e34\u0e21\u0e1e\u0e4c` : "",
+      totalWords > 0 ? `\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e17\u0e35\u0e48\u0e2a\u0e01\u0e31\u0e14\u0e44\u0e14\u0e49\u0e23\u0e27\u0e21\u0e1b\u0e23\u0e30\u0e21\u0e32\u0e13 ${totalWords.toLocaleString()} \u0e04\u0e33` : "",
+    ].filter(Boolean).join("\n\n");
+  }
+  return [
+    totalFiles === analyzedCount
+      ? `**${scopeLabel}** contains **${analyzedCount.toLocaleString()} successfully analyzed paper${analyzedCount === 1 ? "" : "s"}**.`
+      : `**${scopeLabel}** contains **${totalFiles.toLocaleString()} total file${totalFiles === 1 ? "" : "s"}**: **${analyzedCount.toLocaleString()} successfully analyzed paper${analyzedCount === 1 ? "" : "s"}**.`,
+    failedCount > 0 ? `${failedCount.toLocaleString()} file${failedCount === 1 ? "" : "s"} failed analysis.` : "",
+    pendingCount > 0 ? `${pendingCount.toLocaleString()} file${pendingCount === 1 ? " is" : "s are"} queued or processing.` : "",
+    canceledCount > 0 ? `${canceledCount.toLocaleString()} file${canceledCount === 1 ? " was" : "s were"} canceled.` : "",
+    folderCount > 1 ? `The selected scope spans ${folderCount.toLocaleString()} folders.` : "",
+    unknownYearCount > 0 ? `${unknownYearCount.toLocaleString()} paper${unknownYearCount === 1 ? " has" : "s have"} an unknown publication year.` : "",
+    totalWords > 0 ? `The extracted corpus contains approximately ${totalWords.toLocaleString()} words.` : "",
+  ].filter(Boolean).join("\n\n");
+}
+
+function repositoryStatisticsResult(
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan,
+  prompt: string
+): Omit<RepositoryChatResult, "handled" | "plan" | "diagnostics"> {
+  return {
+    answer: buildRepositoryStatisticsSummary(context.papers, context.scopeLabel, prompt, context.runStats),
+    citations: [],
+    charts: [],
+  };
 }
 
 interface RepositoryQaOutput
@@ -1501,13 +1686,15 @@ async function repositoryQaResult(
 
 export async function runRepositoryChat(input: RepositoryChatInput): Promise<RepositoryChatResult> {
   const context = await loadRepositoryContext(input);
-  const plan = await refineRepositoryPrompt(
-    input.prompt,
-    context,
-    input.model,
-    input.forceChart,
-    input.history
-  );
+  const plan = requestsRepositoryStatistics(input.prompt)
+    ? fallbackPromptPlan(input.prompt, Boolean(input.forceChart))
+    : await refineRepositoryPrompt(
+        input.prompt,
+        context,
+        input.model,
+        input.forceChart,
+        input.history
+      );
   const diagnostics = {
     projectId: context.projectId,
     folderId: context.folderId,
@@ -1543,7 +1730,9 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       diagnostics: { ...diagnostics, ...result.quality },
     };
   }
-  const result = plan.intent === "word_count"
+  const result = plan.intent === "repository_statistics"
+    ? repositoryStatisticsResult(context, plan, input.prompt)
+    : plan.intent === "word_count"
     ? wordCountResult(context, plan)
     : topicResult(context, plan);
   return { handled: true, ...result, plan, diagnostics };

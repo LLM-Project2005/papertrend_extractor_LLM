@@ -288,11 +288,13 @@ async function loadPaperMetadata(
       const scope = scopedRunIds
         ? scopedRunIds.length === 0
           ? " AND false"
-          : (values.push(scopedRunIds), ` AND p.ingestion_run_id = ANY($2::uuid[])`)
+          : (values.push(scopedRunIds), ` AND pc.ingestion_run_id = ANY($2::uuid[])`)
         : "";
       const result = await client.query<Record<string, unknown>>(
-        `SELECT p.id::text AS paper_id, p.folder_id, p.year, p.title, p.ingestion_run_id
-         FROM public.papers p WHERE p.owner_user_id = $1${scope}`,
+        `SELECT p.id::text AS paper_id, p.folder_id, p.year, p.title, pc.ingestion_run_id
+         FROM public.papers p
+         JOIN public.paper_content pc ON pc.paper_id = p.id
+         WHERE p.owner_user_id = $1${scope}`,
         values
       );
       return result.rows.flatMap((row) => {
@@ -434,23 +436,21 @@ async function loadTableData(
   if (getDatabaseProvider() === "cloud-sql") {
     const paperIds = metadata.map((paper) => paper.paper_id);
     const loaded = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
-      const [keywords, single, multi] = await Promise.all([
-        client.query<Record<string, unknown>>(
-          `SELECT paper_id::text, folder_id, topic, keyword, keyword_frequency, evidence
-           FROM public.paper_keywords WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-          [ownerUserId, paperIds]
-        ),
-        client.query<Record<string, unknown>>(
-          `SELECT paper_id::text, folder_id, el, eli, lae, other
-           FROM public.paper_tracks_single WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-          [ownerUserId, paperIds]
-        ),
-        client.query<Record<string, unknown>>(
-          `SELECT paper_id::text, folder_id, el, eli, lae, other
-           FROM public.paper_tracks_multi WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-          [ownerUserId, paperIds]
-        ),
-      ]);
+      const keywords = await client.query<Record<string, unknown>>(
+        `SELECT paper_id::text, folder_id, topic, keyword, keyword_frequency, evidence
+         FROM public.paper_keywords WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+        [ownerUserId, paperIds]
+      );
+      const single = await client.query<Record<string, unknown>>(
+        `SELECT paper_id::text, folder_id, el, eli, lae, other
+         FROM public.paper_tracks_single WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+        [ownerUserId, paperIds]
+      );
+      const multi = await client.query<Record<string, unknown>>(
+        `SELECT paper_id::text, folder_id, el, eli, lae, other
+         FROM public.paper_tracks_multi WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+        [ownerUserId, paperIds]
+      );
       return { keywords: keywords.rows, single: single.rows, multi: multi.rows };
     });
     return shapeTableDashboardData(metadata, loaded.keywords, loaded.single, loaded.multi);
@@ -674,18 +674,16 @@ async function loadTrackTableData(
   if (getDatabaseProvider() === "cloud-sql") {
     const paperIds = metadata.map((paper) => paper.paper_id);
     const loaded = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
-      const [single, multi] = await Promise.all([
-        client.query<Record<string, unknown>>(
-          `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_single
-           WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-          [ownerUserId, paperIds]
-        ),
-        client.query<Record<string, unknown>>(
-          `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_multi
-           WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-          [ownerUserId, paperIds]
-        ),
-      ]);
+      const single = await client.query<Record<string, unknown>>(
+        `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_single
+         WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+        [ownerUserId, paperIds]
+      );
+      const multi = await client.query<Record<string, unknown>>(
+        `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_multi
+         WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+        [ownerUserId, paperIds]
+      );
       return { single: single.rows, multi: multi.rows };
     });
     const shaped = shapeTableDashboardData(metadata, [], loaded.single, loaded.multi);

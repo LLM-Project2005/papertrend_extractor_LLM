@@ -12,6 +12,8 @@
     "lint": "next lint",
     "auth:parity": "tsx scripts/auth-parity-smoke.ts",
     "test:repository-chat": "tsx --test --test-force-exit tests/repository-chat.test.ts",
+    "test:repository-chat:live": "tsx scripts/repository-chat-live-eval.ts",
+    "test:repository-chat:cloudsql": "tsx scripts/repository-chat-cloudsql-live.ts",
     "import-csv": "npx tsx scripts/import-csv.ts",
     "sync-supabase": "npx tsx scripts/import-csv.ts",
     "worker:queue": "python worker/process_ingestion_queue.py",
