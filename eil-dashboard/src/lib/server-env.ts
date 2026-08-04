@@ -139,6 +139,18 @@ export function getOpenAIConfig(taskName?: string): {
   };
 }
 
+export function getRepositoryEmbeddingConfig(): {
+  model: string;
+  dimensions: number;
+  batchSize: number;
+} {
+  return {
+    model: process.env.REPOSITORY_EMBEDDING_MODEL ?? "openai/text-embedding-3-small",
+    dimensions: parseBoundedIntEnv("REPOSITORY_EMBEDDING_DIMENSIONS", 1536, 128, 4096),
+    batchSize: parseBoundedIntEnv("REPOSITORY_EMBEDDING_BATCH_SIZE", 24, 1, 100),
+  };
+}
+
 export function getGoogleClientId(): string {
   return process.env.GOOGLE_CLIENT_ID ?? "";
 }

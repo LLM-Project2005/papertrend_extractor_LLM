@@ -3858,6 +3858,7 @@ async function normalChat(
     try {
       const repositoryResult = await runRepositoryChat({
         ownerUserId,
+        threadId: thread.id,
         projectId: body.projectId,
         folderId: body.folderId,
         selectedRunIds: body.selectedRunIds,
@@ -3865,6 +3866,7 @@ async function normalChat(
         model: selectedModel,
         forceChart: chartRequested,
         history: (body.messages ?? []).slice(-12),
+        jobCallbackBaseUrl: new URL(request.url).origin,
       });
       if (repositoryResult.handled) {
         const repositoryCharts = repositoryResult.charts as ChatChartPayload[];
@@ -3879,6 +3881,9 @@ async function normalChat(
           chart: repositoryCharts[0] ?? null,
           charts: repositoryCharts,
           repositoryPlan: repositoryResult.plan,
+          repositoryExecution: repositoryResult.execution ?? null,
+          repositoryCoverage: repositoryResult.coverage ?? null,
+          repositoryLimitations: repositoryResult.limitations ?? [],
           repositoryDiagnostics: repositoryResult.diagnostics,
         };
 
@@ -3905,6 +3910,10 @@ async function normalChat(
           toolResults,
           chart: repositoryCharts[0] ?? null,
           charts: repositoryCharts,
+          execution: repositoryResult.execution ?? null,
+          coverage: repositoryResult.coverage ?? null,
+          limitations: repositoryResult.limitations ?? [],
+          jobId: repositoryResult.jobId ?? null,
           thread: detail.thread,
           messages: detail.messages,
           deepResearchSession: detail.deepResearchSession,

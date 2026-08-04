@@ -7,6 +7,7 @@ import {
 } from "../src/lib/repository-text";
 import {
   buildRepositoryStatisticsSummary,
+  fallbackExecutionPlan,
   fallbackPromptPlan,
   requestsRepositoryStatistics,
 } from "../src/lib/repository-chat";
@@ -179,4 +180,22 @@ test("word-frequency questions remain separate from repository cardinality", () 
   const plan = fallbackPromptPlan('Count the word "feedback" across all papers', false);
   assert.equal(plan.intent, "word_count");
   assert.equal(plan.retrievalMode, "exhaustive");
+});
+
+test("Chat V2 fallback preserves complete title-list scope", () => {
+  const plan = fallbackExecutionPlan("Please give me the names of every document in this repository");
+  assert.equal(plan.operation, "list_documents");
+  assert.equal(plan.scopeMode, "complete");
+});
+
+test("Chat V2 fallback treats explain-each as complete document analysis", () => {
+  const plan = fallbackExecutionPlan("Explain each file in the selected folder");
+  assert.equal(plan.operation, "analyze_each_document");
+  assert.equal(plan.scopeMode, "complete");
+});
+
+test("Chat V2 does not force focused evidence questions into complete mode", () => {
+  const plan = fallbackExecutionPlan("What did the studies report about learner anxiety?");
+  assert.equal(plan.operation, "search_evidence");
+  assert.equal(plan.scopeMode, "focused");
 });

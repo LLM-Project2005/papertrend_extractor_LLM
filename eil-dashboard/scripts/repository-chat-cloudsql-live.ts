@@ -13,6 +13,8 @@ async function main(): Promise<void> {
   assert.ok(ownerUserId, "OWNER_USER_ID is required.");
   process.env.DATABASE_PROVIDER = "cloud-sql";
   process.env.REPOSITORY_CHAT_DISABLE_LLM = "true";
+  process.env.REPOSITORY_CHAT_V2_ENABLED = "true";
+  process.env.REPOSITORY_HYBRID_RETRIEVAL_ENABLED = "true";
 
   const pool = new Pool({ connectionString: databaseUrl, max: 1 });
   const client = await pool.connect();
@@ -72,6 +74,18 @@ async function main(): Promise<void> {
   assert.match(statistics.answer, new RegExp(`\\b${succeededRuns}\\b`));
   if (failedRuns > 0) assert.match(statistics.answer, new RegExp(`\\b${failedRuns}\\b`));
 
+  const listing = await runRepositoryChat({ ...common, prompt: "List the names of every paper in this repository." });
+  assert.equal(listing.execution?.operation, "list_documents");
+  assert.equal(listing.coverage?.eligiblePapers, succeededRuns);
+  assert.equal(listing.coverage?.returnedPapers, succeededRuns);
+  assert.equal(listing.coverage?.complete, true);
+
+  const explanations = await runRepositoryChat({ ...common, prompt: "Explain each paper in this repository." });
+  assert.equal(explanations.execution?.operation, "analyze_each_document");
+  assert.equal(explanations.coverage?.processedPapers, succeededRuns);
+  assert.equal(explanations.coverage?.returnedPapers, succeededRuns);
+  assert.equal(explanations.coverage?.complete, true);
+
   const chart = await runRepositoryChat({
     ...common,
     prompt: "Display the repository topics as a bar chart.",
@@ -103,6 +117,11 @@ async function main(): Promise<void> {
       intent: chart.plan.intent,
       retrievalMode: chart.plan.retrievalMode,
       chartCount: chart.charts.length,
+    },
+    exhaustive: {
+      listed: listing.coverage?.returnedPapers,
+      explained: explanations.coverage?.returnedPapers,
+      complete: listing.coverage?.complete && explanations.coverage?.complete,
     },
   }));
 }

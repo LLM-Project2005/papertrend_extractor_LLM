@@ -152,6 +152,9 @@ interface ChatPayload {
   thread?: WorkspaceThreadSummary;
   messages?: WorkspaceMessageRecord[];
   deepResearchSession?: DeepResearchSessionRecord | null;
+  jobId?: string | null;
+  coverage?: Record<string, unknown> | null;
+  limitations?: string[];
 }
 
 interface ChatSearchResult {
@@ -1968,6 +1971,34 @@ export default function ChatClient() {
     return payload;
   }
 
+  async function waitForRepositoryJob(jobId: string) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2_500));
+      const response = await fetch(`/api/chat/jobs/${encodeURIComponent(jobId)}`, {
+        headers: requestHeaders,
+      });
+      if (!response.ok) throw new Error("Could not read repository report progress.");
+      const payload = await response.json() as { job?: {
+        status?: string; resultText?: string | null; citations?: Citation[];
+        charts?: ChatChartPayload[]; errorMessage?: string | null; coverage?: Record<string, unknown>;
+      } };
+      const job = payload.job;
+      if (job?.status === "succeeded") {
+        setMessages((current) => [...current, localMessage(
+          "assistant",
+          job.resultText ?? "Repository report completed.",
+          job.citations ?? [],
+          { mode: "grounded", charts: job.charts ?? [], repositoryCoverage: job.coverage ?? null }
+        )]);
+        return;
+      }
+      if (job?.status === "failed" || job?.status === "canceled") {
+        throw new Error(job.errorMessage ?? "Repository report did not complete.");
+      }
+    }
+    throw new Error("Repository report is still running. You can return to this chat later.");
+  }
+
   function stopGenerating() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -2097,6 +2128,9 @@ export default function ChatClient() {
           ),
         ]);
       }
+      if (payload.jobId) {
+        await waitForRepositoryJob(payload.jobId);
+      }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
       setError(
@@ -2168,6 +2202,9 @@ export default function ChatClient() {
             { mode: payload.mode ?? "fallback" }
           ),
         ]);
+      }
+      if (payload.jobId) {
+        await waitForRepositoryJob(payload.jobId);
       }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
