@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 
 export const runtime = "nodejs";
 
@@ -44,11 +46,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = getSupabaseAdmin();
     const url = new URL(request.url);
     const folderId = url.searchParams.get("folderId");
     const jobId = url.searchParams.get("jobId");
 
+    if (getDatabaseProvider() === "cloud-sql") {
+      const result = await cloudSqlAnalysisJobRepository.status(user.id, { folderId, jobId });
+      return NextResponse.json({
+        jobs: result.jobs,
+        runs: result.runs.map((run) => ({ ...run, input_payload: trimStatusInputPayload(run.input_payload) })),
+      });
+    }
+
+    const supabase = getSupabaseAdmin();
     let jobQuery = supabase
       .from("folder_analysis_jobs")
       .select("*")

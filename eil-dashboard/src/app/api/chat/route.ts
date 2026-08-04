@@ -20,6 +20,10 @@ import { createChatCompletionResult } from "@/lib/openai";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
@@ -1505,6 +1509,15 @@ async function projectFolderIds(ownerUserId: string, projectId?: string) {
   if (!projectId || projectId === "all") {
     return [];
   }
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ id: string }>(
+        `SELECT id FROM public.research_folders WHERE owner_user_id=$1 AND project_id=$2`,
+        [ownerUserId, projectId]
+      );
+      return result.rows.map((row) => row.id);
+    });
+  }
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("research_folders")
@@ -1530,6 +1543,28 @@ async function findLibraryRunsByAttachmentNames(
   );
   if (attachmentKeys.size === 0) {
     return [];
+  }
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    const folderIds = projectId && projectId !== "all" && (!folderId || folderId === "all")
+      ? await projectFolderIds(ownerUserId, projectId) : [];
+    if (projectId && projectId !== "all" && (!folderId || folderId === "all") && folderIds.length === 0) return [];
+    const data = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      let scope = "";
+      if (folderId && folderId !== "all") { values.push(folderId); scope = ` AND folder_id=$${values.length}`; }
+      else if (folderIds.length) { values.push(folderIds); scope = ` AND folder_id=ANY($${values.length}::uuid[])`; }
+      const result = await client.query<ChartLibraryRun>(
+        `SELECT id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload
+         FROM public.ingestion_runs WHERE owner_user_id=$1 AND source_type='upload' AND trashed_at IS NULL${scope}
+         ORDER BY updated_at DESC LIMIT 400`, values
+      );
+      return result.rows;
+    });
+    return data.filter((run) => {
+      const keys = [run.display_name ?? "", run.source_filename ?? "", run.source_path ?? "", chartRunLabel(run)].map(normalizeFileMatchKey).filter(Boolean);
+      return keys.some((key) => [...attachmentKeys].some((attachment) => key === attachment || key.includes(attachment) || attachment.includes(key)));
+    }).sort((left, right) => (left.status === "succeeded" ? 0 : 1) - (right.status === "succeeded" ? 0 : 1));
   }
 
   const supabase = getSupabaseAdmin();
@@ -1596,6 +1631,16 @@ async function loadChartRunsByIds(
   if (normalizedRunIds.length === 0) {
     return [];
   }
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<ChartLibraryRun>(
+        `SELECT id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload
+         FROM public.ingestion_runs WHERE owner_user_id=$1 AND id=ANY($2::uuid[])`,
+        [ownerUserId, normalizedRunIds]
+      );
+      return result.rows;
+    });
+  }
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("ingestion_runs")
@@ -1620,6 +1665,33 @@ async function queueChartAnalysisRuns(
   const timestamp = new Date().toISOString();
   const failedRuns = notReadyRuns.filter((run) => run.status === "failed");
   const queuedRunIds = notReadyRuns.map((run) => run.id);
+  if (getDatabaseProvider() === "cloud-sql") {
+    await cloudSqlAnalysisJobRepository.requeueRuns(
+      ownerUserId,
+      failedRuns.map((run) => run.id),
+      "The user requested a chart, so this failed analysis was returned to the queue."
+    );
+    const queueStart = await triggerWorkerQueueWithRetries({
+      maxRuns: Math.min(Math.max(queuedRunIds.length, 1), 5), taskCount: queuedRunIds.length,
+      reason: "chat-chart-analysis-preflight",
+    });
+    const folderJobId = String(notReadyRuns[0]?.folder_analysis_job_id ?? "");
+    if (folderJobId) {
+      await cloudSqlIngestionRepository.persistWorkerStartState({
+        ownerUserId, runIds: queuedRunIds, folderJobId,
+        progressStage: queueStart.progressStage, progressMessage: queueStart.progressMessage,
+        progressDetail: queueStart.progressDetail, metadata: { last_worker_trigger_payload: queueStart.trigger.payload },
+      });
+    }
+    return {
+      runIds: queuedRunIds,
+      runTitles: notReadyRuns.map(chartRunLabel),
+      statuses: Object.fromEntries(notReadyRuns.map((run) => [run.id, run.status])),
+      message: queueStart.progressMessage,
+      detail: queueStart.progressDetail,
+      queueStart: { started: queueStart.started, alreadyRunning: queueStart.alreadyRunning, progressMessage: queueStart.progressMessage, progressDetail: queueStart.progressDetail },
+    };
+  }
   const supabase = getSupabaseAdmin();
 
   for (const run of failedRuns) {
@@ -1804,7 +1876,7 @@ async function loadChartDashboardData(
   selectedPaperIds: string[] = [],
   overrideScopeLabel?: string
 ) {
-  const supabase = getSupabaseAdmin();
+  const supabase = getDatabaseProvider() === "cloud-sql" ? null : getSupabaseAdmin();
   if (request.scope === "selected_files" && selectedRunIds.length > 0) {
     const scopedRunIds = await resolveScopedRunIds(
       supabase,
@@ -2929,6 +3001,25 @@ async function loadScopedPlanPapers(
   projectId: string | undefined,
   selectedRunIds: string[] = []
 ): Promise<LocalPlanPaper[]> {
+  if (getDatabaseProvider() === "cloud-sql") {
+    const normalizedRunIds = await resolveScopedRunIds(null, ownerUserId, selectedRunIds);
+    const folderIds = projectId && (!folderId || folderId === "all") ? await projectFolderIds(ownerUserId, projectId) : [];
+    if (projectId && (!folderId || folderId === "all") && folderIds.length === 0) return [];
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      let scope = "";
+      if (normalizedRunIds.length) { values.push(normalizedRunIds); scope = ` AND p.ingestion_run_id=ANY($${values.length}::uuid[])`; }
+      else if (folderId && folderId !== "all") { values.push(folderId); scope = ` AND p.folder_id=$${values.length}`; }
+      else if (folderIds.length) { values.push(folderIds); scope = ` AND p.folder_id=ANY($${values.length}::uuid[])`; }
+      const result = await client.query<LocalPlanPaper>(
+        `SELECT p.id AS paper_id,p.title,p.year,p.folder_id,p.ingestion_run_id,
+         c.abstract_claims,c.methods,c.results,c.conclusion FROM public.papers p
+         LEFT JOIN public.paper_content c ON c.paper_id=p.id AND c.owner_user_id=$1
+         WHERE p.owner_user_id=$1${scope}`, values
+      );
+      return result.rows;
+    });
+  }
   const supabase = getSupabaseAdmin();
   const normalizedRunIds = await resolveScopedRunIds(supabase, ownerUserId, selectedRunIds);
   let query = supabase
@@ -2966,7 +3057,7 @@ async function loadScopedPlanPapers(
 }
 
 async function resolveScopedRunIds(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  supabase: ReturnType<typeof getSupabaseAdmin> | null,
   ownerUserId: string,
   selectedRunIds: string[] = []
 ) {
@@ -2974,6 +3065,24 @@ async function resolveScopedRunIds(
   if (normalizedRunIds.length === 0) {
     return normalizedRunIds;
   }
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const resolved = new Set(normalizedRunIds);
+      let frontier = [...normalizedRunIds];
+      for (let depth = 0; depth < 4 && frontier.length; depth += 1) {
+        const result = await client.query<{ copied_from_run_id: string | null }>(
+          `SELECT copied_from_run_id FROM public.ingestion_runs WHERE owner_user_id=$1 AND id=ANY($2::uuid[])`,
+          [ownerUserId, frontier]
+        );
+        frontier = result.rows.map((row) => row.copied_from_run_id ?? "").filter((id) => Boolean(id) && !resolved.has(id));
+        frontier.forEach((id) => resolved.add(id));
+      }
+      return [...resolved];
+    });
+  }
+
+  if (!supabase) throw new Error("Supabase client is required in Supabase mode.");
 
   const resolved = new Set(normalizedRunIds);
   let frontier = [...normalizedRunIds];
@@ -3676,7 +3785,6 @@ async function normalChat(
           .join("\n")}`
       : "";
 
-  const supabase = ownerUserId ? getSupabaseAdmin() : null;
   const chatRepository = ownerUserId ? getChatRepository() : null;
   let thread: ChatThreadDetail["thread"] | null = null;
   let existingThreadDetail: ChatThreadDetail | null = null;
@@ -3813,7 +3921,7 @@ async function normalChat(
   }
 
   if (chartRequested) {
-    if (!ownerUserId || !supabase || !chatRepository || !thread) {
+    if (!ownerUserId || !chatRepository || !thread) {
       return NextResponse.json(
         { error: "Sign in to build charts from repository data." },
         { status: 401 }
@@ -4055,6 +4163,12 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: "Sign in to use deep research mode." },
           { status: 401 }
+        );
+      }
+      if (getDatabaseProvider() === "cloud-sql") {
+        return NextResponse.json(
+          { error: "Deep research is temporarily unavailable during the Cloud SQL production migration. Normal repository chat remains available." },
+          { status: 503 }
         );
       }
       if (action === "continue") {

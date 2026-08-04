@@ -5,6 +5,7 @@ import {
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
 import {
   MAX_FILES_PER_BATCH,
   hasPdfMagic,
@@ -19,6 +20,13 @@ import {
 } from "@/lib/worker-queue-start";
 
 export const runtime = "nodejs";
+
+function cloudSqlRetiredResponse() {
+  return NextResponse.json(
+    { error: "This legacy upload endpoint is retired. Use the prepare/finalize upload flow." },
+    { status: 410 }
+  );
+}
 
 const AUTO_ANALYSIS_PROVIDER = "Automatic task routing";
 const AUTO_ANALYSIS_MODEL = "automatic-task-routing";
@@ -100,6 +108,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  if (getDatabaseProvider() === "cloud-sql") return cloudSqlRetiredResponse();
   if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

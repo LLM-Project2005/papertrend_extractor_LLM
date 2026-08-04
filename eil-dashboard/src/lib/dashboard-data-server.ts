@@ -1,6 +1,8 @@
 import { generateMockData } from "@/lib/mockData";
 import { normalizePaperId, paperIdFromRunId, paperLookupKey } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import {
   filterTopicFamiliesByPaperIds,
   loadOrBuildProjectCorpusTopicCache,
@@ -210,6 +212,16 @@ async function resolveScopedFolderIds(
     return null;
   }
 
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ id: string }>(
+        `SELECT id FROM public.research_folders WHERE owner_user_id = $1 AND project_id = $2`,
+        [ownerUserId, projectId]
+      );
+      return result.rows.map((row) => row.id);
+    });
+  }
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("research_folders")
@@ -239,6 +251,17 @@ async function resolveScopedRunIds(
     return [];
   }
 
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ id: string }>(
+        `SELECT id FROM public.ingestion_runs
+         WHERE owner_user_id = $1 AND folder_id = ANY($2::uuid[])`,
+        [ownerUserId, scopedFolderIds ?? []]
+      );
+      return result.rows.map((row) => row.id);
+    });
+  }
+
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("ingestion_runs")
@@ -259,6 +282,32 @@ async function loadPaperMetadata(
   ownerUserId: string,
   scopedRunIds: string[] | null
 ): Promise<PaperMetadata[]> {
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      const scope = scopedRunIds
+        ? scopedRunIds.length === 0
+          ? " AND false"
+          : (values.push(scopedRunIds), ` AND p.ingestion_run_id = ANY($2::uuid[])`)
+        : "";
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT p.id::text AS paper_id, p.folder_id, p.year, p.title, p.ingestion_run_id
+         FROM public.papers p WHERE p.owner_user_id = $1${scope}`,
+        values
+      );
+      return result.rows.flatMap((row) => {
+        const ingestionRunId = typeof row.ingestion_run_id === "string" ? row.ingestion_run_id : null;
+        const paperId = resolvePaperId(row.paper_id, ingestionRunId);
+        return paperId ? [{
+          paper_id: paperId,
+          folder_id: typeof row.folder_id === "string" ? row.folder_id : null,
+          year: String(row.year ?? "Unknown"),
+          title: String(row.title ?? "Untitled paper"),
+          ingestion_run_id: ingestionRunId,
+        }] : [];
+      });
+    });
+  }
   const supabase = getSupabaseAdmin();
   let query = supabase
     .from("papers_full")
@@ -303,6 +352,9 @@ async function loadViewData(
   scopedPaperIds: PaperId[] | null,
   metadata: PaperMetadata[]
 ): Promise<DashboardData | null> {
+  if (getDatabaseProvider() === "cloud-sql") {
+    return null;
+  }
   const supabase = getSupabaseAdmin();
   const lookups = buildMetadataLookups(metadata);
   const scopedIdSet = scopedPaperIds ? new Set(scopedPaperIds) : null;
@@ -377,6 +429,31 @@ async function loadTableData(
 ): Promise<DashboardData> {
   if (metadata.length === 0) {
     return emptyDashboardData();
+  }
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    const paperIds = metadata.map((paper) => paper.paper_id);
+    const loaded = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const [keywords, single, multi] = await Promise.all([
+        client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, topic, keyword, keyword_frequency, evidence
+           FROM public.paper_keywords WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        ),
+        client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other
+           FROM public.paper_tracks_single WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        ),
+        client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other
+           FROM public.paper_tracks_multi WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        ),
+      ]);
+      return { keywords: keywords.rows, single: single.rows, multi: multi.rows };
+    });
+    return shapeTableDashboardData(metadata, loaded.keywords, loaded.single, loaded.multi);
   }
 
   const supabase = getSupabaseAdmin();
@@ -513,6 +590,38 @@ async function loadTableData(
   };
 }
 
+function shapeTableDashboardData(
+  metadata: PaperMetadata[],
+  keywordRows: Record<string, unknown>[],
+  singleRows: Record<string, unknown>[],
+  multiRows: Record<string, unknown>[]
+): DashboardData {
+  const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
+  const trends = keywordRows.flatMap((row) => {
+    const paperId = normalizePaperId(row.paper_id);
+    const paper = paperId ? metadataByPaperId.get(paperId) : null;
+    if (!paper || !String(row.keyword ?? "").trim()) return [];
+    return [{
+      paper_id: paper.paper_id, folder_id: typeof row.folder_id === "string" ? row.folder_id : paper.folder_id,
+      year: paper.year, title: paper.title, topic: String(row.topic ?? "Unclassified"),
+      keyword: String(row.keyword ?? ""), keyword_frequency: Number(row.keyword_frequency ?? 0),
+      evidence: String(row.evidence ?? ""),
+    }];
+  });
+  const mapTracks = (source: Record<string, unknown>[]) => {
+    const byPaper = new Map(source.map((row) => [normalizePaperId(row.paper_id), row]));
+    return metadata.map((paper) => {
+      const row = byPaper.get(paper.paper_id);
+      return {
+        paper_id: paper.paper_id, folder_id: typeof row?.folder_id === "string" ? row.folder_id : paper.folder_id,
+        year: paper.year, title: paper.title, el: Number(row?.el ?? 0), eli: Number(row?.eli ?? 0),
+        lae: Number(row?.lae ?? 0), other: Number(row ? row.other ?? 0 : 1),
+      };
+    });
+  };
+  return { trends, tracksSingle: mapTracks(singleRows), tracksMulti: mapTracks(multiRows), topicFamilies: [], useMock: false, diagnostics: null };
+}
+
 function mergeDashboardSources(
   preferred: DashboardData | null,
   fallback: DashboardData
@@ -560,6 +669,27 @@ async function loadTrackTableData(
 ): Promise<Pick<DashboardData, "tracksSingle" | "tracksMulti">> {
   if (metadata.length === 0) {
     return { tracksSingle: [], tracksMulti: [] };
+  }
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    const paperIds = metadata.map((paper) => paper.paper_id);
+    const loaded = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const [single, multi] = await Promise.all([
+        client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_single
+           WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        ),
+        client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_multi
+           WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        ),
+      ]);
+      return { single: single.rows, multi: multi.rows };
+    });
+    const shaped = shapeTableDashboardData(metadata, [], loaded.single, loaded.multi);
+    return { tracksSingle: shaped.tracksSingle, tracksMulti: shaped.tracksMulti };
   }
 
   const supabase = getSupabaseAdmin();
@@ -738,6 +868,13 @@ async function loadDashboardDataServerUncached(
     const scopedData =
       projectId && projectId !== "all"
         ? await (async () => {
+            if (getDatabaseProvider() === "cloud-sql") {
+              return loadProjectScopedDashboardFallbackData(
+                ownerUserId,
+                projectId,
+                requestedFolderIds
+              );
+            }
             try {
               return await loadProjectScopedDashboardData(
                 ownerUserId,

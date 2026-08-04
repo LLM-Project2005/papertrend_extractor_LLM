@@ -1,7 +1,13 @@
 import type { AuthIdentity } from "@/lib/auth/adapter";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { getDatabaseProvider } from "@/lib/server-env";
-import { resolveCloudSqlIdentityOwner } from "@/lib/cloudsql/identity-repository";
+import {
+  getDatabaseProvider,
+  getFirebaseAutoProvisionVerifiedUsers,
+} from "@/lib/server-env";
+import {
+  provisionCloudSqlIdentityOwner,
+  resolveCloudSqlIdentityOwner,
+} from "@/lib/cloudsql/identity-repository";
 
 export interface AuthIdentityMappingKey {
   provider: AuthIdentity["provider"];
@@ -41,10 +47,13 @@ export async function resolveExternalIdentityOwner(
 
   try {
     if (getDatabaseProvider() === "cloud-sql") {
-      const data = await resolveCloudSqlIdentityOwner(
+      let data = await resolveCloudSqlIdentityOwner(
         identity.provider,
         identity.subject
       );
+      if (!data?.ownerUserId && getFirebaseAutoProvisionVerifiedUsers()) {
+        data = await provisionCloudSqlIdentityOwner(identity);
+      }
       if (!data?.ownerUserId) {
         return identity;
       }

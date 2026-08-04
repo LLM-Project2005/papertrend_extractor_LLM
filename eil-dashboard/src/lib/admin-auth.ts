@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "crypto";
-import { getAdminImportSecret } from "@/lib/server-env";
+import { getAdminImportSecret, getDatabaseProvider } from "@/lib/server-env";
+import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { User } from "@supabase/supabase-js";
 import {
@@ -50,6 +51,19 @@ export async function isAuthorizedAdminRequest(request: Request): Promise<boolea
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) {
     return false;
+  }
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    try {
+      return await withCloudSqlOwnerTransaction(user.id, async (client) => {
+        const result = await client.query<{ role: string | null }>(
+          `SELECT role FROM public.user_profiles WHERE id=$1`, [user.id]
+        );
+        return result.rows[0]?.role === "admin";
+      });
+    } catch {
+      return false;
+    }
   }
 
   const supabase = getSupabaseAdmin();

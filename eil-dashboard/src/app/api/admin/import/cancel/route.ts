@@ -4,6 +4,8 @@ import {
   isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 
 export const runtime = "nodejs";
 
@@ -24,6 +26,12 @@ export async function POST(request: Request) {
         { error: "Provide at least one ingestion run id." },
         { status: 400 }
       );
+    }
+
+    if (getDatabaseProvider() === "cloud-sql") {
+      if (!user?.id) return NextResponse.json({ error: "An authenticated owner is required." }, { status: 401 });
+      const runs = await cloudSqlAnalysisJobRepository.cancelRuns(user.id, runIds);
+      return NextResponse.json({ runs });
     }
 
     const supabase = getSupabaseAdmin();

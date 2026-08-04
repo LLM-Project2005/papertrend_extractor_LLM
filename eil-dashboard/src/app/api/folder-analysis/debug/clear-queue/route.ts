@@ -3,6 +3,7 @@ import {
   isAuthorizedAdminRequest,
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
 import { resetWorkerQueueLock } from "@/lib/worker-trigger";
 
 export const runtime = "nodejs";
@@ -12,6 +13,12 @@ type ClearQueueBody = {
 };
 
 export async function POST(request: Request) {
+  if (getDatabaseProvider() === "cloud-sql") {
+    return NextResponse.json(
+      { error: "The legacy debug queue clearer is disabled in Cloud SQL mode." },
+      { status: 410 }
+    );
+  }
   if (!(await isAuthorizedAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

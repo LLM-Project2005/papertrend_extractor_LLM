@@ -6,7 +6,9 @@ system.
 
 ## Current Status
 
-Phase 8C, the Cloud SQL application pilot, is in progress.
+Phase 8C is code-complete for the beta-critical workflow and deployed to the
+isolated Cloud SQL pilot. Phase 8D foundations are provisioned but production
+traffic remains unchanged.
 
 Status audit on 2026-08-04:
 
@@ -177,6 +179,26 @@ object has a verified destination and a path-mapping plan exists.
 
 ## Phase 8C: Complete The Cloud SQL Application Layer
 
+### Current status (2026-08-04)
+
+- `papertrend-web-cloudsql-pilot` runs Firebase + Cloud SQL + GCS without
+  Supabase environment variables.
+- `papertrend-worker-cloudsql-pilot` is Cloud SQL-authoritative and private;
+  only the pilot web runtime and task identity may invoke it.
+- Verified Firebase users can be provisioned transactionally when
+  `FIREBASE_AUTO_PROVISION_VERIFIED_USERS=true`. Unverified users still fail
+  closed, and migrated emails retain their existing owner UUID.
+- Profile, project/folder, library, upload/finalize, queue controls, analysis
+  detail, dashboard, normal chat/chart, quotas, and admin role checks have
+  Cloud SQL provider paths.
+- Legacy multipart upload, Google Drive queue, Supabase account linking, and
+  the debug queue clearer return `410` in Cloud SQL mode.
+- Deep Research remains temporarily unavailable in Cloud SQL mode. It is not a
+  hidden Supabase fallback and is not part of the beta cutover acceptance gate.
+
+An authenticated browser smoke test is still required after each pilot
+deployment. CLI health checks cannot prove Firebase login or owner isolation.
+
 Implementation has started with the first vertical slice:
 
 - server-only PostgreSQL pooling through `DATABASE_URL`;
@@ -295,6 +317,18 @@ until these owner-scoped checks pass.
 
 ## Phase 8D: Prepare A Separate Production Deployment
 
+### Provisioned foundations (2026-08-04)
+
+- private bucket: `research-trend-analysis-papertrend-uploads-production`;
+- paused queue: `papertrend-ingestion-production` (1 concurrent dispatch);
+- service accounts: `papertrend-web-production`,
+  `papertrend-worker-production`, and `papertrend-tasks-production`;
+- deployment manifests: `cloudbuild.web.production.yaml` and
+  `cloudbuild.worker.production.yaml`.
+
+No production Cloud Run service has been deployed and no traffic has moved.
+The dedicated identities intentionally have no application IAM grants yet.
+
 Create a separate production Cloud Run service/revision. Do not reuse the
 staging service for the cutover.
 
@@ -317,6 +351,9 @@ Manual Google Cloud steps:
 ## Phase 8E: Controlled Cutover
 
 Only perform this after Phase 8C and 8D pass.
+
+Current state: **prepared, not executed**. The production queue is paused and
+the Vercel/Supabase deployment remains authoritative.
 
 1. Announce a short maintenance window and stop new uploads/analysis starts.
 2. Drain Cloud Tasks and wait for active runs to finish or record them for

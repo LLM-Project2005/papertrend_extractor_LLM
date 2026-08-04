@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
 import {
   getBearerTokenFromRequest,
   verifyFirebaseIdentityToken,
@@ -17,6 +18,12 @@ function sameEmail(left: string | null | undefined, right: string | null | undef
  * intentionally not usable to choose an arbitrary owner UUID from the client.
  */
 export async function POST(request: Request) {
+  if (getDatabaseProvider() === "cloud-sql") {
+    return NextResponse.json(
+      { error: "Legacy Supabase account linking is not available in Cloud SQL mode." },
+      { status: 410 }
+    );
+  }
   const supabaseToken = getBearerTokenFromRequest(request);
   const firebaseToken = request.headers.get("x-firebase-id-token")?.trim() ?? "";
   if (!supabaseToken || !firebaseToken) {

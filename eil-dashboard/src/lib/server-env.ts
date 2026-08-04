@@ -58,6 +58,12 @@ export function getFirebaseCheckRevoked(): boolean {
   return normalizeConfiguredValue(configured).toLowerCase() === "true";
 }
 
+export function getFirebaseAutoProvisionVerifiedUsers(): boolean {
+  return normalizeConfiguredValue(
+    process.env.FIREBASE_AUTO_PROVISION_VERIFIED_USERS
+  ).toLowerCase() === "true";
+}
+
 export type DatabaseProvider = "supabase" | "cloud-sql";
 export type StorageProvider = "supabase" | "gcs";
 

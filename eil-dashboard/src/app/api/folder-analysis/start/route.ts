@@ -4,6 +4,9 @@ import {
   isAuthorizedAdminRequest,
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
@@ -26,26 +29,29 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as StartBody;
     const folderJobId = typeof body.folderJobId === "string" ? body.folderJobId.trim() : "";
-    const supabase = getSupabaseAdmin();
+    const useCloudSql = getDatabaseProvider() === "cloud-sql";
+    const supabase = useCloudSql ? null : getSupabaseAdmin();
 
-    let query = supabase
-      .from("ingestion_runs")
-      .select("id,status,folder_analysis_job_id")
-      .eq("source_type", "upload")
-      .in("status", ["queued", "processing"])
-      .order("created_at", { ascending: true })
-      .limit(25);
-
-    if (user) {
-      query = query.eq("owner_user_id", user.id);
-    }
-    if (folderJobId) {
-      query = query.eq("folder_analysis_job_id", folderJobId);
+    if (useCloudSql && !user) {
+      return NextResponse.json({ error: "Cloud SQL queue starts require an authenticated owner." }, { status: 401 });
     }
 
-    const { data: runs, error } = await query;
-    if (error) {
-      throw new Error(error.message);
+    let runs: Array<Record<string, unknown>>;
+    if (useCloudSql) {
+      runs = await cloudSqlAnalysisJobRepository.listActive(user!.id, folderJobId || null, 25);
+    } else {
+      let query = supabase!
+        .from("ingestion_runs")
+        .select("id,status,folder_analysis_job_id")
+        .eq("source_type", "upload")
+        .in("status", ["queued", "processing"])
+        .order("created_at", { ascending: true })
+        .limit(25);
+      if (user) query = query.eq("owner_user_id", user.id);
+      if (folderJobId) query = query.eq("folder_analysis_job_id", folderJobId);
+      const { data, error } = await query;
+      if (error) throw new Error(error.message);
+      runs = (data ?? []) as Array<Record<string, unknown>>;
     }
 
     const queuedRuns = (runs ?? []).filter((run) => run.status === "queued");
@@ -95,12 +101,25 @@ export async function POST(request: Request) {
       };
     }
 
-    await persistWorkerStartState({
-      supabase,
-      runIds: queuedRuns.map((run) => String(run.id ?? "")).filter(Boolean),
-      folderJobId: folderJobId || String(queuedRuns[0]?.folder_analysis_job_id ?? ""),
-      result: queueStart,
-    });
+    const resolvedJobId = folderJobId || String(queuedRuns[0]?.folder_analysis_job_id ?? "");
+    if (useCloudSql) {
+      await cloudSqlIngestionRepository.persistWorkerStartState({
+        ownerUserId: user!.id,
+        runIds: queuedRuns.map((run) => String(run.id ?? "")).filter(Boolean),
+        folderJobId: resolvedJobId,
+        progressStage: queueStart.progressStage,
+        progressMessage: queueStart.progressMessage,
+        progressDetail: queueStart.progressDetail,
+        metadata: { worker_trigger_attempts: queueStart.attempts, last_worker_trigger_payload: queueStart.trigger.payload },
+      });
+    } else {
+      await persistWorkerStartState({
+        supabase: supabase!,
+        runIds: queuedRuns.map((run) => String(run.id ?? "")).filter(Boolean),
+        folderJobId: resolvedJobId,
+        result: queueStart,
+      });
+    }
 
     return NextResponse.json(
       {

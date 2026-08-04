@@ -7,6 +7,7 @@ import {
 } from "@/lib/google-drive";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
@@ -20,6 +21,12 @@ const AUTO_ANALYSIS_MODEL = "automatic-task-routing";
 const AUTO_ANALYSIS_LABEL = "Automatic per-task model routing";
 
 export async function POST(request: Request) {
+  if (getDatabaseProvider() === "cloud-sql") {
+    return NextResponse.json(
+      { error: "Google Drive import is temporarily unavailable during the Google Cloud cutover." },
+      { status: 410 }
+    );
+  }
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
