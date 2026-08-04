@@ -10,6 +10,7 @@ import {
   replaceDeepResearchPlan,
   updateWorkspaceThread,
 } from "@/lib/chat-store";
+import { getChatRepository } from "@/lib/chat-repository";
 import { TRACK_COLS, type TrackKey } from "@/lib/constants";
 import {
   loadDashboardDataServer,
@@ -3676,18 +3677,15 @@ async function normalChat(
       : "";
 
   const supabase = ownerUserId ? getSupabaseAdmin() : null;
+  const chatRepository = ownerUserId ? getChatRepository() : null;
   let thread: ChatThreadDetail["thread"] | null = null;
   let existingThreadDetail: ChatThreadDetail | null = null;
-  if (ownerUserId && supabase) {
+  if (ownerUserId && chatRepository) {
     if (body.threadId) {
-      existingThreadDetail = await getWorkspaceThreadDetail(
-        supabase,
-        ownerUserId,
-        body.threadId
-      );
+      existingThreadDetail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
       thread = existingThreadDetail.thread;
     } else {
-      thread = await createWorkspaceThread(supabase, {
+      thread = await chatRepository.createThread({
           ownerUserId,
           mode: "normal",
           title: buildThreadTitle(currentMessage),
@@ -3704,40 +3702,26 @@ async function normalChat(
         : null;
 
     if (editTarget) {
-      const { error: updateMessageError } = await supabase
-        .from("workspace_messages")
-        .update({
-          content: currentMessage,
-          metadata: {
-            ...(editTarget.metadata &&
-            typeof editTarget.metadata === "object"
-              ? (editTarget.metadata as Record<string, unknown>)
-              : {}),
-            attachments: body.attachments ?? [],
-            selectedRunIds: body.selectedRunIds ?? [],
-            editedAt: new Date().toISOString(),
-          },
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editTarget.id)
-        .eq("thread_id", thread.id)
-        .eq("owner_user_id", ownerUserId)
-        .eq("role", "user");
-      if (updateMessageError) {
-        throw new Error(updateMessageError.message);
+      if (!editTarget.created_at) {
+        throw new Error("Chat message timestamp is missing.");
       }
-
-      const { error: deleteLaterMessagesError } = await supabase
-        .from("workspace_messages")
-        .delete()
-        .eq("thread_id", thread.id)
-        .eq("owner_user_id", ownerUserId)
-        .gt("created_at", editTarget.created_at);
-      if (deleteLaterMessagesError) {
-        throw new Error(deleteLaterMessagesError.message);
-      }
+      await chatRepository.editUserMessage({
+        ownerUserId,
+        threadId: thread.id,
+        messageId: editTarget.id,
+        content: currentMessage,
+        metadata: {
+          ...(editTarget.metadata && typeof editTarget.metadata === "object"
+            ? (editTarget.metadata as Record<string, unknown>)
+            : {}),
+          attachments: body.attachments ?? [],
+          selectedRunIds: body.selectedRunIds ?? [],
+          editedAt: new Date().toISOString(),
+        },
+        createdAt: editTarget.created_at,
+      });
     } else {
-      await appendWorkspaceMessage(supabase, {
+      await chatRepository.appendMessage({
         threadId: thread.id,
         ownerUserId,
         folderId: body.folderId,
@@ -3759,10 +3743,10 @@ async function normalChat(
   const selectedModel = resolveChatModel(body.model);
 
   const repositoryEligible =
-    Boolean(ownerUserId && supabase && thread && body.projectId && body.projectId !== "all") &&
+    Boolean(ownerUserId && chatRepository && thread && body.projectId && body.projectId !== "all") &&
     requestedToolMode !== "web_search" &&
     !body.webSearchEnabled;
-  if (repositoryEligible && ownerUserId && supabase && thread && body.projectId) {
+  if (repositoryEligible && ownerUserId && chatRepository && thread && body.projectId) {
     try {
       const repositoryResult = await runRepositoryChat({
         ownerUserId,
@@ -3790,7 +3774,7 @@ async function normalChat(
           repositoryDiagnostics: repositoryResult.diagnostics,
         };
 
-        await appendWorkspaceMessage(supabase, {
+        await chatRepository.appendMessage({
           threadId: thread.id,
           ownerUserId,
           folderId: body.folderId,
@@ -3800,12 +3784,12 @@ async function normalChat(
           citations: repositoryCitations,
           metadata,
         });
-        await updateWorkspaceThread(supabase, thread.id, {
+        await chatRepository.updateThread(ownerUserId, thread.id, {
           summary: repositoryResult.answer.slice(0, 240),
           title: thread.title || buildThreadTitle(currentMessage),
         });
 
-        const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+        const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
         return NextResponse.json({
           mode: "grounded",
           answer: repositoryResult.answer,
@@ -3829,7 +3813,7 @@ async function normalChat(
   }
 
   if (chartRequested) {
-    if (!ownerUserId || !supabase || !thread) {
+    if (!ownerUserId || !supabase || !chatRepository || !thread) {
       return NextResponse.json(
         { error: "Sign in to build charts from repository data." },
         { status: 401 }
@@ -3877,7 +3861,7 @@ async function normalChat(
       deferredAnalysis: deferred ?? null,
     };
 
-    await appendWorkspaceMessage(supabase, {
+    await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
       folderId: body.folderId,
@@ -3887,12 +3871,12 @@ async function normalChat(
       citations: [],
       metadata,
     });
-    await updateWorkspaceThread(supabase, thread.id, {
+    await chatRepository.updateThread(ownerUserId, thread.id, {
       summary: answer.slice(0, 240),
       title: thread.title || buildThreadTitle(currentMessage),
     });
 
-    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+    const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
     return NextResponse.json({
       mode: charts.length > 0 ? "grounded" : deferred ? "analysis_queued" : "fallback",
       answer,
@@ -4008,8 +3992,8 @@ async function normalChat(
     mode = "grounded";
   }
 
-  if (ownerUserId && supabase && thread) {
-    await appendWorkspaceMessage(supabase, {
+  if (ownerUserId && chatRepository && thread) {
+    await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
       folderId: body.folderId,
@@ -4024,12 +4008,12 @@ async function normalChat(
         webSearchEnabled: webSearchRequested,
       },
     });
-    await updateWorkspaceThread(supabase, thread.id, {
+    await chatRepository.updateThread(ownerUserId, thread.id, {
       summary: answer.slice(0, 240),
       title: thread.title || buildThreadTitle(currentMessage),
     });
 
-    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+    const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
     return NextResponse.json({
       mode,
       answer,

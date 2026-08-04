@@ -14,9 +14,10 @@ Status audit on 2026-08-04:
   reported `missing_in_gcs: 0`.
 - Two owner-mapped Firebase users passed the pilot isolation checks.
 - Fresh ingestion mirror runs reached `shadow.state=verified`.
-- Project-scoped repository chat now reads its paper evidence from Cloud SQL in
-  the pilot, but chat thread persistence and several ingestion/dashboard routes
-  still use Supabase compatibility paths.
+- Project-scoped repository chat reads paper evidence from Cloud SQL in the
+  pilot. Normal chat thread/message persistence now has a provider-neutral
+  Cloud SQL repository; deep-research persistence and several ingestion/
+  dashboard routes still use Supabase compatibility paths.
 - Cloud SQL automated backups are still disabled.
 - A production GCS bucket and separate production web/worker services do not
   exist yet.
@@ -352,7 +353,6 @@ For the current Phase 8C work, you only need to:
    the pilot owner-isolation tests pass and the remaining repositories are
    implemented.
 
-The next coding slice is provider-neutral chat thread/message persistence,
-followed by ingestion, dashboard, and deep-research repositories. Repository
-contract tests and a controlled provider comparison remain required before any
-production provider change.
+The next coding slice is ingestion and dashboard persistence, followed by the
+deep-research repository. Repository contract tests and a controlled provider
+comparison remain required before any production provider change.
