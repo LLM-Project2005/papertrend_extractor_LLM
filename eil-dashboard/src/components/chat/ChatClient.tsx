@@ -3238,9 +3238,7 @@ export default function ChatClient() {
                                   )}
                                   <span className="min-w-0">
                                     <span className="font-medium text-slate-900 dark:text-[#ececec]">
-                                      {citation.sourceType === "web"
-                                        ? `[${citation.paperId}]`
-                                        : `[Paper ${citation.paperId}]`}{" "}
+                                      {citation.sourceType === "web" ? "Web source: " : "Paper: "}
                                       {citation.title}
                                     </span>
                                     <span className="ml-2 text-slate-500 dark:text-[#8e8e8e]">

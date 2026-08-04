@@ -9,6 +9,8 @@ import {
   buildRepositoryStatisticsSummary,
   fallbackExecutionPlan,
   fallbackPromptPlan,
+  formatPaperReferencesForReaders,
+  inferConversationAnswerLanguage,
   requestsRepositoryStatistics,
 } from "../src/lib/repository-chat";
 import {
@@ -198,4 +200,31 @@ test("Chat V2 does not force focused evidence questions into complete mode", () 
   const plan = fallbackExecutionPlan("What did the studies report about learner anxiety?");
   assert.equal(plan.operation, "search_evidence");
   assert.equal(plan.scopeMode, "focused");
+});
+
+test("conversation language follows Thai dialogue despite embedded English terms", () => {
+  assert.equal(
+    inferConversationAnswerLanguage("ช่วย summarize methodology และ findings ให้หน่อย"),
+    "Thai"
+  );
+  assert.equal(
+    inferConversationAnswerLanguage("What does สมชาย report about feedback?"),
+    "English"
+  );
+  assert.equal(
+    inferConversationAnswerLanguage("Could you expand on that?", [
+      { role: "user", content: "ช่วยสรุปผลการวิจัยในโฟลเดอร์นี้ให้หน่อย" },
+      { role: "assistant", content: "ได้ครับ ผลการวิจัยหลักมีดังนี้" },
+    ]),
+    "Thai"
+  );
+});
+
+test("reader-facing citations use paper titles instead of database ids", () => {
+  const answer = formatPaperReferencesForReaders(
+    "Feedback improved revision quality [Paper 101].",
+    [{ paperId: "101", title: "Peer Feedback in EFL Writing", year: "2022" }]
+  );
+  assert.equal(answer, "Feedback improved revision quality **Peer Feedback in EFL Writing** (2022).");
+  assert.doesNotMatch(answer, /Paper 101/);
 });
