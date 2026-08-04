@@ -404,7 +404,7 @@ function groupMarkdownLines(lines: string[]) {
   while (index < lines.length) {
     const line = lines[index];
 
-    if (/^#{1,3}\s+/.test(line)) {
+    if (/^#{1,6}\s+/.test(line)) {
       groups.push([line]);
       index += 1;
       continue;
@@ -461,7 +461,7 @@ function groupMarkdownLines(lines: string[]) {
     index += 1;
     while (
       index < lines.length &&
-      !/^#{1,3}\s+/.test(lines[index]) &&
+      !/^#{1,6}\s+/.test(lines[index]) &&
       !/^[-*]\s+/.test(lines[index]) &&
       !/^\d+\.\s+/.test(lines[index]) &&
       !/^>\s?/.test(lines[index])
@@ -657,12 +657,28 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 );
               }
 
-              if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
-                const headingText = lines[0].replace(/^#{1,3}\s+/, "");
+              if (lines.length === 1 && /^#{1,6}\s+/.test(lines[0])) {
+                const headingMatch = lines[0].match(/^(#{1,6})\s+(.+)$/);
+                const headingLevel = headingMatch?.[1].length ?? 3;
+                const headingText = headingMatch?.[2] ?? lines[0];
+                const headingContent = renderInlineMarkdown(
+                  headingText,
+                  `${keyPrefix}-heading-${blockIndex}-${groupIndex}`
+                );
+                const headingKey = `${keyPrefix}-heading-${blockIndex}-${groupIndex}`;
+                if (headingLevel === 1) {
+                  return <h2 key={headingKey} className={`${headingClass} text-xl`}>{headingContent}</h2>;
+                }
+                if (headingLevel === 2) {
+                  return <h3 key={headingKey} className={headingClass}>{headingContent}</h3>;
+                }
+                if (headingLevel === 3) {
+                  return <h4 key={headingKey} className={`${headingClass} text-base`}>{headingContent}</h4>;
+                }
                 return (
-                  <h3 key={`${keyPrefix}-heading-${blockIndex}-${groupIndex}`} className={headingClass}>
-                    {renderInlineMarkdown(headingText, `${keyPrefix}-heading-${blockIndex}-${groupIndex}`)}
-                  </h3>
+                  <h5 key={headingKey} className="text-sm font-semibold text-slate-800 dark:text-[#ececec]">
+                    {headingContent}
+                  </h5>
                 );
               }
 
