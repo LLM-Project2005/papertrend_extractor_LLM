@@ -180,7 +180,7 @@ export function rankRepositoryEvidence(
         right.lexicalScore - left.lexicalScore ||
         left.title.localeCompare(right.title)
     )
-    .slice(0, Math.max(1, Math.min(limit, 24)));
+    .slice(0, Math.max(1, Math.min(limit, 256)));
 }
 
 export function validateInlinePaperCitations(

@@ -35,6 +35,7 @@ from analysis_pipeline import (
     process_pdf_run,
 )
 from supabase_http import build_retrying_session
+from database_client import create_worker_database_client
 
 try:
     from google.cloud import storage as gcs_storage
@@ -177,7 +178,7 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
     "build_dataset": {
         "stage": "building_dataset",
         "message": "Building the workspace dataset",
-        "detail": "Preparing the final normalized records that will be written back into Supabase.",
+        "detail": "Preparing the final normalized records that will be written to the workspace database.",
     },
 }
 
@@ -1133,7 +1134,7 @@ def cloudsql_error_details(error: BaseException) -> Dict[str, str]:
 
 
 def mirror_completed_dataset(
-    client: SupabaseRestClient,
+    client: Any,
     run: Dict[str, Any],
     dataset: Dict[str, Any],
 ) -> None:
@@ -1368,7 +1369,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="saving",
                 message="Saving results to the workspace",
-                detail="Writing the extracted paper, keywords, tracks, and related analysis back into Supabase.",
+                detail="Writing the extracted paper, keywords, tracks, and related analysis to the workspace database.",
                 metrics_patch={
                     "graph_seconds": graph_seconds,
                     "model_usage": {
@@ -1437,10 +1438,11 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             run["completed_at"] = now_iso()
             run["input_payload"] = final_input_payload
             sync_folder_analysis_job(client, run)
-            mirror_completed_dataset(client, run, result.dataset)
+            if config.database_provider == "supabase":
+                mirror_completed_dataset(client, run, result.dataset)
 
 
-def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
+def process_once(client: Any, config: WorkerConfig) -> bool:
     recovered_invalid = recover_invalid_succeeded_runs(client, config)
     recovered_stale = recover_stale_processing_runs(client, config)
     if recovered_invalid or recovered_stale:
@@ -1541,7 +1543,7 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
     return False
 
 
-def process_batch(client: SupabaseRestClient, config: WorkerConfig, max_runs: int = 1) -> Dict[str, int]:
+def process_batch(client: Any, config: WorkerConfig, max_runs: int = 1) -> Dict[str, int]:
     processed_runs = 0
     for _ in range(max(max_runs, 0)):
         if not process_once(client, config):
@@ -1551,7 +1553,7 @@ def process_batch(client: SupabaseRestClient, config: WorkerConfig, max_runs: in
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Process queued Supabase ingestion runs.")
+    parser = argparse.ArgumentParser(description="Process queued Papertrend ingestion runs.")
     parser.add_argument("--once", action="store_true", help="Process at most one queued run and exit.")
     parser.add_argument(
         "--loop",
@@ -1565,7 +1567,7 @@ def main() -> None:
     configure_logging()
     args = parse_args()
     config = load_config()
-    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    client = create_worker_database_client(config, SupabaseRestClient)
 
     run_loop = args.loop or not args.once
     if args.once:

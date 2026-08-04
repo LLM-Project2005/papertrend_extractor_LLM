@@ -15,9 +15,14 @@ Status audit on 2026-08-04:
 - Two owner-mapped Firebase users passed the pilot isolation checks.
 - Fresh ingestion mirror runs reached `shadow.state=verified`.
 - Project-scoped repository chat reads paper evidence from Cloud SQL in the
-  pilot. Normal chat thread/message persistence now has a provider-neutral
-  Cloud SQL repository; deep-research persistence and several ingestion/
-  dashboard routes still use Supabase compatibility paths.
+  pilot. Retrieval now uses adaptive focused/comparative/exhaustive budgets,
+  and repository-wide requests build an aggregate coverage map across every
+  paper before selecting detailed evidence.
+- Normal chat thread/message persistence and the browser upload prepare/finalize
+  flow now have provider-neutral Cloud SQL repositories.
+- The ingestion worker now has a Cloud SQL-authoritative client selected by
+  `DATABASE_PROVIDER`, and GCS-only source enforcement in that mode. This code
+  is not yet enabled on the live worker.
 - Cloud SQL automated backups are still disabled.
 - A production GCS bucket and separate production web/worker services do not
   exist yet.
@@ -32,10 +37,10 @@ Completed before this phase:
 
 Not complete yet:
 
-- The Next.js API still uses Supabase repositories for most routes.
-  `DATABASE_PROVIDER=cloud-sql` is currently limited to the profile and
-  workspace organization/project/folder repository slice below; it is not a
-  complete web database migration.
+- Dashboard/chart helpers, deep-research persistence, folder-analysis control,
+  queue recovery, Firebase legacy account linking, and the disabled Google
+  Drive path still contain Supabase compatibility implementations. These must
+  be migrated or formally retired before Supabase runtime secrets are removed.
 - Historical files have been copied to staging GCS, but the final maintenance-
   window delta and production-bucket copy still need validation.
 - Cloud SQL automated backups are disabled. The current on-demand backup is a
@@ -183,6 +188,10 @@ Implementation has started with the first vertical slice:
   filters;
 - owner-scoped library rename, favorite, move, trash, restore, and copy
   mutations;
+- owner-scoped upload batch creation, GCS upload finalization, queue status,
+  and worker-trigger diagnostics;
+- Cloud SQL-authoritative ingestion queue claiming, heartbeat, status/job
+  updates, and analysis result persistence;
 - the existing Supabase implementations remain selected by default.
 
 This is the main engineering gate before any provider flip.

@@ -319,9 +319,10 @@ def _check_gcs_object_status(body: Dict[str, Any]) -> Dict[str, Any]:
 def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
     from analysis_pipeline import load_config
     from process_ingestion_queue import SupabaseRestClient, process_batch
+    from database_client import create_worker_database_client
 
     config = load_config()
-    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    client = create_worker_database_client(config, SupabaseRestClient)
     summary = process_batch(client, config, max_runs=max_runs)
     return {
         **summary,

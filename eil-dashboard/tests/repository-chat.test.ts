@@ -94,4 +94,33 @@ test("fallback plan carries safe defaults for the richer retrieval contract", ()
   const plan = fallbackPromptPlan("Compare the methods used in my papers", false);
   assert.deepEqual(plan.evidenceNeeds, []);
   assert.equal(plan.answerLanguage, "same as user");
+  assert.equal(plan.retrievalMode, "comparative");
+});
+
+test("repository-wide requests use exhaustive retrieval planning", () => {
+  const plan = fallbackPromptPlan(
+    "Synthesize the major findings across all papers in the entire repository",
+    false
+  );
+  assert.equal(plan.retrievalMode, "exhaustive");
+});
+
+test("retrieval candidate pools can grow beyond the original sixteen-paper window", () => {
+  const documents = Array.from({ length: 40 }, (_, index) => ({
+    paperId: String(index + 1),
+    title: `Repository paper ${index + 1}`,
+    abstract: `Shared repository evidence with distinct sample ${index + 1}.`,
+    methods: "Survey method.",
+    results: "Repository-wide evidence was reported.",
+    conclusion: "The finding contributes to corpus coverage.",
+    content: `Repository-wide evidence and corpus coverage sample ${index + 1}.`,
+    topics: [`Topic ${index % 8}`],
+    keywords: ["repository evidence"],
+  }));
+  const candidates = rankRepositoryEvidence(
+    documents,
+    ["repository-wide evidence and corpus coverage"],
+    40
+  );
+  assert.equal(candidates.length, 40);
 });

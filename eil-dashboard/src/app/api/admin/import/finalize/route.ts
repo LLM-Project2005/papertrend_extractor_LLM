@@ -4,12 +4,13 @@ import {
   isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
-import { getWorkerServiceUrl, getWorkerWebhookSecret } from "@/lib/server-env";
+import { getDatabaseProvider, getWorkerServiceUrl, getWorkerWebhookSecret } from "@/lib/server-env";
 
 export const runtime = "nodejs";
 
@@ -84,7 +85,8 @@ export async function POST(request: Request) {
 
   try {
     const user = await getAuthenticatedUserFromRequest(request);
-    const supabase = getSupabaseAdmin();
+    const databaseProvider = getDatabaseProvider();
+    const supabase = databaseProvider === "supabase" ? getSupabaseAdmin() : null;
     const body = (await request.json()) as {
       folderJobId?: string;
       uploaded?: UploadFinalizeItem[];
@@ -111,23 +113,28 @@ export async function POST(request: Request) {
 
     const allRunIds = [...new Set([...uploadedRunIds, ...failedRunIds])];
 
-    let query = supabase
-      .from("ingestion_runs")
-      .select("id,owner_user_id,folder_analysis_job_id,input_payload")
-      .in("id", allRunIds)
-      .eq("folder_analysis_job_id", folderJobId);
-
-    if (user?.id) {
-      query = query.eq("owner_user_id", user.id);
+    if (!user?.id) {
+      return NextResponse.json({ error: "An authenticated owner is required." }, { status: 401 });
+    }
+    let runRows: Array<Record<string, unknown>>;
+    if (databaseProvider === "cloud-sql") {
+      runRows = await cloudSqlIngestionRepository.loadOwnedBatch(
+        user.id,
+        folderJobId,
+        allRunIds
+      ) as unknown as Array<Record<string, unknown>>;
+    } else {
+      const { data, error } = await supabase!
+        .from("ingestion_runs")
+        .select("id,owner_user_id,folder_analysis_job_id,input_payload")
+        .in("id", allRunIds)
+        .eq("folder_analysis_job_id", folderJobId)
+        .eq("owner_user_id", user.id);
+      if (error) throw new Error(error.message);
+      runRows = (data ?? []) as Array<Record<string, unknown>>;
     }
 
-    const { data: runRows, error: runRowsError } = await query;
-
-    if (runRowsError) {
-      throw new Error(runRowsError.message);
-    }
-
-    const validRunIds = new Set((runRows ?? []).map((row) => String(row.id ?? "")).filter(Boolean));
+    const validRunIds = new Set(runRows.map((row) => String(row.id ?? "")).filter(Boolean));
     const validUploadedItems = uploaded.filter((item) => {
       const runId = String(item.runId);
       const storagePath = String(item.storagePath ?? "");
@@ -156,16 +163,57 @@ export async function POST(request: Request) {
 
     const queueableUploadedItems = [...validUploadedItems, ...recoveredUploadedItems];
 
+    if (databaseProvider === "cloud-sql") {
+      const finalized = await cloudSqlIngestionRepository.finalizeBatch({
+        ownerUserId: user.id,
+        folderJobId,
+        uploaded: queueableUploadedItems.map((item) => ({
+          runId: String(item.runId), storagePath: String(item.storagePath),
+        })),
+        failed: remainingFailedItems.map((item) => ({
+          runId: String(item.runId), errorMessage: item.errorMessage,
+        })),
+      });
+      let queueStart = buildNotStartedResult("no_uploaded_runs");
+      if (queueableUploadedItems.length > 0) {
+        queueStart = await triggerWorkerQueueWithRetries({
+          maxRuns: Math.min(queueableUploadedItems.length, 5),
+          taskCount: queueableUploadedItems.length,
+          reason: "admin-import-direct-upload",
+        });
+        await cloudSqlIngestionRepository.persistWorkerStartState({
+          ownerUserId: user.id,
+          runIds: queueableUploadedItems.map((item) => String(item.runId)),
+          folderJobId,
+          progressStage: queueStart.progressStage,
+          progressMessage: queueStart.progressMessage,
+          progressDetail: queueStart.progressDetail,
+          metadata: {
+            worker_trigger_attempts: queueStart.attempts,
+            worker_trigger_status: queueStart.started ? "started" : queueStart.alreadyRunning ? "waiting_for_worker" : "not_started",
+            last_worker_trigger_status_code: queueStart.trigger.status,
+            last_worker_trigger_payload: queueStart.trigger.payload,
+          },
+        });
+      }
+      return NextResponse.json({
+        runs: finalized.runs,
+        folderJob: finalized.folderJob,
+        queueStart,
+        warning: queueStart.started || queueStart.alreadyRunning ? null : queueStart.progressMessage,
+      }, { status: queueableUploadedItems.length > 0 ? 201 : 202 });
+    }
+
     const timestamp = new Date().toISOString();
 
     for (const item of queueableUploadedItems) {
-      const row = (runRows ?? []).find((entry) => String(entry.id) === String(item.runId));
+      const row = runRows.find((entry) => String(entry.id) === String(item.runId));
       const basePayload =
         row?.input_payload && typeof row.input_payload === "object" && !Array.isArray(row.input_payload)
           ? (row.input_payload as Record<string, unknown>)
           : {};
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabase!
         .from("ingestion_runs")
         .update({
           status: "queued",
@@ -190,13 +238,13 @@ export async function POST(request: Request) {
     }
 
     for (const item of remainingFailedItems) {
-      const row = (runRows ?? []).find((entry) => String(entry.id) === String(item.runId));
+      const row = runRows.find((entry) => String(entry.id) === String(item.runId));
       const basePayload =
         row?.input_payload && typeof row.input_payload === "object" && !Array.isArray(row.input_payload)
           ? (row.input_payload as Record<string, unknown>)
           : {};
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabase!
         .from("ingestion_runs")
         .update({
           status: "failed",
@@ -222,7 +270,7 @@ export async function POST(request: Request) {
     const queuedCount = queueableUploadedItems.length;
     const failedCount = remainingFailedItems.length;
 
-    const { data: folderJobAfterUpdate, error: folderJobUpdateError } = await supabase
+    const { data: folderJobAfterUpdate, error: folderJobUpdateError } = await supabase!
       .from("folder_analysis_jobs")
       .update({
         status: queuedCount > 0 ? "queued" : "failed",
@@ -277,14 +325,14 @@ export async function POST(request: Request) {
       }
 
       await persistWorkerStartState({
-        supabase,
+        supabase: supabase!,
         runIds: queueableUploadedItems.map((item) => item.runId),
         folderJobId,
         result: queueStart,
       });
     }
 
-    const { data: runs, error: runsError } = await supabase
+    const { data: runs, error: runsError } = await supabase!
       .from("ingestion_runs")
       .select("*")
       .eq("folder_analysis_job_id", folderJobId)

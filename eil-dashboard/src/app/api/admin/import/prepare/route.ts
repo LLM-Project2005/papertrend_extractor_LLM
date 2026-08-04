@@ -13,6 +13,7 @@ import {
 } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   MAX_FILES_PER_BATCH,
   sanitizeStorageFileName,
@@ -40,108 +41,6 @@ class UploadPreparationError extends Error {
     super(message);
     this.name = "UploadPreparationError";
   }
-}
-
-/**
- * The Cloud SQL pilot owns workspace/project records, while ingestion still
- * writes to Supabase. Mirror only the authenticated project's exact IDs until
- * the ingestion repository is migrated, so the Supabase foreign keys remain
- * valid without making Cloud SQL globally writable from this route.
- */
-async function ensureCloudSqlPilotWorkspaceMirror(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
-  ownerUserId: string,
-  projectId: string
-) {
-  const { data: authData, error: authError } = await supabase.auth.admin.getUserById(
-    ownerUserId
-  );
-  if (authError || !authData.user) {
-    throw new UploadPreparationError(
-      "This Cloud SQL pilot account is not linked to a Supabase owner account yet. Upload testing requires the account to be linked before ingestion can start.",
-      403
-    );
-  }
-
-  const repository = getWorkspaceRepository();
-  const [organizations, projects] = await Promise.all([
-    repository.listOrganizations(ownerUserId),
-    repository.listProjects(ownerUserId),
-  ]);
-  const project = projects.find((candidate) => candidate.id === projectId);
-  if (!project) {
-    throw new UploadPreparationError(
-      "The selected project was not found in the Cloud SQL pilot for this account. Refresh the project list and try again.",
-      404
-    );
-  }
-
-  const organization = organizations.find(
-    (candidate) => candidate.id === project.organization_id
-  );
-  if (!organization) {
-    throw new UploadPreparationError(
-      "The selected project's workspace was not found in the Cloud SQL pilot. Refresh the project list and try again.",
-      409
-    );
-  }
-
-  const { data: existingOrganization, error: organizationLookupError } = await supabase
-    .from("workspace_organizations")
-    .select("owner_user_id")
-    .eq("id", organization.id)
-    .maybeSingle();
-  if (organizationLookupError) throw new Error(organizationLookupError.message);
-  if (
-    existingOrganization?.owner_user_id &&
-    existingOrganization.owner_user_id !== ownerUserId
-  ) {
-    throw new UploadPreparationError("The selected workspace belongs to another account.", 403);
-  }
-
-  const { data: existingProject, error: projectLookupError } = await supabase
-    .from("workspace_projects")
-    .select("owner_user_id, organization_id")
-    .eq("id", project.id)
-    .maybeSingle();
-  if (projectLookupError) throw new Error(projectLookupError.message);
-  if (
-    existingProject?.owner_user_id &&
-    (existingProject.owner_user_id !== ownerUserId ||
-      existingProject.organization_id !== organization.id)
-  ) {
-    throw new UploadPreparationError("The selected project belongs to another account.", 403);
-  }
-
-  const updatedAt = new Date().toISOString();
-  const { error: organizationUpsertError } = await supabase
-    .from("workspace_organizations")
-    .upsert(
-      {
-        id: organization.id,
-        owner_user_id: ownerUserId,
-        name: organization.name,
-        type: organization.type,
-        updated_at: organization.updated_at ?? updatedAt,
-      },
-      { onConflict: "id" }
-    );
-  if (organizationUpsertError) throw new Error(organizationUpsertError.message);
-
-  const { error: projectUpsertError } = await supabase
-    .from("workspace_projects")
-    .upsert(
-      {
-        id: project.id,
-        organization_id: organization.id,
-        owner_user_id: ownerUserId,
-        name: project.name,
-        description: project.description ?? null,
-        updated_at: project.updated_at ?? updatedAt,
-      },
-      { onConflict: "id" }
-    );
-  if (projectUpsertError) throw new Error(projectUpsertError.message);
 }
 
 async function createGcsSignedUploadUrl({
@@ -203,7 +102,8 @@ export async function POST(request: Request) {
 
   try {
     const user = await getAuthenticatedUserFromRequest(request);
-    const supabase = getSupabaseAdmin();
+    const databaseProvider = getDatabaseProvider();
+    const supabase = databaseProvider === "supabase" ? getSupabaseAdmin() : null;
     const body = (await request.json()) as {
       folder?: string;
       source_kind?: string;
@@ -239,42 +139,49 @@ export async function POST(request: Request) {
       }
     }
 
-    if (getDatabaseProvider() === "cloud-sql") {
+    if (databaseProvider === "cloud-sql") {
       if (!user?.id) {
         throw new UploadPreparationError(
           "An authenticated owner account is required to upload in the Cloud SQL pilot.",
           401
         );
       }
-      await ensureCloudSqlPilotWorkspaceMirror(supabase, user.id, projectId);
+    } else if (!supabase) {
+      throw new Error("Supabase database configuration is unavailable.");
     }
 
-    const researchFolder = await ensureResearchFolder(
-      supabase,
-      user?.id ?? null,
-      projectId,
-      folder
-    );
+    const researchFolder = databaseProvider === "cloud-sql"
+      ? await getWorkspaceRepository().ensureFolder(user!.id, projectId, folder)
+      : await ensureResearchFolder(supabase!, user?.id ?? null, projectId, folder);
     const folderId = researchFolder?.id ?? null;
+    if (!folderId) throw new Error("Failed to resolve the upload folder.");
 
-    const { data: folderJob, error: folderJobError } = await supabase
-      .from("folder_analysis_jobs")
-      .insert({
-        owner_user_id: user?.id ?? null,
-        folder_id: folderId,
-        status: "queued",
-        total_runs: files.length,
-        queued_runs: 0,
-        processing_runs: files.length,
-        progress_stage: "uploading",
-        progress_message: "Uploading files",
-        progress_detail: `Uploading ${files.length} file${files.length === 1 ? "" : "s"} to storage before queueing analysis.`,
-      })
-      .select("*")
-      .single();
-
-    if (folderJobError || !folderJob) {
-      throw new Error(folderJobError?.message ?? "Failed to create folder analysis job.");
+    let folderJob: Record<string, unknown> & { id: string };
+    let preparedRuns: Array<Record<string, unknown>> = [];
+    if (databaseProvider === "cloud-sql") {
+      const batch = await cloudSqlIngestionRepository.createUploadBatch({
+        ownerUserId: user!.id,
+        folderId,
+        files,
+        folderName: folder,
+        sourceKind,
+        provider: AUTO_ANALYSIS_PROVIDER,
+        model: AUTO_ANALYSIS_MODEL,
+        analysisLabel: AUTO_ANALYSIS_LABEL,
+      });
+      folderJob = batch.folderJob;
+      preparedRuns = batch.runs as unknown as Array<Record<string, unknown>>;
+    } else {
+      const { data, error } = await supabase!
+        .from("folder_analysis_jobs")
+        .insert({
+          owner_user_id: user?.id ?? null, folder_id: folderId, status: "queued",
+          total_runs: files.length, queued_runs: 0, processing_runs: files.length,
+          progress_stage: "uploading", progress_message: "Uploading files",
+          progress_detail: `Uploading ${files.length} file${files.length === 1 ? "" : "s"} to storage before queueing analysis.`,
+        }).select("*").single();
+      if (error || !data) throw new Error(error?.message ?? "Failed to create folder analysis job.");
+      folderJob = data as Record<string, unknown> & { id: string };
     }
 
     const uploads: Array<{
@@ -289,12 +196,12 @@ export async function POST(request: Request) {
 
     const createdRuns: Array<Record<string, unknown>> = [];
 
-    for (const file of files) {
+    for (const [filePosition, file] of files.entries()) {
       const lowerName = file.name.toLowerCase();
-
-      const { data: runData, error: insertError } = await supabase
-        .from("ingestion_runs")
-        .insert({
+      let runData = preparedRuns[filePosition] as Record<string, unknown> | undefined;
+      if (!runData) {
+        const { data, error: insertError } = await supabase!
+          .from("ingestion_runs").insert({
           owner_user_id: user?.id ?? null,
           folder_id: folderId,
           folder_analysis_job_id: folderJob.id,
@@ -319,12 +226,11 @@ export async function POST(request: Request) {
             progress_message: "Uploading",
             progress_detail: "Uploading file directly to storage before queueing analysis.",
           },
-        })
-        .select("*")
-        .single();
-
-      if (insertError || !runData) {
-        throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
+          }).select("*").single();
+        if (insertError || !data) {
+          throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
+        }
+        runData = data as Record<string, unknown>;
       }
 
       const objectPath = `pending/${folder}/${runData.id}/${sanitizeStorageFileName(file.name)}`;
@@ -342,7 +248,7 @@ export async function POST(request: Request) {
         signedUrl = signedUpload.signedUrl;
         uploadHeaders = signedUpload.headers;
       } else {
-        const { data: signedUpload, error: signedUploadError } = await supabase.storage
+        const { data: signedUpload, error: signedUploadError } = await supabase!.storage
           .from("paper-uploads")
           .createSignedUploadUrl(objectPath);
 
