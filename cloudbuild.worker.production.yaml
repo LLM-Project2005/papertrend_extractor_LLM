@@ -16,7 +16,7 @@ steps:
       - .
       - --add-cloudsql-instances
       - ${_CLOUD_SQL_INSTANCE_CONNECTION_NAME}
-      - --allow-unauthenticated
+      - --no-allow-unauthenticated
       - --service-account
       - ${_RUNTIME_SERVICE_ACCOUNT}
       - --memory
