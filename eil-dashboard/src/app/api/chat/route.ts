@@ -17,6 +17,7 @@ import {
   loadScopedDashboardData,
 } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
+import { buildPapertrendSystemPrompt } from "@/lib/papertrend-system-prompt";
 import {
   BUILD_RESEARCH_CHART_TOOL,
   chartToolArguments,
@@ -1340,13 +1341,14 @@ async function planChartBundleWithLlm(
       [
         {
           role: "system",
-          content:
-            "You are a production chart-planning agent for a research-paper analytics app. Use the build_research_charts tool. " +
+          content: buildPapertrendSystemPrompt("chart_planner", [
+            "Use the build_research_charts tool. " +
             "Understand the complete user request and choose one or more useful charts from the available analyzed data. " +
             "If the user asks for multiple charts, comparisons, a dashboard, a report, or several angles, return multiple chart specs. " +
             "Honor requested chart types, measures, grouping, focus terms, scope, and number of views whenever the available metrics permit it. " +
             "Select line charts for meaningful ordered time trends, bar charts for category comparison, pie charts only for small part-to-whole distributions, and tables for exact values or dense comparisons. " +
             "Do not invent metrics, columns, or data. Call the tool exactly once.",
+          ]),
         },
         {
           role: "user",
