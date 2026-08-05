@@ -38,10 +38,11 @@ export async function createRepositoryChatJob(input: RepositoryChatInput, plan: 
       `INSERT INTO repository_chat_jobs
        (id,owner_user_id,thread_id,project_id,folder_id,prompt,execution_plan,progress_total)
        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
-      [id, input.ownerUserId, input.threadId ?? null, input.projectId, input.folderId ?? null, input.prompt,
+      [id, input.ownerUserId, input.threadId ?? null, input.projectId ?? null, input.folderId ?? null, input.prompt,
         JSON.stringify({ ...plan, ownerUserId: input.ownerUserId, threadId: input.threadId ?? null,
-          projectId: input.projectId, folderId: input.folderId ?? null, prompt: input.prompt,
-          selectedRunIds: input.selectedRunIds ?? [], model: input.model ?? null }), total]
+          projectId: input.projectId ?? null, folderId: input.folderId ?? null, prompt: input.prompt,
+          selectedRunIds: input.selectedRunIds ?? [], knowledgeScope: input.knowledgeScope ?? null,
+          model: input.model ?? null }), total]
     );
   });
   return id;

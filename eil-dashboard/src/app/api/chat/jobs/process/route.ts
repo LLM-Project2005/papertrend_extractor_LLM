@@ -23,9 +23,13 @@ export async function POST(request: Request) {
     const result = await runRepositoryChat({
       ownerUserId: job.ownerUserId,
       threadId: typeof plan.threadId === "string" ? plan.threadId : null,
-      projectId: String(plan.projectId ?? ""),
+      projectId: typeof plan.projectId === "string" ? plan.projectId : null,
       folderId: typeof plan.folderId === "string" ? plan.folderId : null,
       selectedRunIds: Array.isArray(plan.selectedRunIds) ? plan.selectedRunIds.map(String) : [],
+      knowledgeScope:
+        plan.knowledgeScope && typeof plan.knowledgeScope === "object"
+          ? plan.knowledgeScope as Parameters<typeof runRepositoryChat>[0]["knowledgeScope"]
+          : undefined,
       prompt: String(plan.prompt ?? ""),
       model: typeof plan.model === "string" ? plan.model : undefined,
       bypassAsyncJob: true,

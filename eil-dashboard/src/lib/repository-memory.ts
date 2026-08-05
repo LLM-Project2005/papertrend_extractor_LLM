@@ -9,7 +9,7 @@ const EMBEDDING_VERSION = "repository-embedding-v1";
 
 export interface RepositoryMemoryScope {
   ownerUserId: string;
-  projectId: string;
+  projectId: string | null;
   folderId: string | null;
 }
 
@@ -144,13 +144,13 @@ export async function hybridRepositorySearch(
       `WITH lexical AS (
          SELECT id, row_number() OVER (ORDER BY ts_rank_cd(to_tsvector('simple', content), plainto_tsquery('simple', $4)) DESC) AS rank
          FROM paper_retrieval_chunks
-         WHERE owner_user_id=$1 AND project_id=$2 AND ($3::uuid IS NULL OR folder_id=$3)
+         WHERE owner_user_id=$1 AND ($2::uuid IS NULL OR project_id=$2) AND ($3::uuid IS NULL OR folder_id=$3)
            AND to_tsvector('simple', content) @@ plainto_tsquery('simple', $4)
          LIMIT 80
        ), semantic AS (
          SELECT id, row_number() OVER (ORDER BY embedding <=> $5::vector) AS rank
          FROM paper_retrieval_chunks
-         WHERE $5::text IS NOT NULL AND owner_user_id=$1 AND project_id=$2
+         WHERE $5::text IS NOT NULL AND owner_user_id=$1 AND ($2::uuid IS NULL OR project_id=$2)
            AND ($3::uuid IS NULL OR folder_id=$3) AND embedding IS NOT NULL
          LIMIT 80
        )
@@ -158,7 +158,7 @@ export async function hybridRepositorySearch(
               (COALESCE(1.0/(60+l.rank),0)+COALESCE(1.0/(60+s.rank),0))::float8 AS score
        FROM paper_retrieval_chunks c
        LEFT JOIN lexical l ON l.id=c.id LEFT JOIN semantic s ON s.id=c.id
-       WHERE c.owner_user_id=$1 AND c.project_id=$2 AND ($3::uuid IS NULL OR c.folder_id=$3)
+       WHERE c.owner_user_id=$1 AND ($2::uuid IS NULL OR c.project_id=$2) AND ($3::uuid IS NULL OR c.folder_id=$3)
          AND (l.id IS NOT NULL OR s.id IS NOT NULL)
        ORDER BY score DESC LIMIT $6`,
       [scope.ownerUserId, scope.projectId, scope.folderId, query, embedding ? `[${embedding.join(",")}]` : null, Math.max(1, Math.min(limit, 100))]

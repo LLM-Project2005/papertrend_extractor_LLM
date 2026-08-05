@@ -12,6 +12,11 @@ import {
   type RepositoryRetrievalCandidate,
 } from "@/lib/repository-retrieval";
 import { hybridRepositorySearch } from "@/lib/repository-memory";
+import {
+  normalizeKnowledgeScope,
+  type KnowledgeScope,
+  type KnowledgeScopeSnapshot,
+} from "@/lib/knowledge-scope";
 import { createRepositoryChatJob, enqueueRepositoryChatJob } from "@/lib/repository-chat-jobs";
 import { buildPapertrendSystemPrompt } from "@/lib/papertrend-system-prompt";
 import { getDatabaseProvider } from "@/lib/server-env";
@@ -82,9 +87,12 @@ export interface RepositoryRunStats {
 
 export interface RepositoryContext {
   ownerUserId: string;
-  projectId: string;
+  projectId: string | null;
   folderId: string | null;
   selectedRunIds: string[];
+  knowledgeScope: KnowledgeScope;
+  scopeSnapshot: KnowledgeScopeSnapshot;
+  projects: Array<{ id: string; name: string }>;
   scopeLabel: string;
   versionHash: string;
   summaryMarkdown: string;
@@ -111,6 +119,7 @@ export interface RepositoryPromptPlan {
 }
 
 export type RepositoryOperation =
+  | "converse"
   | "inspect_scope"
   | "list_documents"
   | "analyze_each_document"
@@ -154,8 +163,9 @@ export interface RepositoryChatResult {
   coverage?: RepositoryCoverage;
   limitations?: string[];
   jobId?: string;
+  scopeSnapshot: KnowledgeScopeSnapshot;
   diagnostics: {
-    projectId: string;
+    projectId: string | null;
     folderId: string | null;
     selectedRunCount: number;
     paperCount: number;
@@ -177,9 +187,11 @@ export interface RepositoryChatResult {
 export interface RepositoryChatInput {
   ownerUserId: string;
   threadId?: string | null;
-  projectId: string;
+  projectId?: string | null;
   folderId?: string | null;
   selectedRunIds?: string[];
+  knowledgeScope?: KnowledgeScope;
+  allowWeb?: boolean;
   prompt: string;
   model?: string;
   forceChart?: boolean;
@@ -288,6 +300,7 @@ const PromptPlanSchema = z.object({
 
 const ExecutionPlanSchema = z.object({
   operation: z.enum([
+    "converse",
     "inspect_scope",
     "list_documents",
     "analyze_each_document",
@@ -297,6 +310,7 @@ const ExecutionPlanSchema = z.object({
     "visualize",
   ]),
   operations: z.array(z.enum([
+    "converse",
     "inspect_scope",
     "list_documents",
     "analyze_each_document",
@@ -506,37 +520,49 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
   keywords: KeywordRow[];
   scopeLabel: string;
   runStats: RepositoryRunStats;
+  projects: Array<{ id: string; name: string }>;
+  folder: { id: string; name: string } | null;
 }> {
   const supabase = getSupabaseAdmin();
-  const { data: project, error: projectError } = await supabase
+  const scope = normalizeKnowledgeScope(input);
+  let projectQuery = supabase
     .from("workspace_projects")
     .select("id,name")
-    .eq("id", input.projectId)
-    .eq("owner_user_id", input.ownerUserId)
-    .maybeSingle();
+    .eq("owner_user_id", input.ownerUserId);
+  if (scope.projectId) projectQuery = projectQuery.eq("id", scope.projectId);
+  const { data: projectRows, error: projectError } = await projectQuery;
   if (projectError) throw new Error(projectError.message);
-  if (!project) throw new Error("Project not found.");
+  const projects = (projectRows ?? []).map((project) => ({
+    id: String(project.id),
+    name: String(project.name ?? "Project"),
+  }));
+  if (scope.projectId && projects.length === 0) throw new Error("Project not found.");
+  if (projects.length === 0) {
+    return { papers: [], keywords: [], scopeLabel: "All projects", runStats: buildRunStats([]), projects: [], folder: null };
+  }
 
   let folderQuery = supabase
     .from("research_folders")
     .select("id,name")
     .eq("owner_user_id", input.ownerUserId)
-    .eq("project_id", input.projectId);
-  if (input.folderId && input.folderId !== "all") {
-    folderQuery = folderQuery.eq("id", input.folderId);
+    .in("project_id", projects.map((project) => project.id));
+  if (scope.folderId) {
+    folderQuery = folderQuery.eq("id", scope.folderId);
   }
   const { data: folders, error: foldersError } = await folderQuery;
   if (foldersError) throw new Error(foldersError.message);
   const folderIds = (folders ?? []).map((folder) => String(folder.id));
-  if (input.folderId && input.folderId !== "all" && folderIds.length === 0) {
+  if (scope.folderId && folderIds.length === 0) {
     throw new Error("Folder not found in this project.");
   }
   if (folderIds.length === 0) {
     return {
       papers: [],
       keywords: [],
-      scopeLabel: String(project.name ?? "Project"),
+      scopeLabel: scope.kind === "all_projects" ? "All projects" : `${projects[0].name} repository`,
       runStats: buildRunStats([]),
+      projects,
+      folder: null,
     };
   }
 
@@ -546,7 +572,7 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
     .eq("owner_user_id", input.ownerUserId)
     .is("trashed_at", null)
     .in("folder_id", folderIds);
-  const selectedRunIds = normalizedIdList(input.selectedRunIds);
+  const selectedRunIds = normalizedIdList(scope.runIds ?? input.selectedRunIds);
   if (selectedRunIds.length > 0) runQuery = runQuery.in("id", selectedRunIds);
   const { data: runs, error: runsError } = await runQuery;
   if (runsError) throw new Error(runsError.message);
@@ -555,14 +581,16 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
     .filter((run) => String(run.status ?? "").toLowerCase() === "succeeded")
     .map((run) => String(run.id));
   if (runIds.length === 0) {
-    const selectedFolder = (folders ?? [])[0];
+    const selectedFolder = scope.folderId ? (folders ?? [])[0] : null;
     return {
       papers: [],
       keywords: [],
       scopeLabel: selectedRunIds.length > 0
         ? "selected papers"
-        : String(selectedFolder?.name ?? project.name ?? "Repository"),
+        : String(selectedFolder?.name ?? (scope.kind === "all_projects" ? "All projects" : `${projects[0].name} repository`)),
       runStats,
+      projects,
+      folder: selectedFolder ? { id: String(selectedFolder.id), name: String(selectedFolder.name) } : null,
     };
   }
 
@@ -582,7 +610,7 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
     : { data: [], error: null };
   if (keywords.error) throw new Error(keywords.error.message);
 
-  const selectedFolder = input.folderId && input.folderId !== "all" ? (folders ?? [])[0] : null;
+  const selectedFolder = scope.folderId ? (folders ?? [])[0] : null;
   return {
     papers: (paperRows ?? []) as PaperRow[],
     keywords: (keywords.data ?? []) as KeywordRow[],
@@ -590,8 +618,12 @@ async function loadSupabaseRows(input: RepositoryChatInput): Promise<{
       ? `${runIds.length} selected paper${runIds.length === 1 ? "" : "s"}`
       : selectedFolder
         ? String(selectedFolder.name)
-        : `${String(project.name ?? "Project")} repository`,
+        : scope.kind === "all_projects"
+          ? "All projects"
+          : `${projects[0].name} repository`,
     runStats,
+    projects,
+    folder: selectedFolder ? { id: String(selectedFolder.id), name: String(selectedFolder.name) } : null,
   };
 }
 
@@ -600,21 +632,34 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
   keywords: KeywordRow[];
   scopeLabel: string;
   runStats: RepositoryRunStats;
+  projects: Array<{ id: string; name: string }>;
+  folder: { id: string; name: string } | null;
 }> {
   return withCloudSqlOwnerTransaction(input.ownerUserId, async (client) => {
+    const scope = normalizeKnowledgeScope(input);
     const project = await client.query<{ id: string; name: string }>(
-      `SELECT id, name FROM public.workspace_projects WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
-      [input.projectId, input.ownerUserId]
+      `SELECT id, name FROM public.workspace_projects
+       WHERE owner_user_id = $1 AND ($2::uuid IS NULL OR id = $2)
+       ORDER BY name ASC`,
+      [input.ownerUserId, scope.projectId ?? null]
     );
-    if (!project.rows[0]) throw new Error("Project not found.");
+    if (scope.projectId && !project.rows[0]) throw new Error("Project not found.");
+    const projects = project.rows.map((row) => ({ id: String(row.id), name: String(row.name) }));
+    if (projects.length === 0) {
+      return { papers: [], keywords: [], scopeLabel: "All projects", runStats: buildRunStats([]), projects: [], folder: null };
+    }
 
-    const values: unknown[] = [input.ownerUserId, input.projectId];
-    const conditions = ["ir.owner_user_id = $1", "rf.project_id = $2", "ir.trashed_at IS NULL"];
-    if (input.folderId && input.folderId !== "all") {
-      values.push(input.folderId);
+    const values: unknown[] = [input.ownerUserId];
+    const conditions = ["ir.owner_user_id = $1", "rf.owner_user_id = $1", "ir.trashed_at IS NULL"];
+    if (scope.projectId) {
+      values.push(scope.projectId);
+      conditions.push(`rf.project_id = $${values.length}`);
+    }
+    if (scope.folderId) {
+      values.push(scope.folderId);
       conditions.push(`rf.id = $${values.length}`);
     }
-    const selectedRunIds = normalizedIdList(input.selectedRunIds);
+    const selectedRunIds = normalizedIdList(scope.runIds ?? input.selectedRunIds);
     if (selectedRunIds.length > 0) {
       values.push(selectedRunIds);
       conditions.push(`ir.id = ANY($${values.length}::uuid[])`);
@@ -667,18 +712,20 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
         )
       : { rows: [] as KeywordRow[] };
 
-    let scopeLabel = `${project.rows[0].name} repository`;
+    let folder: { id: string; name: string } | null = null;
+    let scopeLabel = scope.kind === "all_projects" ? "All projects" : `${project.rows[0].name} repository`;
     if (selectedRunIds.length > 0) {
       scopeLabel = `${paperResult.rows.length} selected paper${paperResult.rows.length === 1 ? "" : "s"}`;
-    } else if (input.folderId && input.folderId !== "all") {
-      const folder = await client.query<{ name: string }>(
-        `SELECT name FROM public.research_folders WHERE id = $1 AND owner_user_id = $2 AND project_id = $3 LIMIT 1`,
-        [input.folderId, input.ownerUserId, input.projectId]
+    } else if (scope.folderId) {
+      const folderResult = await client.query<{ name: string }>(
+        `SELECT name FROM public.research_folders WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
+        [scope.folderId, input.ownerUserId]
       );
-      if (!folder.rows[0]) throw new Error("Folder not found in this project.");
-      scopeLabel = folder.rows[0].name;
+      if (!folderResult.rows[0]) throw new Error("Folder not found in this project.");
+      scopeLabel = folderResult.rows[0].name;
+      folder = { id: scope.folderId, name: folderResult.rows[0].name };
     }
-    return { papers: paperResult.rows, keywords: keywordResult.rows, scopeLabel, runStats };
+    return { papers: paperResult.rows, keywords: keywordResult.rows, scopeLabel, runStats, projects, folder };
   });
 }
 
@@ -971,10 +1018,11 @@ async function pruneRepositoryCacheForOwner(ownerUserId: string): Promise<void> 
 }
 
 export async function loadRepositoryContext(input: RepositoryChatInput): Promise<RepositoryContext> {
-  const selectedRunIds = normalizedIdList(input.selectedRunIds);
+  const knowledgeScope = normalizeKnowledgeScope(input);
+  const selectedRunIds = normalizedIdList(knowledgeScope.runIds ?? input.selectedRunIds);
   const loaded = getDatabaseProvider() === "cloud-sql"
-    ? await loadCloudSqlRows(input)
-    : await loadSupabaseRows(input);
+    ? await loadCloudSqlRows({ ...input, knowledgeScope })
+    : await loadSupabaseRows({ ...input, knowledgeScope });
   const papers = loaded.papers.map(paperFromRow);
   addKeywordRows(papers, loaded.keywords);
   const cached = await loadTermIndexes(input.ownerUserId, papers.map((paper) => paper.paperId));
@@ -992,9 +1040,23 @@ export async function loadRepositoryContext(input: RepositoryChatInput): Promise
   );
   const context: RepositoryContext = {
     ownerUserId: input.ownerUserId,
-    projectId: input.projectId,
-    folderId: input.folderId && input.folderId !== "all" ? input.folderId : null,
+    projectId: knowledgeScope.projectId ?? null,
+    folderId: knowledgeScope.folderId ?? null,
     selectedRunIds,
+    knowledgeScope,
+    scopeSnapshot: {
+      kind: knowledgeScope.kind,
+      label: loaded.scopeLabel,
+      projectId: knowledgeScope.projectId ?? null,
+      projectName: knowledgeScope.projectId
+        ? loaded.projects.find((project) => project.id === knowledgeScope.projectId)?.name ?? null
+        : null,
+      folderId: loaded.folder?.id ?? null,
+      folderName: loaded.folder?.name ?? null,
+      selectedRunCount: selectedRunIds.length,
+      eligiblePaperCount: papers.length,
+    },
+    projects: loaded.projects,
     scopeLabel: loaded.scopeLabel,
     versionHash,
     summaryMarkdown: buildRepositorySummary(loaded.scopeLabel, papers, topicCounts, totalWords),
@@ -1435,7 +1497,7 @@ function repositoryStatisticsResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
   prompt: string
-): Omit<RepositoryChatResult, "handled" | "plan" | "diagnostics"> {
+): Omit<RepositoryChatResult, "handled" | "plan" | "diagnostics" | "scopeSnapshot"> {
   return {
     answer: buildRepositoryStatisticsSummary(context.papers, context.scopeLabel, prompt, context.runStats),
     citations: [],
@@ -2011,7 +2073,12 @@ export function fallbackExecutionPlan(
   const quoted = quotedTerms(prompt);
   let operation: RepositoryOperation = "search_evidence";
   let scopeMode: RepositoryExecutionPlan["scopeMode"] = "focused";
-  if (/\b(count|frequency|occurrences?|how many times)\b/i.test(prompt) || quoted.length > 0) {
+  if (/^\s*(?:hi|hello|hey|thanks?|thank you|what can you do|who are you)\b|\b(?:write|draft)\s+(?:an?\s+)?(?:email|cover letter|poem|story)\b/i.test(prompt)) {
+    operation = "converse";
+  } else if (/\b(?:what(?:'s| is) in|show|describe)\s+(?:this|the|my)?\s*(?:repository|folder|project|library)\b/i.test(prompt)) {
+    operation = "inspect_scope";
+    scopeMode = "complete";
+  } else if (/\b(count|frequency|occurrences?|how many times)\b/i.test(prompt) || quoted.length > 0) {
     operation = "analyze_text";
     scopeMode = /\b(all|every|repository|corpus|folder)\b/i.test(prompt) ? "complete" : "focused";
   } else if (/\b(list|show|name|names|titles?)\b.{0,60}\b(all|every|papers?|documents?|files?)\b/i.test(prompt)) {
@@ -2065,7 +2132,9 @@ function legacyPlanForExecution(plan: RepositoryExecutionPlan): RepositoryPrompt
         ? "topic_chart"
         : plan.operation === "aggregate_corpus"
           ? "topic_summary"
-          : "repository_qa";
+          : plan.operation === "converse"
+            ? "general"
+            : "repository_qa";
   return {
     intent,
     refinedQuestion: plan.refinedQuestion,
@@ -2094,7 +2163,8 @@ export async function planRepositoryExecution(
       content: buildPapertrendSystemPrompt("request_director", [
         "Interpret the request semantically and return JSON only. " +
         "Choose one to four ordered operations. Set operation to the primary operation and operations to every capability needed to satisfy a compound request. " +
-        "Use inspect_scope for repository metadata/count/status/year questions; " +
+        "Use converse for clearly unrelated conversation that does not require repository evidence. Even in converse mode, remember that you are Papertrend, a research-paper knowledge assistant. " +
+        "Use inspect_scope for repository metadata/count/status/year questions, including asking what is in the selected repository or folder; " +
         "list_documents for complete title or metadata listings; analyze_each_document when every document needs an explanation, summary, classification, or comparison; " +
         "aggregate_corpus for repository-wide topics, methods, trends, gaps, or synthesis; search_evidence for a focused evidence question; " +
         "analyze_text for exact word/phrase/entity frequencies; visualize for requested charts or tables. " +
@@ -2111,8 +2181,17 @@ export async function planRepositoryExecution(
       content: JSON.stringify({
         request: input.prompt,
         forceChart: Boolean(input.forceChart),
-        scope: context.scopeLabel,
+        scope: {
+          ...context.scopeSnapshot,
+          projects: context.projects,
+          runStats: context.runStats,
+        },
         eligiblePapers: context.papers.length,
+        availableTools: [
+          "inspect_scope", "list_documents", "analyze_each_document", "aggregate_corpus",
+          "search_evidence", "analyze_text", "visualize", "converse",
+          ...(input.allowWeb ? ["web_search"] : []),
+        ],
         recentConversation: (input.history ?? []).slice(-6),
       }),
     },
@@ -2140,7 +2219,10 @@ export async function planRepositoryExecution(
     const answerLanguage = /^(?:same as (?:the )?user|user language|auto)$/i.test(plannedLanguage)
       ? inferConversationAnswerLanguage(input.prompt, input.history)
       : plannedLanguage;
-    const operations = [...(parsed.data.operations ?? [parsed.data.operation])];
+    let operations = [...(parsed.data.operations ?? [parsed.data.operation])];
+    if (operations.length > 1 && operations.includes("converse")) {
+      operations = operations.filter((operation) => operation !== "converse");
+    }
     if (promptRequestsChart(input.prompt, input.forceChart) && !operations.includes("visualize")) {
       if (operations.length >= 4) operations[operations.length - 1] = "visualize";
       else operations.push("visualize");
@@ -2174,6 +2256,7 @@ function completeCoverage(context: RepositoryContext, returned: number): Reposit
 }
 
 const OPERATION_LABELS: Record<RepositoryOperation, string> = {
+  converse: "Conversation",
   inspect_scope: "Repository scope",
   list_documents: "Documents",
   analyze_each_document: "Document analysis",
@@ -2200,7 +2283,8 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     const stepPlan = legacyPlanForExecution(stepExecution);
     let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
 
-    if (operation === "list_documents") result = listDocumentsResult(context);
+    if (operation === "converse") result = await converseResult(input, context, stepExecution);
+    else if (operation === "list_documents") result = listDocumentsResult(context);
     else if (operation === "analyze_each_document") result = analyzeEachDocumentResult(context);
     else if (operation === "aggregate_corpus") result = await aggregateCorpusResult(input, context, stepExecution);
     else if (operation === "inspect_scope") result = {
@@ -2397,6 +2481,49 @@ async function aggregateCorpusResult(
   };
 }
 
+async function converseResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  execution: RepositoryExecutionPlan
+): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content: buildPapertrendSystemPrompt("grounded_answer", [
+            "You are Papertrend, a research-paper knowledge assistant. Respond naturally to this general request without inventing repository findings. " +
+              "You can inspect and analyze the user's authorized Papertrend projects, folders, analyzed papers, charts, and research workflows when asked. " +
+              "Never claim that you lack access to the selected Papertrend repository. If repository evidence is needed, invite the user to ask directly rather than requesting files that already exist in Papertrend. " +
+              `The active authorized scope is ${context.scopeLabel} with ${context.papers.length} analyzed paper(s). Answer in ${execution.answerLanguage}.`,
+          ]),
+        },
+        ...(input.history ?? []).slice(-10),
+        { role: "user" as const, content: input.prompt },
+      ],
+      0.3,
+      input.model,
+      "CHAT_CONVERSE",
+      { maxTokens: 1_200 }
+    );
+    if (completion?.content?.trim()) {
+      return {
+        answer: completion.content.trim(), citations: [], charts: [],
+        coverage: { eligiblePapers: context.papers.length, processedPapers: 0, returnedPapers: 0, complete: false, scopeLabel: context.scopeLabel },
+        limitations: ["Repository context was available but not needed for this general request."],
+      };
+    }
+  } catch {
+    // Return a useful Papertrend-specific fallback below.
+  }
+  return {
+    answer: "I can inspect and analyze your Papertrend repositories, explain individual papers, compare findings and methods, count exact terms, build charts, and conduct deeper cited research. Your selected repository remains available for the next question.",
+    citations: [], charts: [],
+    coverage: { eligiblePapers: context.papers.length, processedPapers: 0, returnedPapers: 0, complete: false, scopeLabel: context.scopeLabel },
+    limitations: ["The conversational model was unavailable; a Papertrend capability summary is shown."],
+  };
+}
+
 export async function runRepositoryChat(input: RepositoryChatInput): Promise<RepositoryChatResult> {
   const context = await loadRepositoryContext(input);
   const chatV2Enabled = process.env.REPOSITORY_CHAT_V2_ENABLED !== "false";
@@ -2420,11 +2547,10 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     versionHash: context.versionHash,
     scopeLabel: context.scopeLabel,
   };
-  if (plan.intent === "general") {
-    return { handled: false, answer: "", citations: [], charts: [], plan, diagnostics };
-  }
-  if (input.forceChart && plan.intent === "repository_qa") {
-    return { handled: false, answer: "", citations: [], charts: [], plan, diagnostics };
+  if (execution?.operation === "converse" || (!execution && plan.intent === "general")) {
+    const converseExecution = execution ?? fallbackExecutionPlan(input.prompt, input.forceChart, input.history);
+    const result = await converseResult(input, context, converseExecution);
+    return { handled: true, ...result, plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   if (context.papers.length === 0) {
     return {
@@ -2442,6 +2568,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
         scopeLabel: context.scopeLabel,
       },
       limitations: ["No completed paper extraction is available in the selected scope."],
+      scopeSnapshot: context.scopeSnapshot,
       diagnostics,
     };
   }
@@ -2456,11 +2583,12 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       execution,
       coverage: result.coverage,
       limitations: result.limitations,
+      scopeSnapshot: context.scopeSnapshot,
       diagnostics: { ...diagnostics, ...result.quality },
     };
   }
   if (execution?.operation === "list_documents") {
-    return { handled: true, ...listDocumentsResult(context), plan, execution, diagnostics };
+    return { handled: true, ...listDocumentsResult(context), plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   if (execution?.operation === "analyze_each_document") {
     const asyncThreshold = Math.max(20, Number.parseInt(process.env.REPOSITORY_CHAT_ASYNC_PAPER_THRESHOLD ?? "80", 10) || 80);
@@ -2474,15 +2602,16 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
           citations: [], charts: [], plan, execution, jobId,
           coverage: { eligiblePapers: context.papers.length, processedPapers: 0, returnedPapers: 0, complete: false, scopeLabel: context.scopeLabel },
           limitations: ["The complete result is running asynchronously because it is too large for one interactive response."],
+          scopeSnapshot: context.scopeSnapshot,
           diagnostics,
         };
       }
     }
-    return { handled: true, ...analyzeEachDocumentResult(context), plan, execution, diagnostics };
+    return { handled: true, ...analyzeEachDocumentResult(context), plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   if (execution?.operation === "aggregate_corpus") {
     const result = await aggregateCorpusResult(input, context, execution);
-    return { handled: true, ...result, plan, execution, diagnostics };
+    return { handled: true, ...result, plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   if (plan.intent === "repository_qa") {
     const result = await repositoryQaResult(input, context, plan);
@@ -2505,6 +2634,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       limitations: execution?.scopeMode === "focused"
         ? ["Focused retrieval reports relevant evidence coverage, not exhaustive corpus coverage."]
         : [],
+      scopeSnapshot: context.scopeSnapshot,
       diagnostics: { ...diagnostics, ...result.quality },
     };
   }
@@ -2520,6 +2650,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     execution,
     coverage: completeCoverage(context, context.papers.length),
     limitations: [],
+    scopeSnapshot: context.scopeSnapshot,
     diagnostics,
   };
 }

@@ -34,6 +34,10 @@ import {
   previewConversationSources,
 } from "@/lib/conversation-sources";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import type {
+  KnowledgeScope,
+  KnowledgeScopeSnapshot,
+} from "@/lib/knowledge-scope";
 import {
   ChartIcon,
   ChatIcon,
@@ -159,6 +163,9 @@ interface ChatPayload {
   jobId?: string | null;
   coverage?: Record<string, unknown> | null;
   limitations?: string[];
+  groundingMode?: "repository" | "repository_web" | "general" | "repository_unavailable";
+  scopeSnapshot?: KnowledgeScopeSnapshot | null;
+  requestId?: string;
 }
 
 interface ChatSearchResult {
@@ -1031,8 +1038,30 @@ function sessionActive(session?: DeepResearchSessionRecord | null) {
 }
 
 function buildFolderLabel(folderId: string, folders: ResearchFolderRow[]) {
+  if (folderId === "all-projects") return "All projects";
   if (!folderId || folderId === "all") return "Entire repository";
   return folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
+}
+
+function scopeSnapshotFromMetadata(metadata?: Record<string, unknown> | null): KnowledgeScopeSnapshot | null {
+  const value = metadata?.scopeSnapshot;
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<KnowledgeScopeSnapshot>;
+  if (!candidate.kind || typeof candidate.label !== "string") return null;
+  return {
+    kind: candidate.kind,
+    label: candidate.label,
+    projectId: candidate.projectId ?? null,
+    projectName: candidate.projectName ?? null,
+    folderId: candidate.folderId ?? null,
+    folderName: candidate.folderName ?? null,
+    selectedRunCount: Number(candidate.selectedRunCount ?? 0),
+    eligiblePaperCount: Number(candidate.eligiblePaperCount ?? 0),
+  };
+}
+
+function groundingModeFromMetadata(metadata?: Record<string, unknown> | null): string {
+  return typeof metadata?.groundingMode === "string" ? metadata.groundingMode : "";
 }
 
 function runTitleOf(run: IngestionRunRow) {
@@ -1492,7 +1521,7 @@ export default function ChatClient() {
     startAnalysisSession,
     refreshFolders,
   } = useWorkspaceProfile();
-  const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
+  const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all-projects");
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -1508,7 +1537,8 @@ export default function ChatClient() {
     () => folders.map((folder) => folder.id),
     [folders]
   );
-  const { allYears } = useDashboardData(chatScopeFolderId, projectFolderIds, {
+  const dashboardScopeFolderId = chatScopeFolderId === "all-projects" ? "all" : chatScopeFolderId;
+  const { allYears } = useDashboardData(dashboardScopeFolderId, projectFolderIds, {
     projectId: selectedProjectId,
     enabled: Boolean(selectedProjectId),
   });
@@ -1610,8 +1640,10 @@ export default function ChatClient() {
     [selectedLibraryRuns]
   );
   const activeFolderLabel = useMemo(
-    () => buildFolderLabel(chatScopeFolderId, folders),
-    [chatScopeFolderId, folders]
+    () => chatScopeFolderId === "all"
+      ? currentProject?.name ?? "Current project"
+      : buildFolderLabel(chatScopeFolderId, folders),
+    [chatScopeFolderId, currentProject?.name, folders]
   );
   const filteredLibraryRuns = useMemo(() => {
     const needle = libraryQuery.trim().toLowerCase();
@@ -1657,6 +1689,46 @@ export default function ChatClient() {
         : messages,
     [messages, researchReport]
   );
+  const activeKnowledgeScope = useMemo<KnowledgeScope>(() => {
+    if (selectedRunIds.length > 0) {
+      return {
+        kind: "selected_papers",
+        projectId: selectedProjectId ?? undefined,
+        folderId:
+          chatScopeFolderId !== "all" && chatScopeFolderId !== "all-projects"
+            ? chatScopeFolderId
+            : undefined,
+        runIds: selectedRunIds,
+      };
+    }
+    if (chatScopeFolderId !== "all" && chatScopeFolderId !== "all-projects") {
+      return { kind: "folder", projectId: selectedProjectId ?? undefined, folderId: chatScopeFolderId };
+    }
+    if (chatScopeFolderId === "all") {
+      return { kind: "project", projectId: selectedProjectId ?? undefined };
+    }
+    return { kind: "all_projects" };
+  }, [chatScopeFolderId, selectedProjectId, selectedRunIds]);
+  const activeScopeSnapshot = useMemo<KnowledgeScopeSnapshot>(() => {
+    const selectedFolder = folders.find((folder) => folder.id === activeKnowledgeScope.folderId) ?? null;
+    const label = activeKnowledgeScope.kind === "selected_papers"
+      ? `${selectedRunIds.length} selected paper${selectedRunIds.length === 1 ? "" : "s"}`
+      : activeKnowledgeScope.kind === "folder"
+        ? selectedFolder?.name ?? "Selected folder"
+        : activeKnowledgeScope.kind === "project"
+          ? `${currentProject?.name ?? "Current project"} repository`
+          : "All projects";
+    return {
+      kind: activeKnowledgeScope.kind,
+      label,
+      projectId: activeKnowledgeScope.projectId ?? null,
+      projectName: activeKnowledgeScope.projectId ? currentProject?.name ?? null : null,
+      folderId: activeKnowledgeScope.folderId ?? null,
+      folderName: selectedFolder?.name ?? null,
+      selectedRunCount: activeKnowledgeScope.runIds?.length ?? 0,
+      eligiblePaperCount: 0,
+    };
+  }, [activeKnowledgeScope, currentProject?.name, folders, selectedRunIds.length]);
   const conversationSources = useMemo(
     () => dedupeConversationSources(visibleMessages.flatMap((message) => message.citations)),
     [visibleMessages]
@@ -2007,6 +2079,9 @@ export default function ChatClient() {
     setSelectedLibraryRuns([]);
     setLibraryRuns([]);
     setLibraryQuery("");
+    setChatScopeFolderId((current) =>
+      current === "all" || current === "all-projects" ? current : "all-projects"
+    );
   }, [selectedProjectId]);
 
   async function sendRequest(body: Record<string, unknown>) {
@@ -2161,8 +2236,9 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds: editedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
         webSearchEnabled,
@@ -2211,6 +2287,8 @@ export default function ChatClient() {
       localMessage("user", prompt, [], {
         attachments: selectedAttachments,
         selectedRunIds,
+        knowledgeScope: activeKnowledgeScope,
+        scopeSnapshot: activeScopeSnapshot,
       }),
     ];
     setMessages(nextMessages);
@@ -2236,8 +2314,9 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
         webSearchEnabled,
@@ -2292,6 +2371,8 @@ export default function ChatClient() {
         toolMode: "chart",
         attachments: selectedAttachments,
         selectedRunIds,
+        knowledgeScope: activeKnowledgeScope,
+        scopeSnapshot: activeScopeSnapshot,
       }),
     ];
     setMessages(nextMessages);
@@ -2309,8 +2390,9 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         toolMode: "chart",
         threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
@@ -2402,6 +2484,8 @@ export default function ChatClient() {
         chatMode: "deep_research",
         attachments: selectedAttachments,
         selectedRunIds,
+        knowledgeScope: activeKnowledgeScope,
+        scopeSnapshot: activeScopeSnapshot,
         researchSourcePolicy: effectiveResearchSourcePolicy,
       }),
     ];
@@ -2412,8 +2496,9 @@ export default function ChatClient() {
       const payload = await sendRequest({
         message: prompt,
         attachments: selectedAttachments,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         threadId: activeThread?.mode === "deep_research" ? activeThread.id : undefined,
         sessionId:
@@ -2442,8 +2527,9 @@ export default function ChatClient() {
     setError(null);
     try {
       const payload = await sendRequest({
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         threadId: activeThread.id,
         sessionId: deepSession.id,
@@ -3213,6 +3299,8 @@ export default function ChatClient() {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);
                   const attachments = attachmentsFromMetadata(message.metadata);
+                  const scopeSnapshot = scopeSnapshotFromMetadata(message.metadata);
+                  const groundingMode = groundingModeFromMetadata(message.metadata);
                   const citationPreview = previewConversationSources(message.citations, 5);
                   return (
                     <section key={message.id}>
@@ -3277,6 +3365,19 @@ export default function ChatClient() {
                                   {renderRichMessage(message.content, message.id, "user")}
                                 </div>
                                 <MessageAttachmentList attachments={attachments} />
+                                {scopeSnapshot ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setMenuOpen(true)}
+                                    title={scopeSnapshot.eligiblePaperCount > 0
+                                      ? `${scopeSnapshot.eligiblePaperCount} analyzed paper${scopeSnapshot.eligiblePaperCount === 1 ? "" : "s"} in this message scope`
+                                      : "Knowledge scope used for this message"}
+                                    className="ml-auto inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                  >
+                                    <FolderIcon className="h-3.5 w-3.5 flex-none" />
+                                    <span className="truncate">{scopeSnapshot.label}</span>
+                                  </button>
+                                ) : null}
                               </>
                             )}
                           </div>
@@ -3284,6 +3385,11 @@ export default function ChatClient() {
                       ) : (
                         <div className="space-y-4">
                           {renderRichMessage(message.content, message.id, "assistant")}
+                          {groundingMode === "general" ? (
+                            <div className="text-xs text-slate-400 dark:text-[#8e8e8e]">
+                              Repository context not used
+                            </div>
+                          ) : null}
                           {charts.map((chart, chartIndex) => (
                             <ChatChartCard
                               key={`${message.id}-chart-${chartIndex}-${chart.title}`}
@@ -3625,6 +3731,23 @@ export default function ChatClient() {
                             <button
                               type="button"
                               onClick={() => {
+                                setChatScopeFolderId("all-projects");
+                                setMenuOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                                chatScopeFolderId === "all-projects"
+                                  ? "bg-slate-100 text-slate-900 dark:bg-[#0a0a0a] dark:text-white"
+                                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                              }`}
+                            >
+                              <span>All projects</span>
+                              {chatScopeFolderId === "all-projects" ? (
+                                <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
+                              ) : null}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
                                 setChatScopeFolderId("all");
                                 setMenuOpen(false);
                               }}
@@ -3634,7 +3757,7 @@ export default function ChatClient() {
                                   : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                               }`}
                             >
-                              <span>Entire repository</span>
+                              <span className="truncate">{currentProject?.name ?? "Current project"}</span>
                               {chatScopeFolderId === "all" ? (
                                 <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
                               ) : null}

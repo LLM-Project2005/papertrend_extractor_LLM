@@ -132,3 +132,18 @@ The previous limitation was architectural: `RepositoryExecutionPlan` allowed exa
 ## Next Evaluation Gate
 
 Measure planner accuracy, exhaustive-scope coverage, retrieval recall, citation validity, claim faithfulness, Thai/English continuity, latency, and cost on a fixed golden set. New RAG techniques should ship only when they improve those scores without weakening owner/project/folder isolation.
+
+## Knowledge Chat V3 Recovery
+
+The pilot regression where Papertrend answered as a generic local-files assistant came from route bypass, not missing retrieval infrastructure. Web Search, missing project context, an unhandled planner result, or a repository exception could all enter a generic prompt that denied repository access.
+
+Knowledge Chat V3 changes that contract:
+
+1. Resolve an owner-authorized scope before planning. Precedence is selected papers, folder, explicit project, then all owner projects.
+2. Send every authenticated normal-chat request through the knowledge orchestrator. Web retrieval supplements repository evidence instead of disabling it.
+3. Use `converse` only for genuinely unrelated conversation. It remains Papertrend-aware and never claims the product cannot access an authorized repository.
+4. Persist an authoritative scope snapshot with every user message so historical scope labels remain stable.
+5. Fail closed with a request ID and scoped limitation. A repository exception never falls through to an ungrounded generic answer.
+6. Log scope kind, operation, latency, retrieval rounds, evidence count, and failure stage without logging prompts or paper text.
+
+`KNOWLEDGE_CHAT_V3_ENABLED=false` restores the prior route during pilot rollout. Chat V2 planning and retrieval remain available underneath the new route contract.

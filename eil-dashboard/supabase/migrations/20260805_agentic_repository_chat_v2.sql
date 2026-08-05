@@ -4,7 +4,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS public.paper_retrieval_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  project_id UUID REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
   folder_id UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
   paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
   ingestion_run_id UUID REFERENCES public.ingestion_runs(id) ON DELETE SET NULL,

@@ -10,6 +10,14 @@ import {
   previewConversationSources,
 } from "../src/lib/conversation-sources";
 import { recommendResearchChart } from "../src/lib/chart-recommendation";
+import { knowledgeScopeLabel } from "../src/lib/knowledge-scope";
+
+test("chat scope labels remain readable for persisted message chips", () => {
+  assert.equal(knowledgeScopeLabel({ kind: "all_projects" }), "All projects");
+  assert.equal(knowledgeScopeLabel({ kind: "project", projectId: "p1" }), "Current project");
+  assert.equal(knowledgeScopeLabel({ kind: "folder", folderId: "f1" }), "Selected folder");
+  assert.equal(knowledgeScopeLabel({ kind: "selected_papers", runIds: ["a", "b"] }), "2 selected papers");
+});
 
 test("citation previews show five sources and expose the remaining count", () => {
   const sources = Array.from({ length: 35 }, (_, index) => ({

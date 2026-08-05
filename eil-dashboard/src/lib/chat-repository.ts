@@ -52,6 +52,12 @@ export interface ChatRepository {
   ): Promise<void>;
   deleteThread(ownerUserId: string, threadId: string): Promise<void>;
   appendMessage(input: AppendMessageInput): Promise<WorkspaceMessageRecord>;
+  updateMessageMetadata(
+    ownerUserId: string,
+    threadId: string,
+    messageId: string,
+    metadata: Record<string, unknown>
+  ): Promise<void>;
   editUserMessage(input: EditUserMessageInput): Promise<void>;
   getThreadDetail(ownerUserId: string, threadId: string): Promise<ChatThreadDetail>;
 }
@@ -86,6 +92,16 @@ class SupabaseChatRepository implements ChatRepository {
 
   appendMessage(input: AppendMessageInput) {
     return appendWorkspaceMessage(this.client, input);
+  }
+
+  async updateMessageMetadata(ownerUserId: string, threadId: string, messageId: string, metadata: Record<string, unknown>): Promise<void> {
+    const { error } = await this.client
+      .from("workspace_messages")
+      .update({ metadata, updated_at: new Date().toISOString() })
+      .eq("id", messageId)
+      .eq("thread_id", threadId)
+      .eq("owner_user_id", ownerUserId);
+    if (error) throw new Error(error.message);
   }
 
   async editUserMessage(input: EditUserMessageInput): Promise<void> {
@@ -248,6 +264,17 @@ class CloudSqlChatRepository implements ChatRepository {
       );
       if (!result.rows[0]) throw new Error("Failed to append workspace message.");
       return messageRow(result.rows[0]);
+    });
+  }
+
+  updateMessageMetadata(ownerUserId: string, threadId: string, messageId: string, metadata: Record<string, unknown>): Promise<void> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query(
+        `UPDATE public.workspace_messages SET metadata=$4::jsonb, updated_at=now()
+         WHERE id=$1 AND thread_id=$2 AND owner_user_id=$3`,
+        [messageId, threadId, ownerUserId, JSON.stringify(metadata)]
+      );
+      if (result.rowCount === 0) throw new Error("Chat message not found.");
     });
   }
 

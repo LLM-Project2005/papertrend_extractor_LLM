@@ -95,6 +95,26 @@ async function main(): Promise<void> {
   assert.equal(chart.plan.retrievalMode, "exhaustive");
   assert.ok(chart.charts.length > 0, "Repository topic chart was not generated.");
 
+  const allProjects = await runRepositoryChat({
+    ownerUserId,
+    knowledgeScope: { kind: "all_projects" },
+    prompt: "What's in this repository?",
+  });
+  assert.equal(allProjects.handled, true);
+  assert.equal(allProjects.execution?.operation, "inspect_scope");
+  assert.equal(allProjects.scopeSnapshot.kind, "all_projects");
+  assert.equal(allProjects.scopeSnapshot.label, "All projects");
+  assert.ok(allProjects.diagnostics.paperCount >= succeededRuns);
+
+  const capabilities = await runRepositoryChat({
+    ownerUserId,
+    knowledgeScope: { kind: "all_projects" },
+    prompt: "What can you do?",
+  });
+  assert.equal(capabilities.handled, true);
+  assert.equal(capabilities.execution?.operation, "converse");
+  assert.doesNotMatch(capabilities.answer, /do not have access to your (?:local|private)/i);
+
   console.log(JSON.stringify({
     ok: true,
     projectId,
@@ -122,6 +142,11 @@ async function main(): Promise<void> {
       listed: listing.coverage?.returnedPapers,
       explained: explanations.coverage?.returnedPapers,
       complete: listing.coverage?.complete && explanations.coverage?.complete,
+    },
+    knowledgeV3: {
+      allProjectPapers: allProjects.diagnostics.paperCount,
+      transcriptRoute: allProjects.execution?.operation,
+      capabilityRoute: capabilities.execution?.operation,
     },
   }));
 }

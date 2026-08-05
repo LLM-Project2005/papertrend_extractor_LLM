@@ -17,6 +17,29 @@ import {
   rankRepositoryEvidence,
   validateInlinePaperCitations,
 } from "../src/lib/repository-retrieval";
+import { normalizeKnowledgeScope } from "../src/lib/knowledge-scope";
+
+test("knowledge scope precedence is selected papers, folder, project, then all projects", () => {
+  assert.deepEqual(
+    normalizeKnowledgeScope({ projectId: "project-a", folderId: "folder-a", selectedRunIds: ["run-a"] }),
+    { kind: "selected_papers", projectId: "project-a", folderId: "folder-a", runIds: ["run-a"] }
+  );
+  assert.deepEqual(
+    normalizeKnowledgeScope({ projectId: "project-a", folderId: "folder-a" }),
+    { kind: "folder", projectId: "project-a", folderId: "folder-a" }
+  );
+  assert.deepEqual(
+    normalizeKnowledgeScope({ knowledgeScope: { kind: "project", projectId: "project-a" } }),
+    { kind: "project", projectId: "project-a" }
+  );
+  assert.deepEqual(normalizeKnowledgeScope({}), { kind: "all_projects" });
+});
+
+test("reported generic transcript routes to Papertrend capabilities", () => {
+  assert.equal(fallbackExecutionPlan("What's in this folder?").operation, "inspect_scope");
+  assert.equal(fallbackExecutionPlan("What's in this repository?").operation, "inspect_scope");
+  assert.equal(fallbackExecutionPlan("What can you do?").operation, "converse");
+});
 
 test("normalizes case while preserving whole-word boundaries", () => {
   const text = "Feedback improves feedback-informed teaching, but feed is different.";

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import {
@@ -26,6 +27,12 @@ import {
 } from "@/lib/chart-agent";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
+import {
+  knowledgeScopeLabel,
+  normalizeKnowledgeScope,
+  type KnowledgeScope,
+  type KnowledgeScopeSnapshot,
+} from "@/lib/knowledge-scope";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
@@ -45,6 +52,7 @@ import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
   DeepResearchSessionRecord,
+  WorkspaceMessageRecord,
 } from "@/types/research";
 interface Citation {
   paperId: number | string;
@@ -195,6 +203,7 @@ interface ChatRequestBody {
   editMessageId?: string;
   folderId?: string | "all";
   projectId?: string;
+  knowledgeScope?: KnowledgeScope;
   toolMode?: ChatToolMode;
   chartRequest?: ChartRequest;
   webSearchEnabled?: boolean;
@@ -255,6 +264,12 @@ const ChatRequestBodySchema = z
     editMessageId: z.string().max(80).optional(),
     folderId: z.string().max(80).optional(),
     projectId: z.string().max(80).optional(),
+    knowledgeScope: z.object({
+      kind: z.enum(["all_projects", "project", "folder", "selected_papers"]),
+      projectId: z.string().max(80).optional(),
+      folderId: z.string().max(80).optional(),
+      runIds: z.array(z.string().max(80)).max(50).optional(),
+    }).optional(),
     toolMode: z.enum(["auto", "web_search", "chart", "none"]).optional(),
     chartRequest: z.record(z.string(), z.unknown()).optional(),
     webSearchEnabled: z.boolean().optional(),
@@ -3816,6 +3831,25 @@ async function normalChat(
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
 
+  const requestId = randomUUID();
+  const knowledgeChatV3Enabled = process.env.KNOWLEDGE_CHAT_V3_ENABLED === "true";
+  const knowledgeScope = normalizeKnowledgeScope({
+    knowledgeScope: body.knowledgeScope,
+    projectId: body.projectId,
+    folderId: body.folderId,
+    selectedRunIds: body.selectedRunIds,
+  });
+  const preliminaryScopeSnapshot: KnowledgeScopeSnapshot = {
+    kind: knowledgeScope.kind,
+    label: knowledgeScopeLabel(knowledgeScope),
+    projectId: knowledgeScope.projectId ?? null,
+    projectName: null,
+    folderId: knowledgeScope.folderId ?? null,
+    folderName: null,
+    selectedRunCount: knowledgeScope.runIds?.length ?? 0,
+    eligiblePaperCount: 0,
+  };
+
   const attachmentContext =
     body.attachments && body.attachments.length > 0
       ? `\n\nAttached files:\n${body.attachments
@@ -3831,6 +3865,7 @@ async function normalChat(
   const chatRepository = ownerUserId ? getChatRepository() : null;
   let thread: ChatThreadDetail["thread"] | null = null;
   let existingThreadDetail: ChatThreadDetail | null = null;
+  let persistedUserMessage: WorkspaceMessageRecord | null = null;
   if (ownerUserId && chatRepository) {
     if (body.threadId) {
       existingThreadDetail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
@@ -3867,21 +3902,27 @@ async function normalChat(
             : {}),
           attachments: body.attachments ?? [],
           selectedRunIds: body.selectedRunIds ?? [],
+          knowledgeScope,
+          scopeSnapshot: preliminaryScopeSnapshot,
           editedAt: new Date().toISOString(),
         },
         createdAt: editTarget.created_at,
       });
+      persistedUserMessage = { ...editTarget, content: currentMessage };
     } else {
-      await chatRepository.appendMessage({
+      persistedUserMessage = await chatRepository.appendMessage({
         threadId: thread.id,
         ownerUserId,
-        folderId: body.folderId,
+        folderId: knowledgeScope.folderId,
         role: "user",
         content: currentMessage,
         messageKind: "chat",
         metadata: {
           attachments: body.attachments ?? [],
           selectedRunIds: body.selectedRunIds ?? [],
+          knowledgeScope,
+          scopeSnapshot: preliminaryScopeSnapshot,
+          requestId,
         },
       });
     }
@@ -3894,17 +3935,19 @@ async function normalChat(
   const selectedModel = resolveChatModel(body.model);
 
   const repositoryEligible =
-    Boolean(ownerUserId && chatRepository && thread && body.projectId && body.projectId !== "all") &&
-    requestedToolMode !== "web_search" &&
-    !body.webSearchEnabled;
-  if (repositoryEligible && ownerUserId && chatRepository && thread && body.projectId) {
+    Boolean(ownerUserId && chatRepository && thread) &&
+    (knowledgeChatV3Enabled || Boolean(body.projectId && body.projectId !== "all"));
+  if (repositoryEligible && ownerUserId && chatRepository && thread) {
+    const startedAt = Date.now();
     try {
       const repositoryResult = await runRepositoryChat({
         ownerUserId,
         threadId: thread.id,
-        projectId: body.projectId,
-        folderId: body.folderId,
-        selectedRunIds: body.selectedRunIds,
+        projectId: knowledgeScope.projectId,
+        folderId: knowledgeScope.folderId,
+        selectedRunIds: knowledgeScope.runIds,
+        knowledgeScope,
+        allowWeb: requestedToolMode === "web_search" || Boolean(body.webSearchEnabled),
         prompt: currentMessage,
         model: selectedModel,
         forceChart: chartRequested,
@@ -3912,13 +3955,72 @@ async function normalChat(
         jobCallbackBaseUrl: new URL(request.url).origin,
       });
       if (repositoryResult.handled) {
+        let repositoryAnswer = repositoryResult.answer;
         const repositoryCharts = repositoryResult.charts as ChatChartPayload[];
         const repositoryCitations = repositoryResult.citations as Citation[];
         const toolResults: ChatToolResult[] = repositoryCharts.length > 0
           ? [{ type: "chart", status: "succeeded", data: { charts: repositoryCharts } }]
           : [];
+        const webSearchRequested = requestedToolMode === "web_search" || Boolean(body.webSearchEnabled);
+        if (webSearchRequested) {
+          try {
+            const webCompletion = await createChatCompletionResult(
+              [
+                {
+                  role: "system",
+                  content: buildPapertrendSystemPrompt("grounded_answer", [
+                    "Find concise, current external context that complements the supplied repository-grounded answer. Do not repeat or contradict repository evidence without clearly labeling the disagreement. Return only the web-context section and do not invent paper citations.",
+                  ]),
+                },
+                {
+                  role: "user",
+                  content: `Question: ${currentMessage}\n\nRepository-grounded answer:\n${repositoryAnswer}`,
+                },
+              ],
+              0.2,
+              selectedModel,
+              "CHAT_WEB_AUGMENT",
+              {
+                maxTokens: 1_200,
+                tools: [{ type: "openrouter:web_search", parameters: { max_results: 5, max_total_results: 8, search_context_size: "medium" } }],
+                toolChoice: "auto",
+              }
+            );
+            const webAnswer = webCompletion?.content?.trim();
+            const webCitations = extractWebCitations(webCompletion?.annotations ?? []);
+            if (webAnswer) repositoryAnswer = `${repositoryAnswer}\n\n## Web context\n\n${webAnswer}`;
+            repositoryCitations.push(...webCitations);
+            toolResults.push({ type: "web_search", status: webCitations.length > 0 ? "succeeded" : "skipped", citations: webCitations });
+          } catch (webError) {
+            toolResults.push({ type: "web_search", status: "failed", error: webError instanceof Error ? webError.message : "Web search failed." });
+          }
+        }
+        if (persistedUserMessage) {
+          await chatRepository.updateMessageMetadata(ownerUserId, thread.id, persistedUserMessage.id, {
+            ...(persistedUserMessage.metadata ?? {}),
+            attachments: body.attachments ?? [], selectedRunIds: knowledgeScope.runIds ?? [], knowledgeScope,
+            scopeSnapshot: repositoryResult.scopeSnapshot, requestId,
+          });
+        }
+        console.info("knowledge_chat_route", {
+          requestId,
+          stage: "completed",
+          latencyMs: Date.now() - startedAt,
+          ownerUserId,
+          scopeKind: repositoryResult.scopeSnapshot.kind,
+          projectId: repositoryResult.scopeSnapshot.projectId,
+          folderId: repositoryResult.scopeSnapshot.folderId,
+          eligiblePaperCount: repositoryResult.scopeSnapshot.eligiblePaperCount,
+          operation: repositoryResult.execution?.operation ?? repositoryResult.plan.intent,
+          retrievalRounds: repositoryResult.diagnostics.retrievalRounds ?? 0,
+          evidenceCount: repositoryResult.diagnostics.selectedEvidenceCount ?? 0,
+          groundingMode: webSearchRequested ? "repository_web" : repositoryResult.execution?.operation === "converse" ? "general" : "repository",
+        });
         const metadata = {
           mode: "grounded",
+          groundingMode: webSearchRequested ? "repository_web" : repositoryResult.execution?.operation === "converse" ? "general" : "repository",
+          scopeSnapshot: repositoryResult.scopeSnapshot,
+          requestId,
           model: selectedModel,
           toolResults,
           chart: repositoryCharts[0] ?? null,
@@ -3933,22 +4035,25 @@ async function normalChat(
         await chatRepository.appendMessage({
           threadId: thread.id,
           ownerUserId,
-          folderId: body.folderId,
+          folderId: knowledgeScope.folderId,
           role: "assistant",
-          content: repositoryResult.answer,
+          content: repositoryAnswer,
           messageKind: "chat",
           citations: repositoryCitations,
           metadata,
         });
         await chatRepository.updateThread(ownerUserId, thread.id, {
-          summary: repositoryResult.answer.slice(0, 240),
+          summary: repositoryAnswer.slice(0, 240),
           title: thread.title || buildThreadTitle(currentMessage),
         });
 
         const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
         return NextResponse.json({
           mode: "grounded",
-          answer: repositoryResult.answer,
+          groundingMode: metadata.groundingMode,
+          scopeSnapshot: repositoryResult.scopeSnapshot,
+          requestId,
+          answer: repositoryAnswer,
           citations: repositoryCitations,
           toolResults,
           chart: repositoryCharts[0] ?? null,
@@ -3962,12 +4067,36 @@ async function normalChat(
           deepResearchSession: detail.deepResearchSession,
         });
       }
+      if (knowledgeChatV3Enabled) {
+        throw new Error("Knowledge Chat V3 returned an unhandled scoped request.");
+      }
     } catch (error) {
-      console.error("Repository chat failed; continuing with the standard chat path.", {
+      const failureMessage = error instanceof Error ? error.message : "Unknown repository chat error";
+      console.error("knowledge_chat_route", {
+        requestId,
+        stage: "repository_execution",
+        fallbackReason: "repository_error",
+        latencyMs: Date.now() - startedAt,
         ownerUserId,
-        projectId: body.projectId,
-        folderId: body.folderId ?? null,
-        message: error instanceof Error ? error.message : "Unknown repository chat error",
+        scopeKind: knowledgeScope.kind,
+        projectId: knowledgeScope.projectId ?? null,
+        folderId: knowledgeScope.folderId ?? null,
+        message: failureMessage,
+      });
+      const answer = `I could not access the selected Papertrend knowledge scope for this request. Your papers were not replaced with a generic answer. Please retry, or report request ID \`${requestId}\` if the problem continues.`;
+      await chatRepository.appendMessage({
+        threadId: thread.id, ownerUserId, folderId: knowledgeScope.folderId, role: "assistant", content: answer,
+        messageKind: "chat", citations: [], metadata: {
+          mode: "fallback", groundingMode: "repository_unavailable", requestId,
+          scopeSnapshot: preliminaryScopeSnapshot,
+          repositoryLimitations: [failureMessage], failureStage: "repository_execution",
+        },
+      });
+      const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
+      return NextResponse.json({
+        mode: "fallback", groundingMode: "repository_unavailable", answer, citations: [], toolResults: [],
+        scopeSnapshot: preliminaryScopeSnapshot, requestId, limitations: ["Repository knowledge was temporarily unavailable."],
+        thread: detail.thread, messages: detail.messages, deepResearchSession: detail.deepResearchSession,
       });
     }
   }
@@ -4024,7 +4153,7 @@ async function normalChat(
     await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
-      folderId: body.folderId,
+      folderId: knowledgeScope.folderId,
       role: "assistant",
       content: answer,
       messageKind: "chat",
@@ -4083,8 +4212,8 @@ async function normalChat(
     {
       role: "system",
       content:
-        "You are a helpful, general-purpose assistant. Respond conversationally and clearly. " +
-        "Do not assume access to workspace databases, filters, or paper corpora unless the user explicitly provides that context in the chat.",
+        "You are Papertrend, a research-paper knowledge assistant. Respond conversationally and clearly. " +
+        "When no authenticated repository scope is available, state that sign-in or scope selection is required for private paper evidence; never describe Papertrend as a generic local-files assistant.",
     },
   ];
 
@@ -4156,7 +4285,7 @@ async function normalChat(
     await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
-      folderId: body.folderId,
+      folderId: knowledgeScope.folderId,
       role: "assistant",
       content: answer,
       messageKind: "chat",
