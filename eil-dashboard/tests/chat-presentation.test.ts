@@ -9,6 +9,7 @@ import {
   dedupeConversationSources,
   previewConversationSources,
 } from "../src/lib/conversation-sources";
+import { recommendResearchChart } from "../src/lib/chart-recommendation";
 
 test("citation previews show five sources and expose the remaining count", () => {
   const sources = Array.from({ length: 35 }, (_, index) => ({
@@ -63,4 +64,25 @@ test("chart explanations receive complete rows, totals, and extrema", () => {
   assert.equal(summary.totals.value, 13);
   assert.equal(summary.extrema.value.highest.label, "2023");
   assert.equal(summary.extrema.value.lowest.label, "2022");
+});
+
+test("chart semantics reject unreadable pie charts", () => {
+  const result = recommendResearchChart({
+    requestedType: "pie",
+    temporal: false,
+    categoryCount: 14,
+    seriesCount: 1,
+  });
+  assert.equal(result.chartType, "bar");
+  assert.match(result.warnings.join(" "), /more than eight categories/i);
+});
+
+test("chart semantics preserve ordered time as a line", () => {
+  const result = recommendResearchChart({
+    requestedType: "bar",
+    temporal: true,
+    categoryCount: 10,
+    seriesCount: 2,
+  });
+  assert.equal(result.chartType, "line");
 });

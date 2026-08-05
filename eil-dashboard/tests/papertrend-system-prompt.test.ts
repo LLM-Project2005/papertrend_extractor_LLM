@@ -21,6 +21,8 @@ test("task overlays remain narrow and composable", () => {
   const chart = buildPapertrendSystemPrompt("chart_planner");
   const auditor = buildPapertrendSystemPrompt("faithfulness_auditor");
   assert.match(planner, /semantic request director/i);
+  assert.match(planner, /multiple capabilities/i);
+  assert.match(planner, /not what the user is allowed to ask/i);
   assert.match(chart, /chart-tool calls/i);
   assert.match(auditor, /Audit every substantive claim/i);
   assert.doesNotMatch(planner, /Translate the research request into supported chart-tool calls/i);
@@ -32,4 +34,3 @@ test("call-specific additions are appended without changing the core contract", 
   assert.match(prompt, new RegExp(marker.replace(".", "\\.")));
   assert.match(prompt, /Never reinterpret a repository-wide request/i);
 });
-

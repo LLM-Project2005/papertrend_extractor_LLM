@@ -18,6 +18,7 @@ import {
 } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
 import { buildPapertrendSystemPrompt } from "@/lib/papertrend-system-prompt";
+import { recommendResearchChart } from "@/lib/chart-recommendation";
 import {
   BUILD_RESEARCH_CHART_TOOL,
   chartToolArguments,
@@ -928,6 +929,31 @@ function buildChartFromData(
     yKeys: ["value"],
     data: rows,
     planner,
+  };
+}
+
+function validateRenderedChart(chart: ChatChartPayload): ChatChartPayload {
+  const temporal = chart.metric === "papers_per_year" ||
+    chart.metric === "topic_trend" ||
+    chart.metric === "keyword_trend" ||
+    chart.metric === "track_trend";
+  const recommendation = recommendResearchChart({
+    requestedType: chart.chartType,
+    temporal,
+    categoryCount: chart.data.length,
+    seriesCount: chart.yKeys.length,
+  });
+  return {
+    ...chart,
+    chartType: recommendation.chartType,
+    planner: {
+      ...chart.planner,
+      source: chart.planner?.source ?? "fallback",
+      reason: chart.planner?.reason
+        ? `${chart.planner.reason} ${recommendation.reason}`
+        : recommendation.reason,
+      warnings: [...(chart.planner?.warnings ?? []), ...recommendation.warnings],
+    },
   };
 }
 
@@ -2021,7 +2047,8 @@ async function buildChatChart(
     : [buildFallbackChartPlan(request)];
   const charts = plannedRequests
     .map((plannedRequest) => buildChartFromData(data, plannedRequest, scopeLabel))
-    .filter((chart): chart is ChatChartPayload => Boolean(chart));
+    .filter((chart): chart is ChatChartPayload => Boolean(chart))
+    .map(validateRenderedChart);
   const fallbackChart =
     charts.length === 0
       ? buildBestAvailableChartFromData(
@@ -2038,7 +2065,7 @@ async function buildChatChart(
       scopeLabel
         )
       : null;
-  const finalCharts = fallbackChart ? [fallbackChart] : charts;
+  const finalCharts = fallbackChart ? [validateRenderedChart(fallbackChart)] : charts;
   return {
     request: plannedRequests[0],
     requests: plannedRequests,

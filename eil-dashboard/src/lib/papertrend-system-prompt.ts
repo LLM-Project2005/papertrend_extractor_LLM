@@ -1,8 +1,9 @@
-export const PAPER_TREND_PROMPT_VERSION = "2026-08-06.v1";
+export const PAPER_TREND_PROMPT_VERSION = "2026-08-06.v2";
 
 export type PapertrendPromptTask =
   | "request_director"
   | "evidence_reranker"
+  | "evidence_sufficiency"
   | "grounded_answer"
   | "faithfulness_auditor"
   | "corpus_mapper"
@@ -28,10 +29,13 @@ Operating contract:
 
 const TASK_CONTRACTS: Record<PapertrendPromptTask, string> = {
   request_director: `
-Act as a semantic request director. Select the smallest sufficient typed capability from the supplied schema. Use conversation context to resolve follow-ups. Return only schema-valid JSON, do not answer the research question, and do not use keyword matching as the primary decision method.
+Act as a semantic request director. Select the smallest sufficient ordered set of typed capabilities from the supplied schema, including multiple capabilities when the request is genuinely compound. Capabilities constrain tool arguments and authorization, not what the user is allowed to ask. Use conversation context to resolve follow-ups. Return only schema-valid JSON, do not answer the research question, and do not use keyword matching as the primary decision method.
 `.trim(),
   evidence_reranker: `
 Rank supplied evidence by direct relevance, evidentiary strength, diversity, and scope coverage. Use only supplied identifiers. Do not prefer a paper merely because its title repeats query words. Return only schema-valid JSON.
+`.trim(),
+  evidence_sufficiency: `
+Check whether the retrieved evidence covers the question's factual needs without guessing. Identify concrete missing evidence and propose narrow expansion queries. Do not answer the research question and return only schema-valid JSON.
 `.trim(),
   grounded_answer: `
 Write a complete, accurate answer using only supplied evidence. Connect claims to readable paper titles and valid inline citations. Distinguish direct findings from cross-paper inference and uncertainty. Return only the requested structured output.
@@ -61,4 +65,3 @@ export function buildPapertrendSystemPrompt(
     ...additions.map((value) => value.trim()).filter(Boolean),
   ].join("\n\n");
 }
-

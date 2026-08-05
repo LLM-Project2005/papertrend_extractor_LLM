@@ -196,6 +196,14 @@ test("Chat V2 fallback treats explain-each as complete document analysis", () =>
   assert.equal(plan.scopeMode, "complete");
 });
 
+test("Chat V2 fallback preserves multiple requested capabilities", () => {
+  const plan = fallbackExecutionPlan(
+    'Count the phrase "peer feedback" across the repository and visualize the result'
+  );
+  assert.deepEqual(plan.operations, ["analyze_text", "visualize"]);
+  assert.equal(plan.scopeMode, "complete");
+});
+
 test("Chat V2 does not force focused evidence questions into complete mode", () => {
   const plan = fallbackExecutionPlan("What did the studies report about learner anxiety?");
   assert.equal(plan.operation, "search_evidence");

@@ -121,6 +121,7 @@ export type RepositoryOperation =
 
 export interface RepositoryExecutionPlan {
   operation: RepositoryOperation;
+  operations: RepositoryOperation[];
   scopeMode: "complete" | "focused";
   refinedQuestion: string;
   terms: string[];
@@ -167,6 +168,9 @@ export interface RepositoryChatResult {
     faithfulnessChecked?: boolean;
     invalidCitationCount?: number;
     repositoryCoverageCount?: number;
+    retrievalRounds?: number;
+    sufficiencyChecked?: boolean;
+    missingEvidenceNeeds?: string[];
   };
 }
 
@@ -292,6 +296,15 @@ const ExecutionPlanSchema = z.object({
     "analyze_text",
     "visualize",
   ]),
+  operations: z.array(z.enum([
+    "inspect_scope",
+    "list_documents",
+    "analyze_each_document",
+    "aggregate_corpus",
+    "search_evidence",
+    "analyze_text",
+    "visualize",
+  ])).min(1).max(4).optional(),
   scopeMode: z.enum(["complete", "focused"]),
   refinedQuestion: z.string().min(1).max(1_000),
   terms: z.array(z.string().min(1).max(100)).max(12).default([]),
@@ -322,8 +335,21 @@ function normalizeExecutionPlanCandidate(value: Record<string, unknown> | null):
     : operation === "visualize" ? "table" : "prose";
   const requestedChart = String(value.chartType ?? "").toLowerCase();
   const chartType = ["bar", "line", "pie", "table"].includes(requestedChart) ? requestedChart : "bar";
+  const validOperations = new Set<RepositoryOperation>([
+    "inspect_scope", "list_documents", "analyze_each_document", "aggregate_corpus",
+    "search_evidence", "analyze_text", "visualize",
+  ]);
+  const operations = [
+    ...(Array.isArray(value.operations) ? value.operations : []),
+    operation,
+  ]
+    .map((item) => String(item) as RepositoryOperation)
+    .filter((item, index, values) => validOperations.has(item) && values.indexOf(item) === index)
+    .slice(0, 4);
   return {
     ...value,
+    operation: operations[0] ?? operation,
+    operations,
     scopeMode: operation === "search_evidence" ? "focused" : value.scopeMode,
     terms: normalizeStringList(value.terms, 12),
     retrievalQueries: normalizeStringList(value.retrievalQueries, 8),
@@ -338,6 +364,13 @@ function normalizeExecutionPlanCandidate(value: Record<string, unknown> | null):
 const RerankSchema = z.object({
   paperIds: z.array(z.string().min(1)).max(20),
   reason: z.string().max(500).default(""),
+  confidence: z.number().min(0).max(1).default(0.5),
+});
+
+const EvidenceSufficiencySchema = z.object({
+  sufficient: z.boolean(),
+  missingEvidenceNeeds: z.array(z.string().min(1).max(240)).max(6).default([]),
+  expansionQueries: z.array(z.string().min(1).max(240)).max(4).default([]),
   confidence: z.number().min(0).max(1).default(0.5),
 });
 
@@ -1350,6 +1383,9 @@ interface SelectedEvidence {
   repositoryCoverageCount: number;
   rerankerSource: "llm" | "fallback";
   rerankerConfidence: number;
+  retrievalRounds: number;
+  sufficiencyChecked: boolean;
+  missingEvidenceNeeds: string[];
 }
 
 export function buildRepositoryStatisticsSummary(
@@ -1417,6 +1453,9 @@ interface RepositoryQaOutput
     faithfulnessChecked: boolean;
     invalidCitationCount: number;
     repositoryCoverageCount: number;
+    retrievalRounds: number;
+    sufficiencyChecked: boolean;
+    missingEvidenceNeeds: string[];
   };
 }
 
@@ -1505,6 +1544,49 @@ function addCoverageRepresentatives(
   return result.slice(0, limit);
 }
 
+async function evaluateEvidenceSufficiency(input: {
+  question: string;
+  evidenceNeeds: string[];
+  candidates: RepositoryRetrievalCandidate[];
+  model?: string;
+}): Promise<z.infer<typeof EvidenceSufficiencySchema> | null> {
+  if (input.candidates.length === 0) return null;
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content: buildPapertrendSystemPrompt("evidence_sufficiency", [
+            "Decide whether the selected excerpts are sufficient to answer the focused question without guessing. " +
+            "Check every evidence need, contradictions, and missing populations, methods, or outcomes. " +
+            "If evidence is insufficient, propose up to four narrow retrieval queries that seek the missing information. " +
+            "Do not answer the research question. Return JSON only: {sufficient,missingEvidenceNeeds,expansionQueries,confidence}.",
+          ]),
+        },
+        {
+          role: "user",
+          content: [
+            `Question: ${input.question}`,
+            `Evidence needs: ${input.evidenceNeeds.join("; ") || "Direct evidence that answers the question"}`,
+            "",
+            ...input.candidates.map(candidatePrompt),
+          ].join("\n\n").slice(0, 18_000),
+        },
+      ],
+      0,
+      input.model,
+      "CHAT_EVIDENCE_SUFFICIENCY",
+      { maxTokens: 500 }
+    );
+    const parsed = EvidenceSufficiencySchema.safeParse(
+      extractJsonObject(completion?.content ?? "")
+    );
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
+  }
+}
+
 async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
@@ -1557,6 +1639,9 @@ async function selectEvidence(
   let selectedIds = candidates.slice(0, budgets.sourceLimit).map((candidate) => candidate.paperId);
   let rerankerSource: SelectedEvidence["rerankerSource"] = "fallback";
   let rerankerConfidence = 0.45;
+  let retrievalRounds = 1;
+  let sufficiencyChecked = false;
+  let missingEvidenceNeeds: string[] = [];
 
   if (candidates.length > 1) {
     try {
@@ -1611,6 +1696,49 @@ async function selectEvidence(
     );
   } else {
     selectedIds = selectedIds.slice(0, budgets.sourceLimit);
+    const candidateById = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
+    const selectedCandidates = selectedIds
+      .map((paperId) => candidateById.get(paperId))
+      .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate));
+    const sufficiency = await evaluateEvidenceSufficiency({
+      question: plan.refinedQuestion,
+      evidenceNeeds: plan.evidenceNeeds,
+      candidates: selectedCandidates,
+      model,
+    });
+    if (sufficiency) {
+      sufficiencyChecked = true;
+      missingEvidenceNeeds = sufficiency.missingEvidenceNeeds;
+      if (!sufficiency.sufficient && sufficiency.expansionQueries.length > 0) {
+        const expandedLimit = Math.min(
+          context.papers.length,
+          Math.max(budgets.sourceLimit, Math.min(20, budgets.sourceLimit * 2))
+        );
+        const expanded = rankRepositoryEvidence(
+          context.papers.map((paper) => ({
+            paperId: paper.paperId,
+            title: paper.title,
+            abstract: paper.abstract,
+            methods: paper.methods,
+            results: paper.results,
+            conclusion: paper.conclusion,
+            content: paper.content,
+            topics: [...paper.topics.keys()],
+            keywords: [...paper.keywords.keys()],
+          })),
+          sufficiency.expansionQueries,
+          Math.min(context.papers.length, budgets.candidateLimit)
+        );
+        selectedIds = [...new Set([
+          ...selectedIds,
+          ...expanded.map((candidate) => candidate.paperId),
+        ])].slice(0, expandedLimit);
+        const mergedById = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
+        expanded.forEach((candidate) => mergedById.set(candidate.paperId, candidate));
+        candidates = [...mergedById.values()];
+        retrievalRounds = 2;
+      }
+    }
   }
 
   const candidateById = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
@@ -1643,6 +1771,9 @@ async function selectEvidence(
     repositoryCoverageCount: context.papers.length,
     rerankerSource,
     rerankerConfidence,
+    retrievalRounds,
+    sufficiencyChecked,
+    missingEvidenceNeeds,
   };
 }
 
@@ -1801,6 +1932,9 @@ async function repositoryQaResult(
         faithfulnessChecked: false,
         invalidCitationCount: 0,
         repositoryCoverageCount: evidence.repositoryCoverageCount,
+        retrievalRounds: evidence.retrievalRounds,
+        sufficiencyChecked: evidence.sufficiencyChecked,
+        missingEvidenceNeeds: evidence.missingEvidenceNeeds,
       },
     };
   }
@@ -1832,6 +1966,9 @@ async function repositoryQaResult(
           faithfulnessChecked,
           invalidCitationCount: validation.invalidPaperIds.length,
           repositoryCoverageCount: evidence.repositoryCoverageCount,
+          retrievalRounds: evidence.retrievalRounds,
+          sufficiencyChecked: evidence.sufficiencyChecked,
+          missingEvidenceNeeds: evidence.missingEvidenceNeeds,
         },
       };
     }
@@ -1857,6 +1994,9 @@ async function repositoryQaResult(
       faithfulnessChecked,
       invalidCitationCount: validation.invalidPaperIds.length,
       repositoryCoverageCount: evidence.repositoryCoverageCount,
+      retrievalRounds: evidence.retrievalRounds,
+      sufficiencyChecked: evidence.sufficiencyChecked,
+      missingEvidenceNeeds: evidence.missingEvidenceNeeds,
     },
   };
 }
@@ -1890,8 +2030,17 @@ export function fallbackExecutionPlan(
     operation = "visualize";
     scopeMode = "complete";
   }
+  const operations: RepositoryOperation[] = [operation];
+  if (chart && !operations.includes("visualize")) operations.push("visualize");
+  if (
+    operation === "list_documents" &&
+    /\b(explain|summari[sz]e|classify|compare|analy[sz]e)\b/i.test(prompt)
+  ) {
+    operations.push("analyze_each_document");
+  }
   return {
     operation,
+    operations: [...new Set(operations)].slice(0, 4),
     scopeMode,
     refinedQuestion: prompt.trim(),
     terms: quoted,
@@ -1944,13 +2093,17 @@ export async function planRepositoryExecution(
       role: "system" as const,
       content: buildPapertrendSystemPrompt("request_director", [
         "Interpret the request semantically and return JSON only. " +
-        "Choose exactly one operation: inspect_scope for repository metadata/count/status/year questions; " +
+        "Choose one to four ordered operations. Set operation to the primary operation and operations to every capability needed to satisfy a compound request. " +
+        "Use inspect_scope for repository metadata/count/status/year questions; " +
         "list_documents for complete title or metadata listings; analyze_each_document when every document needs an explanation, summary, classification, or comparison; " +
         "aggregate_corpus for repository-wide topics, methods, trends, gaps, or synthesis; search_evidence for a focused evidence question; " +
         "analyze_text for exact word/phrase/entity frequencies; visualize for requested charts or tables. " +
+        "Use aggregate_corpus only when the requested answer must characterize patterns across a corpus. A focused question asking what evidence supports, explains, links, or contradicts one issue uses search_evidence even when many papers may contribute. " +
+        "When the user asks only to show or plot an already supported repository metric as a chart or table, use visualize by itself; add aggregate_corpus only when a separate narrative synthesis is also requested. " +
+        "Do not split one coherent task unnecessarily, but do not discard a requested count, listing, analysis, or visualization merely because another capability is also needed. " +
         "scopeMode must be complete whenever the user asks about all/every/the repository as a corpus. Never reinterpret a repository-wide request as one paper. " +
         "Preserve exact count terms. Infer answerLanguage from the conversation, not isolated words: honor the latest explicit language request; otherwise use Thai when the user is conversing or asking in Thai even when technical terms are English, and use English when the request is English even if Thai names appear in evidence. Keep that language until the user switches it. " +
-        "Do not answer the question. Schema: {operation,scopeMode,refinedQuestion,terms,retrievalQueries,evidenceNeeds,requestedFields,answerLanguage,outputFormat,chartType,reason,confidence}.",
+        "Do not answer the question. Schema: {operation,operations,scopeMode,refinedQuestion,terms,retrievalQueries,evidenceNeeds,requestedFields,answerLanguage,outputFormat,chartType,reason,confidence}.",
       ]),
     },
     {
@@ -1987,8 +2140,15 @@ export async function planRepositoryExecution(
     const answerLanguage = /^(?:same as (?:the )?user|user language|auto)$/i.test(plannedLanguage)
       ? inferConversationAnswerLanguage(input.prompt, input.history)
       : plannedLanguage;
+    const operations = [...(parsed.data.operations ?? [parsed.data.operation])];
+    if (promptRequestsChart(input.prompt, input.forceChart) && !operations.includes("visualize")) {
+      if (operations.length >= 4) operations[operations.length - 1] = "visualize";
+      else operations.push("visualize");
+    }
     return {
       ...parsed.data,
+      operation: operations[0] ?? parsed.data.operation,
+      operations: [...new Set(operations)],
       terms: [...new Set(parsed.data.terms.map((term) => term.trim()).filter(Boolean))],
       answerLanguage,
       source: "llm",
@@ -2010,6 +2170,104 @@ function completeCoverage(context: RepositoryContext, returned: number): Reposit
     returnedPapers: returned,
     complete: returned === context.papers.length,
     scopeLabel: context.scopeLabel,
+  };
+}
+
+const OPERATION_LABELS: Record<RepositoryOperation, string> = {
+  inspect_scope: "Repository scope",
+  list_documents: "Documents",
+  analyze_each_document: "Document analysis",
+  aggregate_corpus: "Corpus synthesis",
+  search_evidence: "Evidence answer",
+  analyze_text: "Text analysis",
+  visualize: "Visualization",
+};
+
+async function runMultiCapabilityPlan(input: RepositoryChatInput, context: RepositoryContext, execution: RepositoryExecutionPlan) {
+  const sections: string[] = [];
+  const citations = new Map<string, RepositoryCitation>();
+  const charts: RepositoryChartPayload[] = [];
+  const limitations = new Set<string>();
+  const coverages: RepositoryCoverage[] = [];
+  const quality: Partial<RepositoryQaOutput["quality"]> = {};
+
+  for (const operation of execution.operations) {
+    const stepExecution: RepositoryExecutionPlan = {
+      ...execution,
+      operation,
+      operations: [operation],
+    };
+    const stepPlan = legacyPlanForExecution(stepExecution);
+    let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
+
+    if (operation === "list_documents") result = listDocumentsResult(context);
+    else if (operation === "analyze_each_document") result = analyzeEachDocumentResult(context);
+    else if (operation === "aggregate_corpus") result = await aggregateCorpusResult(input, context, stepExecution);
+    else if (operation === "inspect_scope") result = {
+      ...repositoryStatisticsResult(context, stepPlan, input.prompt),
+      coverage: completeCoverage(context, context.papers.length),
+      limitations: [],
+    };
+    else if (operation === "analyze_text") result = {
+      ...wordCountResult(context, stepPlan),
+      coverage: completeCoverage(context, context.papers.length),
+      limitations: [],
+    };
+    else if (operation === "visualize") {
+      const visualizesTextAnalysis = execution.operations.includes("analyze_text") && stepPlan.terms.length > 0;
+      const visualResult = visualizesTextAnalysis
+        ? wordCountResult(context, { ...stepPlan, intent: "word_count", needsChart: true })
+        : topicResult(context, stepPlan);
+      result = {
+        ...visualResult,
+        answer: visualizesTextAnalysis
+          ? "The chart uses the exact complete-scope term counts reported above."
+          : visualResult.answer,
+        coverage: completeCoverage(context, context.papers.length),
+        limitations: [],
+      };
+    }
+    else {
+      const qa = await repositoryQaResult(input, context, stepPlan);
+      Object.assign(quality, qa.quality);
+      result = {
+        answer: qa.answer,
+        citations: qa.citations,
+        charts: qa.charts,
+        coverage: {
+          eligiblePapers: context.papers.length,
+          processedPapers: qa.quality.selectedEvidenceCount,
+          returnedPapers: qa.citations.length,
+          complete: execution.scopeMode === "complete" && qa.quality.selectedEvidenceCount === context.papers.length,
+          scopeLabel: context.scopeLabel,
+        },
+        limitations: execution.scopeMode === "focused"
+          ? ["Focused retrieval reports relevant evidence coverage, not exhaustive corpus coverage."]
+          : [],
+      };
+    }
+
+    sections.push(`## ${OPERATION_LABELS[operation]}\n\n${result.answer}`);
+    result.citations.forEach((citation) => citations.set(`${citation.paperId}:${citation.href}`, citation));
+    charts.push(...result.charts);
+    result.limitations?.forEach((limitation) => limitations.add(limitation));
+    if (result.coverage) coverages.push(result.coverage);
+  }
+
+  const eligiblePapers = context.papers.length;
+  return {
+    answer: sections.join("\n\n"),
+    citations: [...citations.values()],
+    charts,
+    coverage: {
+      eligiblePapers,
+      processedPapers: Math.max(0, ...coverages.map((coverage) => coverage.processedPapers)),
+      returnedPapers: Math.max(0, ...coverages.map((coverage) => coverage.returnedPapers)),
+      complete: coverages.length > 0 && coverages.every((coverage) => coverage.complete),
+      scopeLabel: context.scopeLabel,
+    },
+    limitations: [...limitations],
+    quality,
   };
 }
 
@@ -2185,6 +2443,20 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       },
       limitations: ["No completed paper extraction is available in the selected scope."],
       diagnostics,
+    };
+  }
+  if (execution && execution.operations.length > 1) {
+    const result = await runMultiCapabilityPlan(input, context, execution);
+    return {
+      handled: true,
+      answer: result.answer,
+      citations: result.citations,
+      charts: result.charts,
+      plan,
+      execution,
+      coverage: result.coverage,
+      limitations: result.limitations,
+      diagnostics: { ...diagnostics, ...result.quality },
     };
   }
   if (execution?.operation === "list_documents") {
