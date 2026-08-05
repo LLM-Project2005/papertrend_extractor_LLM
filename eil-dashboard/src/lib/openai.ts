@@ -27,9 +27,19 @@ export interface ChatCompletionAnnotation {
   };
 }
 
+export interface ChatCompletionToolCall {
+  id?: string;
+  type?: string;
+  function?: {
+    name?: string;
+    arguments?: string;
+  };
+}
+
 export interface ChatCompletionResult {
   content: string | null;
   annotations: ChatCompletionAnnotation[];
+  toolCalls: ChatCompletionToolCall[];
   model?: string;
   usage?: unknown;
 }
@@ -123,6 +133,7 @@ export async function createChatCompletionResult(
       message?: {
         content?: unknown;
         annotations?: ChatCompletionAnnotation[];
+        tool_calls?: ChatCompletionToolCall[];
       };
     }>;
   };
@@ -131,6 +142,7 @@ export async function createChatCompletionResult(
   return {
     content: normalizeMessageContent(message?.content),
     annotations: Array.isArray(message?.annotations) ? message.annotations : [],
+    toolCalls: Array.isArray(message?.tool_calls) ? message.tool_calls : [],
     model: payload.model,
     usage: payload.usage,
   };

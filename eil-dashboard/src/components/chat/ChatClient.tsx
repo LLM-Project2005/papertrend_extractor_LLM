@@ -29,6 +29,10 @@ import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
 import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
+import {
+  dedupeConversationSources,
+  previewConversationSources,
+} from "@/lib/conversation-sources";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
   ChartIcon,
@@ -706,6 +710,36 @@ function safeCitationHref(href: string): string {
   } catch {
     return "#";
   }
+}
+
+function CitationLink({ citation, compact = false }: { citation: Citation; compact?: boolean }) {
+  return (
+    <Link
+      href={safeCitationHref(citation.href)}
+      className={`flex items-start gap-2.5 border border-slate-200 bg-white text-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a] ${
+        compact ? "rounded-lg px-3 py-2" : "rounded-xl px-3.5 py-3"
+      }`}
+    >
+      {citation.sourceType === "web" ? (
+        <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+      ) : (
+        <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-slate-900 dark:text-[#ececec]">
+          {citation.title}
+        </span>
+        <span className="mt-0.5 block text-xs text-slate-500 dark:text-[#8e8e8e]">
+          {citation.sourceType === "web" ? "Web source" : citation.year || "Paper"}
+        </span>
+        {!compact && citation.reason ? (
+          <span className="mt-1.5 block text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+            {citation.reason}
+          </span>
+        ) : null}
+      </span>
+    </Link>
+  );
 }
 
 const chatChartTooltipTheme = {
@@ -1499,6 +1533,8 @@ export default function ChatClient() {
   const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
   const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const [sourcesPanelOpen, setSourcesPanelOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
   const [chatSearchDetails, setChatSearchDetails] = useState<ChatThreadDetail[]>([]);
@@ -1620,6 +1656,10 @@ export default function ChatClient() {
         ? messages.filter((message) => message.kind !== "deep_research_report")
         : messages,
     [messages, researchReport]
+  );
+  const conversationSources = useMemo(
+    () => dedupeConversationSources(visibleMessages.flatMap((message) => message.citations)),
+    [visibleMessages]
   );
   const researchProgress = useMemo(
     () => buildResearchProgress(deepSession),
@@ -2746,7 +2786,7 @@ export default function ChatClient() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="relative flex items-center gap-2">
               {deepSession ? (
                 <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   {sessionLabel(deepSession) ?? "Saved"}
@@ -2765,6 +2805,32 @@ export default function ChatClient() {
                   <FullscreenIcon className="h-4 w-4" />
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setConversationMenuOpen((current) => !current)}
+                title="Conversation menu"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                aria-label="Open conversation menu"
+                aria-expanded={conversationMenuOpen}
+              >
+                <MoreHorizontalIcon className="h-4 w-4" />
+              </button>
+              {conversationMenuOpen ? (
+                <div className="absolute right-0 top-11 z-30 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_48px_rgba(0,0,0,0.4)]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourcesPanelOpen(true);
+                      setConversationMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                  >
+                    <PaperIcon className="h-4 w-4" />
+                    <span className="min-w-0 flex-1">Files in this conversation</span>
+                    <span className="text-xs text-slate-400 dark:text-[#777777]">{conversationSources.length}</span>
+                  </button>
+                </div>
+              ) : null}
             </div>
           </header>
 
@@ -3147,6 +3213,7 @@ export default function ChatClient() {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);
                   const attachments = attachmentsFromMetadata(message.metadata);
+                  const citationPreview = previewConversationSources(message.citations, 5);
                   return (
                     <section key={message.id}>
                       {isUser ? (
@@ -3224,34 +3291,24 @@ export default function ChatClient() {
                             />
                           ))}
                           {message.citations.length > 0 ? (
-                            <div className="space-y-2">
-                              {message.citations.map((citation) => (
-                                <Link
-                                  key={`${message.id}-${citation.paperId}`}
-                                  href={safeCitationHref(citation.href)}
-                                  className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
-                                >
-                                  {citation.sourceType === "web" ? (
-                                    <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
-                                  ) : (
-                                    <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
-                                  )}
-                                  <span className="min-w-0">
-                                    <span className="font-medium text-slate-900 dark:text-[#ececec]">
-                                      {citation.sourceType === "web" ? "Web source: " : "Paper: "}
-                                      {citation.title}
-                                    </span>
-                                    <span className="ml-2 text-slate-500 dark:text-[#8e8e8e]">
-                                      ({citation.year})
-                                    </span>
-                                    {citation.reason ? (
-                                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
-                                        {citation.reason}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                </Link>
+                            <div className="max-w-[720px] space-y-1.5">
+                              {citationPreview.visible.map((citation) => (
+                                <CitationLink
+                                  key={`${message.id}-${citation.sourceType ?? "paper"}-${citation.paperId}`}
+                                  citation={citation}
+                                  compact
+                                />
                               ))}
+                              {citationPreview.remaining > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSourcesPanelOpen(true)}
+                                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                >
+                                  <PaperIcon className="h-3.5 w-3.5" />
+                                  {citationPreview.remaining} more
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -3856,6 +3913,49 @@ export default function ChatClient() {
             </form>
           </div>
         </section>
+
+        {sourcesPanelOpen ? (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-30 bg-black/25 lg:hidden"
+              onClick={() => setSourcesPanelOpen(false)}
+              aria-label="Close conversation sources"
+            />
+            <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(90vw,360px)] flex-col border-l border-slate-200 bg-white shadow-[-18px_0_50px_rgba(15,23,42,0.14)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[-18px_0_50px_rgba(0,0,0,0.4)] lg:static lg:z-auto lg:w-[340px] lg:flex-none lg:shadow-none">
+              <div className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-[#1f1f1f]">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">Files in this conversation</p>
+                  <p className="text-xs text-slate-500 dark:text-[#8e8e8e]">{conversationSources.length} unique sources</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSourcesPanelOpen(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  aria-label="Close conversation sources"
+                >
+                  <CloseIcon className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {conversationSources.length > 0 ? (
+                  <div className="space-y-2">
+                    {conversationSources.map((citation) => (
+                      <CitationLink
+                        key={`conversation-${citation.sourceType ?? "paper"}-${citation.paperId}-${citation.href}`}
+                        citation={citation}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-2 py-8 text-center text-sm leading-6 text-slate-500 dark:text-[#8e8e8e]">
+                    Sources cited by answers in this conversation will appear here.
+                  </div>
+                )}
+              </div>
+            </aside>
+          </>
+        ) : null}
       </div>
 
       {reportFullViewOpen && researchReport ? (

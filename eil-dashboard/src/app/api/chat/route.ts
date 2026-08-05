@@ -17,6 +17,11 @@ import {
   loadScopedDashboardData,
 } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
+import {
+  BUILD_RESEARCH_CHART_TOOL,
+  chartToolArguments,
+  describeChartRows,
+} from "@/lib/chart-agent";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
@@ -1336,10 +1341,12 @@ async function planChartBundleWithLlm(
         {
           role: "system",
           content:
-            "You are a production chart planner for a research-paper analytics app. " +
-            "Choose one or more useful charts from the available analyzed data. " +
+            "You are a production chart-planning agent for a research-paper analytics app. Use the build_research_charts tool. " +
+            "Understand the complete user request and choose one or more useful charts from the available analyzed data. " +
             "If the user asks for multiple charts, comparisons, a dashboard, a report, or several angles, return multiple chart specs. " +
-            "Return strict JSON only. Do not include markdown. Do not invent metrics, columns, or data.",
+            "Honor requested chart types, measures, grouping, focus terms, scope, and number of views whenever the available metrics permit it. " +
+            "Select line charts for meaningful ordered time trends, bar charts for category comparison, pie charts only for small part-to-whole distributions, and tables for exact values or dense comparisons. " +
+            "Do not invent metrics, columns, or data. Call the tool exactly once.",
         },
         {
           role: "user",
@@ -1368,10 +1375,15 @@ async function planChartBundleWithLlm(
       0.1,
       resolveChatModel(body.model),
       "CHART_PLANNER",
-      { maxTokens: 1200 }
+      {
+        maxTokens: 1200,
+        tools: [BUILD_RESEARCH_CHART_TOOL],
+        toolChoice: { type: "function", function: { name: "build_research_charts" } },
+        parallelToolCalls: false,
+      }
     );
     return sanitizePlannerBundle(
-      extractJsonObject(completion?.content),
+      chartToolArguments(completion?.toolCalls ?? []) ?? extractJsonObject(completion?.content),
       fallbackRequest,
       profile.availableMetrics,
       prompt
@@ -2043,7 +2055,7 @@ function summarizeChartForResponse(chart: ChatChartPayload) {
     chartType: chart.chartType,
     scope: chart.scopeLabel,
     series: chart.yKeys,
-    sampleRows: chart.data.slice(0, 8),
+    dataSummary: describeChartRows(chart.data, chart.yKeys),
     plannerReason: chart.planner?.reason,
   };
 }
@@ -2105,7 +2117,9 @@ async function synthesizeChartAnswer(
             "Default behavior: if the user simply asks for a chart or does not specify a response style, explain the chart automatically. " +
             "Mention what the chart shows, the strongest visible pattern, and any useful caution about scope or missing data. " +
             "If the user asks for ideas, thoughts, a plan, critique, summary, next steps, recommendations, or another format, prioritize that intent while still grounding the answer in the chart. " +
-            "Do not claim to have data beyond the provided chart summaries. Keep it concise but useful.",
+            "Use the language established by the latest user request and recent conversation, including Thai when the conversation is Thai. " +
+            "Start with a direct answer, then explain why each visualization was selected, the strongest and weakest values, meaningful comparisons or time changes, and any scope/data limitations. Use compact Markdown headings and bullets when multiple charts are present. " +
+            "Do not claim causation, statistical significance, or data beyond the provided complete chart summaries. Be detailed enough to make the chart understandable without repeating every plotted value.",
         },
         {
           role: "user",
@@ -2125,7 +2139,7 @@ async function synthesizeChartAnswer(
       0.35,
       resolveChatModel(body.model),
       "CHART_SYNTHESIS",
-      { maxTokens: 900 }
+      { maxTokens: 1_600 }
     );
     return completion?.content?.trim() || fallbackChartAnswer(charts);
   } catch {
