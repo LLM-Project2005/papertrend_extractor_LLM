@@ -102,7 +102,7 @@ export class CloudSqlIngestionRepository {
     return withCloudSqlOwnerTransaction(input.ownerUserId, async (client) => {
       const timestamp = new Date().toISOString();
       for (const item of input.uploaded) {
-        await client.query(
+        const result = await client.query(
           `UPDATE public.ingestion_runs
            SET status = 'queued', source_path = $4, error_message = NULL,
                completed_at = NULL, updated_at = $5,
@@ -111,10 +111,13 @@ export class CloudSqlIngestionRepository {
           [item.runId, input.ownerUserId, input.folderJobId, item.storagePath, timestamp,
             JSON.stringify({ progress_stage: "queued", progress_message: "Queued", progress_detail: "Upload complete. Waiting for worker to claim this file.", uploaded_at: timestamp })]
         );
+        if (result.rowCount !== 1) {
+          throw new Error(`Upload finalization did not match run ${item.runId}.`);
+        }
       }
       for (const item of input.failed) {
         const message = item.errorMessage || "Direct upload failed before queueing.";
-        await client.query(
+        const result = await client.query(
           `UPDATE public.ingestion_runs
            SET status = 'failed', error_message = $4, completed_at = $5,
                updated_at = $5, input_payload = COALESCE(input_payload, '{}'::jsonb) || $6::jsonb
@@ -122,6 +125,9 @@ export class CloudSqlIngestionRepository {
           [item.runId, input.ownerUserId, input.folderJobId, message, timestamp,
             JSON.stringify({ progress_stage: "failed", progress_message: "Upload failed", progress_detail: message, upload_failed_at: timestamp })]
         );
+        if (result.rowCount !== 1) {
+          throw new Error(`Upload failure finalization did not match run ${item.runId}.`);
+        }
       }
       const queuedCount = input.uploaded.length;
       const failedCount = input.failed.length;
@@ -144,6 +150,12 @@ export class CloudSqlIngestionRepository {
         `SELECT * FROM public.ingestion_runs WHERE owner_user_id = $1 AND folder_analysis_job_id = $2 ORDER BY created_at DESC`,
         [input.ownerUserId, input.folderJobId]
       );
+      const invalidQueuedRun = runs.rows.find(
+        (run) => run.status === "queued" && !String(run.source_path ?? "").trim()
+      );
+      if (invalidQueuedRun) {
+        throw new Error(`Queued run ${invalidQueuedRun.id} is missing its storage path.`);
+      }
       return { folderJob: job.rows[0], runs: runs.rows };
     });
   }

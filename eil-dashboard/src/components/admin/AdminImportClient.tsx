@@ -974,6 +974,7 @@ export default function AdminImportClient() {
           storagePath: string;
           token: string;
           signedUrl: string;
+          uploadHeaders?: Record<string, string>;
           fileName: string;
         }>;
         error?: string;
@@ -1017,7 +1018,7 @@ export default function AdminImportClient() {
             method: "PUT",
             headers: {
               "Content-Type": file.type || "application/pdf",
-              "x-upsert": "false",
+              ...(uploadTarget.uploadHeaders ?? { "x-upsert": "false" }),
             },
             body: file,
           });

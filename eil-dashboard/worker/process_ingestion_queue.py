@@ -1458,7 +1458,38 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
     if not queued_runs:
         return False
 
+    quarantined_invalid_run = False
     for run in queued_runs:
+        if not str(run.get("source_path") or "").strip():
+            run_id = str(run.get("id") or "")
+            message = "Upload did not produce a storage path; this run cannot be processed."
+            client.update_run(
+                run_id,
+                {
+                    "status": "failed",
+                    "completed_at": now_iso(),
+                    "error_message": message,
+                    "input_payload": merge_input_payload(
+                        run,
+                        {
+                            "last_error_stage": "queue_validation",
+                            "progress_stage": "failed",
+                            "progress_message": "Upload incomplete",
+                            "progress_detail": message,
+                            "progress_updated_at": now_iso(),
+                            **build_lifecycle_payload("failed"),
+                        },
+                    ),
+                },
+            )
+            sync_folder_analysis_job(client, run)
+            logger.warning(
+                "quarantined queued run without storage path",
+                extra={"run_id": run_id},
+            )
+            quarantined_invalid_run = True
+            continue
+
         claimed = client.claim_run(str(run["id"]))
         if not claimed:
             continue
@@ -1540,7 +1571,7 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
             logger.exception("run failed", extra={"run_id": run_id, "error_message": message})
         return True
 
-    return False
+    return quarantined_invalid_run
 
 
 def process_batch(client: Any, config: WorkerConfig, max_runs: int = 1) -> Dict[str, int]:
