@@ -14,11 +14,13 @@ private browser window.
    `research-trend-analysis-papertrend-uploads-staging`.
 4. Confirm the new run and paper exist in Cloud SQL, not Supabase.
 5. Open library detail, dashboard, normal chat, and one chart request.
-6. Sign out and sign in as user B. Confirm user A's projects, folders, papers,
+6. Create and complete one Deep Research request; confirm the session, steps,
+   report message, and citations are stored in Cloud SQL.
+7. Sign out and sign in as user B. Confirm user A's projects, folders, papers,
    chat threads, and dashboard rows are absent.
-7. Create a new **email-verified** Firebase test user. Confirm first login
+8. Create a new **email-verified** Firebase test user. Confirm first login
    creates a Cloud SQL profile/mapping without manual SQL.
-8. Confirm the Vercel application still works as rollback.
+9. Confirm the Vercel application still works as rollback.
 
 ## Gate B: IAM approval
 

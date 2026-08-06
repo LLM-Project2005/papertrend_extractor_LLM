@@ -1,4 +1,5 @@
 import { getPythonNodeServiceUrl, getWorkerWebhookSecret } from "@/lib/server-env";
+import { serviceAuthorizationHeader } from "@/lib/google-service-auth";
 
 export async function callPythonNodeService<TResponse>(
   path: string,
@@ -14,11 +15,12 @@ export async function callPythonNodeService<TResponse>(
   const timeout = setTimeout(() => controller.abort(), 15000);
 
   try {
+    const authorization = await serviceAuthorizationHeader(baseUrl, workerWebhookSecret);
     const response = await fetch(`${baseUrl}${path}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(workerWebhookSecret ? { Authorization: `Bearer ${workerWebhookSecret}` } : {}),
+        ...(authorization ? { Authorization: authorization } : {}),
       },
       body: JSON.stringify(body),
       signal: controller.signal,

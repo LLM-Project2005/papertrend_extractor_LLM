@@ -1,6 +1,8 @@
 import { createHash } from "crypto";
 
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
+import { getDatabaseProvider } from "@/lib/server-env";
 import type { DashboardData, PaperId, TrackRow } from "@/types/database";
 
 const DASHBOARD_SUMMARY_CACHE_VERSION = 1;
@@ -211,6 +213,31 @@ export async function materializeDashboardSummaryCache(
   }
 
   const payload = buildDashboardSummaryPayload(data, scope);
+  if (getDatabaseProvider() === "cloud-sql") {
+    await withCloudSqlOwnerTransaction(scope.ownerUserId, (client) =>
+      client.query(
+        `
+          INSERT INTO public.workspace_analytics_cache (
+            owner_user_id, scope_type, scope_key, version_hash, payload, updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5::jsonb, NOW())
+          ON CONFLICT (owner_user_id, scope_type, scope_key)
+          DO UPDATE SET
+            version_hash = EXCLUDED.version_hash,
+            payload = EXCLUDED.payload,
+            updated_at = NOW()
+        `,
+        [
+          scope.ownerUserId,
+          payload.scope.type,
+          payload.scope.key,
+          buildDashboardSummaryVersionHash(payload),
+          JSON.stringify(payload),
+        ]
+      )
+    );
+    return;
+  }
   const supabase = getSupabaseAdmin();
   const { error } = await supabase
     .from("workspace_analytics_cache")
@@ -239,6 +266,22 @@ export async function loadDashboardSummaryCache(
   }
 
   const resolvedScope = resolveSummaryScope(scope);
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(scope.ownerUserId, async (client) => {
+      const result = await client.query<{ payload: DashboardSummaryCachePayload }>(
+        `
+          SELECT payload
+          FROM public.workspace_analytics_cache
+          WHERE owner_user_id = $1
+            AND scope_type = $2
+            AND scope_key = $3
+          LIMIT 1
+        `,
+        [scope.ownerUserId, resolvedScope.type, resolvedScope.key]
+      );
+      return result.rows[0]?.payload ?? null;
+    });
+  }
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("workspace_analytics_cache")

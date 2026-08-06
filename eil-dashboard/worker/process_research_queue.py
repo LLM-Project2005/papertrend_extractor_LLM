@@ -623,7 +623,9 @@ def main() -> None:
     args = parse_args()
     config = load_config()
     configure_logging(config)
-    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    from database_client import create_worker_database_client
+
+    client = create_worker_database_client(config, SupabaseRestClient)
 
     if args.once:
         summary = process_batch(client, max_runs=max(1, args.max_runs))

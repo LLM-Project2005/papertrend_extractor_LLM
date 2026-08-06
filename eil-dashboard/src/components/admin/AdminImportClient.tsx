@@ -16,7 +16,6 @@ import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
-import { supabase } from "@/lib/supabase";
 import Modal from "@/components/ui/Modal";
 import {
   ArrowRightIcon,
@@ -755,15 +754,8 @@ export default function AdminImportClient() {
 
   async function handleOpenPrimaryFileAction(run: IngestionRunRow) {
     if (run.status === "succeeded") {
-      try {
-        await handleViewAnalysis(run);
-        return;
-      } catch {
-        setAnalysisRun(null);
-        setAnalysisDetail(null);
-        setAnalysisError(null);
-        // Fall back to preview if analysis details are not reachable.
-      }
+      await handleViewAnalysis(run).catch(() => undefined);
+      return;
     }
 
     await handlePreviewRun(run);
@@ -945,11 +937,6 @@ export default function AdminImportClient() {
       setError(
         `Each PDF must be 20 MB or smaller. Oversized file(s): ${names}${extra}.`
       );
-      return;
-    }
-
-    if (!supabase) {
-      setError("Supabase browser client is not configured. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.");
       return;
     }
 

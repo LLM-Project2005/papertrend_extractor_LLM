@@ -1,16 +1,20 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PoolClient } from "pg";
 import {
   appendWorkspaceMessage,
   createWorkspaceThread,
   deleteWorkspaceThread,
   getWorkspaceThreadDetail,
   listWorkspaceThreads,
+  replaceDeepResearchPlan,
 } from "@/lib/chat-store";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type {
   ChatThreadDetail,
+  DeepResearchSessionRecord,
+  DeepResearchStepRecord,
   WorkspaceMessageRecord,
   WorkspaceThreadSummary,
 } from "@/types/research";
@@ -42,6 +46,26 @@ interface EditUserMessageInput {
   createdAt: string;
 }
 
+export interface ReplaceDeepResearchPlanInput {
+  threadId: string;
+  ownerUserId: string;
+  folderId?: string | null;
+  sessionId?: string | null;
+  prompt: string;
+  title: string;
+  summary: string;
+  requiresAnalysis: boolean;
+  pendingRunCount: number;
+  sourcePolicy?: Record<string, unknown>;
+  steps: Array<{
+    position: number;
+    title: string;
+    description: string;
+    tool_name: string;
+    tool_input: Record<string, unknown>;
+  }>;
+}
+
 export interface ChatRepository {
   listThreads(ownerUserId: string): Promise<WorkspaceThreadSummary[]>;
   createThread(input: CreateThreadInput): Promise<WorkspaceThreadSummary>;
@@ -59,6 +83,12 @@ export interface ChatRepository {
     metadata: Record<string, unknown>
   ): Promise<void>;
   editUserMessage(input: EditUserMessageInput): Promise<void>;
+  replaceDeepResearchPlan(input: ReplaceDeepResearchPlanInput): Promise<DeepResearchSessionRecord>;
+  updateDeepResearchSession(
+    ownerUserId: string,
+    sessionId: string,
+    patch: Partial<DeepResearchSessionRecord>
+  ): Promise<void>;
   getThreadDetail(ownerUserId: string, threadId: string): Promise<ChatThreadDetail>;
 }
 
@@ -127,6 +157,23 @@ class SupabaseChatRepository implements ChatRepository {
     if (deleteError) throw new Error(deleteError.message);
   }
 
+  replaceDeepResearchPlan(input: ReplaceDeepResearchPlanInput) {
+    return replaceDeepResearchPlan(this.client, input);
+  }
+
+  async updateDeepResearchSession(
+    ownerUserId: string,
+    sessionId: string,
+    patch: Partial<DeepResearchSessionRecord>
+  ): Promise<void> {
+    const { error } = await this.client
+      .from("deep_research_sessions")
+      .update({ ...patch, updated_at: new Date().toISOString() })
+      .eq("id", sessionId)
+      .eq("owner_user_id", ownerUserId);
+    if (error) throw new Error(error.message);
+  }
+
   getThreadDetail(ownerUserId: string, threadId: string) {
     return getWorkspaceThreadDetail(this.client, ownerUserId, threadId);
   }
@@ -161,7 +208,52 @@ function messageRow(row: Record<string, unknown>): WorkspaceMessageRecord {
   };
 }
 
+function deepResearchStepRow(row: Record<string, unknown>): DeepResearchStepRecord {
+  return {
+    ...(row as unknown as DeepResearchStepRecord),
+    input_payload: row.input_payload && typeof row.input_payload === "object"
+      ? row.input_payload as DeepResearchStepRecord["input_payload"] : {},
+    output_payload: row.output_payload && typeof row.output_payload === "object"
+      ? row.output_payload as DeepResearchStepRecord["output_payload"] : {},
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
+  };
+}
+
+function deepResearchSessionRow(
+  row: Record<string, unknown>,
+  steps: DeepResearchStepRecord[] = []
+): DeepResearchSessionRecord {
+  return {
+    ...(row as unknown as DeepResearchSessionRecord),
+    requires_analysis: Boolean(row.requires_analysis),
+    pending_run_count: Number(row.pending_run_count ?? 0),
+    created_at: iso(row.created_at),
+    updated_at: iso(row.updated_at),
+    completed_at: row.completed_at ? iso(row.completed_at) : null,
+    steps,
+  };
+}
+
 class CloudSqlChatRepository implements ChatRepository {
+  private async loadDeepResearchSession(
+    client: PoolClient,
+    ownerUserId: string,
+    sessionId: string
+  ): Promise<DeepResearchSessionRecord> {
+    const session = await client.query<Record<string, unknown>>(
+      `SELECT * FROM public.deep_research_sessions WHERE id=$1 AND owner_user_id=$2 LIMIT 1`,
+      [sessionId, ownerUserId]
+    );
+    if (!session.rows[0]) throw new Error("Deep research session not found.");
+    const steps = await client.query<Record<string, unknown>>(
+      `SELECT * FROM public.deep_research_steps
+       WHERE session_id=$1 AND owner_user_id=$2 ORDER BY position ASC`,
+      [sessionId, ownerUserId]
+    );
+    return deepResearchSessionRow(session.rows[0], steps.rows.map(deepResearchStepRow));
+  }
+
   listThreads(ownerUserId: string): Promise<WorkspaceThreadSummary[]> {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const result = await client.query<Record<string, unknown>>(
@@ -305,6 +397,93 @@ class CloudSqlChatRepository implements ChatRepository {
     });
   }
 
+  replaceDeepResearchPlan(input: ReplaceDeepResearchPlanInput): Promise<DeepResearchSessionRecord> {
+    return withCloudSqlOwnerTransaction(input.ownerUserId, async (client) => {
+      let sessionId = input.sessionId ?? null;
+      if (sessionId) {
+        const updated = await client.query(
+          `UPDATE public.deep_research_sessions SET
+             prompt=$3, plan_summary=$4, requires_analysis=$5, pending_run_count=$6,
+             status='planned', final_report=NULL, last_error=NULL, updated_at=now(), completed_at=NULL
+           WHERE id=$1 AND owner_user_id=$2`,
+          [sessionId, input.ownerUserId, input.prompt, input.summary, input.requiresAnalysis, input.pendingRunCount]
+        );
+        if (updated.rowCount === 0) throw new Error("Deep research session not found.");
+        await client.query(
+          `DELETE FROM public.deep_research_steps WHERE session_id=$1 AND owner_user_id=$2`,
+          [sessionId, input.ownerUserId]
+        );
+      } else {
+        const created = await client.query<{ id: string }>(
+          `INSERT INTO public.deep_research_sessions
+             (thread_id,owner_user_id,folder_id,prompt,plan_summary,requires_analysis,pending_run_count,status,updated_at)
+           SELECT $1,$2,$3,$4,$5,$6,$7,'planned',now()
+           WHERE EXISTS (SELECT 1 FROM public.workspace_threads WHERE id=$1 AND owner_user_id=$2)
+           RETURNING id`,
+          [input.threadId, input.ownerUserId, input.folderId || null, input.prompt, input.summary,
+            input.requiresAnalysis, input.pendingRunCount]
+        );
+        if (!created.rows[0]) throw new Error("Failed to create deep research session.");
+        sessionId = created.rows[0].id;
+      }
+
+      for (const step of input.steps) {
+        await client.query(
+          `INSERT INTO public.deep_research_steps
+             (session_id,owner_user_id,position,title,description,tool_name,status,input_payload,output_payload,updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6,'planned',$7::jsonb,'{}'::jsonb,now())`,
+          [sessionId, input.ownerUserId, step.position, step.title, step.description,
+            step.tool_name, JSON.stringify(step.tool_input)]
+        );
+      }
+
+      await client.query(
+        `DELETE FROM public.workspace_messages
+         WHERE thread_id=$1 AND owner_user_id=$2
+           AND message_kind IN ('deep_research_plan','deep_research_report')`,
+        [input.threadId, input.ownerUserId]
+      );
+      await client.query(
+        `INSERT INTO public.workspace_messages
+           (thread_id,owner_user_id,folder_id,role,message_kind,content,citations,metadata,updated_at)
+         VALUES ($1,$2,$3,'assistant','deep_research_plan',$4,'[]'::jsonb,$5::jsonb,now())`,
+        [input.threadId, input.ownerUserId, input.folderId || null, input.summary,
+          JSON.stringify({ sessionId, requiresAnalysis: input.requiresAnalysis,
+            pendingRunCount: input.pendingRunCount, sourcePolicy: input.sourcePolicy ?? null })]
+      );
+      await client.query(
+        `UPDATE public.workspace_threads SET title=$3,summary=$4,updated_at=now()
+         WHERE id=$1 AND owner_user_id=$2`,
+        [input.threadId, input.ownerUserId, input.title, input.summary]
+      );
+      return this.loadDeepResearchSession(client, input.ownerUserId, sessionId);
+    });
+  }
+
+  updateDeepResearchSession(
+    ownerUserId: string,
+    sessionId: string,
+    patch: Partial<DeepResearchSessionRecord>
+  ): Promise<void> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query(
+        `UPDATE public.deep_research_sessions SET
+           status=COALESCE($3,status),
+           pending_run_count=COALESCE($4,pending_run_count),
+           requires_analysis=COALESCE($5,requires_analysis),
+           last_error=CASE WHEN $6 THEN $7 ELSE last_error END,
+           completed_at=CASE WHEN $8 THEN $9::timestamptz ELSE completed_at END,
+           updated_at=now()
+         WHERE id=$1 AND owner_user_id=$2`,
+        [sessionId, ownerUserId, patch.status ?? null, patch.pending_run_count ?? null,
+          patch.requires_analysis ?? null, Object.prototype.hasOwnProperty.call(patch, "last_error"),
+          patch.last_error ?? null, Object.prototype.hasOwnProperty.call(patch, "completed_at"),
+          patch.completed_at ?? null]
+      );
+      if (result.rowCount === 0) throw new Error("Deep research session not found.");
+    });
+  }
+
   getThreadDetail(ownerUserId: string, threadId: string): Promise<ChatThreadDetail> {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const thread = await client.query<Record<string, unknown>>(
@@ -321,10 +500,18 @@ class CloudSqlChatRepository implements ChatRepository {
         `,
         [threadId, ownerUserId]
       );
+      const sessions = await client.query<Record<string, unknown>>(
+        `SELECT * FROM public.deep_research_sessions
+         WHERE thread_id=$1 AND owner_user_id=$2 ORDER BY created_at DESC LIMIT 1`,
+        [threadId, ownerUserId]
+      );
+      const deepResearchSession = sessions.rows[0]
+        ? await this.loadDeepResearchSession(client, ownerUserId, String(sessions.rows[0].id))
+        : null;
       return {
         thread: threadRow(thread.rows[0]),
         messages: messages.rows.map(messageRow),
-        deepResearchSession: null,
+        deepResearchSession,
       };
     });
   }

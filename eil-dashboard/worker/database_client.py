@@ -183,6 +183,130 @@ class CloudSqlWorkerClient:
     def update_research_session(self, session_id: str, patch: Dict[str, Any]) -> None:
         self._update_owned_record("deep_research_sessions", session_id, patch)
 
+    def list_queued_sessions(self, limit: int) -> List[Dict[str, Any]]:
+        return self._list_research_sessions("queued", "created_at ASC", limit)
+
+    def list_waiting_sessions(self, limit: int) -> List[Dict[str, Any]]:
+        return self._list_research_sessions("waiting_on_analysis", "updated_at ASC", limit)
+
+    def _list_research_sessions(self, status: str, order: str, limit: int) -> List[Dict[str, Any]]:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                f"SELECT * FROM public.deep_research_sessions WHERE status = %s "
+                f"ORDER BY {order} LIMIT %s",
+                (status, max(int(limit), 1)),
+            )
+            return self._rows(cursor)
+
+    def claim_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE public.deep_research_sessions SET status='processing',last_error=NULL,updated_at=now() "
+                "WHERE id=%s AND status='queued' RETURNING *",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            return {str(key): _json_safe(value) for key, value in dict(row).items()} if row else None
+
+    def update_session(self, session_id: str, patch: Dict[str, Any]) -> None:
+        self.update_research_session(session_id, patch)
+
+    def get_session_steps(self, session_id: str) -> List[Dict[str, Any]]:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT * FROM public.deep_research_steps WHERE session_id=%s ORDER BY position ASC",
+                (session_id,),
+            )
+            return self._rows(cursor)
+
+    def update_step(self, session_id: str, position: int, patch: Dict[str, Any]) -> None:
+        from psycopg import sql
+
+        allowed = {"status", "input_payload", "output_payload", "title", "description", "tool_name"}
+        values = [(key, value) for key, value in patch.items() if key in allowed]
+        if not values:
+            return
+        assignments = sql.SQL(", ").join(
+            sql.SQL("{} = %s").format(sql.Identifier(key)) for key, _ in values
+        )
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                sql.SQL("UPDATE public.deep_research_steps SET {},updated_at=now() "
+                        "WHERE session_id=%s AND position=%s").format(assignments),
+                [_json_value(value) for _, value in values] + [session_id, position],
+            )
+
+    def insert_step(self, row: Dict[str, Any]) -> None:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO public.deep_research_steps "
+                "(session_id,owner_user_id,position,title,description,tool_name,status,input_payload,output_payload,updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,now()) "
+                "ON CONFLICT (session_id,position) DO UPDATE SET "
+                "title=EXCLUDED.title,description=EXCLUDED.description,tool_name=EXCLUDED.tool_name,"
+                "status=EXCLUDED.status,input_payload=EXCLUDED.input_payload,output_payload=EXCLUDED.output_payload,updated_at=now()",
+                (row.get("session_id"), row.get("owner_user_id"), row.get("position"), row.get("title"),
+                 row.get("description"), row.get("tool_name"), row.get("status") or "planned",
+                 _json_value(row.get("input_payload") or {}), _json_value(row.get("output_payload") or {})),
+            )
+
+    def list_project_folder_ids(self, owner_user_id: str, project_id: str) -> List[str]:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT id FROM public.research_folders WHERE owner_user_id=%s AND project_id=%s",
+                (owner_user_id, project_id),
+            )
+            return [str(row["id"]) for row in cursor.fetchall()]
+
+    def list_pending_runs(
+        self,
+        owner_user_id: str,
+        folder_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+        selected_run_ids: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        with self._connection() as connection, connection.cursor() as cursor:
+            values: List[Any] = [owner_user_id]
+            conditions = ["ir.owner_user_id=%s", "ir.status IN ('queued','processing')"]
+            join = ""
+            run_ids = [str(value) for value in list(selected_run_ids or []) if str(value).strip()]
+            if run_ids:
+                conditions.append("ir.id = ANY(%s::uuid[])")
+                values.append(run_ids)
+            elif folder_id:
+                conditions.append("ir.folder_id=%s")
+                values.append(folder_id)
+            elif project_id:
+                join = " JOIN public.research_folders rf ON rf.id=ir.folder_id"
+                conditions.extend(["rf.project_id=%s", "rf.owner_user_id=%s"])
+                values.extend([project_id, owner_user_id])
+            cursor.execute(
+                f"SELECT ir.id,ir.status FROM public.ingestion_runs ir{join} WHERE {' AND '.join(conditions)}",
+                values,
+            )
+            return self._rows(cursor)
+
+    def delete_report_messages(self, thread_id: str) -> None:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "DELETE FROM public.workspace_messages WHERE thread_id=%s AND message_kind='deep_research_report'",
+                (thread_id,),
+            )
+
+    def insert_message(self, row: Dict[str, Any]) -> None:
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO public.workspace_messages "
+                "(thread_id,owner_user_id,folder_id,role,message_kind,content,citations,metadata,updated_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,now())",
+                (row.get("thread_id"), row.get("owner_user_id"), row.get("folder_id"), row.get("role"),
+                 row.get("message_kind") or "chat", row.get("content") or "",
+                 _json_value(row.get("citations") or []), _json_value(row.get("metadata") or {})),
+            )
+
+    def update_thread(self, thread_id: str, patch: Dict[str, Any]) -> None:
+        self._update_record("workspace_threads", thread_id, patch)
+
     def get_google_drive_connection(self, user_id: str) -> Optional[Dict[str, Any]]:
         with self._connection() as connection, connection.cursor() as cursor:
             cursor.execute(

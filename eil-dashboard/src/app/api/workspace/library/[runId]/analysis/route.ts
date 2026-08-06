@@ -261,8 +261,8 @@ export async function GET(
     }
 
     const paperId =
-      paperIdFromRunId(String(paper.ingestion_run_id ?? "")) ||
       normalizePaperId(paper.paper_id) ||
+      paperIdFromRunId(String(paper.ingestion_run_id ?? "")) ||
       paperIdFromRunId(runId);
 
     const cloudDetails = useCloudSql ? await withCloudSqlOwnerTransaction(user.id, async (client) => {

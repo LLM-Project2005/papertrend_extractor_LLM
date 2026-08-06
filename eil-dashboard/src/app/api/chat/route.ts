@@ -3,13 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import {
-  appendWorkspaceMessage,
   buildThreadTitle,
-  createWorkspaceThread,
-  getDeepResearchSession,
-  getWorkspaceThreadDetail,
-  replaceDeepResearchPlan,
-  updateWorkspaceThread,
 } from "@/lib/chat-store";
 import { getChatRepository } from "@/lib/chat-repository";
 import { TRACK_COLS, type TrackKey } from "@/lib/constants";
@@ -2230,7 +2224,7 @@ function extractWebCitations(annotations: unknown): Citation[] {
 }
 
 async function resolveReusableDeepResearchSessionId(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  chatRepository: ReturnType<typeof getChatRepository>,
   ownerUserId: string,
   body: ChatRequestBody,
 ): Promise<string | undefined> {
@@ -2239,12 +2233,16 @@ async function resolveReusableDeepResearchSessionId(
     return undefined;
   }
 
-  let existing: DeepResearchSessionRecord;
+  let existing: DeepResearchSessionRecord | null | undefined;
   try {
-    existing = await getDeepResearchSession(supabase, sessionId);
+    if (!body.threadId) return undefined;
+    const detail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
+    existing = detail.deepResearchSession;
   } catch {
     return undefined;
   }
+
+  if (!existing || existing.id !== sessionId) return undefined;
 
   if (String(existing.owner_user_id ?? "") !== ownerUserId) {
     return undefined;
@@ -3561,8 +3559,34 @@ async function countPendingRuns(
   ownerUserId: string,
   selectedRunIds: string[] = [],
 ) {
-  const supabase = getSupabaseAdmin();
   const normalizedRunIds = selectedRunIds.filter(Boolean);
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      const conditions = ["ir.owner_user_id=$1", "ir.status IN ('queued','processing')"];
+      let joinFolders = false;
+      if (normalizedRunIds.length > 0) {
+        values.push(normalizedRunIds);
+        conditions.push(`ir.id=ANY($${values.length}::uuid[])`);
+      } else if (folderId && folderId !== "all") {
+        values.push(folderId);
+        conditions.push(`ir.folder_id=$${values.length}`);
+      } else if (projectId) {
+        joinFolders = true;
+        values.push(projectId);
+        conditions.push(`rf.project_id=$${values.length}`, "rf.owner_user_id=$1");
+      }
+      const result = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM public.ingestion_runs ir
+         ${joinFolders ? "JOIN public.research_folders rf ON rf.id=ir.folder_id" : ""}
+         WHERE ${conditions.join(" AND ")}`,
+        values
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    });
+  }
+
+  const supabase = getSupabaseAdmin();
   let query = supabase
     .from("ingestion_runs")
     .select("id", { count: "exact", head: true })
@@ -3606,26 +3630,33 @@ async function planDeepResearch(
   const attachmentNames = (body.attachments ?? [])
     .map((attachment) => String(attachment?.name ?? "").trim())
     .filter(Boolean);
-  const selectedRunIds = body.selectedRunIds ?? [];
+  const knowledgeScope = normalizeKnowledgeScope({
+    knowledgeScope: body.knowledgeScope,
+    projectId: body.projectId,
+    folderId: body.folderId,
+    selectedRunIds: body.selectedRunIds,
+  });
+  const selectedRunIds = knowledgeScope.runIds ?? [];
+  const researchProjectId = knowledgeScope.projectId;
   const researchSourcePolicy = normalizeResearchSourcePolicy(
     body.researchSourcePolicy,
     selectedRunIds
   );
-  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
+  const researchFolderId = folderForResearchPolicy(knowledgeScope.folderId, researchSourcePolicy);
   if (!prompt) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
+  const chatRepository = getChatRepository();
   const reusableSessionId = await resolveReusableDeepResearchSessionId(
-    supabase,
+    chatRepository,
     ownerUserId,
     body
   );
   const thread =
     body.threadId
-      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
-      : await createWorkspaceThread(supabase, {
+      ? (await chatRepository.getThreadDetail(ownerUserId, body.threadId)).thread
+      : await chatRepository.createThread({
           ownerUserId,
           mode: "deep_research",
           title: buildThreadTitle(prompt),
@@ -3633,7 +3664,7 @@ async function planDeepResearch(
         });
 
   if (!body.threadId) {
-    await appendWorkspaceMessage(supabase, {
+    await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
       folderId: researchFolderId,
@@ -3643,7 +3674,8 @@ async function planDeepResearch(
       metadata: {
         chatMode: "deep_research",
         attachments: body.attachments ?? [],
-        selectedRunIds: body.selectedRunIds ?? [],
+        selectedRunIds,
+        knowledgeScope,
         researchSourcePolicy,
       },
     });
@@ -3684,7 +3716,7 @@ async function planDeepResearch(
     }>("/research-plan", {
       ownerUserId,
       folderId: researchFolderId,
-      projectId: body.projectId,
+      projectId: researchProjectId,
       selectedRunIds,
       attachmentNames,
       sourcePolicy: researchSourcePolicy,
@@ -3696,9 +3728,9 @@ async function planDeepResearch(
 
   const pendingRunCount = await countPendingRuns(
     researchFolderId,
-    body.projectId,
+    researchProjectId,
     ownerUserId,
-    body.selectedRunIds ?? []
+    selectedRunIds
   );
   const plan =
     rawPlan ??
@@ -3707,12 +3739,12 @@ async function planDeepResearch(
       pendingRunCount,
       ownerUserId,
       researchFolderId,
-      body.projectId,
+      researchProjectId,
       selectedRunIds,
       attachmentNames,
       researchSourcePolicy
     ));
-  const session = await replaceDeepResearchPlan(supabase, {
+  const session = await chatRepository.replaceDeepResearchPlan({
     threadId: thread.id,
     ownerUserId,
     folderId: researchFolderId,
@@ -3741,7 +3773,7 @@ async function planDeepResearch(
     })),
   });
 
-  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+  const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
   return NextResponse.json({
     mode: "deep_research",
     action: "plan",
@@ -3762,37 +3794,34 @@ async function continueDeepResearch(
     );
   }
 
-  const supabase = getSupabaseAdmin();
-  const selectedRunIds = normalizeIdList(body.selectedRunIds ?? []);
+  const chatRepository = getChatRepository();
+  const knowledgeScope = normalizeKnowledgeScope({
+    knowledgeScope: body.knowledgeScope,
+    projectId: body.projectId,
+    folderId: body.folderId,
+    selectedRunIds: body.selectedRunIds,
+  });
+  const selectedRunIds = normalizeIdList(knowledgeScope.runIds ?? []);
   const researchSourcePolicy = normalizeResearchSourcePolicy(
     body.researchSourcePolicy,
     selectedRunIds
   );
-  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
+  const researchFolderId = folderForResearchPolicy(knowledgeScope.folderId, researchSourcePolicy);
   const pendingRunCount = await countPendingRuns(
     researchFolderId,
-    body.projectId,
+    knowledgeScope.projectId,
     ownerUserId,
     selectedRunIds
   );
   const nextStatus = pendingRunCount > 0 ? "waiting_on_analysis" : "queued";
 
-  const { error } = await supabase
-    .from("deep_research_sessions")
-    .update({
-      status: nextStatus,
-      pending_run_count: pendingRunCount,
-      requires_analysis: pendingRunCount > 0,
-      last_error: null,
-      updated_at: new Date().toISOString(),
-      completed_at: null,
-    })
-    .eq("id", body.sessionId)
-    .eq("owner_user_id", ownerUserId);
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  await chatRepository.updateDeepResearchSession(ownerUserId, body.sessionId, {
+    status: nextStatus,
+    pending_run_count: pendingRunCount,
+    requires_analysis: pendingRunCount > 0,
+    last_error: null,
+    completed_at: null,
+  });
 
   if (pendingRunCount > 0) {
     await triggerWorkerQueue({
@@ -3806,7 +3835,7 @@ async function continueDeepResearch(
     }).catch(() => null);
   }
 
-  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId);
+  const detail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
   return NextResponse.json({
     mode: "deep_research",
     action: "continue",
@@ -4344,12 +4373,6 @@ export async function POST(request: Request) {
         return NextResponse.json(
           { error: "Sign in to use deep research mode." },
           { status: 401 }
-        );
-      }
-      if (getDatabaseProvider() === "cloud-sql") {
-        return NextResponse.json(
-          { error: "Deep research is temporarily unavailable during the Cloud SQL production migration. Normal repository chat remains available." },
-          { status: 503 }
         );
       }
       if (action === "continue") {

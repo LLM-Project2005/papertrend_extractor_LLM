@@ -335,9 +335,10 @@ def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
 def _run_research_batch(max_runs: int) -> Dict[str, Any]:
     from analysis_pipeline import load_config
     from process_research_queue import SupabaseRestClient, process_batch
+    from database_client import create_worker_database_client
 
     config = load_config()
-    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    client = create_worker_database_client(config, SupabaseRestClient)
     return process_batch(client, max_runs=max_runs)
 
 

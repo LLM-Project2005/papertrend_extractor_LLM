@@ -14,6 +14,7 @@ import {
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
+import { serviceAuthorizationHeader } from "@/lib/google-service-auth";
 import {
   MAX_FILES_PER_BATCH,
   sanitizeStorageFileName,
@@ -63,11 +64,12 @@ async function createGcsSignedUploadUrl({
     );
   }
 
+  const authorization = await serviceAuthorizationHeader(workerServiceUrl, workerSecret);
   const response = await fetch(`${workerServiceUrl}/gcs/signed-upload`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${workerSecret}`,
+      ...(authorization ? { Authorization: authorization } : {}),
     },
     body: JSON.stringify({
       bucket,
