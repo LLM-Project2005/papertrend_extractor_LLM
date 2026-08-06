@@ -280,6 +280,53 @@ def _create_gcs_signed_upload(body: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _create_gcs_signed_read(body: Dict[str, Any]) -> Dict[str, Any]:
+    if gcs_storage is None or GoogleAuthRequest is None:
+        raise RuntimeError("GCS signing support is not installed.")
+
+    bucket_name = os.getenv("GCS_UPLOAD_BUCKET", "").strip()
+    object_name = _safe_gcs_object_name(
+        str(body.get("objectName") or body.get("storagePath") or "")
+    )
+    expires_minutes = min(max(int(body.get("expiresMinutes") or 15), 1), 60)
+    if not bucket_name:
+        raise RuntimeError("GCS_UPLOAD_BUCKET is not configured.")
+
+    credentials, project_id = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(GoogleAuthRequest())
+    service_account_email = (
+        os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL", "").strip()
+        or getattr(credentials, "service_account_email", "")
+        or ""
+    )
+    if not service_account_email:
+        raise RuntimeError(
+            "Could not resolve the signing service account email. Set GOOGLE_SERVICE_ACCOUNT_EMAIL."
+        )
+
+    storage_client = gcs_storage.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT_ID") or project_id)
+    blob = storage_client.bucket(bucket_name).blob(object_name)
+    if not blob.exists():
+        raise FileNotFoundError("The requested GCS object was not found.")
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expires_minutes),
+        method="GET",
+        service_account_email=service_account_email,
+        access_token=credentials.token,
+    )
+    return {
+        "ok": True,
+        "bucket": bucket_name,
+        "objectName": object_name,
+        "signedUrl": signed_url,
+        "method": "GET",
+        "expiresMinutes": expires_minutes,
+    }
+
+
 def _check_gcs_object_status(body: Dict[str, Any]) -> Dict[str, Any]:
     if gcs_storage is None:
         raise RuntimeError("GCS support is not installed.")
@@ -818,6 +865,10 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
             if self.path == "/gcs/signed-upload":
                 upload_result = _create_gcs_signed_upload(body)
                 _json_response(self, 201, upload_result)
+                return
+
+            if self.path == "/gcs/signed-read":
+                _json_response(self, 200, _create_gcs_signed_read(body))
                 return
 
             if self.path == "/gcs/object-status":

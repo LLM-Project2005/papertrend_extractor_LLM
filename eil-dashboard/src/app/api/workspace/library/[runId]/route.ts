@@ -3,6 +3,7 @@ import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { cloudSqlLibraryRepository } from "@/lib/cloudsql/library-repository";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { callPythonNodeService } from "@/lib/python-node-service";
 
 export const runtime = "nodejs";
 
@@ -140,9 +141,46 @@ export async function POST(
       return NextResponse.json({ error: "Action is required." }, { status: 400 });
     }
 
-    if (getDatabaseProvider() === "cloud-sql" && action === "copy") {
-      const run = await cloudSqlLibraryRepository.copyRun(user.id, runId);
-      return NextResponse.json({ run }, { status: 201 });
+    if (getDatabaseProvider() === "cloud-sql") {
+      if (action === "copy") {
+        const run = await cloudSqlLibraryRepository.copyRun(user.id, runId);
+        return NextResponse.json({ run }, { status: 201 });
+      }
+
+      const run = await cloudSqlLibraryRepository.getRun(user.id, runId);
+      if (!run) {
+        return NextResponse.json({ error: "File not found." }, { status: 404 });
+      }
+      const inputPayload =
+        run.input_payload && typeof run.input_payload === "object" && !Array.isArray(run.input_payload)
+          ? run.input_payload
+          : {};
+      const driveWebViewLink =
+        typeof inputPayload.drive_web_view_link === "string"
+          ? inputPayload.drive_web_view_link
+          : null;
+      if (driveWebViewLink) {
+        return NextResponse.json({ url: driveWebViewLink });
+      }
+
+      const sourcePath = String(run.source_path ?? "").trim();
+      if (!sourcePath) {
+        throw new Error("File path is unavailable for this item.");
+      }
+      const objectName = sourcePath.startsWith("gs://")
+        ? sourcePath.slice(5).split("/").slice(1).join("/")
+        : sourcePath.replace(/^\/+/, "");
+      if (!objectName) {
+        throw new Error("The stored cloud object path is invalid.");
+      }
+      const signed = await callPythonNodeService<{ signedUrl?: string }>(
+        "/gcs/signed-read",
+        { objectName, expiresMinutes: 60 }
+      );
+      if (!signed?.signedUrl) {
+        throw new Error("Failed to create a GCS read URL.");
+      }
+      return NextResponse.json({ url: signed.signedUrl });
     }
 
     const supabase = getSupabaseAdmin();

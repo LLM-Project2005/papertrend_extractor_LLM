@@ -10,6 +10,16 @@ export interface LibraryRunListOptions {
 }
 
 export class CloudSqlLibraryRepository {
+  async getRun(ownerUserId: string, runId: string): Promise<IngestionRunRow | null> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<IngestionRunRow>(
+        `SELECT * FROM public.ingestion_runs WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
+        [runId, ownerUserId]
+      );
+      return result.rows[0] ?? null;
+    });
+  }
+
   async updateRun(
     ownerUserId: string,
     runId: string,

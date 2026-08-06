@@ -34,7 +34,8 @@ Cloud Run services can deploy. Review and approve these grants:
 - web and worker may act as the production task identity;
 - production task and web identities may invoke only the production worker;
 - Cloud Build's service account may act as the web/worker runtime identities;
-- web needs Service Account Token Creator on itself only for GCS signed URLs.
+- the worker needs Service Account Token Creator on itself only for GCS signed
+  upload/read URLs; the web identity invokes the private worker with OIDC.
 
 These are persistent IAM changes. Apply them only after the owner approves the
 listed blast radius.
