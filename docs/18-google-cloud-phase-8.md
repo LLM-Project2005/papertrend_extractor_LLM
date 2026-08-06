@@ -6,11 +6,11 @@ system.
 
 ## Current Status
 
-Phase 8C is code-complete for the beta-critical workflow and deployed to the
-isolated Cloud SQL pilot. Phase 8D foundations are provisioned but production
-traffic remains unchanged.
+Phase 8D acceptance is complete. Phase 8E cutover was executed on 2026-08-06;
+production now uses Firebase, Cloud SQL, GCS, Cloud Tasks, and Cloud Run. The
+48-hour rollback observation gate remains active.
 
-Status audit on 2026-08-04:
+Final cutover audit on 2026-08-06:
 
 - The non-destructive Supabase Storage copy completed and full-copy verification
   reported `missing_in_gcs: 0`.
@@ -25,9 +25,17 @@ Status audit on 2026-08-04:
 - The ingestion worker now has a Cloud SQL-authoritative client selected by
   `DATABASE_PROVIDER`, and GCS-only source enforcement in that mode. This code
   is not yet enabled on the live worker.
-- Cloud SQL automated backups are still disabled.
-- A production GCS bucket and separate production web/worker services do not
-  exist yet.
+- Production web revision: `papertrend-web-production-00005-4ng`.
+- Production worker revision: `papertrend-worker-production-00005-f6t`.
+- Production queue is running and had no queued or processing work at the
+  cutover checkpoint.
+- On-demand Cloud SQL backup `1786013708147` completed successfully.
+- Final storage verification reported `missing_in_gcs: 0`; all 122 legacy
+  Supabase objects are present in production GCS.
+- Both mapped test owners were reconciled. Owner B's missing delta was inserted
+  without overwriting Cloud SQL-authoritative rows.
+- Browser upload, worker analysis, library, dashboard, chat, and owner isolation
+  passed against production.
 
 Completed before this phase:
 
@@ -37,21 +45,13 @@ Completed before this phase:
 - Cloud SQL received fresh mirrored runs and shadow verification passed.
 - A successful on-demand Cloud SQL backup exists: `1783872481797`.
 
-Not complete yet:
+Still required before decommissioning rollback systems:
 
-- Dashboard/chart helpers, deep-research persistence, folder-analysis control,
-  queue recovery, Firebase legacy account linking, and the disabled Google
-  Drive path still contain Supabase compatibility implementations. These must
-  be migrated or formally retired before Supabase runtime secrets are removed.
-- Historical files have been copied to staging GCS, but the final maintenance-
-  window delta and production-bucket copy still need validation.
-- Cloud SQL automated backups are disabled. The current on-demand backup is a
-  point-in-time safety copy, not an operating backup policy.
-- Production traffic still runs on Vercel and must remain there until all gates
-  below pass.
-
-Do not change production `DATABASE_PROVIDER`, delete Supabase data, or delete
-Vercel during Phase 8.
+- Observe production for at least 48 hours.
+- Configure the long-term automated backup/PITR policy within the approved
+  budget.
+- Perform and record the rollback drill.
+- Obtain explicit approval before deleting Supabase or Vercel.
 
 ## Target Architecture
 
@@ -317,7 +317,7 @@ until these owner-scoped checks pass.
 
 ## Phase 8D: Prepare A Separate Production Deployment
 
-### Provisioned foundations (2026-08-04)
+### Completed production deployment (2026-08-06)
 
 - private bucket: `research-trend-analysis-papertrend-uploads-production`;
 - paused queue: `papertrend-ingestion-production` (1 concurrent dispatch);
@@ -326,8 +326,9 @@ until these owner-scoped checks pass.
 - deployment manifests: `cloudbuild.web.production.yaml` and
   `cloudbuild.worker.production.yaml`.
 
-No production Cloud Run service has been deployed and no traffic has moved.
-The dedicated identities intentionally have no application IAM grants yet.
+The separate production web and worker services are deployed with dedicated
+runtime identities and least-privilege application grants. Production browser
+and worker acceptance tests passed.
 
 Create a separate production Cloud Run service/revision. Do not reuse the
 staging service for the cutover.
@@ -352,8 +353,9 @@ Manual Google Cloud steps:
 
 Only perform this after Phase 8C and 8D pass.
 
-Current state: **prepared, not executed**. The production queue is paused and
-the Vercel/Supabase deployment remains authoritative.
+Current state: **executed; observation active**. Cloud SQL and GCS are
+authoritative. Supabase and Vercel remain intact only for rollback during the
+observation window.
 
 1. Announce a short maintenance window and stop new uploads/analysis starts.
 2. Drain Cloud Tasks and wait for active runs to finish or record them for
@@ -387,18 +389,14 @@ successfully and the professor approves decommissioning.
 
 ## Manual Actions For You Now
 
-For the current Phase 8C work, you only need to:
+No provider migration command is required now. During the observation gate:
 
-1. Keep production on Vercel + Supabase.
-2. Run the read-only storage inventory.
-3. Review the dry-run storage copy report.
-4. Create/record a fresh Cloud SQL backup.
-5. Keep the existing `papertrend-web-staging` service on Supabase and use the
-   isolated pilot configuration for Cloud SQL testing only.
-6. Do not apply Cloud SQL `FORCE RLS` or decommission Supabase/Vercel until
-   the pilot owner-isolation tests pass and the remaining repositories are
-   implemented.
-
-The next coding slice is ingestion and dashboard persistence, followed by the
-deep-research repository. Repository contract tests and a controlled provider
-comparison remain required before any production provider change.
+1. Use the Cloud Run production URL normally for at least 48 hours.
+2. Report any failed login, upload, processing, library, dashboard, chat, or
+   cross-user test with its timestamp and request/run ID.
+3. Confirm the automated backup/PITR setting and retention budget in Cloud SQL.
+4. Keep Supabase and Vercel unchanged and available for rollback.
+5. Do not run another full migration; use `--insert-missing-only` only for a
+   reviewed owner-specific reconciliation.
+6. After observation, perform the rollback drill and obtain approval before
+   deleting either legacy service.

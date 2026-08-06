@@ -3,6 +3,21 @@
 This runbook is intentionally split into preparation and cutover. Do not run
 the cutover section during ordinary development.
 
+## Status checkpoint (2026-08-06)
+
+- Gates A, B, and C passed.
+- Phase 8D is complete.
+- Phase 8E maintenance steps 1-9 passed.
+- Cloud SQL backup `1786013708147` is successful.
+- Final storage copy has zero missing GCS objects.
+- Both mapped owners were reconciled without overwriting newer Cloud SQL rows.
+- Production upload, worker processing, library, dashboard, chat, and isolation
+  tests passed.
+- Step 10, the 48-hour observation and rollback-retention gate, is active.
+
+Do not delete Supabase or Vercel until step 10 and the rollback drill are
+recorded as passed.
+
 ## Gate A: Pilot acceptance (manual)
 
 Open `https://papertrend-web-cloudsql-pilot-javhavgdsq-as.a.run.app` in a

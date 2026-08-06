@@ -11,15 +11,16 @@ Google Cloud replacements are proven one boundary at a time.
 | Phase 1 - Google foundation | Complete | Cloud SQL, GCS, Cloud Run, Secret Manager, Tasks, and Scheduler exist in staging. |
 | Phase 2 - GCS and worker path | Complete | Browser upload, GCS object verification, queueing, GCS download, and analysis work end to end. |
 | Phase 3 - security and parity preparation | Complete | OIDC trigger security, storage inventory, owner authorization checks, controlled mirroring, and staging parity checks are complete; Supabase remains authoritative. |
-| Phase 4 - identity migration | 4B staging parity passed; checkpoint added | Firebase Preview authentication, owner mapping, refresh/logout behavior, and cross-user checks pass; production remains on Supabase. |
-| Phase 5 - Google-hosted backend | Staging deployed and health-checked | Cloud Run serves the Next.js web/API staging service; Vercel remains the live rollback path. |
-| Phase 6 - Cloud SQL dual-write and shadow verification | Reconciliation gate passed | One-owner live cycles mirror and shadow-verify successfully; Supabase remains authoritative. |
-| Phase 7 - frontend hosting | Staging in progress | The Google-hosted frontend is available at its Cloud Run URL; Vercel remains the production host until full parity testing is complete. |
-| Phase 8 - final data and service cutover | 8A readiness in progress | Backups, storage migration, Cloud SQL application repositories, production deployment, and a reversible cutover remain. See `docs/18-google-cloud-phase-8.md`. |
-| Phase 9 - operations and cost controls | Not started | Monitoring, backup policy, queue recovery, quotas, billing alerts, and rollback drills follow the cutover. |
+| Phase 4 - identity migration | Complete | Firebase authentication, stable owner mapping, account provisioning, and cross-user checks are active in production. |
+| Phase 5 - Google-hosted backend | Complete | The Next.js web/API and worker run on Cloud Run with dedicated production identities. |
+| Phase 6 - Cloud SQL dual-write and shadow verification | Complete | Reconciliation and shadow verification passed before the authoritative provider switch. |
+| Phase 7 - frontend hosting | Complete | The production frontend is served by Cloud Run; Vercel is retained only as a temporary rollback host. |
+| Phase 8 - final data and service cutover | Cutover complete; observation active | Phase 8D acceptance passed and Phase 8E moved production to Firebase, Cloud SQL, GCS, and Cloud Tasks. Keep rollback systems intact through the observation gate. |
+| Phase 9 - operations and cost controls | Next | Monitoring, backup policy, queue recovery, quotas, billing alerts, and a documented rollback drill follow the observation gate. |
 
-The attached earlier plan was correct about the major work, but its numbering
-made it look as if Auth and RLS had already been replaced. They have not.
+The original plan was correct about the major boundaries. Firebase identity and
+application-level owner authorization are now active; database and storage
+traffic are Cloud SQL/GCS authoritative.
 
 ## Phase 0 - Inventory And Rollback
 
@@ -177,12 +178,11 @@ Implementation order:
    Auth directly.
 7. Run cross-user authorization tests before migrating real beta users.
 
-Current safety state:
+Historical Phase 4 safety state (superseded by the completed production
+cutover):
 
-- `AUTH_PROVIDER` defaults to `supabase`; the current browser login and all
-  production private API routes therefore continue to work through Supabase.
-  The test Preview explicitly uses `AUTH_PROVIDER=firebase` and
-  `NEXT_PUBLIC_AUTH_PROVIDER=firebase` for parity testing.
+- During parity testing, `AUTH_PROVIDER` defaulted to `supabase` while Preview
+  explicitly selected Firebase. Production now explicitly selects Firebase.
 - Firebase credentials are configured only in Preview server/client
   environments; production remains on Supabase until the next migration gate.
 - If Firebase is selected without all server credentials, token verification
@@ -207,7 +207,8 @@ test environment:
    policies.
 4. Deploy a preview with server `AUTH_PROVIDER=firebase` and client
    `NEXT_PUBLIC_AUTH_PROVIDER=firebase`, plus Firebase Admin secrets in the
-   server environment. Keep production on `supabase`.
+  server environment. Production was kept on Supabase during this historical
+  checkpoint and has since completed the provider cutover.
 5. While still signed in to the existing Supabase test account, link the
    verified Firebase account through `/api/auth/firebase/link`. The endpoint
    requires both tokens and matching verified email; it never accepts an owner
@@ -220,8 +221,8 @@ The remaining repeatable checkpoint is the API smoke test in
 `docs/14-firebase-auth-parity.md`. It checks unauthenticated rejection,
 mapped-user access, invalid-token rejection, and optional second-user
 isolation across profile, projects, folders, library, and chat list routes.
-Keep production on `AUTH_PROVIDER=supabase` until that smoke test and the
-manual acceptance checklist are recorded against the current Preview build.
+That smoke test and manual acceptance checklist passed before production was
+switched to Firebase.
 
 The Cloud SQL mapping schema is also prepared in
 `cloudsql/phase4_identity_mapping.sql`. Apply it to staging only after the

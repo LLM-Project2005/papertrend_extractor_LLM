@@ -88,6 +88,15 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "ai_usage_events": ("id",),
 }
 
+GENERATED_ID_TABLES = frozenset(
+    {
+        "paper_keywords",
+        "paper_keyword_concepts",
+        "paper_analysis_facets",
+        "paper_author_keywords",
+    }
+)
+
 OWNER_FILTER_COLUMNS = {
     "user_profiles": "id",
     "google_drive_connections": "user_id",
@@ -105,6 +114,14 @@ def parse_args() -> argparse.Namespace:
         "--apply",
         action="store_true",
         help="Actually upsert data into Cloud SQL. Without this flag, no network calls are made.",
+    )
+    parser.add_argument(
+        "--insert-missing-only",
+        action="store_true",
+        help=(
+            "Never update an existing Cloud SQL row. Insert only absent primary keys; "
+            "intended for the final delta after Cloud SQL has begun receiving writes."
+        ),
     )
     return parser.parse_args()
 
@@ -200,12 +217,70 @@ def upsert_rows(
     table: str,
     rows: list[dict[str, Any]],
     available_columns: set[str],
+    insert_missing_only: bool = False,
 ) -> int:
     from psycopg import sql
 
     keys = PRIMARY_KEYS[table]
+    prepared_rows = rows
+    if insert_missing_only and table in GENERATED_ID_TABLES:
+        prepared_rows = []
+        with connection.cursor() as cursor:
+            for source_row in rows:
+                row = dict(source_row)
+                source_id = row.get("id")
+                cursor.execute(
+                    sql.SQL(
+                        "SELECT owner_user_id, paper_id FROM public.{table} WHERE id = %s"
+                    ).format(table=sql.Identifier(table)),
+                    (source_id,),
+                )
+                existing = cursor.fetchone()
+                if existing:
+                    same_record = (
+                        str(existing[0] or "") == str(row.get("owner_user_id") or "")
+                        and str(existing[1] or "") == str(row.get("paper_id") or "")
+                    )
+                    if same_record:
+                        prepared_rows.append(row)
+                        continue
+                    comparison_columns = sorted(
+                        column
+                        for column in row
+                        if column != "id" and column in available_columns
+                    )
+                    comparisons = sql.SQL(" AND ").join(
+                        sql.SQL("{column} IS NOT DISTINCT FROM %s").format(
+                            column=sql.Identifier(column)
+                        )
+                        for column in comparison_columns
+                    )
+                    cursor.execute(
+                        sql.SQL(
+                            "SELECT 1 FROM public.{table} WHERE {comparisons} LIMIT 1"
+                        ).format(
+                            table=sql.Identifier(table),
+                            comparisons=comparisons,
+                        ),
+                        tuple(jsonb_value(row.get(column)) for column in comparison_columns),
+                    )
+                    if cursor.fetchone():
+                        continue
+                    cursor.execute(
+                        "SELECT nextval(pg_get_serial_sequence(%s, %s))",
+                        (f"public.{table}", "id"),
+                    )
+                    generated = cursor.fetchone()
+                    if not generated or generated[0] is None:
+                        raise RuntimeError(f"Cloud SQL sequence is unavailable for {table}.id")
+                    row["id"] = generated[0]
+                prepared_rows.append(row)
+
+    if not prepared_rows:
+        return 0
+
     columns = sorted(
-        {column for row in rows for column in row if column in available_columns}
+        {column for row in prepared_rows for column in row if column in available_columns}
     )
     if not columns or any(key not in columns for key in keys):
         raise RuntimeError(f"Cloud SQL schema cannot accept the primary key for {table}.")
@@ -214,7 +289,11 @@ def upsert_rows(
     placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in columns)
     conflict_keys = sql.SQL(", ").join(sql.Identifier(key) for key in keys)
     update_columns = [column for column in columns if column not in keys]
-    if update_columns:
+    if insert_missing_only:
+        conflict_target = sql.SQL("")
+        conflict_clause = sql.SQL("DO NOTHING")
+    elif update_columns:
+        conflict_target = sql.SQL(" ({keys})").format(keys=conflict_keys)
         updates = sql.SQL(", ").join(
             sql.SQL("{column} = EXCLUDED.{column}").format(
                 column=sql.Identifier(column)
@@ -223,25 +302,26 @@ def upsert_rows(
         )
         conflict_clause = sql.SQL("DO UPDATE SET {updates}").format(updates=updates)
     else:
+        conflict_target = sql.SQL(" ({keys})").format(keys=conflict_keys)
         conflict_clause = sql.SQL("DO NOTHING")
 
     statement = sql.SQL(
         "INSERT INTO public.{table} ({columns}) VALUES ({placeholders}) "
-        "ON CONFLICT ({keys}) {conflict}"
+        "ON CONFLICT{target} {conflict}"
     ).format(
         table=sql.Identifier(table),
         columns=quoted_columns,
         placeholders=placeholders,
-        keys=conflict_keys,
+        target=conflict_target,
         conflict=conflict_clause,
     )
     values = [
         tuple(jsonb_value(row.get(column)) for column in columns)
-        for row in rows
+        for row in prepared_rows
     ]
     with connection.cursor() as cursor:
         cursor.executemany(statement, values)
-    return len(rows)
+        return max(int(cursor.rowcount), 0)
 
 
 def migrate(
@@ -251,6 +331,7 @@ def migrate(
     database_url: str,
     owner_user_id: str,
     page_size: int,
+    insert_missing_only: bool = False,
 ) -> dict[str, Any]:
     try:
         import psycopg
@@ -275,6 +356,7 @@ def migrate(
         "owner_user_id": owner_user_id or None,
         "tables": {},
         "missing_in_supabase": [],
+        "insert_missing_only": insert_missing_only,
     }
     with psycopg.connect(database_url.strip(), connect_timeout=10) as connection:
         available_columns = cloudsql_table_columns(connection)
@@ -299,6 +381,7 @@ def migrate(
                         table,
                         rows,
                         available_columns[table],
+                        insert_missing_only=insert_missing_only,
                     )
                     connection.commit()
             except SourceTableMissing:
@@ -325,6 +408,7 @@ def main() -> int:
                         "apply_required": True,
                         "tables": list(TABLE_ORDER),
                         "owner_user_id": owner_user_id or None,
+                        "insert_missing_only": bool(args.insert_missing_only),
                     },
                     indent=2,
                 )
@@ -336,6 +420,7 @@ def main() -> int:
             database_url=str(args.database_url or ""),
             owner_user_id=owner_user_id,
             page_size=page_size,
+            insert_missing_only=bool(args.insert_missing_only),
         )
         print(json.dumps(report, indent=2, sort_keys=True))
         return 0

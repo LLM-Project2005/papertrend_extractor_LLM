@@ -194,20 +194,19 @@ The latest local verification includes:
 
 ## Remaining Cutover Checklist
 
-- Complete one production browser upload from prepare through GCS upload, finalize,
-  Cloud Tasks dispatch, worker analysis, and successful dashboard/library display.
-- Test production file open/download after direct GCS read signing.
-- Test production chat and one Deep Research request with the intended beta limits.
-- Confirm production queue remains `RUNNING` and no retrying smoke tasks remain.
+- Observe the accepted production deployment for at least 48 hours.
+- Configure and verify the approved automated backup/PITR policy.
+- Perform and record one rollback drill before decommissioning rollback systems.
 - Monitor Cloud Run 4xx/5xx, Cloud Tasks retries, Cloud SQL connections, GCS errors,
   OpenRouter limits, and monthly budget alerts during the beta.
-- Keep the pilot deployment available as a rollback target until production
-  acceptance is complete.
+- Keep Supabase and Vercel intact until the observation and rollback gates pass.
 
-The latest production PDF reached GCS and was finalized with a correct production
-`gs://` source path. It was later marked `Canceled by user` while the older poison
-rows were blocking the queue, so it was intentionally not requeued. A fresh upload
-is required for the final end-to-end acceptance check.
+Production browser upload, direct GCS storage, Cloud Tasks dispatch, worker
+analysis, library/dashboard display, chat, and owner isolation now pass. Phase
+8D is complete. Phase 8E cutover is complete with its observation gate active.
+The final Cloud SQL backup is `1786013708147`; storage parity reports zero
+missing objects. A safe insert-only relational delta reconciled the second test
+owner without overwriting Cloud SQL-authoritative rows.
 
 ## Key Commits
 
