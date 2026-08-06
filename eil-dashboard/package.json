@@ -25,6 +25,7 @@
     "worker:research:once": "python worker/process_research_queue.py --once"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
     "@supabase/supabase-js": "^2.43.0",
     "@types/pg": "^8.20.0",
     "firebase": "^12.16.0",

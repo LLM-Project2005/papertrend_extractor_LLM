@@ -10,7 +10,8 @@ import {
   triggerWorkerQueueWithRetries,
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
-import { getDatabaseProvider, getWorkerServiceUrl, getWorkerWebhookSecret } from "@/lib/server-env";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { gcsObjectExists } from "@/lib/gcs-signed-urls";
 
 export const runtime = "nodejs";
 
@@ -31,34 +32,6 @@ function isSafePendingStoragePath(storagePath: string, runId: string): boolean {
     !normalizedPath.includes("..") &&
     !normalizedPath.includes("\\")
   );
-}
-
-async function gcsObjectExists(storagePath: string): Promise<boolean> {
-  if (!storagePath.startsWith("gs://")) {
-    return false;
-  }
-  const workerServiceUrl = getWorkerServiceUrl();
-  const workerSecret = getWorkerWebhookSecret();
-  if (!workerServiceUrl || !workerSecret) {
-    return false;
-  }
-
-  try {
-    const response = await fetch(`${workerServiceUrl}/gcs/object-status`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${workerSecret}`,
-      },
-      body: JSON.stringify({ storagePath }),
-    });
-    const payload = (await response.json().catch(() => null)) as {
-      exists?: boolean;
-    } | null;
-    return response.ok && Boolean(payload?.exists);
-  } catch {
-    return false;
-  }
 }
 
 function buildNotStartedResult(reason: string): WorkerQueueStartResult {

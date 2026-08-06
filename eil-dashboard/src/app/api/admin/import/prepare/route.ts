@@ -8,13 +8,11 @@ import {
   getGcsUploadBucket,
   getDatabaseProvider,
   getStorageProvider,
-  getWorkerServiceUrl,
-  getWorkerWebhookSecret,
 } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
-import { serviceAuthorizationHeader } from "@/lib/google-service-auth";
+import { createGcsSignedUploadUrl as signGcsUpload } from "@/lib/gcs-signed-urls";
 import {
   MAX_FILES_PER_BATCH,
   sanitizeStorageFileName,
@@ -55,46 +53,14 @@ async function createGcsSignedUploadUrl({
   storagePath: string;
   headers?: Record<string, string>;
 }> {
-  const workerServiceUrl = getWorkerServiceUrl();
-  const workerSecret = getWorkerWebhookSecret();
   const bucket = getGcsUploadBucket();
-  if (!workerServiceUrl || !workerSecret || !bucket) {
-    throw new Error(
-      "GCS upload signing is not configured. Check WORKER_SERVICE_URL, WORKER_WEBHOOK_SECRET, and GCS_UPLOAD_BUCKET."
-    );
-  }
-
-  const authorization = await serviceAuthorizationHeader(workerServiceUrl, workerSecret);
-  const response = await fetch(`${workerServiceUrl}/gcs/signed-upload`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(authorization ? { Authorization: authorization } : {}),
-    },
-    body: JSON.stringify({
-      bucket,
-      objectName: storagePath,
-      contentType,
-      expiresMinutes: 30,
-    }),
+  if (!bucket) throw new Error("GCS_UPLOAD_BUCKET is not configured.");
+  return signGcsUpload({
+    bucketName: bucket,
+    objectName: storagePath,
+    contentType,
+    expiresMinutes: 30,
   });
-
-  const payload = (await response.json().catch(() => null)) as {
-    signedUrl?: string;
-    storagePath?: string;
-    headers?: Record<string, string>;
-    error?: string;
-  } | null;
-
-  if (!response.ok || !payload?.signedUrl || !payload.storagePath) {
-    throw new Error(payload?.error ?? "Failed to create GCS signed upload URL.");
-  }
-
-  return {
-    signedUrl: payload.signedUrl,
-    storagePath: payload.storagePath,
-    headers: payload.headers,
-  };
 }
 
 export async function POST(request: Request) {

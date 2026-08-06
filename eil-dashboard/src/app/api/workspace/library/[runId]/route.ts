@@ -3,7 +3,7 @@ import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { cloudSqlLibraryRepository } from "@/lib/cloudsql/library-repository";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { callPythonNodeService } from "@/lib/python-node-service";
+import { createGcsSignedReadUrl } from "@/lib/gcs-signed-urls";
 
 export const runtime = "nodejs";
 
@@ -173,14 +173,8 @@ export async function POST(
       if (!objectName) {
         throw new Error("The stored cloud object path is invalid.");
       }
-      const signed = await callPythonNodeService<{ signedUrl?: string }>(
-        "/gcs/signed-read",
-        { objectName, expiresMinutes: 60 }
-      );
-      if (!signed?.signedUrl) {
-        throw new Error("Failed to create a GCS read URL.");
-      }
-      return NextResponse.json({ url: signed.signedUrl });
+      const signedUrl = await createGcsSignedReadUrl({ objectName, expiresMinutes: 60 });
+      return NextResponse.json({ url: signedUrl });
     }
 
     const supabase = getSupabaseAdmin();

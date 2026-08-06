@@ -47,7 +47,7 @@ substitutions:
   _CLOUD_SQL_INSTANCE_CONNECTION_NAME: research-trend-analysis:asia-southeast1:papertrend-pg
   _GCS_UPLOAD_BUCKET: research-trend-analysis-papertrend-uploads-staging
   _CLOUD_TASKS_QUEUE: papertrend-ingestion-staging
-  _WORKER_OIDC_AUDIENCE: https://papertrend-worker-cloudsql-pilot-899665963783.asia-southeast1.run.app
+  _WORKER_OIDC_AUDIENCE: https://papertrend-worker-cloudsql-pilot-javhavgdsq-as.a.run.app
   _APP_ALLOWED_ORIGINS: https://papertrend-web-cloudsql-pilot-javhavgdsq-as.a.run.app
 
 options:

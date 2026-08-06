@@ -4,6 +4,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -188,7 +189,7 @@ def _is_authorized_worker_request(handler: BaseHTTPRequestHandler) -> bool:
     audience = os.getenv("WORKER_OIDC_AUDIENCE", "").strip()
     allowed_accounts = {
         value.strip().lower()
-        for value in os.getenv("WORKER_OIDC_SERVICE_ACCOUNTS", "").split(",")
+        for value in re.split(r"[,;]", os.getenv("WORKER_OIDC_SERVICE_ACCOUNTS", ""))
         if value.strip()
     }
     if not token or not audience or not allowed_accounts:
