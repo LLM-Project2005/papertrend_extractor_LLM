@@ -47,6 +47,12 @@ Production resources:
 - Authentication: Firebase Authentication
 - Secrets: Google Secret Manager
 
+Current verified production revisions after upload/queue hardening:
+
+- Web: `papertrend-web-production-00005-4ng`
+- Worker: `papertrend-worker-production-00005-f6t`
+- Queue state: `RUNNING`
+
 The web service is public because it is the browser-facing application. Firebase
 tokens authenticate users at the application layer. The worker remains private at
 the Cloud Run IAM layer and also validates every POST with an allowlisted Google
@@ -83,6 +89,10 @@ public inside the worker application.
   dashboard analytics, chat, and cross-user access on the pilot.
 - Built separate production web and worker candidates instead of redirecting pilot
   traffic in place.
+- Deployed the Google Cloud-only production web and worker services with Firebase,
+  Cloud SQL, GCS, Cloud Tasks, and Secret Manager configuration.
+- Replaced production browser storage dependencies on Supabase with direct,
+  short-lived GCS upload and read URLs signed by the authenticated web backend.
 
 ## Chat And Research Work
 
@@ -135,6 +145,22 @@ configurable.
   accepts comma or semicolon delimiters.
 - Signed upload fragility: GCS upload/read URL generation now runs directly in the
   authenticated web backend. The worker remains private and focused on processing.
+- Production browser upload `Failed to fetch`: the production bucket had no CORS
+  policy even though staging did. Added an origin-restricted production policy for
+  `PUT`, `GET`, `HEAD`, and `OPTIONS`; a real GCS preflight now returns `200` with
+  the expected production origin and headers.
+- Silent queue failures after upload: three legacy rows from earlier failed uploads
+  remained `queued` without `source_path`. Because the worker claims oldest work
+  first, they consumed Cloud Tasks and failed before the valid production upload
+  could start. The three impossible rows were quarantined as failed, and production
+  was verified to contain zero pathless queued rows.
+- Queue recurrence prevention: the worker now quarantines any future queued run
+  lacking a storage path and continues to valid work. Cloud SQL finalization checks
+  that every update matched exactly one run and refuses to return a queued run with
+  no path.
+- Library upload header mismatch: the Library `+ New` flow still sent Supabase's
+  `x-upsert` header to GCS. It now uses the signed upload headers returned by the
+  server, matching the main workspace uploader.
 
 ## Production Security Boundaries
 
@@ -162,6 +188,9 @@ The latest local verification includes:
 - Cloud SQL table migration and owner-scoped parity.
 - Firebase cross-user isolation.
 - Private worker OIDC smoke testing.
+- Production GCS CORS preflight returning `200 OK` for the production web origin.
+- Production queue state `RUNNING` with zero queued rows missing `source_path`.
+- Production web/worker revisions deployed successfully after queue hardening.
 
 ## Remaining Cutover Checklist
 
@@ -175,10 +204,18 @@ The latest local verification includes:
 - Keep the pilot deployment available as a rollback target until production
   acceptance is complete.
 
+The latest production PDF reached GCS and was finalized with a correct production
+`gs://` source path. It was later marked `Canceled by user` while the older poison
+rows were blocking the queue, so it was intentionally not requeued. A fresh upload
+is required for the final end-to-end acceptance check.
+
 ## Key Commits
 
 - `5cfaff3` - complete Cloud SQL upload and research paths
 - `0098468` - serve library files from GCS
+- `6ac8ecd` - secure production upload signing and worker OIDC authentication
+- `225a02d` - allow production browser uploads through origin-scoped GCS CORS
+- `299943d` - quarantine invalid ingestion queue rows and harden finalization
 
 This document summarizes the migration conversation and implementation state; the
 detailed commands and operational procedures remain in the numbered migration and
