@@ -1,5 +1,5 @@
-# Phase 8D production worker candidate. It is deployed separately and does not
-# receive tasks until the production queue is explicitly configured at cutover.
+# Production worker deployment. The Cloud Build production trigger must watch
+# the main branch only; test continues to deploy the isolated pilot worker.
 steps:
   - id: deploy-worker-production-candidate
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
@@ -49,7 +49,7 @@ substitutions:
   _GCS_UPLOAD_BUCKET: research-trend-analysis-papertrend-uploads-production
   _CLOUD_TASKS_QUEUE: papertrend-ingestion-production
   _WORKER_OIDC_AUDIENCE: https://papertrend-worker-production-javhavgdsq-as.a.run.app
-  _APP_ALLOWED_ORIGINS: set-after-web-deployment
+  _APP_ALLOWED_ORIGINS: https://papertrend-web-production-javhavgdsq-as.a.run.app
 
 options:
   dynamicSubstitutions: true

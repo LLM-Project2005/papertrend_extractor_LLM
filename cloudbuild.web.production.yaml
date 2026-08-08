@@ -1,5 +1,5 @@
-# Phase 8D production candidate. This creates a separate Cloud Run service and
-# does not change staging, the Cloud SQL pilot, Vercel, or production traffic.
+# Production web deployment. The Cloud Build production trigger must watch the
+# main branch only; test continues to deploy the isolated pilot service.
 steps:
   - id: deploy-web-production-candidate
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
@@ -51,7 +51,7 @@ substitutions:
   _GCS_UPLOAD_BUCKET: research-trend-analysis-papertrend-uploads-production
   _WORKER_SERVICE_URL: https://papertrend-worker-production-javhavgdsq-as.a.run.app
   _REPOSITORY_CHAT_TASKS_QUEUE: papertrend-ingestion-production
-  _APP_ALLOWED_ORIGINS: set-after-web-deployment
+  _APP_ALLOWED_ORIGINS: https://papertrend-web-production-javhavgdsq-as.a.run.app
   _NEXT_PUBLIC_FIREBASE_API_KEY: set-in-cloud-build-trigger
   _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: research-trend-analysis.firebaseapp.com
   _NEXT_PUBLIC_FIREBASE_PROJECT_ID: research-trend-analysis

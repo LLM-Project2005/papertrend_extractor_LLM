@@ -18,6 +18,24 @@ the cutover section during ordinary development.
 Do not delete Supabase or Vercel until step 10 and the rollback drill are
 recorded as passed.
 
+## Branch promotion and automatic deployment
+
+Production follows GitHub `main`; development acceptance follows `test`:
+
+1. Commit and push development changes to `test`.
+2. Let the test-branch pilot/staging triggers deploy and complete acceptance.
+3. Open a pull request from `test` to `main` and review the exact diff.
+4. Merge only after pilot acceptance.
+5. The `papertrend-web-production-main` and
+   `papertrend-worker-production-main` triggers build the merged `main` commit
+   and deploy separate production Cloud Run revisions.
+6. Confirm both builds succeed, then smoke-test `/api/health`, login, upload,
+   processing, library, and chat.
+
+The former generic `Github-repo` autodetect trigger is disabled. Do not point a
+production trigger at `test`, and do not manually submit a production build
+from a test-branch working tree except during an explicitly approved rollback.
+
 ## Gate A: Pilot acceptance (manual)
 
 Open `https://papertrend-web-cloudsql-pilot-javhavgdsq-as.a.run.app` in a
