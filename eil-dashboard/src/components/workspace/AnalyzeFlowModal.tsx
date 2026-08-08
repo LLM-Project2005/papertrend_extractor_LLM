@@ -8,14 +8,11 @@ import Modal from "@/components/ui/Modal";
 import {
   ArrowRightIcon,
   CheckCircleIcon,
-  CloudIcon,
   CloseIcon,
   DriveIcon,
   FileIcon,
   FolderIcon,
-  OneDriveIcon,
   PaperIcon,
-  SharePointIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
@@ -42,7 +39,13 @@ interface DriveBreadcrumb {
   name: string;
 }
 
-const SOURCE_OPTIONS = [
+const SOURCE_OPTIONS: Array<{
+  id: ImportSource;
+  label: string;
+  status: "ready" | "planned";
+  icon: typeof UploadIcon;
+  description: string;
+}> = [
   {
     id: "pdf-upload",
     label: "PDF upload",
@@ -50,35 +53,7 @@ const SOURCE_OPTIONS = [
     icon: UploadIcon,
     description: "Upload paper PDFs directly into the workspace queue.",
   },
-  {
-    id: "google-drive",
-    label: "Google Drive",
-    status: "ready",
-    icon: DriveIcon,
-    description: "Connect Google Drive, browse PDFs, and queue them without local upload.",
-  },
-  {
-    id: "onedrive",
-    label: "OneDrive",
-    status: "planned",
-    icon: OneDriveIcon,
-    description: "Planned connector for institution-managed document libraries.",
-  },
-  {
-    id: "sharepoint",
-    label: "SharePoint",
-    status: "planned",
-    icon: SharePointIcon,
-    description: "Planned connector for Microsoft document repositories.",
-  },
-  {
-    id: "cloud-storage",
-    label: "Cloud storage",
-    status: "planned",
-    icon: CloudIcon,
-    description: "Planned connector for buckets and external archives.",
-  },
-] as const;
+];
 
 const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
 
@@ -112,7 +87,7 @@ interface AnalyzeFlowModalProps {
 export default function AnalyzeFlowModal({
   open,
   onClose,
-  defaultFolder = "Inbox",
+  defaultFolder = "Repository",
   title = "Analyze workspace sources",
   eyebrow = "Analyze",
   onCreated,
@@ -134,7 +109,7 @@ export default function AnalyzeFlowModal({
   const [driveSearch, setDriveSearch] = useState("");
   const [selectedDriveFileIds, setSelectedDriveFileIds] = useState<string[]>([]);
   const [driveFolderTrail, setDriveFolderTrail] = useState<DriveBreadcrumb[]>([
-    { id: "root", name: "My Drive" },
+    { id: "root", name: "Library" },
   ]);
   const [queuedSummary, setQueuedSummary] = useState<{
     count: number;
@@ -350,6 +325,7 @@ export default function AnalyzeFlowModal({
             runId: string;
             storagePath: string;
             signedUrl: string;
+            uploadHeaders?: Record<string, string>;
             fileName: string;
           }>;
           error?: string;
@@ -363,6 +339,17 @@ export default function AnalyzeFlowModal({
         }
 
         setUploadStage("Uploading PDF to secure storage");
+        const preparedRuns = (preparePayload.runs ?? []) as IngestionRunRow[];
+        if (preparedRuns.length > 0) {
+          onCreated?.(preparedRuns, {
+            folder: folder.trim() || defaultFolder,
+            folderId: preparePayload.folderJob.folder_id ?? null,
+            folderJob: preparePayload.folderJob,
+            sourceKind: selectedSource,
+          });
+          onClose();
+        }
+
         const uploaded: Array<{
           runId: string;
           storagePath: string;
@@ -392,14 +379,17 @@ export default function AnalyzeFlowModal({
               method: "PUT",
               headers: {
                 "Content-Type": file.type || "application/pdf",
-                "x-upsert": "false",
+                ...(uploadTarget.uploadHeaders ?? { "x-upsert": "false" }),
               },
               body: file,
             });
 
             if (!uploadResponse.ok) {
               const body = await uploadResponse.text();
-              throw new Error(body || `Storage upload failed with status ${uploadResponse.status}.`);
+              throw new Error(
+                body ||
+                  `Storage upload failed with status ${uploadResponse.status} ${uploadResponse.statusText}.`
+              );
             }
 
             uploaded.push({
@@ -448,27 +438,30 @@ export default function AnalyzeFlowModal({
           );
         }
 
+        if (finalizePayload?.warning) {
+          console.warn("[AnalyzeFlowModal] upload finalized with warning", finalizePayload.warning);
+        }
+
         setUploadStage("Worker requested");
         const queuedRuns = (finalizePayload?.runs ?? []).filter(
           (run) => run.status !== "failed"
         );
+        const finalizedRuns = finalizePayload?.runs ?? [];
         const folderJob = finalizePayload?.folderJob ?? null;
         const queueWarning = finalizePayload?.warning ?? null;
-
-        if (queuedRuns.length === 0) {
-          throw new Error("All selected files failed during upload.");
-        }
 
         if (adminSecret.trim() && typeof window !== "undefined") {
           window.localStorage.setItem("eil_admin_secret", adminSecret.trim());
         }
 
-        onCreated?.(queuedRuns, {
-          folder: folder.trim() || defaultFolder,
-          folderId: folderJob?.folder_id ?? null,
-          folderJob,
-          sourceKind: selectedSource,
-        });
+        if (finalizedRuns.length > 0) {
+          onCreated?.(finalizedRuns, {
+            folder: folder.trim() || defaultFolder,
+            folderId: folderJob?.folder_id ?? null,
+            folderJob,
+            sourceKind: selectedSource,
+          });
+        }
 
         setQueuedSummary({
           count: queuedRuns.length,
@@ -609,13 +602,13 @@ export default function AnalyzeFlowModal({
 
   return (
     <Modal onClose={handleClose}>
-      <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <div className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
           <div>
             <p className="text-sm font-medium text-slate-500 dark:text-[#9c9c9c]">
               {eyebrow}
             </p>
-            <h2 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
+            <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
               {title}
             </h2>
           </div>
@@ -629,19 +622,13 @@ export default function AnalyzeFlowModal({
           </button>
         </div>
 
-        <div className="space-y-6 px-5 py-5 sm:px-6">
-          <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]">
-            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-              Single PDF upload
-            </p>
-            <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
-              Google Drive and batch uploads are temporarily hidden for beta stability.
-              Upload one paper at a time and track progress from Home.
-            </p>
-          </div>
+        <div className="space-y-5 px-5 py-5 sm:px-6">
+          <p className="text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
+            Upload one PDF at a time. Analysis progress will remain available on Home.
+          </p>
 
           <div className="grid gap-4">
-            <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center dark:border-[#3a3a3a] dark:bg-[#050505]">
+            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-[#3a3a3a] dark:bg-[#050505]">
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                 <PaperIcon className="h-6 w-6" />
               </span>
@@ -654,15 +641,23 @@ export default function AnalyzeFlowModal({
                   <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
                     The file will be uploaded, queued, and processed by the analysis worker.
                   </p>
-                  <div className="mt-5">
+                  <div className="mt-5 flex justify-center">
                     <input
+                      id="papertrend-pdf-upload"
                       type="file"
                       accept="application/pdf"
                       onChange={(event) =>
                         setFiles(Array.from(event.target.files ?? []).filter(Boolean).slice(0, 1))
                       }
-                      className="mx-auto block w-full max-w-md text-sm text-slate-600 dark:text-[#b8b8b8]"
+                      className="sr-only"
                     />
+                    <label
+                      htmlFor="papertrend-pdf-upload"
+                      className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+                    >
+                      <UploadIcon className="h-4 w-4" />
+                      {files[0] ? "Choose another PDF" : "Choose PDF"}
+                    </label>
                   </div>
                 </>
               ) : selectedSourceMeta.id === "google-drive" ? (
@@ -831,34 +826,31 @@ export default function AnalyzeFlowModal({
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-t border-slate-200 pt-4 dark:border-[#1f1f1f]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   Queue details
                 </p>
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div>
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
                       Project
                     </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                       {currentProject?.name ?? "No project selected"}
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                  <div>
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
                       Destination
                     </p>
-                    <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                       {folder.trim() || defaultFolder}
-                    </p>
-                    <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
-                      The app uses the current library location automatically.
                     </p>
                   </div>
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-t border-slate-200 pt-4 dark:border-[#1f1f1f]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   Selected files
                 </p>
@@ -947,7 +939,7 @@ export default function AnalyzeFlowModal({
             <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
               <span className="font-medium">{uploadStage || "Queueing file"}</span>
               <span className="ml-2 text-blue-700/80 dark:text-blue-200/80">
-                Please keep this window open.
+                You can hide this window and follow progress from Home.
               </span>
             </div>
           ) : null}
@@ -955,7 +947,7 @@ export default function AnalyzeFlowModal({
 
         <div className="flex flex-col gap-3 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:border-[#1f1f1f]">
           <p className="text-sm text-slate-500 dark:text-[#9c9c9c]">
-            Files are queued in Supabase first, then processed by the external analysis worker.
+            Files upload to private cloud storage, then enter the analysis queue.
           </p>
           <div className="flex flex-wrap gap-2">
             <button
@@ -963,7 +955,7 @@ export default function AnalyzeFlowModal({
               onClick={handleClose}
               className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#b8b8b8]"
             >
-              Cancel
+              {uploading ? "Hide" : "Cancel"}
             </button>
             <button
               type="button"

@@ -9,6 +9,7 @@ interface UseDashboardDataOptions {
   mode?: DashboardDataMode;
   pollIntervalMs?: number;
   projectId?: string | null;
+  enabled?: boolean;
   refetchOnWindowFocus?: boolean;
 }
 
@@ -108,6 +109,7 @@ export function useDashboardData(
   const mode = options.mode ?? "auto";
   const pollIntervalMs = options.pollIntervalMs ?? 0;
   const projectId = options.projectId ?? null;
+  const enabled = options.enabled ?? true;
   const refetchOnWindowFocus = options.refetchOnWindowFocus ?? false;
   const normalizedFolderIds = useMemo(() => {
     if (Array.isArray(folderSelection)) {
@@ -132,6 +134,15 @@ export function useDashboardData(
 
     async function load(isBackgroundRefresh = false) {
       if (!hydrated) {
+        return;
+      }
+
+      if (!enabled) {
+        if (!cancelled) {
+          setData(null);
+          setLoading(true);
+          setRefreshing(false);
+        }
         return;
       }
 
@@ -238,6 +249,7 @@ export function useDashboardData(
     };
   }, [
     folderSelectionKey,
+    enabled,
     hydrated,
     mode,
     pollIntervalMs,
@@ -260,6 +272,10 @@ export function useDashboardData(
 
   const refresh = async () => {
     if (!hydrated) {
+      return;
+    }
+
+    if (!enabled) {
       return;
     }
 

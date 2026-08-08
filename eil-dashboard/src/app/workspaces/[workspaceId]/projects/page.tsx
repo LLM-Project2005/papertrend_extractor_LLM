@@ -1,5 +1,5 @@
-import WorkspaceProjectsClient from "@/components/workspace/workspaces/WorkspaceProjectsClient";
+import { redirect } from "next/navigation";
 
 export default function WorkspaceProjectsPage() {
-  return <WorkspaceProjectsClient />;
+  redirect("/workspaces");
 }

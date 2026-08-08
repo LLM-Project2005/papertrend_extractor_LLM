@@ -4,7 +4,15 @@ import {
   isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
+import {
+  getGcsUploadBucket,
+  getDatabaseProvider,
+  getStorageProvider,
+} from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getWorkspaceRepository } from "@/lib/workspace-repository";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
+import { createGcsSignedUploadUrl as signGcsUpload } from "@/lib/gcs-signed-urls";
 import {
   MAX_FILES_PER_BATCH,
   sanitizeStorageFileName,
@@ -24,6 +32,37 @@ type PrepareUploadFile = {
   type?: string | null;
 };
 
+class UploadPreparationError extends Error {
+  constructor(
+    message: string,
+    readonly status = 400
+  ) {
+    super(message);
+    this.name = "UploadPreparationError";
+  }
+}
+
+async function createGcsSignedUploadUrl({
+  storagePath,
+  contentType,
+}: {
+  storagePath: string;
+  contentType: string;
+}): Promise<{
+  signedUrl: string;
+  storagePath: string;
+  headers?: Record<string, string>;
+}> {
+  const bucket = getGcsUploadBucket();
+  if (!bucket) throw new Error("GCS_UPLOAD_BUCKET is not configured.");
+  return signGcsUpload({
+    bucketName: bucket,
+    objectName: storagePath,
+    contentType,
+    expiresMinutes: 30,
+  });
+}
+
 export async function POST(request: Request) {
   if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -31,7 +70,8 @@ export async function POST(request: Request) {
 
   try {
     const user = await getAuthenticatedUserFromRequest(request);
-    const supabase = getSupabaseAdmin();
+    const databaseProvider = getDatabaseProvider();
+    const supabase = databaseProvider === "supabase" ? getSupabaseAdmin() : null;
     const body = (await request.json()) as {
       folder?: string;
       source_kind?: string;
@@ -39,7 +79,7 @@ export async function POST(request: Request) {
       files?: PrepareUploadFile[];
     };
 
-    const folder = sanitizeFolderName(String(body.folder ?? "Inbox"));
+    const folder = sanitizeFolderName(String(body.folder ?? "Repository"));
     const sourceKind = String(body.source_kind ?? "pdf-upload") || "pdf-upload";
     const projectId = String(body.project_id ?? "").trim();
     const files = Array.isArray(body.files)
@@ -67,32 +107,49 @@ export async function POST(request: Request) {
       }
     }
 
-    const researchFolder = await ensureResearchFolder(
-      supabase,
-      user?.id ?? null,
-      projectId,
-      folder
-    );
+    if (databaseProvider === "cloud-sql") {
+      if (!user?.id) {
+        throw new UploadPreparationError(
+          "An authenticated owner account is required to upload in the Cloud SQL pilot.",
+          401
+        );
+      }
+    } else if (!supabase) {
+      throw new Error("Supabase database configuration is unavailable.");
+    }
+
+    const researchFolder = databaseProvider === "cloud-sql"
+      ? await getWorkspaceRepository().ensureFolder(user!.id, projectId, folder)
+      : await ensureResearchFolder(supabase!, user?.id ?? null, projectId, folder);
     const folderId = researchFolder?.id ?? null;
+    if (!folderId) throw new Error("Failed to resolve the upload folder.");
 
-    const { data: folderJob, error: folderJobError } = await supabase
-      .from("folder_analysis_jobs")
-      .insert({
-        owner_user_id: user?.id ?? null,
-        folder_id: folderId,
-        status: "queued",
-        total_runs: files.length,
-        queued_runs: 0,
-        processing_runs: files.length,
-        progress_stage: "uploading",
-        progress_message: "Uploading files",
-        progress_detail: `Uploading ${files.length} file${files.length === 1 ? "" : "s"} to storage before queueing analysis.`,
-      })
-      .select("*")
-      .single();
-
-    if (folderJobError || !folderJob) {
-      throw new Error(folderJobError?.message ?? "Failed to create folder analysis job.");
+    let folderJob: Record<string, unknown> & { id: string };
+    let preparedRuns: Array<Record<string, unknown>> = [];
+    if (databaseProvider === "cloud-sql") {
+      const batch = await cloudSqlIngestionRepository.createUploadBatch({
+        ownerUserId: user!.id,
+        folderId,
+        files,
+        folderName: folder,
+        sourceKind,
+        provider: AUTO_ANALYSIS_PROVIDER,
+        model: AUTO_ANALYSIS_MODEL,
+        analysisLabel: AUTO_ANALYSIS_LABEL,
+      });
+      folderJob = batch.folderJob;
+      preparedRuns = batch.runs as unknown as Array<Record<string, unknown>>;
+    } else {
+      const { data, error } = await supabase!
+        .from("folder_analysis_jobs")
+        .insert({
+          owner_user_id: user?.id ?? null, folder_id: folderId, status: "queued",
+          total_runs: files.length, queued_runs: 0, processing_runs: files.length,
+          progress_stage: "uploading", progress_message: "Uploading files",
+          progress_detail: `Uploading ${files.length} file${files.length === 1 ? "" : "s"} to storage before queueing analysis.`,
+        }).select("*").single();
+      if (error || !data) throw new Error(error?.message ?? "Failed to create folder analysis job.");
+      folderJob = data as Record<string, unknown> & { id: string };
     }
 
     const uploads: Array<{
@@ -101,17 +158,18 @@ export async function POST(request: Request) {
       storagePath: string;
       token: string;
       signedUrl: string;
+      uploadHeaders?: Record<string, string>;
       fileName: string;
     }> = [];
 
     const createdRuns: Array<Record<string, unknown>> = [];
 
-    for (const file of files) {
+    for (const [filePosition, file] of files.entries()) {
       const lowerName = file.name.toLowerCase();
-
-      const { data: runData, error: insertError } = await supabase
-        .from("ingestion_runs")
-        .insert({
+      let runData = preparedRuns[filePosition] as Record<string, unknown> | undefined;
+      if (!runData) {
+        const { data, error: insertError } = await supabase!
+          .from("ingestion_runs").insert({
           owner_user_id: user?.id ?? null,
           folder_id: folderId,
           folder_analysis_job_id: folderJob.id,
@@ -136,23 +194,39 @@ export async function POST(request: Request) {
             progress_message: "Uploading",
             progress_detail: "Uploading file directly to storage before queueing analysis.",
           },
-        })
-        .select("*")
-        .single();
-
-      if (insertError || !runData) {
-        throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
+          }).select("*").single();
+        if (insertError || !data) {
+          throw new Error(insertError?.message ?? `Failed to create run for ${file.name}`);
+        }
+        runData = data as Record<string, unknown>;
       }
 
-      const storagePath = `pending/${folder}/${runData.id}/${sanitizeStorageFileName(file.name)}`;
-      const { data: signedUpload, error: signedUploadError } = await supabase.storage
-        .from("paper-uploads")
-        .createSignedUploadUrl(storagePath);
+      const objectPath = `pending/${folder}/${runData.id}/${sanitizeStorageFileName(file.name)}`;
+      let storagePath = objectPath;
+      let token = "";
+      let signedUrl = "";
+      let uploadHeaders: Record<string, string> | undefined;
 
-      if (signedUploadError || !signedUpload) {
-        throw new Error(
-          signedUploadError?.message ?? `Failed to create signed upload URL for ${file.name}`
-        );
+      if (getStorageProvider() === "gcs") {
+        const signedUpload = await createGcsSignedUploadUrl({
+          storagePath: objectPath,
+          contentType: file.type || "application/pdf",
+        });
+        storagePath = signedUpload.storagePath;
+        signedUrl = signedUpload.signedUrl;
+        uploadHeaders = signedUpload.headers;
+      } else {
+        const { data: signedUpload, error: signedUploadError } = await supabase!.storage
+          .from("paper-uploads")
+          .createSignedUploadUrl(objectPath);
+
+        if (signedUploadError || !signedUpload) {
+          throw new Error(
+            signedUploadError?.message ?? `Failed to create signed upload URL for ${file.name}`
+          );
+        }
+        token = signedUpload.token;
+        signedUrl = signedUpload.signedUrl;
       }
 
       createdRuns.push(runData);
@@ -160,8 +234,9 @@ export async function POST(request: Request) {
         fileIndex: file.fileIndex,
         runId: String(runData.id),
         storagePath,
-        token: signedUpload.token,
-        signedUrl: signedUpload.signedUrl,
+        token,
+        signedUrl,
+        uploadHeaders,
         fileName: file.name,
       });
     }
@@ -180,7 +255,7 @@ export async function POST(request: Request) {
       {
         error: error instanceof Error ? error.message : "Failed to prepare uploads.",
       },
-      { status: 500 }
+      { status: error instanceof UploadPreparationError ? error.status : 500 }
     );
   }
 }

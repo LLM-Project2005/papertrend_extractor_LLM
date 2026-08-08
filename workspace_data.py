@@ -1,9 +1,13 @@
 import json
 import logging
 import os
+import re
 import time
+from datetime import date, datetime
+from decimal import Decimal
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Sequence, Tuple
+from uuid import UUID
 
 from supabase_http import build_retrying_session
 
@@ -70,8 +74,83 @@ class SupabaseQueryClient:
         return payload if isinstance(payload, list) else []
 
 
+class CloudSqlQueryClient:
+    _resources = {
+        "research_folders", "ingestion_runs", "papers_full", "trends_flat",
+        "tracks_single_flat", "tracks_multi_flat", "concepts_flat",
+        "paper_keyword_concepts", "paper_facets_flat", "paper_analysis_facets",
+        "author_keywords_flat", "paper_author_keywords", "research_typologies_flat",
+        "paper_research_typologies",
+    }
+
+    def __init__(self, database_url: str) -> None:
+        self.database_url = database_url
+
+    def select_rows(self, resource: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        if resource not in self._resources:
+            raise ValueError(f"Unsupported Cloud SQL research resource: {resource}")
+        from psycopg import sql
+        from psycopg.rows import dict_row
+
+        conditions = []
+        values: List[Any] = []
+        for column, raw_filter in (params or {}).items():
+            if column == "select":
+                continue
+            if not re.fullmatch(r"[a-z_][a-z0-9_]*", column):
+                raise ValueError("Invalid research filter column.")
+            filter_value = str(raw_filter or "")
+            if filter_value.startswith("eq."):
+                conditions.append(sql.SQL("{} = %s").format(sql.Identifier(column)))
+                values.append(filter_value[3:])
+            elif filter_value.startswith("in.(") and filter_value.endswith(")"):
+                items = [item.strip() for item in filter_value[4:-1].split(",") if item.strip()]
+                if not items:
+                    return []
+                placeholders = sql.SQL(",").join(sql.Placeholder() for _ in items)
+                conditions.append(
+                    sql.SQL("{} IN ({})").format(sql.Identifier(column), placeholders)
+                )
+                values.extend(items)
+            else:
+                raise ValueError("Unsupported Cloud SQL research filter.")
+
+        query = sql.SQL("SELECT * FROM public.{}").format(sql.Identifier(resource))
+        if conditions:
+            query += sql.SQL(" WHERE ") + sql.SQL(" AND ").join(conditions)
+        with psycopg.connect(self.database_url, row_factory=dict_row) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query, values)
+                return [_json_safe(dict(row)) for row in cursor.fetchall()]
+
+
+def _json_safe(value: Any) -> Any:
+    """Match the JSON-native values returned by the Supabase REST adapter."""
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, Decimal):
+        return float(value)
+    return value
+
+
+def _query_client():
+    provider = (os.getenv("DATABASE_PROVIDER") or os.getenv("INFRA_PROVIDER") or "supabase").lower().replace("_", "-")
+    if provider in {"cloud-sql", "google"}:
+        database_url = os.getenv("DATABASE_URL", "").strip()
+        return CloudSqlQueryClient(database_url) if database_url else None
+    url = _get_supabase_url()
+    key = _get_service_key()
+    return SupabaseQueryClient(url, key) if url and key else None
+
+
 def _try_load_optional(
-    client: SupabaseQueryClient,
+    client: Any,
     resource: str,
     params: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
@@ -338,13 +417,11 @@ def load_papers_full_by_run_ids(
     if not owner_user_id or not normalized_run_ids:
         return []
 
-    url = _get_supabase_url()
-    key = _get_service_key()
-    if not url or not key:
+    client = _query_client()
+    if client is None:
         return []
 
     try:
-        client = SupabaseQueryClient(url, key)
         resolved_run_ids = resolve_related_run_ids(owner_user_id, normalized_run_ids, client)
         return client.select_rows(
             "papers_full",
@@ -361,7 +438,7 @@ def load_papers_full_by_run_ids(
 def resolve_related_run_ids(
     owner_user_id: Optional[str],
     selected_run_ids: Sequence[str],
-    client: Optional[SupabaseQueryClient] = None,
+    client: Optional[Any] = None,
 ) -> List[str]:
     normalized_run_ids = [
         str(run_id).strip()
@@ -371,12 +448,9 @@ def resolve_related_run_ids(
     if not owner_user_id or not normalized_run_ids:
         return normalized_run_ids
 
-    url = _get_supabase_url()
-    key = _get_service_key()
-    if not client and (not url or not key):
+    local_client = client or _query_client()
+    if local_client is None:
         return normalized_run_ids
-
-    local_client = client or SupabaseQueryClient(url, key)
     resolved = set(normalized_run_ids)
     frontier = set(normalized_run_ids)
 
@@ -417,13 +491,11 @@ def load_papers_full_by_paper_ids(
     if not owner_user_id or not normalized_paper_ids:
         return []
 
-    url = _get_supabase_url()
-    key = _get_service_key()
-    if not url or not key:
+    client = _query_client()
+    if client is None:
         return []
 
     try:
-        client = SupabaseQueryClient(url, key)
         return client.select_rows(
             "papers_full",
             {
@@ -581,9 +653,8 @@ def load_workspace_dataset(
     ):
         return cache_entry["dataset"]
 
-    url = _get_supabase_url()
-    key = _get_service_key()
-    if not owner_user_id or not url or not key:
+    client = _query_client()
+    if not owner_user_id or client is None:
         dataset = _build_mock_workspace_dataset()
         _CACHE[_cache_key(owner_user_id, normalized_folder_id, normalized_project_id)] = {
             "dataset": dataset,
@@ -592,7 +663,6 @@ def load_workspace_dataset(
         return dataset
 
     try:
-        client = SupabaseQueryClient(url, key)
         scoped_folder_ids = _resolve_scoped_folder_ids(
             client,
             owner_user_id,

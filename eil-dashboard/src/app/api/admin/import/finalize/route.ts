@@ -4,11 +4,14 @@ import {
   isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { gcsObjectExists } from "@/lib/gcs-signed-urls";
 
 export const runtime = "nodejs";
 
@@ -20,11 +23,14 @@ type UploadFinalizeItem = {
 };
 
 function isSafePendingStoragePath(storagePath: string, runId: string): boolean {
+  const normalizedPath = storagePath.startsWith("gs://")
+    ? storagePath.replace(/^gs:\/\/[^/]+\//, "")
+    : storagePath;
   return (
-    storagePath.startsWith("pending/") &&
-    storagePath.includes(`/${runId}/`) &&
-    !storagePath.includes("..") &&
-    !storagePath.includes("\\")
+    normalizedPath.startsWith("pending/") &&
+    normalizedPath.includes(`/${runId}/`) &&
+    !normalizedPath.includes("..") &&
+    !normalizedPath.includes("\\")
   );
 }
 
@@ -52,7 +58,8 @@ export async function POST(request: Request) {
 
   try {
     const user = await getAuthenticatedUserFromRequest(request);
-    const supabase = getSupabaseAdmin();
+    const databaseProvider = getDatabaseProvider();
+    const supabase = databaseProvider === "supabase" ? getSupabaseAdmin() : null;
     const body = (await request.json()) as {
       folderJobId?: string;
       uploaded?: UploadFinalizeItem[];
@@ -79,40 +86,107 @@ export async function POST(request: Request) {
 
     const allRunIds = [...new Set([...uploadedRunIds, ...failedRunIds])];
 
-    let query = supabase
-      .from("ingestion_runs")
-      .select("id,owner_user_id,folder_analysis_job_id,input_payload")
-      .in("id", allRunIds)
-      .eq("folder_analysis_job_id", folderJobId);
-
-    if (user?.id) {
-      query = query.eq("owner_user_id", user.id);
+    if (!user?.id) {
+      return NextResponse.json({ error: "An authenticated owner is required." }, { status: 401 });
+    }
+    let runRows: Array<Record<string, unknown>>;
+    if (databaseProvider === "cloud-sql") {
+      runRows = await cloudSqlIngestionRepository.loadOwnedBatch(
+        user.id,
+        folderJobId,
+        allRunIds
+      ) as unknown as Array<Record<string, unknown>>;
+    } else {
+      const { data, error } = await supabase!
+        .from("ingestion_runs")
+        .select("id,owner_user_id,folder_analysis_job_id,input_payload")
+        .in("id", allRunIds)
+        .eq("folder_analysis_job_id", folderJobId)
+        .eq("owner_user_id", user.id);
+      if (error) throw new Error(error.message);
+      runRows = (data ?? []) as Array<Record<string, unknown>>;
     }
 
-    const { data: runRows, error: runRowsError } = await query;
-
-    if (runRowsError) {
-      throw new Error(runRowsError.message);
-    }
-
-    const validRunIds = new Set((runRows ?? []).map((row) => String(row.id ?? "")).filter(Boolean));
+    const validRunIds = new Set(runRows.map((row) => String(row.id ?? "")).filter(Boolean));
     const validUploadedItems = uploaded.filter((item) => {
       const runId = String(item.runId);
       const storagePath = String(item.storagePath ?? "");
       return validRunIds.has(runId) && isSafePendingStoragePath(storagePath, runId);
     });
     const validFailedItems = failed.filter((item) => validRunIds.has(String(item.runId)));
+    const recoveredUploadedItems: UploadFinalizeItem[] = [];
+    const remainingFailedItems: UploadFinalizeItem[] = [];
+
+    for (const item of validFailedItems) {
+      const runId = String(item.runId);
+      const storagePath = String(item.storagePath ?? "");
+      if (
+        isSafePendingStoragePath(storagePath, runId) &&
+        storagePath.startsWith("gs://") &&
+        (await gcsObjectExists(storagePath))
+      ) {
+        recoveredUploadedItems.push({
+          ...item,
+          errorMessage: undefined,
+        });
+      } else {
+        remainingFailedItems.push(item);
+      }
+    }
+
+    const queueableUploadedItems = [...validUploadedItems, ...recoveredUploadedItems];
+
+    if (databaseProvider === "cloud-sql") {
+      const finalized = await cloudSqlIngestionRepository.finalizeBatch({
+        ownerUserId: user.id,
+        folderJobId,
+        uploaded: queueableUploadedItems.map((item) => ({
+          runId: String(item.runId), storagePath: String(item.storagePath),
+        })),
+        failed: remainingFailedItems.map((item) => ({
+          runId: String(item.runId), errorMessage: item.errorMessage,
+        })),
+      });
+      let queueStart = buildNotStartedResult("no_uploaded_runs");
+      if (queueableUploadedItems.length > 0) {
+        queueStart = await triggerWorkerQueueWithRetries({
+          maxRuns: Math.min(queueableUploadedItems.length, 5),
+          taskCount: queueableUploadedItems.length,
+          reason: "admin-import-direct-upload",
+        });
+        await cloudSqlIngestionRepository.persistWorkerStartState({
+          ownerUserId: user.id,
+          runIds: queueableUploadedItems.map((item) => String(item.runId)),
+          folderJobId,
+          progressStage: queueStart.progressStage,
+          progressMessage: queueStart.progressMessage,
+          progressDetail: queueStart.progressDetail,
+          metadata: {
+            worker_trigger_attempts: queueStart.attempts,
+            worker_trigger_status: queueStart.started ? "started" : queueStart.alreadyRunning ? "waiting_for_worker" : "not_started",
+            last_worker_trigger_status_code: queueStart.trigger.status,
+            last_worker_trigger_payload: queueStart.trigger.payload,
+          },
+        });
+      }
+      return NextResponse.json({
+        runs: finalized.runs,
+        folderJob: finalized.folderJob,
+        queueStart,
+        warning: queueStart.started || queueStart.alreadyRunning ? null : queueStart.progressMessage,
+      }, { status: queueableUploadedItems.length > 0 ? 201 : 202 });
+    }
 
     const timestamp = new Date().toISOString();
 
-    for (const item of validUploadedItems) {
-      const row = (runRows ?? []).find((entry) => String(entry.id) === String(item.runId));
+    for (const item of queueableUploadedItems) {
+      const row = runRows.find((entry) => String(entry.id) === String(item.runId));
       const basePayload =
         row?.input_payload && typeof row.input_payload === "object" && !Array.isArray(row.input_payload)
           ? (row.input_payload as Record<string, unknown>)
           : {};
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabase!
         .from("ingestion_runs")
         .update({
           status: "queued",
@@ -136,14 +210,14 @@ export async function POST(request: Request) {
       }
     }
 
-    for (const item of validFailedItems) {
-      const row = (runRows ?? []).find((entry) => String(entry.id) === String(item.runId));
+    for (const item of remainingFailedItems) {
+      const row = runRows.find((entry) => String(entry.id) === String(item.runId));
       const basePayload =
         row?.input_payload && typeof row.input_payload === "object" && !Array.isArray(row.input_payload)
           ? (row.input_payload as Record<string, unknown>)
           : {};
 
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabase!
         .from("ingestion_runs")
         .update({
           status: "failed",
@@ -166,10 +240,10 @@ export async function POST(request: Request) {
       }
     }
 
-    const queuedCount = validUploadedItems.length;
-    const failedCount = validFailedItems.length;
+    const queuedCount = queueableUploadedItems.length;
+    const failedCount = remainingFailedItems.length;
 
-    const { data: folderJobAfterUpdate, error: folderJobUpdateError } = await supabase
+    const { data: folderJobAfterUpdate, error: folderJobUpdateError } = await supabase!
       .from("folder_analysis_jobs")
       .update({
         status: queuedCount > 0 ? "queued" : "failed",
@@ -224,14 +298,14 @@ export async function POST(request: Request) {
       }
 
       await persistWorkerStartState({
-        supabase,
-        runIds: validUploadedItems.map((item) => item.runId),
+        supabase: supabase!,
+        runIds: queueableUploadedItems.map((item) => item.runId),
         folderJobId,
         result: queueStart,
       });
     }
 
-    const { data: runs, error: runsError } = await supabase
+    const { data: runs, error: runsError } = await supabase!
       .from("ingestion_runs")
       .select("*")
       .eq("folder_analysis_job_id", folderJobId)

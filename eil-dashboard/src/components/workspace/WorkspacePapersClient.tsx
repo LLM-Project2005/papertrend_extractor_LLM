@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useDashboardData } from "@/hooks/useData";
 import { filterDashboardData } from "@/lib/dashboard-filters";
+import { TRACK_COLS } from "@/lib/constants";
 import Sidebar from "@/components/Sidebar";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
@@ -22,12 +23,14 @@ export default function WorkspacePapersClient() {
     searchQuery,
     setSearchQuery,
   } = useWorkspaceProfile();
+  const router = useRouter();
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const { data, loading, allYears } = useDashboardData(
     selectedFolderId,
     scopedFolderIds,
     {
       projectId: selectedProjectId,
+      enabled: Boolean(selectedProjectId),
     }
   );
   const searchParams = useSearchParams();
@@ -37,6 +40,42 @@ export default function WorkspacePapersClient() {
     const value = (searchParams.get("paperId") ?? "").trim();
     return value || null;
   }, [searchParams]);
+  const drilldown = useMemo(() => {
+    const track = (searchParams.get("track") ?? "").trim().toUpperCase();
+    const year = (searchParams.get("year") ?? "").trim();
+    const topic = (searchParams.get("topic") ?? "").trim();
+    const keyword = (searchParams.get("keyword") ?? "").trim();
+    const folder = (searchParams.get("folder") ?? "").trim();
+    const paperIds = [
+      ...new Set(
+        (searchParams.get("paperIds") ?? "")
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean)
+      ),
+    ];
+    const query = paperIds.length > 0 ? "" : keyword || topic || "";
+    const active = Boolean(track || year || query || folder || paperIds.length > 0);
+    const parts = [
+      track ? `Track: ${track}` : "",
+      year ? `Year: ${year}` : "",
+      keyword ? `Keyword: ${keyword}` : topic ? `Topic: ${topic}` : "",
+      paperIds.length > 0 ? `${paperIds.length} linked paper${paperIds.length === 1 ? "" : "s"}` : "",
+    ].filter(Boolean);
+
+    return {
+      active,
+      track: TRACK_COLS.includes(track as (typeof TRACK_COLS)[number])
+        ? track
+        : "",
+      year,
+      query,
+      folder,
+      paperIds,
+      label: parts.join(" | "),
+      signature: [track, year, topic, keyword, folder, paperIds.join(",")].join("|"),
+    };
+  }, [searchParams]);
 
   useEffect(() => {
     if (allYears.length > 0 && selectedYears.length === 0) {
@@ -44,13 +83,66 @@ export default function WorkspacePapersClient() {
     }
   }, [allYears, selectedYears.length]);
 
+  useEffect(() => {
+    if (!drilldown.active) {
+      return;
+    }
+
+    if (drilldown.folder && folders.some((folder) => folder.id === drilldown.folder)) {
+      setSelectedFolderId(drilldown.folder);
+    }
+    if (drilldown.track) {
+      setSelectedTracks([drilldown.track]);
+    }
+    if (drilldown.year) {
+      setSelectedYears([drilldown.year]);
+    }
+    if (drilldown.query) {
+      setSearchQuery(drilldown.query);
+    } else if (drilldown.paperIds.length > 0) {
+      setSearchQuery("");
+    }
+  }, [
+    drilldown.active,
+    drilldown.folder,
+    drilldown.paperIds,
+    drilldown.query,
+    drilldown.signature,
+    drilldown.track,
+    drilldown.year,
+    folders,
+    setSearchQuery,
+    setSelectedFolderId,
+    setSelectedTracks,
+    setSelectedYears,
+  ]);
+
+  function clearDrilldown() {
+    setSearchQuery("");
+    setSelectedTracks([...TRACK_COLS]);
+    if (allYears.length > 0) {
+      setSelectedYears(allYears);
+    }
+    router.replace("/workspace/papers");
+  }
+
   const filteredData = useMemo(() => {
     if (!data) {
       return { trends: [], tracksSingle: [], tracksMulti: [] };
     }
 
-    return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
-  }, [data, searchQuery, selectedTracks, selectedYears]);
+    const base = filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
+    if (drilldown.paperIds.length === 0) {
+      return base;
+    }
+
+    const allowedPaperIds = new Set(drilldown.paperIds);
+    return {
+      trends: base.trends.filter((row) => allowedPaperIds.has(row.paper_id)),
+      tracksSingle: base.tracksSingle.filter((row) => allowedPaperIds.has(row.paper_id)),
+      tracksMulti: base.tracksMulti.filter((row) => allowedPaperIds.has(row.paper_id)),
+    };
+  }, [data, drilldown.paperIds, searchQuery, selectedTracks, selectedYears]);
 
   if (loading || !data) {
     return (
@@ -96,6 +188,26 @@ export default function WorkspacePapersClient() {
           </button>
         </div>
       </div>
+
+      {drilldown.active ? (
+        <section className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-200">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="font-medium">Dashboard drilldown</p>
+              <p className="mt-1 text-sky-700 dark:text-sky-300">
+                {drilldown.label || "Showing papers from the selected chart segment."}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={clearDrilldown}
+              className="inline-flex h-9 items-center rounded-full border border-sky-200 bg-white px-3 text-xs font-semibold text-sky-800 transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-[#050505] dark:text-sky-200 dark:hover:bg-sky-950/50"
+            >
+              Clear
+            </button>
+          </div>
+        </section>
+      ) : null}
 
       <div className="min-w-0">
         {filterOpen && (

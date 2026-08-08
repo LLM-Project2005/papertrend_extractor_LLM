@@ -13,8 +13,15 @@ except ImportError:  # pragma: no cover - optional convenience dependency
 
 @dataclass
 class WorkerConfig:
+    database_provider: str
+    storage_provider: str
     supabase_url: str
     supabase_service_key: str
+    database_url: str
+    google_cloud_project_id: str
+    google_cloud_region: str
+    cloud_sql_instance_connection_name: str
+    gcs_upload_bucket: str
     openai_api_key: str
     openai_base_url: str
     openai_model: str
@@ -45,10 +52,29 @@ def load_config() -> WorkerConfig:
     if load_dotenv:
         load_dotenv()
 
+    infra_provider = os.getenv("INFRA_PROVIDER", "").strip().lower().replace("_", "-")
+    database_provider = (
+        os.getenv("DATABASE_PROVIDER") or infra_provider or "supabase"
+    ).strip().lower().replace("_", "-")
+    storage_provider = (
+        os.getenv("STORAGE_PROVIDER") or infra_provider or "supabase"
+    ).strip().lower().replace("_", "-")
+    if database_provider == "google":
+        database_provider = "cloud-sql"
+    if storage_provider == "google":
+        storage_provider = "gcs"
+
     supabase_url = os.getenv("SUPABASE_URL") or os.getenv("NEXT_PUBLIC_SUPABASE_URL", "")
     supabase_service_key = (
         os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY", "")
     )
+    database_url = os.getenv("DATABASE_URL", "")
+    google_cloud_project_id = os.getenv("GOOGLE_CLOUD_PROJECT_ID") or os.getenv(
+        "GCLOUD_PROJECT", ""
+    )
+    google_cloud_region = os.getenv("GOOGLE_CLOUD_REGION", "asia-southeast1")
+    cloud_sql_instance_connection_name = os.getenv("CLOUD_SQL_INSTANCE_CONNECTION_NAME", "")
+    gcs_upload_bucket = os.getenv("GCS_UPLOAD_BUCKET", "")
     openai_api_key = os.getenv("OPENAI_API_KEY", "")
     openai_base_url = (os.getenv("OPENAI_BASE_URL") or "https://api.openai.com/v1").rstrip("/")
     openai_model = os.getenv("OPENAI_MODEL") or "gpt-4.1-mini"
@@ -58,18 +84,46 @@ def load_config() -> WorkerConfig:
     missing = [
         name
         for name, value in [
-            ("SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL", supabase_url),
-            ("SUPABASE_SERVICE_ROLE_KEY", supabase_service_key),
             ("OPENAI_API_KEY", openai_api_key),
         ]
         if not value
     ]
+    if database_provider == "supabase" or storage_provider == "supabase":
+        missing.extend(
+            name
+            for name, value in [
+                ("SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL", supabase_url),
+                ("SUPABASE_SERVICE_ROLE_KEY", supabase_service_key),
+            ]
+            if not value
+        )
+    if database_provider == "cloud-sql":
+        missing.extend(
+            name
+            for name, value in [
+                ("DATABASE_URL", database_url),
+                (
+                    "CLOUD_SQL_INSTANCE_CONNECTION_NAME",
+                    cloud_sql_instance_connection_name,
+                ),
+            ]
+            if not value
+        )
+    if storage_provider == "gcs" and not gcs_upload_bucket:
+        missing.append("GCS_UPLOAD_BUCKET")
     if missing:
         raise RuntimeError("Missing required worker environment variables: " + ", ".join(missing))
 
     return WorkerConfig(
+        database_provider=database_provider,
+        storage_provider=storage_provider,
         supabase_url=supabase_url,
         supabase_service_key=supabase_service_key,
+        database_url=database_url,
+        google_cloud_project_id=google_cloud_project_id,
+        google_cloud_region=google_cloud_region,
+        cloud_sql_instance_connection_name=cloud_sql_instance_connection_name,
+        gcs_upload_bucket=gcs_upload_bucket,
         openai_api_key=openai_api_key,
         openai_base_url=openai_base_url,
         openai_model=openai_model,

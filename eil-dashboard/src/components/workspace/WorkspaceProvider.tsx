@@ -95,6 +95,8 @@ interface WorkspaceContextValue {
     options?: { organizationId?: string | null; description?: string | null }
   ) => Promise<WorkspaceProjectRow>;
   createFolder: (folderName: string) => Promise<ResearchFolderRow>;
+  renameProject: (projectId: string, name: string) => Promise<WorkspaceProjectRow>;
+  renameFolder: (folderId: string, name: string) => Promise<ResearchFolderRow>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | undefined>(
@@ -134,6 +136,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [selectedTracks, setSelectedTracksState] = useState<string[]>([...TRACK_COLS]);
   const [searchQuery, setSearchQueryState] = useState("");
   const loadedKeyRef = useRef<string | null>(null);
+  const profileDirtyRef = useRef(false);
   const cachedWorkspaceRef = useRef<{
     organizationId: string | null;
     projectId: string | null;
@@ -208,6 +211,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const nextKey = `${user.id}:${authProfile?.updated_at ?? "local"}`;
       if (loadedKeyRef.current !== nextKey) {
         loadedKeyRef.current = nextKey;
+        // Remote profile hydration is not a local edit and must never start
+        // the persistence effect below.
+        profileDirtyRef.current = false;
         setProfile(remoteProfile);
       }
 
@@ -216,6 +222,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     loadedKeyRef.current = "anonymous";
+    profileDirtyRef.current = false;
     setProfile(loadWorkspaceProfile());
     setOrganizations([]);
     setProjects([]);
@@ -676,6 +683,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         ])
       );
       setSelectedOrganizationIdState(payload.organization.id);
+      profileDirtyRef.current = true;
+      setProfile((current) => ({
+        ...current,
+        name: payload.organization!.name,
+        updatedAt: new Date().toISOString(),
+      }));
       return payload.organization;
     },
     [session?.access_token, user]
@@ -690,7 +703,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         options?.organizationId ?? selectedOrganizationIdState ?? null;
 
       if (!user || !session?.access_token || !organizationId) {
-        throw new Error("Select a workspace before creating projects.");
+        throw new Error("A project owner is required before creating projects.");
       }
 
       const response = await fetch("/api/workspace/projects", {
@@ -776,6 +789,76 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return payload.folder;
     },
     [selectedProjectIdState, session?.access_token, user]
+  );
+
+  const renameProject = useCallback(
+    async (projectId: string, name: string) => {
+      if (!user || !session?.access_token) {
+        throw new Error("Sign in before renaming projects.");
+      }
+
+      const response = await fetch("/api/workspace/projects", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ projectId, name }),
+      });
+
+      const payload = (await response.json()) as {
+        project?: WorkspaceProjectRow;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? "Failed to rename project.");
+      }
+
+      setProjects((current) =>
+        sortByName(current.map((project) => (project.id === projectId ? payload.project! : project)))
+      );
+      setAllProjects((current) =>
+        sortByName(current.map((project) => (project.id === projectId ? payload.project! : project)))
+      );
+      return payload.project;
+    },
+    [session?.access_token, user]
+  );
+
+  const renameFolder = useCallback(
+    async (folderId: string, name: string) => {
+      if (!user || !session?.access_token) {
+        throw new Error("Sign in before renaming folders.");
+      }
+
+      const response = await fetch("/api/workspace/folders", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ folderId, name }),
+      });
+
+      const payload = (await response.json()) as {
+        folder?: ResearchFolderRow;
+        error?: string;
+      };
+
+      if (!response.ok || !payload.folder) {
+        throw new Error(payload.error ?? "Failed to rename folder.");
+      }
+
+      setFolders((current) =>
+        sortByName(current.map((folder) => (folder.id === folderId ? payload.folder! : folder)))
+      );
+      setAllFolders((current) =>
+        sortByName(current.map((folder) => (folder.id === folderId ? payload.folder! : folder)))
+      );
+      return payload.folder;
+    },
+    [session?.access_token, user]
   );
 
   useEffect(() => {
@@ -878,6 +961,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    if (!profileDirtyRef.current) {
+      return;
+    }
+
+    profileDirtyRef.current = false;
     saveWorkspaceProfileRemote(profile).catch(() => {
       // The local profile still persists in localStorage, so the workspace
       // remains usable even if the remote sync fails temporarily.
@@ -914,6 +1002,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       searchQuery,
       hasActiveProject: Boolean(currentProject),
       updateProfile: (updates) => {
+        profileDirtyRef.current = true;
         setProfile((current) => ({
           ...current,
           ...updates,
@@ -921,6 +1010,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }));
       },
       resetProfile: () => {
+        profileDirtyRef.current = true;
         setProfile({
           ...DEFAULT_WORKSPACE_PROFILE,
           updatedAt: new Date().toISOString(),
@@ -937,7 +1027,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           folderJobId: options?.folderJob?.id ?? null,
           folderId: options?.folderId ?? null,
           sourceKind: options?.sourceKind ?? "pdf-upload",
-          folder: options?.folder ?? "Inbox",
+          folder: options?.folder ?? "Repository",
           minimized: false,
           startedAt: new Date().toISOString(),
         });
@@ -1073,6 +1163,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       createOrganization,
       createProject,
       createFolder,
+      renameProject,
+      renameFolder,
     }),
     [
       analysisSession,
@@ -1081,6 +1173,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       createProject,
       currentOrganization,
       currentProject,
+      renameFolder,
+      renameProject,
       allFolders,
       allProjects,
       folders,

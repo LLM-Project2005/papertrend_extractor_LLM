@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import { listWorkspaceThreads } from "@/lib/chat-store";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getChatRepository } from "@/lib/chat-repository";
 
 export const runtime = "nodejs";
 
@@ -12,8 +11,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = getSupabaseAdmin();
-    const threads = await listWorkspaceThreads(supabase, user.id);
+    const threads = await getChatRepository().listThreads(user.id);
     return NextResponse.json({ threads });
   } catch (error) {
     return NextResponse.json(

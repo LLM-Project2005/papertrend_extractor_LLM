@@ -1,18 +1,30 @@
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from nodes.common import normalize_whitespace
 
 
-CURRENT_MAX_YEAR = 2026
+CURRENT_MAX_YEAR = datetime.now(timezone.utc).year
 MIN_PUBLICATION_YEAR = 1900
 MAX_PUBLICATION_YEAR = CURRENT_MAX_YEAR + 1
 
 _AD_YEAR_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 _THAI_YEAR_RE = re.compile(r"(?<!\d)(25[0-9]{2})(?!\d)")
 _DATE_YEAR_RE = re.compile(r"D:(\d{4})")
+_EXPLICIT_PUBLICATION_RE = re.compile(
+    r"\b(?:publication\s+(?:date|year)|published(?:\s+(?:in|on))?|"
+    r"online\s+first|available\s+online|copyright)\b|\u00a9",
+    re.IGNORECASE,
+)
+_NON_PUBLICATION_RE = re.compile(
+    r"\b(?:received|accepted|revised|submitted|"
+    r"data\s+(?:were\s+)?collected|collection|academic\s+year|"
+    r"school\s+year|semester|cohort|participants?|sample)\b",
+    re.IGNORECASE,
+)
 _WEAK_CONTEXT_RE = re.compile(
     r"\b("
     r"references?|bibliography|cited|retrieved|accessed|"
@@ -32,7 +44,7 @@ _CITATION_CONTEXT_RE = re.compile(
 _STRONG_CONTEXT_RE = re.compile(
     r"\b("
     r"published|publication|journal|volume|vol\.|issue|doi|"
-    r"proceedings|conference|received|accepted|available online|"
+    r"proceedings|conference|available online|"
     r"copyright|©|thesis|dissertation|พ\.ศ\."
     r")\b",
     re.IGNORECASE,
@@ -82,15 +94,30 @@ def resolve_publication_year(
         pdf_metadata=pdf_metadata,
         input_payload=input_payload,
     )
-    candidate_by_year = {candidate.year: candidate for candidate in candidates}
+    # A year can appear in several places. Keep the strongest evidence for each
+    # year instead of letting a later, weaker mention overwrite it.
+    candidate_by_year: Dict[str, YearCandidate] = {}
+    for candidate in candidates:
+        current = candidate_by_year.get(candidate.year)
+        if current is None or _candidate_sort_key(candidate) > _candidate_sort_key(current):
+            candidate_by_year[candidate.year] = candidate
     llm_normalized = normalize_publication_year(llm_year)
 
     selected: Optional[YearCandidate] = None
     strategy = "unresolved"
 
-    if llm_normalized != "Unknown" and llm_normalized in candidate_by_year:
+    if _has_ambiguous_strong_candidates(candidates):
+        strategy = "ambiguous_publication_candidates"
+    elif llm_normalized != "Unknown" and llm_normalized in candidate_by_year:
         verified = candidate_by_year[llm_normalized]
-        if verified.confidence >= 0.55:
+        # An LLM may choose among grounded candidates, but it must not promote
+        # weak metadata (filename, PDF creation date, or body text) into a
+        # publication year merely because the number looks plausible.
+        if (
+            verified.confidence >= 0.78
+            and _can_verify_with_llm(verified)
+            and _llm_candidate_is_preferred(verified, candidates)
+        ):
             selected = YearCandidate(
                 year=verified.year,
                 source=f"llm_verified:{verified.source}",
@@ -102,17 +129,20 @@ def resolve_publication_year(
 
     if selected is None and candidates:
         top = candidates[0]
-        if top.confidence >= 0.80:
+        if top.confidence >= 0.80 and _can_select_deterministically(top):
             selected = top
             strategy = "deterministic_high_confidence"
-        elif top.confidence >= 0.65 and llm_normalized == "Unknown":
+        elif top.confidence >= 0.65 and llm_normalized == "Unknown" and _can_select_deterministically(top):
             selected = top
             strategy = "deterministic_medium_confidence"
 
     if selected is None:
+        best_confidence = max((candidate.confidence for candidate in candidates), default=0.0)
         return {
             "year": "Unknown",
             "year_confidence": 0.0,
+            "best_candidate_confidence": round(best_confidence, 3),
+            "year_confidence_band": _confidence_band(0.0),
             "year_source": "unresolved",
             "year_evidence": "",
             "year_candidates": [candidate_to_dict(candidate) for candidate in candidates],
@@ -124,6 +154,8 @@ def resolve_publication_year(
     return {
         "year": selected.year,
         "year_confidence": round(selected.confidence, 3),
+        "best_candidate_confidence": round(selected.confidence, 3),
+        "year_confidence_band": _confidence_band(selected.confidence),
         "year_source": selected.source,
         "year_evidence": selected.evidence[:1000],
         "year_candidates": [candidate_to_dict(candidate) for candidate in candidates],
@@ -131,6 +163,71 @@ def resolve_publication_year(
         "llm_year": llm_normalized,
         "needs_review": selected.confidence < 0.75,
     }
+
+
+def merge_web_year_resolution(
+    local: Dict[str, Any],
+    web: Optional[Dict[str, Any]],
+    *,
+    minimum_web_confidence: float = 0.88,
+) -> Dict[str, Any]:
+    """Merge a strict external result without allowing weak disagreement.
+
+    Web metadata can fill a missing local year or corroborate the same year.
+    When local and web sources disagree, the resolver abstains and preserves
+    both candidates for diagnostics instead of silently choosing one.
+    """
+
+    if not web:
+        return local
+
+    local_candidates = list(local.get("year_candidates") or [])
+    web_candidates = list(web.get("year_candidates") or [])
+    merged_candidates = local_candidates + web_candidates
+    web_confidence = float(web.get("year_confidence") or 0.0)
+
+    if local.get("year") == "Unknown" and web_confidence >= minimum_web_confidence:
+        return {
+            **local,
+            **web,
+            "year_candidates": merged_candidates,
+            "llm_year": local.get("llm_year", "Unknown"),
+            "needs_review": web_confidence < 0.90,
+        }
+
+    if local.get("year") == web.get("year") and local.get("year") != "Unknown":
+        confidence = min(
+            1.0,
+            max(float(local.get("year_confidence") or 0.0), web_confidence) + 0.03,
+        )
+        return {
+            **local,
+            "year_confidence": round(confidence, 3),
+            "best_candidate_confidence": round(confidence, 3),
+            "year_confidence_band": _confidence_band(confidence),
+            "year_source": f"{local.get('year_source', 'local')}+{web.get('year_source', 'web')}"[:120],
+            "year_evidence": f"{local.get('year_evidence', '')}; {web.get('year_evidence', '')}"[:1000],
+            "year_candidates": merged_candidates,
+            "year_resolution_strategy": "local_web_agreement",
+            "needs_review": confidence < 0.90,
+        }
+
+    if local.get("year") not in (None, "Unknown") and web_confidence >= minimum_web_confidence:
+        best_confidence = max(float(local.get("year_confidence") or 0.0), web_confidence)
+        return {
+            **local,
+            "year": "Unknown",
+            "year_confidence": 0.0,
+            "best_candidate_confidence": round(best_confidence, 3),
+            "year_confidence_band": "unresolved",
+            "year_source": "conflict:local_vs_web",
+            "year_evidence": f"Local: {local.get('year_evidence', '')}; Web: {web.get('year_evidence', '')}"[:1000],
+            "year_candidates": merged_candidates,
+            "year_resolution_strategy": "conflicting_local_web_candidates",
+            "needs_review": True,
+        }
+
+    return local
 
 
 def collect_year_candidates(
@@ -147,8 +244,14 @@ def collect_year_candidates(
     pdf_metadata = pdf_metadata or {}
     input_payload = input_payload or {}
 
+    derived_payload = _is_derived_year_payload(input_payload)
     for key in ("year", "publication_year", "paper_year"):
         if key in input_payload:
+            # The worker stores its own resolved year in input_payload for
+            # diagnostics. Do not treat that previous result as authoritative
+            # when a run is reprocessed; resolve it again from source evidence.
+            if key == "year" and derived_payload:
+                continue
             _add_value_candidate(
                 candidates,
                 input_payload.get(key),
@@ -157,7 +260,7 @@ def collect_year_candidates(
                 evidence=f"{key}: {input_payload.get(key)}",
             )
 
-    for key in ("created_at", "published_at", "publication_date"):
+    for key in ("published_at", "publication_date"):
         if key in input_payload:
             _add_value_candidate(
                 candidates,
@@ -178,7 +281,10 @@ def collect_year_candidates(
                     candidates,
                     date_match.group(1),
                     source=f"pdf_metadata:{key}",
-                    confidence=0.62,
+                    # PDF creation/modification dates describe the file, not
+                    # necessarily the publication. Keep them in the audit
+                    # trail, but never let them decide a year by themselves.
+                    confidence=0.25,
                     evidence=f"{key}: {value}",
                 )
             continue
@@ -187,7 +293,7 @@ def collect_year_candidates(
             candidates,
             value,
             source=f"pdf_metadata:{key}",
-            confidence=0.58,
+            confidence=0.28,
             evidence=f"{key}: {value}",
         )
 
@@ -234,9 +340,11 @@ def _add_path_candidates(candidates: List[YearCandidate], path: str, source: str
     path_obj = Path(path)
     parts = list(path_obj.parts) or [path]
     for index, part in enumerate(parts):
-        base_confidence = 0.90 if re.fullmatch(r"(19|20)\d{2}|25[0-9]{2}", part) else 0.82
+        # A year in a folder or filename is useful for investigation, but it
+        # can refer to a download, scan, revision, or dataset year.
+        base_confidence = 0.55 if re.fullmatch(r"(19|20)\d{2}|25[0-9]{2}", part) else 0.45
         if index == len(parts) - 1:
-            base_confidence = min(base_confidence, 0.86)
+            base_confidence = min(base_confidence, 0.50)
         _add_value_candidate(
             candidates,
             part,
@@ -262,18 +370,31 @@ def _add_text_candidates(
             continue
         context = _context(text, start, end)
         confidence = base_confidence
-        if _STRONG_CONTEXT_RE.search(context):
-            confidence += 0.08
+        publication_kind = _publication_kind(text, start)
+        explicit_publication = publication_kind is not None
+        if publication_kind == "online":
+            confidence += 0.12
+        elif explicit_publication:
+            confidence += 0.18
+        elif _STRONG_CONTEXT_RE.search(context):
+            confidence += 0.05
+        if _NON_PUBLICATION_RE.search(context):
+            confidence -= 0.20
         if _WEAK_CONTEXT_RE.search(context):
             confidence -= 0.22
         if _CITATION_CONTEXT_RE.search(context):
             confidence -= 0.25
         if source == "body_text":
-            confidence = min(confidence, 0.48)
+            confidence = min(confidence, 0.55 if explicit_publication else 0.48)
+        candidate_source = (
+            f"{source}:explicit_publication:{publication_kind}"
+            if explicit_publication
+            else source
+        )
         candidates.append(
             YearCandidate(
                 year=year,
-                source=source,
+                source=candidate_source,
                 confidence=max(0.0, min(1.0, confidence)),
                 evidence=context,
                 raw_year=raw_year,
@@ -368,4 +489,138 @@ def _dedupe_candidates(candidates: Sequence[YearCandidate]) -> List[YearCandidat
                 )
             )
 
-    return sorted(boosted, key=lambda item: (item.confidence, item.source), reverse=True)
+    return sorted(boosted, key=_candidate_sort_key, reverse=True)
+
+
+def _is_derived_year_payload(payload: Dict[str, Any]) -> bool:
+    """Return whether a payload contains a worker-produced year audit."""
+
+    return bool(
+        isinstance(payload.get("year_resolution"), dict)
+        or payload.get("pipeline")
+        or payload.get("analysis_metrics")
+    )
+
+
+def _candidate_priority(candidate: YearCandidate) -> int:
+    source = candidate.source.lower()
+    if source.startswith("import_metadata:year") or source.startswith("import_metadata:publication_year"):
+        return 100
+    if source.startswith("import_metadata:paper_year") or source.startswith("import_metadata:published_at"):
+        return 95
+    if source.startswith("import_metadata:publication_date"):
+        return 94
+    if ":explicit_publication:published" in source or ":explicit_publication:copyright" in source:
+        return 95
+    if ":explicit_publication:online" in source:
+        return 90
+    if ":explicit_publication" in source:
+        return 92
+    if source.startswith("section:title_abstract"):
+        return 70
+    if source.startswith("front_matter"):
+        return 65
+    if source.startswith("pdf_metadata"):
+        return 25
+    if source.startswith("source_filename") or source.startswith("source_path"):
+        return 20
+    if source.startswith("body_text"):
+        return 10
+    return 0
+
+
+def _candidate_sort_key(candidate: YearCandidate) -> Tuple[float, int, str]:
+    return (candidate.confidence, _candidate_priority(candidate), candidate.source)
+
+
+def _can_verify_with_llm(candidate: YearCandidate) -> bool:
+    return _is_publication_evidence(candidate)
+
+
+def _llm_candidate_is_preferred(candidate: YearCandidate, candidates: Sequence[YearCandidate]) -> bool:
+    """Prevent an LLM from choosing a weaker date label over stronger evidence."""
+
+    strongest = max(candidates, key=_candidate_sort_key, default=None)
+    return strongest is None or _candidate_sort_key(candidate) >= _candidate_sort_key(strongest)
+
+
+def _can_select_deterministically(candidate: YearCandidate) -> bool:
+    """Allow only publication evidence to auto-select a year.
+
+    Weak file metadata remains visible in ``year_candidates`` so the UI or a
+    later repair job can explain the uncertainty, but it must not silently
+    become the paper's publication year.
+    """
+
+    return _is_publication_evidence(candidate)
+
+
+def _is_publication_evidence(candidate: YearCandidate) -> bool:
+    source = candidate.source.lower()
+    return source.startswith("import_metadata:") or ":explicit_publication:" in source
+
+
+def _has_ambiguous_strong_candidates(candidates: Sequence[YearCandidate]) -> bool:
+    strong = [
+        candidate
+        for candidate in candidates
+        if candidate.confidence >= 0.80 and _can_select_deterministically(candidate)
+    ]
+    if len({candidate.year for candidate in strong}) < 2:
+        return False
+
+    # A publication date is more authoritative than an online-first date. A
+    # common pattern is "Published 2017; available online 2018"; this is not a
+    # true conflict for the paper's publication-year field. Only compare years
+    # at the strongest publication-evidence level present.
+    strongest_rank = max(_publication_evidence_rank(candidate) for candidate in strong)
+    strongest = [
+        candidate for candidate in strong if _publication_evidence_rank(candidate) == strongest_rank
+    ]
+    if len({candidate.year for candidate in strongest}) < 2:
+        return False
+
+    ranked = sorted(strongest, key=_candidate_sort_key, reverse=True)
+    return ranked[0].confidence - ranked[1].confidence < 0.08
+
+
+def _publication_kind(text: str, year_start: int) -> Optional[str]:
+    """Classify the publication label nearest to a year mention."""
+
+    window_start = max(0, year_start - 90)
+    window = text[window_start:year_start]
+    matches = list(_EXPLICIT_PUBLICATION_RE.finditer(window))
+    if not matches:
+        return None
+
+    label = matches[-1].group(0).lower()
+    if "online" in label:
+        return "online"
+    if "copyright" in label:
+        return "copyright"
+    return "published"
+
+
+def _publication_evidence_rank(candidate: YearCandidate) -> int:
+    source = candidate.source.lower()
+    if ":explicit_publication:published" in source:
+        return 4
+    if ":explicit_publication:copyright" in source:
+        return 3
+    if ":explicit_publication:online" in source:
+        return 2
+    if ":explicit_publication:" in source:
+        return 1
+    if source.startswith("import_metadata:"):
+        return 5
+    return 0
+
+
+def _confidence_band(confidence: float) -> str:
+    if confidence >= 0.90:
+        return "high"
+    if confidence >= 0.75:
+        return "medium"
+    if confidence > 0:
+        return "low"
+    return "unresolved"

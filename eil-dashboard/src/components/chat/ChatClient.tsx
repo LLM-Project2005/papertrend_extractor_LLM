@@ -29,7 +29,15 @@ import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
 import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
+import {
+  dedupeConversationSources,
+  previewConversationSources,
+} from "@/lib/conversation-sources";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import type {
+  KnowledgeScope,
+  KnowledgeScopeSnapshot,
+} from "@/lib/knowledge-scope";
 import {
   ChartIcon,
   ChatIcon,
@@ -66,8 +74,11 @@ import type {
 } from "@/types/database";
 import type {
   ChatMode,
+  DeepResearchCitationRef,
+  DeepResearchEvidenceItem,
   ChatThreadDetail,
   DeepResearchSessionRecord,
+  DeepResearchStepRecord,
   WorkspaceMessageRecord,
   WorkspaceThreadSummary,
 } from "@/types/research";
@@ -84,6 +95,7 @@ interface Citation {
 type ChartType = "auto" | "bar" | "line" | "pie" | "table";
 type ChartMetric =
   | "papers_per_year"
+  | "word_count"
   | "top_topics"
   | "top_keywords"
   | "track_distribution"
@@ -148,6 +160,12 @@ interface ChatPayload {
   thread?: WorkspaceThreadSummary;
   messages?: WorkspaceMessageRecord[];
   deepResearchSession?: DeepResearchSessionRecord | null;
+  jobId?: string | null;
+  coverage?: Record<string, unknown> | null;
+  limitations?: string[];
+  groundingMode?: "repository" | "repository_web" | "general" | "repository_unavailable";
+  scopeSnapshot?: KnowledgeScopeSnapshot | null;
+  requestId?: string;
 }
 
 interface ChatSearchResult {
@@ -216,7 +234,7 @@ const STRICT_RESEARCH_BUDGET: DeepResearchBudgetPolicy = {
 };
 
 const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
-  scope: "auto",
+  scope: "project",
   includeAttached: true,
   includeCurrentScope: true,
   includeWorkspace: false,
@@ -397,7 +415,7 @@ function groupMarkdownLines(lines: string[]) {
   while (index < lines.length) {
     const line = lines[index];
 
-    if (/^#{1,3}\s+/.test(line)) {
+    if (/^#{1,6}\s+/.test(line)) {
       groups.push([line]);
       index += 1;
       continue;
@@ -454,7 +472,7 @@ function groupMarkdownLines(lines: string[]) {
     index += 1;
     while (
       index < lines.length &&
-      !/^#{1,3}\s+/.test(lines[index]) &&
+      !/^#{1,6}\s+/.test(lines[index]) &&
       !/^[-*]\s+/.test(lines[index]) &&
       !/^\d+\.\s+/.test(lines[index]) &&
       !/^>\s?/.test(lines[index])
@@ -650,12 +668,28 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 );
               }
 
-              if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
-                const headingText = lines[0].replace(/^#{1,3}\s+/, "");
+              if (lines.length === 1 && /^#{1,6}\s+/.test(lines[0])) {
+                const headingMatch = lines[0].match(/^(#{1,6})\s+(.+)$/);
+                const headingLevel = headingMatch?.[1].length ?? 3;
+                const headingText = headingMatch?.[2] ?? lines[0];
+                const headingContent = renderInlineMarkdown(
+                  headingText,
+                  `${keyPrefix}-heading-${blockIndex}-${groupIndex}`
+                );
+                const headingKey = `${keyPrefix}-heading-${blockIndex}-${groupIndex}`;
+                if (headingLevel === 1) {
+                  return <h2 key={headingKey} className={`${headingClass} text-xl`}>{headingContent}</h2>;
+                }
+                if (headingLevel === 2) {
+                  return <h3 key={headingKey} className={headingClass}>{headingContent}</h3>;
+                }
+                if (headingLevel === 3) {
+                  return <h4 key={headingKey} className={`${headingClass} text-base`}>{headingContent}</h4>;
+                }
                 return (
-                  <h3 key={`${keyPrefix}-heading-${blockIndex}-${groupIndex}`} className={headingClass}>
-                    {renderInlineMarkdown(headingText, `${keyPrefix}-heading-${blockIndex}-${groupIndex}`)}
-                  </h3>
+                  <h5 key={headingKey} className="text-sm font-semibold text-slate-800 dark:text-[#ececec]">
+                    {headingContent}
+                  </h5>
                 );
               }
 
@@ -683,6 +717,36 @@ function safeCitationHref(href: string): string {
   } catch {
     return "#";
   }
+}
+
+function CitationLink({ citation, compact = false }: { citation: Citation; compact?: boolean }) {
+  return (
+    <Link
+      href={safeCitationHref(citation.href)}
+      className={`flex items-start gap-2.5 border border-slate-200 bg-white text-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a] ${
+        compact ? "rounded-lg px-3 py-2" : "rounded-xl px-3.5 py-3"
+      }`}
+    >
+      {citation.sourceType === "web" ? (
+        <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+      ) : (
+        <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+      )}
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-slate-900 dark:text-[#ececec]">
+          {citation.title}
+        </span>
+        <span className="mt-0.5 block text-xs text-slate-500 dark:text-[#8e8e8e]">
+          {citation.sourceType === "web" ? "Web source" : citation.year || "Paper"}
+        </span>
+        {!compact && citation.reason ? (
+          <span className="mt-1.5 block text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+            {citation.reason}
+          </span>
+        ) : null}
+      </span>
+    </Link>
+  );
 }
 
 const chatChartTooltipTheme = {
@@ -974,8 +1038,30 @@ function sessionActive(session?: DeepResearchSessionRecord | null) {
 }
 
 function buildFolderLabel(folderId: string, folders: ResearchFolderRow[]) {
-  if (!folderId || folderId === "all") return "All folders";
+  if (folderId === "all-projects") return "All projects";
+  if (!folderId || folderId === "all") return "Entire repository";
   return folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
+}
+
+function scopeSnapshotFromMetadata(metadata?: Record<string, unknown> | null): KnowledgeScopeSnapshot | null {
+  const value = metadata?.scopeSnapshot;
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<KnowledgeScopeSnapshot>;
+  if (!candidate.kind || typeof candidate.label !== "string") return null;
+  return {
+    kind: candidate.kind,
+    label: candidate.label,
+    projectId: candidate.projectId ?? null,
+    projectName: candidate.projectName ?? null,
+    folderId: candidate.folderId ?? null,
+    folderName: candidate.folderName ?? null,
+    selectedRunCount: Number(candidate.selectedRunCount ?? 0),
+    eligiblePaperCount: Number(candidate.eligiblePaperCount ?? 0),
+  };
+}
+
+function groundingModeFromMetadata(metadata?: Record<string, unknown> | null): string {
+  return typeof metadata?.groundingMode === "string" ? metadata.groundingMode : "";
 }
 
 function runTitleOf(run: IngestionRunRow) {
@@ -1166,6 +1252,196 @@ function splitReportBlocks(report?: string | null) {
     .filter(Boolean);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function uniqueStrings(values: string[]) {
+  return Array.from(
+    new Set(values.map((value) => value.trim()).filter(Boolean))
+  );
+}
+
+function readStringArray(record: Record<string, unknown> | null, key: string) {
+  const value = record?.[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter(Boolean);
+}
+
+function extractStepRawRecord(step: DeepResearchStepRecord) {
+  return asRecord(step.output_payload?.raw);
+}
+
+function extractStepDiagnostics(step: DeepResearchStepRecord) {
+  const raw = extractStepRawRecord(step);
+  return [
+    asRecord(step.output_payload?.diagnostics),
+    asRecord(raw?.diagnostics),
+    asRecord(raw?.verification),
+  ].filter(Boolean) as Record<string, unknown>[];
+}
+
+function extractStepWarnings(step: DeepResearchStepRecord) {
+  return uniqueStrings(
+    extractStepDiagnostics(step).flatMap((diagnostics) => [
+      ...readStringArray(diagnostics, "verification_warnings"),
+      ...readStringArray(diagnostics, "warnings"),
+    ])
+  );
+}
+
+function extractStepUnresolvedSections(step: DeepResearchStepRecord) {
+  return uniqueStrings(
+    extractStepDiagnostics(step).flatMap((diagnostics) => [
+      ...readStringArray(diagnostics, "unresolved_sections"),
+      ...readStringArray(diagnostics, "missing_sections"),
+    ])
+  );
+}
+
+function extractStepEvidenceItems(step: DeepResearchStepRecord) {
+  const raw = extractStepRawRecord(step);
+  const rawItems = raw?.evidenceItems;
+  if (!Array.isArray(rawItems)) return [] as DeepResearchEvidenceItem[];
+  return rawItems.filter((item): item is DeepResearchEvidenceItem => {
+    const record = asRecord(item);
+    return Boolean(record?.title && record?.snippet);
+  });
+}
+
+function extractStepCitations(step: DeepResearchStepRecord) {
+  const raw = extractStepRawRecord(step);
+  const outputCitations = step.output_payload?.citations ?? [];
+  const rawLedgerValue = raw?.citationLedger;
+  const rawLedger = Array.isArray(rawLedgerValue)
+    ? (rawLedgerValue as DeepResearchCitationRef[])
+    : [];
+  return [...outputCitations, ...rawLedger].filter((citation) =>
+    Boolean(citation?.source_id || citation?.source_label || citation?.url)
+  );
+}
+
+function formatResearchPhase(value?: string | null) {
+  return String(value || "")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function buildResearchEvidenceSummary(session?: DeepResearchSessionRecord | null) {
+  const steps = session?.steps ?? [];
+  const citations = steps.flatMap(extractStepCitations);
+  const uniqueCitations = new Map<string, DeepResearchCitationRef>();
+  citations.forEach((citation) => {
+    const key =
+      citation.source_id ||
+      citation.url ||
+      String(citation.paper_id ?? "") ||
+      citation.source_label;
+    if (key && !uniqueCitations.has(key)) {
+      uniqueCitations.set(key, citation);
+    }
+  });
+  const evidenceItems = steps.flatMap(extractStepEvidenceItems);
+  const warnings = uniqueStrings(steps.flatMap(extractStepWarnings));
+  const unresolvedSections = uniqueStrings(
+    steps.flatMap(extractStepUnresolvedSections)
+  );
+  const partialSteps = steps.filter(
+    (step) => step.output_payload?.completion_kind === "partial"
+  ).length;
+  const sourceTotals = Array.from(uniqueCitations.values()).reduce(
+    (summary, citation) => {
+      const type = citation.source_type ?? "workspace";
+      summary.total += 1;
+      if (type === "paper") summary.paper += 1;
+      else if (type === "web") summary.web += 1;
+      else summary.workspace += 1;
+      return summary;
+    },
+    { total: 0, paper: 0, web: 0, workspace: 0 }
+  );
+
+  return {
+    sourceTotals,
+    evidenceCount: evidenceItems.length,
+    supportedEvidenceCount: evidenceItems.filter(
+      (item) => item.supports_section
+    ).length,
+    warnings,
+    unresolvedSections,
+    partialSteps,
+  };
+}
+
+function ResearchEvidenceSummary({
+  summary,
+}: {
+  summary: ReturnType<typeof buildResearchEvidenceSummary>;
+}) {
+  const completionLabel =
+    summary.partialSteps > 0 ? `${summary.partialSteps} partial` : "No partial steps";
+  const metrics = [
+    ["Sources", String(summary.sourceTotals.total)],
+    ["Library", String(summary.sourceTotals.paper)],
+    [
+      "Evidence",
+      `${summary.supportedEvidenceCount}/${summary.evidenceCount}`,
+    ],
+    ["Completion", completionLabel],
+  ];
+  const visibleWarnings = summary.warnings.slice(0, 3);
+  const visibleUnresolved = summary.unresolvedSections.slice(0, 4);
+  const hasVisibleSignal =
+    summary.sourceTotals.total > 0 ||
+    summary.evidenceCount > 0 ||
+    summary.partialSteps > 0 ||
+    visibleWarnings.length > 0 ||
+    visibleUnresolved.length > 0;
+
+  if (!hasVisibleSignal) return null;
+
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]">
+      <div className="grid gap-3 sm:grid-cols-4">
+        {metrics.map(([label, value]) => (
+          <div key={label}>
+            <p className="text-[11px] font-medium uppercase tracking-normal text-slate-400 dark:text-[#777777]">
+              {label}
+            </p>
+            <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-[#ececec]">
+              {value}
+            </p>
+          </div>
+        ))}
+      </div>
+      {visibleWarnings.length > 0 || visibleUnresolved.length > 0 ? (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {visibleWarnings.map((warning) => (
+            <span
+              key={`warning-${warning}`}
+              className="rounded-full border border-amber-300/50 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"
+            >
+              {warning}
+            </span>
+          ))}
+          {visibleUnresolved.map((section) => (
+            <span
+              key={`unresolved-${section}`}
+              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]"
+            >
+              Missing: {section}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function buildResearchProgress(session?: DeepResearchSessionRecord | null) {
   const steps = session?.steps ?? [];
   const completedSteps = steps.filter(
@@ -1245,7 +1521,7 @@ export default function ChatClient() {
     startAnalysisSession,
     refreshFolders,
   } = useWorkspaceProfile();
-  const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
+  const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all-projects");
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -1261,8 +1537,10 @@ export default function ChatClient() {
     () => folders.map((folder) => folder.id),
     [folders]
   );
-  const { allYears } = useDashboardData(chatScopeFolderId, projectFolderIds, {
+  const dashboardScopeFolderId = chatScopeFolderId === "all-projects" ? "all" : chatScopeFolderId;
+  const { allYears } = useDashboardData(dashboardScopeFolderId, projectFolderIds, {
     projectId: selectedProjectId,
+    enabled: Boolean(selectedProjectId),
   });
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
@@ -1285,6 +1563,8 @@ export default function ChatClient() {
   const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
   const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  const [sourcesPanelOpen, setSourcesPanelOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
   const [chatSearchDetails, setChatSearchDetails] = useState<ChatThreadDetail[]>([]);
@@ -1327,7 +1607,9 @@ export default function ChatClient() {
       scope:
         selectedRunIds.length > 0
           ? "attached"
-          : "auto",
+          : researchSourcePolicy.scope === "workspace"
+            ? "workspace"
+            : "project",
       includeAttached: true,
       includeCurrentScope: true,
       agentDirected: true,
@@ -1358,8 +1640,10 @@ export default function ChatClient() {
     [selectedLibraryRuns]
   );
   const activeFolderLabel = useMemo(
-    () => buildFolderLabel(chatScopeFolderId, folders),
-    [chatScopeFolderId, folders]
+    () => chatScopeFolderId === "all"
+      ? currentProject?.name ?? "Current project"
+      : buildFolderLabel(chatScopeFolderId, folders),
+    [chatScopeFolderId, currentProject?.name, folders]
   );
   const filteredLibraryRuns = useMemo(() => {
     const needle = libraryQuery.trim().toLowerCase();
@@ -1405,8 +1689,56 @@ export default function ChatClient() {
         : messages,
     [messages, researchReport]
   );
+  const activeKnowledgeScope = useMemo<KnowledgeScope>(() => {
+    if (selectedRunIds.length > 0) {
+      return {
+        kind: "selected_papers",
+        projectId: selectedProjectId ?? undefined,
+        folderId:
+          chatScopeFolderId !== "all" && chatScopeFolderId !== "all-projects"
+            ? chatScopeFolderId
+            : undefined,
+        runIds: selectedRunIds,
+      };
+    }
+    if (chatScopeFolderId !== "all" && chatScopeFolderId !== "all-projects") {
+      return { kind: "folder", projectId: selectedProjectId ?? undefined, folderId: chatScopeFolderId };
+    }
+    if (chatScopeFolderId === "all") {
+      return { kind: "project", projectId: selectedProjectId ?? undefined };
+    }
+    return { kind: "all_projects" };
+  }, [chatScopeFolderId, selectedProjectId, selectedRunIds]);
+  const activeScopeSnapshot = useMemo<KnowledgeScopeSnapshot>(() => {
+    const selectedFolder = folders.find((folder) => folder.id === activeKnowledgeScope.folderId) ?? null;
+    const label = activeKnowledgeScope.kind === "selected_papers"
+      ? `${selectedRunIds.length} selected paper${selectedRunIds.length === 1 ? "" : "s"}`
+      : activeKnowledgeScope.kind === "folder"
+        ? selectedFolder?.name ?? "Selected folder"
+        : activeKnowledgeScope.kind === "project"
+          ? `${currentProject?.name ?? "Current project"} repository`
+          : "All projects";
+    return {
+      kind: activeKnowledgeScope.kind,
+      label,
+      projectId: activeKnowledgeScope.projectId ?? null,
+      projectName: activeKnowledgeScope.projectId ? currentProject?.name ?? null : null,
+      folderId: activeKnowledgeScope.folderId ?? null,
+      folderName: selectedFolder?.name ?? null,
+      selectedRunCount: activeKnowledgeScope.runIds?.length ?? 0,
+      eligiblePaperCount: 0,
+    };
+  }, [activeKnowledgeScope, currentProject?.name, folders, selectedRunIds.length]);
+  const conversationSources = useMemo(
+    () => dedupeConversationSources(visibleMessages.flatMap((message) => message.citations)),
+    [visibleMessages]
+  );
   const researchProgress = useMemo(
     () => buildResearchProgress(deepSession),
+    [deepSession]
+  );
+  const researchEvidenceSummary = useMemo(
+    () => buildResearchEvidenceSummary(deepSession),
     [deepSession]
   );
   const hasContent = visibleMessages.length > 0 || Boolean(deepSession);
@@ -1747,6 +2079,9 @@ export default function ChatClient() {
     setSelectedLibraryRuns([]);
     setLibraryRuns([]);
     setLibraryQuery("");
+    setChatScopeFolderId((current) =>
+      current === "all" || current === "all-projects" ? current : "all-projects"
+    );
   }, [selectedProjectId]);
 
   async function sendRequest(body: Record<string, unknown>) {
@@ -1765,6 +2100,34 @@ export default function ChatClient() {
       throw new Error(payload.error ?? "Chat request failed.");
     }
     return payload;
+  }
+
+  async function waitForRepositoryJob(jobId: string) {
+    for (let attempt = 0; attempt < 240; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2_500));
+      const response = await fetch(`/api/chat/jobs/${encodeURIComponent(jobId)}`, {
+        headers: requestHeaders,
+      });
+      if (!response.ok) throw new Error("Could not read repository report progress.");
+      const payload = await response.json() as { job?: {
+        status?: string; resultText?: string | null; citations?: Citation[];
+        charts?: ChatChartPayload[]; errorMessage?: string | null; coverage?: Record<string, unknown>;
+      } };
+      const job = payload.job;
+      if (job?.status === "succeeded") {
+        setMessages((current) => [...current, localMessage(
+          "assistant",
+          job.resultText ?? "Repository report completed.",
+          job.citations ?? [],
+          { mode: "grounded", charts: job.charts ?? [], repositoryCoverage: job.coverage ?? null }
+        )]);
+        return;
+      }
+      if (job?.status === "failed" || job?.status === "canceled") {
+        throw new Error(job.errorMessage ?? "Repository report did not complete.");
+      }
+    }
+    throw new Error("Repository report is still running. You can return to this chat later.");
   }
 
   function stopGenerating() {
@@ -1873,8 +2236,9 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds: editedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
         webSearchEnabled,
@@ -1895,6 +2259,9 @@ export default function ChatClient() {
             { mode: payload.mode ?? "fallback" }
           ),
         ]);
+      }
+      if (payload.jobId) {
+        await waitForRepositoryJob(payload.jobId);
       }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
@@ -1920,6 +2287,8 @@ export default function ChatClient() {
       localMessage("user", prompt, [], {
         attachments: selectedAttachments,
         selectedRunIds,
+        knowledgeScope: activeKnowledgeScope,
+        scopeSnapshot: activeScopeSnapshot,
       }),
     ];
     setMessages(nextMessages);
@@ -1945,8 +2314,9 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
         webSearchEnabled,
@@ -1968,6 +2338,9 @@ export default function ChatClient() {
           ),
         ]);
       }
+      if (payload.jobId) {
+        await waitForRepositoryJob(payload.jobId);
+      }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
       setError(
@@ -1983,7 +2356,7 @@ export default function ChatClient() {
     const prompt =
       draft.trim() || "Create the most useful chart from my analyzed papers.";
     if (!canPersist) {
-      setError("Sign in to build charts from workspace data.");
+      setError("Sign in to build charts from repository data.");
       return;
     }
 
@@ -1998,6 +2371,8 @@ export default function ChatClient() {
         toolMode: "chart",
         attachments: selectedAttachments,
         selectedRunIds,
+        knowledgeScope: activeKnowledgeScope,
+        scopeSnapshot: activeScopeSnapshot,
       }),
     ];
     setMessages(nextMessages);
@@ -2015,8 +2390,9 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         toolMode: "chart",
         threadId: activeThread?.mode === "normal" ? activeThread.id : undefined,
@@ -2108,6 +2484,8 @@ export default function ChatClient() {
         chatMode: "deep_research",
         attachments: selectedAttachments,
         selectedRunIds,
+        knowledgeScope: activeKnowledgeScope,
+        scopeSnapshot: activeScopeSnapshot,
         researchSourcePolicy: effectiveResearchSourcePolicy,
       }),
     ];
@@ -2118,8 +2496,9 @@ export default function ChatClient() {
       const payload = await sendRequest({
         message: prompt,
         attachments: selectedAttachments,
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         threadId: activeThread?.mode === "deep_research" ? activeThread.id : undefined,
         sessionId:
@@ -2148,8 +2527,9 @@ export default function ChatClient() {
     setError(null);
     try {
       const payload = await sendRequest({
-        folderId: chatScopeFolderId,
+        folderId: activeKnowledgeScope.folderId ?? "all",
         projectId: selectedProjectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         threadId: activeThread.id,
         sessionId: deepSession.id,
@@ -2492,7 +2872,7 @@ export default function ChatClient() {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="relative flex items-center gap-2">
               {deepSession ? (
                 <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   {sessionLabel(deepSession) ?? "Saved"}
@@ -2511,6 +2891,32 @@ export default function ChatClient() {
                   <FullscreenIcon className="h-4 w-4" />
                 )}
               </button>
+              <button
+                type="button"
+                onClick={() => setConversationMenuOpen((current) => !current)}
+                title="Conversation menu"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                aria-label="Open conversation menu"
+                aria-expanded={conversationMenuOpen}
+              >
+                <MoreHorizontalIcon className="h-4 w-4" />
+              </button>
+              {conversationMenuOpen ? (
+                <div className="absolute right-0 top-11 z-30 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_48px_rgba(0,0,0,0.4)]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSourcesPanelOpen(true);
+                      setConversationMenuOpen(false);
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                  >
+                    <PaperIcon className="h-4 w-4" />
+                    <span className="min-w-0 flex-1">Files in this conversation</span>
+                    <span className="text-xs text-slate-400 dark:text-[#777777]">{conversationSources.length}</span>
+                  </button>
+                </div>
+              ) : null}
             </div>
           </header>
 
@@ -2545,6 +2951,8 @@ export default function ChatClient() {
                         Full view
                       </button>
                     </div>
+
+                    <ResearchEvidenceSummary summary={researchEvidenceSummary} />
 
                     <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#030303] dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
                       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
@@ -2658,6 +3066,8 @@ export default function ChatClient() {
                     </div>
 
                     <div className="mt-6 space-y-4">
+                      <ResearchEvidenceSummary summary={researchEvidenceSummary} />
+
                       {researchProgress.steps.map((step) => {
                         const isObsolete = step.output_payload?.result_kind === "obsolete";
                         const isBlocked =
@@ -2680,6 +3090,12 @@ export default function ChatClient() {
                           step.output_payload?.summary?.trim() ||
                           step.description?.trim() ||
                           "";
+                        const stepWarnings = extractStepWarnings(step);
+                        const unresolvedSections = extractStepUnresolvedSections(step);
+                        const stepEvidenceItems = extractStepEvidenceItems(step).slice(0, 2);
+                        const citationCount = extractStepCitations(step).length;
+                        const completionKind = step.output_payload?.completion_kind;
+                        const phaseLabel = formatResearchPhase(step.input_payload?.phaseClass);
                         const sourceCounts =
                           step.output_payload?.diagnostics &&
                           typeof step.output_payload.diagnostics === "object" &&
@@ -2730,11 +3146,14 @@ export default function ChatClient() {
                                     Added
                                   </span>
                                 ) : null}
-                                {step.input_payload?.phaseClass ? (
+                                {phaseLabel ? (
                                   <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#8e8e8e]">
-                                    {String(step.input_payload.phaseClass)
-                                      .replace(/_/g, " ")
-                                      .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                                    {phaseLabel}
+                                  </span>
+                                ) : null}
+                                {completionKind === "partial" ? (
+                                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-amber-700 dark:text-amber-200">
+                                    Partial
                                   </span>
                                 ) : null}
                                 {isObsolete ? (
@@ -2769,6 +3188,62 @@ export default function ChatClient() {
                                   {sourceCounts.paper ?? 0} library,{" "}
                                   {sourceCounts.web ?? 0} web
                                 </p>
+                              ) : null}
+                              {citationCount > 0 ? (
+                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+                                  Evidence ledger: {citationCount} citation
+                                  {citationCount === 1 ? "" : "s"}
+                                </p>
+                              ) : null}
+                              {stepWarnings.length > 0 ||
+                              unresolvedSections.length > 0 ? (
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {stepWarnings.slice(0, 2).map((warning) => (
+                                    <span
+                                      key={`${step.id}-warning-${warning}`}
+                                      className="rounded-full border border-amber-300/50 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:border-amber-400/20 dark:bg-amber-500/10 dark:text-amber-200"
+                                    >
+                                      {warning}
+                                    </span>
+                                  ))}
+                                  {unresolvedSections.slice(0, 3).map((section) => (
+                                    <span
+                                      key={`${step.id}-missing-${section}`}
+                                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]"
+                                    >
+                                      Missing: {section}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : null}
+                              {stepEvidenceItems.length > 0 ? (
+                                <div className="mt-3 space-y-2">
+                                  {stepEvidenceItems.map((item, evidenceIndex) => (
+                                    <div
+                                      key={`${step.id}-evidence-${item.paperId}-${evidenceIndex}`}
+                                      className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                                    >
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-normal text-slate-400 dark:text-[#777777]">
+                                        <span>{item.section || item.requested_section}</span>
+                                        <span className="text-slate-300 dark:text-white/20">
+                                          |
+                                        </span>
+                                        <span>
+                                          Relevance{" "}
+                                          {Number.isFinite(item.relevance_score)
+                                            ? item.relevance_score.toFixed(2)
+                                            : "n/a"}
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-700 dark:text-[#d4d4d4]">
+                                        {item.title}
+                                      </p>
+                                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-[#a3a3a3]">
+                                        {item.snippet}
+                                      </p>
+                                    </div>
+                                  ))}
+                                </div>
                               ) : null}
                             </div>
                           </div>
@@ -2824,6 +3299,9 @@ export default function ChatClient() {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);
                   const attachments = attachmentsFromMetadata(message.metadata);
+                  const scopeSnapshot = scopeSnapshotFromMetadata(message.metadata);
+                  const groundingMode = groundingModeFromMetadata(message.metadata);
+                  const citationPreview = previewConversationSources(message.citations, 5);
                   return (
                     <section key={message.id}>
                       {isUser ? (
@@ -2887,6 +3365,19 @@ export default function ChatClient() {
                                   {renderRichMessage(message.content, message.id, "user")}
                                 </div>
                                 <MessageAttachmentList attachments={attachments} />
+                                {scopeSnapshot ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => setMenuOpen(true)}
+                                    title={scopeSnapshot.eligiblePaperCount > 0
+                                      ? `${scopeSnapshot.eligiblePaperCount} analyzed paper${scopeSnapshot.eligiblePaperCount === 1 ? "" : "s"} in this message scope`
+                                      : "Knowledge scope used for this message"}
+                                    className="ml-auto inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                  >
+                                    <FolderIcon className="h-3.5 w-3.5 flex-none" />
+                                    <span className="truncate">{scopeSnapshot.label}</span>
+                                  </button>
+                                ) : null}
                               </>
                             )}
                           </div>
@@ -2894,6 +3385,11 @@ export default function ChatClient() {
                       ) : (
                         <div className="space-y-4">
                           {renderRichMessage(message.content, message.id, "assistant")}
+                          {groundingMode === "general" ? (
+                            <div className="text-xs text-slate-400 dark:text-[#8e8e8e]">
+                              Repository context not used
+                            </div>
+                          ) : null}
                           {charts.map((chart, chartIndex) => (
                             <ChatChartCard
                               key={`${message.id}-chart-${chartIndex}-${chart.title}`}
@@ -2901,36 +3397,24 @@ export default function ChatClient() {
                             />
                           ))}
                           {message.citations.length > 0 ? (
-                            <div className="space-y-2">
-                              {message.citations.map((citation) => (
-                                <Link
-                                  key={`${message.id}-${citation.paperId}`}
-                                  href={safeCitationHref(citation.href)}
-                                  className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm shadow-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
-                                >
-                                  {citation.sourceType === "web" ? (
-                                    <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
-                                  ) : (
-                                    <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
-                                  )}
-                                  <span className="min-w-0">
-                                    <span className="font-medium text-slate-900 dark:text-[#ececec]">
-                                      {citation.sourceType === "web"
-                                        ? `[${citation.paperId}]`
-                                        : `[Paper ${citation.paperId}]`}{" "}
-                                      {citation.title}
-                                    </span>
-                                    <span className="ml-2 text-slate-500 dark:text-[#8e8e8e]">
-                                      ({citation.year})
-                                    </span>
-                                    {citation.reason ? (
-                                      <span className="mt-1 block text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
-                                        {citation.reason}
-                                      </span>
-                                    ) : null}
-                                  </span>
-                                </Link>
+                            <div className="max-w-[720px] space-y-1.5">
+                              {citationPreview.visible.map((citation) => (
+                                <CitationLink
+                                  key={`${message.id}-${citation.sourceType ?? "paper"}-${citation.paperId}`}
+                                  citation={citation}
+                                  compact
+                                />
                               ))}
+                              {citationPreview.remaining > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSourcesPanelOpen(true)}
+                                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                >
+                                  <PaperIcon className="h-3.5 w-3.5" />
+                                  {citationPreview.remaining} more
+                                </button>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -3054,7 +3538,9 @@ export default function ChatClient() {
                       <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
                         {selectedRunIds.length > 0
                           ? `${selectedRunIds.length} attached file${selectedRunIds.length === 1 ? "" : "s"}`
-                          : "Auto scope"}
+                          : chatScopeFolderId === "all"
+                            ? "Current repository"
+                            : activeFolderLabel}
                       </span>
                       <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
                         Library + analytics
@@ -3098,8 +3584,8 @@ export default function ChatClient() {
                   onKeyDown={handleComposerKeyDown}
                   placeholder={
                     chartModeEnabled
-                      ? "Ask for a chart, or leave blank for the best chart"
-                      : "Ask anything"
+                      ? "Ask for a repository chart, or leave blank for the best chart"
+                      : "Ask the repository"
                   }
                   rows={1}
                   className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
@@ -3235,13 +3721,30 @@ export default function ChatClient() {
                           <div className="mt-2 border-t border-slate-200 pt-2 dark:border-[#1f1f1f]">
                             <div className="flex items-center justify-between px-3 pb-2">
                               <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
-                                Folder scope
+                                Repository scope
                               </span>
                               <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-[#b4b4b4]">
                                 <FolderIcon className="h-3.5 w-3.5" />
                                 {activeFolderLabel}
                               </span>
                             </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setChatScopeFolderId("all-projects");
+                                setMenuOpen(false);
+                              }}
+                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                                chatScopeFolderId === "all-projects"
+                                  ? "bg-slate-100 text-slate-900 dark:bg-[#0a0a0a] dark:text-white"
+                                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                              }`}
+                            >
+                              <span>All projects</span>
+                              {chatScopeFolderId === "all-projects" ? (
+                                <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
+                              ) : null}
+                            </button>
                             <button
                               type="button"
                               onClick={() => {
@@ -3254,7 +3757,7 @@ export default function ChatClient() {
                                   : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                               }`}
                             >
-                              <span>All folders</span>
+                              <span className="truncate">{currentProject?.name ?? "Current project"}</span>
                               {chatScopeFolderId === "all" ? (
                                 <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
                               ) : null}
@@ -3533,6 +4036,49 @@ export default function ChatClient() {
             </form>
           </div>
         </section>
+
+        {sourcesPanelOpen ? (
+          <>
+            <button
+              type="button"
+              className="fixed inset-0 z-30 bg-black/25 lg:hidden"
+              onClick={() => setSourcesPanelOpen(false)}
+              aria-label="Close conversation sources"
+            />
+            <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(90vw,360px)] flex-col border-l border-slate-200 bg-white shadow-[-18px_0_50px_rgba(15,23,42,0.14)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[-18px_0_50px_rgba(0,0,0,0.4)] lg:static lg:z-auto lg:w-[340px] lg:flex-none lg:shadow-none">
+              <div className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-[#1f1f1f]">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">Files in this conversation</p>
+                  <p className="text-xs text-slate-500 dark:text-[#8e8e8e]">{conversationSources.length} unique sources</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSourcesPanelOpen(false)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  aria-label="Close conversation sources"
+                >
+                  <CloseIcon className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto p-3">
+                {conversationSources.length > 0 ? (
+                  <div className="space-y-2">
+                    {conversationSources.map((citation) => (
+                      <CitationLink
+                        key={`conversation-${citation.sourceType ?? "paper"}-${citation.paperId}-${citation.href}`}
+                        citation={citation}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="px-2 py-8 text-center text-sm leading-6 text-slate-500 dark:text-[#8e8e8e]">
+                    Sources cited by answers in this conversation will appear here.
+                  </div>
+                )}
+              </div>
+            </aside>
+          </>
+        ) : null}
       </div>
 
       {reportFullViewOpen && researchReport ? (
@@ -3708,8 +4254,8 @@ export default function ChatClient() {
                   Add from library
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-[#8e8e8e]">
-                  Choose files from {currentProject?.name ?? "this project"} to focus the
-                  chat context.
+                  Choose files from {currentProject?.name ?? "this repository"} only when you
+                  want to narrow chat below the whole repository.
                 </p>
               </div>
               <button
@@ -3810,7 +4356,7 @@ export default function ChatClient() {
       <AnalyzeFlowModal
         open={showAnalyzeModal}
         onClose={() => setShowAnalyzeModal(false)}
-        defaultFolder={activeFolderLabel === "All folders" ? "Inbox" : activeFolderLabel}
+        defaultFolder={activeFolderLabel === "Entire repository" ? "Repository" : activeFolderLabel}
         title="Add files"
         eyebrow="Upload"
         onCreated={handleCreatedRuns}

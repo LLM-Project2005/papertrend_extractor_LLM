@@ -650,7 +650,7 @@ The brand uses STACKED shadows — multiple small offsets layered to fake natura
 
 **`nav-link`** — the centred link row inside `nav-bar`.
 - Text `{colors.body}`, set in `{typography.body-sm}`, padding `{spacing.xs} {spacing.sm}`, shape `{rounded.full}` (ghost pill — visible only on hover or active, but the radius is documented).
-
+ 
 **`footer`** — the bottom 4-column nav.
 - Background `{colors.canvas}`, text `{colors.body}`, padding `{spacing.4xl} {spacing.lg}`. Eyebrow column labels in `{typography.caption-mono}` (uppercase mono effect); link rows in `{typography.body-sm}`.
 

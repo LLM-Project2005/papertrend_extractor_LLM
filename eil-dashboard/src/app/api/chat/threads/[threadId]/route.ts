@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import {
-  deleteWorkspaceThread,
-  getWorkspaceThreadDetail,
-  updateWorkspaceThread,
-} from "@/lib/chat-store";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getChatRepository } from "@/lib/chat-repository";
 
 export const runtime = "nodejs";
 
@@ -20,8 +15,7 @@ export async function GET(
 
   try {
     const { threadId } = context.params;
-    const supabase = getSupabaseAdmin();
-    const detail = await getWorkspaceThreadDetail(supabase, user.id, threadId);
+    const detail = await getChatRepository().getThreadDetail(user.id, threadId);
     return NextResponse.json(detail);
   } catch (error) {
     return NextResponse.json(
@@ -51,12 +45,12 @@ export async function PATCH(
       return NextResponse.json({ error: "Title is required." }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
-    await updateWorkspaceThread(supabase, threadId, {
+    const repository = getChatRepository();
+    await repository.updateThread(user.id, threadId, {
       title,
       summary: body.summary ?? null,
     });
-    const detail = await getWorkspaceThreadDetail(supabase, user.id, threadId);
+    const detail = await repository.getThreadDetail(user.id, threadId);
     return NextResponse.json(detail);
   } catch (error) {
     return NextResponse.json(
@@ -80,8 +74,7 @@ export async function DELETE(
 
   try {
     const { threadId } = context.params;
-    const supabase = getSupabaseAdmin();
-    await deleteWorkspaceThread(supabase, user.id, threadId);
+    await getChatRepository().deleteThread(user.id, threadId);
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json(

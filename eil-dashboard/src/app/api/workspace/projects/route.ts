@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import { createWorkspaceProject } from "@/lib/workspace-organizations";
-import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getWorkspaceRepository } from "@/lib/workspace-repository";
 
 export const runtime = "nodejs";
 
@@ -15,24 +14,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const organizationId = searchParams.get("organizationId");
 
-    const supabase = getSupabaseAdmin();
-    let query = supabase
-      .from("workspace_projects")
-      .select("*")
-      .eq("owner_user_id", user.id)
-      .order("name", { ascending: true });
-
-    if (organizationId) {
-      query = query.eq("organization_id", organizationId);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return NextResponse.json({ projects: data ?? [] });
+    const projects = await getWorkspaceRepository().listProjects(user.id, organizationId);
+    return NextResponse.json({ projects });
   } catch (error) {
     return NextResponse.json(
       {
@@ -67,9 +50,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project name is required." }, { status: 400 });
     }
 
-    const supabase = getSupabaseAdmin();
-    const project = await createWorkspaceProject(
-      supabase,
+    const project = await getWorkspaceRepository().createProject(
       user.id,
       body.organizationId.trim(),
       body.name,
@@ -82,6 +63,54 @@ export async function POST(request: Request) {
       {
         error:
           error instanceof Error ? error.message : "Failed to create project.",
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: Request) {
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = (await request.json()) as {
+      projectId?: string;
+      name?: string;
+      description?: string | null;
+    };
+
+    if (!body.projectId?.trim()) {
+      return NextResponse.json({ error: "projectId is required." }, { status: 400 });
+    }
+    if (!body.name?.trim()) {
+      return NextResponse.json({ error: "Project name is required." }, { status: 400 });
+    }
+
+    const patch: { name: string; description?: string | null } = {
+      name: body.name.trim(),
+    };
+    if (body.description !== undefined) {
+      patch.description = body.description;
+    }
+
+    const project = await getWorkspaceRepository().updateProject(
+      user.id,
+      body.projectId.trim(),
+      patch
+    );
+    if (!project) {
+      return NextResponse.json({ error: "Project not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ project });
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to rename project.",
       },
       { status: 500 }
     );

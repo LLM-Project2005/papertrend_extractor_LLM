@@ -1,0 +1,10 @@
+[
+  {
+    "origin": [
+      "https://papertrend-web-production-javhavgdsq-as.a.run.app"
+    ],
+    "method": ["PUT", "GET", "HEAD", "OPTIONS"],
+    "responseHeader": ["Content-Type", "x-goog-resumable"],
+    "maxAgeSeconds": 3600
+  }
+]

@@ -1,11 +1,14 @@
 import argparse
 from datetime import datetime, timedelta, timezone
+import hmac
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -33,6 +36,17 @@ _QUEUE_PROCESS_STARTED_AT = 0.0
 _RESEARCH_PROCESS_STARTED_AT = 0.0
 _FORCED_QUEUE_BATCH_COUNT = 0
 _FORCED_RESEARCH_BATCH_COUNT = 0
+
+try:
+    import google.auth
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+    from google.cloud import storage as gcs_storage
+    from google.oauth2 import id_token as google_id_token
+except Exception:  # pragma: no cover - only required for GCS signed upload mode
+    google = None  # type: ignore[assignment]
+    GoogleAuthRequest = None  # type: ignore[assignment]
+    gcs_storage = None  # type: ignore[assignment]
+    google_id_token = None  # type: ignore[assignment]
 
 
 def _batch_stale_after_seconds(env_name: str, default_seconds: int) -> float:
@@ -159,16 +173,204 @@ def _is_authorized_worker_request(handler: BaseHTTPRequestHandler) -> bool:
         or ""
     ).strip()
     if not expected:
+        shared_secret_authorized = False
+    else:
+        supplied = handler.headers.get("Authorization") or ""
+        shared_secret_authorized = hmac.compare_digest(supplied, f"Bearer {expected}")
+    if shared_secret_authorized:
+        return True
+
+    # Google-managed Cloud Tasks and Scheduler calls can use an OIDC identity
+    # token. Keep the shared secret fallback for Vercel and older queued tasks.
+    authorization = handler.headers.get("Authorization") or ""
+    if not authorization.startswith("Bearer "):
         return False
-    return handler.headers.get("Authorization") == f"Bearer {expected}"
+    token = authorization[7:].strip()
+    audience = os.getenv("WORKER_OIDC_AUDIENCE", "").strip()
+    allowed_accounts = {
+        value.strip().lower()
+        for value in re.split(r"[,;]", os.getenv("WORKER_OIDC_SERVICE_ACCOUNTS", ""))
+        if value.strip()
+    }
+    if not token or not audience or not allowed_accounts:
+        return False
+    if google_id_token is None or GoogleAuthRequest is None:
+        return False
+    try:
+        claims = google_id_token.verify_oauth2_token(
+            token,
+            GoogleAuthRequest(),
+            audience=audience,
+        )
+        issuer = str(claims.get("iss") or "")
+        email = str(claims.get("email") or "").strip().lower()
+        return (
+            issuer in {"https://accounts.google.com", "accounts.google.com"}
+            and email in allowed_accounts
+            and claims.get("email_verified", True) is not False
+        )
+    except Exception as error:
+        logger.warning("worker OIDC verification failed: %s", type(error).__name__)
+        return False
+
+
+def _safe_gcs_object_name(value: str) -> str:
+    object_name = value.strip().lstrip("/")
+    parts = [part for part in object_name.split("/") if part]
+    if (
+        not object_name
+        or object_name.endswith("/")
+        or len(object_name) > 1024
+        or any(part in {".", ".."} for part in parts)
+        or "\\" in object_name
+    ):
+        raise ValueError("Invalid GCS object path.")
+    return "/".join(parts)
+
+
+def _create_gcs_signed_upload(body: Dict[str, Any]) -> Dict[str, Any]:
+    if gcs_storage is None or GoogleAuthRequest is None:
+        raise RuntimeError("GCS signing support is not installed.")
+
+    bucket_name = (
+        str(body.get("bucket") or "").strip()
+        or os.getenv("GCS_UPLOAD_BUCKET", "").strip()
+    )
+    object_name = _safe_gcs_object_name(str(body.get("objectName") or body.get("storagePath") or ""))
+    content_type = str(body.get("contentType") or "application/pdf").strip() or "application/pdf"
+    expires_minutes = min(max(int(body.get("expiresMinutes") or 30), 1), 60)
+
+    if not bucket_name:
+        raise RuntimeError("GCS_UPLOAD_BUCKET is not configured.")
+    if not content_type.startswith("application/pdf"):
+        raise ValueError("Only PDF uploads can be signed.")
+
+    credentials, project_id = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(GoogleAuthRequest())
+    service_account_email = (
+        os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL", "").strip()
+        or getattr(credentials, "service_account_email", "")
+        or ""
+    )
+    if not service_account_email:
+        raise RuntimeError(
+            "Could not resolve the signing service account email. Set GOOGLE_SERVICE_ACCOUNT_EMAIL."
+        )
+
+    storage_client = gcs_storage.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT_ID") or project_id)
+    blob = storage_client.bucket(bucket_name).blob(object_name)
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expires_minutes),
+        method="PUT",
+        content_type=content_type,
+        service_account_email=service_account_email,
+        access_token=credentials.token,
+    )
+    return {
+        "ok": True,
+        "bucket": bucket_name,
+        "objectName": object_name,
+        "storagePath": f"gs://{bucket_name}/{object_name}",
+        "signedUrl": signed_url,
+        "method": "PUT",
+        "headers": {"Content-Type": content_type},
+        "expiresMinutes": expires_minutes,
+    }
+
+
+def _create_gcs_signed_read(body: Dict[str, Any]) -> Dict[str, Any]:
+    if gcs_storage is None or GoogleAuthRequest is None:
+        raise RuntimeError("GCS signing support is not installed.")
+
+    bucket_name = os.getenv("GCS_UPLOAD_BUCKET", "").strip()
+    object_name = _safe_gcs_object_name(
+        str(body.get("objectName") or body.get("storagePath") or "")
+    )
+    expires_minutes = min(max(int(body.get("expiresMinutes") or 15), 1), 60)
+    if not bucket_name:
+        raise RuntimeError("GCS_UPLOAD_BUCKET is not configured.")
+
+    credentials, project_id = google.auth.default(
+        scopes=["https://www.googleapis.com/auth/cloud-platform"]
+    )
+    credentials.refresh(GoogleAuthRequest())
+    service_account_email = (
+        os.getenv("GOOGLE_SERVICE_ACCOUNT_EMAIL", "").strip()
+        or getattr(credentials, "service_account_email", "")
+        or ""
+    )
+    if not service_account_email:
+        raise RuntimeError(
+            "Could not resolve the signing service account email. Set GOOGLE_SERVICE_ACCOUNT_EMAIL."
+        )
+
+    storage_client = gcs_storage.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT_ID") or project_id)
+    blob = storage_client.bucket(bucket_name).blob(object_name)
+    if not blob.exists():
+        raise FileNotFoundError("The requested GCS object was not found.")
+    signed_url = blob.generate_signed_url(
+        version="v4",
+        expiration=timedelta(minutes=expires_minutes),
+        method="GET",
+        service_account_email=service_account_email,
+        access_token=credentials.token,
+    )
+    return {
+        "ok": True,
+        "bucket": bucket_name,
+        "objectName": object_name,
+        "signedUrl": signed_url,
+        "method": "GET",
+        "expiresMinutes": expires_minutes,
+    }
+
+
+def _check_gcs_object_status(body: Dict[str, Any]) -> Dict[str, Any]:
+    if gcs_storage is None:
+        raise RuntimeError("GCS support is not installed.")
+
+    storage_path = str(body.get("storagePath") or "").strip()
+    object_name_input = str(body.get("objectName") or "").strip()
+    bucket_name = str(body.get("bucket") or "").strip() or os.getenv("GCS_UPLOAD_BUCKET", "").strip()
+    if storage_path.startswith("gs://"):
+        parsed = urllib.parse.urlparse(storage_path)
+        bucket_name = parsed.netloc
+        object_name = _safe_gcs_object_name(parsed.path)
+    else:
+        object_name = _safe_gcs_object_name(object_name_input or storage_path)
+
+    if not bucket_name:
+        raise RuntimeError("GCS_UPLOAD_BUCKET is not configured.")
+
+    storage_client = gcs_storage.Client(project=os.getenv("GOOGLE_CLOUD_PROJECT_ID") or None)
+    blob = storage_client.bucket(bucket_name).blob(object_name)
+    exists = blob.exists()
+    size = None
+    updated = None
+    if exists:
+        blob.reload()
+        size = blob.size
+        updated = blob.updated.isoformat() if blob.updated else None
+    return {
+        "ok": True,
+        "exists": exists,
+        "bucket": bucket_name,
+        "objectName": object_name,
+        "size": size,
+        "updated": updated,
+    }
 
 
 def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
     from analysis_pipeline import load_config
     from process_ingestion_queue import SupabaseRestClient, process_batch
+    from database_client import create_worker_database_client
 
     config = load_config()
-    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    client = create_worker_database_client(config, SupabaseRestClient)
     summary = process_batch(client, config, max_runs=max_runs)
     return {
         **summary,
@@ -181,9 +383,10 @@ def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
 def _run_research_batch(max_runs: int) -> Dict[str, Any]:
     from analysis_pipeline import load_config
     from process_research_queue import SupabaseRestClient, process_batch
+    from database_client import create_worker_database_client
 
     config = load_config()
-    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    client = create_worker_database_client(config, SupabaseRestClient)
     return process_batch(client, max_runs=max_runs)
 
 
@@ -240,6 +443,11 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
         or ""
     ).strip()
     target_base_url = _worker_base_url_from_request(handler)
+    oidc_service_account = os.getenv("CLOUD_TASKS_OIDC_SERVICE_ACCOUNT", "").strip()
+    oidc_audience = (
+        os.getenv("WORKER_OIDC_AUDIENCE", "").strip()
+        or target_base_url
+    )
 
     missing = [
         name
@@ -247,11 +455,12 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
             "CLOUD_TASKS_PROJECT_ID": project_id,
             "CLOUD_TASKS_LOCATION": location_id,
             "CLOUD_TASKS_QUEUE": queue_id,
-            "WORKER_WEBHOOK_SECRET": worker_secret,
             "CLOUD_TASKS_TARGET_BASE_URL": target_base_url,
         }.items()
         if not value
     ]
+    if not worker_secret and not oidc_service_account:
+        missing.append("WORKER_WEBHOOK_SECRET or CLOUD_TASKS_OIDC_SERVICE_ACCOUNT")
     if missing:
         return {
             "ok": False,
@@ -284,17 +493,25 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
             "retryOnBusy": True,
             "source": "cloud-tasks",
         }
-        task: Dict[str, Any] = {
-            "http_request": {
-                "http_method": tasks_v2.HttpMethod.POST,
-                "url": target_url,
-                "headers": {
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {worker_secret}",
-                    "X-Papertrend-Task-Source": "cloud-tasks",
-                },
-                "body": json.dumps(payload).encode("utf-8"),
+        http_request: Dict[str, Any] = {
+            "http_method": tasks_v2.HttpMethod.POST,
+            "url": target_url,
+            "headers": {
+                "Content-Type": "application/json",
+                "X-Papertrend-Task-Source": "cloud-tasks",
+            },
+            "body": json.dumps(payload).encode("utf-8"),
+        }
+        if oidc_service_account:
+            http_request["oidc_token"] = {
+                "service_account_email": oidc_service_account,
+                "audience": oidc_audience,
             }
+        else:
+            http_request["headers"]["Authorization"] = f"Bearer {worker_secret}"
+
+        task: Dict[str, Any] = {
+            "http_request": http_request,
         }
 
         delay_seconds = initial_delay_seconds + (index * spacing_seconds)
@@ -315,6 +532,7 @@ def _enqueue_ingestion_tasks(handler: BaseHTTPRequestHandler, body: Dict[str, An
         "requested_task_count": requested_task_count,
         "max_runs_per_task": max_runs_per_task,
         "target_path": "/process-queue",
+        "auth_mode": "oidc" if oidc_service_account else "shared-secret",
         "task_names": task_names,
     }
 
@@ -643,6 +861,19 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
             if self.path == "/enqueue-ingestion-tasks":
                 task_result = _enqueue_ingestion_tasks(self, body)
                 _json_response(self, 202 if task_result.get("enqueued") else 503, task_result)
+                return
+
+            if self.path == "/gcs/signed-upload":
+                upload_result = _create_gcs_signed_upload(body)
+                _json_response(self, 201, upload_result)
+                return
+
+            if self.path == "/gcs/signed-read":
+                _json_response(self, 200, _create_gcs_signed_read(body))
+                return
+
+            if self.path == "/gcs/object-status":
+                _json_response(self, 200, _check_gcs_object_status(body))
                 return
 
             if self.path == "/process-research-queue":

@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -34,6 +35,14 @@ from analysis_pipeline import (
     process_pdf_run,
 )
 from supabase_http import build_retrying_session
+from database_client import create_worker_database_client
+
+try:
+    from google.cloud import storage as gcs_storage
+    from google.api_core.retry import Retry as GoogleRetry
+except ImportError:  # pragma: no cover - only required when STORAGE_PROVIDER=gcs
+    gcs_storage = None
+    GoogleRetry = None  # type: ignore[assignment]
 
 
 logger = logging.getLogger("papertrend_worker")
@@ -45,6 +54,49 @@ USER_STALE_REQUEUE_AFTER_SECONDS = 180
 FOLDER_PROGRESS_SYNC_INTERVAL_SECONDS = 5.0
 GRAPH_PROGRESS_PATCH_INTERVAL_SECONDS = 3.0
 GRAPH_PROGRESS_ALWAYS_PATCH_NODES = {"extract", "segment", "build_dataset"}
+INGESTION_GRAPH_MODE = "parallel_fanout_v1"
+
+
+def parse_gcs_source_path(source_path: str, default_bucket: str) -> tuple[str, str]:
+    value = source_path.strip()
+    if value.startswith("gs://"):
+        parsed = urllib.parse.urlparse(value)
+        bucket = parsed.netloc
+        object_name = parsed.path.lstrip("/")
+    else:
+        bucket = default_bucket
+        object_name = value
+
+    if not bucket:
+        raise RuntimeError("GCS storage is enabled but GCS_UPLOAD_BUCKET is missing.")
+    if not object_name or object_name.startswith("/") or ".." in object_name.split("/"):
+        raise RuntimeError("The queued run has an invalid GCS object path.")
+    return bucket, object_name
+
+
+def download_gcs_object(config: WorkerConfig, source_path: str, destination: Path) -> None:
+    if gcs_storage is None:
+        raise RuntimeError(
+            "google-cloud-storage is not installed. Install worker dependencies before using GCS."
+        )
+
+    bucket_name, object_name = parse_gcs_source_path(source_path, config.gcs_upload_bucket)
+    client = gcs_storage.Client(project=config.google_cloud_project_id or None)
+    blob = client.bucket(bucket_name).blob(object_name)
+    retry_policy = GoogleRetry(deadline=90) if GoogleRetry is not None else None
+    try:
+        blob.download_to_filename(
+            str(destination),
+            timeout=90,
+            retry=retry_policy,
+            raw_download=True,
+            checksum=None,
+        )
+    except TypeError:
+        blob.download_to_filename(str(destination), timeout=90)
+
+    if not destination.exists() or destination.stat().st_size <= 0:
+        raise RuntimeError("The Cloud Storage download completed but produced an empty file.")
 
 
 def _int_env(name: str, default: int, minimum: int = 1) -> int:
@@ -126,9 +178,59 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
     "build_dataset": {
         "stage": "building_dataset",
         "message": "Building the workspace dataset",
-        "detail": "Preparing the final normalized records that will be written back into Supabase.",
+        "detail": "Preparing the final normalized records that will be written to the workspace database.",
     },
 }
+
+RUN_STAGE_TO_LIFECYCLE: Dict[str, str] = {
+    "uploading": "uploading",
+    "queued": "queued",
+    "preparing": "preparing",
+    "downloading": "downloading",
+    "starting_analysis": "processing",
+    "extracting_text": "processing",
+    "cleaning_text": "processing",
+    "translating_text": "processing",
+    "structuring_sections": "processing",
+    "inferring_metadata": "processing",
+    "extracting_author_keywords": "processing",
+    "extracting_keywords": "processing",
+    "grouping_topics": "processing",
+    "labeling_topics": "processing",
+    "classifying_tracks": "processing",
+    "classifying_typology": "processing",
+    "extracting_facets": "processing",
+    "building_dataset": "processing",
+    "saving": "saving",
+    "completed": "succeeded",
+    "failed": "failed",
+    "canceled": "canceled",
+}
+
+RUN_LIFECYCLE_RANK: Dict[str, int] = {
+    "created": 0,
+    "uploading": 10,
+    "uploaded": 20,
+    "queued": 30,
+    "preparing": 40,
+    "downloading": 50,
+    "processing": 60,
+    "saving": 70,
+    "succeeded": 80,
+    "failed": 90,
+    "canceled": 90,
+}
+RUN_TERMINAL_LIFECYCLES = {"succeeded", "failed", "canceled"}
+
+
+def build_lifecycle_payload(stage: str, lifecycle_state: Optional[str] = None) -> Dict[str, Any]:
+    state = lifecycle_state or RUN_STAGE_TO_LIFECYCLE.get(stage, "processing")
+    return {
+        "lifecycle_state": state,
+        "lifecycle_rank": RUN_LIFECYCLE_RANK.get(state, RUN_LIFECYCLE_RANK["processing"]),
+        "lifecycle_is_terminal": state in RUN_TERMINAL_LIFECYCLES,
+        "lifecycle_updated_at": now_iso(),
+    }
 
 
 class SupabaseRestClient:
@@ -229,6 +331,104 @@ class SupabaseRestClient:
         response.raise_for_status()
         rows = response.json()
         return rows[0] if rows else None
+
+    def get_owned_row(
+        self,
+        table: str,
+        row_id: str,
+        owner_user_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch one trusted owner-scoped dependency for the Cloud SQL mirror."""
+
+        normalized_id = str(row_id or "").strip()
+        normalized_owner = str(owner_user_id or "").strip()
+        if not normalized_id or not normalized_owner:
+            return None
+        response = self.session.get(
+            self._rest_url(table),
+            params={
+                "select": "*",
+                "id": f"eq.{normalized_id}",
+                "owner_user_id": f"eq.{normalized_owner}",
+                "limit": "1",
+            },
+            timeout=60,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        return rows[0] if rows else None
+
+    def collect_cloudsql_mirror_dependencies(
+        self,
+        run: Dict[str, Any],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """Collect the run's parent rows in foreign-key insertion order.
+
+        The mirror only needs a small dependency closure: organization/project
+        parents for folders, folders for jobs/runs, jobs for runs, and copied
+        source runs. Every lookup is scoped to the run owner before it can be
+        sent to Cloud SQL.
+        """
+
+        owner_user_id = str(run.get("owner_user_id") or "").strip()
+        if not owner_user_id:
+            return {}
+        try:
+            owner_user_id = str(uuid.UUID(owner_user_id))
+        except ValueError as error:
+            raise ValueError("run.owner_user_id must be a valid UUID.") from error
+
+        dependencies: Dict[str, List[Dict[str, Any]]] = {
+            "workspace_organizations": [],
+            "workspace_projects": [],
+            "research_folders": [],
+            "folder_analysis_jobs": [],
+            "ingestion_runs": [],
+        }
+        seen: set[tuple[str, str]] = set()
+        pending: list[tuple[str, str]] = []
+
+        def enqueue(table: str, row_id: Any) -> None:
+            value = str(row_id or "").strip()
+            if value:
+                pending.append((table, value))
+
+        def add_dependency(table: str, row_id: str) -> None:
+            identity = (table, row_id)
+            if identity in seen:
+                return
+            seen.add(identity)
+            row = self.get_owned_row(table, row_id, owner_user_id)
+            if not row:
+                raise RuntimeError(
+                    f"Supabase mirror dependency is missing: {table} {row_id}."
+                )
+            dependencies[table].append(row)
+
+            if table == "workspace_projects":
+                enqueue("workspace_organizations", row.get("organization_id"))
+            elif table == "research_folders":
+                enqueue("workspace_organizations", row.get("organization_id"))
+                enqueue("workspace_projects", row.get("project_id"))
+            elif table == "folder_analysis_jobs":
+                enqueue("research_folders", row.get("folder_id"))
+            elif table == "ingestion_runs":
+                enqueue("research_folders", row.get("folder_id"))
+                enqueue("folder_analysis_jobs", row.get("folder_analysis_job_id"))
+                enqueue("ingestion_runs", row.get("copied_from_run_id"))
+
+        # The current run is already included in the mirror payload. Visit it
+        # only to discover its parents and copied-from chain.
+        seen.add(("ingestion_runs", str(run.get("id") or "").strip()))
+        enqueue("research_folders", run.get("folder_id"))
+        enqueue("folder_analysis_jobs", run.get("folder_analysis_job_id"))
+        enqueue("ingestion_runs", run.get("copied_from_run_id"))
+
+        while pending:
+            table, row_id = pending.pop(0)
+            add_dependency(table, row_id)
+
+        return dependencies
 
     def update_run(self, run_id: str, patch: Dict[str, Any]) -> None:
         payload = {"updated_at": now_iso(), **patch}
@@ -468,12 +668,14 @@ def _recovery_payload(
         {
             "analysis_mode": "automatic",
             "analysis_label": AUTO_ANALYSIS_LABEL,
+            "ingestion_graph_mode": INGESTION_GRAPH_MODE,
             counter_key: counter,
             "last_recovered_at": now_iso(),
             "progress_stage": "queued",
             "progress_message": stage_message,
             "progress_detail": detail,
             "progress_updated_at": now_iso(),
+            **build_lifecycle_payload("queued"),
         },
     )
 
@@ -560,11 +762,13 @@ def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConf
                         {
                             "analysis_mode": "automatic",
                             "analysis_label": AUTO_ANALYSIS_LABEL,
+                            "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                             "progress_stage": "failed",
                             "progress_message": "Analysis failed",
                             "progress_detail": "The worker stalled repeatedly, so the run was stopped for manual review.",
                             "recovery_count": recovery_attempts,
                             "last_recovered_at": now_iso(),
+                            **build_lifecycle_payload("failed"),
                         },
                     ),
                 },
@@ -631,12 +835,14 @@ def recover_invalid_succeeded_runs(client: SupabaseRestClient, config: WorkerCon
                     {
                         "analysis_mode": "automatic",
                         "analysis_label": AUTO_ANALYSIS_LABEL,
+                        "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                         "completion_recovery_count": completion_recovery_count + 1,
                         "last_recovered_at": now_iso(),
                         "progress_stage": "queued",
                         "progress_message": "Requeued after incomplete analysis",
                         "progress_detail": "The previous run reported success without extracted text or keyword output, so it was returned to the queue automatically.",
                         "progress_updated_at": now_iso(),
+                        **build_lifecycle_payload("queued"),
                     },
                 ),
             },
@@ -756,10 +962,12 @@ def update_run_progress(
     patch: Dict[str, Any] = {
         "analysis_mode": "automatic",
         "analysis_label": AUTO_ANALYSIS_LABEL,
+        "ingestion_graph_mode": INGESTION_GRAPH_MODE,
         "progress_stage": stage,
         "progress_message": message,
         "progress_detail": detail,
         "progress_updated_at": now_iso(),
+        **build_lifecycle_payload(stage),
     }
     if sync_folder_now:
         patch["folder_progress_synced_at"] = now_iso()
@@ -782,7 +990,13 @@ def update_run_progress(
     run["provider"] = str(run.get("provider") or AUTO_ANALYSIS_PROVIDER)
     run["model"] = str(run.get("model") or AUTO_ANALYSIS_MODEL)
     if sync_folder_now:
-        sync_folder_analysis_job(client, run)
+        try:
+            sync_folder_analysis_job(client, run)
+        except Exception as error:
+            logger.warning(
+                "folder progress sync skipped after transient failure",
+                extra={"run_id": run_id, "error_message": str(error)[:500]},
+            )
 
 
 def update_run_graph_progress(
@@ -896,6 +1110,110 @@ def sync_folder_analysis_job(client: SupabaseRestClient, run: Dict[str, Any]) ->
     client.update_folder_analysis_job(folder_job_id, patch)
 
 
+def cloudsql_error_details(error: BaseException) -> Dict[str, str]:
+    """Return safe database diagnostics without logging secrets or row data."""
+
+    details: Dict[str, str] = {"error_type": type(error).__name__}
+    sqlstate = getattr(error, "sqlstate", None)
+    if sqlstate:
+        details["sqlstate"] = str(sqlstate)
+    diagnostic = getattr(error, "diag", None)
+    constraint_name = getattr(diagnostic, "constraint_name", None)
+    if constraint_name:
+        details["constraint"] = str(constraint_name)
+    if isinstance(error, RuntimeError):
+        message = str(error)
+        if message.startswith("Supabase mirror dependency is missing:"):
+            dependency = message.split(":", 1)[1].strip().split(" ", 1)[0]
+            details["reason"] = f"missing_dependency:{dependency}"
+        elif message.startswith("Cloud SQL"):
+            # These messages are generated locally and contain only table/schema
+            # names, never SQL text, credentials, or paper contents.
+            details["reason"] = message
+    return details
+
+
+def mirror_completed_dataset(
+    client: Any,
+    run: Dict[str, Any],
+    dataset: Dict[str, Any],
+) -> None:
+    """Best-effort Cloud SQL mirror; never changes the authoritative result."""
+
+    from cloudsql_mirror import (
+        cloudsql_dual_write_enabled,
+        mirror_ingestion_dataset,
+        shadow_ingestion_dataset,
+    )
+
+    if not cloudsql_dual_write_enabled():
+        return
+
+    owner_user_id = str(run.get("owner_user_id") or "").strip()
+    if not owner_user_id:
+        summary: Dict[str, Any] = {
+            "state": "skipped",
+            "reason": "missing_owner_user_id",
+        }
+    else:
+        try:
+            dependencies = client.collect_cloudsql_mirror_dependencies(run)
+            summary = mirror_ingestion_dataset(
+                database_url=os.getenv("DATABASE_URL", ""),
+                run=run,
+                dataset=dataset,
+                dependencies=dependencies,
+            )
+            if summary.get("state") == "mirrored":
+                try:
+                    summary["shadow"] = shadow_ingestion_dataset(
+                        database_url=os.getenv("DATABASE_URL", ""),
+                        run=run,
+                        dataset=dataset,
+                    )
+                except Exception as error:
+                    error_details = cloudsql_error_details(error)
+                    summary["shadow"] = {
+                        "state": "failed",
+                        **error_details,
+                    }
+                    logger.error(
+                        "cloud sql shadow read failed after mirror "
+                        "error_type=%s sqlstate=%s constraint=%s",
+                        error_details.get("error_type"),
+                        error_details.get("sqlstate", ""),
+                        error_details.get("constraint", ""),
+                        extra={
+                            "run_id": str(run.get("id") or ""),
+                            **error_details,
+                        },
+                    )
+        except Exception as error:
+            error_details = cloudsql_error_details(error)
+            summary = {
+                "state": "failed",
+                **error_details,
+            }
+            logger.error(
+                "cloud sql dual-write failed without blocking the authoritative result "
+                "error_type=%s sqlstate=%s constraint=%s",
+                error_details.get("error_type"),
+                error_details.get("sqlstate", ""),
+                error_details.get("constraint", ""),
+                extra={"run_id": str(run.get("id") or ""), **error_details},
+            )
+
+    mirrored_payload = merge_input_payload(
+        run,
+        {
+            "cloudsql_mirror": summary,
+            "cloudsql_mirror_updated_at": now_iso(),
+        },
+    )
+    client.update_run(str(run["id"]), {"input_payload": mirrored_payload})
+    run["input_payload"] = mirrored_payload
+
+
 def resume_waiting_research_sessions_for_folder(
     client: SupabaseRestClient,
     run: Dict[str, Any],
@@ -928,6 +1246,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
 
     input_payload = run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {}
     source_kind = str(input_payload.get("source_kind") or "pdf-upload")
+    storage_provider = str(input_payload.get("storage_provider") or config.storage_provider)
+    storage_provider = storage_provider.strip().lower().replace("_", "-")
     queue_wait_seconds = seconds_since_iso(run.get("created_at"))
 
     with processing_heartbeat(client, run_id, config.heartbeat_interval_seconds):
@@ -965,6 +1285,20 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     extra={"run_id": run_id, "file_id": storage_path},
                 )
                 download_google_drive_file(access_token, storage_path, local_pdf)
+            elif storage_provider == "gcs" or storage_path.startswith("gs://"):
+                update_run_progress(
+                    client,
+                    run,
+                    run_id,
+                    stage="downloading",
+                    message="Downloading source file",
+                    detail="Fetching the uploaded PDF from Cloud Storage before extraction begins.",
+                )
+                logger.info(
+                    "downloading gcs object",
+                    extra={"run_id": run_id, "storage_path": storage_path},
+                )
+                download_gcs_object(config, storage_path, local_pdf)
             else:
                 update_run_progress(
                     client,
@@ -975,7 +1309,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     detail="Fetching the uploaded PDF from Supabase Storage before extraction begins.",
                 )
                 logger.info(
-                    "downloading storage object",
+                    "downloading supabase storage object",
                     extra={"run_id": run_id, "storage_path": storage_path},
                 )
                 client.download_storage_object(storage_path, local_pdf)
@@ -1035,7 +1369,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="saving",
                 message="Saving results to the workspace",
-                detail="Writing the extracted paper, keywords, tracks, and related analysis back into Supabase.",
+                detail="Writing the extracted paper, keywords, tracks, and related analysis to the workspace database.",
                 metrics_patch={
                     "graph_seconds": graph_seconds,
                     "model_usage": {
@@ -1066,6 +1400,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "analysis_mode": "automatic",
                     "analysis_label": AUTO_ANALYSIS_LABEL,
                     "pipeline": PIPELINE_NAME,
+                    "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                     "paper_id": result.dataset["paper_id"],
                     "year": result.dataset.get("year"),
                     "year_resolution": result.dataset.get("year_resolution"),
@@ -1085,6 +1420,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "progress_detail": "This paper is ready to use across the dashboard, paper library, and chat.",
                     "progress_updated_at": now_iso(),
                     "folder_progress_synced_at": now_iso(),
+                    **build_lifecycle_payload("completed"),
                 },
             )
             client.update_run(
@@ -1102,9 +1438,11 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             run["completed_at"] = now_iso()
             run["input_payload"] = final_input_payload
             sync_folder_analysis_job(client, run)
+            if config.database_provider == "supabase":
+                mirror_completed_dataset(client, run, result.dataset)
 
 
-def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
+def process_once(client: Any, config: WorkerConfig) -> bool:
     recovered_invalid = recover_invalid_succeeded_runs(client, config)
     recovered_stale = recover_stale_processing_runs(client, config)
     if recovered_invalid or recovered_stale:
@@ -1120,7 +1458,38 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
     if not queued_runs:
         return False
 
+    quarantined_invalid_run = False
     for run in queued_runs:
+        if not str(run.get("source_path") or "").strip():
+            run_id = str(run.get("id") or "")
+            message = "Upload did not produce a storage path; this run cannot be processed."
+            client.update_run(
+                run_id,
+                {
+                    "status": "failed",
+                    "completed_at": now_iso(),
+                    "error_message": message,
+                    "input_payload": merge_input_payload(
+                        run,
+                        {
+                            "last_error_stage": "queue_validation",
+                            "progress_stage": "failed",
+                            "progress_message": "Upload incomplete",
+                            "progress_detail": message,
+                            "progress_updated_at": now_iso(),
+                            **build_lifecycle_payload("failed"),
+                        },
+                    ),
+                },
+            )
+            sync_folder_analysis_job(client, run)
+            logger.warning(
+                "quarantined queued run without storage path",
+                extra={"run_id": run_id},
+            )
+            quarantined_invalid_run = True
+            continue
+
         claimed = client.claim_run(str(run["id"]))
         if not claimed:
             continue
@@ -1177,11 +1546,13 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
                                 "analysis_mode": "automatic",
                                 "analysis_label": AUTO_ANALYSIS_LABEL,
                                 "pipeline": PIPELINE_NAME,
+                                "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                                 "last_error_stage": "processing",
                                 "progress_stage": "failed",
                                 "progress_message": "Analysis failed",
                                 "progress_detail": message[:400],
                                 "progress_updated_at": now_iso(),
+                                **build_lifecycle_payload("failed"),
                             },
                         ),
                     },
@@ -1200,10 +1571,10 @@ def process_once(client: SupabaseRestClient, config: WorkerConfig) -> bool:
             logger.exception("run failed", extra={"run_id": run_id, "error_message": message})
         return True
 
-    return False
+    return quarantined_invalid_run
 
 
-def process_batch(client: SupabaseRestClient, config: WorkerConfig, max_runs: int = 1) -> Dict[str, int]:
+def process_batch(client: Any, config: WorkerConfig, max_runs: int = 1) -> Dict[str, int]:
     processed_runs = 0
     for _ in range(max(max_runs, 0)):
         if not process_once(client, config):
@@ -1213,7 +1584,7 @@ def process_batch(client: SupabaseRestClient, config: WorkerConfig, max_runs: in
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Process queued Supabase ingestion runs.")
+    parser = argparse.ArgumentParser(description="Process queued Papertrend ingestion runs.")
     parser.add_argument("--once", action="store_true", help="Process at most one queued run and exit.")
     parser.add_argument(
         "--loop",
@@ -1227,7 +1598,7 @@ def main() -> None:
     configure_logging()
     args = parse_args()
     config = load_config()
-    client = SupabaseRestClient(config.supabase_url, config.supabase_service_key)
+    client = create_worker_database_client(config, SupabaseRestClient)
 
     run_loop = args.loop or not args.once
     if args.once:

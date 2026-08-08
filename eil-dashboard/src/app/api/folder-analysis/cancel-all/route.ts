@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { IngestionRunRow } from "@/types/database";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 
 export const runtime = "nodejs";
 
@@ -93,6 +95,16 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as CancelAllBody;
     const folderJobId = typeof body.folderJobId === "string" ? body.folderJobId.trim() : "";
+
+    if (getDatabaseProvider() === "cloud-sql") {
+      const activeRuns = await cloudSqlAnalysisJobRepository.listActive(user.id, folderJobId || null, 500);
+      const canceledRuns = await cloudSqlAnalysisJobRepository.cancelRuns(
+        user.id,
+        activeRuns.map((run) => String(run.id))
+      );
+      return NextResponse.json({ ok: true, canceledCount: canceledRuns.length, canceledRuns });
+    }
+
     const supabase = getSupabaseAdmin();
 
     let runQuery = supabase

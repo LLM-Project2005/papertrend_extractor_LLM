@@ -5,6 +5,8 @@ import {
 } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { triggerWorkerQueue } from "@/lib/worker-trigger";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 
 export const runtime = "nodejs";
 const USER_STALE_REQUEUE_AFTER_MS = 3 * 60 * 1000;
@@ -44,6 +46,27 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as RetryBody;
     const folderJobId = typeof body.folderJobId === "string" ? body.folderJobId.trim() : "";
+
+    if (getDatabaseProvider() === "cloud-sql") {
+      if (!user) return NextResponse.json({ error: "An authenticated owner is required." }, { status: 401 });
+      const activeRuns = await cloudSqlAnalysisJobRepository.listActive(user.id, folderJobId || null, 5);
+      const staleIds = activeRuns.filter((run) => run.status === "processing" && isStale(
+        readProgressTimestamp(run as { updated_at?: string | null; input_payload?: Record<string, unknown> | null }),
+        USER_STALE_REQUEUE_AFTER_MS
+      )).map((run) => String(run.id));
+      const requeuedStaleCount = await cloudSqlAnalysisJobRepository.requeueRuns(
+        user.id, staleIds, "This run stopped updating, so it was returned to the queue."
+      );
+      if (activeRuns.length === 0) {
+        return NextResponse.json({ ok: true, activeCount: 0, requeuedStaleCount: 0, trigger: { started: false, status: 0, payload: { skipped: true, reason: "no_active_runs" } } });
+      }
+      const trigger = await triggerWorkerQueue({
+        maxRuns: Math.min(Math.max(activeRuns.length, 1), 5),
+        reason: requeuedStaleCount > 0 ? "user-force-requeue-stale-analysis" : "user-retry-folder-analysis",
+      });
+      return NextResponse.json({ ok: trigger.started, activeCount: activeRuns.length, requeuedStaleCount, trigger }, { status: trigger.started ? 200 : 409 });
+    }
+
     const supabase = getSupabaseAdmin();
 
     let query = supabase

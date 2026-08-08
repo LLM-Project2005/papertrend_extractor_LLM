@@ -5,6 +5,8 @@
 export const TRACK_COLS = ["EL", "ELI", "LAE", "Other"] as const;
 export type TrackKey = (typeof TRACK_COLS)[number];
 
+export const DEFAULT_REPOSITORY_NAME = "Repository";
+
 export const TRACK_COLORS: Record<TrackKey, string> = {
   EL: "#4a7fe5",
   ELI: "#e05c5c",

@@ -3,6 +3,8 @@ import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 
 export const runtime = "nodejs";
 
@@ -138,6 +140,23 @@ async function resolveRelatedRunIds(
   ownerUserId: string,
   runId: string
 ): Promise<string[]> {
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const resolved = new Set<string>([runId]);
+      let current = runId;
+      for (let hop = 0; hop < 5; hop += 1) {
+        const result = await client.query<{ copied_from_run_id: string | null }>(
+          `SELECT copied_from_run_id FROM public.ingestion_runs WHERE owner_user_id=$1 AND id=$2`,
+          [ownerUserId, current]
+        );
+        const next = result.rows[0]?.copied_from_run_id;
+        if (!next || resolved.has(next)) break;
+        resolved.add(next);
+        current = next;
+      }
+      return [...resolved];
+    });
+  }
   const supabase = getSupabaseAdmin();
   const resolved = new Set<string>([runId]);
   let currentRunId = runId;
@@ -177,27 +196,43 @@ export async function GET(
 
   try {
     const { runId } = await params;
-    const supabase = getSupabaseAdmin();
+    const useCloudSql = getDatabaseProvider() === "cloud-sql";
+    const supabase = useCloudSql ? null : getSupabaseAdmin();
     const relatedRunIds = await resolveRelatedRunIds(user.id, runId);
 
-    const { data: run, error: runError } = await supabase
+    const cloudBase = useCloudSql ? await withCloudSqlOwnerTransaction(user.id, async (client) => {
+      const [runResult, paperResult] = await Promise.all([
+        client.query<Record<string, unknown>>(`SELECT * FROM public.ingestion_runs WHERE owner_user_id=$1 AND id=$2`, [user.id, runId]),
+        client.query<Record<string, unknown>>(
+          `SELECT p.id::text AS paper_id,p.title,p.year,p.folder_id,p.ingestion_run_id,
+           c.abstract_claims,c.methods,c.results,c.conclusion,c.raw_text,c.source_filename
+           FROM public.papers p LEFT JOIN public.paper_content c ON c.paper_id=p.id AND c.owner_user_id=$1
+           WHERE p.owner_user_id=$1 AND p.ingestion_run_id=ANY($2::uuid[])`, [user.id, relatedRunIds]
+        ),
+      ]);
+      return { run: runResult.rows[0] ?? null, papers: paperResult.rows };
+    }) : null;
+
+    const runResult = useCloudSql ? { data: cloudBase?.run ?? null, error: null } : await supabase!
       .from("ingestion_runs")
       .select("*")
       .eq("owner_user_id", user.id)
       .eq("id", runId)
       .maybeSingle();
+    const { data: run, error: runError } = runResult;
 
     if (runError || !run) {
       throw new Error(runError?.message ?? "Library file not found.");
     }
 
-    const { data: papers, error: papersError } = await supabase
+    const papersResult = useCloudSql ? { data: cloudBase?.papers ?? [], error: null } : await supabase!
       .from("papers_full")
       .select(
         "paper_id::text,title,year,abstract_claims,methods,results,conclusion,raw_text,source_filename,ingestion_run_id"
       )
       .eq("owner_user_id", user.id)
       .in("ingestion_run_id", relatedRunIds);
+    const { data: papers, error: papersError } = papersResult;
 
     if (papersError) {
       throw new Error(papersError.message);
@@ -226,9 +261,25 @@ export async function GET(
     }
 
     const paperId =
-      paperIdFromRunId(String(paper.ingestion_run_id ?? "")) ||
       normalizePaperId(paper.paper_id) ||
+      paperIdFromRunId(String(paper.ingestion_run_id ?? "")) ||
       paperIdFromRunId(runId);
+
+    const cloudDetails = useCloudSql ? await withCloudSqlOwnerTransaction(user.id, async (client) => {
+      const query = (table: string, columns: string) => client.query<Record<string, unknown>>(
+        `SELECT ${columns} FROM public.${table} WHERE owner_user_id=$1 AND paper_id=$2`, [user.id, paperId]
+      );
+      const [content, keywords, concepts, facets, single, multi] = await Promise.all([
+        query("paper_content", "raw_text,abstract_claims,methods,results,conclusion,source_filename,ingestion_run_id"),
+        query("paper_keywords", "topic,keyword,keyword_frequency,evidence"),
+        query("paper_keyword_concepts", "concept_label,matched_terms,related_keywords,total_frequency,first_evidence,evidence_snippets"),
+        query("paper_analysis_facets", "facet_type,label,evidence"),
+        query("paper_tracks_single", "el,eli,lae,other"),
+        query("paper_tracks_multi", "el,eli,lae,other"),
+      ]);
+      const wrap = (rows: Record<string, unknown>[], singleRow = false) => ({ data: singleRow ? rows[0] ?? null : rows, error: null });
+      return [wrap(content.rows, true), wrap(keywords.rows), wrap(concepts.rows), wrap(facets.rows), wrap(single.rows, true), wrap(multi.rows, true), wrap([]), wrap([], true), wrap([], true)] as const;
+    }) : null;
 
     const [
       paperContentResult,
@@ -240,8 +291,8 @@ export async function GET(
       fallbackTrendKeywordsResult,
       fallbackSingleResult,
       fallbackMultiResult,
-    ] = await Promise.all([
-      supabase
+    ] = cloudDetails ?? await Promise.all([
+      supabase!
         .from("paper_content")
         .select(
           "raw_text,abstract_claims,methods,results,conclusion,source_filename,ingestion_run_id"
@@ -249,47 +300,47 @@ export async function GET(
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId)
         .maybeSingle(),
-      supabase
+      supabase!
         .from("paper_keywords")
         .select("topic,keyword,keyword_frequency,evidence")
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId),
-      supabase
+      supabase!
         .from("paper_keyword_concepts")
         .select(
           "concept_label,matched_terms,related_keywords,total_frequency,first_evidence,evidence_snippets"
         )
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId),
-      supabase
+      supabase!
         .from("paper_analysis_facets")
         .select("facet_type,label,evidence")
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId),
-      supabase
+      supabase!
         .from("paper_tracks_single")
         .select("el,eli,lae,other")
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId)
         .maybeSingle(),
-      supabase
+      supabase!
         .from("paper_tracks_multi")
         .select("el,eli,lae,other")
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId)
         .maybeSingle(),
-      supabase
+      supabase!
         .from("trends_flat")
         .select("topic,keyword,keyword_frequency,evidence")
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId),
-      supabase
+      supabase!
         .from("tracks_single_flat")
         .select("el,eli,lae,other")
         .eq("owner_user_id", user.id)
         .eq("paper_id", paperId)
         .maybeSingle(),
-      supabase
+      supabase!
         .from("tracks_multi_flat")
         .select("el,eli,lae,other")
         .eq("owner_user_id", user.id)

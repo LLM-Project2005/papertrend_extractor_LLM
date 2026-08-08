@@ -1,23 +1,37 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import {
-  appendWorkspaceMessage,
   buildThreadTitle,
-  createWorkspaceThread,
-  getDeepResearchSession,
-  getWorkspaceThreadDetail,
-  replaceDeepResearchPlan,
-  updateWorkspaceThread,
 } from "@/lib/chat-store";
+import { getChatRepository } from "@/lib/chat-repository";
 import { TRACK_COLS, type TrackKey } from "@/lib/constants";
 import {
   loadDashboardDataServer,
   loadScopedDashboardData,
 } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
+import { buildPapertrendSystemPrompt } from "@/lib/papertrend-system-prompt";
+import { recommendResearchChart } from "@/lib/chart-recommendation";
+import {
+  BUILD_RESEARCH_CHART_TOOL,
+  chartToolArguments,
+  describeChartRows,
+} from "@/lib/chart-agent";
 import { callPythonNodeService } from "@/lib/python-node-service";
+import { runRepositoryChat } from "@/lib/repository-chat";
+import {
+  knowledgeScopeLabel,
+  normalizeKnowledgeScope,
+  type KnowledgeScope,
+  type KnowledgeScopeSnapshot,
+} from "@/lib/knowledge-scope";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
@@ -32,6 +46,7 @@ import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
   DeepResearchSessionRecord,
+  WorkspaceMessageRecord,
 } from "@/types/research";
 interface Citation {
   paperId: number | string;
@@ -47,6 +62,7 @@ type ChartScope = "selected_files" | "workspace";
 type ChartType = "auto" | "bar" | "line" | "pie" | "table";
 type ChartMetric =
   | "papers_per_year"
+  | "word_count"
   | "top_topics"
   | "top_keywords"
   | "track_distribution"
@@ -181,6 +197,7 @@ interface ChatRequestBody {
   editMessageId?: string;
   folderId?: string | "all";
   projectId?: string;
+  knowledgeScope?: KnowledgeScope;
   toolMode?: ChatToolMode;
   chartRequest?: ChartRequest;
   webSearchEnabled?: boolean;
@@ -241,6 +258,12 @@ const ChatRequestBodySchema = z
     editMessageId: z.string().max(80).optional(),
     folderId: z.string().max(80).optional(),
     projectId: z.string().max(80).optional(),
+    knowledgeScope: z.object({
+      kind: z.enum(["all_projects", "project", "folder", "selected_papers"]),
+      projectId: z.string().max(80).optional(),
+      folderId: z.string().max(80).optional(),
+      runIds: z.array(z.string().max(80)).max(50).optional(),
+    }).optional(),
     toolMode: z.enum(["auto", "web_search", "chart", "none"]).optional(),
     chartRequest: z.record(z.string(), z.unknown()).optional(),
     webSearchEnabled: z.boolean().optional(),
@@ -295,7 +318,7 @@ function normalizeResearchSourcePolicy(
       ? rawScope
       : selectedRunIds.length > 0
         ? "attached"
-        : "auto";
+        : "project";
   const rawBudget = (value?.budget ?? {}) as Partial<DeepResearchBudgetPolicy>;
   const qualityMode =
     rawBudget.qualityMode === "quality" || rawBudget.qualityMode === "balanced"
@@ -494,7 +517,7 @@ function inferChartTypeFromPrompt(message: string, metric: ChartMetric): ChartTy
 }
 
 function promptRequestsWorkspaceScope(message: string) {
-  return /\b(workspace|project|folder|folders|all folders|all papers|all analyzed|all analysed|whole corpus|entire corpus|corpus|library)\b/i.test(
+  return /\b(repository|repositories|workspace|project|folder|folders|all folders|all papers|all analyzed|all analysed|whole corpus|entire corpus|corpus|library)\b/i.test(
     message
   );
 }
@@ -918,6 +941,31 @@ function buildChartFromData(
   };
 }
 
+function validateRenderedChart(chart: ChatChartPayload): ChatChartPayload {
+  const temporal = chart.metric === "papers_per_year" ||
+    chart.metric === "topic_trend" ||
+    chart.metric === "keyword_trend" ||
+    chart.metric === "track_trend";
+  const recommendation = recommendResearchChart({
+    requestedType: chart.chartType,
+    temporal,
+    categoryCount: chart.data.length,
+    seriesCount: chart.yKeys.length,
+  });
+  return {
+    ...chart,
+    chartType: recommendation.chartType,
+    planner: {
+      ...chart.planner,
+      source: chart.planner?.source ?? "fallback",
+      reason: chart.planner?.reason
+        ? `${chart.planner.reason} ${recommendation.reason}`
+        : recommendation.reason,
+      warnings: [...(chart.planner?.warnings ?? []), ...recommendation.warnings],
+    },
+  };
+}
+
 function buildBestAvailableChartFromData(
   data: DashboardData,
   request: Required<ChartRequest> | ResolvedChartPlan,
@@ -1328,11 +1376,14 @@ async function planChartBundleWithLlm(
       [
         {
           role: "system",
-          content:
-            "You are a production chart planner for a research-paper analytics app. " +
-            "Choose one or more useful charts from the available analyzed data. " +
+          content: buildPapertrendSystemPrompt("chart_planner", [
+            "Use the build_research_charts tool. " +
+            "Understand the complete user request and choose one or more useful charts from the available analyzed data. " +
             "If the user asks for multiple charts, comparisons, a dashboard, a report, or several angles, return multiple chart specs. " +
-            "Return strict JSON only. Do not include markdown. Do not invent metrics, columns, or data.",
+            "Honor requested chart types, measures, grouping, focus terms, scope, and number of views whenever the available metrics permit it. " +
+            "Select line charts for meaningful ordered time trends, bar charts for category comparison, pie charts only for small part-to-whole distributions, and tables for exact values or dense comparisons. " +
+            "Do not invent metrics, columns, or data. Call the tool exactly once.",
+          ]),
         },
         {
           role: "user",
@@ -1361,10 +1412,15 @@ async function planChartBundleWithLlm(
       0.1,
       resolveChatModel(body.model),
       "CHART_PLANNER",
-      { maxTokens: 1200 }
+      {
+        maxTokens: 1200,
+        tools: [BUILD_RESEARCH_CHART_TOOL],
+        toolChoice: { type: "function", function: { name: "build_research_charts" } },
+        parallelToolCalls: false,
+      }
     );
     return sanitizePlannerBundle(
-      extractJsonObject(completion?.content),
+      chartToolArguments(completion?.toolCalls ?? []) ?? extractJsonObject(completion?.content),
       fallbackRequest,
       profile.availableMetrics,
       prompt
@@ -1502,6 +1558,15 @@ async function projectFolderIds(ownerUserId: string, projectId?: string) {
   if (!projectId || projectId === "all") {
     return [];
   }
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ id: string }>(
+        `SELECT id FROM public.research_folders WHERE owner_user_id=$1 AND project_id=$2`,
+        [ownerUserId, projectId]
+      );
+      return result.rows.map((row) => row.id);
+    });
+  }
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("research_folders")
@@ -1527,6 +1592,28 @@ async function findLibraryRunsByAttachmentNames(
   );
   if (attachmentKeys.size === 0) {
     return [];
+  }
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    const folderIds = projectId && projectId !== "all" && (!folderId || folderId === "all")
+      ? await projectFolderIds(ownerUserId, projectId) : [];
+    if (projectId && projectId !== "all" && (!folderId || folderId === "all") && folderIds.length === 0) return [];
+    const data = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      let scope = "";
+      if (folderId && folderId !== "all") { values.push(folderId); scope = ` AND folder_id=$${values.length}`; }
+      else if (folderIds.length) { values.push(folderIds); scope = ` AND folder_id=ANY($${values.length}::uuid[])`; }
+      const result = await client.query<ChartLibraryRun>(
+        `SELECT id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload
+         FROM public.ingestion_runs WHERE owner_user_id=$1 AND source_type='upload' AND trashed_at IS NULL${scope}
+         ORDER BY updated_at DESC LIMIT 400`, values
+      );
+      return result.rows;
+    });
+    return data.filter((run) => {
+      const keys = [run.display_name ?? "", run.source_filename ?? "", run.source_path ?? "", chartRunLabel(run)].map(normalizeFileMatchKey).filter(Boolean);
+      return keys.some((key) => [...attachmentKeys].some((attachment) => key === attachment || key.includes(attachment) || attachment.includes(key)));
+    }).sort((left, right) => (left.status === "succeeded" ? 0 : 1) - (right.status === "succeeded" ? 0 : 1));
   }
 
   const supabase = getSupabaseAdmin();
@@ -1593,6 +1680,16 @@ async function loadChartRunsByIds(
   if (normalizedRunIds.length === 0) {
     return [];
   }
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<ChartLibraryRun>(
+        `SELECT id,folder_id,folder_analysis_job_id,status,display_name,source_filename,source_path,input_payload
+         FROM public.ingestion_runs WHERE owner_user_id=$1 AND id=ANY($2::uuid[])`,
+        [ownerUserId, normalizedRunIds]
+      );
+      return result.rows;
+    });
+  }
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from("ingestion_runs")
@@ -1617,6 +1714,33 @@ async function queueChartAnalysisRuns(
   const timestamp = new Date().toISOString();
   const failedRuns = notReadyRuns.filter((run) => run.status === "failed");
   const queuedRunIds = notReadyRuns.map((run) => run.id);
+  if (getDatabaseProvider() === "cloud-sql") {
+    await cloudSqlAnalysisJobRepository.requeueRuns(
+      ownerUserId,
+      failedRuns.map((run) => run.id),
+      "The user requested a chart, so this failed analysis was returned to the queue."
+    );
+    const queueStart = await triggerWorkerQueueWithRetries({
+      maxRuns: Math.min(Math.max(queuedRunIds.length, 1), 5), taskCount: queuedRunIds.length,
+      reason: "chat-chart-analysis-preflight",
+    });
+    const folderJobId = String(notReadyRuns[0]?.folder_analysis_job_id ?? "");
+    if (folderJobId) {
+      await cloudSqlIngestionRepository.persistWorkerStartState({
+        ownerUserId, runIds: queuedRunIds, folderJobId,
+        progressStage: queueStart.progressStage, progressMessage: queueStart.progressMessage,
+        progressDetail: queueStart.progressDetail, metadata: { last_worker_trigger_payload: queueStart.trigger.payload },
+      });
+    }
+    return {
+      runIds: queuedRunIds,
+      runTitles: notReadyRuns.map(chartRunLabel),
+      statuses: Object.fromEntries(notReadyRuns.map((run) => [run.id, run.status])),
+      message: queueStart.progressMessage,
+      detail: queueStart.progressDetail,
+      queueStart: { started: queueStart.started, alreadyRunning: queueStart.alreadyRunning, progressMessage: queueStart.progressMessage, progressDetail: queueStart.progressDetail },
+    };
+  }
   const supabase = getSupabaseAdmin();
 
   for (const run of failedRuns) {
@@ -1801,7 +1925,7 @@ async function loadChartDashboardData(
   selectedPaperIds: string[] = [],
   overrideScopeLabel?: string
 ) {
-  const supabase = getSupabaseAdmin();
+  const supabase = getDatabaseProvider() === "cloud-sql" ? null : getSupabaseAdmin();
   if (request.scope === "selected_files" && selectedRunIds.length > 0) {
     const scopedRunIds = await resolveScopedRunIds(
       supabase,
@@ -1835,7 +1959,7 @@ async function loadChartDashboardData(
       projectId && projectId !== "all" ? projectId : null,
       "live"
     ),
-    scopeLabel: folderId && folderId !== "all" ? "selected folder" : "workspace",
+    scopeLabel: folderId && folderId !== "all" ? "selected folder" : "repository",
   };
 }
 
@@ -1932,7 +2056,8 @@ async function buildChatChart(
     : [buildFallbackChartPlan(request)];
   const charts = plannedRequests
     .map((plannedRequest) => buildChartFromData(data, plannedRequest, scopeLabel))
-    .filter((chart): chart is ChatChartPayload => Boolean(chart));
+    .filter((chart): chart is ChatChartPayload => Boolean(chart))
+    .map(validateRenderedChart);
   const fallbackChart =
     charts.length === 0
       ? buildBestAvailableChartFromData(
@@ -1949,7 +2074,7 @@ async function buildChatChart(
       scopeLabel
         )
       : null;
-  const finalCharts = fallbackChart ? [fallbackChart] : charts;
+  const finalCharts = fallbackChart ? [validateRenderedChart(fallbackChart)] : charts;
   return {
     request: plannedRequests[0],
     requests: plannedRequests,
@@ -1968,7 +2093,7 @@ function summarizeChartForResponse(chart: ChatChartPayload) {
     chartType: chart.chartType,
     scope: chart.scopeLabel,
     series: chart.yKeys,
-    sampleRows: chart.data.slice(0, 8),
+    dataSummary: describeChartRows(chart.data, chart.yKeys),
     plannerReason: chart.planner?.reason,
   };
 }
@@ -2030,7 +2155,9 @@ async function synthesizeChartAnswer(
             "Default behavior: if the user simply asks for a chart or does not specify a response style, explain the chart automatically. " +
             "Mention what the chart shows, the strongest visible pattern, and any useful caution about scope or missing data. " +
             "If the user asks for ideas, thoughts, a plan, critique, summary, next steps, recommendations, or another format, prioritize that intent while still grounding the answer in the chart. " +
-            "Do not claim to have data beyond the provided chart summaries. Keep it concise but useful.",
+            "Use the language established by the latest user request and recent conversation, including Thai when the conversation is Thai. " +
+            "Start with a direct answer, then explain why each visualization was selected, the strongest and weakest values, meaningful comparisons or time changes, and any scope/data limitations. Use compact Markdown headings and bullets when multiple charts are present. " +
+            "Do not claim causation, statistical significance, or data beyond the provided complete chart summaries. Be detailed enough to make the chart understandable without repeating every plotted value.",
         },
         {
           role: "user",
@@ -2050,7 +2177,7 @@ async function synthesizeChartAnswer(
       0.35,
       resolveChatModel(body.model),
       "CHART_SYNTHESIS",
-      { maxTokens: 900 }
+      { maxTokens: 1_600 }
     );
     return completion?.content?.trim() || fallbackChartAnswer(charts);
   } catch {
@@ -2097,7 +2224,7 @@ function extractWebCitations(annotations: unknown): Citation[] {
 }
 
 async function resolveReusableDeepResearchSessionId(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  chatRepository: ReturnType<typeof getChatRepository>,
   ownerUserId: string,
   body: ChatRequestBody,
 ): Promise<string | undefined> {
@@ -2106,12 +2233,16 @@ async function resolveReusableDeepResearchSessionId(
     return undefined;
   }
 
-  let existing: DeepResearchSessionRecord;
+  let existing: DeepResearchSessionRecord | null | undefined;
   try {
-    existing = await getDeepResearchSession(supabase, sessionId);
+    if (!body.threadId) return undefined;
+    const detail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
+    existing = detail.deepResearchSession;
   } catch {
     return undefined;
   }
+
+  if (!existing || existing.id !== sessionId) return undefined;
 
   if (String(existing.owner_user_id ?? "") !== ownerUserId) {
     return undefined;
@@ -2239,6 +2370,7 @@ function isCorpusLevelPrompt(prompt: string) {
     "across my",
     "across all",
     "selected folder",
+    "current repository",
     "current project",
     "research gaps",
     "major gaps",
@@ -2925,6 +3057,25 @@ async function loadScopedPlanPapers(
   projectId: string | undefined,
   selectedRunIds: string[] = []
 ): Promise<LocalPlanPaper[]> {
+  if (getDatabaseProvider() === "cloud-sql") {
+    const normalizedRunIds = await resolveScopedRunIds(null, ownerUserId, selectedRunIds);
+    const folderIds = projectId && (!folderId || folderId === "all") ? await projectFolderIds(ownerUserId, projectId) : [];
+    if (projectId && (!folderId || folderId === "all") && folderIds.length === 0) return [];
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      let scope = "";
+      if (normalizedRunIds.length) { values.push(normalizedRunIds); scope = ` AND p.ingestion_run_id=ANY($${values.length}::uuid[])`; }
+      else if (folderId && folderId !== "all") { values.push(folderId); scope = ` AND p.folder_id=$${values.length}`; }
+      else if (folderIds.length) { values.push(folderIds); scope = ` AND p.folder_id=ANY($${values.length}::uuid[])`; }
+      const result = await client.query<LocalPlanPaper>(
+        `SELECT p.id AS paper_id,p.title,p.year,p.folder_id,p.ingestion_run_id,
+         c.abstract_claims,c.methods,c.results,c.conclusion FROM public.papers p
+         LEFT JOIN public.paper_content c ON c.paper_id=p.id AND c.owner_user_id=$1
+         WHERE p.owner_user_id=$1${scope}`, values
+      );
+      return result.rows;
+    });
+  }
   const supabase = getSupabaseAdmin();
   const normalizedRunIds = await resolveScopedRunIds(supabase, ownerUserId, selectedRunIds);
   let query = supabase
@@ -2962,7 +3113,7 @@ async function loadScopedPlanPapers(
 }
 
 async function resolveScopedRunIds(
-  supabase: ReturnType<typeof getSupabaseAdmin>,
+  supabase: ReturnType<typeof getSupabaseAdmin> | null,
   ownerUserId: string,
   selectedRunIds: string[] = []
 ) {
@@ -2970,6 +3121,24 @@ async function resolveScopedRunIds(
   if (normalizedRunIds.length === 0) {
     return normalizedRunIds;
   }
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const resolved = new Set(normalizedRunIds);
+      let frontier = [...normalizedRunIds];
+      for (let depth = 0; depth < 4 && frontier.length; depth += 1) {
+        const result = await client.query<{ copied_from_run_id: string | null }>(
+          `SELECT copied_from_run_id FROM public.ingestion_runs WHERE owner_user_id=$1 AND id=ANY($2::uuid[])`,
+          [ownerUserId, frontier]
+        );
+        frontier = result.rows.map((row) => row.copied_from_run_id ?? "").filter((id) => Boolean(id) && !resolved.has(id));
+        frontier.forEach((id) => resolved.add(id));
+      }
+      return [...resolved];
+    });
+  }
+
+  if (!supabase) throw new Error("Supabase client is required in Supabase mode.");
 
   const resolved = new Set(normalizedRunIds);
   let frontier = [...normalizedRunIds];
@@ -3072,14 +3241,14 @@ async function buildLocalResearchPlan(
     promptAnalysis.primary_intent === "corpus_synthesis"
   ) {
     addStep({
-      title: "Map the workspace evidence base",
+      title: "Map the repository evidence base",
       description: "Build a high-level map of the analyzed papers, topic coverage, keyword coverage, and year distribution before choosing retrieval paths.",
       toolName: "get_dashboard_summary",
       phaseClass: "research",
       requiredClass: "required_before_verification",
-      purpose: "Use workspace analytics as the first evidence layer for corpus-level research.",
+      purpose: "Use repository analytics as the first evidence layer for corpus-level research.",
       expectedOutput: "A corpus snapshot with topic, keyword, track, and year coverage signals.",
-      completionCondition: "The workspace evidence base is summarized or an evidence gap is recorded.",
+      completionCondition: "The repository evidence base is summarized or an evidence gap is recorded.",
       query: normalizedQuery,
     });
     addStep({
@@ -3118,10 +3287,10 @@ async function buildLocalResearchPlan(
     });
     summary =
       promptAnalysis.primary_intent === "gap_analysis"
-        ? `Analyze research gaps across the scoped workspace corpus, compare overrepresented and underexplored areas, then ground every claim in retrieved paper evidence.`
+        ? `Analyze research gaps across the scoped repository corpus, compare overrepresented and underexplored areas, then ground every claim in retrieved paper evidence.`
         : promptAnalysis.primary_intent === "trend_analysis"
-          ? `Analyze trends across the scoped workspace corpus using analytics first, then verify the trend narrative with paper-level evidence.`
-          : `Synthesize the scoped workspace corpus by combining analytics, targeted retrieval, section evidence, and gap checking.`;
+          ? `Analyze trends across the scoped repository corpus using analytics first, then verify the trend narrative with paper-level evidence.`
+          : `Synthesize the scoped repository corpus by combining analytics, targeted retrieval, section evidence, and gap checking.`;
   } else if (promptAnalysis.single_paper && promptAnalysis.candidate_title) {
     if (promptAnalysis.target_in_scope) {
       addStep({
@@ -3234,7 +3403,7 @@ async function buildLocalResearchPlan(
     });
     addStep({
       title: "Check corpus framing",
-      description: "Use workspace-level context only where it helps explain representativeness or coverage.",
+      description: "Use repository-level context only where it helps explain representativeness or coverage.",
       toolName: "get_dashboard_summary",
       phaseClass: "research",
       requiredClass: "optional_context",
@@ -3247,11 +3416,11 @@ async function buildLocalResearchPlan(
   } else if (promptAnalysis.survey || papers.length >= 8) {
     addStep({
       title: "Map the scoped corpus",
-      description: "List the in-scope papers first so the review stays grounded in the current workspace.",
+      description: "List the in-scope papers first so the review stays grounded in the current repository.",
       toolName: "list_folder_papers",
       phaseClass: "research",
       requiredClass: "required_before_verification",
-      purpose: "Establish what evidence is actually available in the workspace.",
+      purpose: "Establish what evidence is actually available in the repository.",
       expectedOutput: "A scope map of the currently available papers.",
       completionCondition: "The corpus scope is summarized.",
       query: normalizedQuery,
@@ -3281,7 +3450,7 @@ async function buildLocalResearchPlan(
     });
     addStep({
       title: "Frame coverage patterns",
-      description: "Use workspace-level trends only when they improve chronology, coverage, or topic framing.",
+      description: "Use repository-level trends only when they improve chronology, coverage, or topic framing.",
       toolName: "get_dashboard_summary",
       phaseClass: "research",
       requiredClass: "optional_context",
@@ -3294,7 +3463,7 @@ async function buildLocalResearchPlan(
   } else {
     addStep({
       title: "Check scoped coverage",
-      description: "Quickly verify the workspace coverage before drilling into the answer.",
+      description: "Quickly verify the repository coverage before drilling into the answer.",
       toolName: "list_folder_papers",
       phaseClass: "research",
       requiredClass: "required_before_verification",
@@ -3390,8 +3559,34 @@ async function countPendingRuns(
   ownerUserId: string,
   selectedRunIds: string[] = [],
 ) {
-  const supabase = getSupabaseAdmin();
   const normalizedRunIds = selectedRunIds.filter(Boolean);
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      const conditions = ["ir.owner_user_id=$1", "ir.status IN ('queued','processing')"];
+      let joinFolders = false;
+      if (normalizedRunIds.length > 0) {
+        values.push(normalizedRunIds);
+        conditions.push(`ir.id=ANY($${values.length}::uuid[])`);
+      } else if (folderId && folderId !== "all") {
+        values.push(folderId);
+        conditions.push(`ir.folder_id=$${values.length}`);
+      } else if (projectId) {
+        joinFolders = true;
+        values.push(projectId);
+        conditions.push(`rf.project_id=$${values.length}`, "rf.owner_user_id=$1");
+      }
+      const result = await client.query<{ count: string }>(
+        `SELECT count(*)::text AS count FROM public.ingestion_runs ir
+         ${joinFolders ? "JOIN public.research_folders rf ON rf.id=ir.folder_id" : ""}
+         WHERE ${conditions.join(" AND ")}`,
+        values
+      );
+      return Number(result.rows[0]?.count ?? 0);
+    });
+  }
+
+  const supabase = getSupabaseAdmin();
   let query = supabase
     .from("ingestion_runs")
     .select("id", { count: "exact", head: true })
@@ -3435,26 +3630,33 @@ async function planDeepResearch(
   const attachmentNames = (body.attachments ?? [])
     .map((attachment) => String(attachment?.name ?? "").trim())
     .filter(Boolean);
-  const selectedRunIds = body.selectedRunIds ?? [];
+  const knowledgeScope = normalizeKnowledgeScope({
+    knowledgeScope: body.knowledgeScope,
+    projectId: body.projectId,
+    folderId: body.folderId,
+    selectedRunIds: body.selectedRunIds,
+  });
+  const selectedRunIds = knowledgeScope.runIds ?? [];
+  const researchProjectId = knowledgeScope.projectId;
   const researchSourcePolicy = normalizeResearchSourcePolicy(
     body.researchSourcePolicy,
     selectedRunIds
   );
-  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
+  const researchFolderId = folderForResearchPolicy(knowledgeScope.folderId, researchSourcePolicy);
   if (!prompt) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdmin();
+  const chatRepository = getChatRepository();
   const reusableSessionId = await resolveReusableDeepResearchSessionId(
-    supabase,
+    chatRepository,
     ownerUserId,
     body
   );
   const thread =
     body.threadId
-      ? (await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId)).thread
-      : await createWorkspaceThread(supabase, {
+      ? (await chatRepository.getThreadDetail(ownerUserId, body.threadId)).thread
+      : await chatRepository.createThread({
           ownerUserId,
           mode: "deep_research",
           title: buildThreadTitle(prompt),
@@ -3462,7 +3664,7 @@ async function planDeepResearch(
         });
 
   if (!body.threadId) {
-    await appendWorkspaceMessage(supabase, {
+    await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
       folderId: researchFolderId,
@@ -3472,7 +3674,8 @@ async function planDeepResearch(
       metadata: {
         chatMode: "deep_research",
         attachments: body.attachments ?? [],
-        selectedRunIds: body.selectedRunIds ?? [],
+        selectedRunIds,
+        knowledgeScope,
         researchSourcePolicy,
       },
     });
@@ -3513,7 +3716,7 @@ async function planDeepResearch(
     }>("/research-plan", {
       ownerUserId,
       folderId: researchFolderId,
-      projectId: body.projectId,
+      projectId: researchProjectId,
       selectedRunIds,
       attachmentNames,
       sourcePolicy: researchSourcePolicy,
@@ -3525,9 +3728,9 @@ async function planDeepResearch(
 
   const pendingRunCount = await countPendingRuns(
     researchFolderId,
-    body.projectId,
+    researchProjectId,
     ownerUserId,
-    body.selectedRunIds ?? []
+    selectedRunIds
   );
   const plan =
     rawPlan ??
@@ -3536,12 +3739,12 @@ async function planDeepResearch(
       pendingRunCount,
       ownerUserId,
       researchFolderId,
-      body.projectId,
+      researchProjectId,
       selectedRunIds,
       attachmentNames,
       researchSourcePolicy
     ));
-  const session = await replaceDeepResearchPlan(supabase, {
+  const session = await chatRepository.replaceDeepResearchPlan({
     threadId: thread.id,
     ownerUserId,
     folderId: researchFolderId,
@@ -3570,7 +3773,7 @@ async function planDeepResearch(
     })),
   });
 
-  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+  const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
   return NextResponse.json({
     mode: "deep_research",
     action: "plan",
@@ -3591,37 +3794,34 @@ async function continueDeepResearch(
     );
   }
 
-  const supabase = getSupabaseAdmin();
-  const selectedRunIds = normalizeIdList(body.selectedRunIds ?? []);
+  const chatRepository = getChatRepository();
+  const knowledgeScope = normalizeKnowledgeScope({
+    knowledgeScope: body.knowledgeScope,
+    projectId: body.projectId,
+    folderId: body.folderId,
+    selectedRunIds: body.selectedRunIds,
+  });
+  const selectedRunIds = normalizeIdList(knowledgeScope.runIds ?? []);
   const researchSourcePolicy = normalizeResearchSourcePolicy(
     body.researchSourcePolicy,
     selectedRunIds
   );
-  const researchFolderId = folderForResearchPolicy(body.folderId, researchSourcePolicy);
+  const researchFolderId = folderForResearchPolicy(knowledgeScope.folderId, researchSourcePolicy);
   const pendingRunCount = await countPendingRuns(
     researchFolderId,
-    body.projectId,
+    knowledgeScope.projectId,
     ownerUserId,
     selectedRunIds
   );
   const nextStatus = pendingRunCount > 0 ? "waiting_on_analysis" : "queued";
 
-  const { error } = await supabase
-    .from("deep_research_sessions")
-    .update({
-      status: nextStatus,
-      pending_run_count: pendingRunCount,
-      requires_analysis: pendingRunCount > 0,
-      last_error: null,
-      updated_at: new Date().toISOString(),
-      completed_at: null,
-    })
-    .eq("id", body.sessionId)
-    .eq("owner_user_id", ownerUserId);
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  await chatRepository.updateDeepResearchSession(ownerUserId, body.sessionId, {
+    status: nextStatus,
+    pending_run_count: pendingRunCount,
+    requires_analysis: pendingRunCount > 0,
+    last_error: null,
+    completed_at: null,
+  });
 
   if (pendingRunCount > 0) {
     await triggerWorkerQueue({
@@ -3635,7 +3835,7 @@ async function continueDeepResearch(
     }).catch(() => null);
   }
 
-  const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, body.threadId);
+  const detail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
   return NextResponse.json({
     mode: "deep_research",
     action: "continue",
@@ -3660,6 +3860,25 @@ async function normalChat(
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
 
+  const requestId = randomUUID();
+  const knowledgeChatV3Enabled = process.env.KNOWLEDGE_CHAT_V3_ENABLED === "true";
+  const knowledgeScope = normalizeKnowledgeScope({
+    knowledgeScope: body.knowledgeScope,
+    projectId: body.projectId,
+    folderId: body.folderId,
+    selectedRunIds: body.selectedRunIds,
+  });
+  const preliminaryScopeSnapshot: KnowledgeScopeSnapshot = {
+    kind: knowledgeScope.kind,
+    label: knowledgeScopeLabel(knowledgeScope),
+    projectId: knowledgeScope.projectId ?? null,
+    projectName: null,
+    folderId: knowledgeScope.folderId ?? null,
+    folderName: null,
+    selectedRunCount: knowledgeScope.runIds?.length ?? 0,
+    eligiblePaperCount: 0,
+  };
+
   const attachmentContext =
     body.attachments && body.attachments.length > 0
       ? `\n\nAttached files:\n${body.attachments
@@ -3672,19 +3891,16 @@ async function normalChat(
           .join("\n")}`
       : "";
 
-  const supabase = ownerUserId ? getSupabaseAdmin() : null;
+  const chatRepository = ownerUserId ? getChatRepository() : null;
   let thread: ChatThreadDetail["thread"] | null = null;
   let existingThreadDetail: ChatThreadDetail | null = null;
-  if (ownerUserId && supabase) {
+  let persistedUserMessage: WorkspaceMessageRecord | null = null;
+  if (ownerUserId && chatRepository) {
     if (body.threadId) {
-      existingThreadDetail = await getWorkspaceThreadDetail(
-        supabase,
-        ownerUserId,
-        body.threadId
-      );
+      existingThreadDetail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
       thread = existingThreadDetail.thread;
     } else {
-      thread = await createWorkspaceThread(supabase, {
+      thread = await chatRepository.createThread({
           ownerUserId,
           mode: "normal",
           title: buildThreadTitle(currentMessage),
@@ -3701,49 +3917,41 @@ async function normalChat(
         : null;
 
     if (editTarget) {
-      const { error: updateMessageError } = await supabase
-        .from("workspace_messages")
-        .update({
-          content: currentMessage,
-          metadata: {
-            ...(editTarget.metadata &&
-            typeof editTarget.metadata === "object"
-              ? (editTarget.metadata as Record<string, unknown>)
-              : {}),
-            attachments: body.attachments ?? [],
-            selectedRunIds: body.selectedRunIds ?? [],
-            editedAt: new Date().toISOString(),
-          },
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", editTarget.id)
-        .eq("thread_id", thread.id)
-        .eq("owner_user_id", ownerUserId)
-        .eq("role", "user");
-      if (updateMessageError) {
-        throw new Error(updateMessageError.message);
+      if (!editTarget.created_at) {
+        throw new Error("Chat message timestamp is missing.");
       }
-
-      const { error: deleteLaterMessagesError } = await supabase
-        .from("workspace_messages")
-        .delete()
-        .eq("thread_id", thread.id)
-        .eq("owner_user_id", ownerUserId)
-        .gt("created_at", editTarget.created_at);
-      if (deleteLaterMessagesError) {
-        throw new Error(deleteLaterMessagesError.message);
-      }
+      await chatRepository.editUserMessage({
+        ownerUserId,
+        threadId: thread.id,
+        messageId: editTarget.id,
+        content: currentMessage,
+        metadata: {
+          ...(editTarget.metadata && typeof editTarget.metadata === "object"
+            ? (editTarget.metadata as Record<string, unknown>)
+            : {}),
+          attachments: body.attachments ?? [],
+          selectedRunIds: body.selectedRunIds ?? [],
+          knowledgeScope,
+          scopeSnapshot: preliminaryScopeSnapshot,
+          editedAt: new Date().toISOString(),
+        },
+        createdAt: editTarget.created_at,
+      });
+      persistedUserMessage = { ...editTarget, content: currentMessage };
     } else {
-      await appendWorkspaceMessage(supabase, {
+      persistedUserMessage = await chatRepository.appendMessage({
         threadId: thread.id,
         ownerUserId,
-        folderId: body.folderId,
+        folderId: knowledgeScope.folderId,
         role: "user",
         content: currentMessage,
         messageKind: "chat",
         metadata: {
           attachments: body.attachments ?? [],
           selectedRunIds: body.selectedRunIds ?? [],
+          knowledgeScope,
+          scopeSnapshot: preliminaryScopeSnapshot,
+          requestId,
         },
       });
     }
@@ -3753,11 +3961,179 @@ async function normalChat(
   const chartRequested =
     requestedToolMode === "chart" ||
     Boolean(body.chartRequest);
+  const selectedModel = resolveChatModel(body.model);
+
+  const repositoryEligible =
+    Boolean(ownerUserId && chatRepository && thread) &&
+    (knowledgeChatV3Enabled || Boolean(body.projectId && body.projectId !== "all"));
+  if (repositoryEligible && ownerUserId && chatRepository && thread) {
+    const startedAt = Date.now();
+    try {
+      const repositoryResult = await runRepositoryChat({
+        ownerUserId,
+        threadId: thread.id,
+        projectId: knowledgeScope.projectId,
+        folderId: knowledgeScope.folderId,
+        selectedRunIds: knowledgeScope.runIds,
+        knowledgeScope,
+        allowWeb: requestedToolMode === "web_search" || Boolean(body.webSearchEnabled),
+        prompt: currentMessage,
+        model: selectedModel,
+        forceChart: chartRequested,
+        history: (body.messages ?? []).slice(-12),
+        jobCallbackBaseUrl: new URL(request.url).origin,
+      });
+      if (repositoryResult.handled) {
+        let repositoryAnswer = repositoryResult.answer;
+        const repositoryCharts = repositoryResult.charts as ChatChartPayload[];
+        const repositoryCitations = repositoryResult.citations as Citation[];
+        const toolResults: ChatToolResult[] = repositoryCharts.length > 0
+          ? [{ type: "chart", status: "succeeded", data: { charts: repositoryCharts } }]
+          : [];
+        const webSearchRequested = requestedToolMode === "web_search" || Boolean(body.webSearchEnabled);
+        if (webSearchRequested) {
+          try {
+            const webCompletion = await createChatCompletionResult(
+              [
+                {
+                  role: "system",
+                  content: buildPapertrendSystemPrompt("grounded_answer", [
+                    "Find concise, current external context that complements the supplied repository-grounded answer. Do not repeat or contradict repository evidence without clearly labeling the disagreement. Return only the web-context section and do not invent paper citations.",
+                  ]),
+                },
+                {
+                  role: "user",
+                  content: `Question: ${currentMessage}\n\nRepository-grounded answer:\n${repositoryAnswer}`,
+                },
+              ],
+              0.2,
+              selectedModel,
+              "CHAT_WEB_AUGMENT",
+              {
+                maxTokens: 1_200,
+                tools: [{ type: "openrouter:web_search", parameters: { max_results: 5, max_total_results: 8, search_context_size: "medium" } }],
+                toolChoice: "auto",
+              }
+            );
+            const webAnswer = webCompletion?.content?.trim();
+            const webCitations = extractWebCitations(webCompletion?.annotations ?? []);
+            if (webAnswer) repositoryAnswer = `${repositoryAnswer}\n\n## Web context\n\n${webAnswer}`;
+            repositoryCitations.push(...webCitations);
+            toolResults.push({ type: "web_search", status: webCitations.length > 0 ? "succeeded" : "skipped", citations: webCitations });
+          } catch (webError) {
+            toolResults.push({ type: "web_search", status: "failed", error: webError instanceof Error ? webError.message : "Web search failed." });
+          }
+        }
+        if (persistedUserMessage) {
+          await chatRepository.updateMessageMetadata(ownerUserId, thread.id, persistedUserMessage.id, {
+            ...(persistedUserMessage.metadata ?? {}),
+            attachments: body.attachments ?? [], selectedRunIds: knowledgeScope.runIds ?? [], knowledgeScope,
+            scopeSnapshot: repositoryResult.scopeSnapshot, requestId,
+          });
+        }
+        console.info("knowledge_chat_route", {
+          requestId,
+          stage: "completed",
+          latencyMs: Date.now() - startedAt,
+          ownerUserId,
+          scopeKind: repositoryResult.scopeSnapshot.kind,
+          projectId: repositoryResult.scopeSnapshot.projectId,
+          folderId: repositoryResult.scopeSnapshot.folderId,
+          eligiblePaperCount: repositoryResult.scopeSnapshot.eligiblePaperCount,
+          operation: repositoryResult.execution?.operation ?? repositoryResult.plan.intent,
+          retrievalRounds: repositoryResult.diagnostics.retrievalRounds ?? 0,
+          evidenceCount: repositoryResult.diagnostics.selectedEvidenceCount ?? 0,
+          groundingMode: webSearchRequested ? "repository_web" : repositoryResult.execution?.operation === "converse" ? "general" : "repository",
+        });
+        const metadata = {
+          mode: "grounded",
+          groundingMode: webSearchRequested ? "repository_web" : repositoryResult.execution?.operation === "converse" ? "general" : "repository",
+          scopeSnapshot: repositoryResult.scopeSnapshot,
+          requestId,
+          model: selectedModel,
+          toolResults,
+          chart: repositoryCharts[0] ?? null,
+          charts: repositoryCharts,
+          repositoryPlan: repositoryResult.plan,
+          repositoryExecution: repositoryResult.execution ?? null,
+          repositoryCoverage: repositoryResult.coverage ?? null,
+          repositoryLimitations: repositoryResult.limitations ?? [],
+          repositoryDiagnostics: repositoryResult.diagnostics,
+        };
+
+        await chatRepository.appendMessage({
+          threadId: thread.id,
+          ownerUserId,
+          folderId: knowledgeScope.folderId,
+          role: "assistant",
+          content: repositoryAnswer,
+          messageKind: "chat",
+          citations: repositoryCitations,
+          metadata,
+        });
+        await chatRepository.updateThread(ownerUserId, thread.id, {
+          summary: repositoryAnswer.slice(0, 240),
+          title: thread.title || buildThreadTitle(currentMessage),
+        });
+
+        const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
+        return NextResponse.json({
+          mode: "grounded",
+          groundingMode: metadata.groundingMode,
+          scopeSnapshot: repositoryResult.scopeSnapshot,
+          requestId,
+          answer: repositoryAnswer,
+          citations: repositoryCitations,
+          toolResults,
+          chart: repositoryCharts[0] ?? null,
+          charts: repositoryCharts,
+          execution: repositoryResult.execution ?? null,
+          coverage: repositoryResult.coverage ?? null,
+          limitations: repositoryResult.limitations ?? [],
+          jobId: repositoryResult.jobId ?? null,
+          thread: detail.thread,
+          messages: detail.messages,
+          deepResearchSession: detail.deepResearchSession,
+        });
+      }
+      if (knowledgeChatV3Enabled) {
+        throw new Error("Knowledge Chat V3 returned an unhandled scoped request.");
+      }
+    } catch (error) {
+      const failureMessage = error instanceof Error ? error.message : "Unknown repository chat error";
+      console.error("knowledge_chat_route", {
+        requestId,
+        stage: "repository_execution",
+        fallbackReason: "repository_error",
+        latencyMs: Date.now() - startedAt,
+        ownerUserId,
+        scopeKind: knowledgeScope.kind,
+        projectId: knowledgeScope.projectId ?? null,
+        folderId: knowledgeScope.folderId ?? null,
+        message: failureMessage,
+      });
+      const answer = `I could not access the selected Papertrend knowledge scope for this request. Your papers were not replaced with a generic answer. Please retry, or report request ID \`${requestId}\` if the problem continues.`;
+      await chatRepository.appendMessage({
+        threadId: thread.id, ownerUserId, folderId: knowledgeScope.folderId, role: "assistant", content: answer,
+        messageKind: "chat", citations: [], metadata: {
+          mode: "fallback", groundingMode: "repository_unavailable", requestId,
+          scopeSnapshot: preliminaryScopeSnapshot,
+          repositoryLimitations: [failureMessage], failureStage: "repository_execution",
+        },
+      });
+      const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
+      return NextResponse.json({
+        mode: "fallback", groundingMode: "repository_unavailable", answer, citations: [], toolResults: [],
+        scopeSnapshot: preliminaryScopeSnapshot, requestId, limitations: ["Repository knowledge was temporarily unavailable."],
+        thread: detail.thread, messages: detail.messages, deepResearchSession: detail.deepResearchSession,
+      });
+    }
+  }
 
   if (chartRequested) {
-    if (!ownerUserId || !supabase || !thread) {
+    if (!ownerUserId || !chatRepository || !thread) {
       return NextResponse.json(
-        { error: "Sign in to build charts from workspace data." },
+        { error: "Sign in to build charts from repository data." },
         { status: 401 }
       );
     }
@@ -3803,22 +4179,22 @@ async function normalChat(
       deferredAnalysis: deferred ?? null,
     };
 
-    await appendWorkspaceMessage(supabase, {
+    await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
-      folderId: body.folderId,
+      folderId: knowledgeScope.folderId,
       role: "assistant",
       content: answer,
       messageKind: "chat",
       citations: [],
       metadata,
     });
-    await updateWorkspaceThread(supabase, thread.id, {
+    await chatRepository.updateThread(ownerUserId, thread.id, {
       summary: answer.slice(0, 240),
       title: thread.title || buildThreadTitle(currentMessage),
     });
 
-    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+    const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
     return NextResponse.json({
       mode: charts.length > 0 ? "grounded" : deferred ? "analysis_queued" : "fallback",
       answer,
@@ -3835,7 +4211,6 @@ async function normalChat(
   const citations: Citation[] = [];
   let mode: "grounded" | "fallback" = "fallback";
   const generationOptions = resolveGenerationOptions(body);
-  const selectedModel = resolveChatModel(body.model);
   const webSearchRequested =
     requestedToolMode === "web_search" ||
     Boolean(body.webSearchEnabled) ||
@@ -3866,8 +4241,8 @@ async function normalChat(
     {
       role: "system",
       content:
-        "You are a helpful, general-purpose assistant. Respond conversationally and clearly. " +
-        "Do not assume access to workspace databases, filters, or paper corpora unless the user explicitly provides that context in the chat.",
+        "You are Papertrend, a research-paper knowledge assistant. Respond conversationally and clearly. " +
+        "When no authenticated repository scope is available, state that sign-in or scope selection is required for private paper evidence; never describe Papertrend as a generic local-files assistant.",
     },
   ];
 
@@ -3935,11 +4310,11 @@ async function normalChat(
     mode = "grounded";
   }
 
-  if (ownerUserId && supabase && thread) {
-    await appendWorkspaceMessage(supabase, {
+  if (ownerUserId && chatRepository && thread) {
+    await chatRepository.appendMessage({
       threadId: thread.id,
       ownerUserId,
-      folderId: body.folderId,
+      folderId: knowledgeScope.folderId,
       role: "assistant",
       content: answer,
       messageKind: "chat",
@@ -3951,12 +4326,12 @@ async function normalChat(
         webSearchEnabled: webSearchRequested,
       },
     });
-    await updateWorkspaceThread(supabase, thread.id, {
+    await chatRepository.updateThread(ownerUserId, thread.id, {
       summary: answer.slice(0, 240),
       title: thread.title || buildThreadTitle(currentMessage),
     });
 
-    const detail = await getWorkspaceThreadDetail(supabase, ownerUserId, thread.id);
+    const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
     return NextResponse.json({
       mode,
       answer,

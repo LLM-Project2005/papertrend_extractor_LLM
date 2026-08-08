@@ -48,6 +48,8 @@ export function getRunStageMessage(run: RunLike): string {
 
   const stage = readInputPayloadString(run, "progress_stage").toLowerCase();
   switch (stage) {
+    case "uploading":
+      return "Uploading file";
     case "queued":
       return "Queued for analysis";
     case "queued_waiting_for_worker":

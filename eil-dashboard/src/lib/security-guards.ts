@@ -5,7 +5,9 @@ import {
   getAiDailyMessageLimit,
   getLoginRateLimitAttempts,
   getLoginRateLimitWindowSeconds,
+  getDatabaseProvider,
 } from "@/lib/server-env";
+import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
 
 export class GuardError extends Error {
   status: number;
@@ -63,6 +65,27 @@ export async function assertLoginRateLimit(request: Request, email: string): Pro
   const ipHash = hashSubject(getClientIp(request));
   const subjectHash = hashSubject(`${email}:${ipHash}`);
   const since = new Date(Date.now() - windowSeconds * 1000).toISOString();
+  if (getDatabaseProvider() === "cloud-sql") {
+    try {
+      await withCloudSqlServiceTransaction(async (client) => {
+        const result = await client.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM public.security_rate_limit_events
+           WHERE bucket='password_auth' AND subject_hash=$1 AND created_at >= $2`, [subjectHash, since]
+        );
+        const blocked = Number(result.rows[0]?.count ?? 0) >= limit;
+        await client.query(
+          `INSERT INTO public.security_rate_limit_events(bucket,subject_hash,ip_hash,action,allowed)
+           VALUES('password_auth',$1,$2,$3,$4)`, [subjectHash, ipHash, blocked ? "blocked" : "attempt", !blocked]
+        );
+        if (blocked) throw new GuardError("Too many login attempts. Please wait and try again.", 429);
+      });
+      return;
+    } catch (error) {
+      if (error instanceof GuardError) throw error;
+      console.warn("[security] Cloud SQL login rate limit unavailable; allowing request", { message: error instanceof Error ? error.message : "unknown_error" });
+      return;
+    }
+  }
   const supabase = getSupabaseAdmin();
 
   try {
@@ -117,6 +140,28 @@ export async function assertAndRecordAiUsage(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const since = today.toISOString();
+  if (getDatabaseProvider() === "cloud-sql") {
+    try {
+      await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+        const result = await client.query<{ count: string }>(
+          `SELECT count(*)::text AS count FROM public.ai_usage_events
+           WHERE owner_user_id=$1 AND usage_kind=$2 AND created_at >= $3`, [ownerUserId, kind, since]
+        );
+        if (Number(result.rows[0]?.count ?? 0) >= limit) {
+          throw new GuardError("Daily AI usage limit reached. Please try again tomorrow.", 429);
+        }
+        await client.query(
+          `INSERT INTO public.ai_usage_events(owner_user_id,usage_kind,units,metadata)
+           VALUES($1,$2,1,$3)`, [ownerUserId, kind, metadata ?? {}]
+        );
+      });
+      return;
+    } catch (error) {
+      if (error instanceof GuardError) throw error;
+      console.warn("[security] Cloud SQL AI usage guard unavailable; allowing request", { kind, message: error instanceof Error ? error.message : "unknown_error" });
+      return;
+    }
+  }
   const supabase = getSupabaseAdmin();
 
   try {

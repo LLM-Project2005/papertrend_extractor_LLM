@@ -2,11 +2,21 @@
   "name": "eil-dashboard",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "auth:parity": "tsx scripts/auth-parity-smoke.ts",
+    "test:repository-chat": "tsx --test --test-force-exit tests/*.test.ts",
+    "test:repository-chat:live": "tsx scripts/repository-chat-live-eval.ts",
+    "test:repository-chat:v2-planner-live": "tsx scripts/repository-chat-v2-planner-live.ts",
+    "test:repository-chat:cloudsql": "tsx scripts/repository-chat-cloudsql-live.ts",
+    "repository-memory:backfill": "tsx scripts/backfill-repository-memory.ts",
+    "repository-memory:verify": "tsx scripts/verify-repository-memory.ts",
     "import-csv": "npx tsx scripts/import-csv.ts",
     "sync-supabase": "npx tsx scripts/import-csv.ts",
     "worker:queue": "python worker/process_ingestion_queue.py",
@@ -15,9 +25,14 @@
     "worker:research:once": "python worker/process_research_queue.py --once"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.21.0",
     "@supabase/supabase-js": "^2.43.0",
+    "@types/pg": "^8.20.0",
+    "firebase": "^12.16.0",
+    "firebase-admin": "13.9.0",
     "framer-motion": "^12.40.0",
     "next": "^14.2.0",
+    "pg": "^8.22.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "recharts": "^2.12.0",

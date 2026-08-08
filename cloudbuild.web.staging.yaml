@@ -1,0 +1,62 @@
+# Phase 5 staging deployment for the Next.js web/API service.
+# Vercel remains the rollback and production frontend while this service is
+# validated directly through its Cloud Run URL.
+
+steps:
+  - id: deploy-web-source
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --source
+      - eil-dashboard
+      - --project
+      - ${PROJECT_ID}
+      - --region
+      - ${_REGION}
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --memory
+      - 1Gi
+      - --cpu
+      - "1"
+      - --timeout
+      - "300"
+      - --concurrency
+      - "20"
+      - --min-instances
+      - "0"
+      - --max-instances
+      - "2"
+      - --ingress
+      - all
+      - --service-account
+      - ${_RUNTIME_SERVICE_ACCOUNT}
+      - --set-build-env-vars
+      - NEXT_PUBLIC_AUTH_PROVIDER=${_NEXT_PUBLIC_AUTH_PROVIDER},NEXT_PUBLIC_FIREBASE_API_KEY=${_NEXT_PUBLIC_FIREBASE_API_KEY},NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN},NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_NEXT_PUBLIC_FIREBASE_PROJECT_ID},NEXT_PUBLIC_FIREBASE_APP_ID=${_NEXT_PUBLIC_FIREBASE_APP_ID},NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL},NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      - --set-env-vars
+      - AUTH_PROVIDER=firebase,DATABASE_PROVIDER=supabase,STORAGE_PROVIDER=gcs,GOOGLE_CLOUD_PROJECT_ID=${PROJECT_ID},GOOGLE_CLOUD_REGION=${_REGION},GCS_UPLOAD_BUCKET=${_GCS_UPLOAD_BUCKET},WORKER_SERVICE_URL=${_WORKER_SERVICE_URL},FIREBASE_CHECK_REVOKED=true,APP_ALLOWED_ORIGINS=${_APP_ALLOWED_ORIGINS}
+      - --set-secrets
+      - SUPABASE_URL=SUPABASE_URL:latest,NEXT_PUBLIC_SUPABASE_URL=SUPABASE_URL:latest,SUPABASE_SERVICE_ROLE_KEY=SUPABASE_SERVICE_ROLE_KEY:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,FIREBASE_PROJECT_ID=FIREBASE_PROJECT_ID:latest,FIREBASE_CLIENT_EMAIL=FIREBASE_CLIENT_EMAIL:latest,FIREBASE_PRIVATE_KEY=FIREBASE_PRIVATE_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest
+
+substitutions:
+  _REGION: asia-southeast1
+  _SERVICE_NAME: papertrend-web-staging
+  _RUNTIME_SERVICE_ACCOUNT: papertrend-app-runtime@${PROJECT_ID}.iam.gserviceaccount.com
+  _GCS_UPLOAD_BUCKET: research-trend-analysis-papertrend-uploads-staging
+  _WORKER_SERVICE_URL: https://papertrend-node-service-staging-899665963783.asia-southeast1.run.app
+  _APP_ALLOWED_ORIGINS: https://papertrend-extractor-llm-git-test-pchantarusorn-9175s-projects.vercel.app
+  _NEXT_PUBLIC_AUTH_PROVIDER: firebase
+  _NEXT_PUBLIC_FIREBASE_API_KEY: set-in-cloud-build-trigger
+  _NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: set-in-cloud-build-trigger
+  _NEXT_PUBLIC_FIREBASE_PROJECT_ID: set-in-cloud-build-trigger
+  _NEXT_PUBLIC_FIREBASE_APP_ID: set-in-cloud-build-trigger
+  _NEXT_PUBLIC_SUPABASE_URL: set-in-cloud-build-trigger
+  _NEXT_PUBLIC_SUPABASE_ANON_KEY: set-in-cloud-build-trigger
+
+options:
+  dynamicSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY

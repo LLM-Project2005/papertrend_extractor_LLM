@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { isAuthorizedAdminRequest } from "@/lib/admin-auth";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { triggerWorkerQueue } from "@/lib/worker-trigger";
+import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 
 export const runtime = "nodejs";
 
@@ -59,6 +61,16 @@ export async function POST(request: Request) {
     const staleBeforeIso = new Date(Date.now() - staleMinutes * 60_000).toISOString();
     const orphanBeforeIso = new Date(Date.now() - orphanJobMinutes * 60_000).toISOString();
     const nowIso = new Date().toISOString();
+
+    if (getDatabaseProvider() === "cloud-sql") {
+      const recovery = await cloudSqlAnalysisJobRepository.recoverAll({
+        staleBefore: staleBeforeIso,
+        orphanBefore: orphanBeforeIso,
+        maxRows,
+      });
+      const trigger = await triggerWorkerQueue({ maxRuns: triggerMaxRuns, reason: "admin-manual-queue-recover" });
+      return NextResponse.json({ ok: true, staleMinutes, orphanJobMinutes, ...recovery, workerTrigger: trigger });
+    }
 
     const supabase = getSupabaseAdmin();
 

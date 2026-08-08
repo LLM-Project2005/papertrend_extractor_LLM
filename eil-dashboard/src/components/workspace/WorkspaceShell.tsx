@@ -46,17 +46,16 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     id: "overview",
     label: "Overview",
     items: [
-      { href: "/workspace/home", label: "Project Overview", icon: HomeIcon },
+      { href: "/workspace/home", label: "Repository Overview", icon: HomeIcon },
       { href: "/workspace/dashboard", label: "Dashboard", icon: ChartIcon },
     ],
   },
   {
-    id: "workspace",
-    label: "Workspace",
+    id: "project",
+    label: "Repository",
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
       { href: "/workspace/library", label: "Library", icon: FolderIcon },
-      { href: "/workspace/logs", label: "History", icon: FileIcon },
     ],
   },
   {
@@ -68,21 +67,21 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
 
 const SEARCH_PAGE_ITEMS = [
   {
-    id: "workspaces",
-    label: "Workspaces",
-    description: "Return to the workspace/project picker",
+    id: "projects",
+    label: "Repositories",
+    description: "Switch between research repositories",
     href: "/workspaces",
     icon: HomeIcon,
-    keywords: ["switch project", "project picker", "workspaces", "organizations", "home", "start"],
+    keywords: ["switch repository", "repository picker", "project picker", "projects", "home", "start"],
     featured: true,
   },
   {
     id: "project-overview",
-    label: "Project Overview",
-    description: "Open the project home and status view",
+    label: "Repository Overview",
+    description: "Open the repository home and status view",
     href: "/workspace/home",
     icon: HomeIcon,
-    keywords: ["overview", "home", "project", "activity", "status", "recent papers"],
+    keywords: ["overview", "home", "repository", "project", "activity", "status", "recent papers"],
     featured: true,
   },
   {
@@ -113,21 +112,12 @@ const SEARCH_PAGE_ITEMS = [
     featured: true,
   },
   {
-    id: "logs",
-    label: "Analysis History",
-    description: "Browse previous analysis runs and revisit files",
-    href: "/workspace/logs",
-    icon: FileIcon,
-    keywords: ["history", "analysis", "jobs", "processing", "queue", "run logs"],
-    featured: true,
-  },
-  {
     id: "settings",
     label: "Settings",
-    description: "Adjust workspace preferences and identity",
+    description: "Adjust repository preferences and identity",
     href: "/workspace/settings",
     icon: SettingsIcon,
-    keywords: ["preferences", "configuration", "configure workspace", "workspace settings"],
+    keywords: ["preferences", "configuration", "repository settings", "project settings", "settings"],
   },
   {
     id: "profile",
@@ -142,11 +132,9 @@ const SEARCH_PAGE_ITEMS = [
 const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 
 function WorkspaceBreadcrumb({
-  organizationName,
   projectName,
   onNavigate,
 }: {
-  organizationName: string;
   projectName: string;
   onNavigate?: (href: string) => void;
 }) {
@@ -159,11 +147,11 @@ function WorkspaceBreadcrumb({
           prefetch={false}
           className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
-          {organizationName || "Workspaces"}
+          Repositories
         </Link>
         <span className="text-slate-300 dark:text-[#4f4f4f]">&gt;</span>
         <span className="truncate text-slate-500 dark:text-[#9b9b9b]">
-          {projectName || "Select project"}
+          {projectName || "Select repository"}
         </span>
       </div>
     </div>
@@ -224,13 +212,11 @@ function DesktopSidebar({
 
 function MobileSidebar({
   pathname,
-  organizationName,
   projectName,
   onClose,
   onNavigate,
 }: {
   pathname: string;
-  organizationName: string;
   projectName: string;
   onClose: () => void;
   onNavigate: (href: string) => void;
@@ -244,7 +230,6 @@ function MobileSidebar({
               <LogoMarkIcon className="h-7 w-7" />
             </span>
             <WorkspaceBreadcrumb
-              organizationName={organizationName}
               projectName={projectName}
             />
           </div>
@@ -308,7 +293,6 @@ export default function WorkspaceShell({
   const router = useRouter();
   const { hydrated: authHydrated, user } = useAuth();
   const {
-    currentOrganization,
     currentProject,
     hasActiveProject,
     workspaceLoading,
@@ -507,7 +491,6 @@ export default function WorkspaceShell({
             </Link>
 
             <WorkspaceBreadcrumb
-              organizationName={currentOrganization?.name ?? ""}
               projectName={currentProject?.name ?? ""}
               onNavigate={handleNavigate}
             />
@@ -542,7 +525,6 @@ export default function WorkspaceShell({
         <div className="fixed inset-0 z-50 bg-black/45 lg:hidden">
           <MobileSidebar
             pathname={pathname}
-            organizationName={currentOrganization?.name ?? ""}
             projectName={currentProject?.name ?? ""}
             onClose={() => setSidebarOpen(false)}
             onNavigate={handleNavigate}
@@ -559,19 +541,19 @@ export default function WorkspaceShell({
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
               <div className="w-full rounded-[28px] border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-                <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Workspace setup</p>
+                <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Repository setup</p>
                 <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">
-                  Select a project to open the workspace
+                  Select a repository to continue
                 </h1>
                 <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
-                  Projects sit inside workspaces. Pick one to continue into the
-                  overview, dashboard, chat, library, and analysis history.
+                  Choose a repository to open its overview, dashboard, chat, library,
+                  folders, and paper details.
                 </p>
                 <Link
                   href="/workspaces"
                   className="mt-8 inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
                 >
-                  Open workspaces
+                  Open repositories
                 </Link>
               </div>
             </div>

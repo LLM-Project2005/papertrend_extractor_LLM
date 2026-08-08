@@ -79,6 +79,51 @@ CREATE TABLE IF NOT EXISTS user_profiles (
 );
 
 -- ------------------------------------------------------------------
+-- 1e. Provider-neutral identity mappings (server-only transition table)
+-- ------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS auth_identity_mappings (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id     UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  provider          TEXT NOT NULL CHECK (provider IN ('supabase', 'firebase')),
+  external_subject  TEXT NOT NULL,
+  email             TEXT,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (provider, external_subject),
+  UNIQUE (provider, owner_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_identity_mappings_owner
+  ON auth_identity_mappings(owner_user_id);
+
+CREATE INDEX IF NOT EXISTS idx_auth_identity_mappings_provider_subject
+  ON auth_identity_mappings(provider, external_subject);
+
+ALTER TABLE auth_identity_mappings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE auth_identity_mappings FORCE ROW LEVEL SECURITY;
+
+CREATE OR REPLACE FUNCTION public.prevent_auth_identity_mapping_key_change()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id
+     OR OLD.provider IS DISTINCT FROM NEW.provider
+     OR OLD.external_subject IS DISTINCT FROM NEW.external_subject THEN
+    RAISE EXCEPTION 'auth identity mapping keys are immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS auth_identity_mapping_key_guard
+  ON public.auth_identity_mappings;
+CREATE TRIGGER auth_identity_mapping_key_guard
+BEFORE UPDATE ON public.auth_identity_mappings
+FOR EACH ROW
+EXECUTE FUNCTION public.prevent_auth_identity_mapping_key_change();
+
+-- ------------------------------------------------------------------
 -- 1d. Google Drive Connections
 -- ------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS google_drive_connections (
@@ -225,6 +270,21 @@ ALTER TABLE paper_content
   ADD COLUMN IF NOT EXISTS source_filename TEXT,
   ADD COLUMN IF NOT EXISTS source_path TEXT,
   ADD COLUMN IF NOT EXISTS ingestion_run_id UUID REFERENCES ingestion_runs(id);
+
+CREATE TABLE IF NOT EXISTS paper_term_index (
+  paper_id BIGINT PRIMARY KEY REFERENCES papers(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES research_folders(id) ON DELETE SET NULL,
+  ingestion_run_id UUID REFERENCES ingestion_runs(id) ON DELETE SET NULL,
+  content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+  total_words INT NOT NULL DEFAULT 0 CHECK (total_words >= 0),
+  term_counts JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_term_index_owner_run
+  ON paper_term_index(owner_user_id, ingestion_run_id);
 
 -- ------------------------------------------------------------------
 -- 7. Canonical keyword concepts
@@ -630,6 +690,7 @@ ALTER TABLE paper_keywords ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_single ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_tracks_multi ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_content ENABLE ROW LEVEL SECURITY;
+ALTER TABLE paper_term_index ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ingestion_runs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE folder_analysis_jobs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE paper_keyword_concepts ENABLE ROW LEVEL SECURITY;
@@ -646,6 +707,7 @@ DROP POLICY IF EXISTS "anon_read" ON paper_keywords;
 DROP POLICY IF EXISTS "anon_read" ON paper_tracks_single;
 DROP POLICY IF EXISTS "anon_read" ON paper_tracks_multi;
 DROP POLICY IF EXISTS "anon_read" ON paper_content;
+DROP POLICY IF EXISTS "anon_read" ON paper_term_index;
 DROP POLICY IF EXISTS "anon_read" ON paper_keyword_concepts;
 DROP POLICY IF EXISTS "anon_read" ON paper_analysis_facets;
 DROP POLICY IF EXISTS "anon_read" ON paper_author_keywords;
@@ -654,6 +716,15 @@ DROP POLICY IF EXISTS "anon_read" ON paper_research_typologies;
 DO $$
 BEGIN
   CREATE POLICY "papers_select_own" ON papers
+  FOR SELECT USING (auth.uid() = owner_user_id);
+EXCEPTION
+  WHEN duplicate_object THEN
+    NULL;
+END $$;
+
+DO $$
+BEGIN
+  CREATE POLICY "paper_term_index_select_own" ON paper_term_index
   FOR SELECT USING (auth.uid() = owner_user_id);
 EXCEPTION
   WHEN duplicate_object THEN

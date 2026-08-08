@@ -14,17 +14,17 @@ const SETTINGS_SECTIONS = [
   {
     id: "general",
     label: "General",
-    description: "Workspace name, domain, and identity.",
+    description: "Repository name, domain, and identity.",
   },
   {
-    id: "workspace",
-    label: "Workspace",
+    id: "project",
+    label: "Repository",
     description: "Goal, intake source, and output defaults.",
   },
   {
     id: "access",
     label: "Access",
-    description: "Account and synced workspace state.",
+    description: "Account and synced repository state.",
   },
 ] as const;
 
@@ -36,7 +36,7 @@ export default function WorkspaceSettingsClient() {
   const [activeSection, setActiveSection] = useState<SectionId>("general");
   const [message, setMessage] = useState<string | null>(null);
 
-  function setSavedMessage(nextMessage = "Workspace preferences updated.") {
+    function setSavedMessage(nextMessage = "Repository preferences updated.") {
     setMessage(nextMessage);
   }
 
@@ -123,10 +123,10 @@ export default function WorkspaceSettingsClient() {
             <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-3xl font-semibold tracking-normal text-slate-950 dark:text-[#ececec]">
-                  Project settings
+                  Repository settings
                 </h2>
                 <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                  General configuration, naming, and workspace framing.
+                  General configuration, naming, and repository framing.
                 </p>
               </div>
 
@@ -134,10 +134,10 @@ export default function WorkspaceSettingsClient() {
                 <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Workspace name
+                      Repository profile name
                     </p>
                     <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Displayed across the workspace shell.
+                      Displayed across the repository shell.
                     </p>
                   </div>
                   <input
@@ -153,29 +153,10 @@ export default function WorkspaceSettingsClient() {
                 <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Organization
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Faculty, lab, department, or research team name.
-                    </p>
-                  </div>
-                  <input
-                    value={profile.organization}
-                    onChange={(event) => {
-                      updateProfile({ organization: event.target.value });
-                      setSavedMessage();
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                  />
-                </label>
-
-                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
                       Research domain
                     </p>
                     <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Used in the landing, workspace, and chat framing.
+                      Used in the landing, repository, and chat framing.
                     </p>
                   </div>
                   <input
@@ -194,7 +175,7 @@ export default function WorkspaceSettingsClient() {
               <div className="flex items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <h3 className="text-xl font-semibold text-slate-950 dark:text-[#ececec]">
-                    Workspace state
+                    Repository state
                   </h3>
                   <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
                     Changes persist locally for guests and sync to Supabase for signed-in users.
@@ -204,26 +185,26 @@ export default function WorkspaceSettingsClient() {
                   type="button"
                   onClick={() => {
                     resetProfile();
-                    setSavedMessage("Workspace preferences reset to defaults.");
+                    setSavedMessage("Repository preferences reset to defaults.");
                   }}
                   className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                 >
-                  Reset workspace
+                  Reset repository
                 </button>
               </div>
             </section>
           </>
         ) : null}
 
-        {activeSection === "workspace" ? (
+        {activeSection === "project" ? (
           <>
             <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
-                  Workspace focus
+                  Repository focus
                 </h2>
                 <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                  Set the default analysis mode this workspace should optimize for.
+                  Set the default analysis mode this repository should optimize for.
                 </p>
               </div>
               <div className="grid gap-3 px-6 py-5">
@@ -304,7 +285,7 @@ export default function WorkspaceSettingsClient() {
                   Output defaults
                 </h2>
                 <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                  Highlight the experiences this workspace should prioritize.
+                  Highlight the experiences this repository should prioritize.
                 </p>
               </div>
               <div className="grid gap-3 px-6 py-5 md:grid-cols-2">
@@ -340,10 +321,10 @@ export default function WorkspaceSettingsClient() {
             <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
-                  Project access
+                  Repository access
                 </h2>
                 <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                  Who this workspace belongs to and how the profile is being remembered.
+                  Who this repository belongs to and how the profile is being remembered.
                 </p>
               </div>
 
@@ -354,7 +335,7 @@ export default function WorkspaceSettingsClient() {
                       Session owner
                     </p>
                     <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Active account linked to this workspace.
+                      Active account linked to this repository.
                     </p>
                   </div>
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">

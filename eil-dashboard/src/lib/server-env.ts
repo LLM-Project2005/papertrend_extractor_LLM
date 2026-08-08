@@ -2,6 +2,10 @@ export function getSupabaseUrl(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_URL ?? process.env.SUPABASE_URL ?? "";
 }
 
+function normalizeConfiguredValue(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^['"]|['"]$/g, "");
+}
+
 export function getSupabaseServiceRoleKey(): string {
   return (
     process.env.SUPABASE_SERVICE_ROLE_KEY ??
@@ -12,6 +16,93 @@ export function getSupabaseServiceRoleKey(): string {
 
 export function getSupabaseAnonKey(): string {
   return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_ANON_KEY ?? "";
+}
+
+export type AuthProvider = "supabase" | "firebase";
+
+export function getAuthProvider(): AuthProvider {
+  // Keep the server switch authoritative, but allow Preview deployments that
+  // only set the matching public switch to avoid silently verifying a Firebase
+  // token with the Supabase adapter.
+  const provider = (
+    process.env.AUTH_PROVIDER ??
+    process.env.NEXT_PUBLIC_AUTH_PROVIDER ??
+    "supabase"
+  ).trim().replace(/^['"]|['"]$/g, "").toLowerCase();
+  if (provider === "supabase" || provider === "") {
+    return "supabase";
+  }
+  if (provider === "firebase" || provider === "identity-platform") {
+    return "firebase";
+  }
+  throw new Error("Unsupported AUTH_PROVIDER configuration.");
+}
+
+export function getFirebaseProjectId(): string {
+  return normalizeConfiguredValue(process.env.FIREBASE_PROJECT_ID);
+}
+
+export function getFirebaseClientEmail(): string {
+  return normalizeConfiguredValue(process.env.FIREBASE_CLIENT_EMAIL);
+}
+
+export function getFirebasePrivateKey(): string {
+  return process.env.FIREBASE_PRIVATE_KEY ?? "";
+}
+
+export function getFirebaseCheckRevoked(): boolean {
+  const configured = process.env.FIREBASE_CHECK_REVOKED;
+  if (configured === undefined) {
+    return getAuthProvider() === "firebase";
+  }
+  return normalizeConfiguredValue(configured).toLowerCase() === "true";
+}
+
+export function getFirebaseAutoProvisionVerifiedUsers(): boolean {
+  return normalizeConfiguredValue(
+    process.env.FIREBASE_AUTO_PROVISION_VERIFIED_USERS
+  ).toLowerCase() === "true";
+}
+
+export type DatabaseProvider = "supabase" | "cloud-sql";
+export type StorageProvider = "supabase" | "gcs";
+
+function normalizeProvider(value: string | undefined): string {
+  return (value ?? "").trim().toLowerCase().replace(/_/g, "-");
+}
+
+export function getDatabaseProvider(): DatabaseProvider {
+  const provider = normalizeProvider(
+    process.env.DATABASE_PROVIDER ?? process.env.INFRA_PROVIDER
+  );
+  return provider === "cloud-sql" || provider === "google" ? "cloud-sql" : "supabase";
+}
+
+export function getStorageProvider(): StorageProvider {
+  const provider = normalizeProvider(
+    process.env.STORAGE_PROVIDER ?? process.env.INFRA_PROVIDER
+  );
+  return provider === "gcs" || provider === "google" ? "gcs" : "supabase";
+}
+
+export function getGoogleCloudProjectId(): string {
+  return process.env.GOOGLE_CLOUD_PROJECT_ID ?? process.env.GCLOUD_PROJECT ?? "";
+}
+
+export function getGoogleCloudRegion(): string {
+  return process.env.GOOGLE_CLOUD_REGION ?? "asia-southeast1";
+}
+
+export function getGcsUploadBucket(): string {
+  return process.env.GCS_UPLOAD_BUCKET ?? "";
+}
+
+export function getCloudSqlInstanceConnectionName(): string {
+  return process.env.CLOUD_SQL_INSTANCE_CONNECTION_NAME ?? "";
+}
+
+export function getDatabaseUrl(): string {
+  return process.env.DATABASE_URL ?? "";
 }
 
 export function getAdminImportSecret(): string {
@@ -45,6 +136,18 @@ export function getOpenAIConfig(taskName?: string): {
       ""
     ),
     model: taskModel ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+  };
+}
+
+export function getRepositoryEmbeddingConfig(): {
+  model: string;
+  dimensions: number;
+  batchSize: number;
+} {
+  return {
+    model: process.env.REPOSITORY_EMBEDDING_MODEL ?? "openai/text-embedding-3-small",
+    dimensions: parseBoundedIntEnv("REPOSITORY_EMBEDDING_DIMENSIONS", 1536, 128, 4096),
+    batchSize: parseBoundedIntEnv("REPOSITORY_EMBEDDING_BATCH_SIZE", 24, 1, 100),
   };
 }
 

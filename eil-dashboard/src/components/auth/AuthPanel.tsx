@@ -38,6 +38,7 @@ export default function AuthPanel({
     signUpWithPassword,
     resetPassword,
     signOut,
+    authError,
   } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export default function AuthPanel({
       "Signed in"
     );
   }, [profile?.full_name, user?.email, user?.user_metadata]);
+  const visibleError = error ?? authError;
 
   async function handleProviderSignIn(
     provider: (typeof OAUTH_OPTIONS)[number]["provider"]
@@ -162,9 +164,9 @@ export default function AuthPanel({
           Sign out
         </button>
 
-        {error ? (
+        {visibleError ? (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-            {error}
+            {visibleError}
           </div>
         ) : null}
       </section>
@@ -284,9 +286,9 @@ export default function AuthPanel({
         </div>
       </form>
 
-      {error ? (
+      {visibleError ? (
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-          {error}
+          {visibleError}
         </div>
       ) : null}
       {notice ? (
