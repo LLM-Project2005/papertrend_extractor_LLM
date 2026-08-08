@@ -102,7 +102,7 @@ export default function ProjectIndexClient() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
+    <main className="papertrend-product min-h-screen bg-papertrend-canvas text-papertrend-ink">
       <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
         <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-4">
           <Link

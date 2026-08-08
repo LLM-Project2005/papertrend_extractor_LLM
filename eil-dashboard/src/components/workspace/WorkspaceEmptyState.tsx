@@ -13,30 +13,30 @@ export default function WorkspaceEmptyState({
   description: string;
 }) {
   return (
-    <section className="app-surface mx-auto max-w-4xl px-6 py-8 text-center sm:px-8">
-      <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#c7c7c7]">
+    <section className="mx-auto max-w-3xl border-y border-papertrend-line px-6 py-12 text-center sm:px-8">
+      <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-md border border-papertrend-line bg-papertrend-raised text-papertrend-action">
         <UploadIcon className="h-6 w-6" />
       </span>
-      <p className="mt-4 text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
+      <p className="papertrend-kicker mt-5">
         {eyebrow}
       </p>
-      <h1 className="mt-2 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
+      <h1 className="papertrend-page-title mt-3">
         {title}
       </h1>
-      <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
+      <p className="mx-auto mt-3 max-w-2xl text-sm leading-7 text-papertrend-muted">
         {description}
       </p>
       <div className="mt-6 flex justify-center gap-3">
         <Link
           href="/workspace/home?analyze=1"
-          className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
+          className="inline-flex min-h-11 items-center gap-2 rounded-md bg-papertrend-action px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--pt-action-hover)]"
         >
           <span>Analyze documents</span>
           <ArrowRightIcon className="h-4 w-4" />
         </Link>
         <Link
           href="/workspace/imports"
-          className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+          className="inline-flex min-h-11 items-center rounded-md border border-papertrend-line bg-papertrend-surface px-4 py-2.5 text-sm font-semibold text-papertrend-muted transition-colors hover:border-[var(--pt-line-strong)] hover:text-papertrend-ink"
         >
           Open imports
         </Link>

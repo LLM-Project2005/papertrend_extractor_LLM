@@ -1,0 +1,17 @@
+{
+  "brief": "Redesign all Papertrend public and workspace surfaces without changing product behavior or brand identity.",
+  "genre": "editorial research workspace",
+  "theme": "Papertrend evidence blue",
+  "macrostructure": "asymmetric editorial landing with operational product surfaces",
+  "nav": "compact fixed marketing bar and persistent workspace rail",
+  "footer": "quiet reference directory",
+  "motion": "restrained staged reveals and fast control transitions",
+  "constraints": [
+    "preserve routes and functionality",
+    "maximum standard radius 8px",
+    "local fonts only",
+    "light and dark themes",
+    "responsive from 320px",
+    "no fabricated metrics"
+  ]
+}

@@ -245,16 +245,13 @@ export function DocsArticle({ page }: { page: DocsPage }) {
 export function DocsHome() {
   return (
     <div className="mx-auto max-w-7xl px-4 pb-20 pt-28 sm:px-6">
-      <section className="relative overflow-hidden rounded-lg border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505] sm:p-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(0,124,240,0.12),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,0,128,0.10),transparent_32%)]" />
-        <div className="relative max-w-3xl">
-          <p className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 font-mono text-xs text-slate-500 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f]">
-            PAPERTREND DOCS
-          </p>
-          <h1 className="mt-6 text-4xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-6xl">
+      <section className="border-b border-papertrend-line pb-10 pt-4 sm:pb-14">
+        <div className="max-w-3xl">
+          <p className="papertrend-kicker">Papertrend docs</p>
+          <h1 className="mt-5 font-serif text-4xl font-semibold leading-tight text-papertrend-ink sm:text-6xl">
             Learn, operate, and trust your research workspace.
           </h1>
-          <p className="mt-6 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
+          <p className="mt-6 text-base leading-8 text-papertrend-muted">
             Detailed product documentation for uploads, analysis, dashboards, AI chat,
             deep research, cloud queue behavior, evaluation, and troubleshooting.
           </p>

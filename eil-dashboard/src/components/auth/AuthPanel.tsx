@@ -80,8 +80,8 @@ export default function AuthPanel({
 
   if (!hydrated) {
     return (
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
-        <p className="text-sm text-slate-500 dark:text-[#9b9b9b]">Loading sign-in...</p>
+      <section className="rounded-lg border border-papertrend-line bg-papertrend-surface p-6 shadow-panel">
+        <p className="text-sm text-papertrend-muted">Loading sign-in...</p>
       </section>
     );
   }
@@ -126,9 +126,9 @@ export default function AuthPanel({
 
   if (user) {
     return (
-      <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <section className="rounded-lg border border-papertrend-line bg-papertrend-surface p-6 shadow-sm">
         <div className="flex items-start gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#d6d6d6]">
+          <span className="flex h-11 w-11 items-center justify-center rounded-md bg-papertrend-raised text-papertrend-muted">
             <UserIcon className="h-5 w-5" />
           </span>
           <div className="min-w-0">
@@ -165,7 +165,7 @@ export default function AuthPanel({
         </button>
 
         {visibleError ? (
-          <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+          <div className="mt-4 rounded-md border border-[var(--pt-danger)] bg-[var(--pt-danger-soft)] px-4 py-3 text-sm text-[var(--pt-danger)]" role="alert">
             {visibleError}
           </div>
         ) : null}
@@ -174,11 +174,11 @@ export default function AuthPanel({
   }
 
   return (
-    <section className="rounded-[28px] border border-slate-200 bg-white p-6 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+    <section className="rounded-lg border border-papertrend-line bg-papertrend-surface p-6 shadow-panel sm:p-7">
       <div className="mb-6">
-        <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">{eyebrow}</p>
-        <h2 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#9b9b9b]">{description}</p>
+        <p className="papertrend-kicker">{eyebrow}</p>
+        <h2 className="mt-3 font-serif text-3xl font-semibold text-papertrend-ink">{title}</h2>
+        <p className="mt-3 text-sm leading-6 text-papertrend-muted">{description}</p>
       </div>
 
       <div className="grid gap-3">
@@ -190,7 +190,7 @@ export default function AuthPanel({
               type="button"
               onClick={() => handleProviderSignIn(option.provider)}
               disabled={busy}
-              className="inline-flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex min-h-11 items-center justify-between rounded-md border border-papertrend-line bg-papertrend-surface px-4 py-3 text-sm font-medium text-papertrend-ink transition-colors hover:border-[var(--pt-line-strong)] hover:bg-papertrend-raised disabled:cursor-not-allowed disabled:opacity-60"
             >
               <span className="inline-flex items-center gap-3">
                 <Icon className="h-4 w-4" />
@@ -217,7 +217,7 @@ export default function AuthPanel({
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
               maxLength={120}
-              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+              className="w-full rounded-md border border-papertrend-line bg-papertrend-surface px-4 py-3 text-sm text-papertrend-ink outline-none transition-colors placeholder:text-papertrend-muted focus:border-papertrend-action"
               placeholder="Your name"
             />
           </label>
@@ -233,7 +233,7 @@ export default function AuthPanel({
             onChange={(event) => setEmail(event.target.value)}
             autoComplete="email"
             required
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+            className="w-full rounded-md border border-papertrend-line bg-papertrend-surface px-4 py-3 text-sm text-papertrend-ink outline-none transition-colors placeholder:text-papertrend-muted focus:border-papertrend-action"
             placeholder="you@example.com"
           />
         </label>
@@ -250,7 +250,7 @@ export default function AuthPanel({
             minLength={8}
             maxLength={256}
             required
-            className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+            className="w-full rounded-md border border-papertrend-line bg-papertrend-surface px-4 py-3 text-sm text-papertrend-ink outline-none transition-colors placeholder:text-papertrend-muted focus:border-papertrend-action"
             placeholder="At least 8 characters"
           />
         </label>
@@ -258,7 +258,7 @@ export default function AuthPanel({
         <button
           type="submit"
           disabled={busy}
-          className="inline-flex w-full items-center justify-center rounded-2xl bg-slate-950 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
+          className="inline-flex min-h-11 w-full items-center justify-center rounded-md bg-papertrend-action px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[var(--pt-action-hover)] disabled:cursor-not-allowed disabled:opacity-60"
         >
           {passwordMode === "signup" ? "Create account" : "Sign in with password"}
         </button>
@@ -287,12 +287,12 @@ export default function AuthPanel({
       </form>
 
       {visibleError ? (
-        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        <div className="mt-4 rounded-md border border-[var(--pt-danger)] bg-[var(--pt-danger-soft)] px-4 py-3 text-sm text-[var(--pt-danger)]" role="alert">
           {visibleError}
         </div>
       ) : null}
       {notice ? (
-        <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+        <div className="mt-4 rounded-md border border-[var(--pt-success)] bg-[var(--pt-success-soft)] px-4 py-3 text-sm text-[var(--pt-success)]" role="status">
           {notice}
         </div>
       ) : null}

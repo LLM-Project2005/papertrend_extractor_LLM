@@ -12,13 +12,13 @@ interface MarketingNavProps {
 
 export function MarketingNav({ activeSlug }: MarketingNavProps) {
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white/90 backdrop-blur-xl dark:border-[#1f1f1f] dark:bg-black/90">
+    <header className="fixed inset-x-0 top-0 z-50 border-b border-papertrend-line bg-papertrend-surface/95 backdrop-blur-xl">
       <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="Papertrend home">
-          <span className="flex h-9 w-9 flex-none items-center justify-center text-slate-950 dark:text-white">
+          <span className="flex h-9 w-9 flex-none items-center justify-center text-papertrend-ink">
             <LogoMarkIcon className="h-7 w-7" />
           </span>
-          <span className="text-sm font-semibold text-slate-950 dark:text-white">Papertrend</span>
+          <span className="text-sm font-semibold text-papertrend-ink">Papertrend</span>
         </Link>
 
         <nav className="hidden min-w-0 items-center gap-1 md:flex">
@@ -28,8 +28,8 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
               href={`/features/${feature.slug}`}
               className={`rounded-md px-3 py-2 text-sm transition-colors ${
                 activeSlug === feature.slug
-                  ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
-                  : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  ? "bg-papertrend-action-soft text-papertrend-action"
+                  : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
               }`}
             >
               {feature.navLabel}
@@ -39,8 +39,8 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
             href="/docs"
             className={`rounded-md px-3 py-2 text-sm transition-colors ${
               activeSlug === "docs"
-                ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                ? "bg-papertrend-action-soft text-papertrend-action"
+                : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
             }`}
           >
             Docs
@@ -48,6 +48,12 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
         </nav>
 
         <div className="flex items-center gap-2">
+          <Link
+            href="/docs"
+            className="inline-flex min-h-10 items-center rounded-md px-2 text-sm font-medium text-papertrend-muted transition-colors hover:bg-papertrend-raised hover:text-papertrend-ink md:hidden"
+          >
+            Docs
+          </Link>
           <ThemeToggle compact />
           <MarketingCTA className="hidden sm:inline-flex" />
           <WorkspaceProfileMenu variant="marketing" />
@@ -61,33 +67,33 @@ export function MarketingFooter() {
   return (
     <footer
       data-site-footer
-      className="border-t border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-black"
+      className="border-t border-papertrend-line bg-papertrend-raised"
     >
       <div className="mx-auto grid max-w-7xl gap-10 px-4 py-12 sm:px-6 md:grid-cols-[1fr_1.2fr]">
         <div>
           <Link href="/" className="inline-flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center text-slate-950 dark:text-white">
+            <span className="flex h-9 w-9 items-center justify-center text-papertrend-ink">
               <LogoMarkIcon className="h-7 w-7" />
             </span>
-            <span className="text-sm font-semibold text-slate-950 dark:text-white">Papertrend</span>
+            <span className="text-sm font-semibold text-papertrend-ink">Papertrend</span>
           </Link>
-          <p className="mt-4 max-w-sm text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
+          <p className="mt-4 max-w-sm text-sm leading-6 text-papertrend-muted">
             Research intelligence for teams that need to turn paper collections into
             reusable analysis, dashboards, and AI-assisted insight.
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <nav aria-label="Footer" className="grid gap-x-8 gap-y-1 sm:grid-cols-2">
           {footerLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="border-b border-papertrend-line py-3 text-sm text-papertrend-muted transition-colors hover:text-papertrend-action"
             >
               {link.label}
             </Link>
           ))}
-        </div>
+        </nav>
       </div>
     </footer>
   );
@@ -101,7 +107,7 @@ export function MarketingShell({
   activeSlug?: string;
 }) {
   return (
-    <div className="marketing-shell min-h-screen overflow-hidden bg-white text-slate-950 dark:bg-black dark:text-white">
+    <div className="marketing-shell min-h-screen overflow-hidden">
       <MarketingNav activeSlug={activeSlug} />
       <main>{children}</main>
       <MarketingFooter />

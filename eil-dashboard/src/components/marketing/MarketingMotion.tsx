@@ -15,7 +15,7 @@ export function MotionReveal({ children, className = "", delay = 0 }: MotionReve
   return (
     <motion.div
       className={className}
-      initial={reduceMotion ? false : { opacity: 0, y: 18 }}
+      initial={false}
       whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       viewport={{ once: true, margin: "-80px" }}
       transition={{ duration: 0.55, ease: "easeOut", delay }}
@@ -33,23 +33,21 @@ export function AnimatedProductFrame() {
 
   return (
     <motion.div
-      className="relative mx-auto mt-14 w-full max-w-6xl overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#030303] shadow-[0_30px_120px_rgba(0,0,0,0.55)]"
-      initial={reduceMotion ? false : { opacity: 0, y: 22 }}
+      className="relative mx-auto mt-12 min-w-0 w-full max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-papertrend-line bg-papertrend-ink shadow-overlay sm:max-w-6xl"
+      initial={false}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.7, ease: "easeOut" }}
     >
-      <div className="marketing-scanline pointer-events-none absolute inset-0 z-10" />
-      <div className="border-b border-[#1f1f1f] bg-[#050505] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ff4d4d]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#f9cb28]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#00dfd8]" />
-          <span className="ml-3 font-mono text-xs text-[#8f8f8f]">papertrend.app/workspace</span>
+      <div className="flex min-w-0 items-center justify-between gap-3 border-b border-[#36445a] bg-[#101722] px-4 py-3">
+        <div className="min-w-0">
+          <p className="font-mono text-[11px] uppercase text-[#55c8d2]">Repository overview</p>
+          <p className="mt-1 truncate text-sm font-medium text-white">Language education research</p>
         </div>
+        <span className="flex-none rounded-md border border-[#526176] px-3 py-1 font-mono text-xs text-[#c7d0dc]">36 papers</span>
       </div>
 
-      <div className="grid gap-px bg-[#1f1f1f] md:grid-cols-[0.82fr_1.18fr]">
-        <div className="bg-[#050505] p-5">
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-px bg-[#36445a] md:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
+        <div className="min-w-0 bg-[#050505] p-5">
           <div className="mb-5 flex items-center justify-between">
             <div>
               <p className="font-mono text-xs text-[#8f8f8f]">QUEUE</p>
@@ -72,9 +70,9 @@ export function AnimatedProductFrame() {
                 animate={reduceMotion ? undefined : { borderColor: index === 0 ? "#00dfd8" : "#1f1f1f" }}
                 transition={transition}
               >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="truncate text-sm font-medium text-white">{name}</span>
-                  <span className="font-mono text-xs text-[#8f8f8f]">{status}</span>
+                <div className="flex min-w-0 items-center justify-between gap-3">
+                  <span className="min-w-0 truncate text-sm font-medium text-white">{name}</span>
+                  <span className="flex-none font-mono text-xs text-[#8f8f8f]">{status}</span>
                 </div>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-sm bg-[#111111]">
                   <motion.div
@@ -89,8 +87,8 @@ export function AnimatedProductFrame() {
           </div>
         </div>
 
-        <div className="bg-black p-5">
-          <div className="grid gap-4 lg:grid-cols-[1fr_0.85fr]">
+        <div className="min-w-0 bg-black p-5">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.85fr)]">
             <div className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-5">
               <div className="flex items-center justify-between">
                 <div>
@@ -151,7 +149,7 @@ export function AnimatedFeaturePanel({ label }: { label: string }) {
   return (
     <motion.div
       className="relative overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#030303] p-5"
-      initial={reduceMotion ? false : { opacity: 0, y: 16 }}
+      initial={false}
       whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       viewport={{ once: true }}
       transition={{ duration: 0.6, ease: "easeOut" }}

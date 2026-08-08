@@ -166,15 +166,18 @@ function DesktopSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[208px] dark:border-[#1f1f1f] dark:bg-[#050505] lg:block">
-      <div className="flex h-full flex-col py-2">
-        <nav className="flex-1 overflow-y-auto px-2">
+    <aside className="fixed bottom-0 left-0 top-[60px] z-30 hidden w-56 overflow-hidden border-r border-papertrend-line bg-papertrend-surface lg:block">
+      <div className="flex h-full flex-col py-4">
+        <div className="px-4 pb-4">
+          <p className="font-mono text-[11px] uppercase text-papertrend-muted">Research workspace</p>
+        </div>
+        <nav className="flex-1 overflow-y-auto px-3">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.id}
-              className={sectionIndex === 0 ? "" : "mt-3 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]"}
+              className={sectionIndex === 0 ? "" : "mt-4 border-t border-papertrend-line pt-4"}
             >
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
+              <p className="px-3 text-[11px] font-semibold uppercase text-papertrend-muted">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
@@ -188,14 +191,14 @@ function DesktopSidebar({
                       href={item.href}
                       prefetch={false}
                       onClick={() => onNavigate(item.href)}
-                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
+                      className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors ${
                         isActive
-                          ? "bg-slate-900 text-white dark:bg-[#111111]"
-                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                          ? "bg-papertrend-action-soft text-papertrend-action"
+                          : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
                       }`}
                     >
                       <Icon className="h-[18px] w-[18px] flex-none" />
-                      <span className="ml-3 hidden whitespace-nowrap text-sm font-medium group-hover:block">
+                      <span className="min-w-0 truncate text-sm font-medium">
                         {item.label}
                       </span>
                     </Link>
@@ -467,14 +470,14 @@ export default function WorkspaceShell({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-[#f2f2f2]">
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95">
-        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
+    <div className="papertrend-product min-h-screen bg-papertrend-canvas text-papertrend-ink">
+      <header className="fixed inset-x-0 top-0 z-40 h-[60px] border-b border-papertrend-line bg-papertrend-surface/95 backdrop-blur">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center gap-3 px-4 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] lg:hidden"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-papertrend-line bg-papertrend-surface text-papertrend-muted lg:hidden"
               aria-label="Open workspace navigation"
             >
               <MenuIcon className="h-4 w-4" />
@@ -484,7 +487,7 @@ export default function WorkspaceShell({
               href="/"
               prefetch={false}
               onClick={() => handleNavigate("/")}
-              className="flex h-10 w-10 items-center justify-center text-slate-950 transition-transform hover:scale-[1.04] dark:text-white"
+              className="flex h-10 w-10 items-center justify-center text-papertrend-ink transition-colors hover:text-papertrend-action"
               aria-label="Go to front page"
             >
               <LogoMarkIcon className="h-7 w-7" />
@@ -502,7 +505,7 @@ export default function WorkspaceShell({
               href="/docs"
               prefetch={false}
               onClick={() => handleNavigate("/docs")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-papertrend-line bg-papertrend-surface px-3 text-sm font-medium text-papertrend-muted transition-colors hover:border-[var(--pt-line-strong)] hover:text-papertrend-ink"
               aria-label="Open documentation"
             >
               <FileIcon className="h-4 w-4" />
@@ -532,26 +535,26 @@ export default function WorkspaceShell({
         </div>
       ) : null}
 
-      <div className="min-h-screen pt-16 lg:pl-14">
-        <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
+      <div className="min-h-screen pt-[60px] lg:pl-56">
+        <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-7 lg:px-8"}>
           {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
           ) : hasActiveProject ? (
             children
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
-              <div className="w-full rounded-[28px] border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-                <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Repository setup</p>
-                <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">
+              <div className="w-full max-w-2xl border-y border-papertrend-line px-8 py-12 text-center">
+                <p className="papertrend-kicker">Repository setup</p>
+                <h1 className="papertrend-page-title mt-4">
                   Select a repository to continue
                 </h1>
-                <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
+                <p className="mt-4 text-sm leading-7 text-papertrend-muted">
                   Choose a repository to open its overview, dashboard, chat, library,
                   folders, and paper details.
                 </p>
                 <Link
                   href="/workspaces"
-                  className="mt-8 inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
+                  className="mt-8 inline-flex min-h-11 items-center rounded-md bg-papertrend-action px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--pt-action-hover)]"
                 >
                   Open repositories
                 </Link>
