@@ -476,8 +476,8 @@ export default function PaperAnalysisExplorerModal({
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-6">
-          <nav className="sticky top-0 z-10 -mx-1 flex flex-nowrap gap-2 overflow-x-auto bg-white/95 px-1 py-1 backdrop-blur dark:bg-[#030303]/95" aria-label="Paper explorer tabs">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
+          <nav className="sticky top-0 z-20 -mx-5 mb-5 flex flex-nowrap gap-2 overflow-x-auto border-b border-slate-200 bg-white px-5 py-3 dark:border-[#1f1f1f] dark:bg-[#030303] sm:-mx-6 sm:px-6" aria-label="Paper explorer tabs">
             {TAB_LABELS.map((tab) => (
               <button
                 key={tab.id}

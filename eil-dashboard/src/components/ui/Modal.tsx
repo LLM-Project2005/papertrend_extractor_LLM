@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 interface ModalProps {
   children: ReactNode;
@@ -15,9 +16,18 @@ export default function Modal({
 }: ModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
+  const [mounted, setMounted] = useState(false);
   onCloseRef.current = onClose;
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) {
+      return;
+    }
+
     const previousOverflow = document.body.style.overflow;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     document.body.style.overflow = "hidden";
@@ -64,15 +74,19 @@ export default function Modal({
       window.removeEventListener("keydown", handleKeyDown);
       previouslyFocused?.focus({ preventScroll: true });
     };
-  }, []);
+  }, [mounted]);
 
-  return (
+  if (!mounted) {
+    return null;
+  }
+
+  return createPortal(
     <div
-      className={`modal-backdrop fixed inset-0 ${zIndexClassName} bg-black/65 backdrop-blur-[2px]`}
+      className={`modal-backdrop fixed inset-0 ${zIndexClassName} overflow-y-auto bg-black/65 backdrop-blur-[2px]`}
       onClick={onClose}
       role="presentation"
     >
-      <div className="flex min-h-full items-center justify-center px-4 py-6 sm:px-6">
+      <div className="flex min-h-full items-center justify-center px-3 py-3 sm:px-6 sm:py-6">
         <div
           ref={containerRef}
           className="modal-panel min-w-0"
@@ -83,6 +97,7 @@ export default function Modal({
           {children}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

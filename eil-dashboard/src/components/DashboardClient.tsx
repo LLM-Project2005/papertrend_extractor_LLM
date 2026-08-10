@@ -521,11 +521,12 @@ export default function DashboardClient({
   ]);
 
   useEffect(() => {
-    if (!isAdaptiveTab || !data || selectedYears.length === 0 || !adaptivePlanSignature) {
+    if (!isAdaptiveTab || !data || !adaptivePlanSignature) {
       return;
     }
 
     let cancelled = false;
+    const controller = new AbortController();
     const includeFolderComparison =
       selectedFolderIds.length > 1 || (selectedFolderIds.length === 0 && folders.length > 1);
     const fallbackPlan = createDefaultVisualizationPlan(
@@ -565,10 +566,12 @@ export default function DashboardClient({
       setPlanState({ plan: fallbackPlan, source: "fallback" });
     }
 
+    const requestTimeout = window.setTimeout(() => controller.abort(), 20_000);
     const timer = window.setTimeout(async () => {
       try {
         const response = await fetch("/api/visualization-plan", {
           method: "POST",
+          signal: controller.signal,
           headers: {
             "Content-Type": "application/json",
             ...(session?.access_token
@@ -581,9 +584,12 @@ export default function DashboardClient({
             searchQuery,
             folderIds: selectedFolderIds,
             projectId: selectedProjectId,
+            context: {
+              goal: "Reveal the strongest decision-useful patterns in this filtered research corpus without overstating sparse evidence.",
+            },
           }),
         });
-        const payload = (await response.json()) as {
+        const payload = (await response.json().catch(() => ({}))) as {
           plan?: VisualizationPlan;
           source?: "agent" | "fallback";
         };
@@ -613,6 +619,8 @@ export default function DashboardClient({
 
     return () => {
       cancelled = true;
+      controller.abort();
+      window.clearTimeout(requestTimeout);
       window.clearTimeout(timer);
     };
   }, [
@@ -642,7 +650,22 @@ export default function DashboardClient({
       filteredData.trends,
     ]
   );
-  const adaptiveSection = planState?.plan.sections[0] ?? null;
+  const adaptiveFallbackPlan = useMemo(
+    () =>
+      data
+        ? createDefaultVisualizationPlan(
+            data.useMock ? "mock" : "live",
+            selectedTracks as TrackKey[],
+            selectedFolderIds.length > 1 ||
+              (selectedFolderIds.length === 0 && folders.length > 1)
+          )
+        : null,
+    [data, folders.length, selectedFolderIds, selectedTracks]
+  );
+  const adaptiveSection =
+    (planState?.plan ?? adaptiveFallbackPlan)?.sections.find(
+      (section) => section.section_key === "adaptive"
+    ) ?? null;
 
   if (loading && !data) {
     return (
