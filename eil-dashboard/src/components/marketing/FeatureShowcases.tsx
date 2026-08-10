@@ -216,7 +216,7 @@ export function ResearchDashboardShowcase() {
               {bars.map((height, index) => (
                 <motion.div
                   key={height + index}
-                  className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#075fce] via-[#168db7] to-[#5ce1e6]"
+                  className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#7928ca] via-[#ff0080] to-[#f9cb28]"
                   initial={{ height: `${height * 0.62}%` }}
                   animate={transition ? { height: [`${height * 0.62}%`, `${height}%`] } : undefined}
                   transition={transition ? { ...transition, delay: index * 0.05 } : undefined}
@@ -245,7 +245,7 @@ export function ResearchDashboardShowcase() {
               <p className="font-mono text-xs text-[#8f8f8f]">FILTER TRACE</p>
               <div className="mt-5 h-24 rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
                 <motion.div
-                  className="h-full rounded-md bg-gradient-to-r from-[#075fce] via-[#168db7] to-[#5ce1e6]"
+                  className="h-full rounded-md bg-gradient-to-r from-[#007cf0] via-[#7928ca] to-[#ff0080]"
                   initial={{ width: "54%" }}
                   animate={transition ? { width: ["54%", "86%"] } : undefined}
                   transition={transition}
@@ -313,7 +313,7 @@ export function AdaptiveDashboardShowcase() {
                   {[46, 72, 58, 86, 64].map((height, barIndex) => (
                     <motion.div
                       key={`${title}-${height}`}
-                      className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-[#075fce] via-[#168db7] to-[#5ce1e6]"
+                      className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-[#7928ca] via-[#ff0080] to-[#f9cb28]"
                       initial={{ height: `${height * 0.55}%` }}
                       animate={transition ? { height: [`${height * 0.55}%`, `${height}%`] } : undefined}
                       transition={transition ? { ...transition, delay: barIndex * 0.05 } : undefined}
@@ -388,11 +388,11 @@ export function AIResearchChatShowcase() {
               <p className="mt-3 text-[15px] leading-7 text-[#f3f3f3]">
                 The strongest cluster is inquiry-based learning, followed by collaboration and assessment design.
               </p>
-              <div className="mt-4 flex h-32 items-end gap-2 rounded-2xl border border-[#1f1f1f] bg-[#050505] p-3">
+              <div className="mt-4 flex h-32 items-end gap-2 rounded-xl border border-[#1f1f1f] bg-[#050505] p-3">
                 {[82, 64, 48, 35].map((height, index) => (
                   <motion.div
                     key={height}
-                    className="flex-1 rounded-t-md bg-gradient-to-t from-[#075fce] via-[#168db7] to-[#5ce1e6]"
+                    className="flex-1 rounded-t-md bg-gradient-to-t from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]"
                     initial={{ height: `${height * 0.5}%` }}
                     animate={transition ? { height: [`${height * 0.5}%`, `${height}%`] } : undefined}
                     transition={transition ? { ...transition, delay: index * 0.08 } : undefined}
@@ -403,7 +403,7 @@ export function AIResearchChatShowcase() {
           </div>
 
           <div className="bg-black p-4">
-            <div className="flex items-center gap-3 rounded-[28px] border border-[#1f1f1f] bg-[#050505] px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <div className="flex items-center gap-3 rounded-xl border border-[#1f1f1f] bg-[#050505] px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#ececec]">+</span>
               <span className="flex-1 text-sm text-[#8f8f8f]">Ask anything about attached papers...</span>
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-xs font-medium text-[#111111]">
@@ -464,7 +464,7 @@ export function DeepResearchGraphShowcase() {
               {[78, 63, 86].map((width, index) => (
                 <motion.div
                   key={width}
-                  className="h-2 rounded-sm bg-gradient-to-r from-[#075fce] via-[#168db7] to-[#5ce1e6]"
+                  className="h-2 rounded-sm bg-gradient-to-r from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]"
                   initial={{ width: `${width - 22}%` }}
                   animate={transition ? { width: [`${width - 22}%`, `${width}%`] } : undefined}
                   transition={transition ? { ...transition, delay: index * 0.1 } : undefined}
@@ -586,7 +586,7 @@ export function CloudQueueShowcase() {
                   <span className="text-xs text-[#8f8f8f]">{item}</span>
                   <div className="h-2 rounded-sm bg-[#111111]">
                     <motion.div
-                      className="h-full rounded-sm bg-gradient-to-r from-[#075fce] via-[#168db7] to-[#5ce1e6]"
+                      className="h-full rounded-sm bg-gradient-to-r from-[#007cf0] via-[#7928ca] to-[#ff4d4d]"
                       initial={{ width: `${36 + index * 8}%` }}
                       animate={transition ? { width: [`${36 + index * 8}%`, `${82 - index * 6}%`] } : undefined}
                       transition={transition ? { ...transition, delay: index * 0.1 } : undefined}

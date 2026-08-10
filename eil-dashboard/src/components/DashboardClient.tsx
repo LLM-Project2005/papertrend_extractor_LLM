@@ -668,7 +668,7 @@ export default function DashboardClient({
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search papers, topics, keywords, or years"
-              className="w-full rounded-2xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
+              className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
             />
           </label>
 
@@ -723,7 +723,7 @@ export default function DashboardClient({
 
         <section className="app-surface px-4 py-4 sm:px-5">
           {liveDataError ? (
-            <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
               Live dashboard data could not be loaded for this scope. {liveDataError}
             </div>
           ) : null}
@@ -831,7 +831,7 @@ export default function DashboardClient({
 
         {drilldownTarget ? (
           <Modal onClose={() => setDrilldownTarget(null)}>
-            <div className="max-h-[88vh] w-[min(920px,94vw)] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+            <div className="max-h-[88vh] w-[min(920px,94vw)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
               <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-5 dark:border-[#1f1f1f] dark:bg-[#030303] sm:px-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -861,7 +861,7 @@ export default function DashboardClient({
                   drilldownPapers.map((paper) => (
                     <article
                       key={paper.paperId}
-                      className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                      className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                         <div className="min-w-0">
@@ -952,7 +952,7 @@ export default function DashboardClient({
                     </article>
                   ))
                 ) : (
-                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                       No papers matched this dashboard item in the current filter scope.
                     </p>
@@ -969,7 +969,7 @@ export default function DashboardClient({
               filterOpen ? "" : "pointer-events-none opacity-0"
             } transition-all`}
           >
-            <div className="rounded-3xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
                   Analytics filters

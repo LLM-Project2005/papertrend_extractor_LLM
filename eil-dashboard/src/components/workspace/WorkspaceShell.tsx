@@ -134,25 +134,23 @@ const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 function WorkspaceBreadcrumb({
   projectName,
   onNavigate,
-  inverted = false,
 }: {
   projectName: string;
   onNavigate?: (href: string) => void;
-  inverted?: boolean;
 }) {
   return (
     <div className="min-w-0">
-      <div className={`flex items-center gap-2 text-sm ${inverted ? "text-[#8d9bab]" : "text-papertrend-muted"}`}>
+      <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
           href="/workspaces"
           onClick={() => onNavigate?.("/workspaces")}
           prefetch={false}
-          className={`truncate font-medium transition-colors ${inverted ? "text-white hover:text-[#5ce1e6]" : "text-papertrend-ink hover:text-papertrend-action"}`}
+          className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
           Repositories
         </Link>
-        <span className={inverted ? "text-[#526071]" : "text-papertrend-line"}>/</span>
-        <span className={`truncate ${inverted ? "text-[#aeb9c7]" : "text-papertrend-muted"}`}>
+        <span className="text-slate-300 dark:text-[#4f4f4f]">&gt;</span>
+        <span className="truncate text-slate-500 dark:text-[#9b9b9b]">
           {projectName || "Select repository"}
         </span>
       </div>
@@ -168,27 +166,15 @@ function DesktopSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <aside className="workspace-instrument-rail fixed bottom-0 left-0 top-[60px] z-30 hidden w-56 overflow-hidden border-r border-[#263442] bg-[#080b10] text-white lg:block">
-      <div className="flex h-full flex-col py-4">
-        <div className="px-4 pb-4">
-          <div className="mb-4 flex items-center gap-3 border-b border-white/15 pb-4">
-            <span className="relative h-8 w-8 overflow-hidden border border-white/20">
-              <span className="absolute -left-1 top-1 h-7 w-9 -rotate-[24deg] bg-[#075fce] [clip-path:polygon(0_0,100%_36%,42%_100%)]" />
-            </span>
-            <div>
-              <p className="text-sm font-semibold text-white">Papertrend</p>
-              <p className="font-mono text-[10px] text-[#8d9bab]">Research instrument</p>
-            </div>
-          </div>
-          <p className="font-mono text-[11px] uppercase text-[#8d9bab]">Workspace index</p>
-        </div>
-        <nav className="flex-1 overflow-y-auto px-3">
+    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[208px] dark:border-[#1f1f1f] dark:bg-[#050505] lg:block">
+      <div className="flex h-full flex-col py-2">
+        <nav className="flex-1 overflow-y-auto px-2">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.id}
-              className={sectionIndex === 0 ? "" : "mt-4 border-t border-white/15 pt-4"}
+              className={sectionIndex === 0 ? "" : "mt-3 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]"}
             >
-              <p className="px-3 font-mono text-[10px] uppercase text-[#718092]">
+              <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
@@ -202,14 +188,14 @@ function DesktopSidebar({
                       href={item.href}
                       prefetch={false}
                       onClick={() => onNavigate(item.href)}
-                      className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors ${
+                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
-                          ? "border-l-2 border-[#5ce1e6] bg-white/10 text-white"
-                          : "border-l-2 border-transparent text-[#aeb9c7] hover:bg-white/5 hover:text-white"
+                          ? "bg-slate-900 text-white dark:bg-[#111111]"
+                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                       }`}
                     >
                       <Icon className="h-[18px] w-[18px] flex-none" />
-                      <span className="min-w-0 truncate text-sm font-medium">
+                      <span className="ml-3 hidden whitespace-nowrap text-sm font-medium group-hover:block">
                         {item.label}
                       </span>
                     </Link>
@@ -236,22 +222,21 @@ function MobileSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <div className="h-full w-full max-w-[280px] overflow-y-auto border-r border-[#263442] bg-[#080b10] text-white">
-      <div className="sticky top-0 border-b border-white/15 bg-[#080b10] px-4 py-4">
+    <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <div className="sticky top-0 border-b border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
-            <span className="flex h-10 w-10 items-center justify-center text-white">
+            <span className="flex h-10 w-10 items-center justify-center text-slate-950 dark:text-white">
               <LogoMarkIcon className="h-7 w-7" />
             </span>
             <WorkspaceBreadcrumb
               projectName={projectName}
-              inverted
             />
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/20 bg-white/5 text-white transition-colors hover:bg-white hover:text-black"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
             aria-label="Close workspace navigation"
           >
             <CloseIcon className="h-4 w-4" />
@@ -262,7 +247,7 @@ function MobileSidebar({
       <nav className="space-y-4 px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.id}>
-            <p className="px-3 font-mono text-[10px] uppercase text-[#718092]">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#5f5f5f]">
               {section.label}
             </p>
             <div className="mt-2 space-y-1">
@@ -281,8 +266,8 @@ function MobileSidebar({
                     }}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        ? "border-l-2 border-[#5ce1e6] bg-white/10 text-white"
-                        : "border-l-2 border-transparent text-[#aeb9c7] hover:bg-white/5 hover:text-white"
+                        ? "bg-slate-900 text-white dark:bg-[#030303]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                     }`}
                   >
                     <Icon className="h-4 w-4 flex-none" />
@@ -482,14 +467,14 @@ export default function WorkspaceShell({
   }
 
   return (
-    <div className="papertrend-product min-h-screen bg-papertrend-canvas text-papertrend-ink">
-      <header className="fixed inset-x-0 top-0 z-40 h-[60px] border-b border-papertrend-line bg-papertrend-surface/95 backdrop-blur">
-        <div className="mx-auto flex h-full max-w-[1600px] items-center gap-3 px-4 sm:px-6">
+    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-[#f2f2f2]">
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95">
+        <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setSidebarOpen(true)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-papertrend-line bg-papertrend-surface text-papertrend-muted lg:hidden"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] lg:hidden"
               aria-label="Open workspace navigation"
             >
               <MenuIcon className="h-4 w-4" />
@@ -499,7 +484,7 @@ export default function WorkspaceShell({
               href="/"
               prefetch={false}
               onClick={() => handleNavigate("/")}
-              className="flex h-10 w-10 items-center justify-center text-papertrend-ink transition-colors hover:text-papertrend-action"
+              className="flex h-10 w-10 items-center justify-center text-slate-950 transition-transform hover:scale-[1.04] dark:text-white"
               aria-label="Go to front page"
             >
               <LogoMarkIcon className="h-7 w-7" />
@@ -517,7 +502,7 @@ export default function WorkspaceShell({
               href="/docs"
               prefetch={false}
               onClick={() => handleNavigate("/docs")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-papertrend-line bg-papertrend-surface px-3 text-sm font-medium text-papertrend-muted transition-colors hover:border-[var(--pt-line-strong)] hover:text-papertrend-ink"
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
               aria-label="Open documentation"
             >
               <FileIcon className="h-4 w-4" />
@@ -528,8 +513,8 @@ export default function WorkspaceShell({
           </div>
         </div>
         {navigating ? (
-          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-papertrend-action-soft">
-            <div className="h-full w-1/2 animate-pulse bg-papertrend-action" />
+          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-slate-950/10 dark:bg-white/10">
+            <div className="h-full w-1/2 animate-pulse bg-slate-950 dark:bg-white" />
           </div>
         ) : null}
       </header>
@@ -547,26 +532,26 @@ export default function WorkspaceShell({
         </div>
       ) : null}
 
-      <div className="min-h-screen pt-[60px] lg:pl-56">
-        <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-7 lg:px-8"}>
+      <div className="min-h-screen pt-16 lg:pl-14">
+        <main className={isChatPage ? "min-w-0" : "workspace-content-enter min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
           {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
           ) : hasActiveProject ? (
             children
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
-              <div className="w-full max-w-2xl border-y border-papertrend-line px-8 py-12 text-center">
-                <p className="papertrend-kicker">Repository setup</p>
-                <h1 className="papertrend-page-title mt-4">
+              <div className="w-full rounded-xl border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
+                <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Repository setup</p>
+                <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">
                   Select a repository to continue
                 </h1>
-                <p className="mt-4 text-sm leading-7 text-papertrend-muted">
+                <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
                   Choose a repository to open its overview, dashboard, chat, library,
                   folders, and paper details.
                 </p>
                 <Link
                   href="/workspaces"
-                  className="mt-8 inline-flex min-h-11 items-center rounded-md bg-papertrend-action px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[var(--pt-action-hover)]"
+                  className="mt-8 inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
                 >
                   Open repositories
                 </Link>
@@ -597,7 +582,7 @@ export default function WorkspaceShell({
                 <button
                   type="button"
                   onClick={() => setStatusPanelOpen(false)}
-                  className="mt-2 w-full rounded-md border border-papertrend-line bg-papertrend-surface px-3 py-2 text-xs font-medium text-papertrend-muted shadow-overlay transition-colors hover:text-papertrend-ink"
+                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-xl transition hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b8b8b8] dark:hover:text-white"
                 >
                   Hide status
                 </button>
@@ -606,7 +591,7 @@ export default function WorkspaceShell({
               <button
                 type="button"
                 onClick={() => setStatusPanelOpen(true)}
-                className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-papertrend-line bg-papertrend-surface text-papertrend-muted shadow-overlay transition-colors hover:border-[var(--pt-line-strong)] hover:text-papertrend-ink"
+                className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-xl transition hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
                 aria-label="Open analysis progress"
                 title="Open analysis progress"
               >

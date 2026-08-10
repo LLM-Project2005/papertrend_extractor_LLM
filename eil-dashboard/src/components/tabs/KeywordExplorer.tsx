@@ -340,7 +340,7 @@ export default function KeywordExplorer({
             placeholder="Search a concept, e.g. intelligibility / comprehensibility"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white"
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white"
           />
         </div>
       </section>
@@ -356,7 +356,7 @@ export default function KeywordExplorer({
           ) : null}
 
           {conceptError ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
               {conceptError}
             </div>
           ) : null}
@@ -559,7 +559,7 @@ export default function KeywordExplorer({
                       conceptResult.cooccurringConcepts.map((item) => (
                         <div
                           key={item.label}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                          className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
                           <span className="text-sm text-slate-700 dark:text-slate-200">
                             {item.label}
@@ -586,7 +586,7 @@ export default function KeywordExplorer({
                       conceptResult.evidence.map((item, index) => (
                         <div
                           key={`${item.paperId}-${index}`}
-                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
                           <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-slate-500">
                             {item.year} • {item.section}
@@ -617,7 +617,7 @@ export default function KeywordExplorer({
                     conceptResult.papers.map((paper) => (
                       <div
                         key={paper.paperId}
-                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>

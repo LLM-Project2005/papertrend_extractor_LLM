@@ -47,7 +47,7 @@ export function FinalCTA() {
             dashboards, charts, grounded chat, and repeatable analysis workflows.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-3">
-            <MarketingCTA loggedInLabel="Open workspace" tone="onDark" />
+            <MarketingCTA loggedInLabel="Open workspace" />
             <Link
               href="/features/paper-analysis"
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#2a2a2a] bg-[#050505] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:border-[#4d4d4d] hover:bg-[#0a0a0a]"
@@ -65,7 +65,7 @@ export function FinalCTA() {
 export function SellingPoint({ children }: { children: ReactNode }) {
   return (
     <li className="flex gap-3 text-sm leading-6 text-[#d0d0d0]">
-      <CheckCircleIcon className="mt-0.5 h-4 w-4 flex-none text-[#5ce1e6]" />
+      <CheckCircleIcon className="mt-0.5 h-4 w-4 flex-none text-[#00dfd8]" />
       <span>{children}</span>
     </li>
   );

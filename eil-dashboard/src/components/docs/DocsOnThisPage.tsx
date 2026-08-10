@@ -60,7 +60,7 @@ export default function DocsOnThisPage({
 
   return (
     <DocsFixedRail side="right">
-      <p className="font-mono text-[10px] uppercase text-papertrend-muted">
+      <p className="text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
         On this page
       </p>
       <nav className="mt-3 space-y-2">
@@ -74,8 +74,8 @@ export default function DocsOnThisPage({
               onClick={() => setActiveId(section.id)}
               className={`block text-sm leading-5 transition-colors ${
                 active
-                  ? "border-l-2 border-papertrend-cyan pl-3 font-semibold text-papertrend-ink"
-                  : "border-l-2 border-transparent pl-3 font-normal text-papertrend-muted hover:text-papertrend-ink"
+                  ? "font-semibold text-slate-950 dark:text-white"
+                  : "font-normal text-slate-500 hover:text-slate-950 dark:text-[#8f8f8f] dark:hover:text-white"
               }`}
             >
               {section.title}

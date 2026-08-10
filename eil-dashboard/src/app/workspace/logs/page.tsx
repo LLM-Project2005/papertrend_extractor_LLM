@@ -314,7 +314,7 @@ export default function WorkspaceLogsPage() {
         ) : null}
       </div>
 
-      <section className="rounded-[28px] border border-slate-200/80 bg-white/85 p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.32)] backdrop-blur dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <section className="rounded-xl border border-slate-200/80 bg-white/85 p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.32)] backdrop-blur dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <label className="relative block flex-1">
             <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#7a7a7a]">
@@ -325,7 +325,7 @@ export default function WorkspaceLogsPage() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search by file name, source path, status, or error"
-              className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white dark:border-[#1f1f1f] dark:bg-black dark:text-[#f2f2f2] dark:placeholder:text-[#7a7a7a] dark:focus:border-[#3a3a3a]"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-slate-50 pl-11 pr-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white dark:border-[#1f1f1f] dark:bg-black dark:text-[#f2f2f2] dark:placeholder:text-[#7a7a7a] dark:focus:border-[#3a3a3a]"
             />
           </label>
           <p className="text-sm text-slate-500 dark:text-[#9c9c9c]">
@@ -339,17 +339,17 @@ export default function WorkspaceLogsPage() {
       </section>
 
       {error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
           {error}
         </div>
       ) : null}
 
       {loading ? (
-        <div className="rounded-[28px] border border-slate-200/80 bg-white/80 px-5 py-10 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505]/85 dark:text-[#a3a3a3]">
+        <div className="rounded-xl border border-slate-200/80 bg-white/80 px-5 py-10 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505]/85 dark:text-[#a3a3a3]">
           Loading analysis history...
         </div>
       ) : groups.length === 0 ? (
-        <div className="rounded-[28px] border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505]/80 dark:text-[#9c9c9c]">
+        <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/80 px-5 py-10 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505]/80 dark:text-[#9c9c9c]">
           {runs.length === 0
             ? "No analysis history yet."
             : "No history items matched your search."}
@@ -367,11 +367,11 @@ export default function WorkspaceLogsPage() {
                   return (
                     <article
                       key={run.id}
-                      className="rounded-[24px] border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.35)] transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
+                      className="rounded-xl border border-slate-200/80 bg-white/85 px-4 py-4 shadow-[0_14px_40px_-32px_rgba(15,23,42,0.35)] transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                     >
                       <div className="flex flex-col gap-4 md:flex-row md:items-center">
                         <div className="flex min-w-0 flex-1 items-start gap-4">
-                          <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#0a0a0a] dark:text-[#d6d6d6]">
+                          <span className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#0a0a0a] dark:text-[#d6d6d6]">
                             <FileIcon className="h-5 w-5" />
                           </span>
                           <div className="min-w-0 space-y-2">

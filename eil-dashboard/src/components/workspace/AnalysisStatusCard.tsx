@@ -406,7 +406,7 @@ export default function AnalysisStatusCard({
 
   if (compact) {
     return (
-      <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xl dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex items-start gap-3">
           <button
             type="button"
@@ -605,17 +605,17 @@ export default function AnalysisStatusCard({
 
       <div className="mt-5 space-y-3">
         {isLikelyStalled ? (
-          <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
             Processing appears stalled. The queue has not advanced for about {Math.floor(staleMinutes)} minute{Math.floor(staleMinutes) === 1 ? "" : "s"}. Use Retry processing to trigger the worker again.
           </div>
         ) : null}
         {isLongRunningStage ? (
-          <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-200">
+          <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-200">
             The worker is still active. The current stage has been running for about {stageDurationLabel}, and some paper-analysis steps can legitimately take several minutes before the next visible progress update.
           </div>
         ) : null}
         {folderJob ? (
-          <article className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+          <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -637,14 +637,14 @@ export default function AnalysisStatusCard({
           </article>
         ) : null}
         {runs.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3]">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3]">
             {loading ? "Loading run status..." : "Waiting for run status to appear."}
           </div>
         ) : (
           runs.map((run) => (
             <article
               key={run.id}
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">

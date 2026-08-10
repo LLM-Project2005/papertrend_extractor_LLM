@@ -559,7 +559,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
           return (
             <div
               key={`${keyPrefix}-codeblock-${blockIndex}`}
-              className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505]"
+              className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505]"
             >
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:text-[#8e8e8e]">
                 <span>{language || "Code"}</span>
@@ -580,7 +580,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 return (
                   <div
                     key={`${keyPrefix}-table-${blockIndex}-${groupIndex}`}
-                    className="overflow-x-auto rounded-2xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#0a0a0a]"
+                    className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#0a0a0a]"
                   >
                     <table className="min-w-full border-collapse text-left text-sm text-slate-700 dark:text-[#ececec]">
                       <thead className="bg-slate-100 dark:bg-white/5">
@@ -655,7 +655,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 return (
                   <blockquote
                     key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
-                    className="rounded-r-2xl border-l-4 border-sky-500/70 bg-sky-50 px-4 py-3 text-[15px] leading-7 text-sky-900 dark:border-sky-400/70 dark:bg-white/5 dark:text-[#d9e9ff]"
+                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] leading-7 text-slate-800 dark:border-[#2a2a2a] dark:bg-[#0a0a0a] dark:text-[#d4d4d4]"
                   >
                     <div className="space-y-2">
                       {quoteLines.map((line, lineIndex) => (
@@ -782,7 +782,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
   );
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
         <div>
           <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -1190,7 +1190,7 @@ function MessageAttachmentList({
         return (
           <div
             key={key}
-            className={`max-w-[240px] overflow-hidden rounded-2xl border text-left shadow-sm ${attachmentTone(
+            className={`max-w-[240px] overflow-hidden rounded-xl border text-left shadow-sm ${attachmentTone(
               attachment
             )}`}
           >
@@ -1405,7 +1405,7 @@ function ResearchEvidenceSummary({
   if (!hasVisibleSignal) return null;
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]">
+    <div className="rounded-xl border border-slate-200 bg-slate-50/80 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]">
       <div className="grid gap-3 sm:grid-cols-4">
         {metrics.map(([label, value]) => (
           <div key={label}>
@@ -2957,7 +2957,7 @@ export default function ChatClient() {
                     <div className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_18px_60px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#030303] dark:shadow-[0_18px_60px_rgba(0,0,0,0.32)]">
                       <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
                         <div className="flex items-center gap-3">
-                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white">
+                          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-[#1d4ed8] text-white">
                             <SparkIcon className="h-4 w-4" />
                           </span>
                           <div>
@@ -2996,7 +2996,7 @@ export default function ChatClient() {
                           ))}
                         </div>
                         {researchBlocks.length > 6 ? (
-                          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                             Continue in full view to read the rest of the report.
                           </div>
                         ) : null}
@@ -3004,11 +3004,11 @@ export default function ChatClient() {
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-[0_12px_40px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+                  <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-[0_12px_40px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white">
+                          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#1d4ed8] text-white">
                             <SparkIcon className="h-4 w-4" />
                           </span>
                           <p className="text-[1.35rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
@@ -3278,7 +3278,7 @@ export default function ChatClient() {
                     ) : null}
 
                     {deepSession.status === "failed" && deepSession.last_error ? (
-                      <div className="mt-4 rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                      <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
                         {deepSession.last_error}
                       </div>
                     ) : null}
@@ -3308,7 +3308,7 @@ export default function ChatClient() {
                         <div className="flex justify-end">
                           <div className="group/message relative max-w-[78%] space-y-2">
                             {editingMessageId === message.id ? (
-                              <div className="rounded-[28px] border border-slate-200 bg-white px-5 py-4 text-left shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+                              <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
                                 <MessageAttachmentList attachments={attachments} />
                                 <textarea
                                   ref={editComposerRef}
@@ -3426,7 +3426,7 @@ export default function ChatClient() {
                 {loading ? (
                   <div className="flex items-start gap-3">
                     <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                       {renderLoadingLabel(
                         deepResearchEnabled,
                         chartModeEnabled,
@@ -3449,9 +3449,9 @@ export default function ChatClient() {
 
           <div className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">
             <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
-              <div className="rounded-[28px] border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+              <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                 {error ? (
-                  <div className="mb-3 rounded-2xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
                     {error}
                   </div>
                 ) : null}
@@ -3492,7 +3492,7 @@ export default function ChatClient() {
                 ) : null}
 
                 {chartSuggestionVisible ? (
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800 dark:border-sky-400/20 dark:bg-sky-500/10 dark:text-sky-100">
                     <span className="inline-flex items-center gap-2">
                       <ChartIcon className="h-4 w-4" />
                       Use Chart mode for this request.
@@ -3521,7 +3521,7 @@ export default function ChatClient() {
                 ) : null}
 
                 {deepResearchEnabled ? (
-                  <div className="mb-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                  <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                     <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                       <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-[#ececec]">
                         <SparkIcon className="h-3.5 w-3.5" />
@@ -3553,7 +3553,7 @@ export default function ChatClient() {
                         }}
                         className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
                           effectiveResearchSourcePolicy.allowWeb
-                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]"
+                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]"
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                         }`}
                       >
@@ -3564,7 +3564,7 @@ export default function ChatClient() {
                         onClick={() => toggleResearchPolicy("allowCharts")}
                         className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
                           effectiveResearchSourcePolicy.allowCharts
-                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]"
+                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]"
                             : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                         }`}
                       >
@@ -3604,7 +3604,7 @@ export default function ChatClient() {
                       </button>
 
                       {menuOpen ? (
-                        <div className="absolute bottom-12 left-0 z-30 w-72 rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_16px_42px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                        <div className="absolute bottom-12 left-0 z-30 w-72 rounded-xl border border-slate-200 bg-white p-2 shadow-[0_16px_42px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                           <button
                             type="button"
                             onClick={() => {
@@ -3633,7 +3633,7 @@ export default function ChatClient() {
                             }}
                             className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
                               chartModeEnabled
-                                ? "bg-sky-100 text-sky-800 dark:bg-[#173868] dark:text-[#9cc8ff]"
+                                ? "bg-sky-100 text-sky-800 dark:bg-[#171717] dark:text-[#f3f3f3]"
                                 : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                             }`}
                           >
@@ -3642,7 +3642,7 @@ export default function ChatClient() {
                               <span>Chart mode</span>
                             </span>
                             {chartModeEnabled ? (
-                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#2b5da8]">
+                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#3a3a3a]">
                                 Active
                               </span>
                             ) : null}
@@ -3668,7 +3668,7 @@ export default function ChatClient() {
                             }}
                             className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
                               webSearchEnabled
-                                ? "bg-sky-100 text-sky-800 dark:bg-[#173868] dark:text-[#9cc8ff]"
+                                ? "bg-sky-100 text-sky-800 dark:bg-[#171717] dark:text-[#f3f3f3]"
                                 : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                             }`}
                           >
@@ -3677,7 +3677,7 @@ export default function ChatClient() {
                               <span>Web search</span>
                             </span>
                             {webSearchEnabled ? (
-                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#2b5da8]">
+                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#3a3a3a]">
                                 Active
                               </span>
                             ) : null}
@@ -3703,7 +3703,7 @@ export default function ChatClient() {
                             }}
                             className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
                               deepResearchEnabled
-                                ? "bg-sky-100 text-sky-800 dark:bg-[#173868] dark:text-[#9cc8ff]"
+                                ? "bg-sky-100 text-sky-800 dark:bg-[#171717] dark:text-[#f3f3f3]"
                                 : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                             }`}
                           >
@@ -3712,7 +3712,7 @@ export default function ChatClient() {
                               <span>Deep research</span>
                             </span>
                             {deepResearchEnabled ? (
-                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#2b5da8]">
+                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#3a3a3a]">
                                 Active
                               </span>
                             ) : null}
@@ -3815,13 +3815,13 @@ export default function ChatClient() {
                     ) : null}
 
                     {deepResearchEnabled ? (
-                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]">
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]">
                         <SparkIcon className="h-3.5 w-3.5" />
                         Deep research
                         <button
                           type="button"
                           onClick={() => setDeepResearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable deep research"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3830,13 +3830,13 @@ export default function ChatClient() {
                     ) : null}
 
                     {chartModeEnabled && !deepResearchEnabled ? (
-                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]">
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]">
                         <ChartIcon className="h-3.5 w-3.5" />
                         Chart mode
                         <button
                           type="button"
                           onClick={() => setChartModeEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable chart mode"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3845,13 +3845,13 @@ export default function ChatClient() {
                     ) : null}
 
                     {webSearchEnabled && !deepResearchEnabled ? (
-                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#2b5da8] dark:bg-[#173868] dark:text-[#9cc8ff]">
+                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]">
                         <SearchIcon className="h-3.5 w-3.5" />
                         Web search
                         <button
                           type="button"
                           onClick={() => setWebSearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#9cc8ff] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable web search"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3885,7 +3885,7 @@ export default function ChatClient() {
                     ) : null}
 
                     {parameterMenuOpen && !deepResearchEnabled && !chartModeEnabled ? (
-                      <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-2xl border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
+                      <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
                         <div className="mb-3 flex items-center justify-between">
                           <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#9b9b9b]">
                             Generation
@@ -3893,7 +3893,7 @@ export default function ChatClient() {
                           <button
                             type="button"
                             onClick={() => setChatParameters(DEFAULT_CHAT_PARAMETERS)}
-                            className="text-xs font-medium text-sky-700 hover:text-sky-900 dark:text-[#9cc8ff] dark:hover:text-[#c9e2ff]"
+                            className="text-xs font-medium text-sky-700 hover:text-sky-900 dark:text-[#f3f3f3] dark:hover:text-[#c9e2ff]"
                           >
                             Reset
                           </button>
@@ -4176,20 +4176,20 @@ export default function ChatClient() {
               </button>
 
               {chatSearchLoading ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                   <span>Searching chats...</span>
                 </div>
               ) : null}
 
               {!chatSearchLoading && chatSearchError ? (
-                <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-700 dark:text-red-200">
                   {chatSearchError}
                 </div>
               ) : null}
 
               {!chatSearchLoading && !chatSearchError && chatSearchResults.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
                   {chatSearchQuery.trim()
                     ? "No chats matched that search."
                     : "No chats yet."}
@@ -4247,7 +4247,7 @@ export default function ChatClient() {
 
       {showLibraryPicker ? (
         <Modal onClose={() => setShowLibraryPicker(false)}>
-          <div className="w-[min(720px,92vw)] rounded-[28px] border border-slate-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
+          <div className="w-[min(720px,92vw)] rounded-xl border border-slate-200 bg-white p-6 shadow-[0_18px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_60px_rgba(0,0,0,0.45)]">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-[#ececec]">
@@ -4275,18 +4275,18 @@ export default function ChatClient() {
                 value={libraryQuery}
                 onChange={(event) => setLibraryQuery(event.target.value)}
                 placeholder="Search files"
-                className="w-full rounded-2xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
+                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
               />
             </label>
 
             <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
               {libraryLoading ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                   <span>Loading library files...</span>
                 </div>
               ) : filteredLibraryRuns.length === 0 ? (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">
                   No files matched this search.
                 </div>
               ) : (
@@ -4298,14 +4298,14 @@ export default function ChatClient() {
                       key={run.id}
                       type="button"
                       onClick={() => toggleLibraryRun(run)}
-                      className={`flex w-full items-start gap-3 rounded-2xl border px-4 py-3 text-left transition-colors ${
+                      className={`flex w-full items-start gap-3 rounded-xl border px-4 py-3 text-left transition-colors ${
                         selected
-                          ? "border-sky-300 bg-sky-50 dark:border-[#2b5da8] dark:bg-[#173868]/65"
+                          ? "border-sky-300 bg-sky-50 dark:border-[#3a3a3a] dark:bg-[#171717]/65"
                           : "border-slate-200 bg-white hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a]"
                       }`}
                     >
                       <span
-                        className={`mt-0.5 inline-flex h-10 w-10 flex-none items-center justify-center rounded-2xl ${runGlyphTone(run)}`}
+                        className={`mt-0.5 inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl ${runGlyphTone(run)}`}
                       >
                         <Glyph className="h-5 w-5" />
                       </span>

@@ -45,7 +45,7 @@ export default function CreateEntityModal({
     <Modal onClose={onClose}>
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+        className="w-full max-w-lg rounded-xl border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f] sm:px-7">
           <div>
@@ -76,14 +76,14 @@ export default function CreateEntityModal({
               onChange={(event) => onValueChange(event.target.value)}
               placeholder={fieldPlaceholder}
               autoFocus
-              className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666666] dark:focus:border-white"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#666666] dark:focus:border-white"
             />
           </label>
 
           {children}
 
           {error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
               {error}
             </div>
           ) : null}

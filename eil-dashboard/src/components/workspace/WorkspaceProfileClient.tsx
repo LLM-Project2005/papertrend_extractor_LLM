@@ -76,7 +76,7 @@ export default function WorkspaceProfileClient() {
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
         <form onSubmit={handleSubmit} className="app-surface p-6">
           <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
+            <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
               <UserIcon className="h-5 w-5" />
             </span>
             <div>

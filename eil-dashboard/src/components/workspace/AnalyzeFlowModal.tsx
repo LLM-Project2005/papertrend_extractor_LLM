@@ -549,9 +549,9 @@ export default function AnalyzeFlowModal({
   if (queuedSummary) {
     return (
       <Modal onClose={handleClose}>
-        <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
           <div className="flex items-start justify-between gap-4">
-            <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
+            <span className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
               <CheckCircleIcon className="h-6 w-6" />
             </span>
             <button
@@ -571,7 +571,7 @@ export default function AnalyzeFlowModal({
             Home page shows the live timeline while the analysis runs.
           </p>
           {queuedSummary.warning ? (
-            <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+            <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
               {queuedSummary.warning}
             </p>
           ) : null}
@@ -629,7 +629,7 @@ export default function AnalyzeFlowModal({
 
           <div className="grid gap-4">
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-[#3a3a3a] dark:bg-[#050505]">
-              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-white text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
+              <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-white text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                 <PaperIcon className="h-6 w-6" />
               </span>
 
@@ -670,7 +670,7 @@ export default function AnalyzeFlowModal({
                   </p>
 
                   {!user ? (
-                    <div className="mt-5 rounded-2xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#9c9c9c]">
+                    <div className="mt-5 rounded-xl border border-slate-200 bg-white px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#9c9c9c]">
                       Sign in first to connect Google Drive.
                     </div>
                   ) : !driveConnected ? (
@@ -680,7 +680,7 @@ export default function AnalyzeFlowModal({
                         void handleConnectGoogleDrive();
                       }}
                       disabled={driveConnecting}
-                      className="mt-5 rounded-2xl bg-slate-900 px-4 py-3 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
+                      className="mt-5 rounded-xl bg-slate-900 px-4 py-3 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
                     >
                       {driveConnecting ? "Connecting..." : "Connect Google Drive"}
                     </button>
@@ -707,7 +707,7 @@ export default function AnalyzeFlowModal({
                           value={driveSearch}
                           onChange={(event) => setDriveSearch(event.target.value)}
                           placeholder="Search this folder"
-                          className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
+                          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
                         />
                         <button
                           type="button"
@@ -717,13 +717,13 @@ export default function AnalyzeFlowModal({
                               driveFolderTrail.at(-1)?.id ?? "root"
                             );
                           }}
-                          className="rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                          className="rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                         >
                           Refresh
                         </button>
                       </div>
 
-                      <div className="max-h-[320px] overflow-y-auto rounded-2xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+                      <div className="max-h-[320px] overflow-y-auto rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
                         {driveLoading ? (
                           <p className="px-4 py-4 text-sm text-slate-500 dark:text-[#9c9c9c]">
                             Loading Google Drive PDFs...
@@ -817,7 +817,7 @@ export default function AnalyzeFlowModal({
                   <button
                     type="button"
                     disabled
-                    className="mt-5 rounded-2xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-400 dark:border-[#1f1f1f] dark:text-[#707070]"
+                    className="mt-5 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-400 dark:border-[#1f1f1f] dark:text-[#707070]"
                   >
                     Coming soon
                   </button>
@@ -855,7 +855,7 @@ export default function AnalyzeFlowModal({
                   Selected files
                 </p>
                 {!user && (
-                  <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                  <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <p className="text-xs font-medium uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
                       Access
                     </p>
@@ -864,7 +864,7 @@ export default function AnalyzeFlowModal({
                       value={adminSecret}
                       onChange={(event) => setAdminSecret(event.target.value)}
                       placeholder="Shared admin secret"
-                      className="mt-3 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
+                      className="mt-3 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
                     />
                   </div>
                 )}
@@ -879,7 +879,7 @@ export default function AnalyzeFlowModal({
                       {files.map((file) => (
                         <div
                           key={`${file.name}-${file.size}`}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex items-center gap-3">
                             <FileIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
@@ -904,7 +904,7 @@ export default function AnalyzeFlowModal({
                       {selectedDriveFiles.map((file) => (
                         <div
                           key={file.id}
-                          className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex items-center gap-3">
                             <DriveIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
@@ -931,12 +931,12 @@ export default function AnalyzeFlowModal({
           </div>
 
           {error && (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
               {error}
             </div>
           )}
           {uploading ? (
-            <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
               <span className="font-medium">{uploadStage || "Queueing file"}</span>
               <span className="ml-2 text-blue-700/80 dark:text-blue-200/80">
                 You can hide this window and follow progress from Home.

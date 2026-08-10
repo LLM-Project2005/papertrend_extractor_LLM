@@ -204,10 +204,12 @@ export async function GET(
       const [runResult, paperResult] = await Promise.all([
         client.query<Record<string, unknown>>(`SELECT * FROM public.ingestion_runs WHERE owner_user_id=$1 AND id=$2`, [user.id, runId]),
         client.query<Record<string, unknown>>(
-          `SELECT p.id::text AS paper_id,p.title,p.year,p.folder_id,p.ingestion_run_id,
+          `SELECT p.id::text AS paper_id,p.title,p.year,p.folder_id,c.ingestion_run_id,
            c.abstract_claims,c.methods,c.results,c.conclusion,c.raw_text,c.source_filename
-           FROM public.papers p LEFT JOIN public.paper_content c ON c.paper_id=p.id AND c.owner_user_id=$1
-           WHERE p.owner_user_id=$1 AND p.ingestion_run_id=ANY($2::uuid[])`, [user.id, relatedRunIds]
+           FROM public.paper_content c
+           JOIN public.papers p ON p.id=c.paper_id AND p.owner_user_id=$1
+           WHERE c.owner_user_id=$1 AND c.ingestion_run_id=ANY($2::uuid[])`,
+          [user.id, relatedRunIds]
         ),
       ]);
       return { run: runResult.rows[0] ?? null, papers: paperResult.rows };

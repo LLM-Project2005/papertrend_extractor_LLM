@@ -3,6 +3,7 @@ import {
   docsCategories,
   docsPages,
   getRelatedDocs,
+  popularDocsPages,
   type DocsCallout,
   type DocsPage,
   type DocsSection,
@@ -26,7 +27,7 @@ function calloutClasses(tone: DocsCallout["tone"]) {
     return "border-sky-300 bg-sky-50 text-sky-950 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100";
   }
 
-  return "border-papertrend-line bg-papertrend-raised text-papertrend-ink";
+  return "border-slate-200 bg-slate-50 text-slate-800 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]";
 }
 
 function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
@@ -35,7 +36,7 @@ function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
       <div className="space-y-2">
         <Link
           href="/docs/search"
-          className="flex items-center gap-2 rounded-md border border-papertrend-line bg-papertrend-surface px-3 py-2.5 text-sm font-medium text-papertrend-muted transition-colors hover:border-[var(--pt-line-strong)] hover:text-papertrend-ink"
+          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3] dark:hover:border-[#3a3a3a] dark:hover:text-white"
         >
           <SearchIcon className="h-4 w-4" />
           Search docs
@@ -44,8 +45,8 @@ function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
           href="/docs"
           className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
             activeSlug
-              ? "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
-              : "border-l-2 border-papertrend-cyan bg-papertrend-action-soft text-papertrend-action"
+              ? "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+              : "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
           }`}
         >
           <FileIcon className="h-4 w-4" />
@@ -56,7 +57,7 @@ function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
       <div className="mt-5 space-y-5">
         {docsCategories.map((category) => (
           <nav key={category.id} aria-label={category.label}>
-            <p className="px-3 font-mono text-[10px] uppercase text-papertrend-muted">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
               {category.label}
             </p>
             <div className="mt-2 space-y-1">
@@ -69,8 +70,8 @@ function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
                     href={`/docs/${page.slug}`}
                     className={`block rounded-lg px-3 py-2 text-sm leading-5 transition-colors ${
                       active
-                        ? "border-l-2 border-papertrend-cyan bg-papertrend-action-soft text-papertrend-action"
-                        : "border-l-2 border-transparent text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
+                        ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
+                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                     }`}
                   >
                     {page.title}
@@ -96,14 +97,14 @@ function DocsCalloutBox({ callout }: { callout: DocsCallout }) {
 
 function DocsSectionBlock({ section }: { section: DocsSection }) {
   return (
-    <section id={section.id} className="scroll-mt-24 border-t border-papertrend-line py-10 first:border-t-0 first:pt-0">
-      <h2 className="text-2xl font-semibold text-papertrend-ink">
+    <section id={section.id} className="scroll-mt-24 border-t border-slate-200 py-9 first:border-t-0 first:pt-0 dark:border-[#1f1f1f]">
+      <h2 className="text-2xl font-semibold tracking-normal text-slate-950 dark:text-white">
         {section.title}
       </h2>
 
       <div className="mt-4 space-y-4">
         {section.body.map((paragraph) => (
-          <p key={paragraph} className="text-base leading-8 text-papertrend-muted">
+          <p key={paragraph} className="text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
             {paragraph}
           </p>
         ))}
@@ -112,8 +113,8 @@ function DocsSectionBlock({ section }: { section: DocsSection }) {
       {section.bullets ? (
         <ul className="mt-5 space-y-3">
           {section.bullets.map((item) => (
-            <li key={item} className="flex gap-3 text-sm leading-7 text-papertrend-muted">
-              <CheckCircleIcon className="mt-1 h-4 w-4 flex-none text-papertrend-cyan" />
+            <li key={item} className="flex gap-3 text-sm leading-7 text-slate-600 dark:text-[#b8b8b8]">
+              <CheckCircleIcon className="mt-1 h-4 w-4 flex-none text-slate-950 dark:text-white" />
               <span>{item}</span>
             </li>
           ))}
@@ -123,8 +124,8 @@ function DocsSectionBlock({ section }: { section: DocsSection }) {
       {section.steps ? (
         <ol className="mt-5 space-y-3">
           {section.steps.map((step, index) => (
-            <li key={step} className="flex gap-3 text-sm leading-7 text-papertrend-muted">
-              <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-papertrend-ink text-xs font-semibold text-papertrend-surface">
+            <li key={step} className="flex gap-3 text-sm leading-7 text-slate-600 dark:text-[#b8b8b8]">
+              <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white dark:bg-white dark:text-[#171717]">
                 {index + 1}
               </span>
               <span>{step}</span>
@@ -134,12 +135,12 @@ function DocsSectionBlock({ section }: { section: DocsSection }) {
       ) : null}
 
       {section.checklist ? (
-        <div className="mt-5 rounded-lg border border-papertrend-line bg-papertrend-surface p-4">
-          <p className="text-sm font-semibold text-papertrend-ink">Checklist</p>
+        <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+          <p className="text-sm font-semibold text-slate-950 dark:text-white">Checklist</p>
           <ul className="mt-3 space-y-2">
             {section.checklist.map((item) => (
-              <li key={item} className="flex gap-3 text-sm leading-6 text-papertrend-muted">
-                <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-papertrend-cyan" />
+              <li key={item} className="flex gap-3 text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]">
+                <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-950 dark:bg-white" />
                 <span>{item}</span>
               </li>
             ))}
@@ -160,8 +161,8 @@ export function DocsArticle({ page }: { page: DocsPage }) {
       <DocsSidebar activeSlug={page.slug} />
 
       <article className="min-w-0 lg:ml-[292px] xl:mr-[252px]">
-        <div className="mb-8 rounded-lg border border-papertrend-line bg-papertrend-surface p-5 lg:hidden">
-          <p className="font-mono text-xs uppercase text-papertrend-muted">
+        <div className="mb-8 rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505] lg:hidden">
+          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
             Documentation
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -171,8 +172,8 @@ export function DocsArticle({ page }: { page: DocsPage }) {
                 href={`/docs/${item.slug}`}
                 className={`rounded-md px-3 py-2 text-sm transition-colors ${
                   item.slug === page.slug
-                    ? "bg-papertrend-action-soft text-papertrend-action"
-                    : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
+                    ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
+                    : "text-slate-600 hover:bg-slate-100 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a]"
                 }`}
               >
                 {item.title}
@@ -181,21 +182,21 @@ export function DocsArticle({ page }: { page: DocsPage }) {
           </div>
         </div>
 
-        <div className="border-b border-papertrend-line pb-8">
-          <p className="font-mono text-xs text-papertrend-action">
+        <div className="border-b border-slate-200 pb-8 dark:border-[#1f1f1f]">
+          <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
             {page.categoryLabel}
           </p>
-          <h1 className="mt-4 max-w-3xl text-4xl font-semibold leading-tight text-papertrend-ink sm:text-5xl">
+          <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-5xl">
             {page.title}
           </h1>
-          <p className="mt-5 max-w-3xl text-base leading-8 text-papertrend-muted">
+          <p className="mt-5 max-w-3xl text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
             {page.description}
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             {page.tags.slice(0, 6).map((tag) => (
               <span
                 key={tag}
-                className="rounded-full border border-papertrend-line bg-papertrend-raised px-3 py-1 text-xs text-papertrend-muted"
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f]"
               >
                 {tag}
               </span>
@@ -210,22 +211,22 @@ export function DocsArticle({ page }: { page: DocsPage }) {
         </div>
 
         {relatedDocs.length > 0 ? (
-          <section className="border-t border-papertrend-line pt-8">
-            <h2 className="text-xl font-semibold text-papertrend-ink">Related docs</h2>
+          <section className="border-t border-slate-200 pt-8 dark:border-[#1f1f1f]">
+            <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Related docs</h2>
             <div className="mt-4 grid gap-3 md:grid-cols-3">
               {relatedDocs.map((related) => (
                 <Link
                   key={related.slug}
                   href={`/docs/${related.slug}`}
-                  className="group rounded-lg border border-papertrend-line bg-papertrend-surface p-4 transition-colors hover:border-[var(--pt-line-strong)]"
+                  className="group rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                 >
-                  <p className="text-sm font-semibold text-papertrend-ink">
+                  <p className="text-sm font-semibold text-slate-950 dark:text-white">
                     {related.title}
                   </p>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-papertrend-muted">
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
                     {related.description}
                   </p>
-                  <span className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-papertrend-action">
+                  <span className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-white">
                     Read more
                     <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
                   </span>
@@ -243,99 +244,114 @@ export function DocsArticle({ page }: { page: DocsPage }) {
 
 export function DocsHome() {
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-24 pt-28 sm:px-6">
-      <section className="grid min-h-[58vh] gap-10 border-b border-papertrend-line pb-14 pt-6 lg:grid-cols-[0.38fr_1fr] lg:items-end">
-        <div className="self-start font-mono text-xs text-papertrend-muted">
-          <p className="text-papertrend-action">[ FIELD MANUAL ]</p>
-          <p className="mt-3">Edition 2026.08</p>
-          <p className="mt-1">Cloud research system</p>
-        </div>
-        <div>
-          <h1 className="max-w-5xl text-5xl font-semibold leading-[0.98] text-papertrend-ink sm:text-6xl lg:text-7xl">
-            Learn the instrument. Follow the evidence.
+    <div className="mx-auto max-w-7xl px-4 pb-20 pt-28 sm:px-6">
+      <section className="relative overflow-hidden rounded-lg border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505] sm:p-10">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(0,124,240,0.12),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,0,128,0.10),transparent_32%)]" />
+        <div className="relative max-w-3xl">
+          <p className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 font-mono text-xs text-slate-500 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f]">
+            PAPERTREND DOCS
+          </p>
+          <h1 className="mt-6 text-4xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-6xl">
+            Learn, operate, and trust your research workspace.
           </h1>
-          <div className="mt-9 grid gap-7 border-t border-papertrend-line pt-7 md:grid-cols-2">
-            <p className="max-w-xl text-base leading-8 text-papertrend-muted">
-              A field guide to uploads, structured analysis, dashboards, grounded chat,
-              deep research, evaluation, and cloud processing.
-            </p>
-            <div className="flex flex-wrap items-start gap-3 md:justify-end">
-              <Link
-                href="/docs/getting-started"
-                className="inline-flex min-h-11 items-center gap-2 rounded-md bg-papertrend-ink px-5 py-2.5 text-sm font-semibold text-papertrend-surface transition-colors hover:bg-papertrend-action hover:text-white"
-              >
-                Start with the workflow
-                <ArrowRightIcon className="h-4 w-4" />
-              </Link>
-              <Link
-                href="/docs/search"
-                className="inline-flex min-h-11 items-center gap-2 rounded-md border border-papertrend-line bg-papertrend-surface px-5 py-2.5 text-sm font-semibold text-papertrend-ink transition-colors hover:border-[var(--pt-line-strong)] hover:bg-papertrend-raised"
-              >
-                <SearchIcon className="h-4 w-4" />
-                Search
-              </Link>
-            </div>
+          <p className="mt-6 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
+            Detailed product documentation for uploads, analysis, dashboards, AI chat,
+            deep research, cloud queue behavior, evaluation, and troubleshooting.
+          </p>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link
+              href="/docs/getting-started"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
+            >
+              Start reading
+              <ArrowRightIcon className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/docs/search"
+              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]"
+            >
+              <SearchIcon className="h-4 w-4" />
+              Search docs
+            </Link>
           </div>
         </div>
       </section>
 
-      <section className="grid border-b border-papertrend-line lg:grid-cols-[0.38fr_1fr]">
-        <div className="border-b border-papertrend-line py-9 lg:border-b-0 lg:border-r lg:pr-8">
-          <SparkIcon className="h-6 w-6 text-papertrend-cyan" />
-          <h2 className="mt-4 text-xl font-semibold text-papertrend-ink">Start from a real task</h2>
-          <p className="mt-3 max-w-sm text-sm leading-7 text-papertrend-muted">
-            The shortest route into the manual, organized around work rather than product marketing.
-          </p>
+      <section className="mt-10 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+        <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505]">
+          <div className="flex items-center gap-2">
+            <SparkIcon className="h-5 w-5 text-slate-950 dark:text-white" />
+            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Popular docs</h2>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2">
+            {popularDocsPages.map((page) => (
+              <Link
+                key={page.slug}
+                href={`/docs/${page.slug}`}
+                className="group rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300 hover:bg-white dark:border-[#1f1f1f] dark:bg-[#030303] dark:hover:border-[#3a3a3a] dark:hover:bg-[#050505]"
+              >
+                <p className="text-sm font-semibold text-slate-950 dark:text-white">{page.title}</p>
+                <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
+                  {page.description}
+                </p>
+                <span className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-white">
+                  Open
+                  <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </Link>
+            ))}
+          </div>
         </div>
-        <div className="divide-y divide-papertrend-line lg:pl-8">
-          {[
-            { label: "Upload and analyze papers", href: "/docs/library-uploads" },
-            { label: "Build charts in chat", href: "/docs/ai-research-chat#chart-mode" },
-            { label: "Review extraction quality", href: "/docs/evaluation-quality" },
-            { label: "Recover failed queue work", href: "/docs/troubleshooting" },
-            { label: "Run a deep research report", href: "/docs/deep-research-agent" },
-          ].map((task, index) => (
-            <Link
-              key={task.href}
-              href={task.href}
-              className="group grid min-h-16 grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-3 py-4 text-papertrend-ink transition-colors hover:text-papertrend-action"
-            >
-              <span className="font-mono text-xs text-papertrend-muted">0{index + 1}</span>
-              <span className="font-medium">{task.label}</span>
-              <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-            </Link>
-          ))}
+
+        <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505]">
+          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Common tasks</h2>
+          <div className="mt-5 space-y-2">
+            {[
+              { label: "Upload and analyze papers", href: "/docs/library-uploads" },
+              { label: "Build charts in chat", href: "/docs/ai-research-chat#chart-mode" },
+              { label: "Review unknown years", href: "/docs/evaluation-quality#year-quality" },
+              { label: "Fix queue or failed-file issues", href: "/docs/troubleshooting" },
+              { label: "Understand deep research", href: "/docs/deep-research-agent" },
+            ].map((task) => (
+              <Link
+                key={task.href}
+                href={task.href}
+                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              >
+                {task.label}
+                <ArrowRightIcon className="h-4 w-4 flex-none" />
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 
-      <section className="py-16">
-        <div className="mb-8 grid gap-4 lg:grid-cols-[0.38fr_1fr]">
-          <p className="font-mono text-xs text-papertrend-action">[ REFERENCE INDEX ]</p>
-          <h2 className="text-3xl font-semibold text-papertrend-ink sm:text-4xl">Browse every system chapter.</h2>
-        </div>
-        <div className="border-t border-papertrend-line">
-          {docsCategories.map((category, categoryIndex) => (
-            <div key={category.id} className="grid border-b border-papertrend-line py-8 lg:grid-cols-[0.38fr_1fr]">
-              <div className="pr-8">
-                <p className="font-mono text-xs text-papertrend-muted">0{categoryIndex + 1}</p>
-                <h3 className="mt-3 text-xl font-semibold text-papertrend-ink">{category.label}</h3>
-                <p className="mt-3 max-w-sm text-sm leading-6 text-papertrend-muted">{category.description}</p>
-              </div>
-              <div className="mt-6 grid gap-x-6 border-t border-papertrend-line md:grid-cols-2 lg:mt-0 lg:border-t-0">
-                {category.pages.map((page) => (
-                  <Link
-                    key={page.slug}
-                    href={`/docs/${page.slug}`}
-                    className="group flex min-h-14 items-center justify-between gap-3 border-b border-papertrend-line text-sm font-medium text-papertrend-ink transition-colors hover:text-papertrend-action"
-                  >
-                    {page.title}
-                    <ArrowRightIcon className="h-4 w-4 flex-none transition-transform group-hover:translate-x-1" />
-                  </Link>
-                ))}
-              </div>
+      <section className="mt-10 grid gap-5 md:grid-cols-3">
+        {docsCategories.map((category) => (
+          <div
+            key={category.id}
+            className="rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505]"
+          >
+            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
+              {category.label}
+            </p>
+            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
+              {category.description}
+            </p>
+            <div className="mt-5 space-y-2">
+              {category.pages.map((page) => (
+                <Link
+                  key={page.slug}
+                  href={`/docs/${page.slug}`}
+                  className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                >
+                  {page.title}
+                  <ArrowRightIcon className="h-3.5 w-3.5 flex-none" />
+                </Link>
+              ))}
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </section>
     </div>
   );
