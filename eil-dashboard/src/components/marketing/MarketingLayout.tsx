@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
+import MarketingMobileMenu from "@/components/marketing/MarketingMobileMenu";
 import { footerLinks, marketingFeatures } from "@/components/marketing/marketing-content";
 import { LogoMarkIcon } from "@/components/ui/Icons";
 import ThemeToggle from "@/components/theme/ThemeToggle";
@@ -8,17 +9,18 @@ import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 
 interface MarketingNavProps {
   activeSlug?: string;
+  immersive?: boolean;
 }
 
-export function MarketingNav({ activeSlug }: MarketingNavProps) {
+export function MarketingNav({ activeSlug, immersive = false }: MarketingNavProps) {
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b border-papertrend-line bg-papertrend-surface/95 backdrop-blur-xl">
+    <header className={`fixed inset-x-0 top-0 z-50 border-b backdrop-blur-xl ${immersive ? "border-white/15 bg-[#05080c]/80 text-white" : "border-papertrend-line bg-papertrend-surface/95 text-papertrend-ink"}`}>
       <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
         <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="Papertrend home">
-          <span className="flex h-9 w-9 flex-none items-center justify-center text-papertrend-ink">
+          <span className={`flex h-9 w-9 flex-none items-center justify-center ${immersive ? "text-white" : "text-papertrend-ink"}`}>
             <LogoMarkIcon className="h-7 w-7" />
           </span>
-          <span className="text-sm font-semibold text-papertrend-ink">Papertrend</span>
+          <span className={`text-sm font-semibold ${immersive ? "text-white" : "text-papertrend-ink"}`}>Papertrend</span>
         </Link>
 
         <nav className="hidden min-w-0 items-center gap-1 md:flex">
@@ -29,7 +31,9 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
               className={`rounded-md px-3 py-2 text-sm transition-colors ${
                 activeSlug === feature.slug
                   ? "bg-papertrend-action-soft text-papertrend-action"
-                  : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
+                  : immersive
+                    ? "text-white/70 hover:bg-white/10 hover:text-white"
+                    : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
               }`}
             >
               {feature.navLabel}
@@ -40,7 +44,9 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
             className={`rounded-md px-3 py-2 text-sm transition-colors ${
               activeSlug === "docs"
                 ? "bg-papertrend-action-soft text-papertrend-action"
-                : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
+                : immersive
+                  ? "text-white/70 hover:bg-white/10 hover:text-white"
+                  : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
             }`}
           >
             Docs
@@ -48,15 +54,10 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
         </nav>
 
         <div className="flex items-center gap-2">
-          <Link
-            href="/docs"
-            className="inline-flex min-h-10 items-center rounded-md px-2 text-sm font-medium text-papertrend-muted transition-colors hover:bg-papertrend-raised hover:text-papertrend-ink md:hidden"
-          >
-            Docs
-          </Link>
-          <ThemeToggle compact />
-          <MarketingCTA className="hidden sm:inline-flex" />
+          <ThemeToggle compact inverted={immersive} />
+          <MarketingCTA className="hidden sm:inline-flex" tone={immersive ? "onDark" : "default"} />
           <WorkspaceProfileMenu variant="marketing" />
+          <MarketingMobileMenu immersive={immersive} />
         </div>
       </div>
     </header>
@@ -102,14 +103,17 @@ export function MarketingFooter() {
 export function MarketingShell({
   children,
   activeSlug,
+  immersive = false,
 }: {
   children: ReactNode;
   activeSlug?: string;
+  immersive?: boolean;
 }) {
+  const featureStory = Boolean(activeSlug && activeSlug !== "docs");
   return (
-    <div className="marketing-shell min-h-screen overflow-hidden">
-      <MarketingNav activeSlug={activeSlug} />
-      <main>{children}</main>
+    <div className={`marketing-shell min-h-screen overflow-hidden ${featureStory ? "feature-world" : ""}`}>
+      <MarketingNav activeSlug={activeSlug} immersive={immersive || featureStory} />
+      <main className={featureStory ? "bg-[#080b10]" : undefined}>{children}</main>
       <MarketingFooter />
     </div>
   );

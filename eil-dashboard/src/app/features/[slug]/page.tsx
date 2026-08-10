@@ -189,7 +189,7 @@ function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
               tracks, facets, and workspace tables becoming structured output.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <MarketingCTA />
+              <MarketingCTA tone="onDark" />
               <BackLink />
             </div>
           </MotionReveal>
@@ -276,7 +276,7 @@ function ResearchDashboardPage({ feature }: { feature: MarketingFeature }) {
               library status in one scan.
             </p>
             <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <MarketingCTA />
+              <MarketingCTA tone="onDark" />
               <BackLink />
             </div>
           </MotionReveal>
@@ -380,7 +380,7 @@ function AIResearchChatPage({ feature }: { feature: MarketingFeature }) {
               research steps when the question calls for it.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <MarketingCTA />
+              <MarketingCTA tone="onDark" />
               <BackLink />
             </div>
           </MotionReveal>
@@ -455,7 +455,7 @@ function CloudQueuePage({ feature }: { feature: MarketingFeature }) {
                 and continuation.
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <MarketingCTA />
+                <MarketingCTA tone="onDark" />
                 <BackLink />
               </div>
             </MotionReveal>

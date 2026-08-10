@@ -101,7 +101,7 @@ export function AnimatedProductFrame() {
                 {[44, 62, 38, 70, 54, 86, 76].map((height, index) => (
                   <motion.div
                     key={height + index}
-                    className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#7928ca] to-[#ff0080]"
+                    className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#075fce] to-[#5ce1e6]"
                     initial={{ height: `${height * 0.65}%` }}
                     animate={reduceMotion ? undefined : { height: [`${height * 0.65}%`, `${height}%`] }}
                     transition={{ ...transition, delay: index * 0.06 }}
@@ -118,7 +118,7 @@ export function AnimatedProductFrame() {
                 </p>
                 <div className="mt-4 rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
                   <div className="h-2 w-2/3 rounded-sm bg-[#00dfd8]" />
-                  <div className="mt-2 h-2 w-1/2 rounded-sm bg-[#7928ca]" />
+                  <div className="mt-2 h-2 w-1/2 rounded-sm bg-[#075fce]" />
                 </div>
               </div>
 

@@ -3,152 +3,166 @@ import Link from "next/link";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
 import { MarketingShell } from "@/components/marketing/MarketingLayout";
 import { AnimatedProductFrame, MotionReveal } from "@/components/marketing/MarketingMotion";
-import { marketingFeatures, workflowSteps } from "@/components/marketing/marketing-content";
-import { ArrowRightIcon, CheckCircleIcon } from "@/components/ui/Icons";
+import {
+  OrigamiCapabilityExplorer,
+  OrigamiHeroArtwork,
+  WordRise,
+} from "@/components/marketing/OrigamiLanding";
+import { ArrowRightIcon, CheckCircleIcon, LogoMarkIcon } from "@/components/ui/Icons";
 
 export const metadata: Metadata = {
-  title: "Papertrend | Research libraries into living insight",
+  title: "Papertrend | Research, folded into focus",
   description:
-    "Papertrend turns research paper collections into structured analysis, dashboards, charts, and grounded research chat.",
+    "Papertrend turns research paper collections into structured evidence, living dashboards, and grounded research conversations.",
 };
+
+const evidencePrinciples = [
+  "Every answer can return to its paper",
+  "Every long process names its current stage",
+  "Every repository stays inside its owner and project scope",
+  "Every corpus view can move from overview to evidence",
+];
 
 export default function LandingPage() {
   return (
-    <MarketingShell>
-      <section className="relative overflow-hidden border-b border-papertrend-line px-4 pb-16 pt-28 sm:px-6 lg:pb-20 lg:pt-36">
-        <div className="relative mx-auto max-w-7xl">
-          <div className="grid min-w-0 gap-10 lg:grid-cols-[0.82fr_1.18fr] lg:items-end">
-            <MotionReveal className="min-w-0 pb-2">
-              <p className="papertrend-kicker">Research intelligence workspace</p>
-              <h1 className="mt-5 max-w-3xl font-serif text-5xl font-semibold leading-[0.98] text-papertrend-ink sm:text-6xl lg:text-7xl">
-                Your research library, made legible.
-              </h1>
-            </MotionReveal>
+    <MarketingShell immersive>
+      <section className="relative min-h-[88dvh] overflow-hidden bg-[#05080c] text-white">
+        <OrigamiHeroArtwork />
+        <div className="relative mx-auto flex min-h-[88dvh] max-w-7xl flex-col px-4 pb-8 pt-24 sm:px-6 sm:pb-10 lg:pt-28">
+          <div className="grid gap-6 border-t border-white/20 pt-5 font-mono text-[11px] text-[#aeb9c7] sm:grid-cols-[0.45fr_1fr_0.45fr]">
+            <p>Papertrend / Research intelligence</p>
+            <p className="max-w-lg sm:justify-self-center">
+              A working environment for turning scattered papers into structured,
+              source-linked understanding.
+            </p>
+            <p className="hidden text-right sm:block">Academic beta / 2026</p>
+          </div>
 
-            <MotionReveal delay={0.08} className="min-w-0 max-w-full overflow-hidden border-l-2 border-papertrend-cyan pl-5 sm:pl-7">
-              <p className="w-full max-w-2xl text-base leading-8 text-papertrend-muted sm:text-lg">
-                Papertrend turns PDFs into structured evidence, visible research
-                patterns, and grounded answers. Follow every paper from upload to
-                analysis without losing the source behind the insight.
+          <div className="mt-auto grid gap-9 lg:grid-cols-[1.3fr_0.7fr] lg:items-end">
+            <div className="min-w-0">
+              <h1 className="font-sans text-[2.65rem] font-semibold leading-[0.84] text-[#f5f6f1] min-[360px]:text-[3.25rem] sm:text-7xl md:text-8xl lg:text-[8.25rem]">
+                <WordRise>Papertrend</WordRise>
+              </h1>
+              <p className="mt-4 font-mono text-xs uppercase text-[#5ce1e6]">
+                Research, folded into focus.
               </p>
-              <div className="mt-7 grid w-full gap-3 sm:flex sm:flex-wrap">
-                <MarketingCTA className="w-full sm:w-auto" />
+            </div>
+
+            <MotionReveal className="min-w-0 border-l border-[#5ce1e6] pl-5 sm:pl-7">
+              <p className="max-w-xl text-base leading-7 text-[#d4dbe4] sm:text-lg">
+                Upload a paper. Watch the evidence take shape. Explore the corpus,
+                ask grounded questions, and keep the source attached to every insight.
+              </p>
+              <div className="mt-7 grid gap-3 sm:flex sm:flex-wrap">
+                <MarketingCTA className="w-full sm:w-auto" tone="onDark" />
                 <Link
                   href="/docs/getting-started"
-                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md border border-papertrend-line bg-papertrend-surface px-5 py-2.5 text-sm font-semibold text-papertrend-ink transition-colors hover:border-[var(--pt-line-strong)] hover:bg-papertrend-raised sm:w-auto"
+                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 border border-white/35 bg-black/25 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:border-white hover:bg-white hover:text-black sm:w-auto"
                 >
-                  Read the workflow
+                  Follow the workflow
                   <ArrowRightIcon className="h-4 w-4" />
                 </Link>
               </div>
             </MotionReveal>
           </div>
 
+          <div className="mt-10 flex items-end justify-between border-t border-white/20 pt-5 font-mono text-[11px] text-[#aeb9c7]">
+            <span>Scroll to unfold</span>
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-[#5ce1e6]" />
+              Evidence system online
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section className="relative overflow-hidden border-b border-papertrend-line bg-papertrend-canvas px-4 py-20 sm:px-6 lg:py-32">
+        <LogoMarkIcon className="pointer-events-none absolute -right-16 top-8 h-72 w-72 rotate-12 text-papertrend-line opacity-60 sm:h-96 sm:w-96" />
+        <div className="relative mx-auto max-w-7xl">
+          <div className="grid gap-10 lg:grid-cols-[0.38fr_1fr]">
+            <MotionReveal>
+              <p className="font-mono text-xs text-papertrend-action">[ 01 ] The premise</p>
+            </MotionReveal>
+            <MotionReveal delay={0.06}>
+              <h2 className="max-w-5xl text-4xl font-medium leading-[1.04] text-papertrend-ink sm:text-5xl lg:text-7xl">
+                Papers should not disappear into folders. They should become a
+                research system you can question, inspect, and trust.
+              </h2>
+              <div className="mt-12 grid gap-8 border-t border-papertrend-line pt-8 md:grid-cols-2">
+                <p className="max-w-xl text-base leading-8 text-papertrend-muted">
+                  Papertrend reads each document as evidence: sections, metadata,
+                  methods, topics, findings, and citations stay connected instead of
+                  becoming isolated summaries.
+                </p>
+                <p className="max-w-xl text-base leading-8 text-papertrend-muted">
+                  The same structured record powers the library, dashboard, charts,
+                  repository chat, and long-form research workflows.
+                </p>
+              </div>
+            </MotionReveal>
+          </div>
+        </div>
+      </section>
+
+      <section className="bg-papertrend-surface px-4 py-20 sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-12 grid gap-6 lg:grid-cols-[0.42fr_1fr] lg:items-end">
+            <p className="font-mono text-xs text-papertrend-action">[ 02 ] Explore the system</p>
+            <div>
+              <h2 className="max-w-4xl text-4xl font-medium leading-tight text-papertrend-ink sm:text-5xl lg:text-6xl">
+                Four folds. One evidence trail.
+              </h2>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-papertrend-muted">
+                Select a capability to see how it changes the same repository without
+                detaching insight from source material.
+              </p>
+            </div>
+          </div>
+          <OrigamiCapabilityExplorer />
+        </div>
+      </section>
+
+      <section className="border-y border-[#253140] bg-[#080b10] px-4 py-20 text-white sm:px-6 lg:py-28">
+        <div className="mx-auto max-w-7xl">
+          <div className="grid gap-10 lg:grid-cols-[0.42fr_1fr] lg:items-end">
+            <p className="font-mono text-xs text-[#5ce1e6]">[ 03 ] Inside the instrument</p>
+            <div>
+              <h2 className="max-w-4xl text-4xl font-medium leading-tight sm:text-5xl lg:text-6xl">
+                See the corpus move from queue to question.
+              </h2>
+              <p className="mt-5 max-w-2xl text-base leading-7 text-[#aeb9c7]">
+                A live research state, not a decorative dashboard mockup.
+              </p>
+            </div>
+          </div>
           <AnimatedProductFrame />
         </div>
       </section>
 
-      <section className="border-b border-papertrend-line bg-papertrend-raised px-4 py-14 sm:px-6">
-        <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.65fr_1.35fr]">
+      <section className="bg-papertrend-canvas px-4 py-20 sm:px-6 lg:py-28">
+        <div className="mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.78fr_1.22fr]">
           <MotionReveal>
-            <p className="papertrend-kicker">One continuous record</p>
-            <h2 className="mt-4 max-w-md font-serif text-3xl font-semibold leading-tight text-papertrend-ink sm:text-4xl">
-              From collection to defensible finding.
+            <p className="font-mono text-xs text-papertrend-action">[ 04 ] Research with provenance</p>
+            <h2 className="mt-5 max-w-xl text-4xl font-medium leading-tight text-papertrend-ink sm:text-5xl">
+              The answer is only useful when the evidence survives it.
             </h2>
-          </MotionReveal>
-          <div className="grid border-y border-papertrend-line sm:grid-cols-2 lg:grid-cols-4">
-            {workflowSteps.map((step, index) => {
-              const Icon = step.icon;
-              return (
-                <MotionReveal
-                  key={step.title}
-                  delay={index * 0.06}
-                  className="relative min-w-0 border-b border-papertrend-line px-5 py-6 last:border-b-0 sm:[&:nth-child(odd)]:border-r lg:border-b-0 lg:border-r lg:last:border-r-0"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <Icon className="h-5 w-5 text-papertrend-action" />
-                    <span className="font-mono text-xs text-papertrend-muted">0{index + 1}</span>
-                  </div>
-                  <h3 className="mt-7 text-base font-semibold text-papertrend-ink">{step.title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-papertrend-muted">{step.copy}</p>
-                </MotionReveal>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="px-4 py-20 sm:px-6 lg:py-28">
-        <div className="mx-auto max-w-7xl">
-          <MotionReveal className="grid gap-5 border-b border-papertrend-line pb-9 lg:grid-cols-[0.8fr_1.2fr] lg:items-end">
-            <div>
-              <p className="papertrend-kicker">Built around the corpus</p>
-              <h2 className="mt-4 font-serif text-4xl font-semibold leading-tight text-papertrend-ink sm:text-5xl">
-                Four capabilities. One evidence trail.
-              </h2>
-            </div>
-            <p className="max-w-2xl text-base leading-7 text-papertrend-muted lg:justify-self-end">
-              Analysis, dashboards, chat, and background processing operate on the
-              same repository context, so every overview can lead back to a paper.
-            </p>
-          </MotionReveal>
-
-          <div className="divide-y divide-papertrend-line">
-            {marketingFeatures.map((feature, index) => {
-              const Icon = feature.icon;
-              return (
-                <MotionReveal
-                  key={feature.slug}
-                  delay={0.04}
-                  className="group grid gap-5 py-8 md:grid-cols-[72px_0.7fr_1.3fr_auto] md:items-center"
-                >
-                  <span className="flex h-11 w-11 items-center justify-center rounded-md border border-papertrend-line bg-papertrend-raised text-papertrend-action">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <div>
-                    <p className="font-mono text-xs text-papertrend-muted">0{index + 1}</p>
-                    <h3 className="mt-2 text-xl font-semibold text-papertrend-ink">{feature.navLabel}</h3>
-                  </div>
-                  <p className="max-w-2xl text-sm leading-7 text-papertrend-muted">{feature.homeSummary}</p>
-                  <Link
-                    href={`/features/${feature.slug}`}
-                    className="inline-flex min-h-10 items-center gap-2 text-sm font-semibold text-papertrend-action"
-                  >
-                    View capability
-                    <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-1" />
-                  </Link>
-                </MotionReveal>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="border-y border-papertrend-line bg-papertrend-ink px-4 py-16 text-white sm:px-6 lg:py-20">
-        <div className="mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1fr_0.9fr] lg:items-center">
-          <MotionReveal>
-            <p className="font-mono text-xs uppercase text-[#9bdce2]">Research with provenance</p>
-            <h2 className="mt-4 max-w-3xl font-serif text-4xl font-semibold leading-tight sm:text-5xl">
-              Ask difficult questions without detaching the answer from its sources.
-            </h2>
-            <p className="mt-5 max-w-2xl text-base leading-7 text-[#c7d0dc]">
-              Inspect the paper, compare the corpus, build the chart, and keep the
-              citation trail inside one working environment.
-            </p>
-          </MotionReveal>
-          <MotionReveal delay={0.08} className="border-l border-[#526176] pl-6">
-            <ul className="space-y-4">
-              {["Owner-scoped repository context", "Paper-title citations", "Visible processing stages", "Complete-scope analysis"].map((item) => (
-                <li key={item} className="flex items-center gap-3 text-sm text-[#e5ebf2]">
-                  <CheckCircleIcon className="h-4 w-4 flex-none text-[#55c8d2]" />
-                  {item}
-                </li>
-              ))}
-            </ul>
             <div className="mt-8">
               <MarketingCTA />
             </div>
           </MotionReveal>
+
+          <div className="border-t border-papertrend-line">
+            {evidencePrinciples.map((item, index) => (
+              <MotionReveal
+                key={item}
+                delay={index * 0.05}
+                className="grid min-h-20 grid-cols-[40px_minmax(0,1fr)] items-center gap-4 border-b border-papertrend-line py-5"
+              >
+                <CheckCircleIcon className="h-5 w-5 text-papertrend-cyan" />
+                <p className="text-lg font-medium text-papertrend-ink sm:text-xl">{item}</p>
+              </MotionReveal>
+            ))}
+          </div>
         </div>
       </section>
     </MarketingShell>

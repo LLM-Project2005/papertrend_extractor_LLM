@@ -177,7 +177,7 @@ export default function AuthPanel({
     <section className="rounded-lg border border-papertrend-line bg-papertrend-surface p-6 shadow-panel sm:p-7">
       <div className="mb-6">
         <p className="papertrend-kicker">{eyebrow}</p>
-        <h2 className="mt-3 font-serif text-3xl font-semibold text-papertrend-ink">{title}</h2>
+        <h2 className="mt-3 text-3xl font-semibold leading-tight text-papertrend-ink">{title}</h2>
         <p className="mt-3 text-sm leading-6 text-papertrend-muted">{description}</p>
       </div>
 
@@ -201,16 +201,16 @@ export default function AuthPanel({
         })}
       </div>
 
-      <div className="my-5 flex items-center gap-3 text-xs text-slate-400 dark:text-[#6f6f6f]">
-        <span className="h-px flex-1 bg-slate-200 dark:bg-[#1f1f1f]" />
+      <div className="my-5 flex items-center gap-3 text-xs text-papertrend-muted">
+        <span className="h-px flex-1 bg-papertrend-line" />
         <span>Password</span>
-        <span className="h-px flex-1 bg-slate-200 dark:bg-[#1f1f1f]" />
+        <span className="h-px flex-1 bg-papertrend-line" />
       </div>
 
       <form className="space-y-3" onSubmit={handlePasswordSubmit}>
         {passwordMode === "signup" ? (
           <label className="block">
-            <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-[#a3a3a3]">
+            <span className="mb-1.5 block text-xs font-medium text-papertrend-muted">
               Name
             </span>
             <input
@@ -224,7 +224,7 @@ export default function AuthPanel({
         ) : null}
 
         <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-[#a3a3a3]">
+          <span className="mb-1.5 block text-xs font-medium text-papertrend-muted">
             Email
           </span>
           <input
@@ -239,7 +239,7 @@ export default function AuthPanel({
         </label>
 
         <label className="block">
-          <span className="mb-1.5 block text-xs font-medium text-slate-500 dark:text-[#a3a3a3]">
+          <span className="mb-1.5 block text-xs font-medium text-papertrend-muted">
             Password
           </span>
           <input
@@ -271,7 +271,7 @@ export default function AuthPanel({
               setError(null);
               setNotice(null);
             }}
-            className="font-medium text-slate-600 hover:text-slate-950 dark:text-[#cfcfcf] dark:hover:text-white"
+            className="font-medium text-papertrend-muted hover:text-papertrend-ink"
           >
             {passwordMode === "signup" ? "Already have an account?" : "Create password account"}
           </button>
@@ -279,7 +279,7 @@ export default function AuthPanel({
             type="button"
             onClick={handlePasswordReset}
             disabled={busy}
-            className="font-medium text-slate-500 hover:text-slate-950 disabled:opacity-60 dark:text-[#9b9b9b] dark:hover:text-white"
+            className="font-medium text-papertrend-muted hover:text-papertrend-ink disabled:opacity-60"
           >
             Reset password
           </button>

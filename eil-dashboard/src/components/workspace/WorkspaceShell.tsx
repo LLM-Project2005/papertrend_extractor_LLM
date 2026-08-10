@@ -134,23 +134,25 @@ const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 function WorkspaceBreadcrumb({
   projectName,
   onNavigate,
+  inverted = false,
 }: {
   projectName: string;
   onNavigate?: (href: string) => void;
+  inverted?: boolean;
 }) {
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
+      <div className={`flex items-center gap-2 text-sm ${inverted ? "text-[#8d9bab]" : "text-papertrend-muted"}`}>
         <Link
           href="/workspaces"
           onClick={() => onNavigate?.("/workspaces")}
           prefetch={false}
-          className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
+          className={`truncate font-medium transition-colors ${inverted ? "text-white hover:text-[#5ce1e6]" : "text-papertrend-ink hover:text-papertrend-action"}`}
         >
           Repositories
         </Link>
-        <span className="text-slate-300 dark:text-[#4f4f4f]">&gt;</span>
-        <span className="truncate text-slate-500 dark:text-[#9b9b9b]">
+        <span className={inverted ? "text-[#526071]" : "text-papertrend-line"}>/</span>
+        <span className={`truncate ${inverted ? "text-[#aeb9c7]" : "text-papertrend-muted"}`}>
           {projectName || "Select repository"}
         </span>
       </div>
@@ -166,18 +168,27 @@ function DesktopSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <aside className="fixed bottom-0 left-0 top-[60px] z-30 hidden w-56 overflow-hidden border-r border-papertrend-line bg-papertrend-surface lg:block">
+    <aside className="workspace-instrument-rail fixed bottom-0 left-0 top-[60px] z-30 hidden w-56 overflow-hidden border-r border-[#263442] bg-[#080b10] text-white lg:block">
       <div className="flex h-full flex-col py-4">
         <div className="px-4 pb-4">
-          <p className="font-mono text-[11px] uppercase text-papertrend-muted">Research workspace</p>
+          <div className="mb-4 flex items-center gap-3 border-b border-white/15 pb-4">
+            <span className="relative h-8 w-8 overflow-hidden border border-white/20">
+              <span className="absolute -left-1 top-1 h-7 w-9 -rotate-[24deg] bg-[#075fce] [clip-path:polygon(0_0,100%_36%,42%_100%)]" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-white">Papertrend</p>
+              <p className="font-mono text-[10px] text-[#8d9bab]">Research instrument</p>
+            </div>
+          </div>
+          <p className="font-mono text-[11px] uppercase text-[#8d9bab]">Workspace index</p>
         </div>
         <nav className="flex-1 overflow-y-auto px-3">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.id}
-              className={sectionIndex === 0 ? "" : "mt-4 border-t border-papertrend-line pt-4"}
+              className={sectionIndex === 0 ? "" : "mt-4 border-t border-white/15 pt-4"}
             >
-              <p className="px-3 text-[11px] font-semibold uppercase text-papertrend-muted">
+              <p className="px-3 font-mono text-[10px] uppercase text-[#718092]">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
@@ -193,8 +204,8 @@ function DesktopSidebar({
                       onClick={() => onNavigate(item.href)}
                       className={`flex h-10 w-full items-center gap-3 rounded-md px-3 text-sm transition-colors ${
                         isActive
-                          ? "bg-papertrend-action-soft text-papertrend-action"
-                          : "text-papertrend-muted hover:bg-papertrend-raised hover:text-papertrend-ink"
+                          ? "border-l-2 border-[#5ce1e6] bg-white/10 text-white"
+                          : "border-l-2 border-transparent text-[#aeb9c7] hover:bg-white/5 hover:text-white"
                       }`}
                     >
                       <Icon className="h-[18px] w-[18px] flex-none" />
@@ -225,21 +236,22 @@ function MobileSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <div className="sticky top-0 border-b border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+    <div className="h-full w-full max-w-[280px] overflow-y-auto border-r border-[#263442] bg-[#080b10] text-white">
+      <div className="sticky top-0 border-b border-white/15 bg-[#080b10] px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
-            <span className="flex h-10 w-10 items-center justify-center text-slate-950 dark:text-white">
+            <span className="flex h-10 w-10 items-center justify-center text-white">
               <LogoMarkIcon className="h-7 w-7" />
             </span>
             <WorkspaceBreadcrumb
               projectName={projectName}
+              inverted
             />
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-md border border-white/20 bg-white/5 text-white transition-colors hover:bg-white hover:text-black"
             aria-label="Close workspace navigation"
           >
             <CloseIcon className="h-4 w-4" />
@@ -250,7 +262,7 @@ function MobileSidebar({
       <nav className="space-y-4 px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.id}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#5f5f5f]">
+            <p className="px-3 font-mono text-[10px] uppercase text-[#718092]">
               {section.label}
             </p>
             <div className="mt-2 space-y-1">
@@ -269,8 +281,8 @@ function MobileSidebar({
                     }}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        ? "bg-slate-900 text-white dark:bg-[#030303]"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                        ? "border-l-2 border-[#5ce1e6] bg-white/10 text-white"
+                        : "border-l-2 border-transparent text-[#aeb9c7] hover:bg-white/5 hover:text-white"
                     }`}
                   >
                     <Icon className="h-4 w-4 flex-none" />
@@ -516,8 +528,8 @@ export default function WorkspaceShell({
           </div>
         </div>
         {navigating ? (
-          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-slate-950/10 dark:bg-white/10">
-            <div className="h-full w-1/2 animate-pulse bg-slate-950 dark:bg-white" />
+          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-papertrend-action-soft">
+            <div className="h-full w-1/2 animate-pulse bg-papertrend-action" />
           </div>
         ) : null}
       </header>
@@ -585,7 +597,7 @@ export default function WorkspaceShell({
                 <button
                   type="button"
                   onClick={() => setStatusPanelOpen(false)}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-xl transition hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b8b8b8] dark:hover:text-white"
+                  className="mt-2 w-full rounded-md border border-papertrend-line bg-papertrend-surface px-3 py-2 text-xs font-medium text-papertrend-muted shadow-overlay transition-colors hover:text-papertrend-ink"
                 >
                   Hide status
                 </button>
@@ -594,7 +606,7 @@ export default function WorkspaceShell({
               <button
                 type="button"
                 onClick={() => setStatusPanelOpen(true)}
-                className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-xl transition hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-papertrend-line bg-papertrend-surface text-papertrend-muted shadow-overlay transition-colors hover:border-[var(--pt-line-strong)] hover:text-papertrend-ink"
                 aria-label="Open analysis progress"
                 title="Open analysis progress"
               >

@@ -64,7 +64,7 @@ export default function DocsFixedRail({ children, side }: DocsFixedRailProps) {
   const sideClass =
     side === "left"
       ? "left-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))] w-[260px] pr-4 lg:block"
-      : "right-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))] w-[220px] border-l border-slate-200 pl-5 dark:border-[#1f1f1f] xl:block";
+      : "right-[max(1.5rem,calc((100vw-80rem)/2+1.5rem))] w-[220px] border-l border-papertrend-line pl-5 xl:block";
 
   return (
     <aside

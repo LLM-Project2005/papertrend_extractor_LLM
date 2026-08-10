@@ -216,7 +216,7 @@ export function ResearchDashboardShowcase() {
               {bars.map((height, index) => (
                 <motion.div
                   key={height + index}
-                  className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#7928ca] via-[#ff0080] to-[#f9cb28]"
+                  className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#075fce] via-[#168db7] to-[#5ce1e6]"
                   initial={{ height: `${height * 0.62}%` }}
                   animate={transition ? { height: [`${height * 0.62}%`, `${height}%`] } : undefined}
                   transition={transition ? { ...transition, delay: index * 0.05 } : undefined}
@@ -245,7 +245,7 @@ export function ResearchDashboardShowcase() {
               <p className="font-mono text-xs text-[#8f8f8f]">FILTER TRACE</p>
               <div className="mt-5 h-24 rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
                 <motion.div
-                  className="h-full rounded-md bg-gradient-to-r from-[#007cf0] via-[#7928ca] to-[#ff0080]"
+                  className="h-full rounded-md bg-gradient-to-r from-[#075fce] via-[#168db7] to-[#5ce1e6]"
                   initial={{ width: "54%" }}
                   animate={transition ? { width: ["54%", "86%"] } : undefined}
                   transition={transition}
@@ -313,7 +313,7 @@ export function AdaptiveDashboardShowcase() {
                   {[46, 72, 58, 86, 64].map((height, barIndex) => (
                     <motion.div
                       key={`${title}-${height}`}
-                      className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-[#7928ca] via-[#ff0080] to-[#f9cb28]"
+                      className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-[#075fce] via-[#168db7] to-[#5ce1e6]"
                       initial={{ height: `${height * 0.55}%` }}
                       animate={transition ? { height: [`${height * 0.55}%`, `${height}%`] } : undefined}
                       transition={transition ? { ...transition, delay: barIndex * 0.05 } : undefined}
@@ -392,7 +392,7 @@ export function AIResearchChatShowcase() {
                 {[82, 64, 48, 35].map((height, index) => (
                   <motion.div
                     key={height}
-                    className="flex-1 rounded-t-md bg-gradient-to-t from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]"
+                    className="flex-1 rounded-t-md bg-gradient-to-t from-[#075fce] via-[#168db7] to-[#5ce1e6]"
                     initial={{ height: `${height * 0.5}%` }}
                     animate={transition ? { height: [`${height * 0.5}%`, `${height}%`] } : undefined}
                     transition={transition ? { ...transition, delay: index * 0.08 } : undefined}
@@ -464,7 +464,7 @@ export function DeepResearchGraphShowcase() {
               {[78, 63, 86].map((width, index) => (
                 <motion.div
                   key={width}
-                  className="h-2 rounded-sm bg-gradient-to-r from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]"
+                  className="h-2 rounded-sm bg-gradient-to-r from-[#075fce] via-[#168db7] to-[#5ce1e6]"
                   initial={{ width: `${width - 22}%` }}
                   animate={transition ? { width: [`${width - 22}%`, `${width}%`] } : undefined}
                   transition={transition ? { ...transition, delay: index * 0.1 } : undefined}
@@ -586,7 +586,7 @@ export function CloudQueueShowcase() {
                   <span className="text-xs text-[#8f8f8f]">{item}</span>
                   <div className="h-2 rounded-sm bg-[#111111]">
                     <motion.div
-                      className="h-full rounded-sm bg-gradient-to-r from-[#007cf0] via-[#7928ca] to-[#ff4d4d]"
+                      className="h-full rounded-sm bg-gradient-to-r from-[#075fce] via-[#168db7] to-[#5ce1e6]"
                       initial={{ width: `${36 + index * 8}%` }}
                       animate={transition ? { width: [`${36 + index * 8}%`, `${82 - index * 6}%`] } : undefined}
                       transition={transition ? { ...transition, delay: index * 0.1 } : undefined}

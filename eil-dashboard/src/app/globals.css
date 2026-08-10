@@ -7,20 +7,20 @@
 :root {
   color-scheme: light;
   --font-ui: "Aptos", "Segoe UI Variable", "Segoe UI", sans-serif;
-  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+  --font-display: "Aptos Display", "Segoe UI Variable Display", "Segoe UI", sans-serif;
   --font-mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  --pt-canvas: #f6f8fb;
-  --pt-surface: #ffffff;
-  --pt-raised: #fbfcfe;
-  --pt-ink: #172033;
-  --pt-muted: #637087;
-  --pt-line: #dce2ea;
-  --pt-line-strong: #bcc7d6;
-  --pt-action: #175cd3;
-  --pt-action-hover: #124aa9;
-  --pt-action-soft: #e9f1ff;
+  --pt-canvas: #f2f5f3;
+  --pt-surface: #fbfcfa;
+  --pt-raised: #e8eeeb;
+  --pt-ink: #10161f;
+  --pt-muted: #536273;
+  --pt-line: #ccd6d2;
+  --pt-line-strong: #96a6a1;
+  --pt-action: #075fce;
+  --pt-action-hover: #044ca8;
+  --pt-action-soft: #e2edff;
   --pt-cyan: #087f8c;
-  --pt-cyan-soft: #e3f5f6;
+  --pt-cyan-soft: #dff3f3;
   --pt-magenta: #a23b72;
   --pt-magenta-soft: #faeaf2;
   --pt-danger: #b42318;
@@ -29,23 +29,23 @@
   --pt-warning-soft: #fff7db;
   --pt-success: #287a52;
   --pt-success-soft: #e9f7ef;
-  --bg-plot: #fbfcfe;
+  --bg-plot: #fbfcfa;
 }
 
 .dark {
   color-scheme: dark;
-  --pt-canvas: #0b1018;
-  --pt-surface: #101722;
-  --pt-raised: #151e2b;
-  --pt-ink: #eef3f8;
-  --pt-muted: #9eabbc;
-  --pt-line: #263244;
-  --pt-line-strong: #3a4a60;
-  --pt-action: #75a7ff;
-  --pt-action-hover: #9bbfff;
-  --pt-action-soft: #172a49;
-  --pt-cyan: #55c8d2;
-  --pt-cyan-soft: #12343a;
+  --pt-canvas: #070a0f;
+  --pt-surface: #0d1219;
+  --pt-raised: #151c25;
+  --pt-ink: #f1f5f3;
+  --pt-muted: #aeb9c7;
+  --pt-line: #283442;
+  --pt-line-strong: #4b5c6e;
+  --pt-action: #78aefe;
+  --pt-action-hover: #9bc2ff;
+  --pt-action-soft: #172b48;
+  --pt-cyan: #5ce1e6;
+  --pt-cyan-soft: #11383b;
   --pt-magenta: #e08ab5;
   --pt-magenta-soft: #3b2030;
   --pt-danger: #ff9189;
@@ -173,13 +173,63 @@ button:disabled {
   color: var(--pt-ink);
 }
 
+.feature-world {
+  color-scheme: dark;
+  --pt-canvas: #05080c;
+  --pt-surface: #080b10;
+  --pt-raised: #10161e;
+  --pt-ink: #f4f6f2;
+  --pt-muted: #aeb9c7;
+  --pt-line: #253140;
+  --pt-line-strong: #46586d;
+  --pt-action: #79b2ff;
+  --pt-action-hover: #a3caff;
+  --pt-action-soft: #142b47;
+  --pt-cyan: #5ce1e6;
+  --pt-cyan-soft: #10383b;
+}
+
+.origami-mark {
+  isolation: isolate;
+}
+
+.origami-mark__plane {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 58%;
+  animation: origami-breathe 5.2s cubic-bezier(0.16, 1, 0.3, 1) infinite alternate;
+}
+
+.origami-mark__plane--one {
+  clip-path: polygon(8% 66%, 48% 10%, 56% 58%, 95% 77%, 46% 92%);
+  background: #f3f5ef;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.origami-mark__plane--two {
+  clip-path: polygon(12% 68%, 48% 10%, 46% 92%);
+  background: #aab7c4;
+  animation-delay: -1.6s;
+}
+
+.origami-mark__plane--three {
+  clip-path: polygon(49% 12%, 95% 77%, 56% 58%);
+  background: #1468d5;
+  animation-delay: -3.2s;
+}
+
+@keyframes origami-breathe {
+  from {
+    transform: translateY(4px) rotate(-1.2deg);
+  }
+  to {
+    transform: translateY(-5px) rotate(1.2deg);
+  }
+}
+
 /* Compatibility aliases for existing feature showcases during the system rollout. */
 .marketing-grid {
-  background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--pt-line) 45%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--pt-line) 45%, transparent) 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: linear-gradient(to bottom, black 0%, transparent 88%);
+  background: transparent;
 }
 
 .marketing-scanline {
@@ -202,7 +252,7 @@ button:disabled {
 }
 
 .papertrend-page-title {
-  font-family: var(--font-display), serif;
+  font-family: var(--font-display);
   font-size: 2rem;
   font-style: normal;
   font-weight: 600;
@@ -216,8 +266,18 @@ button:disabled {
 }
 
 .papertrend-product h1 {
-  font-family: var(--font-display), serif;
+  font-family: var(--font-display);
   font-style: normal;
+}
+
+.workspace-instrument-rail {
+  color-scheme: dark;
+}
+
+@media (max-width: 639px) {
+  .papertrend-page-title {
+    font-size: 1.8rem;
+  }
 }
 
 .papertrend-kicker {

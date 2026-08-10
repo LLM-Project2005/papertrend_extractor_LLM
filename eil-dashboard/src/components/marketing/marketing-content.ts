@@ -80,7 +80,7 @@ export const marketingFeatures: MarketingFeature[] = [
       "Turn analyzed papers into searchable, filterable views of yearly movement, topics, keywords, research tracks, and workspace-wide coverage.",
     homeSummary:
       "Explore trends, topics, tracks, and coverage across all analyzed papers in the workspace.",
-    gradient: "from-[#7928ca] via-[#ff0080] to-[#eb367f]",
+    gradient: "from-[#075fce] via-[#087f8c] to-[#35a86b]",
     icon: ChartIcon,
     heroPoints: ["workspace-wide views", "trend charts", "filterable corpus"],
     proof: [
@@ -112,7 +112,7 @@ export const marketingFeatures: MarketingFeature[] = [
       "Ask questions about attached papers, search the web when needed, and create charts from analyzed files or workspace data without leaving the conversation.",
     homeSummary:
       "Chat with attached papers, trigger web search, and build charts from research data in one place.",
-    gradient: "from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]",
+    gradient: "from-[#075fce] via-[#2d83d8] to-[#e2634f]",
     icon: ChatIcon,
     heroPoints: ["attached-paper context", "chart mode", "web citations"],
     proof: [
@@ -144,7 +144,7 @@ export const marketingFeatures: MarketingFeature[] = [
       "Batch uploads become background work with Cloud Tasks, retry-safe worker runs, and status feedback that keeps users out of long-running request timeouts.",
     homeSummary:
       "Analyze multiple papers in sequence with background workers, retries, and visible run status.",
-    gradient: "from-[#007cf0] via-[#7928ca] to-[#ff4d4d]",
+    gradient: "from-[#27384d] via-[#075fce] to-[#087f8c]",
     icon: UploadIcon,
     heroPoints: ["Cloud Tasks trigger", "retry-aware worker", "queue visibility"],
     proof: [
