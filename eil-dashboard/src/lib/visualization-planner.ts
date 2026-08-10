@@ -1,15 +1,13 @@
 import { TRACK_COLS, type TrackKey } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { loadDashboardDataServer } from "@/lib/dashboard-data-server";
-import { createChatCompletion } from "@/lib/openai";
-import {
-  createDefaultVisualizationPlan,
-  sanitizeVisualizationPlan,
-} from "@/lib/visualization-plan";
+import { createChatCompletionResult } from "@/lib/openai";
+import { sanitizeVisualizationPlan } from "@/lib/visualization-plan";
 import type { DashboardData, PaperId, TrackRow } from "@/types/database";
 import type {
   NormalizedAnalyticsPayload,
   VisualizationPlan,
+  VisualizationChartKey,
   VisualizationPlannerRequest,
 } from "@/types/visualization";
 
@@ -361,15 +359,186 @@ export async function buildNormalizedAnalyticsPayload(
   };
 }
 
+export function getViableAdaptiveCharts(
+  analytics: NormalizedAnalyticsPayload
+): VisualizationChartKey[] {
+  const viable: VisualizationChartKey[] = [];
+  const nonEmptyYears = analytics.yearly_paper_trend.filter((row) => row.papers > 0);
+  const topicFamilies = analytics.canonical_topic_families.filter((row) => row.paper_count > 0);
+  const nonEmptyTracks = analytics.track_totals.single.filter((row) => row.value > 0);
+
+  if (nonEmptyYears.length >= 2) viable.push("adaptive_year_volume");
+  if (topicFamilies.length >= 2) viable.push("adaptive_topic_distribution");
+  if (nonEmptyTracks.length >= 2) viable.push("adaptive_track_distribution");
+
+  const topicYearValues = new Map<string, number[]>();
+  for (const year of analytics.top_topics_over_time) {
+    for (const topic of year.topics) {
+      const values = topicYearValues.get(topic.topic) ?? [];
+      values.push(topic.papers);
+      topicYearValues.set(topic.topic, values);
+    }
+  }
+  const hasChangingTopic = [...topicYearValues.values()].some(
+    (values) => values.length >= 2 && new Set(values).size >= 2
+  );
+  if (hasChangingTopic) viable.push("adaptive_topic_momentum");
+  if (analytics.topic_shifts.emerging.length + analytics.topic_shifts.declining.length >= 2) {
+    viable.push("adaptive_emerging_topics");
+  }
+  if (analytics.folder_topic_totals.filter((row) => row.topics.length > 0).length >= 2) {
+    viable.push("adaptive_folder_topic_comparison");
+  }
+  const hasHeatmapVariation = analytics.keyword_heatmap.rows.some(
+    (row) =>
+      row.totals_by_year.filter((value) => value > 0).length >= 2 &&
+      new Set(row.totals_by_year).size >= 2
+  );
+  if (analytics.keyword_heatmap.years.length >= 2 && hasHeatmapVariation) {
+    viable.push("adaptive_keyword_family_heatmap");
+  }
+  if (analytics.topic_by_track_totals.filter((row) => row.topics.length > 0).length >= 2) {
+    viable.push("adaptive_track_topic_comparison");
+  }
+  return viable;
+}
+
+function buildDataAwareFallbackPlan(
+  analytics: NormalizedAnalyticsPayload,
+  viableChartKeys: VisualizationChartKey[]
+): VisualizationPlan {
+  const preferred: VisualizationChartKey[] = [
+    "adaptive_year_volume",
+    "adaptive_topic_distribution",
+    "adaptive_track_distribution",
+    "adaptive_topic_momentum",
+    "adaptive_emerging_topics",
+    "adaptive_folder_topic_comparison",
+    "adaptive_keyword_family_heatmap",
+    "adaptive_track_topic_comparison",
+  ];
+  const titles: Record<VisualizationChartKey, string> = {
+    overview_metrics: "Overview metrics",
+    papers_per_year: "Papers per year",
+    track_single_breakdown: "Primary track distribution",
+    track_multi_breakdown: "Multiple track distribution",
+    topic_area: "Topic area",
+    emerging_topics: "Emerging topics",
+    declining_topics: "Declining topics",
+    keyword_heatmap: "Keyword heatmap",
+    track_year_stacked: "Tracks over time",
+    track_cooccurrence: "Track co-occurrence",
+    topics_per_track: "Topics by track",
+    paper_table: "Paper table",
+    adaptive_topic_momentum: "Topics with meaningful change over time",
+    adaptive_emerging_topics: "Largest topic shifts",
+    adaptive_folder_topic_comparison: "How folders differ by topic",
+    adaptive_keyword_family_heatmap: "When keyword families appear",
+    adaptive_track_topic_comparison: "How research tracks differ by topic",
+    adaptive_year_volume: "Publication volume by year",
+    adaptive_topic_distribution: "Most represented research topics",
+    adaptive_track_distribution: "Research papers by primary track",
+  };
+  const charts = preferred
+    .filter((key) => viableChartKeys.includes(key))
+    .slice(0, 3)
+    .map((chartKey) => ({
+      chart_key: chartKey,
+      title: titles[chartKey],
+      reason: "Selected as a reliable view supported by the current filter snapshot.",
+      config: chartKey.includes("topic") ? { top_n: 8 } : undefined,
+    }));
+  return {
+    version: "v1",
+    mode: analytics.mode,
+    dashboard_title: "Charts for the current research scope",
+    summary:
+      charts.length > 0
+        ? "A conservative chart set based only on dimensions with enough filtered data to interpret."
+        : "The current filter snapshot does not contain enough varied data for a reliable chart.",
+    sections: [{
+      section_key: "adaptive",
+      title: "Generated analysis",
+      priority: 1,
+      reason: "Charts are tied to the filter snapshot captured when Generate charts was selected.",
+      charts,
+    }],
+  };
+}
+
+function buildVisualizationTool(viableChartKeys: VisualizationChartKey[]) {
+  return {
+    type: "function",
+    function: {
+      name: "build_adaptive_dashboard",
+      description: "Build a concise adaptive research dashboard from chart types proven viable for the current filtered data.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["dashboard_title", "summary", "section_title", "section_reason", "charts"],
+        properties: {
+          dashboard_title: { type: "string" },
+          summary: { type: "string" },
+          section_title: { type: "string" },
+          section_reason: { type: "string" },
+          charts: {
+            type: "array",
+            minItems: 1,
+            maxItems: 5,
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["chart_key", "title", "reason"],
+              properties: {
+                chart_key: { type: "string", enum: viableChartKeys },
+                title: { type: "string" },
+                reason: { type: "string" },
+                config: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    top_n: { type: "integer", minimum: 3, maximum: 12 },
+                    heat_n: { type: "integer", minimum: 4, maximum: 16 },
+                    selected_tracks: { type: "array", items: { type: "string", enum: TRACK_COLS } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+function toolPlanPayload(argumentsText: string | undefined, mode: "mock" | "live") {
+  if (!argumentsText) return null;
+  const parsed = parseJsonPayload(argumentsText) as Record<string, unknown>;
+  return {
+    version: "v1",
+    mode,
+    dashboard_title: parsed.dashboard_title,
+    summary: parsed.summary,
+    sections: [{
+      section_key: "adaptive",
+      title: parsed.section_title,
+      priority: 1,
+      reason: parsed.section_reason,
+      charts: parsed.charts,
+    }],
+  };
+}
+
 function buildPlannerPrompt(
   analytics: NormalizedAnalyticsPayload,
+  viableChartKeys: VisualizationChartKey[],
   context?: VisualizationPlannerRequest["context"]
 ): string {
   return `
 You are an adaptive chart planning agent for a research analytics dashboard.
 Return JSON only.
 
-Your job is to select and sequence 3 to 5 high-value charts for the Adaptive tab.
+Your job is to select and sequence 1 to 5 high-value charts for the Adaptive tab.
 The charts must come only from the approved chart catalog below.
 Do not invent new chart types, layouts, or code.
 Prefer a compact set of charts that together tell the strongest story in the current filtered corpus.
@@ -394,49 +563,26 @@ Core chart selection rubric:
 - Reject plans where two charts use nearly the same grouping and answer the same question.
 
 Rubric guidance for the approved chart catalog:
+- Reliable baselines: adaptive_year_volume, adaptive_topic_distribution, adaptive_track_distribution
 - Time-based: adaptive_topic_momentum, adaptive_keyword_family_heatmap
 - Relationship/comparison: adaptive_folder_topic_comparison, adaptive_track_topic_comparison
 - Distribution/structure: adaptive_emerging_topics, adaptive_keyword_family_heatmap, adaptive_track_topic_comparison
 
-Allowed chart_key values:
-- adaptive_topic_momentum
-- adaptive_emerging_topics
-- adaptive_folder_topic_comparison
-- adaptive_keyword_family_heatmap
-- adaptive_track_topic_comparison
+The only chart keys proven viable for this exact filter snapshot are:
+${viableChartKeys.map((key) => `- ${key}`).join("\n")}
+
+Prefer reliable baseline charts when they answer the question clearly. Use advanced cross-topic charts only
+when they add information beyond publication, topic, or track distributions. Never choose an advanced chart
+just because it sounds more sophisticated.
 
 Allowed config fields:
 - top_n
 - heat_n
 - selected_tracks
 
-Return this exact top-level JSON shape:
-{
-  "version": "v1",
-  "mode": "mock|live",
-  "dashboard_title": "string",
-  "summary": "string",
-  "sections": [
-    {
-      "section_key": "adaptive",
-      "title": "Adaptive",
-      "priority": 1,
-      "reason": "string",
-      "charts": [
-        {
-          "chart_key": "one of the allowed chart keys",
-          "title": "string",
-          "reason": "string",
-          "config": {
-            "top_n": 8,
-            "heat_n": 12,
-            "selected_tracks": ["EL","ELI","LAE","Other"]
-          }
-        }
-      ]
-    }
-  ]
-}
+Call build_adaptive_dashboard exactly once. Its arguments must contain a concise dashboard title,
+a useful summary, a section title and reason, and 1 to 5 non-redundant charts selected only from
+the viable keys above. Fewer strong charts are better than padding the dashboard with weak charts.
 
 Workspace context:
 ${JSON.stringify(context ?? {}, null, 2)}
@@ -458,46 +604,57 @@ export async function planVisualization(
   const includeFolderComparison =
     analytics.filters.folder_ids.length > 1 ||
     (analytics.filters.all_folders_selected && analytics.overview.folder_count > 1);
-  const fallback = createDefaultVisualizationPlan(
-    analytics.mode,
-    analytics.filters.selected_tracks,
-    includeFolderComparison
-  );
+  const viableChartKeys = getViableAdaptiveCharts(analytics);
+  const dataAwareFallback = buildDataAwareFallbackPlan(analytics, viableChartKeys);
+
+  if (viableChartKeys.length === 0) {
+    return { plan: dataAwareFallback, analytics, source: "fallback" };
+  }
 
   try {
-    const response = await createChatCompletion(
+    const response = await createChatCompletionResult(
       [
         {
           role: "system",
           content:
-            "You are Papertrend's senior research-visualization planner. Select truthful, decision-useful charts from the approved catalog and respond with valid JSON only.",
+            "You are Papertrend's senior research-visualization planner. Select truthful, decision-useful charts from the approved tool catalog and call the required tool exactly once.",
         },
         {
           role: "user",
-          content: buildPlannerPrompt(analytics, request.context),
+          content: buildPlannerPrompt(analytics, viableChartKeys, request.context),
         },
       ],
       0,
       undefined,
-      "VISUALIZATION_PLANNING"
+      "VISUALIZATION_PLANNING",
+      {
+        maxTokens: 1400,
+        tools: [buildVisualizationTool(viableChartKeys)],
+        toolChoice: { type: "function", function: { name: "build_adaptive_dashboard" } },
+        parallelToolCalls: false,
+      }
     );
 
     if (!response) {
-      return { plan: fallback, analytics, source: "fallback" };
+      return { plan: dataAwareFallback, analytics, source: "fallback" };
     }
 
-    const rawPlan = parseJsonPayload(response);
+    const toolCall = response.toolCalls.find(
+      (call) => call.function?.name === "build_adaptive_dashboard"
+    );
+    const rawPlan = toolPlanPayload(toolCall?.function?.arguments, analytics.mode);
     return {
       plan: sanitizeVisualizationPlan(
         rawPlan,
         analytics.mode,
         analytics.filters.selected_tracks,
-        includeFolderComparison
+        includeFolderComparison,
+        viableChartKeys
       ),
       analytics,
       source: "agent",
     };
   } catch {
-    return { plan: fallback, analytics, source: "fallback" };
+    return { plan: dataAwareFallback, analytics, source: "fallback" };
   }
 }

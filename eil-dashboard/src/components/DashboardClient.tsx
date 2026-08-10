@@ -10,14 +10,13 @@ import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import Modal from "@/components/ui/Modal";
-import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
+import { ChartIcon, CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
-import { createDefaultVisualizationPlan } from "@/lib/visualization-plan";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import type { DashboardDataMode, PaperId, TrackRow, TrendRow } from "@/types/database";
-import type { VisualizationPlan } from "@/types/visualization";
+import type { DashboardData, DashboardDataMode, PaperId, TrackRow, TrendRow } from "@/types/database";
+import type { NormalizedAnalyticsPayload, VisualizationPlan } from "@/types/visualization";
 
 const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
@@ -27,7 +26,6 @@ const TAB_DEFINITIONS = [
   { key: "adaptive", label: "Adaptive" },
 ] as const;
 
-const ADAPTIVE_PLAN_CACHE_PREFIX = "adaptive-plan-cache:v1";
 const ADAPTIVE_SIGNATURE_SAMPLE_SIZE = 1200;
 const ADAPTIVE_RENDER_ROW_LIMIT = 10000;
 
@@ -48,6 +46,11 @@ type DashboardDrilldownPaper = {
   tracks: string[];
   evidence: string;
 };
+
+type AdaptiveDashboardSnapshot = Pick<
+  DashboardData,
+  "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies"
+>;
 
 function stableSerialize(value: unknown): string {
   if (Array.isArray(value)) {
@@ -235,8 +238,12 @@ export default function DashboardClient({
     plan: VisualizationPlan;
     source: "agent" | "fallback";
   } | null>(null);
+  const [adaptiveSnapshot, setAdaptiveSnapshot] = useState<AdaptiveDashboardSnapshot | null>(null);
+  const [adaptiveAnalytics, setAdaptiveAnalytics] = useState<NormalizedAnalyticsPayload | null>(null);
+  const [generatedAdaptiveSignature, setGeneratedAdaptiveSignature] = useState<string | null>(null);
+  const [adaptiveGenerating, setAdaptiveGenerating] = useState(false);
+  const [adaptiveError, setAdaptiveError] = useState<string | null>(null);
   const previousAllYearsRef = useRef<string[]>([]);
-  const lastPlanSignatureRef = useRef<string | null>(null);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
 
   useEffect(() => {
@@ -520,122 +527,6 @@ export default function DashboardClient({
     selectedYears,
   ]);
 
-  useEffect(() => {
-    if (!isAdaptiveTab || !data || !adaptivePlanSignature) {
-      return;
-    }
-
-    let cancelled = false;
-    const controller = new AbortController();
-    const includeFolderComparison =
-      selectedFolderIds.length > 1 || (selectedFolderIds.length === 0 && folders.length > 1);
-    const fallbackPlan = createDefaultVisualizationPlan(
-      data.useMock ? "mock" : "live",
-      selectedTracks as TrackKey[],
-      includeFolderComparison
-    );
-    const cacheKey = [
-      ADAPTIVE_PLAN_CACHE_PREFIX,
-      session?.user?.id ?? "anonymous",
-      selectedProjectId ?? "all",
-      adaptivePlanSignature,
-    ].join(":");
-
-    try {
-      const cachedValue = window.sessionStorage.getItem(cacheKey);
-      if (cachedValue) {
-        const parsed = JSON.parse(cachedValue) as {
-          plan?: VisualizationPlan;
-          source?: "agent" | "fallback";
-        };
-        if (parsed.plan && lastPlanSignatureRef.current !== adaptivePlanSignature) {
-          setPlanState({
-            plan: parsed.plan,
-            source: parsed.source ?? "agent",
-          });
-          lastPlanSignatureRef.current = adaptivePlanSignature;
-          return;
-        }
-      }
-    } catch {
-      // Ignore cache parsing issues and rebuild below.
-    }
-
-    if (lastPlanSignatureRef.current !== adaptivePlanSignature) {
-      lastPlanSignatureRef.current = adaptivePlanSignature;
-      setPlanState({ plan: fallbackPlan, source: "fallback" });
-    }
-
-    const requestTimeout = window.setTimeout(() => controller.abort(), 20_000);
-    const timer = window.setTimeout(async () => {
-      try {
-        const response = await fetch("/api/visualization-plan", {
-          method: "POST",
-          signal: controller.signal,
-          headers: {
-            "Content-Type": "application/json",
-            ...(session?.access_token
-              ? { Authorization: `Bearer ${session.access_token}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            selectedYears,
-            selectedTracks,
-            searchQuery,
-            folderIds: selectedFolderIds,
-            projectId: selectedProjectId,
-            context: {
-              goal: "Reveal the strongest decision-useful patterns in this filtered research corpus without overstating sparse evidence.",
-            },
-          }),
-        });
-        const payload = (await response.json().catch(() => ({}))) as {
-          plan?: VisualizationPlan;
-          source?: "agent" | "fallback";
-        };
-
-        if (!response.ok || !payload.plan || cancelled) {
-          return;
-        }
-
-        const nextState = {
-          plan: payload.plan,
-          source: payload.source ?? "fallback",
-        } as const;
-        lastPlanSignatureRef.current = adaptivePlanSignature;
-        setPlanState(nextState);
-        try {
-          window.sessionStorage.setItem(cacheKey, JSON.stringify(nextState));
-        } catch {
-          // Ignore cache write failures.
-        }
-      } catch {
-        if (!cancelled) {
-          lastPlanSignatureRef.current = adaptivePlanSignature;
-          setPlanState({ plan: fallbackPlan, source: "fallback" });
-        }
-      }
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      controller.abort();
-      window.clearTimeout(requestTimeout);
-      window.clearTimeout(timer);
-    };
-  }, [
-    isAdaptiveTab,
-    data,
-    adaptivePlanSignature,
-    folders.length,
-    searchQuery,
-    selectedFolderIds,
-    selectedProjectId,
-    selectedTracks,
-    selectedYears,
-    session?.access_token,
-  ]);
-
   const adaptiveRenderData = useMemo(
     () => ({
       trends: filteredData.trends.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
@@ -650,22 +541,77 @@ export default function DashboardClient({
       filteredData.trends,
     ]
   );
-  const adaptiveFallbackPlan = useMemo(
-    () =>
-      data
-        ? createDefaultVisualizationPlan(
-            data.useMock ? "mock" : "live",
-            selectedTracks as TrackKey[],
-            selectedFolderIds.length > 1 ||
-              (selectedFolderIds.length === 0 && folders.length > 1)
-          )
-        : null,
-    [data, folders.length, selectedFolderIds, selectedTracks]
-  );
   const adaptiveSection =
-    (planState?.plan ?? adaptiveFallbackPlan)?.sections.find(
+    planState?.plan.sections.find(
       (section) => section.section_key === "adaptive"
     ) ?? null;
+  const adaptiveFiltersChanged = Boolean(
+    generatedAdaptiveSignature && adaptivePlanSignature !== generatedAdaptiveSignature
+  );
+
+  async function generateAdaptiveCharts() {
+    if (!data || !adaptivePlanSignature || adaptiveGenerating) return;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 30_000);
+    setAdaptiveGenerating(true);
+    setAdaptiveError(null);
+    try {
+      const response = await fetch("/api/visualization-plan", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        },
+        body: JSON.stringify({
+          selectedYears,
+          selectedTracks,
+          searchQuery,
+          folderIds: selectedFolderIds,
+          projectId: selectedProjectId,
+          context: {
+            goal: "Build the clearest non-redundant charts for this exact filtered research corpus. Prefer robust comparisons and disclose sparse evidence.",
+          },
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        plan?: VisualizationPlan;
+        source?: "agent" | "fallback";
+        analytics?: NormalizedAnalyticsPayload;
+        error?: string;
+      };
+      if (!response.ok || !payload.plan || !payload.analytics) {
+        throw new Error(payload.error || "The visualization agent could not build a chart plan.");
+      }
+      setPlanState({ plan: payload.plan, source: payload.source ?? "fallback" });
+      setAdaptiveAnalytics(payload.analytics);
+      setAdaptiveSnapshot({
+        trends: adaptiveRenderData.trends.map((row) => ({ ...row })),
+        tracksSingle: adaptiveRenderData.tracksSingle.map((row) => ({ ...row })),
+        tracksMulti: adaptiveRenderData.tracksMulti.map((row) => ({ ...row })),
+        topicFamilies: adaptiveRenderData.topicFamilies.map((row) => ({
+          ...row,
+          aliases: [...row.aliases],
+          matchedTerms: [...row.matchedTerms],
+          relatedKeywords: [...row.relatedKeywords],
+          representativeKeywords: [...row.representativeKeywords],
+          paperIds: [...row.paperIds],
+        })),
+      });
+      setGeneratedAdaptiveSignature(adaptivePlanSignature);
+    } catch (error) {
+      setAdaptiveError(
+        error instanceof DOMException && error.name === "AbortError"
+          ? "Chart generation timed out. Please try again."
+          : error instanceof Error
+            ? error.message
+            : "Chart generation failed."
+      );
+    } finally {
+      window.clearTimeout(timeout);
+      setAdaptiveGenerating(false);
+    }
+  }
 
   if (loading && !data) {
     return (
@@ -704,7 +650,9 @@ export default function DashboardClient({
                   }`}
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
-              {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
+              {selectedYears.length === 0
+                ? "All years"
+                : `${selectedYears.length} year${selectedYears.length === 1 ? "" : "s"}`}
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
               {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
@@ -757,12 +705,20 @@ export default function DashboardClient({
               </p>
               <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
                 {planState?.plan.dashboard_title ??
-                  (data?.useMock ? "Preview adaptive project" : "Adaptive project analytics")}
+                  (data?.useMock ? "Preview chart workspace" : "Generate adaptive charts")}
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
                 {planState?.plan.summary ??
-                  "Adaptive charts focus on the strongest normalized corpus signals for the current filters."}
+                  "The visualization agent will inspect the current filters and choose only charts supported by that exact data snapshot."}
               </p>
+              {adaptiveFiltersChanged ? (
+                <p className="mt-2 text-sm font-medium text-amber-700 dark:text-amber-300">
+                  Filters changed. Existing charts still show the previous snapshot until you update them.
+                </p>
+              ) : null}
+              {adaptiveError ? (
+                <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300">{adaptiveError}</p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
@@ -778,9 +734,28 @@ export default function DashboardClient({
                   Showing recovered legacy analyses
                 </span>
               ) : null}
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
-                {planState?.source === "agent" ? "Adaptive plan" : "Fallback plan"}
-              </span>
+              {planState ? (
+                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
+                  {planState.source === "agent" ? "Agent plan" : "Safe fallback"}
+                </span>
+              ) : null}
+              {isAdaptiveTab ? (
+                <button
+                  type="button"
+                  onClick={() => void generateAdaptiveCharts()}
+                  disabled={adaptiveGenerating || !data}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
+                >
+                  <ChartIcon className="h-4 w-4" />
+                  {adaptiveGenerating
+                    ? "Building charts..."
+                    : planState
+                      ? adaptiveFiltersChanged
+                        ? "Update charts"
+                        : "Regenerate"
+                      : "Generate charts"}
+                </button>
+              ) : null}
             </div>
           </div>
         </section>
@@ -1062,17 +1037,33 @@ export default function DashboardClient({
             />
           ) : null}
           {currentTabKey === "adaptive" ? (
-            adaptiveSection ? (
+            adaptiveSection && adaptiveSnapshot && adaptiveAnalytics ? (
               <AdaptiveDashboardTab
-                data={adaptiveRenderData}
+                data={adaptiveSnapshot}
+                analytics={adaptiveAnalytics}
                 adaptiveSection={adaptiveSection}
                 folderNamesById={folderNamesById}
               />
             ) : (
-              <section className="app-surface px-5 py-5">
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Preparing adaptive charts for the current scope...
+              <section className="app-surface flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 text-slate-600 dark:border-[#2a2a2a] dark:text-[#d4d4d4]">
+                  <ChartIcon className="h-5 w-5" />
+                </span>
+                <h2 className="mt-5 text-xl font-semibold text-slate-900 dark:text-white">
+                  Build charts for this research scope
+                </h2>
+                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+                  The agent will inspect the selected folders, years, tracks, and search query, then call the chart builder with only statistically usable views.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => void generateAdaptiveCharts()}
+                  disabled={adaptiveGenerating || !data}
+                  className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
+                >
+                  <ChartIcon className="h-4 w-4" />
+                  {adaptiveGenerating ? "Building charts..." : "Generate charts"}
+                </button>
               </section>
             )
           ) : null}

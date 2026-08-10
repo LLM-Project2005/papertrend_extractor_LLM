@@ -16,6 +16,9 @@ const ADAPTIVE_CHART_KEYS: VisualizationChartKey[] = [
   "adaptive_folder_topic_comparison",
   "adaptive_keyword_family_heatmap",
   "adaptive_track_topic_comparison",
+  "adaptive_year_volume",
+  "adaptive_topic_distribution",
+  "adaptive_track_distribution",
 ];
 
 type AdaptiveRubricCategory = "time" | "comparison" | "structure";
@@ -41,6 +44,9 @@ const ADAPTIVE_CHART_RUBRIC_CATEGORIES: Record<
   adaptive_folder_topic_comparison: ["comparison"],
   adaptive_keyword_family_heatmap: ["time", "structure"],
   adaptive_track_topic_comparison: ["comparison", "structure"],
+  adaptive_year_volume: ["time"],
+  adaptive_topic_distribution: ["structure"],
+  adaptive_track_distribution: ["comparison", "structure"],
 };
 
 function clampInteger(
@@ -89,6 +95,7 @@ function sanitizeConfig(
       "adaptive_emerging_topics",
       "adaptive_folder_topic_comparison",
       "adaptive_track_topic_comparison",
+      "adaptive_topic_distribution",
     ].includes(chartKey)
     && !next.top_n
   ) {
@@ -254,7 +261,8 @@ export function sanitizeVisualizationPlan(
   rawPlan: unknown,
   fallbackMode: "mock" | "live",
   selectedTracks: TrackKey[] = DEFAULT_TRACKS,
-  includeFolderComparison = false
+  includeFolderComparison = false,
+  viableChartKeys: VisualizationChartKey[] = ADAPTIVE_CHART_KEYS
 ): VisualizationPlan {
   const fallback = createDefaultVisualizationPlan(
     fallbackMode,
@@ -265,8 +273,16 @@ export function sanitizeVisualizationPlan(
     (section) => section.section_key === "adaptive"
   );
   const fallbackCharts = fallbackAdaptiveSection?.charts ?? [];
+  const viableChartSet = new Set(viableChartKeys);
+  const viableFallback = {
+    ...fallback,
+    sections: fallback.sections.map((section) => ({
+      ...section,
+      charts: section.charts.filter((chart) => viableChartSet.has(chart.chart_key)),
+    })),
+  };
   if (!rawPlan || typeof rawPlan !== "object") {
-    return fallback;
+    return viableFallback;
   }
 
   const plan = rawPlan as Record<string, unknown>;
@@ -297,7 +313,8 @@ export function sanitizeVisualizationPlan(
       if (
         typeof chartKey !== "string" ||
         !VISUALIZATION_CHART_KEYS.includes(chartKey as VisualizationChartKey) ||
-        !ADAPTIVE_CHART_KEYS.includes(chartKey as VisualizationChartKey)
+        !ADAPTIVE_CHART_KEYS.includes(chartKey as VisualizationChartKey) ||
+        !viableChartSet.has(chartKey as VisualizationChartKey)
       ) {
         return null;
       }
@@ -322,10 +339,10 @@ export function sanitizeVisualizationPlan(
     .filter((chart): chart is VisualizationPlanChart => Boolean(chart))
     .slice(0, 5);
 
-  const rubricSafeCharts = enforceAdaptiveCoreRubric(charts, fallbackCharts);
+  const rubricSafeCharts = dedupeChartsByKey(charts).slice(0, 5);
 
   if (rubricSafeCharts.length === 0) {
-    return fallback;
+    return viableFallback;
   }
 
   return {
