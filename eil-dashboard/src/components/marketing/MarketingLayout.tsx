@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
 import { footerLinks, marketingFeatures } from "@/components/marketing/marketing-content";
-import { LogoMarkIcon } from "@/components/ui/Icons";
+import { LogoMarkIcon, MenuIcon } from "@/components/ui/Icons";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 
@@ -48,6 +48,35 @@ export function MarketingNav({ activeSlug }: MarketingNavProps) {
         </nav>
 
         <div className="flex items-center gap-2">
+          <details className="group relative md:hidden">
+            <summary
+              className="flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-md border border-slate-200 text-slate-700 transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 dark:border-[#1f1f1f] dark:text-[#d4d4d4] dark:hover:bg-[#0a0a0a]"
+              aria-label="Open navigation"
+            >
+              <MenuIcon className="h-4 w-4" />
+            </summary>
+            <nav className="absolute right-0 top-12 z-50 w-56 overflow-hidden rounded-lg border border-slate-200 bg-white p-1.5 shadow-xl dark:border-[#262626] dark:bg-[#050505]">
+              {marketingFeatures.map((feature) => (
+                <Link
+                  key={feature.slug}
+                  href={`/features/${feature.slug}`}
+                  className={`block rounded-md px-3 py-2.5 text-sm transition-colors ${
+                    activeSlug === feature.slug
+                      ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
+                      : "text-slate-700 hover:bg-slate-100 dark:text-[#d4d4d4] dark:hover:bg-[#111111]"
+                  }`}
+                >
+                  {feature.navLabel}
+                </Link>
+              ))}
+              <Link
+                href="/docs"
+                className="block rounded-md px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 dark:text-[#d4d4d4] dark:hover:bg-[#111111]"
+              >
+                Docs
+              </Link>
+            </nav>
+          </details>
           <ThemeToggle compact />
           <MarketingCTA className="hidden sm:inline-flex" />
           <WorkspaceProfileMenu variant="marketing" />

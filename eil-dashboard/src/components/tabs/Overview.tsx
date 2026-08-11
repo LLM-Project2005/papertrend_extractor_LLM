@@ -174,7 +174,7 @@ export default function Overview({
                   key={item.name}
                   type="button"
                   onClick={() => onDrilldown?.({ track: item.name })}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                  className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">

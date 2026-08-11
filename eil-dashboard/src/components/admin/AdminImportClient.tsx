@@ -1436,7 +1436,7 @@ export default function AdminImportClient() {
     const sectionClass =
       "rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]";
     const itemClass =
-      "flex w-full items-center justify-between rounded-2xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
+      "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
 
     if (toolbarPopover.kind === "new") {
       return (
@@ -1633,7 +1633,7 @@ export default function AdminImportClient() {
     if (!itemMenuState) return null;
 
     const itemClass =
-      "flex w-full rounded-2xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
+      "flex w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
     const menuItem = itemMenuState.item;
 
     if (menuItem.kind === "folder" && menuItem.folder) {
@@ -1866,7 +1866,7 @@ export default function AdminImportClient() {
                 setItemMenuState(null);
               }
             }}
-            className="flex w-full rounded-2xl px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
+            className="flex w-full rounded-xl px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
           >
             Move to trash
           </button>
@@ -2023,7 +2023,7 @@ export default function AdminImportClient() {
                 onClick={() => setViewMode("list")}
                 className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
                   viewMode === "list"
-                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#244767] dark:text-white"
+                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
                     : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
                 }`}
                 aria-label="List layout"
@@ -2035,7 +2035,7 @@ export default function AdminImportClient() {
                 onClick={() => setViewMode("grid")}
                 className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
                   viewMode === "grid"
-                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#244767] dark:text-white"
+                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
                     : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
                 }`}
                 aria-label="Grid layout"
@@ -2048,21 +2048,21 @@ export default function AdminImportClient() {
       </div>
 
       {message ? (
-        <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
+        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
           {message}
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
           {error}
         </div>
       ) : null}
 
       {queuedNotice ? (
         <Modal onClose={() => setQueuedNotice(null)}>
-          <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white p-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
             <div className="flex items-start justify-between gap-4">
-              <span className="flex h-12 w-12 flex-none items-center justify-center rounded-2xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
+              <span className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
                 <CheckIcon className="h-6 w-6" />
               </span>
               <button
@@ -2082,7 +2082,7 @@ export default function AdminImportClient() {
               The Home page shows the live analysis timeline.
             </p>
             {queuedNotice.warning ? (
-              <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                 {queuedNotice.warning}
               </p>
             ) : null}
@@ -2131,7 +2131,7 @@ export default function AdminImportClient() {
         {visibleEntries.length === 0 ? (
           <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
             <div>
-              <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-[24px] bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
+              <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
                 <FolderIcon className="h-7 w-7" />
               </span>
               <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -2461,7 +2461,7 @@ export default function AdminImportClient() {
                     return (
                       <article
                         key={item.id}
-                        className="group overflow-hidden rounded-[24px] border border-slate-200 bg-white transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
+                        className="group overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       >
                         <button
                           type="button"
@@ -2629,7 +2629,7 @@ export default function AdminImportClient() {
 
       {moveRun ? (
         <Modal onClose={() => (movingRun ? undefined : setMoveRun(null))}>
-          <div className="w-full max-w-lg rounded-[28px] border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white">
+          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f] sm:px-7">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
@@ -2662,7 +2662,7 @@ export default function AdminImportClient() {
                         type="button"
                         disabled={movingRun || isCurrentFolder}
                         onClick={() => void handleMoveRunToFolder(folder.id)}
-                        className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#1f1f1f] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#1f1f1f] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                       >
                         <span className="flex min-w-0 items-center gap-3">
                           <FolderIcon className="h-5 w-5 flex-none text-slate-500 dark:text-[#9c9c9c]" />
@@ -2687,7 +2687,7 @@ export default function AdminImportClient() {
                   })}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-[#2a2a2a] dark:text-[#9b9b9b]">
+                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-[#2a2a2a] dark:text-[#9b9b9b]">
                   No folders are available in this workspace yet.
                 </div>
               )}
@@ -2736,7 +2736,7 @@ export default function AdminImportClient() {
 
       {previewUrl ? (
         <Modal onClose={() => setPreviewUrl(null)}>
-          <div className="h-[85vh] w-[min(1100px,92vw)] overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+          <div className="h-[85vh] w-[min(1100px,92vw)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
               <p className="text-sm font-medium text-slate-900 dark:text-white">
                 {previewTitle}
@@ -2803,7 +2803,7 @@ export default function AdminImportClient() {
             setAnalysisError(null);
           }}
         >
-          <div className="max-h-[90vh] w-[min(980px,92vw)] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+          <div className="max-h-[90vh] w-[min(980px,92vw)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -2839,7 +2839,7 @@ export default function AdminImportClient() {
             </div>
 
             <div className="space-y-5 px-5 py-5 sm:px-6">
-              <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   This panel shows the fixed pipeline analysis from the workspace nodes.
                 </p>
@@ -2914,7 +2914,7 @@ export default function AdminImportClient() {
               </div>
 
               {analysisLoading ? (
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
                   <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
                   <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                     Loading the extracted analysis for this paper...
@@ -2923,13 +2923,13 @@ export default function AdminImportClient() {
               ) : null}
 
               {!analysisLoading && analysisError ? (
-                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                   {analysisError}
                 </div>
               ) : null}
 
               {!analysisLoading && !analysisError && !analysisDetail?.available ? (
-                <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
                   <p className="text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
                     Analysis details are not ready yet for this file.
                   </p>
@@ -2948,7 +2948,7 @@ export default function AdminImportClient() {
                     analysisDetail!.tracksMulti.length > 0 ||
                     analysisDetail!.topics.length > 0) ? (
                     <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                         <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Primary track classification
                         </p>
@@ -2970,7 +2970,7 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                         <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Cross-track classification
                         </p>
@@ -2992,7 +2992,7 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                         <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Concept clusters
                         </p>
@@ -3014,7 +3014,7 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                         <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Analytical facets
                         </p>
@@ -3036,7 +3036,7 @@ export default function AdminImportClient() {
                         </div>
                       </article>
 
-                      <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                      <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                         <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           Pipeline topics
                         </p>
@@ -3061,7 +3061,7 @@ export default function AdminImportClient() {
                   ) : null}
 
                   {analysisDetail!.concepts.length > 0 ? (
-                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -3081,7 +3081,7 @@ export default function AdminImportClient() {
                         {analysisDetail!.concepts.slice(0, 8).map((concept) => (
                           <article
                             key={concept.label}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -3108,7 +3108,7 @@ export default function AdminImportClient() {
                   ) : null}
 
                   {analysisDetail!.facets.length > 0 ? (
-                    <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
                           <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -3124,7 +3124,7 @@ export default function AdminImportClient() {
                         {analysisDetail!.facets.map((facet, index) => (
                           <article
                             key={`${facet.facetType}-${facet.label}-${index}`}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                           >
                             <p className="text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                               {facet.facetType.replace(/_/g, " ")}
@@ -3150,7 +3150,7 @@ export default function AdminImportClient() {
                     ].map(([label, content]) => (
                       <article
                         key={label}
-                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                       >
                         <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                           {label}
@@ -3162,7 +3162,7 @@ export default function AdminImportClient() {
                     ))}
                   </section>
 
-                  <section className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                  <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -3183,7 +3183,7 @@ export default function AdminImportClient() {
                         analysisDetail!.keywords.slice(0, 10).map((keyword, index) => (
                           <article
                             key={`${keyword.keyword}-${index}`}
-                            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-3">
                               <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -3217,7 +3217,7 @@ export default function AdminImportClient() {
 
       {infoRun ? (
         <Modal onClose={() => setInfoRun(null)}>
-          <div className="w-[min(560px,92vw)] rounded-[28px] border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+          <div className="w-[min(560px,92vw)] rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
             <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
               File information
             </h2>

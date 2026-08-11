@@ -15,10 +15,10 @@ export function MotionReveal({ children, className = "", delay = 0 }: MotionReve
   return (
     <motion.div
       className={className}
-      initial={reduceMotion ? false : { opacity: 0, y: 18 }}
-      whileInView={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-80px" }}
-      transition={{ duration: 0.55, ease: "easeOut", delay }}
+      initial={reduceMotion ? false : { opacity: 0.001, y: 14, filter: "blur(5px)" }}
+      whileInView={reduceMotion ? undefined : { opacity: 1, y: 0, filter: "blur(0px)" }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.62, ease: [0.16, 1, 0.3, 1], delay }}
     >
       {children}
     </motion.div>
@@ -29,22 +29,24 @@ export function AnimatedProductFrame() {
   const reduceMotion = useReducedMotion();
   const transition: Transition | undefined = reduceMotion
     ? undefined
-    : { duration: 2.6, repeat: Infinity, repeatType: "reverse", ease: "easeInOut" };
+    : { duration: 0.8, ease: [0.16, 1, 0.3, 1] };
 
   return (
     <motion.div
       className="relative mx-auto mt-14 w-full max-w-6xl overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#030303] shadow-[0_30px_120px_rgba(0,0,0,0.55)]"
       initial={reduceMotion ? false : { opacity: 0, y: 22 }}
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
-      transition={{ duration: 0.7, ease: "easeOut" }}
+      transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+      whileHover={reduceMotion ? undefined : { y: -3 }}
     >
       <div className="marketing-scanline pointer-events-none absolute inset-0 z-10" />
       <div className="border-b border-[#1f1f1f] bg-[#050505] px-4 py-3">
-        <div className="flex items-center gap-2">
-          <span className="h-2.5 w-2.5 rounded-full bg-[#ff4d4d]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#f9cb28]" />
-          <span className="h-2.5 w-2.5 rounded-full bg-[#00dfd8]" />
-          <span className="ml-3 font-mono text-xs text-[#8f8f8f]">papertrend.app/workspace</span>
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-mono text-xs text-[#8f8f8f]">LIVE REPOSITORY</span>
+          <span className="hidden items-center gap-2 font-mono text-xs text-[#8f8f8f] sm:flex">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#00dfd8]" />
+            papertrend.app/workspace
+          </span>
         </div>
       </div>
 
@@ -69,8 +71,8 @@ export function AnimatedProductFrame() {
               <motion.div
                 key={name}
                 className="rounded-lg border border-[#1f1f1f] bg-[#030303] p-4"
-                animate={reduceMotion ? undefined : { borderColor: index === 0 ? "#00dfd8" : "#1f1f1f" }}
-                transition={transition}
+                whileHover={reduceMotion ? undefined : { borderColor: "#3a3a3a", x: 2 }}
+                transition={{ duration: 0.18 }}
               >
                 <div className="flex items-center justify-between gap-3">
                   <span className="truncate text-sm font-medium text-white">{name}</span>
@@ -80,8 +82,8 @@ export function AnimatedProductFrame() {
                   <motion.div
                     className="h-full rounded-sm bg-gradient-to-r from-[#007cf0] to-[#00dfd8]"
                     initial={{ width: index === 0 ? "42%" : percent }}
-                    animate={reduceMotion ? undefined : { width: index === 0 ? ["42%", "78%"] : percent }}
-                    transition={transition}
+                    animate={reduceMotion ? undefined : { width: index === 0 ? "78%" : percent }}
+                    transition={{ ...transition, delay: 0.25 + index * 0.08 }}
                   />
                 </div>
               </motion.div>
@@ -105,7 +107,7 @@ export function AnimatedProductFrame() {
                     key={height + index}
                     className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#7928ca] to-[#ff0080]"
                     initial={{ height: `${height * 0.65}%` }}
-                    animate={reduceMotion ? undefined : { height: [`${height * 0.65}%`, `${height}%`] }}
+                    animate={reduceMotion ? undefined : { height: `${height}%` }}
                     transition={{ ...transition, delay: index * 0.06 }}
                   />
                 ))}
@@ -168,13 +170,12 @@ export function AnimatedFeaturePanel({ label }: { label: string }) {
           <motion.div
             key={width}
             className="h-12 rounded-lg border border-[#1f1f1f] bg-[#050505]"
-            initial={{ width: `${Math.max(38, width - 22)}%` }}
-            animate={reduceMotion ? undefined : { width: [`${Math.max(38, width - 22)}%`, `${width}%`] }}
+            initial={{ width: `${Math.max(38, width - 22)}%`, opacity: 0.55 }}
+            whileInView={reduceMotion ? undefined : { width: `${width}%`, opacity: 1 }}
+            viewport={{ once: true }}
             transition={{
-              duration: 2.2,
-              repeat: Infinity,
-              repeatType: "reverse",
-              ease: "easeInOut",
+              duration: 0.7,
+              ease: [0.16, 1, 0.3, 1],
               delay: index * 0.12,
             }}
           />

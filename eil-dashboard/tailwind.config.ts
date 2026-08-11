@@ -11,15 +11,15 @@ const config: Config = {
     extend: {
       colors: {
         sidebar: {
-          bg: "#1e2a3a",
-          text: "#d4dce8",
-          heading: "#f0f4f8",
-          widget: "#243346",
-          divider: "#2b4560",
-          tag: "#34506e",
-          muted: "#b0bfd0",
-          alert: "#1e3044",
-          "alert-border": "#2b4560",
+          bg: "#050505",
+          text: "#d4d4d4",
+          heading: "#f5f5f5",
+          widget: "#0a0a0a",
+          divider: "#242424",
+          tag: "#171717",
+          muted: "#a3a3a3",
+          alert: "#0a0a0a",
+          "alert-border": "#2a2a2a",
         },
         card: {
           bg: "#f8f9fb",

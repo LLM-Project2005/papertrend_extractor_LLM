@@ -114,7 +114,7 @@ export default function WorkspaceProfileMenu({
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-3 w-[min(320px,calc(100vw-1.5rem))] rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_16px_48px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_16px_48px_rgba(0,0,0,0.45)]">
+        <div className="absolute right-0 z-50 mt-3 w-[min(320px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white p-2 shadow-[0_16px_48px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_16px_48px_rgba(0,0,0,0.45)]">
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-[#1f1f1f] dark:bg-[#0a0a0a]">
             <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
               {identity.name}

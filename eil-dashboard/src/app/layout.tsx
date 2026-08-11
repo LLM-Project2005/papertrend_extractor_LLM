@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
@@ -13,6 +13,12 @@ export const metadata: Metadata = {
     shortcut: "/brand/papertrend-mark.svg",
     apple: "/brand/papertrend-mark.svg",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

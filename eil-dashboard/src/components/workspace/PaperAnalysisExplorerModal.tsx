@@ -216,6 +216,19 @@ function buildKeywordEvidenceRows(detail: RunAnalysisDetail | null) {
   });
 }
 
+function buildPdfEvidenceUrl(
+  url: string,
+  evidence: { keyword: string; evidence: string; context: string }
+): string {
+  const baseUrl = url.split("#", 1)[0];
+  const searchText = cleanDisplayText(
+    evidence.evidence || evidence.context || evidence.keyword
+  ).slice(0, 120);
+  return searchText
+    ? `${baseUrl}#zoom=page-width&search=${encodeURIComponent(searchText)}`
+    : `${baseUrl}#zoom=page-width`;
+}
+
 function titleOf(run: IngestionRunRow) {
   return run.display_name || run.source_filename || run.id;
 }
@@ -231,7 +244,7 @@ function SectionSummaryCard({
   const fullText = cleanDisplayText(value);
 
   return (
-    <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+    <article className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-[#1f1f1f] dark:bg-[#050505]">
       <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
         {label}
       </p>
@@ -251,7 +264,7 @@ function SectionSummaryCard({
       )}
 
       {fullText ? (
-        <details className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]">
+        <details className="mt-4 border-t border-slate-200 pt-4 dark:border-[#242424]">
           <summary className="cursor-pointer text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
             View full extracted text
           </summary>
@@ -282,6 +295,7 @@ export default function PaperAnalysisExplorerModal({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [selectedEvidenceIndex, setSelectedEvidenceIndex] = useState(0);
   const trackBadges = useMemo(() => buildTrackBadges(detail), [detail]);
   const facetGroups = useMemo(() => summarizeFacetGroups(detail), [detail]);
   const keywordEvidenceRows = useMemo(
@@ -296,16 +310,29 @@ export default function PaperAnalysisExplorerModal({
       ).length,
     [keywordEvidenceRows]
   );
+  const selectedEvidence = keywordEvidenceRows[selectedEvidenceIndex] ?? null;
+  const locatedPreviewUrl = useMemo(
+    () =>
+      previewUrl && selectedEvidence
+        ? buildPdfEvidenceUrl(previewUrl, selectedEvidence)
+        : previewUrl,
+    [previewUrl, selectedEvidence]
+  );
 
   useEffect(() => {
     setActiveTab("overview");
     setPreviewUrl(null);
     setPreviewError(null);
     setPreviewLoading(false);
+    setSelectedEvidenceIndex(0);
   }, [run.id]);
 
   useEffect(() => {
-    if (activeTab !== "preview" || previewUrl || previewLoading) {
+    if (
+      (activeTab !== "preview" && activeTab !== "evidence") ||
+      previewUrl ||
+      previewLoading
+    ) {
       return;
     }
 
@@ -347,8 +374,8 @@ export default function PaperAnalysisExplorerModal({
 
   return (
     <Modal onClose={onClose}>
-      <div className="max-h-[92vh] w-[min(1100px,94vw)] overflow-y-auto rounded-[28px] border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
-        <div className="border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
+      <div className="flex max-h-[92vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
+        <div className="flex-none border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -392,17 +419,18 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+              className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+              aria-label="Close paper explorer"
             >
               <CloseIcon className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1">
             <button
               type="button"
               onClick={onDownloadReport}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download report</span>
@@ -410,7 +438,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onDownload}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download PDF</span>
@@ -418,7 +446,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onToggleFavorite}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               <StarIcon className="h-4 w-4" />
               <span>{run.is_favorite ? "Favorited" : "Favorite"}</span>
@@ -426,7 +454,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onRename}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               <PencilSquareIcon className="h-4 w-4" />
               <span>Rename</span>
@@ -434,28 +462,28 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onOpenDashboard}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+              className="flex-none whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               Open dashboard charts
             </button>
             <button
               type="button"
               onClick={() => void onOpenInNewTab()}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+              className="flex-none whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
               Open in new tab
             </button>
           </div>
         </div>
 
-        <div className="space-y-5 px-5 py-5 sm:px-6">
-          <nav className="flex flex-wrap gap-2" aria-label="Paper explorer tabs">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
+          <nav className="sticky top-0 z-20 -mx-5 mb-5 flex flex-nowrap gap-2 overflow-x-auto border-b border-slate-200 bg-white px-5 py-3 dark:border-[#1f1f1f] dark:bg-[#030303] sm:-mx-6 sm:px-6" aria-label="Paper explorer tabs">
             {TAB_LABELS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                className={`flex-none rounded-full px-4 py-2 text-sm font-medium transition-colors ${
                   activeTab === tab.id
                     ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
                     : "border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
@@ -467,7 +495,7 @@ export default function PaperAnalysisExplorerModal({
           </nav>
 
           {loading ? (
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
               <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                 Loading the pipeline analysis for this paper...
@@ -476,13 +504,13 @@ export default function PaperAnalysisExplorerModal({
           ) : null}
 
           {!loading && error ? (
-            <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
               {error}
             </div>
           ) : null}
 
           {!loading && !error && !detail?.available ? (
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
               <p className="text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
                 Pipeline analysis is not ready yet for this file.
               </p>
@@ -496,7 +524,7 @@ export default function PaperAnalysisExplorerModal({
           {!loading && !error && detail?.available ? (
             <>
               {detail.warnings && detail.warnings.length > 0 ? (
-                <section className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-4 dark:border-amber-900/60 dark:bg-amber-950/30">
+                <section className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 dark:border-amber-900/60 dark:bg-amber-950/30">
                   <p className="text-xs font-semibold uppercase tracking-normal text-amber-800 dark:text-amber-200">
                     Pipeline warnings
                   </p>
@@ -514,7 +542,7 @@ export default function PaperAnalysisExplorerModal({
               {activeTab === "overview" ? (
                 <div className="space-y-5">
                   <section className="grid gap-4 lg:grid-cols-3">
-                    <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                         Topical coverage
                       </p>
@@ -536,7 +564,7 @@ export default function PaperAnalysisExplorerModal({
                       </div>
                     </article>
 
-                    <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                         Grounded keywords
                       </p>
@@ -545,7 +573,7 @@ export default function PaperAnalysisExplorerModal({
                           detail.keywords.slice(0, 5).map((keyword, index) => (
                             <div
                               key={`${keyword.keyword}-${index}`}
-                              className="flex items-start justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]"
+                              className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]"
                             >
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -568,7 +596,7 @@ export default function PaperAnalysisExplorerModal({
                       </div>
                     </article>
 
-                    <article className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                         Facet highlights
                       </p>
@@ -605,7 +633,7 @@ export default function PaperAnalysisExplorerModal({
                       {detail.concepts.slice(0, 6).map((concept) => (
                         <article
                           key={concept.label}
-                          className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -650,7 +678,7 @@ export default function PaperAnalysisExplorerModal({
                     detail.keywords.map((keyword, index) => (
                       <article
                         key={`${keyword.keyword}-${index}`}
-                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                        className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                       >
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -672,7 +700,7 @@ export default function PaperAnalysisExplorerModal({
                       </article>
                     ))
                   ) : (
-                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                         No grounded keyword rows were available for this paper.
                       </p>
@@ -683,15 +711,15 @@ export default function PaperAnalysisExplorerModal({
 
               {activeTab === "evidence" ? (
                 <section className="space-y-4">
-                  <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                          Keyword evidence audit
+                          Evidence reader
                         </p>
                         <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                          Review the stored rationale for each keyword alongside the closest
-                          full-text context the system can locate.
+                          Select an extracted claim to inspect its stored rationale, matched
+                          text, and source PDF together.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">
@@ -706,81 +734,117 @@ export default function PaperAnalysisExplorerModal({
                   </div>
 
                   {keywordEvidenceRows.length > 0 ? (
-                    keywordEvidenceRows.map((row) => (
-                      <article
-                        key={`${row.keyword}-${row.index}`}
-                        className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                                {row.keyword}
-                              </p>
-                              <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#d0d0d0]">
-                                {row.frequency}
+                    <div className="grid min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#030303] lg:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.35fr)]">
+                      <div className="border-b border-slate-200 dark:border-[#1f1f1f] lg:border-b-0 lg:border-r">
+                        <div className="max-h-[620px] overflow-y-auto p-2">
+                          {keywordEvidenceRows.map((row) => {
+                            const isSelected = row.index === selectedEvidenceIndex;
+                            return (
+                              <button
+                                key={`${row.keyword}-${row.index}`}
+                                type="button"
+                                onClick={() => setSelectedEvidenceIndex(row.index)}
+                                aria-pressed={isSelected}
+                                className={`w-full rounded-lg px-3 py-3 text-left transition-colors ${
+                                  isSelected
+                                    ? "bg-slate-100 text-slate-950 dark:bg-[#111111] dark:text-white"
+                                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-950 dark:text-[#b7b7b7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                }`}
+                              >
+                                <span className="flex items-start justify-between gap-3">
+                                  <span className="min-w-0">
+                                    <span className="block truncate text-sm font-semibold">
+                                      {row.keyword}
+                                    </span>
+                                    <span className="mt-1 block truncate text-xs text-slate-500 dark:text-[#858585]">
+                                      {row.topic || "Unclassified topic"} | {row.section}
+                                    </span>
+                                  </span>
+                                  <span className="flex-none rounded-full border border-slate-200 px-2 py-0.5 text-[11px] dark:border-[#2a2a2a]">
+                                    {row.frequency}
+                                  </span>
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="min-w-0">
+                        {selectedEvidence ? (
+                          <div className="border-b border-slate-200 p-4 dark:border-[#1f1f1f]">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div>
+                                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                  {selectedEvidence.keyword}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500 dark:text-[#8e8e8e]">
+                                  {selectedEvidence.section}
+                                </p>
+                              </div>
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-[#111111] dark:text-[#cfcfcf]">
+                                {selectedEvidence.matchType === "evidence_match"
+                                  ? "Exact evidence match"
+                                  : selectedEvidence.matchType === "keyword_match"
+                                    ? "Keyword match"
+                                    : "Stored rationale"}
                               </span>
                             </div>
-                            <p className="mt-1 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
-                              {row.topic || "Unclassified topic"} | {row.section}
-                            </p>
+                            <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 dark:text-[#8e8e8e]">
+                                  Stored rationale
+                                </p>
+                                <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
+                                  {selectedEvidence.evidence ? (
+                                    <HighlightedText
+                                      text={selectedEvidence.evidence}
+                                      terms={[selectedEvidence.keyword]}
+                                    />
+                                  ) : (
+                                    "No supporting rationale was stored."
+                                  )}
+                                </p>
+                              </div>
+                              <div>
+                                <p className="text-xs font-semibold text-slate-500 dark:text-[#8e8e8e]">
+                                  Matched text context
+                                </p>
+                                <p className="mt-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
+                                  {selectedEvidence.context ? (
+                                    <HighlightedText
+                                      text={selectedEvidence.context}
+                                      terms={[selectedEvidence.keyword]}
+                                    />
+                                  ) : (
+                                    "No matching extracted-text context could be located."
+                                  )}
+                                </p>
+                              </div>
+                            </div>
                           </div>
-                          <span
-                            className={`rounded-full px-3 py-1.5 text-xs font-medium ${
-                              row.matchType === "evidence_match"
-                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-400/10 dark:text-emerald-200"
-                                : row.matchType === "keyword_match"
-                                  ? "bg-sky-50 text-sky-700 dark:bg-sky-400/10 dark:text-sky-200"
-                                  : "bg-amber-50 text-amber-700 dark:bg-amber-400/10 dark:text-amber-200"
-                            }`}
-                          >
-                            {row.matchType === "evidence_match"
-                              ? "Evidence found"
-                              : row.matchType === "keyword_match"
-                                ? "Keyword found"
-                                : row.matchType === "no_full_text"
-                                  ? "No full text"
-                                  : "Stored evidence only"}
-                          </span>
-                        </div>
+                        ) : null}
 
-                        <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]">
-                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
-                              Stored rationale
-                            </p>
-                            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
-                              {row.evidence ? (
-                                <HighlightedText
-                                  text={row.evidence}
-                                  terms={[row.keyword]}
-                                />
-                              ) : (
-                                "No supporting keyword evidence was stored."
-                              )}
-                            </p>
+                        {previewLoading ? (
+                          <div className="flex h-[420px] items-center justify-center text-sm text-slate-500 dark:text-[#999999]">
+                            Loading source PDF...
                           </div>
-
-                          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#030303]">
-                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
-                              Full-text context
-                            </p>
-                            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#cfcfcf]">
-                              {row.context ? (
-                                <HighlightedText
-                                  text={row.context}
-                                  terms={[row.keyword]}
-                                />
-                              ) : (
-                                "No matching full-text context could be located for this keyword."
-                              )}
-                            </p>
+                        ) : previewError ? (
+                          <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                            {previewError}
                           </div>
-                        </div>
-                      </article>
-                    ))
+                        ) : locatedPreviewUrl ? (
+                          <iframe
+                            key={locatedPreviewUrl}
+                            src={locatedPreviewUrl}
+                            title={`Source PDF for ${selectedEvidence?.keyword || titleOf(run)}`}
+                            className="h-[440px] w-full bg-white lg:h-[480px]"
+                          />
+                        ) : null}
+                      </div>
+                    </div>
                   ) : (
-                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                         No keyword evidence rows were available for this paper.
                       </p>
@@ -796,7 +860,7 @@ export default function PaperAnalysisExplorerModal({
                       {detail.concepts.map((concept) => (
                         <article
                           key={concept.label}
-                          className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex flex-wrap items-center justify-between gap-3">
                             <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
@@ -827,7 +891,7 @@ export default function PaperAnalysisExplorerModal({
                       ))}
                     </section>
                   ) : (
-                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                         No canonical topic groups were available for this paper.
                       </p>
@@ -839,7 +903,7 @@ export default function PaperAnalysisExplorerModal({
                       {detail.facets.map((facet, index) => (
                         <article
                           key={`${facet.facetType}-${facet.label}-${index}`}
-                          className="rounded-[24px] border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <p className="text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
                             {facet.facetType.replace(/_/g, " ")}
@@ -868,21 +932,21 @@ export default function PaperAnalysisExplorerModal({
                         setPreviewError(null);
                         setPreviewLoading(false);
                       }}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                     >
                       Refresh preview
                     </button>
                     <button
                       type="button"
                       onClick={() => void onOpenInNewTab()}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                     >
                       Open in new tab
                     </button>
                   </div>
 
                   {previewLoading ? (
-                    <div className="rounded-[24px] border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
                       <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
                         Loading the paper preview...
@@ -891,13 +955,13 @@ export default function PaperAnalysisExplorerModal({
                   ) : null}
 
                   {!previewLoading && previewError ? (
-                    <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                       {previewError}
                     </div>
                   ) : null}
 
                   {!previewLoading && !previewError && previewUrl ? (
-                    <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <iframe
                         src={previewUrl}
                         title={detail?.title || titleOf(run)}

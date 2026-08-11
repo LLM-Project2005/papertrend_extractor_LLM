@@ -499,7 +499,7 @@ export default function WorkspaceGlobalSearch({
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-3 w-[min(680px,calc(100vw-1rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div className="absolute right-0 z-50 mt-3 w-[min(680px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
           <form
             onSubmit={(event) => {
               event.preventDefault();

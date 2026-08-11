@@ -4,15 +4,47 @@
 
 :root {
   --bg-plot: #fafbfd;
+  --radius-control: 8px;
+  --radius-panel: 12px;
+  --motion-fast: 140ms;
+  --motion-ui: 220ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html,
+body {
+  overflow-x: clip;
 }
 
 body {
-  @apply bg-slate-50 text-slate-900 antialiased transition-colors;
+  @apply bg-slate-50 text-slate-900 antialiased;
+  transition:
+    background-color var(--motion-ui) ease,
+    color var(--motion-ui) ease;
 }
 
 .dark body {
   background-color: #000000;
   color: #f2f2f2;
+}
+
+::selection {
+  background: #171717;
+  color: #ffffff;
+}
+
+.dark ::selection {
+  background: #f2f2f2;
+  color: #000000;
+}
+
+:where(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid #171717;
+  outline-offset: 2px;
+}
+
+.dark :where(button, a, input, select, textarea, summary):focus-visible {
+  outline-color: #f2f2f2;
 }
 
 /* Custom scrollbar */
@@ -52,11 +84,11 @@ body {
 }
 
 .app-surface {
-  @apply rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505];
+  @apply rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505];
 }
 
 .app-card {
-  @apply rounded-2xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505];
+  @apply rounded-lg border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505];
 }
 
 .app-muted {
@@ -159,6 +191,45 @@ body {
   animation: marketing-scanline 4.8s ease-in-out infinite;
 }
 
+.modal-backdrop {
+  animation: modal-backdrop-in var(--motion-ui) ease both;
+}
+
+.modal-panel {
+  animation: modal-panel-in 280ms var(--ease-out-expo) both;
+}
+
+.workspace-content-enter {
+  animation: workspace-content-in 260ms var(--ease-out-expo) both;
+}
+
+@keyframes modal-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes workspace-content-in {
+  from {
+    opacity: 0.72;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @keyframes marketing-grid-drift {
   from {
     background-position: 0 0, 0 0;
@@ -187,7 +258,10 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .marketing-grid,
-  .marketing-scanline {
+  .marketing-scanline,
+  .modal-backdrop,
+  .modal-panel,
+  .workspace-content-enter {
     animation: none;
   }
 }

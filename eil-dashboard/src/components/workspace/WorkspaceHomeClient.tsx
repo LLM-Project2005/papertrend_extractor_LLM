@@ -598,8 +598,6 @@ export default function WorkspaceHomeClient() {
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
       <section className={`${surfaceClass} relative overflow-hidden px-6 py-8 sm:px-8`}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,#007cf0,#00dfd8,#7928ca,#ff0080,#ff4d4d,#f9cb28)]" />
-        <div className="pointer-events-none absolute right-0 top-0 h-40 w-1/2 bg-[radial-gradient(ellipse_at_top_right,rgba(0,124,240,0.14),transparent_55%)]" />
         <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <p className={eyebrowClass}>

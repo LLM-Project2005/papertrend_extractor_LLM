@@ -158,7 +158,7 @@ export default function ProjectIndexClient() {
         </div>
 
         {error ? (
-          <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
             {error}
           </div>
         ) : null}
@@ -167,7 +167,7 @@ export default function ProjectIndexClient() {
           {visibleProjects.map((project) => (
             <article
               key={project.id}
-              className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+              className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
               <div className="flex items-start justify-between gap-4">
                 <button
@@ -204,7 +204,7 @@ export default function ProjectIndexClient() {
         </div>
 
         {visibleProjects.length === 0 ? (
-          <div className="mt-16 rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
+          <div className="mt-16 rounded-xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
             <p className="text-lg font-medium text-slate-900 dark:text-white">No repositories yet</p>
             <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
               Create a repository to start organizing and analyzing papers.

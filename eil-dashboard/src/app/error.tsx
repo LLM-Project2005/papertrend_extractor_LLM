@@ -8,7 +8,7 @@ export default function AppError({
 }) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-slate-900 dark:bg-black dark:text-white">
-      <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <section className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
         <p className="text-sm font-medium text-slate-500 dark:text-[#9b9b9b]">Error</p>
         <h1 className="mt-2 text-2xl font-semibold">Something went wrong</h1>
         <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">

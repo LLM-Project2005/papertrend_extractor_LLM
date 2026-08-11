@@ -388,7 +388,7 @@ export function AIResearchChatShowcase() {
               <p className="mt-3 text-[15px] leading-7 text-[#f3f3f3]">
                 The strongest cluster is inquiry-based learning, followed by collaboration and assessment design.
               </p>
-              <div className="mt-4 flex h-32 items-end gap-2 rounded-2xl border border-[#1f1f1f] bg-[#050505] p-3">
+              <div className="mt-4 flex h-32 items-end gap-2 rounded-xl border border-[#1f1f1f] bg-[#050505] p-3">
                 {[82, 64, 48, 35].map((height, index) => (
                   <motion.div
                     key={height}
@@ -403,7 +403,7 @@ export function AIResearchChatShowcase() {
           </div>
 
           <div className="bg-black p-4">
-            <div className="flex items-center gap-3 rounded-[28px] border border-[#1f1f1f] bg-[#050505] px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+            <div className="flex items-center gap-3 rounded-xl border border-[#1f1f1f] bg-[#050505] px-4 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
               <span className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#ececec]">+</span>
               <span className="flex-1 text-sm text-[#8f8f8f]">Ask anything about attached papers...</span>
               <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-xs font-medium text-[#111111]">

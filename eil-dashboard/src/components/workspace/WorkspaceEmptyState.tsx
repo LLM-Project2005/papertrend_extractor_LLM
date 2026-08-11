@@ -14,7 +14,7 @@ export default function WorkspaceEmptyState({
 }) {
   return (
     <section className="app-surface mx-auto max-w-4xl px-6 py-8 text-center sm:px-8">
-      <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#c7c7c7]">
+      <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#c7c7c7]">
         <UploadIcon className="h-6 w-6" />
       </span>
       <p className="mt-4 text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">

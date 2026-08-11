@@ -29,7 +29,7 @@ export default function LandingPage() {
             <p className="mx-auto inline-flex rounded-md border border-[#1f1f1f] bg-[#050505] px-3 py-1.5 font-mono text-xs text-[#8f8f8f]">
               RESEARCH INTELLIGENCE PLATFORM
             </p>
-            <h1 className="mx-auto mt-7 max-w-5xl text-5xl font-semibold leading-tight text-white sm:text-7xl lg:text-8xl">
+            <h1 className="mx-auto mt-7 max-w-5xl text-4xl font-semibold leading-tight text-white sm:text-7xl lg:text-8xl">
               Turn research libraries into living insight.
             </h1>
             <p className="mx-auto mt-7 max-w-3xl text-base leading-8 text-[#a3a3a3] sm:text-lg">

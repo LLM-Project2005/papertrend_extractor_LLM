@@ -533,14 +533,14 @@ export default function WorkspaceShell({
       ) : null}
 
       <div className="min-h-screen pt-16 lg:pl-14">
-        <main className={isChatPage ? "min-w-0" : "min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
+        <main className={isChatPage ? "min-w-0" : "workspace-content-enter min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
           {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
           ) : hasActiveProject ? (
             children
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
-              <div className="w-full rounded-[28px] border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="w-full rounded-xl border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
                 <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Repository setup</p>
                 <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">
                   Select a repository to continue

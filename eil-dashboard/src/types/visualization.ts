@@ -30,6 +30,9 @@ export const VISUALIZATION_CHART_KEYS = [
   "adaptive_folder_topic_comparison",
   "adaptive_keyword_family_heatmap",
   "adaptive_track_topic_comparison",
+  "adaptive_year_volume",
+  "adaptive_topic_distribution",
+  "adaptive_track_distribution",
 ] as const;
 
 export type VisualizationChartKey = (typeof VISUALIZATION_CHART_KEYS)[number];

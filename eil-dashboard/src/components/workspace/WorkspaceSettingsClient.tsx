@@ -51,7 +51,7 @@ export default function WorkspaceSettingsClient() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+      <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f]">
           <h1 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
             Settings
@@ -88,7 +88,7 @@ export default function WorkspaceSettingsClient() {
             <p className="px-2 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#7d7d7d]">
               Account
             </p>
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
               <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
                 {authProfile?.full_name || user?.email || "Guest session"}
               </p>
@@ -120,7 +120,7 @@ export default function WorkspaceSettingsClient() {
 
         {activeSection === "general" ? (
           <>
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-3xl font-semibold tracking-normal text-slate-950 dark:text-[#ececec]">
                   Repository settings
@@ -171,7 +171,7 @@ export default function WorkspaceSettingsClient() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="flex items-center justify-between gap-4 px-6 py-5">
                 <div>
                   <h3 className="text-xl font-semibold text-slate-950 dark:text-[#ececec]">
@@ -198,7 +198,7 @@ export default function WorkspaceSettingsClient() {
 
         {activeSection === "project" ? (
           <>
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Repository focus
@@ -218,7 +218,7 @@ export default function WorkspaceSettingsClient() {
                         updateProfile({ goal: item.id });
                         setSavedMessage();
                       }}
-                      className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
+                      className={`rounded-xl border px-4 py-4 text-left transition-colors ${
                         isActive
                           ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
                           : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
@@ -236,7 +236,7 @@ export default function WorkspaceSettingsClient() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Intake defaults
@@ -256,7 +256,7 @@ export default function WorkspaceSettingsClient() {
                         updateProfile({ primarySource: item.id });
                         setSavedMessage();
                       }}
-                      className={`rounded-2xl border px-4 py-4 text-left transition-colors ${
+                      className={`rounded-xl border px-4 py-4 text-left transition-colors ${
                         isActive
                           ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
                           : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
@@ -279,7 +279,7 @@ export default function WorkspaceSettingsClient() {
               </div>
             </section>
 
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Output defaults
@@ -296,7 +296,7 @@ export default function WorkspaceSettingsClient() {
                       key={item.id}
                       type="button"
                       onClick={() => toggleOutput(item.id)}
-                      className={`rounded-2xl border p-4 text-left transition-colors ${
+                      className={`rounded-xl border p-4 text-left transition-colors ${
                         isActive
                           ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
                           : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
@@ -318,7 +318,7 @@ export default function WorkspaceSettingsClient() {
 
         {activeSection === "access" ? (
           <>
-            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
                 <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
                   Repository access
@@ -338,7 +338,7 @@ export default function WorkspaceSettingsClient() {
                       Active account linked to this repository.
                     </p>
                   </div>
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
                       {authProfile?.full_name || "Guest session"}
                     </p>
@@ -372,7 +372,7 @@ export default function WorkspaceSettingsClient() {
         ) : null}
 
         {message ? (
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
+          <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
             {message}
           </div>
         ) : null}

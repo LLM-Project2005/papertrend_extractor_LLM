@@ -74,7 +74,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="overflow-hidden rounded-[28px] border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+    <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
       {showHeader && (
         <div className="border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
           <h2 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">

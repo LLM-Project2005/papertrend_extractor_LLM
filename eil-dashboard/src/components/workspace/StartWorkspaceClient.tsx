@@ -122,7 +122,7 @@ export default function StartWorkspaceClient() {
   return (
     <form onSubmit={handleSubmit} className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_340px]">
       <section className="space-y-6">
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 1"
             title="Workspace basics"
@@ -156,7 +156,7 @@ export default function StartWorkspaceClient() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 2"
             title="Primary objective"
@@ -192,7 +192,7 @@ export default function StartWorkspaceClient() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 3"
             title="First intake path"
@@ -235,7 +235,7 @@ export default function StartWorkspaceClient() {
           </div>
         </div>
 
-        <div className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <div className="rounded-xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <SectionHeader
             step="Step 4"
             title="Prioritized outputs"
@@ -269,7 +269,7 @@ export default function StartWorkspaceClient() {
       </section>
 
       <aside className="space-y-6">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <section className="rounded-xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Current summary</p>
           <h2 className="mt-3 text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
             {name || profile.name}
@@ -292,7 +292,7 @@ export default function StartWorkspaceClient() {
           </dl>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <section className="rounded-xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <h3 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">Readiness</h3>
           <div className="mt-4 space-y-4">
             {checklist.map((item) => (
@@ -315,7 +315,7 @@ export default function StartWorkspaceClient() {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
+        <section className="rounded-xl border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505]">
           <div className="flex items-start gap-3">
             <span className="mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#b8b8b8]">
               <HomeIcon className="h-4 w-4" />
