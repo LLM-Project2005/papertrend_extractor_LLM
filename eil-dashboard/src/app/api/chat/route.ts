@@ -24,6 +24,7 @@ import { runRepositoryChat } from "@/lib/repository-chat";
 import {
   knowledgeScopeLabel,
   normalizeKnowledgeScope,
+  projectIdFromScopeMetadata,
   type KnowledgeScope,
   type KnowledgeScopeSnapshot,
 } from "@/lib/knowledge-scope";
@@ -3898,6 +3899,18 @@ async function normalChat(
   if (ownerUserId && chatRepository) {
     if (body.threadId) {
       existingThreadDetail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
+      const requestedProjectId = knowledgeScope.projectId?.trim();
+      if (requestedProjectId) {
+        const belongsToProject = existingThreadDetail.messages.some((message) =>
+          projectIdFromScopeMetadata(message.metadata) === requestedProjectId
+        );
+        if (!belongsToProject) {
+          return NextResponse.json(
+            { error: "This chat belongs to a different repository. Start a new chat in the current repository." },
+            { status: 409 }
+          );
+        }
+      }
       thread = existingThreadDetail.thread;
     } else {
       thread = await chatRepository.createThread({

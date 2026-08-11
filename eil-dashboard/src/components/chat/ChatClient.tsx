@@ -1038,7 +1038,6 @@ function sessionActive(session?: DeepResearchSessionRecord | null) {
 }
 
 function buildFolderLabel(folderId: string, folders: ResearchFolderRow[]) {
-  if (folderId === "all-projects") return "All projects";
   if (!folderId || folderId === "all") return "Entire repository";
   return folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
 }
@@ -1521,7 +1520,7 @@ export default function ChatClient() {
     startAnalysisSession,
     refreshFolders,
   } = useWorkspaceProfile();
-  const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all-projects");
+  const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -1537,7 +1536,7 @@ export default function ChatClient() {
     () => folders.map((folder) => folder.id),
     [folders]
   );
-  const dashboardScopeFolderId = chatScopeFolderId === "all-projects" ? "all" : chatScopeFolderId;
+  const dashboardScopeFolderId = chatScopeFolderId;
   const { allYears } = useDashboardData(dashboardScopeFolderId, projectFolderIds, {
     projectId: selectedProjectId,
     enabled: Boolean(selectedProjectId),
@@ -1558,6 +1557,7 @@ export default function ChatClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuView, setMenuView] = useState<"root" | "scope">("root");
   const [threadMenuId, setThreadMenuId] = useState<string | null>(null);
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
@@ -1695,19 +1695,16 @@ export default function ChatClient() {
         kind: "selected_papers",
         projectId: selectedProjectId ?? undefined,
         folderId:
-          chatScopeFolderId !== "all" && chatScopeFolderId !== "all-projects"
+          chatScopeFolderId !== "all"
             ? chatScopeFolderId
             : undefined,
         runIds: selectedRunIds,
       };
     }
-    if (chatScopeFolderId !== "all" && chatScopeFolderId !== "all-projects") {
+    if (chatScopeFolderId !== "all") {
       return { kind: "folder", projectId: selectedProjectId ?? undefined, folderId: chatScopeFolderId };
     }
-    if (chatScopeFolderId === "all") {
-      return { kind: "project", projectId: selectedProjectId ?? undefined };
-    }
-    return { kind: "all_projects" };
+    return { kind: "project", projectId: selectedProjectId ?? undefined };
   }, [chatScopeFolderId, selectedProjectId, selectedRunIds]);
   const activeScopeSnapshot = useMemo<KnowledgeScopeSnapshot>(() => {
     const selectedFolder = folders.find((folder) => folder.id === activeKnowledgeScope.folderId) ?? null;
@@ -1717,7 +1714,7 @@ export default function ChatClient() {
         ? selectedFolder?.name ?? "Selected folder"
         : activeKnowledgeScope.kind === "project"
           ? `${currentProject?.name ?? "Current project"} repository`
-          : "All projects";
+          : `${currentProject?.name ?? "Current project"} repository`;
     return {
       kind: activeKnowledgeScope.kind,
       label,
@@ -1794,6 +1791,10 @@ export default function ChatClient() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(CHAT_MODEL_STORAGE_KEY, selectedModel);
   }, [selectedModel]);
+
+  useEffect(() => {
+    if (!menuOpen) setMenuView("root");
+  }, [menuOpen]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1886,15 +1887,16 @@ export default function ChatClient() {
 
   const refreshThreads = useCallback(
     async (preferredThreadId?: string | null) => {
-      if (!canPersist || !session?.access_token) {
+      if (!canPersist || !session?.access_token || !selectedProjectId) {
         setThreads([]);
         return;
       }
       setThreadsLoading(true);
       try {
-        const response = await fetch("/api/chat/threads", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
+        const response = await fetch(
+          `/api/chat/threads?projectId=${encodeURIComponent(selectedProjectId ?? "")}`,
+          { headers: { Authorization: `Bearer ${session.access_token}` } }
+        );
         const payload = (await response.json()) as {
           threads?: WorkspaceThreadSummary[];
           error?: string;
@@ -1918,7 +1920,7 @@ export default function ChatClient() {
         setThreadsLoading(false);
       }
     },
-    [canPersist, session?.access_token]
+    [canPersist, selectedProjectId, session?.access_token]
   );
 
   const loadThreadDetail = useCallback(
@@ -1926,9 +1928,10 @@ export default function ChatClient() {
       if (!canPersist || !session?.access_token) return;
       setDetailLoading(true);
       try {
-        const response = await fetch(`/api/chat/threads/${threadId}`, {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
+        const response = await fetch(
+          `/api/chat/threads/${threadId}?projectId=${encodeURIComponent(selectedProjectId ?? "")}`,
+          { headers: { Authorization: `Bearer ${session.access_token}` } }
+        );
         const payload = (await response.json()) as ChatThreadDetail & {
           error?: string;
         };
@@ -1954,7 +1957,7 @@ export default function ChatClient() {
         setDetailLoading(false);
       }
     },
-    [canPersist, session?.access_token]
+    [canPersist, selectedProjectId, session?.access_token]
   );
 
   const loadChatSearchDetails = useCallback(async () => {
@@ -2079,9 +2082,12 @@ export default function ChatClient() {
     setSelectedLibraryRuns([]);
     setLibraryRuns([]);
     setLibraryQuery("");
-    setChatScopeFolderId((current) =>
-      current === "all" || current === "all-projects" ? current : "all-projects"
-    );
+    setChatScopeFolderId("all");
+    setActiveThreadId(null);
+    setActiveThread(null);
+    setMessages([]);
+    setDeepSession(null);
+    setChatSearchDetails([]);
   }, [selectedProjectId]);
 
   async function sendRequest(body: Record<string, unknown>) {
@@ -2755,7 +2761,9 @@ export default function ChatClient() {
           {!sidebarCollapsed ? (
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
-              <p className="text-sm font-medium text-slate-800 dark:text-[#ececec]">Your chats</p>
+              <p className="truncate text-sm font-medium text-slate-800 dark:text-[#ececec]">
+                {currentProject?.name ? `${currentProject.name} chats` : "Repository chats"}
+              </p>
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {threadsLoading ? (
@@ -3368,7 +3376,10 @@ export default function ChatClient() {
                                 {scopeSnapshot ? (
                                   <button
                                     type="button"
-                                    onClick={() => setMenuOpen(true)}
+                                    onClick={() => {
+                                      setMenuView("scope");
+                                      setMenuOpen(true);
+                                    }}
                                     title={scopeSnapshot.eligiblePaperCount > 0
                                       ? `${scopeSnapshot.eligiblePaperCount} analyzed paper${scopeSnapshot.eligiblePaperCount === 1 ? "" : "s"} in this message scope`
                                       : "Knowledge scope used for this message"}
@@ -3596,7 +3607,10 @@ export default function ChatClient() {
                     <div className="relative">
                       <button
                         type="button"
-                        onClick={() => setMenuOpen((current) => !current)}
+                        onClick={() => {
+                          setMenuView("root");
+                          setMenuOpen((current) => !current);
+                        }}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                         aria-label="Open attachment and tool menu"
                       >
@@ -3604,190 +3618,148 @@ export default function ChatClient() {
                       </button>
 
                       {menuOpen ? (
-                        <div className="absolute bottom-12 left-0 z-30 w-72 rounded-xl border border-slate-200 bg-white p-2 shadow-[0_16px_42px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowLibraryPicker(true);
-                              setMenuOpen(false);
-                            }}
-                            className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                          >
-                            <span className="flex items-center gap-3">
-                              <FileIcon className="h-4 w-4" />
-                              <span>Add from library</span>
-                            </span>
-                            {selectedLibraryRuns.length > 0 ? (
-                              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-white/10 dark:text-[#ececec]">
-                                {selectedLibraryRuns.length}
-                              </span>
-                            ) : null}
-                          </button>
+                        <div className="absolute bottom-12 left-0 z-30 w-[min(21rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_16px_42px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]">
+                          {menuView === "scope" ? (
+                            <>
+                              <div className="flex h-12 items-center gap-2 border-b border-slate-200 px-2 dark:border-[#1f1f1f]">
+                                <button
+                                  type="button"
+                                  onClick={() => setMenuView("root")}
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0f0f0f] dark:hover:text-white"
+                                  aria-label="Back to chat tools"
+                                >
+                                  <ChevronDownIcon className="h-4 w-4 rotate-90" />
+                                </button>
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">Repository scope</p>
+                                  <p className="truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">Choose what this message can use</p>
+                                </div>
+                              </div>
+                              <div className="max-h-72 overflow-y-auto p-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setChatScopeFolderId("all");
+                                    setMenuOpen(false);
+                                  }}
+                                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeFolderId === "all" ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                >
+                                  <DriveIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">Entire repository</span>
+                                    <span className="block truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">{currentProject?.name ?? "Current project"}</span>
+                                  </span>
+                                  {chatScopeFolderId === "all" ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
+                                </button>
+                                {folders.length > 0 ? (
+                                  <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Folders</p>
+                                ) : null}
+                                {folders.map((folder) => {
+                                  const active = folder.id === chatScopeFolderId;
+                                  return (
+                                    <button
+                                      key={folder.id}
+                                      type="button"
+                                      onClick={() => {
+                                        setChatScopeFolderId(folder.id);
+                                        setMenuOpen(false);
+                                      }}
+                                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${active ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                    >
+                                      <FolderIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                      <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{folder.name}</span>
+                                      {active ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="p-2">
+                              <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Context</p>
+                              <button
+                                type="button"
+                                onClick={() => setMenuView("scope")}
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                              >
+                                <FolderIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Repository scope</span>
+                                  <span className="block truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">{activeFolderLabel}</span>
+                                </span>
+                                <ChevronDownIcon className="h-4 w-4 flex-none -rotate-90 text-slate-400" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowLibraryPicker(true);
+                                  setMenuOpen(false);
+                                }}
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                              >
+                                <FileIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Attach papers</span>
+                                  <span className="block text-[11px] text-slate-500 dark:text-[#8e8e8e]">Choose specific files from this repository</span>
+                                </span>
+                                {selectedLibraryRuns.length > 0 ? <span className="text-xs font-medium">{selectedLibraryRuns.length}</span> : null}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setShowAnalyzeModal(true);
+                                  setMenuOpen(false);
+                                }}
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                              >
+                                <PaperIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Upload a paper</span>
+                                  <span className="block text-[11px] text-slate-500 dark:text-[#8e8e8e]">Analyze and add it to this repository</span>
+                                </span>
+                              </button>
 
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setChartModeEnabled((current) => !current);
-                              setDeepResearchEnabled(false);
-                              setMenuOpen(false);
-                            }}
-                            className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
-                              chartModeEnabled
-                                ? "bg-sky-100 text-sky-800 dark:bg-[#171717] dark:text-[#f3f3f3]"
-                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                            }`}
-                          >
-                            <span className="flex items-center gap-3">
-                              <ChartIcon className="h-4 w-4" />
-                              <span>Chart mode</span>
-                            </span>
-                            {chartModeEnabled ? (
-                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#3a3a3a]">
-                                Active
-                              </span>
-                            ) : null}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setShowAnalyzeModal(true);
-                              setMenuOpen(false);
-                            }}
-                            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                          >
-                            <PaperIcon className="h-4 w-4" />
-                            <span>Upload files</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setWebSearchEnabled((current) => !current);
-                              setMenuOpen(false);
-                            }}
-                            className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
-                              webSearchEnabled
-                                ? "bg-sky-100 text-sky-800 dark:bg-[#171717] dark:text-[#f3f3f3]"
-                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                            }`}
-                          >
-                            <span className="flex items-center gap-3">
-                              <SearchIcon className="h-4 w-4" />
-                              <span>Web search</span>
-                            </span>
-                            {webSearchEnabled ? (
-                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#3a3a3a]">
-                                Active
-                              </span>
-                            ) : null}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextEnabled = !deepResearchEnabled;
-                              setDeepResearchEnabled(nextEnabled);
-                              setChartModeEnabled(false);
-                              if (nextEnabled && webSearchEnabled) {
-                                setResearchSourcePolicy((current) => ({
-                                  ...current,
-                                  allowWeb: true,
-                                  budget: {
-                                    ...current.budget,
-                                    maxWebSearches: STRICT_RESEARCH_BUDGET.maxWebSearches,
-                                  },
-                                }));
-                              }
-                              setMenuOpen(false);
-                            }}
-                            className={`mt-1 flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition-colors ${
-                              deepResearchEnabled
-                                ? "bg-sky-100 text-sky-800 dark:bg-[#171717] dark:text-[#f3f3f3]"
-                                : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                            }`}
-                          >
-                            <span className="flex items-center gap-3">
-                              <SparkIcon className="h-4 w-4" />
-                              <span>Deep research</span>
-                            </span>
-                            {deepResearchEnabled ? (
-                              <span className="rounded-full bg-sky-700 px-2 py-0.5 text-[11px] font-medium text-white dark:bg-[#3a3a3a]">
-                                Active
-                              </span>
-                            ) : null}
-                          </button>
-
-                          <div className="mt-2 border-t border-slate-200 pt-2 dark:border-[#1f1f1f]">
-                            <div className="flex items-center justify-between px-3 pb-2">
-                              <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
-                                Repository scope
-                              </span>
-                              <span className="inline-flex items-center gap-1 text-xs text-slate-500 dark:text-[#b4b4b4]">
-                                <FolderIcon className="h-3.5 w-3.5" />
-                                {activeFolderLabel}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setChatScopeFolderId("all-projects");
-                                setMenuOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                                chatScopeFolderId === "all-projects"
-                                  ? "bg-slate-100 text-slate-900 dark:bg-[#0a0a0a] dark:text-white"
-                                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                              }`}
-                            >
-                              <span>All projects</span>
-                              {chatScopeFolderId === "all-projects" ? (
-                                <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
-                              ) : null}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setChatScopeFolderId("all");
-                                setMenuOpen(false);
-                              }}
-                              className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                                chatScopeFolderId === "all"
-                                  ? "bg-slate-100 text-slate-900 dark:bg-[#0a0a0a] dark:text-white"
-                                  : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                              }`}
-                            >
-                              <span className="truncate">{currentProject?.name ?? "Current project"}</span>
-                              {chatScopeFolderId === "all" ? (
-                                <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
-                              ) : null}
-                            </button>
-                            <div className="mt-1 max-h-52 space-y-1 overflow-y-auto">
-                              {folders.map((folder) => {
-                                const active = folder.id === chatScopeFolderId;
+                              <div className="my-2 border-t border-slate-200 dark:border-[#1f1f1f]" />
+                              <p className="px-3 pb-1 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Tools</p>
+                              {[
+                                { key: "chart", label: "Chart mode", description: "Build a chart from repository data", icon: ChartIcon, active: chartModeEnabled },
+                                { key: "web", label: "Web search", description: "Add current external sources", icon: SearchIcon, active: webSearchEnabled },
+                                { key: "research", label: "Deep research", description: "Run a longer evidence workflow", icon: SparkIcon, active: deepResearchEnabled },
+                              ].map((item) => {
+                                const Icon = item.icon;
                                 return (
                                   <button
-                                    key={folder.id}
+                                    key={item.key}
                                     type="button"
                                     onClick={() => {
-                                      setChatScopeFolderId(folder.id);
+                                      if (item.key === "chart") {
+                                        setChartModeEnabled(!chartModeEnabled);
+                                        setDeepResearchEnabled(false);
+                                      } else if (item.key === "web") {
+                                        setWebSearchEnabled(!webSearchEnabled);
+                                      } else {
+                                        const nextEnabled = !deepResearchEnabled;
+                                        setDeepResearchEnabled(nextEnabled);
+                                        setChartModeEnabled(false);
+                                        if (nextEnabled && webSearchEnabled) {
+                                          setResearchSourcePolicy((current) => ({ ...current, allowWeb: true, budget: { ...current.budget, maxWebSearches: STRICT_RESEARCH_BUDGET.maxWebSearches } }));
+                                        }
+                                      }
                                       setMenuOpen(false);
                                     }}
-                                    className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-sm transition-colors ${
-                                      active
-                                        ? "bg-slate-100 text-slate-900 dark:bg-[#0a0a0a] dark:text-white"
-                                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                                    }`}
+                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${item.active ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                   >
-                                    <span className="truncate">{folder.name}</span>
-                                    {active ? (
-                                      <ChevronDownIcon className="h-3.5 w-3.5 rotate-[-90deg]" />
-                                    ) : null}
+                                    <Icon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">{item.label}</span>
+                                      <span className="block text-[11px] text-slate-500 dark:text-[#8e8e8e]">{item.description}</span>
+                                    </span>
+                                    {item.active ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                   </button>
                                 );
                               })}
                             </div>
-                          </div>
+                          )}
                         </div>
                       ) : null}
 

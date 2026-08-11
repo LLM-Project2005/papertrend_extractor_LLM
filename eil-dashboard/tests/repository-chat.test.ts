@@ -17,7 +17,10 @@ import {
   rankRepositoryEvidence,
   validateInlinePaperCitations,
 } from "../src/lib/repository-retrieval";
-import { normalizeKnowledgeScope } from "../src/lib/knowledge-scope";
+import {
+  normalizeKnowledgeScope,
+  projectIdFromScopeMetadata,
+} from "../src/lib/knowledge-scope";
 
 test("knowledge scope precedence is selected papers, folder, project, then all projects", () => {
   assert.deepEqual(
@@ -32,7 +35,26 @@ test("knowledge scope precedence is selected papers, folder, project, then all p
     normalizeKnowledgeScope({ knowledgeScope: { kind: "project", projectId: "project-a" } }),
     { kind: "project", projectId: "project-a" }
   );
+  assert.deepEqual(
+    normalizeKnowledgeScope({
+      knowledgeScope: { kind: "all_projects", projectId: "project-a" },
+      projectId: "project-a",
+    }),
+    { kind: "project", projectId: "project-a" }
+  );
   assert.deepEqual(normalizeKnowledgeScope({}), { kind: "all_projects" });
+});
+
+test("message scope metadata resolves its repository project", () => {
+  assert.equal(
+    projectIdFromScopeMetadata({ knowledgeScope: { kind: "folder", projectId: "project-a" } }),
+    "project-a"
+  );
+  assert.equal(
+    projectIdFromScopeMetadata({ scopeSnapshot: { projectId: "project-b" } }),
+    "project-b"
+  );
+  assert.equal(projectIdFromScopeMetadata({}), null);
 });
 
 test("reported generic transcript routes to Papertrend capabilities", () => {

@@ -46,10 +46,10 @@ export function normalizeKnowledgeScope(input: LegacyKnowledgeScopeInput): Knowl
   if (folderId && folderId !== "all" && folderId !== "all-projects") {
     return { kind: "folder", projectId, folderId };
   }
-  if (requested?.kind === "project" && projectId && projectId !== "all") {
-    return { kind: "project", projectId };
-  }
-  if (!requested && projectId && projectId !== "all") {
+  // A project-aware workspace must never widen "entire repository" into every
+  // project owned by the user. Cross-project scope is reserved for callers
+  // that intentionally omit a project ID.
+  if (projectId && projectId !== "all") {
     return { kind: "project", projectId };
   }
   return { kind: "all_projects" };
@@ -63,4 +63,18 @@ export function knowledgeScopeLabel(scope: KnowledgeScope): string {
   if (scope.kind === "folder") return "Selected folder";
   if (scope.kind === "project") return "Current project";
   return "All projects";
+}
+
+export function projectIdFromScopeMetadata(
+  metadata?: Record<string, unknown> | null
+): string | null {
+  if (!metadata) return null;
+  const knowledgeScope = metadata.knowledgeScope && typeof metadata.knowledgeScope === "object"
+    ? metadata.knowledgeScope as Record<string, unknown>
+    : {};
+  const scopeSnapshot = metadata.scopeSnapshot && typeof metadata.scopeSnapshot === "object"
+    ? metadata.scopeSnapshot as Record<string, unknown>
+    : {};
+  const projectId = String(knowledgeScope.projectId ?? scopeSnapshot.projectId ?? "").trim();
+  return projectId || null;
 }
