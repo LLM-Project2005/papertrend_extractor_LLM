@@ -47,6 +47,8 @@ TABLE_ORDER = (
     "paper_analysis_facets",
     "paper_author_keywords",
     "paper_research_typologies",
+    "paper_category_definitions",
+    "paper_category_assignments",
     "workspace_threads",
     "workspace_messages",
     "deep_research_sessions",
@@ -78,6 +80,8 @@ PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "paper_analysis_facets": ("id",),
     "paper_author_keywords": ("id",),
     "paper_research_typologies": ("paper_id",),
+    "paper_category_definitions": ("id",),
+    "paper_category_assignments": ("id",),
     "ingestion_runs": ("id",),
     "workspace_threads": ("id",),
     "workspace_messages": ("id",),
@@ -94,6 +98,8 @@ GENERATED_ID_TABLES = frozenset(
         "paper_keyword_concepts",
         "paper_analysis_facets",
         "paper_author_keywords",
+        "paper_category_definitions",
+        "paper_category_assignments",
     }
 )
 

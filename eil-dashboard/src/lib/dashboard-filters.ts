@@ -1,4 +1,5 @@
 import { TRACK_COLS } from "@/lib/constants";
+import { normalizeCategoryKey } from "@/lib/category-options";
 import type { DashboardData, PaperId, TrackRow } from "@/types/database";
 
 function matchesTrackSelection(row: TrackRow, selectedTracks: string[]): boolean {
@@ -19,6 +20,9 @@ function collectFallbackPaperIds(data: DashboardData, selectedYears: string[]): 
     ...data.tracksMulti
       .filter((row) => selectedYears.includes(row.year))
       .map((row) => row.paper_id),
+    ...(data.categoryAssignments ?? [])
+      .filter((row) => selectedYears.includes(row.year))
+      .map((row) => row.paper_id),
   ]);
 }
 
@@ -31,12 +35,17 @@ export function filterDashboardData(
   selectedYears: string[],
   selectedTracks: string[],
   searchQuery = ""
-): Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies"> {
+): Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "categoryAssignments" | "topicFamilies"> {
+  const categoryRows = data.categoryAssignments ?? [];
+  const dynamicCategoryKeys = [
+    ...new Set(categoryRows.map((row) => normalizeCategoryKey(row.category_key)).filter(Boolean)),
+  ];
   const availableYears = [
     ...new Set([
       ...data.trends.map((row) => row.year),
       ...data.tracksSingle.map((row) => row.year),
       ...data.tracksMulti.map((row) => row.year),
+      ...categoryRows.map((row) => row.year),
     ]),
   ].sort();
   const years =
@@ -45,8 +54,16 @@ export function filterDashboardData(
       : selectedYears.some((year) => availableYears.includes(year))
         ? selectedYears
         : availableYears;
-  const tracks =
-    selectedTracks.length > 0 && selectedTracks.some((track) => isTrackKey(track))
+  const dynamicSelectedTracks = selectedTracks
+    .map((track) => normalizeCategoryKey(track))
+    .filter((track) => dynamicCategoryKeys.includes(track));
+  const useDynamicCategories = dynamicCategoryKeys.length > 0;
+  const hasExplicitDynamicSelection = useDynamicCategories && dynamicSelectedTracks.length > 0;
+  const tracks = useDynamicCategories
+    ? dynamicSelectedTracks.length > 0
+      ? dynamicSelectedTracks
+      : dynamicCategoryKeys
+    : selectedTracks.length > 0 && selectedTracks.some((track) => isTrackKey(track))
       ? selectedTracks.filter((track): track is (typeof TRACK_COLS)[number] =>
           isTrackKey(track)
         )
@@ -81,29 +98,73 @@ export function filterDashboardData(
               [row.title, row.year].join(" ").toLowerCase().includes(normalizedQuery)
             )
             .map((row) => row.paper_id),
+          ...categoryRows
+            .filter((row) =>
+              [
+                row.title,
+                row.year,
+                row.taxonomy_name,
+                row.category_key,
+                row.category_label,
+                row.rationale,
+              ]
+                .join(" ")
+                .toLowerCase()
+                .includes(normalizedQuery)
+            )
+            .map((row) => row.paper_id),
         ]);
 
-  const singleTrackRows = data.tracksSingle.filter(
-    (row) =>
-      years.includes(row.year) &&
-      matchesTrackSelection(row, tracks) &&
-      (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
-  );
+  const singleTrackRows = useDynamicCategories
+    ? []
+    : data.tracksSingle.filter(
+        (row) =>
+          years.includes(row.year) &&
+          matchesTrackSelection(row, tracks) &&
+          (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+      );
 
-  const multiTrackRows = data.tracksMulti.filter(
-    (row) =>
-      years.includes(row.year) &&
-      matchesTrackSelection(row, tracks) &&
-      (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
-  );
+  const multiTrackRows = useDynamicCategories
+    ? []
+    : data.tracksMulti.filter(
+        (row) =>
+          years.includes(row.year) &&
+          matchesTrackSelection(row, tracks) &&
+          (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+      );
+
+  const singleCategoryRows = useDynamicCategories
+    ? categoryRows.filter(
+        (row) =>
+          row.assignment_type === "single" &&
+          years.includes(row.year) &&
+          tracks.includes(normalizeCategoryKey(row.category_key)) &&
+          (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+      )
+    : [];
+  const multiCategoryRows = useDynamicCategories
+    ? categoryRows.filter(
+        (row) =>
+          row.assignment_type === "multi" &&
+          years.includes(row.year) &&
+          tracks.includes(normalizeCategoryKey(row.category_key)) &&
+          (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+      )
+    : [];
 
   const fallbackPaperIds = collectFallbackPaperIds(data, years);
-  const allowedPaperIds =
-    singleTrackRows.length > 0
-      ? new Set(singleTrackRows.map((row) => row.paper_id))
-      : multiTrackRows.length > 0
-        ? new Set(multiTrackRows.map((row) => row.paper_id))
-        : fallbackPaperIds;
+  let allowedPaperIds = fallbackPaperIds;
+  if (singleCategoryRows.length > 0) {
+    allowedPaperIds = new Set(singleCategoryRows.map((row) => row.paper_id));
+  } else if (multiCategoryRows.length > 0) {
+    allowedPaperIds = new Set(multiCategoryRows.map((row) => row.paper_id));
+  } else if (hasExplicitDynamicSelection) {
+    allowedPaperIds = new Set<PaperId>();
+  } else if (singleTrackRows.length > 0) {
+    allowedPaperIds = new Set(singleTrackRows.map((row) => row.paper_id));
+  } else if (multiTrackRows.length > 0) {
+    allowedPaperIds = new Set(multiTrackRows.map((row) => row.paper_id));
+  }
 
   const filteredTrends = data.trends.filter(
     (row) =>
@@ -123,6 +184,12 @@ export function filterDashboardData(
       allowedPaperIds.has(row.paper_id) &&
       (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
   );
+  const filteredCategoryAssignments = categoryRows.filter(
+    (row) =>
+      years.includes(row.year) &&
+      allowedPaperIds.has(row.paper_id) &&
+      (!searchMatchedPaperIds || searchMatchedPaperIds.has(row.paper_id))
+  );
   const trendRowsByTopic = filteredTrends.reduce<Record<string, typeof filteredTrends>>(
     (accumulator, row) => {
       (accumulator[row.topic] ??= []).push(row);
@@ -135,6 +202,7 @@ export function filterDashboardData(
     trends: filteredTrends,
     tracksSingle: filteredTracksSingle,
     tracksMulti: filteredTracksMulti,
+    categoryAssignments: filteredCategoryAssignments,
     topicFamilies: (data.topicFamilies ?? [])
       .map((family) => {
         const scopedTrendRows = trendRowsByTopic[family.canonicalTopic] ?? [];

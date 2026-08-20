@@ -21,7 +21,7 @@ TRACK_FIELD_MAP = {
     "Other": "other",
 }
 
-CATEGORY_STORAGE_SLOTS = ("EL", "ELI", "LAE")
+LEGACY_CATEGORY_STORAGE_SLOTS = ("EL", "ELI", "LAE")
 
 
 def load_prompt(filename: str) -> str:
@@ -78,20 +78,35 @@ def normalize_analysis_profile(input_payload: Any) -> Dict[str, Any]:
 
     categories = []
     raw_categories = profile.get("categories")
+    seen_keys = set()
     if isinstance(raw_categories, list):
-        for index, item in enumerate(raw_categories[: len(CATEGORY_STORAGE_SLOTS)]):
+        for index, item in enumerate(raw_categories):
             if not isinstance(item, dict):
                 continue
             label = normalize_whitespace(str(item.get("label") or ""))[:80]
             if not label:
                 continue
-            key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:40] or f"category_{index + 1}"
+            base_key = (
+                re.sub(
+                    r"[^a-z0-9]+",
+                    "_",
+                    normalize_whitespace(str(item.get("key") or label)).lower(),
+                )
+                .strip("_")[:40]
+                or f"category_{index + 1}"
+            )
+            key = base_key
+            suffix = 2
+            while key in seen_keys:
+                suffix_text = f"_{suffix}"
+                key = f"{base_key[: 40 - len(suffix_text)]}{suffix_text}"
+                suffix += 1
+            seen_keys.add(key)
             categories.append(
                 {
-                    "key": normalize_whitespace(str(item.get("key") or key))[:40],
+                    "key": key,
                     "label": label,
                     "description": normalize_whitespace(str(item.get("description") or ""))[:600],
-                    "storage_slot": CATEGORY_STORAGE_SLOTS[index],
                 }
             )
 
@@ -129,9 +144,9 @@ def format_category_definitions(profile: Dict[str, Any]) -> str:
     for category in categories:
         description = category.get("description") or "No additional description supplied."
         lines.append(
-            f"- {category['storage_slot']}: {category['label']} - {description}"
+            f"- {category['key']}: {category['label']} - {description}"
         )
-    lines.append("- Other: Outside the configured categories, unclear, or insufficient evidence.")
+    lines.append("- other: Other / Unclassified - outside the configured categories, unclear, or insufficient evidence.")
     return "\n".join(lines)
 
 

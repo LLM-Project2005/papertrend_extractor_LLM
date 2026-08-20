@@ -6,7 +6,6 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { buildAnalysisProfileSnapshot } from "@/lib/analysis-profile";
 import {
-  MAX_WORKSPACE_ANALYSIS_CATEGORIES,
   createWorkspaceAnalysisCategoryDraft,
   normalizeWorkspaceAnalysisCategoryDrafts,
 } from "@/lib/workspace-profile";
@@ -167,10 +166,6 @@ export default function AnalyzeFlowModal({
   }
 
   function addAnalysisCategory() {
-    if (profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES) {
-      setError("This compatibility version supports up to three custom categories.");
-      return;
-    }
     updateProfile({
       analysisCategories: [
         ...profile.analysisCategories,
@@ -768,8 +763,7 @@ export default function AnalyzeFlowModal({
                   <button
                     type="button"
                     onClick={addAnalysisCategory}
-                    disabled={profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                   >
                     <PlusIcon className="h-3.5 w-3.5" />
                     <span>Add</span>

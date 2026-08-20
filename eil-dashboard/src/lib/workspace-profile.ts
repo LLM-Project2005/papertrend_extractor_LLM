@@ -7,7 +7,6 @@ import type {
 } from "@/types/workspace";
 
 export const WORKSPACE_PROFILE_STORAGE_KEY = "papertrend_workspace_profile_v1";
-export const MAX_WORKSPACE_ANALYSIS_CATEGORIES = 3;
 
 export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
   name: "Research Signal Lab",
@@ -159,7 +158,7 @@ export function loadWorkspaceProfile(): WorkspaceProfile {
 
 export function normalizeWorkspaceAnalysisCategories(
   categories: unknown,
-  limit = MAX_WORKSPACE_ANALYSIS_CATEGORIES
+  limit = Number.POSITIVE_INFINITY
 ): WorkspaceAnalysisCategory[] {
   if (!Array.isArray(categories)) {
     return [];
@@ -198,10 +197,7 @@ export function normalizeWorkspaceAnalysisCategories(
 }
 
 export function createWorkspaceAnalysisCategoryDraft(index: number): WorkspaceAnalysisCategory {
-  const categoryNumber = Math.min(
-    Math.max(1, index + 1),
-    MAX_WORKSPACE_ANALYSIS_CATEGORIES
-  );
+  const categoryNumber = Math.max(1, index + 1);
   return {
     key: `category_${categoryNumber}`,
     label: "",
@@ -211,7 +207,7 @@ export function createWorkspaceAnalysisCategoryDraft(index: number): WorkspaceAn
 
 export function normalizeWorkspaceAnalysisCategoryDrafts(
   categories: WorkspaceAnalysisCategory[],
-  limit = MAX_WORKSPACE_ANALYSIS_CATEGORIES
+  limit = Number.POSITIVE_INFINITY
 ): WorkspaceAnalysisCategory[] {
   return categories.slice(0, limit).map((category, index) => ({
     key:

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
-  MAX_WORKSPACE_ANALYSIS_CATEGORIES,
   createWorkspaceAnalysisCategoryDraft,
   normalizeWorkspaceAnalysisCategoryDrafts,
   WORKSPACE_GOALS,
@@ -65,10 +64,6 @@ export default function WorkspaceSettingsClient() {
   }
 
   function addCategory() {
-    if (profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES) {
-      setSavedMessage("This compatibility version supports up to three custom categories.");
-      return;
-    }
     updateProfile({
       analysisCategories: [
         ...profile.analysisCategories,
@@ -414,8 +409,7 @@ export default function WorkspaceSettingsClient() {
                   <button
                     type="button"
                     onClick={addCategory}
-                    disabled={profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                   >
                     Add category
                   </button>

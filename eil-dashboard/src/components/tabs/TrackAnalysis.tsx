@@ -18,13 +18,19 @@ import {
   TRACK_NAMES,
   type TrackKey,
 } from "@/lib/constants";
-import type { PaperId, TrendRow, TrackRow } from "@/types/database";
+import {
+  normalizeCategoryKey,
+  type CategoryOption,
+} from "@/lib/category-options";
+import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
+  categoryAssignments?: CategoryAssignmentRow[];
+  categoryOptions?: CategoryOption[];
   selectedTracks: string[];
   categoryLabels?: Record<TrackKey, string>;
   planCharts?: VisualizationPlanChart[];
@@ -43,6 +49,8 @@ export default function TrackAnalysis({
   trends,
   tracksSingle,
   tracksMulti,
+  categoryAssignments = [],
+  categoryOptions = [],
   selectedTracks,
   categoryLabels,
   planCharts,
@@ -64,8 +72,58 @@ export default function TrackAnalysis({
   const stackedTracks = trackYearConfig?.selected_tracks ?? selectedTracks;
   const topicTracks = topicsPerTrackConfig?.selected_tracks ?? selectedTracks;
   const topicsPerTrackLimit = topicsPerTrackConfig?.top_n ?? 8;
+  const hasDynamicCategories = categoryAssignments.length > 0 && categoryOptions.length > 0;
+  const activeCategories = useMemo(() => {
+    if (!hasDynamicCategories) {
+      return [];
+    }
+    const optionKeys = new Set(categoryOptions.map((category) => category.key));
+    const selectedKeys = stackedTracks
+      .map((track) => normalizeCategoryKey(track))
+      .filter((track) => optionKeys.has(track));
+    const activeKeys = new Set(selectedKeys.length > 0 ? selectedKeys : [...optionKeys]);
+    return categoryOptions.filter((category) => activeKeys.has(category.key));
+  }, [categoryOptions, hasDynamicCategories, stackedTracks]);
+  const activeTopicCategories = useMemo(() => {
+    if (!hasDynamicCategories) {
+      return [];
+    }
+    const optionKeys = new Set(categoryOptions.map((category) => category.key));
+    const selectedKeys = topicTracks
+      .map((track) => normalizeCategoryKey(track))
+      .filter((track) => optionKeys.has(track));
+    const activeKeys = new Set(selectedKeys.length > 0 ? selectedKeys : [...optionKeys]);
+    return categoryOptions.filter((category) => activeKeys.has(category.key));
+  }, [categoryOptions, hasDynamicCategories, topicTracks]);
 
   const stackedData = useMemo(() => {
+    if (hasDynamicCategories) {
+      const years = [
+        ...new Set(
+          categoryAssignments
+            .filter((row) => row.assignment_type === "single")
+            .map((row) => row.year)
+        ),
+      ].sort();
+      return years.map((year) => {
+        const entry: Record<string, string | number> = { year };
+        activeCategories.forEach((category) => {
+          const papers = new Set(
+            categoryAssignments
+              .filter(
+                (row) =>
+                  row.assignment_type === "single" &&
+                  row.year === year &&
+                  normalizeCategoryKey(row.category_key) === category.key
+              )
+              .map((row) => row.paper_id)
+          );
+          entry[category.key] = papers.size;
+        });
+        return entry;
+      });
+    }
+
     const years = [...new Set(tracksSingle.map((row) => row.year))].sort();
     return years.map((year) => {
       const entry: Record<string, string | number> = { year };
@@ -75,11 +133,31 @@ export default function TrackAnalysis({
       });
       return entry;
     });
-  }, [stackedTracks, tracksSingle]);
+  }, [activeCategories, categoryAssignments, hasDynamicCategories, stackedTracks, tracksSingle]);
 
   const coMatrix = useMemo(
-    () =>
-      TRACK_COLS.filter((track) => topicTracks.includes(track)).map((leftTrack) =>
+    () => {
+      if (hasDynamicCategories) {
+        const multiByPaper = categoryAssignments
+          .filter((row) => row.assignment_type === "multi")
+          .reduce<Record<string, Set<string>>>((accumulator, row) => {
+            const set = accumulator[row.paper_id] ?? new Set<string>();
+            set.add(normalizeCategoryKey(row.category_key));
+            accumulator[row.paper_id] = set;
+            return accumulator;
+          }, {});
+        return activeTopicCategories.map((leftCategory) =>
+          activeTopicCategories.map((rightCategory) =>
+            Object.values(multiByPaper).reduce(
+              (sum, categorySet) =>
+                sum + (categorySet.has(leftCategory.key) && categorySet.has(rightCategory.key) ? 1 : 0),
+              0
+            )
+          )
+        );
+      }
+
+      return TRACK_COLS.filter((track) => topicTracks.includes(track)).map((leftTrack) =>
         TRACK_COLS.filter((track) => topicTracks.includes(track)).map((rightTrack) =>
           tracksMulti.reduce(
             (sum, row) =>
@@ -90,11 +168,40 @@ export default function TrackAnalysis({
             0
           )
         )
-      ),
-    [topicTracks, tracksMulti]
+      );
+    },
+    [activeTopicCategories, categoryAssignments, hasDynamicCategories, topicTracks, tracksMulti]
   );
 
   const topicsPerTrack = useMemo(() => {
+    if (hasDynamicCategories) {
+      const categorySetsByPaper = categoryAssignments
+        .filter((row) => row.assignment_type === "single")
+        .reduce<Record<string, Set<string>>>((accumulator, row) => {
+          const set = accumulator[row.paper_id] ?? new Set<string>();
+          set.add(normalizeCategoryKey(row.category_key));
+          accumulator[row.paper_id] = set;
+          return accumulator;
+        }, {});
+      const result: Record<string, { topic: string; papers: number }[]> = {};
+
+      activeTopicCategories.forEach((category) => {
+        const counts: Record<string, Set<PaperId>> = {};
+        trends.forEach((row) => {
+          const paperCategories = categorySetsByPaper[row.paper_id];
+          if (paperCategories?.has(category.key)) {
+            (counts[row.topic] ??= new Set()).add(row.paper_id);
+          }
+        });
+        result[category.key] = Object.entries(counts)
+          .map(([topic, ids]) => ({ topic, papers: ids.size }))
+          .sort((left, right) => right.papers - left.papers)
+          .slice(0, topicsPerTrackLimit);
+      });
+
+      return result;
+    }
+
     const trackMap = new Map(tracksSingle.map((row) => [row.paper_id, row]));
     const result: Record<string, { topic: string; papers: number }[]> = {};
 
@@ -114,7 +221,32 @@ export default function TrackAnalysis({
     });
 
     return result;
-  }, [topicTracks, topicsPerTrackLimit, tracksSingle, trends]);
+  }, [
+    activeTopicCategories,
+    categoryAssignments,
+    hasDynamicCategories,
+    topicTracks,
+    topicsPerTrackLimit,
+    tracksSingle,
+    trends,
+  ]);
+  const legacyStackedCategories = TRACK_COLS.filter((track) => stackedTracks.includes(track)).map((track) => ({
+    key: track,
+    label: categoryLabels?.[track as TrackKey] || track,
+    description: TRACK_NAMES[track as TrackKey],
+    color: TRACK_COLORS[track as TrackKey],
+  }));
+  const legacyTopicCategories = TRACK_COLS.filter((track) => topicTracks.includes(track)).map((track) => ({
+    key: track,
+    label: categoryLabels?.[track as TrackKey] || track,
+    description: TRACK_NAMES[track as TrackKey],
+    color: TRACK_COLORS[track as TrackKey],
+  }));
+  const stackedChartCategories = hasDynamicCategories ? activeCategories : legacyStackedCategories;
+  const topicChartCategories = hasDynamicCategories ? activeTopicCategories : legacyTopicCategories;
+  const categoryByKey = new Map(
+    [...stackedChartCategories, ...topicChartCategories].map((category) => [category.key, category])
+  );
 
   return (
     <div className="space-y-6">
@@ -140,16 +272,16 @@ export default function TrackAnalysis({
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                {TRACK_COLS.filter((track) => stackedTracks.includes(track)).map((track) => (
+                {stackedChartCategories.map((category) => (
                   <Bar
-                    key={track}
-                    dataKey={track}
-                    name={categoryLabels?.[track as TrackKey] || track}
+                    key={category.key}
+                    dataKey={category.key}
+                    name={category.label}
                     stackId="tracks"
-                    fill={TRACK_COLORS[track as TrackKey]}
+                    fill={category.color}
                     onClick={(entry) => {
                       if (entry && "year" in entry) {
-                        onDrilldown?.({ track, year: String(entry.year) });
+                        onDrilldown?.({ track: category.key, year: String(entry.year) });
                       }
                     }}
                     className={onDrilldown ? "cursor-pointer" : undefined}
@@ -161,7 +293,7 @@ export default function TrackAnalysis({
         </section>
       )}
 
-      {orderedCharts.includes("track_cooccurrence") && tracksMulti.length > 0 && (
+      {orderedCharts.includes("track_cooccurrence") && coMatrix.length > 0 && (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Category co-occurrence
@@ -171,12 +303,8 @@ export default function TrackAnalysis({
           </p>
           <div className="mt-4">
             <Heatmap
-              rows={TRACK_COLS.filter((track) => topicTracks.includes(track)).map(
-                (track) => categoryLabels?.[track as TrackKey] || track
-              )}
-              cols={TRACK_COLS.filter((track) => topicTracks.includes(track)).map(
-                (track) => categoryLabels?.[track as TrackKey] || track
-              )}
+              rows={topicChartCategories.map((category) => category.label)}
+              cols={topicChartCategories.map((category) => category.label)}
               values={coMatrix}
               colorScale={["#eff6ff", "#1e40af"]}
             />
@@ -193,55 +321,64 @@ export default function TrackAnalysis({
           <div
             className="mt-5 grid gap-6"
             style={{
-              gridTemplateColumns: `repeat(${Object.keys(topicsPerTrack).length}, minmax(0, 1fr))`,
+              gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
             }}
           >
-            {Object.entries(topicsPerTrack).map(([track, data]) => (
-              <div key={track}>
-                <p className="mb-3 text-sm font-medium text-slate-900 dark:text-white">
-                  <span style={{ color: TRACK_COLORS[track as TrackKey] }}>
-                    {categoryLabels?.[track as TrackKey] || track}
-                  </span>
-                  <span className="ml-2 text-slate-500 dark:text-slate-400">
-                    {TRACK_NAMES[track as TrackKey]}
-                  </span>
-                </p>
-                {data.length > 0 ? (
-                  <div className="h-[280px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={data} layout="vertical" margin={{ left: 0, right: 8 }}>
-                        <XAxis type="number" tick={{ fontSize: 10 }} hide />
-                        <YAxis
-                          type="category"
-                          dataKey="topic"
-                          width={150}
-                          tick={{ fontSize: 10 }}
-                          stroke="#94a3b8"
-                        />
-                        <Tooltip />
-                        <Bar
-                          dataKey="papers"
-                          fill={TRACK_COLORS[track as TrackKey]}
-                          radius={[0, 6, 6, 0]}
-                          barSize={16}
-                          onClick={(entry) => {
-                            if (entry && "topic" in entry) {
-                              onDrilldown?.({
-                                track,
-                                topic: String(entry.topic),
-                              });
-                            }
-                          }}
-                          className={onDrilldown ? "cursor-pointer" : undefined}
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-500 dark:text-slate-400">No data</p>
-                )}
-              </div>
-            ))}
+            {Object.entries(topicsPerTrack).map(([track, data]) => {
+              const category = categoryByKey.get(track) ?? {
+                key: track,
+                label: track,
+                description: "",
+                color: TRACK_COLORS.Other,
+              };
+
+              return (
+                <div key={track}>
+                  <p className="mb-3 text-sm font-medium text-slate-900 dark:text-white">
+                    <span style={{ color: category.color }}>{category.label}</span>
+                    {category.description ? (
+                      <span className="ml-2 text-slate-500 dark:text-slate-400">
+                        {category.description}
+                      </span>
+                    ) : null}
+                  </p>
+                  {data.length > 0 ? (
+                    <div className="h-[280px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={data} layout="vertical" margin={{ left: 0, right: 8 }}>
+                          <XAxis type="number" tick={{ fontSize: 10 }} hide />
+                          <YAxis
+                            type="category"
+                            dataKey="topic"
+                            width={150}
+                            tick={{ fontSize: 10 }}
+                            stroke="#94a3b8"
+                          />
+                          <Tooltip />
+                          <Bar
+                            dataKey="papers"
+                            fill={category.color}
+                            radius={[0, 6, 6, 0]}
+                            barSize={16}
+                            onClick={(entry) => {
+                              if (entry && "topic" in entry) {
+                                onDrilldown?.({
+                                  track,
+                                  topic: String(entry.topic),
+                                });
+                              }
+                            }}
+                            className={onDrilldown ? "cursor-pointer" : undefined}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No data</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </section>
       ) : null}

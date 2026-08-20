@@ -229,13 +229,14 @@ class NewIngestionNodeTests(unittest.TestCase):
         )
 
         self.assertEqual(result["track_single"], {"el": 0, "eli": 0, "lae": 0, "other": 1})
+        self.assertEqual(result["category_classification"]["single_category_key"], "other")
         self.assertEqual(result["category_classification"]["single_category"], "Other / Unclassified")
 
     def test_category_classifier_uses_user_defined_category_labels(self) -> None:
         runnable = Mock()
         runnable.invoke.return_value = types.SimpleNamespace(
-            single_track="ELI",
-            multi_tracks=["ELI", "LAE"],
+            single_category_key="workflow_intervention",
+            multi_category_keys=["workflow_intervention", "implementation_evaluation"],
             rationale="The paper designs an intervention and also evaluates implementation outcomes.",
         )
 
@@ -269,6 +270,11 @@ class NewIngestionNodeTests(unittest.TestCase):
                                     "label": "Implementation evaluation",
                                     "description": "Studies evaluating adoption, usability, or implementation.",
                                 },
+                                {
+                                    "key": "equity_audit",
+                                    "label": "Equity audit",
+                                    "description": "Studies primarily auditing differential access or fairness.",
+                                },
                             ],
                         }
                     },
@@ -276,6 +282,11 @@ class NewIngestionNodeTests(unittest.TestCase):
             )
 
         self.assertEqual(result["track_single"], {"el": 0, "eli": 1, "lae": 0, "other": 0})
+        self.assertEqual(result["category_classification"]["single_category_key"], "workflow_intervention")
+        self.assertEqual(
+            result["category_classification"]["multi_category_keys"],
+            ["workflow_intervention", "implementation_evaluation"],
+        )
         self.assertEqual(result["category_classification"]["single_category"], "Workflow intervention")
         self.assertEqual(
             result["category_classification"]["multi_categories"],
@@ -304,6 +315,39 @@ class NewIngestionNodeTests(unittest.TestCase):
                 "final_labeled_topics": [],
                 "track_single": {"el": 1, "eli": 0, "lae": 0, "other": 0},
                 "track_multi": {"el": 1, "eli": 0, "lae": 0, "other": 0},
+                "category_classification": {
+                    "taxonomy_name": "Study design categories",
+                    "domain": "General academic research",
+                    "domain_definition": "",
+                    "taxonomy_definition": "Classify by primary study design.",
+                    "categories": [
+                        {
+                            "key": "descriptive",
+                            "label": "Descriptive",
+                            "description": "Describes observed phenomena.",
+                        },
+                        {
+                            "key": "intervention",
+                            "label": "Intervention",
+                            "description": "Tests an intervention.",
+                        },
+                        {
+                            "key": "measurement",
+                            "label": "Measurement",
+                            "description": "Develops or validates instruments.",
+                        },
+                        {
+                            "key": "critical_policy",
+                            "label": "Critical policy",
+                            "description": "Examines policy, identity, or power.",
+                        },
+                    ],
+                    "single_category_key": "critical_policy",
+                    "multi_category_keys": ["critical_policy", "descriptive"],
+                    "single_category": "Critical policy",
+                    "multi_categories": ["Critical policy", "Descriptive"],
+                    "rationale": "The paper examines identity as a socially situated issue.",
+                },
                 "author_keywords": [
                     {
                         "keyword": "learner identity",
@@ -329,6 +373,15 @@ class NewIngestionNodeTests(unittest.TestCase):
         dataset = result["dataset"]
         self.assertEqual(dataset["author_keywords"][0]["keyword"], "learner identity")
         self.assertEqual(dataset["research_typologies"][0]["primary_group_number"], 4)
+        self.assertEqual(len(dataset["category_definitions"]), 4)
+        self.assertEqual(
+            dataset["category_assignments"][0]["category_key"],
+            "critical_policy",
+        )
+        self.assertEqual(
+            [row["category_key"] for row in dataset["category_assignments"] if row["assignment_type"] == "multi"],
+            ["critical_policy", "descriptive"],
+        )
 
     def test_keyword_search_can_match_author_provided_keywords(self) -> None:
         result = keyword_search_node(

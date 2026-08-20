@@ -55,11 +55,10 @@ test("user-entered taxonomy name and categories are sent in the analysis profile
     snapshot.categories.map((category) => ({
       key: category.key,
       label: category.label,
-      storageSlot: category.storageSlot,
     })),
     [
-      { key: "clinical_trial", label: "Clinical Trial", storageSlot: "EL" },
-      { key: "policy_analysis", label: "Policy Analysis", storageSlot: "ELI" },
+      { key: "clinical_trial", label: "Clinical Trial" },
+      { key: "policy_analysis", label: "Policy Analysis" },
     ]
   );
 });
@@ -86,7 +85,7 @@ test("blank category rows remain editable drafts but are omitted from queued ana
   assert.equal(snapshot.categories[0].label, "Survey Study");
 });
 
-test("queued API payload sanitization keeps at most three user categories", () => {
+test("queued API payload sanitization preserves dynamic user categories", () => {
   const sanitized = sanitizeAnalysisProfilePayload({
     domain: "Engineering education",
     domainDefinition: "Research about teaching and learning in engineering contexts.",
@@ -109,11 +108,12 @@ test("queued API payload sanitization keeps at most three user categories", () =
     "Classify by the evidence design used as the paper's main contribution."
   );
   assert.deepEqual(
-    sanitized.categories.map((category) => [category.label, category.storageSlot]),
+    sanitized.categories.map((category) => [category.key, category.label]),
     [
-      ["Experiment", "EL"],
-      ["Case Study", "ELI"],
-      ["Review", "LAE"],
+      ["experiment", "Experiment"],
+      ["case_study", "Case Study"],
+      ["review", "Review"],
+      ["extra", "Extra"],
     ]
   );
 });

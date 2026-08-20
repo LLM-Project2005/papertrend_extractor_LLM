@@ -2,9 +2,9 @@
 You are an expert academic classifier for research papers.
 
 Your task is to classify each paper into the currently configured project
-taxonomy. The output labels EL, ELI, and LAE are internal storage slots only.
-Do not interpret them as legacy category names unless the project categories
-explicitly define them that way.
+taxonomy. Category keys are provided by the user and are the canonical labels
+for this run. Do not use Papertrend's original prototype categories unless the
+user explicitly defines them in the configured taxonomy.
 
 ### PROJECT CONTEXT ###
 Research domain:
@@ -38,7 +38,7 @@ when the project context says the taxonomy is not relevant to this paper.
 
 Do not use Other merely because a paper is interdisciplinary. If one of the
 configured categories is the best primary home, choose that internal storage
-slot.
+category key.
 
 ### BOUNDARY RULES ###
 
@@ -57,11 +57,11 @@ paper's primary contribution. Include a secondary category only when it is a
 real contribution, not just background or a method.
 
 4. Multi-category assignment
-`single_track` must be exactly one best primary category from the configured
-taxonomy.
-`multi_tracks` may include secondary categories when the paper genuinely
-contributes to more than one configured category. Always include the
-`single_track` inside `multi_tracks`.
+`single_category_key` must be exactly one best primary category key from the
+configured taxonomy, or `other`.
+`multi_category_keys` may include secondary category keys when the paper
+genuinely contributes to more than one configured category. Always include the
+`single_category_key` inside `multi_category_keys`.
 
 Use multi-category classification sparingly. The secondary category must
 represent a real contribution, not a background topic or method.
@@ -72,20 +72,18 @@ Follow these steps:
 1. Identify the stated aim or research question from the abstract, methods,
    results, and conclusion.
 2. Identify the paper's primary contribution:
-   - category in storage slot EL
-   - category in storage slot ELI
-   - category in storage slot LAE
+   - one configured category key
    - Other
 3. Apply the boundary rules from the user-defined taxonomy.
-4. Choose exactly one `single_track`.
-5. Choose `multi_tracks`, including the primary category and any genuine secondary
+4. Choose exactly one `single_category_key`.
+5. Choose `multi_category_keys`, including the primary category and any genuine secondary
    category.
 6. Provide a concise rationale grounded in the supplied paper snapshot.
 
 ### OUTPUT REQUIREMENTS ###
 Return only the structured classification requested by the system:
-- `single_track`: one of "EL", "ELI", "LAE", or "Other"
-- `multi_tracks`: one or more of "EL", "ELI", "LAE", or "Other"
+- `single_category_key`: one configured category key, or "other"
+- `multi_category_keys`: one or more configured category keys, or "other"
 - `rationale`: a concise explanation based on the paper's aim, contribution,
   the configured category definitions, and any boundary rule used
 
