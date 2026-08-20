@@ -26,6 +26,7 @@ interface Props {
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
   selectedTracks: string[];
+  categoryLabels?: Record<TrackKey, string>;
   planCharts?: VisualizationPlanChart[];
   onDrilldown?: (target: {
     track?: string;
@@ -43,6 +44,7 @@ export default function TrackAnalysis({
   tracksSingle,
   tracksMulti,
   selectedTracks,
+  categoryLabels,
   planCharts,
   onDrilldown,
 }: Props) {
@@ -118,17 +120,17 @@ export default function TrackAnalysis({
     <div className="space-y-6">
       <section className="app-surface px-5 py-5">
         <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-          Track analysis
+          Category analysis
         </h2>
         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Review category balance, overlap, and the topic clusters most tied to each track.
+          Review category balance, overlap, and the topic clusters most tied to each category.
         </p>
       </section>
 
       {orderedCharts.includes("track_year_stacked") && stackedData.length > 0 && (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Papers per track per year
+            Papers per category per year
           </h3>
           <div className="mt-4 h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -142,6 +144,7 @@ export default function TrackAnalysis({
                   <Bar
                     key={track}
                     dataKey={track}
+                    name={categoryLabels?.[track as TrackKey] || track}
                     stackId="tracks"
                     fill={TRACK_COLORS[track as TrackKey]}
                     onClick={(entry) => {
@@ -161,15 +164,19 @@ export default function TrackAnalysis({
       {orderedCharts.includes("track_cooccurrence") && tracksMulti.length > 0 && (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Track co-occurrence
+            Category co-occurrence
           </h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            How often tracks appear together on the same paper.
+            How often categories appear together on the same paper.
           </p>
           <div className="mt-4">
             <Heatmap
-              rows={TRACK_COLS.filter((track) => topicTracks.includes(track))}
-              cols={TRACK_COLS.filter((track) => topicTracks.includes(track))}
+              rows={TRACK_COLS.filter((track) => topicTracks.includes(track)).map(
+                (track) => categoryLabels?.[track as TrackKey] || track
+              )}
+              cols={TRACK_COLS.filter((track) => topicTracks.includes(track)).map(
+                (track) => categoryLabels?.[track as TrackKey] || track
+              )}
               values={coMatrix}
               colorScale={["#eff6ff", "#1e40af"]}
             />
@@ -181,7 +188,7 @@ export default function TrackAnalysis({
       Object.keys(topicsPerTrack).length > 0 ? (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Top topics per track
+            Top topics per category
           </h3>
           <div
             className="mt-5 grid gap-6"
@@ -192,7 +199,9 @@ export default function TrackAnalysis({
             {Object.entries(topicsPerTrack).map(([track, data]) => (
               <div key={track}>
                 <p className="mb-3 text-sm font-medium text-slate-900 dark:text-white">
-                  <span style={{ color: TRACK_COLORS[track as TrackKey] }}>{track}</span>
+                  <span style={{ color: TRACK_COLORS[track as TrackKey] }}>
+                    {categoryLabels?.[track as TrackKey] || track}
+                  </span>
                   <span className="ml-2 text-slate-500 dark:text-slate-400">
                     {TRACK_NAMES[track as TrackKey]}
                   </span>

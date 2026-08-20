@@ -12,6 +12,7 @@ import {
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
+import { sanitizeAnalysisProfilePayload } from "@/lib/analysis-profile";
 import { createGcsSignedUploadUrl as signGcsUpload } from "@/lib/gcs-signed-urls";
 import {
   MAX_FILES_PER_BATCH,
@@ -76,12 +77,14 @@ export async function POST(request: Request) {
       folder?: string;
       source_kind?: string;
       project_id?: string;
+      analysis_profile?: unknown;
       files?: PrepareUploadFile[];
     };
 
     const folder = sanitizeFolderName(String(body.folder ?? "Repository"));
     const sourceKind = String(body.source_kind ?? "pdf-upload") || "pdf-upload";
     const projectId = String(body.project_id ?? "").trim();
+    const analysisProfile = sanitizeAnalysisProfilePayload(body.analysis_profile);
     const files = Array.isArray(body.files)
       ? body.files.filter((file) => file && typeof file.name === "string")
       : [];
@@ -136,6 +139,7 @@ export async function POST(request: Request) {
         provider: AUTO_ANALYSIS_PROVIDER,
         model: AUTO_ANALYSIS_MODEL,
         analysisLabel: AUTO_ANALYSIS_LABEL,
+        analysisProfile,
       });
       folderJob = batch.folderJob;
       preparedRuns = batch.runs as unknown as Array<Record<string, unknown>>;
@@ -190,6 +194,7 @@ export async function POST(request: Request) {
             mime_type: file.type || "application/pdf",
             analysis_mode: "automatic",
             analysis_label: AUTO_ANALYSIS_LABEL,
+            analysis_profile: analysisProfile,
             progress_stage: "uploading",
             progress_message: "Uploading",
             progress_detail: "Uploading file directly to storage before queueing analysis.",

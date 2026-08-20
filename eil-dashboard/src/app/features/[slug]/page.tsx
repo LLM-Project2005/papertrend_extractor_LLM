@@ -186,7 +186,7 @@ function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
             <p className="mt-6 max-w-2xl text-base leading-8 text-[#a3a3a3] sm:text-lg">
               {feature.description} This page shows the analysis engine as a lab bench:
               file intake, section recovery, metadata, year evidence, topics,
-              tracks, facets, and workspace tables becoming structured output.
+              categories, facets, and workspace tables becoming structured output.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <MarketingCTA />
@@ -241,8 +241,8 @@ function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
             copy="The worker keeps every output close to a paper, owner, folder, and evidence trail. That makes the same analysis available to the library, dashboard, charts, and chat without re-reading the PDF every time."
             items={[
               "Text extraction first, vision/OCR fallback when text is unusable.",
-              "Structured model calls for segmentation, metadata, keywords, topics, tracks, typology, and facets.",
-              "Supabase persistence writes paper rows, content, keyword rows, concepts, tracks, and analysis facets.",
+              "Structured model calls for segmentation, metadata, keywords, topics, categories, typology, and facets.",
+              "Supabase persistence writes paper rows, content, keyword rows, concepts, categories, and analysis facets.",
               "Retry-safe queue records let failed or incomplete files be resumed instead of silently disappearing.",
             ]}
           />
@@ -293,7 +293,7 @@ function ResearchDashboardPage({ feature }: { feature: MarketingFeature }) {
           <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
             This part is intentionally deterministic: most charts are built from
             stored tables and views, not fresh model guesses. That keeps dashboard
-            numbers stable when users switch folders, years, tracks, or workspace scope.
+            numbers stable when users switch folders, years, categories, or workspace scope.
           </p>
           <ul className="mt-6 space-y-3">
             {feature.sections[0].bullets.map((bullet) => (

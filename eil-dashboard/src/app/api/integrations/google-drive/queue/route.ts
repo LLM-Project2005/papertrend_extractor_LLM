@@ -8,6 +8,7 @@ import {
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getDatabaseProvider } from "@/lib/server-env";
+import { sanitizeAnalysisProfilePayload } from "@/lib/analysis-profile";
 import {
   persistWorkerStartState,
   triggerWorkerQueueWithRetries,
@@ -37,6 +38,7 @@ export async function POST(request: Request) {
       fileIds?: string[];
       folder?: string;
       projectId?: string;
+      analysisProfile?: unknown;
     };
 
     const fileIds = (body.fileIds ?? []).filter(
@@ -65,6 +67,7 @@ export async function POST(request: Request) {
 
     const accessToken = await ensureGoogleDriveAccessToken(connection);
     const folder = sanitizeFolderName(body.folder ?? "Repository");
+    const analysisProfile = sanitizeAnalysisProfilePayload(body.analysisProfile);
     const supabase = getSupabaseAdmin();
     const researchFolder = await ensureResearchFolder(
       supabase,
@@ -126,6 +129,7 @@ export async function POST(request: Request) {
             uploaded_from: "/workspace/home",
             analysis_mode: "automatic",
             analysis_label: AUTO_ANALYSIS_LABEL,
+            analysis_profile: analysisProfile,
             progress_stage: "queued",
             progress_message: "Queued",
             progress_detail:

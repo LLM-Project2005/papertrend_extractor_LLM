@@ -162,13 +162,13 @@ INGESTION_NODE_PROGRESS: Dict[str, Dict[str, str]] = {
     },
     "classify_tracks": {
         "stage": "classifying_tracks",
-        "message": "Classifying research tracks",
-        "detail": "Assigning the paper to the most relevant EL, ELI, LAE, or Other tracks.",
+        "message": "Classifying research categories",
+        "detail": "Assigning the paper to the configured project categories, or Other when no category fits.",
     },
     "classify_typology": {
         "stage": "classifying_typology",
         "message": "Classifying research typology",
-        "detail": "Assigning the paper to the EIL research typology groups.",
+        "detail": "Assigning the paper to the configured research typology groups.",
     },
     "extract_facets": {
         "stage": "extracting_facets",

@@ -3,7 +3,7 @@ from collections import Counter
 from typing import Any, Dict, List, Sequence
 
 from nodes import ModelTask, get_task_llm
-from nodes.common import load_prompt, locate_text_span, normalize_whitespace, safe_json_list
+from nodes.common import load_prompt, locate_text_span, normalize_analysis_profile, normalize_whitespace, safe_json_list
 from state import IngestionState, KeywordCandidateSchema
 
 keyword_extraction_llm = get_task_llm(ModelTask.KEYWORD_EXTRACTION)
@@ -187,7 +187,13 @@ def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
         return {"errors": ["No segmented data found for keyword extraction."], "status": "failed"}
 
     context_text = "\n\n".join(_section_texts(paper_json))
-    full_prompt = load_prompt("keyword_extractor.txt").format(context_text=context_text)
+    analysis_profile = normalize_analysis_profile(state.get("input_payload") or {})
+    full_prompt = load_prompt("keyword_extractor.txt").format(
+        analysis_domain=analysis_profile.get("domain", "General academic research"),
+        domain_definition=analysis_profile.get("domain_definition") or "No research domain definition supplied.",
+        additional_context=analysis_profile.get("additional_context") or "No additional project context supplied.",
+        context_text=context_text,
+    )
     attempts = (
         (keyword_extraction_llm, full_prompt),
         (

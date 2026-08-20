@@ -4,11 +4,14 @@ import { useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
+  MAX_WORKSPACE_ANALYSIS_CATEGORIES,
+  createWorkspaceAnalysisCategoryDraft,
+  normalizeWorkspaceAnalysisCategoryDrafts,
   WORKSPACE_GOALS,
   WORKSPACE_OUTPUTS,
   WORKSPACE_SOURCES,
 } from "@/lib/workspace-profile";
-import type { WorkspaceOutput } from "@/types/workspace";
+import type { WorkspaceAnalysisCategory, WorkspaceOutput } from "@/types/workspace";
 
 const SETTINGS_SECTIONS = [
   {
@@ -47,6 +50,39 @@ export default function WorkspaceSettingsClient() {
 
     updateProfile({ desiredOutputs: outputs });
     setSavedMessage();
+  }
+
+  function updateCategory(index: number, patch: Partial<WorkspaceAnalysisCategory>) {
+    const categories = [...profile.analysisCategories];
+    categories[index] = {
+      key: categories[index]?.key || `category_${index + 1}`,
+      label: categories[index]?.label || "",
+      description: categories[index]?.description || "",
+      ...patch,
+    };
+    updateProfile({ analysisCategories: normalizeWorkspaceAnalysisCategoryDrafts(categories) });
+    setSavedMessage();
+  }
+
+  function addCategory() {
+    if (profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES) {
+      setSavedMessage("This compatibility version supports up to three custom categories.");
+      return;
+    }
+    updateProfile({
+      analysisCategories: [
+        ...profile.analysisCategories,
+        createWorkspaceAnalysisCategoryDraft(profile.analysisCategories.length),
+      ],
+    });
+    setSavedMessage("Category added.");
+  }
+
+  function removeCategory(index: number) {
+    updateProfile({
+      analysisCategories: profile.analysisCategories.filter((_, itemIndex) => itemIndex !== index),
+    });
+    setSavedMessage("Category removed.");
   }
 
   return (
@@ -168,6 +204,48 @@ export default function WorkspaceSettingsClient() {
                     className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
                   />
                 </label>
+
+                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                  <div>
+                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
+                      Research domain definition
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                      Defines what belongs inside the repository field context.
+                    </p>
+                  </div>
+                  <textarea
+                    value={profile.domainDefinition}
+                    onChange={(event) => {
+                      updateProfile({ domainDefinition: event.target.value });
+                      setSavedMessage();
+                    }}
+                    rows={4}
+                    placeholder="Example: Public health research includes population health, clinical service delivery, health policy, epidemiology, and intervention studies. Exclude unrelated biomedical bench science unless the paper connects it to population or care outcomes."
+                    className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                  />
+                </label>
+
+                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                  <div>
+                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
+                      Additional analysis context
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                      Passed to analysis prompts so each repository can explain its field, audience, and review priorities.
+                    </p>
+                  </div>
+                  <textarea
+                    value={profile.analysisContext}
+                    onChange={(event) => {
+                      updateProfile({ analysisContext: event.target.value });
+                      setSavedMessage();
+                    }}
+                    rows={5}
+                    placeholder="Example: This repository contains policy briefs and empirical studies from multiple Chula faculties. Prefer evidence-grounded uncertainty and do not assume one discipline-specific taxonomy."
+                    className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                  />
+                </label>
               </div>
             </section>
 
@@ -233,6 +311,115 @@ export default function WorkspaceSettingsClient() {
                     </button>
                   );
                 })}
+              </div>
+            </section>
+
+            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
+              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
+                <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
+                  Project taxonomy
+                </h2>
+                <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                  Define the categories the model should use for this repository. Leave blank to keep papers unclassified instead of forcing the wrong field.
+                </p>
+              </div>
+              <div className="divide-y divide-slate-200 dark:divide-[#2c2c2c]">
+                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                  <div>
+                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
+                      Taxonomy name
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                      Shown in settings and saved with queued analysis runs.
+                    </p>
+                  </div>
+                  <input
+                    value={profile.categoryTaxonomyName}
+                    onChange={(event) => {
+                      updateProfile({ categoryTaxonomyName: event.target.value });
+                      setSavedMessage();
+                    }}
+                    placeholder="Example: Faculty research categories"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                  />
+                </label>
+
+                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
+                  <div>
+                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
+                      Taxonomy definition
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                      Explains what the category system is meant to distinguish.
+                    </p>
+                  </div>
+                  <textarea
+                    value={profile.categoryTaxonomyDefinition}
+                    onChange={(event) => {
+                      updateProfile({ categoryTaxonomyDefinition: event.target.value });
+                      setSavedMessage();
+                    }}
+                    rows={4}
+                    placeholder="Example: Study design categories classify papers by their primary research contribution, not by topic alone. Choose the category that best matches the stated aim, method, and deliverable."
+                    className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                  />
+                </label>
+
+                <div className="space-y-4 px-6 py-5">
+                  {profile.analysisCategories.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm leading-6 text-slate-500 dark:border-[#2c2c2c] dark:text-[#9b9b9b]">
+                      No categories configured. New analyses will preserve category uncertainty instead of applying field-specific labels.
+                    </div>
+                  ) : null}
+
+                  {profile.analysisCategories.map((category, index) => (
+                    <div
+                      key={`${category.key}-${index}`}
+                      className="rounded-xl border border-slate-200 p-4 dark:border-[#1f1f1f]"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-slate-950 dark:text-[#ececec]">
+                          Category {index + 1}
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => removeCategory(index)}
+                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+                        <input
+                          value={category.label}
+                          onChange={(event) =>
+                            updateCategory(index, {
+                              key: event.target.value,
+                              label: event.target.value,
+                            })
+                          }
+                          placeholder="Category label"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                        />
+                        <input
+                          value={category.description}
+                          onChange={(event) => updateCategory(index, { description: event.target.value })}
+                          placeholder="What kind of paper belongs here?"
+                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
+                        />
+                      </div>
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    onClick={addCategory}
+                    disabled={profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES}
+                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                  >
+                    Add category
+                  </button>
+                </div>
               </div>
             </section>
 

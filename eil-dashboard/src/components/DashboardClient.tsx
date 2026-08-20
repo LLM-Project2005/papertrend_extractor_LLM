@@ -13,6 +13,7 @@ import Modal from "@/components/ui/Modal";
 import { ChartIcon, CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import { readCategoryLabelMap } from "@/lib/analysis-profile";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { DashboardData, DashboardDataMode, PaperId, TrackRow, TrendRow } from "@/types/database";
@@ -21,7 +22,7 @@ import type { NormalizedAnalyticsPayload, VisualizationPlan } from "@/types/visu
 const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
   { key: "trend_analysis", label: "Trend Analysis" },
-  { key: "track_analysis", label: "Track Analysis" },
+  { key: "track_analysis", label: "Category Analysis" },
   { key: "keyword_explorer", label: "Keyword Explorer" },
   { key: "adaptive", label: "Adaptive" },
 ] as const;
@@ -87,7 +88,10 @@ function normalizeTrackKey(value: string | null | undefined): TrackKey | null {
   ) ?? null;
 }
 
-function trackLabelsForRow(row: TrackRow | undefined): string[] {
+function trackLabelsForRow(
+  row: TrackRow | undefined,
+  categoryLabels: Record<TrackKey, string>
+): string[] {
   if (!row) {
     return [];
   }
@@ -95,7 +99,7 @@ function trackLabelsForRow(row: TrackRow | undefined): string[] {
   return TRACK_COLS.filter((track) => {
     const field = track.toLowerCase() as keyof TrackRow;
     return Number(row[field] ?? 0) > 0;
-  }).map((track) => `${track} - ${TRACK_NAMES[track as TrackKey]}`);
+  }).map((track) => categoryLabels[track as TrackKey] || TRACK_NAMES[track as TrackKey]);
 }
 
 function matchesTrack(row: TrackRow | undefined, track: TrackKey | null): boolean {
@@ -193,6 +197,7 @@ export default function DashboardClient({
   const {
     selectedFolderId,
     selectedProjectId,
+    profile,
     folders,
     selectedYears,
     setSelectedYears,
@@ -202,6 +207,7 @@ export default function DashboardClient({
     setSearchQuery,
   } = useWorkspaceProfile();
   const { session } = useAuth();
+  const categoryLabels = useMemo(() => readCategoryLabelMap(profile), [profile]);
 
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const routeSelectedFolderIds = useMemo(
@@ -455,7 +461,12 @@ export default function DashboardClient({
             year: representative.year || "Unknown year",
             topics: [...new Set(trendRows.map((row) => row.topic).filter(Boolean))].slice(0, 6),
             keywords: [...new Set(trendRows.map((row) => row.keyword).filter(Boolean))].slice(0, 8),
-            tracks: [...new Set([...trackLabelsForRow(singleTrack), ...trackLabelsForRow(multiTrack)])],
+            tracks: [
+              ...new Set([
+                ...trackLabelsForRow(singleTrack, categoryLabels),
+                ...trackLabelsForRow(multiTrack, categoryLabels),
+              ]),
+            ],
             evidence: matchingEvidence,
           },
         ];
@@ -465,7 +476,7 @@ export default function DashboardClient({
           String(right.year).localeCompare(String(left.year)) ||
           left.title.localeCompare(right.title)
       );
-  }, [drilldownTarget, filteredData.tracksMulti, filteredData.tracksSingle, filteredData.trends]);
+  }, [categoryLabels, drilldownTarget, filteredData.tracksMulti, filteredData.tracksSingle, filteredData.trends]);
 
   const adaptivePlanSignature = useMemo(() => {
     if (!data || !isAdaptiveTab) {
@@ -655,7 +666,7 @@ export default function DashboardClient({
                 : `${selectedYears.length} year${selectedYears.length === 1 ? "" : "s"}`}
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
-              {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
+              {selectedTracks.length} categor{selectedTracks.length === 1 ? "y" : "ies"}
             </span>
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#bdbdbd]">
               <span className="text-xs font-medium uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -1006,6 +1017,7 @@ export default function DashboardClient({
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
+              categoryLabels={categoryLabels}
               useMock={data?.useMock ?? true}
               onDrilldown={openPaperDrilldown}
             />
@@ -1022,6 +1034,7 @@ export default function DashboardClient({
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
               selectedTracks={selectedTracks}
+              categoryLabels={categoryLabels}
               onDrilldown={openPaperDrilldown}
             />
           ) : null}

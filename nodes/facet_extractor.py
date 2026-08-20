@@ -1,7 +1,7 @@
 from typing import Any, Dict, List
 
 from nodes import ModelTask, get_task_llm
-from nodes.common import load_prompt, safe_json_list
+from nodes.common import load_prompt, normalize_analysis_profile, safe_json_list
 from state import IngestionState, PaperFacetSchema
 
 facet_extraction_llm = get_task_llm(ModelTask.FACET_EXTRACTION)
@@ -9,7 +9,11 @@ facet_extraction_llm = get_task_llm(ModelTask.FACET_EXTRACTION)
 
 def extract_facets_node(state: IngestionState) -> Dict[str, Any]:
     sections = state.get("final_json") or {}
+    analysis_profile = normalize_analysis_profile(state.get("input_payload") or {})
     prompt = load_prompt("facet_extractor.txt").format(
+        analysis_domain=analysis_profile.get("domain", "General academic research"),
+        domain_definition=analysis_profile.get("domain_definition") or "No research domain definition supplied.",
+        additional_context=analysis_profile.get("additional_context") or "No additional project context supplied.",
         title=sections.get("title", ""),
         abstract_claims=sections.get("abstract_claims", "")[:5000],
         methods=sections.get("methods", "")[:3500],

@@ -15,10 +15,10 @@ export const TRACK_COLORS: Record<TrackKey, string> = {
 };
 
 export const TRACK_NAMES: Record<TrackKey, string> = {
-  EL: "English Linguistics",
-  ELI: "English Language Instruction",
-  LAE: "Language Assessment & Evaluation",
-  Other: "Other / General",
+  EL: "Category 1",
+  ELI: "Category 2",
+  LAE: "Category 3",
+  Other: "Other / Unclassified",
 };
 
 /** 20-colour palette for topic / keyword charts */

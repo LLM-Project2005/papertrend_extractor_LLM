@@ -4,6 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { buildAnalysisProfileSnapshot } from "@/lib/analysis-profile";
+import {
+  MAX_WORKSPACE_ANALYSIS_CATEGORIES,
+  createWorkspaceAnalysisCategoryDraft,
+  normalizeWorkspaceAnalysisCategoryDrafts,
+} from "@/lib/workspace-profile";
 import Modal from "@/components/ui/Modal";
 import {
   ArrowRightIcon,
@@ -13,9 +19,11 @@ import {
   FileIcon,
   FolderIcon,
   PaperIcon,
+  PlusIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
+import type { WorkspaceAnalysisCategory } from "@/types/workspace";
 
 type ImportSource =
   | "pdf-upload"
@@ -94,7 +102,7 @@ export default function AnalyzeFlowModal({
 }: AnalyzeFlowModalProps) {
   const router = useRouter();
   const { session, user } = useAuth();
-  const { selectedProjectId, currentProject } = useWorkspaceProfile();
+  const { profile, updateProfile, selectedProjectId, currentProject } = useWorkspaceProfile();
   const [adminSecret, setAdminSecret] = useState("");
   const [folder, setFolder] = useState(defaultFolder);
   const [files, setFiles] = useState<File[]>([]);
@@ -138,6 +146,45 @@ export default function AnalyzeFlowModal({
     () => SOURCE_OPTIONS.find((source) => source.id === selectedSource)!,
     [selectedSource]
   );
+  const configuredCategoryCount = profile.analysisCategories.filter((category) =>
+    category.label.trim()
+  ).length;
+
+  function updateAnalysisCategory(
+    index: number,
+    patch: Partial<WorkspaceAnalysisCategory>
+  ) {
+    const categories = [...profile.analysisCategories];
+    categories[index] = {
+      ...(categories[index] ?? createWorkspaceAnalysisCategoryDraft(index)),
+      ...patch,
+    };
+    updateProfile({
+      analysisCategories: normalizeWorkspaceAnalysisCategoryDrafts(categories),
+    });
+  }
+
+  function addAnalysisCategory() {
+    if (profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES) {
+      setError("This compatibility version supports up to three custom categories.");
+      return;
+    }
+    updateProfile({
+      analysisCategories: [
+        ...profile.analysisCategories,
+        createWorkspaceAnalysisCategoryDraft(profile.analysisCategories.length),
+      ],
+    });
+    setError(null);
+  }
+
+  function removeAnalysisCategory(index: number) {
+    updateProfile({
+      analysisCategories: profile.analysisCategories.filter(
+        (_, itemIndex) => itemIndex !== index
+      ),
+    });
+  }
 
   async function loadDriveFiles(search = driveSearch, parentId = driveFolderTrail.at(-1)?.id ?? "root") {
     if (!session?.access_token || !user) {
@@ -268,6 +315,7 @@ export default function AnalyzeFlowModal({
     setError(null);
 
     try {
+      const analysisProfile = buildAnalysisProfileSnapshot(profile);
       if (selectedSource === "pdf-upload") {
         if (files.length === 0) {
           throw new Error("Choose one PDF file.");
@@ -308,6 +356,7 @@ export default function AnalyzeFlowModal({
             folder: folder.trim() || defaultFolder,
             source_kind: selectedSource,
             project_id: selectedProjectId,
+            analysis_profile: analysisProfile,
             files: files.map((file, fileIndex) => ({
               fileIndex,
               name: file.name,
@@ -498,6 +547,7 @@ export default function AnalyzeFlowModal({
             fileIds: selectedDriveFileIds,
             folder: folder.trim() || defaultFolder,
             projectId: selectedProjectId,
+            analysisProfile,
           }),
         });
 
@@ -626,6 +676,157 @@ export default function AnalyzeFlowModal({
           <p className="text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
             Upload one PDF at a time. Analysis progress will remain available on Home.
           </p>
+
+          <section className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-sm font-semibold text-slate-950 dark:text-[#f2f2f2]">
+                  Analysis setup
+                </p>
+                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
+                  Define the field context and categories for this project before queueing papers.
+                </p>
+              </div>
+              <span className="w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#9c9c9c]">
+                {configuredCategoryCount > 0
+                  ? `${configuredCategoryCount} active`
+                  : "No categories"}
+              </span>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
+                  Research domain
+                </span>
+                <input
+                  value={profile.domain}
+                  onChange={(event) => updateProfile({ domain: event.target.value })}
+                  placeholder="Example: Public health research"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
+                  Research domain definition
+                </span>
+                <textarea
+                  value={profile.domainDefinition}
+                  onChange={(event) => updateProfile({ domainDefinition: event.target.value })}
+                  rows={2}
+                  placeholder="Define the field or collection scope so the model knows what this domain includes and excludes."
+                  className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
+                  Taxonomy name
+                </span>
+                <input
+                  value={profile.categoryTaxonomyName}
+                  onChange={(event) =>
+                    updateProfile({ categoryTaxonomyName: event.target.value })
+                  }
+                  placeholder="Example: Study design categories"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
+                  Taxonomy definition
+                </span>
+                <textarea
+                  value={profile.categoryTaxonomyDefinition}
+                  onChange={(event) =>
+                    updateProfile({ categoryTaxonomyDefinition: event.target.value })
+                  }
+                  rows={2}
+                  placeholder="Explain what this classification schema is meant to separate, and what boundary rules matter."
+                  className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
+                  Additional context
+                </span>
+                <textarea
+                  value={profile.analysisContext}
+                  onChange={(event) => updateProfile({ analysisContext: event.target.value })}
+                  rows={3}
+                  placeholder="Describe the collection, audience, review criteria, or classification caveats."
+                  className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
+                />
+              </label>
+
+              <div className="grid gap-3">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
+                    Categories
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addAnalysisCategory}
+                    disabled={profile.analysisCategories.length >= MAX_WORKSPACE_ANALYSIS_CATEGORIES}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                  >
+                    <PlusIcon className="h-3.5 w-3.5" />
+                    <span>Add</span>
+                  </button>
+                </div>
+
+                {profile.analysisCategories.length === 0 ? (
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-sm leading-6 text-slate-500 dark:border-[#2c2c2c] dark:bg-[#050505] dark:text-[#9c9c9c]">
+                    Papers will stay unclassified unless categories are added.
+                  </p>
+                ) : null}
+
+                {profile.analysisCategories.map((category, index) => (
+                  <div
+                    key={`${category.key}-${index}`}
+                    className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+                        Category {index + 1}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => removeAnalysisCategory(index)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                      >
+                        <CloseIcon className="h-3.5 w-3.5" />
+                        <span>Remove</span>
+                      </button>
+                    </div>
+                    <input
+                      value={category.label}
+                      onChange={(event) =>
+                        updateAnalysisCategory(index, {
+                          key: event.target.value,
+                          label: event.target.value,
+                        })
+                      }
+                      placeholder="Category label"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
+                    />
+                    <textarea
+                      value={category.description}
+                      onChange={(event) =>
+                        updateAnalysisCategory(index, { description: event.target.value })
+                      }
+                      rows={2}
+                      placeholder="Criteria, signals, or examples for this category."
+                      className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
 
           <div className="grid gap-4">
             <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-[#3a3a3a] dark:bg-[#050505]">

@@ -18,6 +18,7 @@ import {
   triggerWorkerQueueWithRetries,
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
+import { sanitizeAnalysisProfilePayload } from "@/lib/analysis-profile";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ const AUTO_ANALYSIS_LABEL = "Automatic per-task model routing";
 const STATUS_INPUT_PAYLOAD_KEYS = [
   "analysis_label",
   "analysis_mode",
+  "analysis_profile",
   "progress_stage",
   "progress_message",
   "progress_detail",
@@ -120,6 +122,17 @@ export async function POST(request: Request) {
     const folder = sanitizeFolderName(String(formData.get("folder") ?? "Repository"));
     const sourceKind = String(formData.get("source_kind") ?? "pdf-upload") || "pdf-upload";
     const projectId = String(formData.get("project_id") ?? "").trim();
+    const analysisProfile = sanitizeAnalysisProfilePayload(
+      (() => {
+        const raw = formData.get("analysis_profile");
+        if (typeof raw !== "string") return null;
+        try {
+          return JSON.parse(raw) as unknown;
+        } catch {
+          return null;
+        }
+      })()
+    );
     const files = formData
       .getAll("files")
       .filter((item): item is File => item instanceof File);
@@ -204,6 +217,7 @@ export async function POST(request: Request) {
             sha256: fileSha256,
             analysis_mode: "automatic",
             analysis_label: AUTO_ANALYSIS_LABEL,
+            analysis_profile: analysisProfile,
             progress_stage: "queued",
             progress_message: "Queued",
             progress_detail:

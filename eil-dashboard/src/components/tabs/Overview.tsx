@@ -23,6 +23,7 @@ interface Props {
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
   selectedTracks: string[];
+  categoryLabels?: Record<TrackKey, string>;
   useMock: boolean;
   visibleCharts?: VisualizationChartKey[];
   onDrilldown?: (target: {
@@ -38,6 +39,7 @@ export default function Overview({
   tracksSingle,
   tracksMulti,
   selectedTracks,
+  categoryLabels,
   useMock,
   visibleCharts,
   onDrilldown,
@@ -75,7 +77,8 @@ export default function Overview({
 
   const buildDonut = (rows: TrackRow[]) =>
     TRACK_COLS.filter((track) => selectedTracks.includes(track)).map((track) => ({
-      name: track,
+      key: track,
+      name: categoryLabels?.[track as TrackKey] || track,
       value: rows.reduce(
         (sum, row) => sum + (row[track.toLowerCase() as keyof TrackRow] as number),
         0
@@ -124,7 +127,7 @@ export default function Overview({
   function renderTrackBreakdown(
     title: string,
     subtitle: string,
-    items: { name: string; value: number }[]
+    items: { key: string; name: string; value: number }[]
   ) {
     const total = items.reduce((sum, item) => sum + item.value, 0);
 
@@ -150,14 +153,14 @@ export default function Overview({
                     paddingAngle={2}
                     stroke={isDark ? "#1f1f1f" : "#ffffff"}
                     onClick={(entry) => {
-                      if (entry && "name" in entry) {
-                        onDrilldown?.({ track: String(entry.name) });
+                      if (entry && "key" in entry) {
+                        onDrilldown?.({ track: String(entry.key) });
                       }
                     }}
                     className={onDrilldown ? "cursor-pointer" : undefined}
                   >
                     {items.map((item) => (
-                      <Cell key={item.name} fill={TRACK_COLORS[item.name as TrackKey]} />
+                      <Cell key={item.key} fill={TRACK_COLORS[item.key as TrackKey]} />
                     ))}
                   </Pie>
                   <Tooltip {...tooltipTheme} />
@@ -171,16 +174,16 @@ export default function Overview({
               const share = total > 0 ? Math.round((item.value / total) * 100) : 0;
               return (
                 <button
-                  key={item.name}
+                  key={item.key}
                   type="button"
-                  onClick={() => onDrilldown?.({ track: item.name })}
+                  onClick={() => onDrilldown?.({ track: item.key })}
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <span
                         className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: TRACK_COLORS[item.name as TrackKey] }}
+                        style={{ backgroundColor: TRACK_COLORS[item.key as TrackKey] }}
                       />
                       <span className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
                         {item.name}
@@ -260,7 +263,7 @@ export default function Overview({
       return (
         <div key={chartKey}>
           {renderTrackBreakdown(
-            "Track distribution",
+            "Category distribution",
             "Single-label assignments",
             donutSingle
           )}
@@ -272,7 +275,7 @@ export default function Overview({
       return (
         <div key={chartKey}>
           {renderTrackBreakdown(
-            "Track overlap",
+            "Category overlap",
             "Multi-label assignments",
             donutMulti
           )}
@@ -290,7 +293,7 @@ export default function Overview({
           Overview
         </h2>
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-          A quick read on corpus coverage, publication volume, and track balance.
+          A quick read on corpus coverage, publication volume, and category balance.
         </p>
         {useMock && (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">

@@ -1,126 +1,70 @@
 ### ROLE ###
-You are an expert academic classifier for research papers in the English as an
-International Language (EIL) graduate program at Chulalongkorn University.
+You are an expert academic classifier for research papers.
 
-Your task is to classify each paper into the program's official track taxonomy:
+Your task is to classify each paper into the currently configured project
+taxonomy. The output labels EL, ELI, and LAE are internal storage slots only.
+Do not interpret them as legacy category names unless the project categories
+explicitly define them that way.
 
-- EL: English Linguistics
-- ELI: English Language Instruction
-- LAE: Language Assessment & Evaluation
-- Other: Outside the three official tracks, or too cross-cutting to assign confidently
+### PROJECT CONTEXT ###
+Research domain:
+{analysis_domain}
+
+Research domain definition:
+{domain_definition}
+
+Taxonomy name:
+{taxonomy_name}
+
+Taxonomy definition:
+{taxonomy_definition}
+
+Additional user-provided context:
+{additional_context}
+
+Configured categories:
+{category_definitions}
 
 ### PROGRAM CONTEXT ###
-The English as an International Language (EIL) program at Chulalongkorn
-University is an interdisciplinary graduate program developed through the
-Faculty of Arts, Faculty of Education, and Language Institute. The program
-studies English in global, multilingual, educational, cultural, and policy
-contexts, preparing graduates for research, teaching, assessment, and language
-policy work.
+### CATEGORY DEFINITIONS AND SIGNALS ###
 
-The program has three expert-designed tracks:
+Use only the configured categories above. The descriptions are supplied by the
+user for this project and are more important than any prior assumptions about
+Papertrend's original prototype.
 
-1. English Linguistics (EL)
-   Uncovers the complexities of English in global contexts through advanced
-   study of structure, variation, meaning, use, and cultural significance.
-
-2. English Language Instruction (ELI)
-   Transforms language education through innovative, research-driven teaching
-   methodologies for diverse learning environments.
-
-3. Language Assessment & Evaluation (LAE)
-   Develops tools, frameworks, and evidence for measuring and evaluating
-   language proficiency, learning, and performance across cultures and contexts.
-
-### TRACK DEFINITIONS AND SIGNALS ###
-
-#### EL - English Linguistics
-Choose EL when the paper primarily investigates how English works, varies, or
-is used as a language in global or local contexts.
-
-Typical focus areas:
-- English phonology, morphology, syntax, semantics, pragmatics, or discourse
-- Corpus linguistics and textual analysis
-- World Englishes, English as a lingua franca, EIL language use
-- Sociolinguistic variation when the main contribution is linguistic description
-- Interlanguage, learner language, contrastive analysis, translation patterns
-- Identity, culture, or communication when analyzed mainly through language use
-
-Core question: Is the paper mainly explaining language structure, meaning,
-variation, discourse, or use?
-
-#### ELI - English Language Instruction
-Choose ELI when the paper primarily concerns teaching, learning, pedagogy,
-curriculum, teacher development, or classroom practice.
-
-Typical focus areas:
-- Teaching methods, instructional design, and classroom interventions
-- Curriculum, materials, syllabus, module, or course design
-- Learner autonomy, motivation, strategy instruction, feedback, engagement
-- Technology-enhanced, blended, flipped, CLIL, task-based, genre-based, PBL, or
-  other pedagogical approaches
-- Teacher education, professional development, or instructional beliefs when the
-  contribution is mainly pedagogical
-
-Core question: Is the paper mainly improving, explaining, or evaluating English
-teaching and learning practice?
-
-#### LAE - Language Assessment & Evaluation
-Choose LAE when the paper primarily concerns the design, validation, evaluation,
-interpretation, or use of language assessment.
-
-Typical focus areas:
-- Test development, validation, reliability, scoring, rubrics, rating scales
-- Rasch, IRT, psychometrics, measurement models, standard setting
-- Language proficiency assessment, diagnostic assessment, placement assessment
-- Portfolio assessment, classroom assessment, performance assessment when the
-  assessment system itself is the main object of study
-- Washback and assessment policy when the main contribution is about assessment
-  practice, consequences, or validity
-
-Core question: Is the paper mainly about how language ability, learning, or
-performance is measured, scored, interpreted, or evaluated?
-
-#### Other
-Choose Other only when the paper clearly does not fit EL, ELI, or LAE, or when
-the extracted evidence is too weak to classify responsibly.
+Choose Other when the paper clearly does not fit the configured project
+categories, when the extracted evidence is too weak to classify responsibly, or
+when the project context says the taxonomy is not relevant to this paper.
 
 Do not use Other merely because a paper is interdisciplinary. If one of the
-three EIL tracks is the best primary home, choose that track.
+configured categories is the best primary home, choose that internal storage
+slot.
 
 ### BOUNDARY RULES ###
 
-1. ELI vs LAE
-If a paper uses a test, rubric, score, pre-test/post-test, questionnaire, or
-assessment result only to measure the effectiveness of a teaching intervention,
-choose ELI. The teaching intervention is the main contribution.
+1. User taxonomy first
+Apply the user's configured category descriptions and additional context before
+using any generic academic assumptions.
 
-Choose LAE only when the assessment instrument, scoring system, validation,
-measurement framework, washback, or evaluation process is itself the main
-object of study.
+2. Evidence over keyword matching
+A category should be selected because the paper's stated aim, method, results,
+or contribution fits the category description. Do not classify only because a
+category label appears as a stray word.
 
-2. EL vs ELI
-If a paper analyzes learner language, discourse, pragmatics, grammar,
-translation, corpus patterns, or language variation without proposing or
-evaluating instruction, choose EL.
+3. Boundary reasoning
+When two categories overlap, choose the category that best represents the
+paper's primary contribution. Include a secondary category only when it is a
+real contribution, not just background or a method.
 
-If the same language analysis is used mainly to improve teaching materials,
-classroom practice, curriculum, or teacher training, choose ELI.
+4. Multi-category assignment
+`single_track` must be exactly one best primary category from the configured
+taxonomy.
+`multi_tracks` may include secondary categories when the paper genuinely
+contributes to more than one configured category. Always include the
+`single_track` inside `multi_tracks`.
 
-3. EL vs LAE
-If a paper studies linguistic features or learner language as the object of
-analysis, choose EL.
-
-If those features are studied mainly to build, validate, score, or interpret an
-assessment instrument, choose LAE.
-
-4. Multi-track assignment
-`single_track` must be exactly one best primary track.
-`multi_tracks` may include secondary tracks when the paper genuinely contributes
-to more than one track. Always include the `single_track` inside `multi_tracks`.
-
-Use multi-track classification sparingly. A paper should not be multi-track
-just because it mentions teaching, tests, or language features. The secondary
-track must represent a real contribution, not a background topic or method.
+Use multi-category classification sparingly. The secondary category must
+represent a real contribution, not a background topic or method.
 
 ### DECISION PROCESS ###
 Follow these steps:
@@ -128,13 +72,14 @@ Follow these steps:
 1. Identify the stated aim or research question from the abstract, methods,
    results, and conclusion.
 2. Identify the paper's primary contribution:
-   - language description/explanation -> EL
-   - instruction/pedagogy/learning intervention -> ELI
-   - assessment/measurement/evaluation -> LAE
-3. Apply the boundary rules, especially ELI vs LAE.
+   - category in storage slot EL
+   - category in storage slot ELI
+   - category in storage slot LAE
+   - Other
+3. Apply the boundary rules from the user-defined taxonomy.
 4. Choose exactly one `single_track`.
-5. Choose `multi_tracks`, including the primary track and any genuine secondary
-   track.
+5. Choose `multi_tracks`, including the primary category and any genuine secondary
+   category.
 6. Provide a concise rationale grounded in the supplied paper snapshot.
 
 ### OUTPUT REQUIREMENTS ###
@@ -142,7 +87,7 @@ Return only the structured classification requested by the system:
 - `single_track`: one of "EL", "ELI", "LAE", or "Other"
 - `multi_tracks`: one or more of "EL", "ELI", "LAE", or "Other"
 - `rationale`: a concise explanation based on the paper's aim, contribution,
-  and any boundary rule used
+  the configured category definitions, and any boundary rule used
 
 ### PAPER SNAPSHOT ###
 TITLE:

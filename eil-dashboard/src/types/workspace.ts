@@ -18,6 +18,12 @@ export type WorkspaceOutput =
   | "track-classification"
   | "curriculum-paths";
 
+export interface WorkspaceAnalysisCategory {
+  key: string;
+  label: string;
+  description: string;
+}
+
 export interface WorkspaceCorpusTopicFamilyCache {
   id: string;
   canonicalTopic: string;
@@ -57,6 +63,11 @@ export interface WorkspaceProfile {
   name: string;
   organization: string;
   domain: string;
+  domainDefinition: string;
+  analysisContext: string;
+  categoryTaxonomyName: string;
+  categoryTaxonomyDefinition: string;
+  analysisCategories: WorkspaceAnalysisCategory[];
   goal: WorkspaceGoal;
   primarySource: WorkspaceSource;
   desiredOutputs: WorkspaceOutput[];

@@ -39,7 +39,7 @@ const AI_ACTIONS = [
   },
   {
     title: "Create a chart",
-    description: "Use Chart mode to visualize topics, keywords, years, or tracks.",
+    description: "Use Chart mode to visualize topics, keywords, years, or categories.",
     prompt: "Create the most useful chart from this repository.",
     icon: ChartIcon,
   },
@@ -843,7 +843,7 @@ export default function WorkspaceHomeClient() {
               Review analytics
             </span>
             <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Trends, tracks, keywords
+              Trends, categories, keywords
             </span>
           </span>
           <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />

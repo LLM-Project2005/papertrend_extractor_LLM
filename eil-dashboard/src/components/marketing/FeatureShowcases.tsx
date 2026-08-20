@@ -118,7 +118,7 @@ export function PaperAnalysisShowcase() {
           <div className="mt-4 rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
             <p className="font-mono text-xs text-[#8f8f8f]">EVIDENCE</p>
             <p className="mt-3 text-sm leading-6 text-[#d0d0d0]">
-              "Learners collaborate through guided inquiry tasks..."
+              &quot;Learners collaborate through guided inquiry tasks...&quot;
             </p>
           </div>
         </div>
@@ -140,7 +140,7 @@ export function AnalysisFullPipelineShowcase() {
     ["Keywords", "candidate phrases"],
     ["Concepts", "grouped themes"],
     ["Topics", "human labels"],
-    ["Tracks", "EL / ELI / LAE"],
+    ["Categories", "Profile taxonomy"],
     ["Persist", "workspace tables"],
   ];
 
@@ -205,7 +205,7 @@ export function ResearchDashboardShowcase() {
                 <h3 className="mt-1 text-lg font-semibold text-white">Topics by year</h3>
               </div>
               <div className="flex gap-2">
-                {["All", "EL", "LAE"].map((chip) => (
+                {["All", "Category A", "Category C"].map((chip) => (
                   <span key={chip} className="rounded-md border border-[#2a2a2a] px-2.5 py-1 text-xs text-[#d0d0d0]">
                     {chip}
                   </span>

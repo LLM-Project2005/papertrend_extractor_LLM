@@ -39,6 +39,7 @@ def run_pipeline() -> None:
                 "paper_metadata": final_state.get("paper_metadata"),
                 "final_labeled_topics": final_state.get("final_labeled_topics", []),
                 "analysis_facets": final_state.get("analysis_facets", []),
+                "category_classification": final_state.get("category_classification", {}),
                 "dataset": final_state.get("dataset", {}),
                 "errors": final_state.get("errors", []),
             }

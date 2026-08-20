@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { TRACK_COLS } from "@/lib/constants";
+import { TRACK_COLS, type TrackKey } from "@/lib/constants";
 import { CloseIcon, PaperIcon } from "@/components/ui/Icons";
 import Modal from "@/components/ui/Modal";
 import type { PaperId, TrendRow, TrackRow } from "@/types/database";
@@ -9,6 +9,7 @@ import type { PaperId, TrendRow, TrackRow } from "@/types/database";
 interface Props {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
+  categoryLabels?: Record<TrackKey, string>;
   linkedPaperId?: string | null;
 }
 
@@ -18,6 +19,7 @@ const trackField = (track: string) =>
 export default function PaperExplorer({
   trends,
   tracksSingle,
+  categoryLabels,
   linkedPaperId = null,
 }: Props) {
   const [selectedPaperId, setSelectedPaperId] = useState<PaperId | null>(null);
@@ -61,11 +63,11 @@ export default function PaperExplorer({
           title: paper.title,
           topics: [...paper.topics],
           keywords: [...paper.keywords],
-          trackLabels: tracks,
+          trackLabels: tracks.map((track) => categoryLabels?.[track as TrackKey] || track),
         };
       })
       .sort((left, right) => right.year.localeCompare(left.year));
-  }, [tracksSingle, trends]);
+  }, [categoryLabels, tracksSingle, trends]);
 
   const detail = useMemo(() => {
     if (selectedPaperId === null) {
@@ -85,7 +87,7 @@ export default function PaperExplorer({
     return {
       title: rows[0].title,
       year: rows[0].year,
-      tracks,
+      tracks: tracks.map((track) => categoryLabels?.[track as TrackKey] || track),
       keywords: rows.map((row) => ({
         keyword: row.keyword,
         frequency: row.keyword_frequency,
@@ -93,7 +95,7 @@ export default function PaperExplorer({
         evidence: row.evidence,
       })),
     };
-  }, [selectedPaperId, tracksSingle, trends]);
+  }, [categoryLabels, selectedPaperId, tracksSingle, trends]);
 
   useEffect(() => {
     if (linkedPaperId === null) {

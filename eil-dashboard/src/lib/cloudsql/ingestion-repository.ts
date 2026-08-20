@@ -13,6 +13,7 @@ export class CloudSqlIngestionRepository {
     provider: string;
     model: string;
     analysisLabel: string;
+    analysisProfile?: unknown;
   }): Promise<{ folderJob: IngestionJobRow; runs: IngestionRunRow[] }> {
     return withCloudSqlOwnerTransaction(input.ownerUserId, async (client) => {
       const folder = await client.query<{ id: string }>(
@@ -69,6 +70,7 @@ export class CloudSqlIngestionRepository {
               mime_type: file.type || "application/pdf",
               analysis_mode: "automatic",
               analysis_label: input.analysisLabel,
+              analysis_profile: input.analysisProfile ?? null,
               progress_stage: "uploading",
               progress_message: "Uploading",
               progress_detail: "Uploading file directly to storage before queueing analysis.",

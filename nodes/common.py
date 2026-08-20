@@ -21,6 +21,8 @@ TRACK_FIELD_MAP = {
     "Other": "other",
 }
 
+CATEGORY_STORAGE_SLOTS = ("EL", "ELI", "LAE")
+
 
 def load_prompt(filename: str) -> str:
     base_path = Path(__file__).resolve().parents[1]
@@ -65,6 +67,72 @@ def build_track_row(selected_tracks: Sequence[str], ensure_single: bool) -> Dict
     if not any(row.values()):
         row["other"] = 1
     return row
+
+
+def normalize_analysis_profile(input_payload: Any) -> Dict[str, Any]:
+    if not isinstance(input_payload, dict):
+        input_payload = {}
+    profile = input_payload.get("analysis_profile")
+    if not isinstance(profile, dict):
+        profile = {}
+
+    categories = []
+    raw_categories = profile.get("categories")
+    if isinstance(raw_categories, list):
+        for index, item in enumerate(raw_categories[: len(CATEGORY_STORAGE_SLOTS)]):
+            if not isinstance(item, dict):
+                continue
+            label = normalize_whitespace(str(item.get("label") or ""))[:80]
+            if not label:
+                continue
+            key = re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")[:40] or f"category_{index + 1}"
+            categories.append(
+                {
+                    "key": normalize_whitespace(str(item.get("key") or key))[:40],
+                    "label": label,
+                    "description": normalize_whitespace(str(item.get("description") or ""))[:600],
+                    "storage_slot": CATEGORY_STORAGE_SLOTS[index],
+                }
+            )
+
+    return {
+        "domain": normalize_whitespace(str(profile.get("domain") or "General academic research"))[:160],
+        "domain_definition": str(
+            profile.get("domainDefinition") or profile.get("domain_definition") or ""
+        ).strip()[:1200],
+        "taxonomy_name": normalize_whitespace(
+            str(profile.get("taxonomyName") or profile.get("taxonomy_name") or "Project categories")
+        )[:120],
+        "taxonomy_definition": str(
+            profile.get("taxonomyDefinition")
+            or profile.get("taxonomy_definition")
+            or profile.get("categoryTaxonomyDefinition")
+            or profile.get("category_taxonomy_definition")
+            or ""
+        ).strip()[:1200],
+        "additional_context": str(
+            profile.get("additionalContext") or profile.get("additional_context") or ""
+        ).strip()[:2000],
+        "categories": categories,
+    }
+
+
+def format_category_definitions(profile: Dict[str, Any]) -> str:
+    categories = profile.get("categories") if isinstance(profile, dict) else []
+    if not categories:
+        return (
+            "No project categories are configured. Return Other unless the system "
+            "has provided a compatible category snapshot."
+        )
+
+    lines = []
+    for category in categories:
+        description = category.get("description") or "No additional description supplied."
+        lines.append(
+            f"- {category['storage_slot']}: {category['label']} - {description}"
+        )
+    lines.append("- Other: Outside the configured categories, unclear, or insufficient evidence.")
+    return "\n".join(lines)
 
 
 def locate_text_span(section_name: str, section_text: str, evidence: str, matched_terms: Sequence[str]) -> Dict[str, Any]:

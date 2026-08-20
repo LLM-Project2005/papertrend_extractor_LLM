@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useDashboardData } from "@/hooks/useData";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { TRACK_COLS } from "@/lib/constants";
+import { readCategoryLabelMap } from "@/lib/analysis-profile";
 import Sidebar from "@/components/Sidebar";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
@@ -14,6 +15,7 @@ export default function WorkspacePapersClient() {
   const {
     selectedFolderId,
     selectedProjectId,
+    profile,
     setSelectedFolderId,
     folders,
     selectedYears,
@@ -24,6 +26,7 @@ export default function WorkspacePapersClient() {
     setSearchQuery,
   } = useWorkspaceProfile();
   const router = useRouter();
+  const categoryLabels = useMemo(() => readCategoryLabelMap(profile), [profile]);
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const { data, loading, allYears } = useDashboardData(
     selectedFolderId,
@@ -257,6 +260,7 @@ export default function WorkspacePapersClient() {
           <PaperExplorer
             trends={filteredData.trends}
             tracksSingle={filteredData.tracksSingle}
+            categoryLabels={categoryLabels}
             linkedPaperId={linkedPaperId}
           />
         </section>
