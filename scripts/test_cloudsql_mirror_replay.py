@@ -45,6 +45,8 @@ TABLES = (
     "paper_analysis_facets",
     "paper_author_keywords",
     "paper_research_typologies",
+    "paper_category_definitions",
+    "paper_category_assignments",
 )
 
 
@@ -86,6 +88,8 @@ def fetch_rows(
     if response.status_code == 404 and table in {
         "paper_author_keywords",
         "paper_research_typologies",
+        "paper_category_definitions",
+        "paper_category_assignments",
     }:
         raise OptionalRelationUnavailable(
             f"Supabase relation {table} is unavailable through REST; replay stopped before writing Cloud SQL."
@@ -155,6 +159,8 @@ def main() -> int:
             "paper_analysis_facets": {"paper_id": f"eq.{paper_id}"},
             "paper_author_keywords": {"paper_id": f"eq.{paper_id}"},
             "paper_research_typologies": {"paper_id": f"eq.{paper_id}"},
+            "paper_category_definitions": {"paper_id": f"eq.{paper_id}"},
+            "paper_category_assignments": {"paper_id": f"eq.{paper_id}"},
         }
         for table in TABLES:
             rows = fetch_rows(
@@ -191,6 +197,8 @@ def main() -> int:
                 "paper_facets": dataset["paper_analysis_facets"],
                 "author_keywords": dataset["paper_author_keywords"],
                 "research_typologies": dataset["paper_research_typologies"],
+                "category_definitions": dataset["paper_category_definitions"],
+                "category_assignments": dataset["paper_category_assignments"],
             },
             dependencies=dependencies,
         )
@@ -210,6 +218,8 @@ def main() -> int:
                     "paper_facets": dataset["paper_analysis_facets"],
                     "author_keywords": dataset["paper_author_keywords"],
                     "research_typologies": dataset["paper_research_typologies"],
+                    "category_definitions": dataset["paper_category_definitions"],
+                    "category_assignments": dataset["paper_category_assignments"],
                 },
             )
         report = {

@@ -216,3 +216,33 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
             ),
             missing_relation_ok=True,
         )
+    if _persist_step(
+        "paper_category_definitions.delete",
+        0,
+        lambda: client.delete_rows_for_paper("paper_category_definitions", paper_id),
+        missing_relation_ok=True,
+    ):
+        _persist_step(
+            "paper_category_definitions.upsert",
+            _row_count(dataset.get("category_definitions")),
+            lambda: client.upsert_rows(
+                "paper_category_definitions",
+                dataset.get("category_definitions", []),
+            ),
+            missing_relation_ok=True,
+        )
+    if _persist_step(
+        "paper_category_assignments.delete",
+        0,
+        lambda: client.delete_rows_for_paper("paper_category_assignments", paper_id),
+        missing_relation_ok=True,
+    ):
+        _persist_step(
+            "paper_category_assignments.upsert",
+            _row_count(dataset.get("category_assignments")),
+            lambda: client.upsert_rows(
+                "paper_category_assignments",
+                dataset.get("category_assignments", []),
+            ),
+            missing_relation_ok=True,
+        )

@@ -33,6 +33,8 @@ TABLES = (
     "paper_analysis_facets",
     "paper_author_keywords",
     "paper_research_typologies",
+    "paper_category_definitions",
+    "paper_category_assignments",
     "ingestion_runs",
     "folder_analysis_jobs",
     "research_folders",
@@ -49,7 +51,12 @@ TABLES = (
 # is acceptable only when the staging Cloud SQL copy is also empty; a table
 # missing from Cloud SQL remains an unresolved schema mismatch.
 OPTIONAL_SOURCE_TABLES = frozenset(
-    {"paper_author_keywords", "paper_research_typologies"}
+    {
+        "paper_author_keywords",
+        "paper_research_typologies",
+        "paper_category_definitions",
+        "paper_category_assignments",
+    }
 )
 
 SELECT_COLUMNS = {
@@ -57,6 +64,8 @@ SELECT_COLUMNS = {
     "paper_tracks_single": "paper_id",
     "paper_tracks_multi": "paper_id",
     "paper_research_typologies": "paper_id",
+    "paper_category_definitions": "paper_id",
+    "paper_category_assignments": "paper_id",
 }
 CONTENT_RANGE_PATTERN = re.compile(r"^(?:\d+-\d+|\*)/(\d+|\*)$")
 

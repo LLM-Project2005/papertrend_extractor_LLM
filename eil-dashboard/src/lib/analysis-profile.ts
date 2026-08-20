@@ -1,14 +1,13 @@
 import type { WorkspaceProfile } from "@/types/workspace";
 
-export const CATEGORY_STORAGE_SLOTS = ["EL", "ELI", "LAE"] as const;
+const LEGACY_CATEGORY_STORAGE_SLOTS = ["EL", "ELI", "LAE"] as const;
 
-export type CategoryStorageSlot = (typeof CATEGORY_STORAGE_SLOTS)[number];
+export type CategoryStorageSlot = (typeof LEGACY_CATEGORY_STORAGE_SLOTS)[number];
 
 export interface AnalysisProfileCategorySnapshot {
   key: string;
   label: string;
   description: string;
-  storageSlot: CategoryStorageSlot;
 }
 
 export interface AnalysisProfileSnapshot {
@@ -25,7 +24,7 @@ function cleanText(value: unknown, limit: number): string {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
 }
 
-function cleanKey(value: unknown, fallback: string): string {
+export function cleanAnalysisCategoryKey(value: unknown, fallback: string): string {
   return (
     cleanText(value, 60)
       .toLowerCase()
@@ -35,18 +34,41 @@ function cleanKey(value: unknown, fallback: string): string {
   );
 }
 
+function normalizeCategories(input: unknown): AnalysisProfileCategorySnapshot[] {
+  const rows = Array.isArray(input) ? input : [];
+  const seen = new Set<string>();
+
+  return rows
+    .map((item, index) => {
+      const row =
+        item && typeof item === "object" && !Array.isArray(item)
+          ? (item as Record<string, unknown>)
+          : {};
+      const label = cleanText(row.label, 80);
+      if (!label) {
+        return null;
+      }
+      const baseKey = cleanAnalysisCategoryKey(row.key || label, `category_${index + 1}`);
+      let key = baseKey;
+      let suffix = 2;
+      while (seen.has(key)) {
+        const suffixText = `_${suffix}`;
+        key = `${baseKey.slice(0, 40 - suffixText.length)}${suffixText}`;
+        suffix += 1;
+      }
+      seen.add(key);
+
+      return {
+        key,
+        label,
+        description: cleanText(row.description, 600),
+      };
+    })
+    .filter((category): category is AnalysisProfileCategorySnapshot => Boolean(category));
+}
+
 export function buildAnalysisProfileSnapshot(profile: WorkspaceProfile): AnalysisProfileSnapshot {
-  const categories = profile.analysisCategories
-    .map((category, index) => ({
-      key: cleanKey(category.key || category.label, `category_${index + 1}`),
-      label: cleanText(category.label, 80),
-      description: cleanText(category.description, 600),
-      storageSlot: CATEGORY_STORAGE_SLOTS[index],
-    }))
-    .filter(
-      (category): category is AnalysisProfileCategorySnapshot =>
-        Boolean(category.label) && Boolean(category.storageSlot)
-    );
+  const categories = normalizeCategories(profile.analysisCategories);
 
   return {
     version: 1,
@@ -76,26 +98,7 @@ export function sanitizeAnalysisProfilePayload(input: unknown): AnalysisProfileS
     input && typeof input === "object" && !Array.isArray(input)
       ? (input as Record<string, unknown>)
       : {};
-  const categoriesInput = Array.isArray(payload.categories) ? payload.categories : [];
-  const categories = categoriesInput
-    .slice(0, CATEGORY_STORAGE_SLOTS.length)
-    .map((item, index) => {
-      const row =
-        item && typeof item === "object" && !Array.isArray(item)
-          ? (item as Record<string, unknown>)
-          : {};
-      const label = cleanText(row.label, 80);
-      if (!label) {
-        return null;
-      }
-      return {
-        key: cleanKey(row.key || label, `category_${index + 1}`),
-        label,
-        description: cleanText(row.description, 600),
-        storageSlot: CATEGORY_STORAGE_SLOTS[index],
-      };
-    })
-    .filter((category): category is AnalysisProfileCategorySnapshot => Boolean(category));
+  const categories = normalizeCategories(payload.categories);
 
   return {
     version: 1,

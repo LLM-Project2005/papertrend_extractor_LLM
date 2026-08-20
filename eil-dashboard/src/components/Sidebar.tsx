@@ -1,6 +1,7 @@
 "use client";
 
-import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import { TRACK_COLORS, TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import { selectedCategoryKeys, type CategoryOption } from "@/lib/category-options";
 import type { ResearchFolderRow } from "@/types/database";
 
 interface Props {
@@ -9,6 +10,7 @@ interface Props {
   onYearsChange: (y: string[]) => void;
   selectedTracks: string[];
   onTracksChange: (t: string[]) => void;
+  categoryOptions?: CategoryOption[];
   folders?: ResearchFolderRow[];
   selectedFolderIds?: string[];
   allFoldersSelected?: boolean;
@@ -25,6 +27,7 @@ export default function Sidebar({
   onYearsChange,
   selectedTracks,
   onTracksChange,
+  categoryOptions,
   folders = [],
   selectedFolderIds = [],
   allFoldersSelected = true,
@@ -37,6 +40,22 @@ export default function Sidebar({
   const normalizedSelectedFolderIds = [...new Set(selectedFolderIds.filter(Boolean))];
   const allYearsSelected =
     selectedYears.length === 0 || selectedYears.length === allYears.length;
+  const effectiveCategoryOptions =
+    categoryOptions && categoryOptions.length > 0
+      ? categoryOptions
+      : TRACK_COLS.map((track) => ({
+          key: track,
+          label: TRACK_NAMES[track as TrackKey],
+          color: TRACK_COLORS[track as TrackKey],
+          isOther: track === "Other",
+        }));
+  const normalizedSelectedCategoryKeys = selectedCategoryKeys(
+    selectedTracks,
+    effectiveCategoryOptions
+  );
+  const allCategoriesSelected =
+    normalizedSelectedCategoryKeys.length === 0 ||
+    normalizedSelectedCategoryKeys.length === effectiveCategoryOptions.length;
 
   const toggleYear = (year: string) => {
     if (allYearsSelected) {
@@ -54,10 +73,14 @@ export default function Sidebar({
   };
 
   const toggleTrack = (track: string) => {
+    if (allCategoriesSelected) {
+      onTracksChange([track]);
+      return;
+    }
     onTracksChange(
-      selectedTracks.includes(track)
-        ? selectedTracks.filter((value) => value !== track)
-        : [...selectedTracks, track]
+      normalizedSelectedCategoryKeys.includes(track)
+        ? normalizedSelectedCategoryKeys.filter((value) => value !== track)
+        : [...normalizedSelectedCategoryKeys, track]
     );
   };
 
@@ -177,17 +200,28 @@ export default function Sidebar({
         </section>
 
         <section>
-          <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
-            Tracks
-          </h3>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+              Categories
+            </h3>
+            <button
+              type="button"
+              className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
+              onClick={() => onTracksChange([])}
+            >
+              Show all
+            </button>
+          </div>
           <div className="space-y-2">
-            {TRACK_COLS.map((track) => {
-              const active = selectedTracks.includes(track);
+            {effectiveCategoryOptions.map((category) => {
+              const active =
+                allCategoriesSelected ||
+                normalizedSelectedCategoryKeys.includes(category.key);
               return (
                 <button
-                  key={track}
+                  key={category.key}
                   type="button"
-                  onClick={() => toggleTrack(track)}
+                  onClick={() => toggleTrack(category.key)}
                   className={`flex w-full items-start justify-between rounded-xl border px-3 py-3 text-left transition-colors ${
                     active
                       ? "border-slate-900 bg-slate-900 text-white dark:border-[#f3f3f3] dark:bg-[#f3f3f3] dark:text-[#171717]"
@@ -195,7 +229,7 @@ export default function Sidebar({
                   }`}
                 >
                   <span>
-                    <span className="block text-sm font-medium">{track}</span>
+                    <span className="block text-sm font-medium">{category.label}</span>
                     <span
                       className={`mt-1 block text-xs ${
                         active
@@ -203,15 +237,14 @@ export default function Sidebar({
                           : "text-slate-500 dark:text-[#8f8f8f]"
                       }`}
                     >
-                      {TRACK_NAMES[track as TrackKey]}
+                      {category.isOther ? "Fallback category" : category.key}
                     </span>
                   </span>
                   <span
-                    className={`mt-0.5 h-2.5 w-2.5 rounded-full ${
-                      active
-                        ? "bg-white dark:bg-[#050505]"
-                        : "bg-slate-200 dark:bg-[#1f1f1f]"
-                    }`}
+                    className="mt-0.5 h-2.5 w-2.5 rounded-full"
+                    style={{
+                      backgroundColor: active ? category.color : "#d7dee8",
+                    }}
                   />
                 </button>
               );

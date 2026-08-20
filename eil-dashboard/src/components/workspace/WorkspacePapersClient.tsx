@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useDashboardData } from "@/hooks/useData";
 import { filterDashboardData } from "@/lib/dashboard-filters";
-import { TRACK_COLS } from "@/lib/constants";
 import { readCategoryLabelMap } from "@/lib/analysis-profile";
+import { buildCategoryOptions } from "@/lib/category-options";
 import Sidebar from "@/components/Sidebar";
 import PaperExplorer from "@/components/tabs/PaperExplorer";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
@@ -36,6 +36,10 @@ export default function WorkspacePapersClient() {
       enabled: Boolean(selectedProjectId),
     }
   );
+  const categoryOptions = useMemo(
+    () => buildCategoryOptions(data, profile, categoryLabels),
+    [categoryLabels, data, profile]
+  );
   const searchParams = useSearchParams();
   const [filterOpen, setFilterOpen] = useState(false);
 
@@ -44,7 +48,7 @@ export default function WorkspacePapersClient() {
     return value || null;
   }, [searchParams]);
   const drilldown = useMemo(() => {
-    const track = (searchParams.get("track") ?? "").trim().toUpperCase();
+    const track = (searchParams.get("track") ?? "").trim();
     const year = (searchParams.get("year") ?? "").trim();
     const topic = (searchParams.get("topic") ?? "").trim();
     const keyword = (searchParams.get("keyword") ?? "").trim();
@@ -60,7 +64,7 @@ export default function WorkspacePapersClient() {
     const query = paperIds.length > 0 ? "" : keyword || topic || "";
     const active = Boolean(track || year || query || folder || paperIds.length > 0);
     const parts = [
-      track ? `Track: ${track}` : "",
+      track ? `Category: ${track}` : "",
       year ? `Year: ${year}` : "",
       keyword ? `Keyword: ${keyword}` : topic ? `Topic: ${topic}` : "",
       paperIds.length > 0 ? `${paperIds.length} linked paper${paperIds.length === 1 ? "" : "s"}` : "",
@@ -68,9 +72,7 @@ export default function WorkspacePapersClient() {
 
     return {
       active,
-      track: TRACK_COLS.includes(track as (typeof TRACK_COLS)[number])
-        ? track
-        : "",
+      track,
       year,
       query,
       folder,
@@ -122,7 +124,7 @@ export default function WorkspacePapersClient() {
 
   function clearDrilldown() {
     setSearchQuery("");
-    setSelectedTracks([...TRACK_COLS]);
+    setSelectedTracks([]);
     if (allYears.length > 0) {
       setSelectedYears(allYears);
     }
@@ -131,7 +133,7 @@ export default function WorkspacePapersClient() {
 
   const filteredData = useMemo(() => {
     if (!data) {
-      return { trends: [], tracksSingle: [], tracksMulti: [] };
+      return { trends: [], tracksSingle: [], tracksMulti: [], categoryAssignments: [] };
     }
 
     const base = filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
@@ -144,6 +146,9 @@ export default function WorkspacePapersClient() {
       trends: base.trends.filter((row) => allowedPaperIds.has(row.paper_id)),
       tracksSingle: base.tracksSingle.filter((row) => allowedPaperIds.has(row.paper_id)),
       tracksMulti: base.tracksMulti.filter((row) => allowedPaperIds.has(row.paper_id)),
+      categoryAssignments: (base.categoryAssignments ?? []).filter((row) =>
+        allowedPaperIds.has(row.paper_id)
+      ),
     };
   }, [data, drilldown.paperIds, searchQuery, selectedTracks, selectedYears]);
 
@@ -179,7 +184,7 @@ export default function WorkspacePapersClient() {
             {selectedYears.length} year{selectedYears.length === 1 ? "" : "s"}
           </span>
           <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
-            {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
+            {selectedTracks.length} categor{selectedTracks.length === 1 ? "y" : "ies"}
           </span>
           <button
             type="button"
@@ -247,9 +252,10 @@ export default function WorkspacePapersClient() {
                   onYearsChange={setSelectedYears}
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
+                  categoryOptions={categoryOptions}
                   useMock={data.useMock}
                   title="Paper filters"
-                  description="Filter the library before reviewing titles, keywords, evidence, and track assignments."
+                  description="Filter the library before reviewing titles, keywords, evidence, and category assignments."
                 />
               </div>
             </div>
@@ -260,6 +266,8 @@ export default function WorkspacePapersClient() {
           <PaperExplorer
             trends={filteredData.trends}
             tracksSingle={filteredData.tracksSingle}
+            categoryAssignments={filteredData.categoryAssignments}
+            categoryOptions={categoryOptions}
             categoryLabels={categoryLabels}
             linkedPaperId={linkedPaperId}
           />

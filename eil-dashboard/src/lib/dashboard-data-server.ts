@@ -9,6 +9,7 @@ import {
 } from "@/lib/corpus-topic-cache";
 import { materializeDashboardSummaryCache } from "@/lib/dashboard-summary-cache";
 import type {
+  CategoryAssignmentRow,
   DashboardData,
   DashboardDataMode,
   PaperId,
@@ -49,6 +50,7 @@ function emptyDashboardData(): DashboardData {
     trends: [],
     tracksSingle: [],
     tracksMulti: [],
+    categoryAssignments: [],
     topicFamilies: [],
     useMock: false,
     diagnostics: null,
@@ -80,6 +82,7 @@ function hasAnyDashboardRows(data: DashboardData | null): boolean {
     data.trends.length > 0 ||
     data.tracksSingle.length > 0 ||
     data.tracksMulti.length > 0 ||
+    (data.categoryAssignments?.length ?? 0) > 0 ||
     (data.topicFamilies?.length ?? 0) > 0
   );
 }
@@ -177,6 +180,39 @@ function mapTrackRow(
   };
 }
 
+function mapCategoryAssignmentRow(
+  row: Record<string, unknown>,
+  lookups: ReturnType<typeof buildMetadataLookups>
+): CategoryAssignmentRow | null {
+  const metadata = resolveMetadataForRow(row, lookups);
+  if (!metadata?.paper_id) {
+    return null;
+  }
+  const categoryKey = String(row.category_key ?? "").trim();
+  if (!categoryKey) {
+    return null;
+  }
+
+  return {
+    paper_id: metadata.paper_id,
+    folder_id:
+      typeof row.folder_id === "string" ? row.folder_id : metadata.folder_id,
+    year: metadata.year,
+    title: metadata.title,
+    taxonomy_name:
+      typeof row.taxonomy_name === "string" ? row.taxonomy_name : null,
+    category_key: categoryKey,
+    category_label: String(row.category_label ?? categoryKey),
+    assignment_type: row.assignment_type === "multi" ? "multi" : "single",
+    is_other: Boolean(row.is_other),
+    rationale: typeof row.rationale === "string" ? row.rationale : null,
+    position:
+      row.position === null || row.position === undefined
+        ? null
+        : Number(row.position),
+  };
+}
+
 function mapTrendRow(
   row: Record<string, unknown>,
   lookups: ReturnType<typeof buildMetadataLookups>
@@ -197,6 +233,74 @@ function mapTrendRow(
     keyword_frequency: Number(row.keyword_frequency ?? 0),
     evidence: String(row.evidence ?? ""),
   };
+}
+
+function isMissingOptionalRelation(error: unknown): boolean {
+  const message =
+    error instanceof Error
+      ? error.message
+      : error && typeof error === "object"
+        ? Object.values(error as Record<string, unknown>).join(" ")
+        : String(error ?? "");
+  return (
+    message.includes("does not exist") ||
+    message.includes("schema cache") ||
+    message.includes("Could not find the table") ||
+    message.includes("PGRST205")
+  );
+}
+
+async function loadCategoryAssignments(
+  ownerUserId: string,
+  metadata: PaperMetadata[]
+): Promise<CategoryAssignmentRow[]> {
+  if (metadata.length === 0) {
+    return [];
+  }
+  const paperIds = metadata.map((paper) => paper.paper_id);
+  const lookups = buildMetadataLookups(metadata);
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const tableCheck = await client.query<{ exists: string | null }>(
+        "SELECT to_regclass('public.paper_category_assignments')::text AS exists",
+        []
+      );
+      if (!tableCheck.rows[0]?.exists) {
+        return [];
+      }
+      const result = await client.query<Record<string, unknown>>(
+        `SELECT paper_id::text, folder_id, taxonomy_name, category_key, category_label,
+                assignment_type, is_other, rationale, position
+         FROM public.paper_category_assignments
+         WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+        [ownerUserId, paperIds]
+      );
+      return result.rows
+        .map((row) => mapCategoryAssignmentRow(row, lookups))
+        .filter((row): row is CategoryAssignmentRow => Boolean(row));
+    });
+  }
+
+  const supabase = getSupabaseAdmin();
+  const result = await supabase
+    .from("paper_category_assignments")
+    .select(
+      "paper_id::text,folder_id,taxonomy_name,category_key,category_label,assignment_type,is_other,rationale,position"
+    )
+    .eq("owner_user_id", ownerUserId)
+    .in("paper_id", paperIds);
+
+  if (result.error) {
+    if (isMissingOptionalRelation(result.error)) {
+      return [];
+    }
+    throw new Error(result.error.message);
+  }
+
+  return ((result.data ?? []) as Record<string, unknown>[])
+    .map((row) => mapCategoryAssignmentRow(row, lookups))
+    .filter((row): row is CategoryAssignmentRow => Boolean(row));
 }
 
 async function resolveScopedFolderIds(
@@ -383,10 +487,11 @@ async function loadViewData(
     multiQuery = multiQuery.in("paper_id", scopedPaperIds);
   }
 
-  const [trendsResult, singleResult, multiResult] = await Promise.all([
+  const [trendsResult, singleResult, multiResult, categoryAssignments] = await Promise.all([
     trendsQuery,
     singleQuery,
     multiQuery,
+    loadCategoryAssignments(ownerUserId, metadata),
   ]);
 
   if (trendsResult.error) {
@@ -419,6 +524,7 @@ async function loadViewData(
     trends,
     tracksSingle,
     tracksMulti,
+    categoryAssignments,
     topicFamilies: [],
     useMock: false,
     diagnostics: null,
@@ -435,32 +541,41 @@ async function loadTableData(
 
   if (getDatabaseProvider() === "cloud-sql") {
     const paperIds = metadata.map((paper) => paper.paper_id);
-    const loaded = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
-      const keywords = await client.query<Record<string, unknown>>(
-        `SELECT paper_id::text, folder_id, topic, keyword, keyword_frequency, evidence
-         FROM public.paper_keywords WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-        [ownerUserId, paperIds]
-      );
-      const single = await client.query<Record<string, unknown>>(
-        `SELECT paper_id::text, folder_id, el, eli, lae, other
-         FROM public.paper_tracks_single WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-        [ownerUserId, paperIds]
-      );
-      const multi = await client.query<Record<string, unknown>>(
-        `SELECT paper_id::text, folder_id, el, eli, lae, other
-         FROM public.paper_tracks_multi WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-        [ownerUserId, paperIds]
-      );
-      return { keywords: keywords.rows, single: single.rows, multi: multi.rows };
-    });
-    return shapeTableDashboardData(metadata, loaded.keywords, loaded.single, loaded.multi);
+    const [loaded, categoryAssignments] = await Promise.all([
+      withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+        const keywords = await client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, topic, keyword, keyword_frequency, evidence
+           FROM public.paper_keywords WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        );
+        const single = await client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other
+           FROM public.paper_tracks_single WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        );
+        const multi = await client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other
+           FROM public.paper_tracks_multi WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        );
+        return { keywords: keywords.rows, single: single.rows, multi: multi.rows };
+      }),
+      loadCategoryAssignments(ownerUserId, metadata),
+    ]);
+    return shapeTableDashboardData(
+      metadata,
+      loaded.keywords,
+      loaded.single,
+      loaded.multi,
+      categoryAssignments
+    );
   }
 
   const supabase = getSupabaseAdmin();
   const paperIds = metadata.map((paper) => paper.paper_id);
   const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
 
-  const [keywordsResult, singleResult, multiResult] = await Promise.all([
+  const [keywordsResult, singleResult, multiResult, categoryAssignments] = await Promise.all([
     supabase
       .from("paper_keywords")
       .select("paper_id::text,folder_id,topic,keyword,keyword_frequency,evidence")
@@ -476,6 +591,7 @@ async function loadTableData(
       .select("paper_id::text,folder_id,el,eli,lae,other")
       .eq("owner_user_id", ownerUserId)
       .in("paper_id", paperIds),
+    loadCategoryAssignments(ownerUserId, metadata),
   ]);
 
   if (keywordsResult.error) {
@@ -584,6 +700,7 @@ async function loadTableData(
     trends,
     tracksSingle,
     tracksMulti,
+    categoryAssignments,
     topicFamilies: [],
     useMock: false,
     diagnostics: null,
@@ -594,7 +711,8 @@ function shapeTableDashboardData(
   metadata: PaperMetadata[],
   keywordRows: Record<string, unknown>[],
   singleRows: Record<string, unknown>[],
-  multiRows: Record<string, unknown>[]
+  multiRows: Record<string, unknown>[],
+  categoryAssignments: CategoryAssignmentRow[] = []
 ): DashboardData {
   const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
   const trends = keywordRows.flatMap((row) => {
@@ -619,7 +737,15 @@ function shapeTableDashboardData(
       };
     });
   };
-  return { trends, tracksSingle: mapTracks(singleRows), tracksMulti: mapTracks(multiRows), topicFamilies: [], useMock: false, diagnostics: null };
+  return {
+    trends,
+    tracksSingle: mapTracks(singleRows),
+    tracksMulti: mapTracks(multiRows),
+    categoryAssignments,
+    topicFamilies: [],
+    useMock: false,
+    diagnostics: null,
+  };
 }
 
 function mergeDashboardSources(
@@ -637,11 +763,31 @@ function mergeDashboardSources(
       ...secondary.filter((row) => !seen.has(row.paper_id)),
     ];
   };
+  const mergeCategoryRows = (
+    primary: CategoryAssignmentRow[] = [],
+    secondary: CategoryAssignmentRow[] = []
+  ) => {
+    const seen = new Set(
+      primary.map(
+        (row) => `${row.paper_id}:${row.assignment_type}:${row.category_key}`
+      )
+    );
+    return [
+      ...primary,
+      ...secondary.filter(
+        (row) => !seen.has(`${row.paper_id}:${row.assignment_type}:${row.category_key}`)
+      ),
+    ];
+  };
 
   return {
     trends: preferred.trends.length > 0 ? preferred.trends : fallback.trends,
     tracksSingle: mergeTrackRows(preferred.tracksSingle, fallback.tracksSingle),
     tracksMulti: mergeTrackRows(preferred.tracksMulti, fallback.tracksMulti),
+    categoryAssignments: mergeCategoryRows(
+      preferred.categoryAssignments,
+      fallback.categoryAssignments
+    ),
     topicFamilies:
       (preferred.topicFamilies?.length ?? 0) > 0
         ? preferred.topicFamilies
@@ -666,35 +812,42 @@ export async function loadScopedDashboardData(
 async function loadTrackTableData(
   ownerUserId: string,
   metadata: PaperMetadata[]
-): Promise<Pick<DashboardData, "tracksSingle" | "tracksMulti">> {
+): Promise<Pick<DashboardData, "tracksSingle" | "tracksMulti" | "categoryAssignments">> {
   if (metadata.length === 0) {
-    return { tracksSingle: [], tracksMulti: [] };
+    return { tracksSingle: [], tracksMulti: [], categoryAssignments: [] };
   }
 
   if (getDatabaseProvider() === "cloud-sql") {
     const paperIds = metadata.map((paper) => paper.paper_id);
-    const loaded = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
-      const single = await client.query<Record<string, unknown>>(
-        `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_single
-         WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-        [ownerUserId, paperIds]
-      );
-      const multi = await client.query<Record<string, unknown>>(
-        `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_multi
-         WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
-        [ownerUserId, paperIds]
-      );
-      return { single: single.rows, multi: multi.rows };
-    });
+    const [loaded, categoryAssignments] = await Promise.all([
+      withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+        const single = await client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_single
+           WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        );
+        const multi = await client.query<Record<string, unknown>>(
+          `SELECT paper_id::text, folder_id, el, eli, lae, other FROM public.paper_tracks_multi
+           WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+          [ownerUserId, paperIds]
+        );
+        return { single: single.rows, multi: multi.rows };
+      }),
+      loadCategoryAssignments(ownerUserId, metadata),
+    ]);
     const shaped = shapeTableDashboardData(metadata, [], loaded.single, loaded.multi);
-    return { tracksSingle: shaped.tracksSingle, tracksMulti: shaped.tracksMulti };
+    return {
+      tracksSingle: shaped.tracksSingle,
+      tracksMulti: shaped.tracksMulti,
+      categoryAssignments,
+    };
   }
 
   const supabase = getSupabaseAdmin();
   const metadataByPaperId = new Map(metadata.map((paper) => [paper.paper_id, paper]));
   const paperIds = metadata.map((paper) => paper.paper_id);
 
-  const [singleResult, multiResult] = await Promise.all([
+  const [singleResult, multiResult, categoryAssignments] = await Promise.all([
     supabase
       .from("paper_tracks_single")
       .select("paper_id::text,folder_id,el,eli,lae,other")
@@ -705,6 +858,7 @@ async function loadTrackTableData(
       .select("paper_id::text,folder_id,el,eli,lae,other")
       .eq("owner_user_id", ownerUserId)
       .in("paper_id", paperIds),
+    loadCategoryAssignments(ownerUserId, metadata),
   ]);
 
   if (singleResult.error) {
@@ -759,6 +913,7 @@ async function loadTrackTableData(
   return {
     tracksSingle: mapRows((singleResult.data ?? []) as Record<string, unknown>[]),
     tracksMulti: mapRows((multiResult.data ?? []) as Record<string, unknown>[]),
+    categoryAssignments,
   };
 }
 
@@ -814,6 +969,10 @@ async function loadProjectScopedDashboardData(
       preferredTrackData?.tracksMulti.length
         ? preferredTrackData.tracksMulti
         : trackFallback.tracksMulti,
+    categoryAssignments:
+      preferredTrackData?.categoryAssignments?.length
+        ? preferredTrackData.categoryAssignments
+        : trackFallback.categoryAssignments ?? [],
     topicFamilies,
     useMock: false,
     diagnostics: null,

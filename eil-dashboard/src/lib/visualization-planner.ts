@@ -121,6 +121,7 @@ export async function buildNormalizedAnalyticsPayload(
     ...filteredDashboard.trends.map((row) => row.paper_id),
     ...filteredDashboard.tracksSingle.map((row) => row.paper_id),
     ...filteredDashboard.tracksMulti.map((row) => row.paper_id),
+    ...(filteredDashboard.categoryAssignments ?? []).map((row) => row.paper_id),
   ]).size;
   const topicCount = new Set(filteredDashboard.trends.map((row) => row.topic)).size;
   const keywordCount = new Set(filteredDashboard.trends.map((row) => row.keyword)).size;
@@ -129,6 +130,7 @@ export async function buildNormalizedAnalyticsPayload(
       ...filteredDashboard.trends.map((row) => row.year),
       ...filteredDashboard.tracksSingle.map((row) => row.year),
       ...filteredDashboard.tracksMulti.map((row) => row.year),
+      ...(filteredDashboard.categoryAssignments ?? []).map((row) => row.year),
     ]),
   ].sort();
   const yearRange =
