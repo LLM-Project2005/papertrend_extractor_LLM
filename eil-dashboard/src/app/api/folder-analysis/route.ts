@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 const STATUS_INPUT_PAYLOAD_KEYS = [
   "analysis_label",
   "analysis_mode",
+  "analysis_profile",
   "progress_stage",
   "progress_message",
   "progress_detail",

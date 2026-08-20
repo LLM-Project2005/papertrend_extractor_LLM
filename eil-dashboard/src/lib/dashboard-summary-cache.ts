@@ -131,10 +131,10 @@ function addTrackCounts(
   trackRows: TrackRow[]
 ) {
   for (const row of trackRows) {
-    if (row.el > 0) addCount(rows, "English Linguistics", row.paper_id);
-    if (row.eli > 0) addCount(rows, "English Language Instruction", row.paper_id);
-    if (row.lae > 0) addCount(rows, "Language Assessment & Evaluation", row.paper_id);
-    if (row.other > 0) addCount(rows, "Other", row.paper_id);
+  if (row.el > 0) addCount(rows, "Category 1", row.paper_id);
+  if (row.eli > 0) addCount(rows, "Category 2", row.paper_id);
+  if (row.lae > 0) addCount(rows, "Category 3", row.paper_id);
+  if (row.other > 0) addCount(rows, "Other / Unclassified", row.paper_id);
   }
 }
 

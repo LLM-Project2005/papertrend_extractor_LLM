@@ -108,6 +108,7 @@ export function getDatabaseUrl(): string {
 export function getAdminImportSecret(): string {
   return (
     process.env.ADMIN_IMPORT_SECRET ??
+    process.env.PAPERTREND_ADMIN_SECRET ??
     process.env.EIL_ADMIN_SECRET ??
     ""
   );

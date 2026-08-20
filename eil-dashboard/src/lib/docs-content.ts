@@ -268,7 +268,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "paper-detail",
             title: "Paper detail panel",
             body: [
-              "The paper detail panel is where users inspect the output of a single succeeded analysis. It should show the extracted paper identity, abstract or text sections, keywords, topics, tracks, facets, and other saved signals when available.",
+              "The paper detail panel is where users inspect the output of a single succeeded analysis. It should show the extracted paper identity, abstract or text sections, keywords, topics, categories, facets, and other saved signals when available.",
             ],
             checklist: [
               "Use the detail panel to validate whether the extracted title and year look correct.",
@@ -430,7 +430,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "safe-changes",
             title: "Safe changes",
             body: [
-              "Changing display preferences should be safe. Analysis outputs such as keywords, paper content, tracks, and year evidence are tied to paper records and should not be affected by profile display changes.",
+              "Changing display preferences should be safe. Analysis outputs such as keywords, paper content, categories, and year evidence are tied to paper records and should not be affected by profile display changes.",
             ],
             checklist: [
               "Confirm the selected workspace before changing workspace settings.",
@@ -459,8 +459,8 @@ const rawDocsCategories: DocsCategoryBase[] = [
         slug: "paper-analysis",
         title: "Paper analysis pipeline",
         description:
-          "Understand how Papertrend extracts metadata, sections, keywords, topics, tracks, typologies, facets, and year evidence.",
-        tags: ["analysis", "pipeline", "metadata", "year", "keyword", "topic", "track", "typology", "facet"],
+          "Understand how Papertrend extracts metadata, sections, keywords, topics, categories, typologies, facets, and year evidence.",
+        tags: ["analysis", "pipeline", "metadata", "year", "keyword", "topic", "category", "typology", "facet"],
         popular: true,
         sections: [
           {
@@ -475,7 +475,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Semantic section detection.",
               "Metadata and year evidence extraction.",
               "Keyword, topic, and concept extraction.",
-              "Track, typology, and facet classification.",
+              "Category, typology, and facet classification.",
               "Persistence into workspace-scoped tables.",
             ],
           },
@@ -483,13 +483,13 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "outputs",
             title: "Important outputs",
             body: [
-              "The most visible outputs are paper title, year, topics, keywords, tracks, paper content, and evidence snippets. Some outputs are used directly in charts, while others support quality review and grounded answers.",
+              "The most visible outputs are paper title, year, topics, keywords, categories, paper content, and evidence snippets. Some outputs are used directly in charts, while others support quality review and grounded answers.",
             ],
             bullets: [
               "Year values power timelines and dashboard filters.",
               "Topics group keywords into higher-level themes.",
               "Keywords provide searchable paper-level signals.",
-              "Tracks classify papers into research track buckets.",
+              "Categories classify papers into the active project taxonomy.",
               "Facets and typologies add higher-level interpretation.",
               "Paper content provides the grounding context for chat and detail panels.",
             ],
@@ -530,8 +530,8 @@ const rawDocsCategories: DocsCategoryBase[] = [
         slug: "research-dashboard",
         title: "Research dashboard and adaptive views",
         description:
-          "Use workspace-wide analytics, filters, top topics, top keywords, tracks, and year views to understand a corpus.",
-        tags: ["dashboard", "adaptive dashboard", "filters", "topics", "keywords", "tracks", "year", "charts"],
+          "Use workspace-wide analytics, filters, top topics, top keywords, categories, and year views to understand a corpus.",
+        tags: ["dashboard", "adaptive dashboard", "filters", "topics", "keywords", "categories", "year", "charts"],
         popular: true,
         sections: [
           {

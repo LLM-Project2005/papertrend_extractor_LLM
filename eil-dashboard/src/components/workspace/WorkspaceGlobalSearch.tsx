@@ -105,7 +105,7 @@ const ACTION_ITEMS: Array<{
   {
     id: "chart-mode",
     label: "Create a chart",
-    description: "Use chat chart mode to visualize papers, topics, keywords, and tracks.",
+    description: "Use chat chart mode to visualize papers, topics, keywords, and categories.",
     href: "/workspace/chat",
     icon: ChartIcon,
     keywords: ["chart", "graph", "visualize", "visualise", "plot", "กราฟ", "แผนภูมิ"],
@@ -561,7 +561,7 @@ export default function WorkspaceGlobalSearch({
             </div>
           ) : (
             <div className="px-4 py-6 text-sm text-slate-500 dark:text-[#9b9b9b]">
-              No results found for "{deferredQuery.trim()}".
+              No results found for &quot;{deferredQuery.trim()}&quot;.
             </div>
           )}
         </div>

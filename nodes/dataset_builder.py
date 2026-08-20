@@ -168,6 +168,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         )
 
     typology = state.get("research_typology") or {}
+    category_classification = state.get("category_classification") or {}
     typology_rows = []
     if typology.get("primary_group_number") and typology.get("primary_group_name"):
         secondary_group_number = typology.get("secondary_group_number")
@@ -234,6 +235,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         "paper_facets": facets,
         "author_keywords": author_keywords,
         "research_typologies": typology_rows,
+        "category_classification": category_classification,
     }
 
     return {
@@ -241,6 +243,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         "concept_rows": concept_rows,
         "author_keywords": author_keywords,
         "research_typology": typology,
+        "category_classification": category_classification,
         "dataset": dataset,
         "errors": [],
         "status": "dataset_ready",
