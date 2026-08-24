@@ -43,6 +43,19 @@ test("Cloud SQL upload preparation serializes quota and duplicate checks", () =>
   assert.match(source, /The same PDF was selected more than once/);
 });
 
+test("upload finalization tolerates Cloud Run cold starts and persists trigger failures", () => {
+  const trigger = readFileSync(join(root, "src/lib/worker-trigger.ts"), "utf8");
+  const finalize = readFileSync(
+    join(root, "src/app/api/admin/import/finalize/route.ts"),
+    "utf8"
+  );
+  assert.match(trigger, /WORKER_REQUEST_TIMEOUT_MS = 20_000/);
+  assert.match(trigger, /worker_request_timeout/);
+  assert.match(trigger, /catch \(error\)/);
+  assert.match(finalize, /buildTriggerExceptionResult/);
+  assert.match(finalize, /queueStart = buildTriggerExceptionResult\(triggerError\)/);
+});
+
 test("chat uses account token accounting and the approved model pair", () => {
   const route = readFileSync(join(root, "src/app/api/chat/route.ts"), "utf8");
   const openai = readFileSync(join(root, "src/lib/openai.ts"), "utf8");

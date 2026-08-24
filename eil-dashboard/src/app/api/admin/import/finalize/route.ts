@@ -51,6 +51,23 @@ function buildNotStartedResult(reason: string): WorkerQueueStartResult {
   };
 }
 
+function buildTriggerExceptionResult(error: unknown): WorkerQueueStartResult {
+  return {
+    ...buildNotStartedResult("trigger_exception"),
+    attempts: 1,
+    trigger: {
+      started: false,
+      status: 0,
+      payload: {
+        reason: "trigger_exception",
+        message: error instanceof Error ? error.message : "unknown_error",
+      },
+    },
+    progressDetail:
+      "The files were uploaded successfully, but the app could not reach the analysis worker. Use \"Start processing now\" to retry once worker connectivity is restored.",
+  };
+}
+
 export async function POST(request: Request) {
   if (!(await isAuthorizedUserOrAdminRequest(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -149,11 +166,15 @@ export async function POST(request: Request) {
       });
       let queueStart = buildNotStartedResult("no_uploaded_runs");
       if (queueableUploadedItems.length > 0) {
-        queueStart = await triggerWorkerQueueWithRetries({
-          maxRuns: Math.min(queueableUploadedItems.length, 5),
-          taskCount: queueableUploadedItems.length,
-          reason: "admin-import-direct-upload",
-        });
+        try {
+          queueStart = await triggerWorkerQueueWithRetries({
+            maxRuns: Math.min(queueableUploadedItems.length, 5),
+            taskCount: queueableUploadedItems.length,
+            reason: "admin-import-direct-upload",
+          });
+        } catch (triggerError) {
+          queueStart = buildTriggerExceptionResult(triggerError);
+        }
         await cloudSqlIngestionRepository.persistWorkerStartState({
           ownerUserId: user.id,
           runIds: queueableUploadedItems.map((item) => String(item.runId)),
