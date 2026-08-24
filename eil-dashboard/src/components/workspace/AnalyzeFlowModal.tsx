@@ -16,6 +16,7 @@ import {
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
+import { fingerprintFiles } from "@/lib/client-file-hash";
 
 type ImportSource =
   | "pdf-upload"
@@ -55,7 +56,8 @@ const SOURCE_OPTIONS: Array<{
   },
 ];
 
-const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_FILES = 50;
 
 async function readJsonPayload<T>(response: Response): Promise<T | null> {
   const text = await response.text();
@@ -109,7 +111,7 @@ export default function AnalyzeFlowModal({
   const [driveSearch, setDriveSearch] = useState("");
   const [selectedDriveFileIds, setSelectedDriveFileIds] = useState<string[]>([]);
   const [driveFolderTrail, setDriveFolderTrail] = useState<DriveBreadcrumb[]>([
-    { id: "root", name: "Library" },
+    { id: "root", name: "Repositories" },
   ]);
   const [queuedSummary, setQueuedSummary] = useState<{
     count: number;
@@ -270,10 +272,10 @@ export default function AnalyzeFlowModal({
     try {
       if (selectedSource === "pdf-upload") {
         if (files.length === 0) {
-          throw new Error("Choose one PDF file.");
+          throw new Error("Choose at least one PDF file.");
         }
-        if (files.length > 1) {
-          throw new Error("For beta stability, upload one PDF at a time.");
+        if (files.length > MAX_UPLOAD_FILES) {
+          throw new Error(`Choose no more than ${MAX_UPLOAD_FILES} PDFs at once.`);
         }
 
         const invalidFiles = files.filter(
@@ -286,9 +288,14 @@ export default function AnalyzeFlowModal({
         const oversizedFiles = files.filter((file) => file.size > MAX_UPLOAD_FILE_BYTES);
         if (oversizedFiles.length > 0) {
           throw new Error(
-            `Each PDF must be 20 MB or smaller. Oversized count: ${oversizedFiles.length}.`
+            `Each PDF must be 10 MB or smaller. Oversized count: ${oversizedFiles.length}.`
           );
         }
+
+        setUploadStage(`Checking ${files.length} file${files.length === 1 ? "" : "s"} for duplicates`);
+        const fingerprints = await fingerprintFiles(files, (completed, total) => {
+          setUploadStage(`Checking files for duplicates (${completed}/${total})`);
+        });
 
         const headers: Record<string, string> = {};
         if (session?.access_token && user) {
@@ -313,6 +320,7 @@ export default function AnalyzeFlowModal({
               name: file.name,
               size: file.size,
               type: file.type || "application/pdf",
+              sha256: fingerprints[fileIndex],
             })),
           }),
         });
@@ -338,17 +346,7 @@ export default function AnalyzeFlowModal({
           );
         }
 
-        setUploadStage("Uploading PDF to secure storage");
-        const preparedRuns = (preparePayload.runs ?? []) as IngestionRunRow[];
-        if (preparedRuns.length > 0) {
-          onCreated?.(preparedRuns, {
-            folder: folder.trim() || defaultFolder,
-            folderId: preparePayload.folderJob.folder_id ?? null,
-            folderJob: preparePayload.folderJob,
-            sourceKind: selectedSource,
-          });
-          onClose();
-        }
+        setUploadStage(`Uploading ${preparePayload.uploads.length} PDF${preparePayload.uploads.length === 1 ? "" : "s"} to secure storage`);
 
         const uploaded: Array<{
           runId: string;
@@ -624,7 +622,7 @@ export default function AnalyzeFlowModal({
 
         <div className="space-y-5 px-5 py-5 sm:px-6">
           <p className="text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
-            Upload one PDF at a time. Analysis progress will remain available on Home.
+            Upload up to 50 PDFs. Each file must be 10 MB or smaller; duplicates are blocked before queueing.
           </p>
 
           <div className="grid gap-4">
@@ -636,7 +634,7 @@ export default function AnalyzeFlowModal({
               {selectedSourceMeta.id === "pdf-upload" ? (
                 <>
                   <p className="mt-4 text-base font-medium text-slate-900 dark:text-[#f2f2f2]">
-                    Choose one paper PDF
+                    Choose paper PDFs
                   </p>
                   <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
                     The file will be uploaded, queued, and processed by the analysis worker.
@@ -646,8 +644,9 @@ export default function AnalyzeFlowModal({
                       id="papertrend-pdf-upload"
                       type="file"
                       accept="application/pdf"
+                      multiple
                       onChange={(event) =>
-                        setFiles(Array.from(event.target.files ?? []).filter(Boolean).slice(0, 1))
+                        setFiles(Array.from(event.target.files ?? []).filter(Boolean).slice(0, MAX_UPLOAD_FILES))
                       }
                       className="sr-only"
                     />
@@ -656,7 +655,7 @@ export default function AnalyzeFlowModal({
                       className="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
                     >
                       <UploadIcon className="h-4 w-4" />
-                      {files[0] ? "Choose another PDF" : "Choose PDF"}
+                      {files.length > 0 ? "Change selection" : "Choose PDFs"}
                     </label>
                   </div>
                 </>
@@ -964,7 +963,7 @@ export default function AnalyzeFlowModal({
               }}
               disabled={
                 uploading ||
-                (selectedSource === "pdf-upload" && files.length !== 1) ||
+                (selectedSource === "pdf-upload" && files.length === 0) ||
                 (selectedSource === "google-drive" &&
                   (!driveConnected || selectedDriveFileIds.length === 0)) ||
                 (selectedSource !== "pdf-upload" && selectedSource !== "google-drive")

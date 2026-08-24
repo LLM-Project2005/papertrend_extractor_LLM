@@ -297,7 +297,7 @@ export default function WorkspaceLogsPage() {
               History
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
-              Revisit previous analysis runs, jump back into the Library, and tidy up your
+              Revisit previous analysis runs, jump back into Repositories, and tidy up your
               history without removing the original files.
             </p>
           </div>
@@ -333,7 +333,7 @@ export default function WorkspaceLogsPage() {
           </p>
         </div>
         <p className="mt-3 text-xs text-slate-500 dark:text-[#8f8f8f]">
-          Removing an item here only hides it from history. It stays in the Library unless you
+          Removing an item here only hides it from history. It stays in its repository unless you
           delete it there.
         </p>
       </section>
@@ -405,7 +405,7 @@ export default function WorkspaceLogsPage() {
                         <div className="flex items-center justify-end gap-2 md:self-stretch">
                           {removedFromLibrary ? (
                             <span className="inline-flex items-center rounded-full px-3 py-2 text-sm text-slate-400 dark:text-[#767676]">
-                              Library file unavailable
+                              Repository file unavailable
                             </span>
                           ) : (
                             <Link

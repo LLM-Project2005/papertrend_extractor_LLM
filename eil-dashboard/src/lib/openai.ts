@@ -1,4 +1,5 @@
 import { getOpenAIConfig } from "@/lib/server-env";
+import { recordAiTokenUsage } from "@/lib/ai-token-usage";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -139,6 +140,7 @@ export async function createChatCompletionResult(
   };
 
   const message = payload.choices?.[0]?.message;
+  recordAiTokenUsage(payload.usage);
   return {
     content: normalizeMessageContent(message?.content),
     annotations: Array.isArray(message?.annotations) ? message.annotations : [],

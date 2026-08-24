@@ -5,18 +5,24 @@ import test from "node:test";
 
 const root = process.cwd();
 
-test("chat history and composer stay within the current repository", () => {
+test("chat history is account-wide while each message keeps an explicit repository scope", () => {
   const client = readFileSync(join(root, "src/components/chat/ChatClient.tsx"), "utf8");
-  const threadsRoute = readFileSync(join(root, "src/app/api/chat/threads/route.ts"), "utf8");
-  const repository = readFileSync(join(root, "src/lib/chat-repository.ts"), "utf8");
+  const chatRoute = readFileSync(join(root, "src/app/api/chat/route.ts"), "utf8");
+  const threadRoute = readFileSync(
+    join(root, "src/app/api/chat/threads/[threadId]/route.ts"),
+    "utf8"
+  );
 
-  assert.match(client, /useState<string>\("all"\)/);
-  assert.doesNotMatch(client, /setChatScopeFolderId\("all-projects"\)/);
-  assert.match(client, /api\/chat\/threads\?projectId=/);
+  assert.match(client, /fetch\("\/api\/chat\/threads"/);
+  assert.doesNotMatch(client, /api\/chat\/threads\?projectId=/);
+  assert.match(client, /allProjects\.map/);
+  assert.match(client, /allFolders\.filter/);
   assert.match(client, /menuView === "scope"/);
-  assert.match(client, /Entire repository/);
-  assert.match(threadsRoute, /searchParams\.get\("projectId"\)/);
-  assert.match(repository, /metadata #>> '\{knowledgeScope,projectId\}'/);
+  assert.match(client, /All repositories/);
+  assert.match(client, /return \{ kind: "all_projects" \}/);
+  assert.match(chatRoute, /scopeSnapshot: preliminaryScopeSnapshot/);
+  assert.doesNotMatch(chatRoute, /This chat belongs to a different repository/);
+  assert.doesNotMatch(threadRoute, /This chat belongs to a different repository/);
 });
 
 test("grounded answers receive one bounded intent and evidence review", () => {

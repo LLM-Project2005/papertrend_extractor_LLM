@@ -2,11 +2,14 @@ import { createHash } from "crypto";
 import { getMaxUploadBytes } from "@/lib/server-env";
 
 export const MAX_FILES_PER_BATCH = 50;
+export const MAX_PAPERS_PER_ACCOUNT = 50;
+export const MAX_PDF_BYTES = 10 * 1024 * 1024;
 
 export type UploadMetadata = {
   name: string;
   size: number;
   type?: string | null;
+  sha256?: string | null;
 };
 
 export function sanitizeStorageFileName(fileName: string): string {
@@ -29,6 +32,9 @@ export function validatePdfUploadMetadata(file: UploadMetadata): string | null {
   }
   if (file.size > maxBytes) {
     return `The PDF is too large: ${name}. Maximum size is ${Math.round(maxBytes / 1024 / 1024)} MB.`;
+  }
+  if (file.sha256 && !/^[a-f0-9]{64}$/i.test(file.sha256)) {
+    return `The file fingerprint is invalid for ${name}.`;
   }
   const mimeType = String(file.type ?? "").toLowerCase();
   if (mimeType && mimeType !== "application/pdf" && mimeType !== "application/octet-stream") {

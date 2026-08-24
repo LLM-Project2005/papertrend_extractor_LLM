@@ -11,8 +11,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const projectId = new URL(request.url).searchParams.get("projectId")?.trim() || null;
-    const threads = await getChatRepository().listThreads(user.id, projectId);
+    const threads = await getChatRepository().listThreads(user.id);
     return NextResponse.json({ threads });
   } catch (error) {
     return NextResponse.json(

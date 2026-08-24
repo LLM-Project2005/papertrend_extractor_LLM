@@ -11,7 +11,10 @@ import {
 } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
-import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
+import {
+  cloudSqlIngestionRepository,
+  UploadPolicyError,
+} from "@/lib/cloudsql/ingestion-repository";
 import { createGcsSignedUploadUrl as signGcsUpload } from "@/lib/gcs-signed-urls";
 import {
   MAX_FILES_PER_BATCH,
@@ -30,6 +33,7 @@ type PrepareUploadFile = {
   name: string;
   size: number;
   type?: string | null;
+  sha256?: string | null;
 };
 
 class UploadPreparationError extends Error {
@@ -255,7 +259,12 @@ export async function POST(request: Request) {
       {
         error: error instanceof Error ? error.message : "Failed to prepare uploads.",
       },
-      { status: error instanceof UploadPreparationError ? error.status : 500 }
+      {
+        status:
+          error instanceof UploadPreparationError || error instanceof UploadPolicyError
+            ? error.status
+            : 500,
+      }
     );
   }
 }

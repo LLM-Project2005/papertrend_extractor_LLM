@@ -180,7 +180,7 @@ interface ChatSearchResult {
 const PINNED_THREADS_STORAGE_KEY = "papertrend_pinned_chat_threads_v1";
 const CHAT_MODEL_STORAGE_KEY = "papertrend_chat_model_v1";
 const CHAT_PARAMETERS_STORAGE_KEY = "papertrend_chat_parameters_v1";
-const DEFAULT_CHAT_MODEL = "google/gemini-3.1-flash-lite";
+const DEFAULT_CHAT_MODEL = "openai/gpt-5.6-luna-20260709";
 
 type ChatGenerationParameters = {
   temperature: number;
@@ -246,10 +246,8 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
 };
 
 const MODEL_OPTIONS = [
-  { value: "google/gemini-3.1-flash-lite", label: "Gemini 3.1 Flash Lite" },
-  { value: "google/gemma-4-31b-it", label: "Gemma 4 31B" },
-  { value: "openai/gpt-4.1-mini", label: "GPT-4.1 mini" },
-  { value: "openai/gpt-4o-mini", label: "GPT-4o mini" },
+  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna" },
+  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash" },
 ] as const;
 
 const CHART_INTENT_PATTERN =
@@ -1512,6 +1510,8 @@ export default function ChatClient() {
   const { session, user } = useAuth();
   const {
     folders,
+    allFolders,
+    allProjects,
     currentProject,
     selectedProjectId,
     selectedYears,
@@ -1520,6 +1520,7 @@ export default function ChatClient() {
     startAnalysisSession,
     refreshFolders,
   } = useWorkspaceProfile();
+  const [chatScopeProjectId, setChatScopeProjectId] = useState<string>("all");
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
@@ -1558,6 +1559,7 @@ export default function ChatClient() {
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuView, setMenuView] = useState<"root" | "scope">("root");
+  const [expandedScopeProjectId, setExpandedScopeProjectId] = useState<string | null>(null);
   const [threadMenuId, setThreadMenuId] = useState<string | null>(null);
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
@@ -1607,11 +1609,16 @@ export default function ChatClient() {
       scope:
         selectedRunIds.length > 0
           ? "attached"
+          : chatScopeProjectId === "all" && chatScopeFolderId === "all"
+            ? "workspace"
           : researchSourcePolicy.scope === "workspace"
             ? "workspace"
             : "project",
       includeAttached: true,
       includeCurrentScope: true,
+      includeWorkspace:
+        researchSourcePolicy.includeWorkspace ||
+        (chatScopeProjectId === "all" && chatScopeFolderId === "all"),
       agentDirected: true,
       allowWeb: researchSourcePolicy.allowWeb || webSearchEnabled,
       allowCode: false,
@@ -1624,7 +1631,7 @@ export default function ChatClient() {
             : 0,
       },
     }),
-    [chatScopeFolderId, researchSourcePolicy, selectedRunIds.length, webSearchEnabled]
+    [chatScopeFolderId, chatScopeProjectId, researchSourcePolicy, selectedRunIds.length, webSearchEnabled]
   );
   const selectedAttachments = useMemo(
     () =>
@@ -1639,12 +1646,19 @@ export default function ChatClient() {
       })),
     [selectedLibraryRuns]
   );
-  const activeFolderLabel = useMemo(
-    () => chatScopeFolderId === "all"
-      ? currentProject?.name ?? "Current project"
-      : buildFolderLabel(chatScopeFolderId, folders),
-    [chatScopeFolderId, currentProject?.name, folders]
-  );
+  const activeFolderLabel = useMemo(() => {
+    if (selectedRunIds.length > 0) {
+      return `${selectedRunIds.length} selected paper${selectedRunIds.length === 1 ? "" : "s"}`;
+    }
+    if (chatScopeFolderId !== "all") {
+      return allFolders.find((folder) => folder.id === chatScopeFolderId)?.name ?? "Selected folder";
+    }
+    if (chatScopeProjectId !== "all") {
+      const project = allProjects.find((item) => item.id === chatScopeProjectId);
+      return project ? `${project.name} repository` : "Selected repository";
+    }
+    return "All repositories";
+  }, [allFolders, allProjects, chatScopeFolderId, chatScopeProjectId, selectedRunIds.length]);
   const filteredLibraryRuns = useMemo(() => {
     const needle = libraryQuery.trim().toLowerCase();
     return libraryRuns.filter((run) => {
@@ -1693,39 +1707,45 @@ export default function ChatClient() {
     if (selectedRunIds.length > 0) {
       return {
         kind: "selected_papers",
-        projectId: selectedProjectId ?? undefined,
-        folderId:
-          chatScopeFolderId !== "all"
-            ? chatScopeFolderId
-            : undefined,
         runIds: selectedRunIds,
       };
     }
     if (chatScopeFolderId !== "all") {
-      return { kind: "folder", projectId: selectedProjectId ?? undefined, folderId: chatScopeFolderId };
+      const selectedFolder = allFolders.find((folder) => folder.id === chatScopeFolderId);
+      return {
+        kind: "folder",
+        projectId:
+          selectedFolder?.project_id ??
+          (chatScopeProjectId !== "all" ? chatScopeProjectId : undefined),
+        folderId: chatScopeFolderId,
+      };
     }
-    return { kind: "project", projectId: selectedProjectId ?? undefined };
-  }, [chatScopeFolderId, selectedProjectId, selectedRunIds]);
+    if (chatScopeProjectId !== "all") {
+      return { kind: "project", projectId: chatScopeProjectId };
+    }
+    return { kind: "all_projects" };
+  }, [allFolders, chatScopeFolderId, chatScopeProjectId, selectedRunIds]);
   const activeScopeSnapshot = useMemo<KnowledgeScopeSnapshot>(() => {
-    const selectedFolder = folders.find((folder) => folder.id === activeKnowledgeScope.folderId) ?? null;
+    const selectedFolder = allFolders.find((folder) => folder.id === activeKnowledgeScope.folderId) ?? null;
+    const selectedProject = allProjects.find((project) => project.id === activeKnowledgeScope.projectId) ?? null;
     const label = activeKnowledgeScope.kind === "selected_papers"
       ? `${selectedRunIds.length} selected paper${selectedRunIds.length === 1 ? "" : "s"}`
       : activeKnowledgeScope.kind === "folder"
         ? selectedFolder?.name ?? "Selected folder"
         : activeKnowledgeScope.kind === "project"
-          ? `${currentProject?.name ?? "Current project"} repository`
-          : `${currentProject?.name ?? "Current project"} repository`;
+          ? `${selectedProject?.name ?? "Selected project"} repository`
+          : "All repositories";
     return {
       kind: activeKnowledgeScope.kind,
       label,
       projectId: activeKnowledgeScope.projectId ?? null,
-      projectName: activeKnowledgeScope.projectId ? currentProject?.name ?? null : null,
+      projectName: selectedProject?.name ?? null,
       folderId: activeKnowledgeScope.folderId ?? null,
       folderName: selectedFolder?.name ?? null,
       selectedRunCount: activeKnowledgeScope.runIds?.length ?? 0,
       eligiblePaperCount: 0,
     };
-  }, [activeKnowledgeScope, currentProject?.name, folders, selectedRunIds.length]);
+  }, [activeKnowledgeScope, allFolders, allProjects, selectedRunIds.length]);
   const conversationSources = useMemo(
     () => dedupeConversationSources(visibleMessages.flatMap((message) => message.citations)),
     [visibleMessages]
@@ -1887,16 +1907,15 @@ export default function ChatClient() {
 
   const refreshThreads = useCallback(
     async (preferredThreadId?: string | null) => {
-      if (!canPersist || !session?.access_token || !selectedProjectId) {
+      if (!canPersist || !session?.access_token) {
         setThreads([]);
         return;
       }
       setThreadsLoading(true);
       try {
-        const response = await fetch(
-          `/api/chat/threads?projectId=${encodeURIComponent(selectedProjectId ?? "")}`,
-          { headers: { Authorization: `Bearer ${session.access_token}` } }
-        );
+        const response = await fetch("/api/chat/threads", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
         const payload = (await response.json()) as {
           threads?: WorkspaceThreadSummary[];
           error?: string;
@@ -1920,7 +1939,7 @@ export default function ChatClient() {
         setThreadsLoading(false);
       }
     },
-    [canPersist, selectedProjectId, session?.access_token]
+    [canPersist, session?.access_token]
   );
 
   const loadThreadDetail = useCallback(
@@ -1928,10 +1947,9 @@ export default function ChatClient() {
       if (!canPersist || !session?.access_token) return;
       setDetailLoading(true);
       try {
-        const response = await fetch(
-          `/api/chat/threads/${threadId}?projectId=${encodeURIComponent(selectedProjectId ?? "")}`,
-          { headers: { Authorization: `Bearer ${session.access_token}` } }
-        );
+        const response = await fetch(`/api/chat/threads/${threadId}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
         const payload = (await response.json()) as ChatThreadDetail & {
           error?: string;
         };
@@ -1957,7 +1975,7 @@ export default function ChatClient() {
         setDetailLoading(false);
       }
     },
-    [canPersist, selectedProjectId, session?.access_token]
+    [canPersist, session?.access_token]
   );
 
   const loadChatSearchDetails = useCallback(async () => {
@@ -1996,19 +2014,16 @@ export default function ChatClient() {
   }, [canPersist, session?.access_token, sortedThreads]);
 
   const loadLibraryRuns = useCallback(async () => {
-    if (!canPersist || !selectedProjectId) {
+    if (!canPersist) {
       setLibraryRuns([]);
       return;
     }
 
     setLibraryLoading(true);
     try {
-      const response = await fetch(
-        `/api/workspace/library?projectId=${encodeURIComponent(selectedProjectId)}`,
-        {
-          headers: { Authorization: `Bearer ${session?.access_token}` },
-        }
-      );
+      const response = await fetch("/api/workspace/library", {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
       const payload = (await response.json()) as {
         runs?: IngestionRunRow[];
         error?: string;
@@ -2026,7 +2041,7 @@ export default function ChatClient() {
     } finally {
       setLibraryLoading(false);
     }
-  }, [canPersist, selectedProjectId, session?.access_token]);
+  }, [canPersist, session?.access_token]);
 
   useEffect(() => {
     if (!canPersist) {
@@ -2077,18 +2092,6 @@ export default function ChatClient() {
       editComposerRef.current?.setSelectionRange(length, length);
     });
   }, [editingDraft.length, editingMessageId]);
-
-  useEffect(() => {
-    setSelectedLibraryRuns([]);
-    setLibraryRuns([]);
-    setLibraryQuery("");
-    setChatScopeFolderId("all");
-    setActiveThreadId(null);
-    setActiveThread(null);
-    setMessages([]);
-    setDeepSession(null);
-    setChatSearchDetails([]);
-  }, [selectedProjectId]);
 
   async function sendRequest(body: Record<string, unknown>) {
     abortControllerRef.current?.abort();
@@ -2243,7 +2246,7 @@ export default function ChatClient() {
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
         folderId: activeKnowledgeScope.folderId ?? "all",
-        projectId: selectedProjectId ?? undefined,
+        projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds: editedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
@@ -2321,7 +2324,7 @@ export default function ChatClient() {
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
         folderId: activeKnowledgeScope.folderId ?? "all",
-        projectId: selectedProjectId ?? undefined,
+        projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         toolMode: webSearchEnabled ? "web_search" : "auto",
@@ -2397,7 +2400,7 @@ export default function ChatClient() {
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
         folderId: activeKnowledgeScope.folderId ?? "all",
-        projectId: selectedProjectId ?? undefined,
+        projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         toolMode: "chart",
@@ -2503,7 +2506,7 @@ export default function ChatClient() {
         message: prompt,
         attachments: selectedAttachments,
         folderId: activeKnowledgeScope.folderId ?? "all",
-        projectId: selectedProjectId ?? undefined,
+        projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         threadId: activeThread?.mode === "deep_research" ? activeThread.id : undefined,
@@ -2534,7 +2537,7 @@ export default function ChatClient() {
     try {
       const payload = await sendRequest({
         folderId: activeKnowledgeScope.folderId ?? "all",
-        projectId: selectedProjectId ?? undefined,
+        projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
         threadId: activeThread.id,
@@ -3635,41 +3638,89 @@ export default function ChatClient() {
                                   <p className="truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">Choose what this message can use</p>
                                 </div>
                               </div>
-                              <div className="max-h-72 overflow-y-auto p-2">
+                              <div className="max-h-80 overflow-y-auto p-2">
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    setChatScopeProjectId("all");
                                     setChatScopeFolderId("all");
+                                    setSelectedLibraryRuns([]);
                                     setMenuOpen(false);
                                   }}
-                                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeFolderId === "all" ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeProjectId === "all" && chatScopeFolderId === "all" ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                 >
                                   <DriveIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
                                   <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">Entire repository</span>
-                                    <span className="block truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">{currentProject?.name ?? "Current project"}</span>
+                                    <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">All repositories</span>
+                                    <span className="block truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">Every analyzed paper in this account</span>
                                   </span>
-                                  {chatScopeFolderId === "all" ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
+                                  {chatScopeProjectId === "all" && chatScopeFolderId === "all" ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                 </button>
-                                {folders.length > 0 ? (
-                                  <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Folders</p>
+                                {allProjects.length > 0 ? (
+                                  <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Repositories</p>
                                 ) : null}
-                                {folders.map((folder) => {
-                                  const active = folder.id === chatScopeFolderId;
+                                {allProjects.map((project) => {
+                                  const projectFolders = allFolders.filter((folder) => folder.project_id === project.id);
+                                  const projectActive = chatScopeProjectId === project.id && chatScopeFolderId === "all";
+                                  const expanded = expandedScopeProjectId === project.id;
                                   return (
-                                    <button
-                                      key={folder.id}
-                                      type="button"
-                                      onClick={() => {
-                                        setChatScopeFolderId(folder.id);
-                                        setMenuOpen(false);
-                                      }}
-                                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${active ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                    <div
+                                      key={project.id}
+                                      onMouseEnter={() => setExpandedScopeProjectId(project.id)}
+                                      onMouseLeave={() => setExpandedScopeProjectId((current) => current === project.id ? null : current)}
+                                      className="rounded-lg"
                                     >
-                                      <FolderIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
-                                      <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{folder.name}</span>
-                                      {active ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
-                                    </button>
+                                      <div className={`flex items-center rounded-lg ${projectActive ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setChatScopeProjectId(project.id);
+                                            setChatScopeFolderId("all");
+                                            setSelectedLibraryRuns([]);
+                                            setMenuOpen(false);
+                                          }}
+                                          className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
+                                        >
+                                          <DriveIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                          <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{project.name}</span>
+                                          {projectActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
+                                        </button>
+                                        {projectFolders.length > 0 ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => setExpandedScopeProjectId(expanded ? null : project.id)}
+                                            className="mr-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-slate-900 dark:hover:bg-[#181818] dark:hover:text-white"
+                                            aria-label={`Show folders in ${project.name}`}
+                                          >
+                                            <ChevronDownIcon className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                                          </button>
+                                        ) : null}
+                                      </div>
+                                      {expanded && projectFolders.length > 0 ? (
+                                        <div className="ml-7 border-l border-slate-200 py-1 pl-2 dark:border-[#242424]">
+                                          {projectFolders.map((folder) => {
+                                            const folderActive = chatScopeFolderId === folder.id;
+                                            return (
+                                              <button
+                                                key={folder.id}
+                                                type="button"
+                                                onClick={() => {
+                                                  setChatScopeProjectId(project.id);
+                                                  setChatScopeFolderId(folder.id);
+                                                  setSelectedLibraryRuns([]);
+                                                  setMenuOpen(false);
+                                                }}
+                                                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${folderActive ? "bg-slate-100 text-slate-950 dark:bg-[#111111] dark:text-white" : "text-slate-600 hover:bg-slate-50 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a]"}`}
+                                              >
+                                                <FolderIcon className="h-4 w-4 flex-none" />
+                                                <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                                                {folderActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      ) : null}
+                                    </div>
                                   );
                                 })}
                               </div>
@@ -4223,11 +4274,11 @@ export default function ChatClient() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-[#ececec]">
-                  Add from library
+                  Add papers from repositories
                 </h2>
                 <p className="mt-1 text-sm text-slate-500 dark:text-[#8e8e8e]">
-                  Choose files from {currentProject?.name ?? "this repository"} only when you
-                  want to narrow chat below the whole repository.
+                  Choose papers from any repository in this account when you want to narrow
+                  this message to specific sources.
                 </p>
               </div>
               <button
@@ -4255,7 +4306,7 @@ export default function ChatClient() {
               {libraryLoading ? (
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                  <span>Loading library files...</span>
+                  <span>Loading repository files...</span>
                 </div>
               ) : filteredLibraryRuns.length === 0 ? (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">
@@ -4325,10 +4376,12 @@ export default function ChatClient() {
         </Modal>
       ) : null}
 
-      <AnalyzeFlowModal
-        open={showAnalyzeModal}
-        onClose={() => setShowAnalyzeModal(false)}
-        defaultFolder={activeFolderLabel === "Entire repository" ? "Repository" : activeFolderLabel}
+          <AnalyzeFlowModal
+            open={showAnalyzeModal}
+            onClose={() => setShowAnalyzeModal(false)}
+            defaultFolder={
+              activeKnowledgeScope.kind === "folder" ? activeFolderLabel : "Repository"
+            }
         title="Add files"
         eyebrow="Upload"
         onCreated={handleCreatedRuns}

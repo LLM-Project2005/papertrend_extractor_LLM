@@ -41,7 +41,7 @@ interface SearchPageItem {
 type SearchCategory =
   | "Actions"
   | "Pages"
-  | "Library"
+  | "Papers"
   | "Repositories"
   | "Folders"
   | "Docs";
@@ -60,7 +60,7 @@ interface SearchResult {
 const CATEGORY_ORDER: SearchCategory[] = [
   "Actions",
   "Pages",
-  "Library",
+  "Papers",
   "Repositories",
   "Folders",
   "Docs",
@@ -221,7 +221,7 @@ function scoreResult(result: SearchResult, query: string) {
   }
 
   if (result.category === "Actions") score += 5;
-  if (result.category === "Library") score += 3;
+  if (result.category === "Papers") score += 3;
 
   return score;
 }
@@ -367,8 +367,8 @@ export default function WorkspaceGlobalSearch({
       ...libraryRuns.map((run) => ({
         id: `run:${run.id}`,
         label: titleOf(run),
-        description: runDescription(run) || "Open this library file",
-        category: "Library" as const,
+        description: runDescription(run) || "Open this repository paper",
+        category: "Papers" as const,
         icon: run.status === "succeeded" ? PaperIcon : CloudIcon,
         featured: false,
         searchText: [

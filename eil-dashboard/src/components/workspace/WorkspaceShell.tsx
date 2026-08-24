@@ -55,7 +55,7 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     label: "Repository",
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
-      { href: "/workspace/library", label: "Library", icon: FolderIcon },
+      { href: "/workspace/library", label: "Repositories", icon: FolderIcon },
     ],
   },
   {
@@ -104,8 +104,8 @@ const SEARCH_PAGE_ITEMS = [
   },
   {
     id: "library",
-    label: "Library",
-    description: "Manage files, imports, and analyzed papers",
+    label: "Repositories",
+    description: "Browse account repositories, folders, and analyzed papers",
     href: "/workspace/library",
     icon: FolderIcon,
     keywords: ["papers", "files", "imports", "documents", "upload", "analyze paper", "search library", "paper detail"],
