@@ -75,11 +75,17 @@ export class CloudSqlIngestionRepository {
             `
               SELECT f.sha256, COALESCE(r.display_name, r.source_filename, f.source_filename) AS source_filename
               FROM public.file_fingerprints f
-              LEFT JOIN public.ingestion_runs r
+              JOIN public.ingestion_runs r
                 ON r.id = f.latest_run_id AND r.owner_user_id = f.owner_user_id
               WHERE f.owner_user_id = $1
                 AND f.sha256 = ANY($2::text[])
-                AND (r.id IS NULL OR r.status NOT IN ('failed', 'canceled'))
+                AND r.status = 'succeeded'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.paper_content pc
+                  WHERE pc.owner_user_id = f.owner_user_id
+                    AND pc.ingestion_run_id = r.id
+                )
             `,
             [input.ownerUserId, hashes]
           )
@@ -90,7 +96,13 @@ export class CloudSqlIngestionRepository {
           SELECT COALESCE(display_name, source_filename) AS source_filename
           FROM public.ingestion_runs
           WHERE owner_user_id = $1
-            AND status NOT IN ('failed', 'canceled')
+            AND status = 'succeeded'
+            AND EXISTS (
+              SELECT 1
+              FROM public.paper_content pc
+              WHERE pc.owner_user_id = ingestion_runs.owner_user_id
+                AND pc.ingestion_run_id = ingestion_runs.id
+            )
             AND EXISTS (
               SELECT 1
               FROM unnest($2::text[], $3::bigint[]) AS incoming(name, size)
@@ -106,7 +118,7 @@ export class CloudSqlIngestionRepository {
       ] as string[]);
       if (duplicateNames.size > 0) {
         throw new UploadPolicyError(
-          `Already in this account: ${Array.from(duplicateNames).slice(0, 5).join(", ")}. Remove the duplicate selection or restore the existing paper instead.`,
+          `Already analyzed in this account: ${Array.from(duplicateNames).slice(0, 5).join(", ")}. Remove the duplicate selection or restore the existing paper instead.`,
           409
         );
       }

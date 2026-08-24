@@ -36,6 +36,10 @@ test("Cloud SQL upload preparation serializes quota and duplicate checks", () =>
   assert.match(source, /MAX_PAPERS_PER_ACCOUNT/);
   assert.match(source, /file_fingerprints/);
   assert.match(source, /ON CONFLICT \(owner_user_id, sha256\)/);
+  assert.match(source, /r\.status = 'succeeded'/);
+  assert.match(source, /pc\.ingestion_run_id = r\.id/);
+  assert.match(source, /status = 'succeeded'/);
+  assert.doesNotMatch(source, /status NOT IN \('failed', 'canceled'\)/);
   assert.match(source, /The same PDF was selected more than once/);
 });
 
