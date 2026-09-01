@@ -46,6 +46,7 @@ import type {
   ResearchFolderRow,
   RunAnalysisDetail,
 } from "@/types/database";
+import { fingerprintFiles } from "@/lib/client-file-hash";
 
 type ViewMode = "list" | "grid";
 type TypeFilter = "all" | "folder" | "pdf" | "image" | "document" | "other";
@@ -246,7 +247,8 @@ function getFolderUploadName(files: File[]) {
   return "Uploaded folder";
 }
 
-const MAX_UPLOAD_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_UPLOAD_FILES = 50;
 
 async function readJsonPayload<T>(response: Response): Promise<T | null> {
   const text = await response.text();
@@ -445,6 +447,8 @@ export default function AdminImportClient() {
     currentProject,
     folders,
     allFolders,
+    allProjects,
+    setSelectedProjectId,
     selectedFolderId,
     setSelectedFolderId,
     createFolder,
@@ -453,6 +457,7 @@ export default function AdminImportClient() {
     startAnalysisSession,
   } = useWorkspaceProfile();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
+  const [libraryProjectId, setLibraryProjectId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -512,8 +517,16 @@ export default function AdminImportClient() {
   );
 
   const folderById = useMemo(
-    () => new Map(folders.map((folder) => [folder.id, folder])),
-    [folders]
+    () => new Map(allFolders.map((folder) => [folder.id, folder])),
+    [allFolders]
+  );
+  const libraryProject = useMemo(
+    () => allProjects.find((project) => project.id === libraryProjectId) ?? null,
+    [allProjects, libraryProjectId]
+  );
+  const projectFolders = useMemo(
+    () => allFolders.filter((folder) => folder.project_id === libraryProjectId),
+    [allFolders, libraryProjectId]
   );
   const succeededRunIds = useMemo(
     () =>
@@ -528,9 +541,29 @@ export default function AdminImportClient() {
   const activeFolder =
     selectedFolderId === "all" ? null : folderById.get(selectedFolderId) ?? null;
   const ownerInitial = (session?.user?.email?.charAt(0) ?? "M").toUpperCase();
+  const projectStats = useMemo(() => {
+    const stats = new Map<string, { folders: number; papers: number; latest: string | null }>();
+    for (const project of allProjects) {
+      stats.set(project.id, { folders: 0, papers: 0, latest: project.updated_at ?? project.created_at ?? null });
+    }
+    for (const folder of allFolders) {
+      const current = stats.get(folder.project_id ?? "");
+      if (current) current.folders += 1;
+    }
+    for (const run of runs) {
+      if (run.trashed_at || !run.folder_id) continue;
+      const projectId = folderById.get(run.folder_id)?.project_id;
+      const current = projectId ? stats.get(projectId) : null;
+      if (!current) continue;
+      current.papers += 1;
+      const updated = run.updated_at ?? run.created_at ?? null;
+      if (timeToMs(updated) > timeToMs(current.latest)) current.latest = updated;
+    }
+    return stats;
+  }, [allFolders, allProjects, folderById, runs]);
 
   async function loadRuns() {
-    if (!currentProject?.id || !session?.access_token) {
+    if (!session?.access_token) {
       setRuns([]);
       return;
     }
@@ -538,9 +571,7 @@ export default function AdminImportClient() {
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/workspace/library?projectId=${encodeURIComponent(
-          currentProject.id
-        )}&includeTrashed=${showTrash ? "true" : "false"}`,
+        `/api/workspace/library?includeTrashed=${showTrash ? "true" : "false"}`,
         { headers: requestHeaders }
       );
       const payload = (await response.json()) as {
@@ -565,10 +596,10 @@ export default function AdminImportClient() {
 
   useEffect(() => {
     void loadRuns();
-  }, [currentProject?.id, requestHeaders, session?.access_token, showTrash]);
+  }, [requestHeaders, session?.access_token, showTrash]);
 
   useEffect(() => {
-    if (!currentProject?.id || !session?.access_token) {
+    if (!session?.access_token) {
       return;
     }
 
@@ -577,7 +608,7 @@ export default function AdminImportClient() {
     }, 15000);
 
     return () => window.clearInterval(interval);
-  }, [currentProject?.id, requestHeaders, session?.access_token, showTrash]);
+  }, [requestHeaders, session?.access_token, showTrash]);
 
   useEffect(() => {
     if (
@@ -898,7 +929,7 @@ export default function AdminImportClient() {
 
   async function handleRestoreRun(run: IngestionRunRow) {
     await patchRun(run.id, { action: "restore" });
-    setMessage(`Restored "${titleOf(run)}" to the library.`);
+    setMessage(`Restored "${titleOf(run)}" to its repository.`);
   }
 
   async function queueUploads(selectedFiles: File[], mode: "files" | "folder") {
@@ -923,8 +954,8 @@ export default function AdminImportClient() {
       return;
     }
 
-    if (pdfFiles.length > 1) {
-      setError("For beta stability, upload one PDF at a time. Batch and folder uploads are temporarily disabled.");
+    if (pdfFiles.length > MAX_UPLOAD_FILES) {
+      setError(`Upload no more than ${MAX_UPLOAD_FILES} PDFs at once.`);
       return;
     }
 
@@ -935,7 +966,7 @@ export default function AdminImportClient() {
         .join(", ");
       const extra = oversizedFiles.length > 3 ? ` and ${oversizedFiles.length - 3} more` : "";
       setError(
-        `Each PDF must be 20 MB or smaller. Oversized file(s): ${names}${extra}.`
+        `Each PDF must be 10 MB or smaller. Oversized file(s): ${names}${extra}.`
       );
       return;
     }
@@ -945,6 +976,10 @@ export default function AdminImportClient() {
 
     setLoading(true);
     try {
+      setMessage(`Checking ${pdfFiles.length} file${pdfFiles.length === 1 ? "" : "s"} for duplicates...`);
+      const fingerprints = await fingerprintFiles(pdfFiles, (completed, total) => {
+        setMessage(`Checking files for duplicates (${completed}/${total})...`);
+      });
       const prepared = await fetch("/api/admin/import/prepare", {
         method: "POST",
         headers: {
@@ -958,9 +993,10 @@ export default function AdminImportClient() {
           files: pdfFiles.map((file, fileIndex) => ({
             fileIndex,
             name: file.name,
-            size: file.size,
-            type: file.type || "application/pdf",
-          })),
+              size: file.size,
+              type: file.type || "application/pdf",
+              sha256: fingerprints[fileIndex],
+            })),
         }),
       });
 
@@ -1110,8 +1146,8 @@ export default function AdminImportClient() {
       setMessage(
         mode === "folder"
           ? ignoredCount > 0
-            ? `Created Library folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-            : `Created Library folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
+            ? `Created repository folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+            : `Created repository folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
           : ignoredCount > 0
             ? `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"}.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
             : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis. You can track live progress on Home.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
@@ -1134,7 +1170,7 @@ export default function AdminImportClient() {
     const selectedFiles = Array.from(event.target.files ?? []).filter(Boolean);
     event.target.value = "";
     if (selectedFiles.length === 0) return;
-    void queueUploads(selectedFiles.slice(0, 1), "files");
+    void queueUploads(selectedFiles.slice(0, MAX_UPLOAD_FILES), "files");
   }
 
   async function handleRenameActiveFolder() {
@@ -1254,7 +1290,7 @@ export default function AdminImportClient() {
 
   const folderStats = useMemo(() => {
     const stats = new Map<string, { count: number; latest: string | null }>();
-    for (const folder of folders) {
+    for (const folder of projectFolders) {
       stats.set(folder.id, {
         count: 0,
         latest: folder.updated_at ?? folder.created_at ?? null,
@@ -1272,11 +1308,11 @@ export default function AdminImportClient() {
       stats.set(run.folder_id, current);
     }
     return stats;
-  }, [folders, runs]);
+  }, [projectFolders, runs]);
 
   const folderEntries = useMemo<LibraryEntry[]>(() => {
     if (selectedFolderId !== "all" || showTrash) return [];
-    return folders.map((folder) => {
+    return projectFolders.map((folder) => {
       const stats = folderStats.get(folder.id);
       const fileCount = stats?.count ?? 0;
       const modifiedAt = stats?.latest ?? folder.updated_at ?? folder.created_at ?? null;
@@ -1298,11 +1334,16 @@ export default function AdminImportClient() {
         folder,
       };
     });
-  }, [folderStats, folders, selectedFolderId, showTrash]);
+  }, [folderStats, projectFolders, selectedFolderId, showTrash]);
 
   const fileEntries = useMemo<LibraryEntry[]>(() => {
     return runs
       .filter((run) => {
+        const runProjectId = run.folder_id
+          ? folderById.get(run.folder_id)?.project_id ?? null
+          : null;
+        if (!libraryProjectId && !showTrash) return false;
+        if (libraryProjectId && runProjectId !== libraryProjectId) return false;
         if (showTrash) {
           if (selectedFolderId !== "all" && run.folder_id !== selectedFolderId) {
             return false;
@@ -1344,7 +1385,7 @@ export default function AdminImportClient() {
           run,
         };
       });
-  }, [folderById, runs, selectedFolderId, showTrash]);
+  }, [folderById, libraryProjectId, runs, selectedFolderId, showTrash]);
 
   const visibleEntries = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1850,7 +1891,7 @@ export default function AdminImportClient() {
             }}
             className={itemClass}
           >
-            Restore to library
+            Restore to repository
           </button>
         ) : (
           <button
@@ -1897,6 +1938,7 @@ export default function AdminImportClient() {
         ref={fileInputRef}
         type="file"
         accept=".pdf,application/pdf"
+        multiple
         className="hidden"
         onChange={handleFilePickerChange}
       />
@@ -1914,26 +1956,41 @@ export default function AdminImportClient() {
                     onClick={() => setSelectedFolderId("all")}
                     className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   >
-                    Library
+                    {libraryProject?.name ?? "Repository"}
                   </button>
                   <span>/</span>
                   <span className="font-medium text-slate-900 dark:text-white">
                     {activeFolder.name}
                   </span>
                 </>
+              ) : libraryProject ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLibraryProjectId(null);
+                      setSelectedFolderId("all");
+                    }}
+                    className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  >
+                    Repositories
+                  </button>
+                  <span>/</span>
+                  <span className="font-medium text-slate-900 dark:text-white">{libraryProject.name}</span>
+                </>
               ) : (
-                <span>Library</span>
+                <span>Repositories</span>
               )}
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-              {showTrash ? "Trash" : activeFolder?.name ?? "Library"}
+              {showTrash ? "Trash" : activeFolder?.name ?? libraryProject?.name ?? "Repositories"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
               {showTrash
-                ? "Review files moved out of the library and restore them when needed."
-                : `Browse folders and research files together inside ${
-                    currentProject?.name ?? "this project"
-                  } with a Library-style layout.`}
+                ? "Review files moved out of repositories and restore them when needed."
+                : libraryProject
+                  ? `Browse folders and analyzed papers inside ${libraryProject.name}.`
+                  : "Open a repository to browse its folders and analyzed papers."}
             </p>
             {activeFolder ? (
               <button
@@ -1951,7 +2008,13 @@ export default function AdminImportClient() {
           <div className="flex w-full max-w-2xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
             <button
               type="button"
-              onClick={(event) => openToolbarMenu(event, "new", 240)}
+              onClick={(event) => {
+                if (!libraryProject) {
+                  setMessage("Open a repository before adding folders or papers.");
+                  return;
+                }
+                openToolbarMenu(event, "new", 240);
+              }}
               className="inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-300 bg-[#e8f0fe] px-5 text-sm font-semibold text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition hover:border-slate-400 dark:border-[#1f1f1f] dark:bg-white dark:text-[#171717] dark:hover:border-[#3a3a3a] dark:hover:bg-[#f2f2f2]"
             >
               <PlusIcon className="h-4 w-4" />
@@ -1972,7 +2035,7 @@ export default function AdminImportClient() {
               }`}
             >
               <TrashIcon className="h-4 w-4" />
-              <span>{showTrash ? "Back to library" : "Trash"}</span>
+              <span>{showTrash ? "Back to repositories" : "Trash"}</span>
             </button>
 
             <label className="relative block min-w-0 flex-1">
@@ -1981,7 +2044,7 @@ export default function AdminImportClient() {
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search in Library"
+                placeholder={libraryProject ? `Search in ${libraryProject.name}` : "Search repositories"}
                 className="h-14 w-full rounded-[20px] border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-slate-900/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a] dark:focus:ring-[#242424]"
               />
             </label>
@@ -2092,7 +2155,7 @@ export default function AdminImportClient() {
                 onClick={() => setQueuedNotice(null)}
                 className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#b8b8b8]"
               >
-                Stay in Library
+                Stay in repositories
               </button>
               <button
                 type="button"
@@ -2110,6 +2173,7 @@ export default function AdminImportClient() {
         </Modal>
       ) : null}
 
+      {libraryProject || showTrash ? (
       <section className="app-surface overflow-visible">
         <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-5 dark:border-[#1f1f1f] sm:px-6">
           <div className="flex items-center justify-between gap-4">
@@ -2579,6 +2643,56 @@ export default function AdminImportClient() {
           </div>
         )}
       </section>
+      ) : (
+        <section className="app-surface overflow-hidden">
+          <div className="border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f]">
+            <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+              {allProjects.length} repositor{allProjects.length === 1 ? "y" : "ies"}
+            </p>
+            <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
+              Repositories are the top-level containers for this account.
+            </p>
+          </div>
+          {allProjects.length > 0 ? (
+            <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
+              {allProjects
+                .filter((project) => !query.trim() || project.name.toLowerCase().includes(query.trim().toLowerCase()))
+                .map((project) => {
+                  const stats = projectStats.get(project.id) ?? { folders: 0, papers: 0, latest: null };
+                  return (
+                    <button
+                      key={project.id}
+                      type="button"
+                      onClick={() => {
+                        setLibraryProjectId(project.id);
+                        setSelectedProjectId(project.id);
+                        setSelectedFolderId("all");
+                        setQuery("");
+                      }}
+                      className="group flex min-h-32 items-start gap-4 rounded-lg border border-slate-200 bg-white p-5 text-left transition-colors hover:border-slate-400 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+                    >
+                      <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">
+                        <DriveIcon className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">{project.name}</span>
+                        <span className="mt-2 block text-sm text-slate-500 dark:text-[#9c9c9c]">
+                          {stats.papers} paper{stats.papers === 1 ? "" : "s"} · {stats.folders} folder{stats.folders === 1 ? "" : "s"}
+                        </span>
+                        <span className="mt-3 block text-xs text-slate-400 dark:text-[#777777]">Updated {formatShortDate(stats.latest)}</span>
+                      </span>
+                      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-400 transition-transform group-hover:translate-x-0.5" />
+                    </button>
+                  );
+                })}
+            </div>
+          ) : (
+            <div className="px-6 py-16 text-center text-sm text-slate-500 dark:text-[#9c9c9c]">
+              Create a repository from the repository switcher to begin.
+            </div>
+          )}
+        </section>
+      )}
 
       <CreateEntityModal
         open={showFolderModal}

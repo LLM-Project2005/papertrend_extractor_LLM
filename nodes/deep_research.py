@@ -494,7 +494,7 @@ def _web_search_config() -> Tuple[str, str, str]:
         os.getenv("MODEL_TASK_RESEARCH_WEB")
         or os.getenv("MODEL_TASK_RESEARCH_SUBTASK")
         or os.getenv("MODEL_TASK_RESEARCH_PLANNING")
-        or "google/gemini-3.1-flash-lite"
+        or "google/gemini-3.7-flash"
     ).strip()
     return api_key, base_url, model
 

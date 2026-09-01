@@ -24,7 +24,6 @@ import { runRepositoryChat } from "@/lib/repository-chat";
 import {
   knowledgeScopeLabel,
   normalizeKnowledgeScope,
-  projectIdFromScopeMetadata,
   type KnowledgeScope,
   type KnowledgeScopeSnapshot,
 } from "@/lib/knowledge-scope";
@@ -40,9 +39,12 @@ import {
 import { triggerResearchQueue, triggerWorkerQueue } from "@/lib/worker-trigger";
 import {
   GuardError,
+  assertAiTokenBudget,
   assertAndRecordAiUsage,
+  persistAiTokenUsage,
   type AiUsageKind,
 } from "@/lib/security-guards";
+import { withAiTokenUsageTracking } from "@/lib/ai-token-usage";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
@@ -413,12 +415,10 @@ function resolveGenerationOptions(body: ChatRequestBody): ChatGenerationOptions 
   return options;
 }
 
-const DEFAULT_CHAT_MODEL = "google/gemini-3.1-flash-lite";
+const DEFAULT_CHAT_MODEL = "openai/gpt-5.6-luna-20260709";
 const TOOL_CAPABLE_CHAT_MODELS = [
-  "google/gemini-3.1-flash-lite",
-  "google/gemma-4-31b-it",
-  "openai/gpt-4.1-mini",
-  "openai/gpt-4o-mini",
+  "openai/gpt-5.6-luna-20260709",
+  "google/gemini-3.7-flash",
 ] as const;
 
 const WEB_SEARCH_INTENT_PATTERN =
@@ -3899,18 +3899,6 @@ async function normalChat(
   if (ownerUserId && chatRepository) {
     if (body.threadId) {
       existingThreadDetail = await chatRepository.getThreadDetail(ownerUserId, body.threadId);
-      const requestedProjectId = knowledgeScope.projectId?.trim();
-      if (requestedProjectId) {
-        const belongsToProject = existingThreadDetail.messages.some((message) =>
-          projectIdFromScopeMetadata(message.metadata) === requestedProjectId
-        );
-        if (!belongsToProject) {
-          return NextResponse.json(
-            { error: "This chat belongs to a different repository. Start a new chat in the current repository." },
-            { status: 409 }
-          );
-        }
-      }
       thread = existingThreadDetail.thread;
     } else {
       thread = await chatRepository.createThread({
@@ -4364,7 +4352,7 @@ async function normalChat(
   });
 }
 
-export async function POST(request: Request) {
+async function handlePost(request: Request) {
   try {
     const body = parseChatRequestBody(await request.json().catch(() => ({})));
     const user = await getAuthenticatedUserFromRequest(request);
@@ -4372,7 +4360,7 @@ export async function POST(request: Request) {
     const chatMode = body.chatMode ?? "normal";
     const action = body.action ?? (chatMode === "deep_research" ? "plan" : "message");
 
-    if (ownerUserId) {
+    if (ownerUserId && chatMode === "deep_research") {
       await assertAndRecordAiUsage(ownerUserId, usageKindForRequest(body), {
         chatMode,
         action,
@@ -4404,4 +4392,33 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+export async function POST(request: Request) {
+  const user = await getAuthenticatedUserFromRequest(request);
+  if (user?.id) {
+    try {
+      await assertAiTokenBudget(user.id);
+    } catch (error) {
+      if (error instanceof GuardError) {
+        return NextResponse.json({ error: error.message }, { status: error.status });
+      }
+      throw error;
+    }
+  }
+
+  return withAiTokenUsageTracking(async (usage) => {
+    try {
+      return await handlePost(request);
+    } finally {
+      if (user?.id && usage.totalTokens > 0) {
+        await persistAiTokenUsage(user.id, usage).catch((error) => {
+          console.error("chat_token_usage_persist_failed", {
+            ownerUserId: user.id,
+            message: error instanceof Error ? error.message : "unknown_error",
+          });
+        });
+      }
+    }
+  });
 }

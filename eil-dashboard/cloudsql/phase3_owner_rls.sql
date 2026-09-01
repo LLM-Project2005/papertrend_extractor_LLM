@@ -34,6 +34,8 @@ DECLARE
     'paper_analysis_facets',
     'paper_author_keywords',
     'paper_research_typologies',
+    'paper_category_definitions',
+    'paper_category_assignments',
     'workspace_threads',
     'workspace_messages',
     'deep_research_sessions',

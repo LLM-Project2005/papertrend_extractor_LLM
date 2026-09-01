@@ -1,25 +1,128 @@
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import type { IngestionRunRow } from "@/types/database";
+import { MAX_PAPERS_PER_ACCOUNT } from "@/lib/upload-safety";
 
 export type IngestionJobRow = Record<string, unknown> & { id: string };
+
+export class UploadPolicyError extends Error {
+  constructor(message: string, readonly status = 409) {
+    super(message);
+    this.name = "UploadPolicyError";
+  }
+}
 
 export class CloudSqlIngestionRepository {
   async createUploadBatch(input: {
     ownerUserId: string;
     folderId: string;
-    files: Array<{ name: string; size: number; type?: string | null }>;
+    files: Array<{ name: string; size: number; type?: string | null; sha256?: string | null }>;
     folderName: string;
     sourceKind: string;
     provider: string;
     model: string;
     analysisLabel: string;
+    analysisProfile?: unknown;
   }): Promise<{ folderJob: IngestionJobRow; runs: IngestionRunRow[] }> {
     return withCloudSqlOwnerTransaction(input.ownerUserId, async (client) => {
+      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+        `paper-upload:${input.ownerUserId}`,
+      ]);
+
       const folder = await client.query<{ id: string }>(
         `SELECT id FROM public.research_folders WHERE id = $1 AND owner_user_id = $2`,
         [input.folderId, input.ownerUserId]
       );
       if (!folder.rows[0]) throw new Error("Folder not found.");
+
+      const accountUsage = await client.query<{ count: string }>(
+        `
+          SELECT (
+            (SELECT count(*) FROM public.papers WHERE owner_user_id = $1) +
+            (SELECT count(*) FROM public.ingestion_runs
+             WHERE owner_user_id = $1
+               AND copied_from_run_id IS NULL
+               AND trashed_at IS NULL
+               AND status IN ('queued', 'processing')
+               AND NOT EXISTS (
+                 SELECT 1 FROM public.paper_content pc
+                 WHERE pc.owner_user_id = $1 AND pc.ingestion_run_id = ingestion_runs.id
+               ))
+          )::text AS count
+        `,
+        [input.ownerUserId]
+      );
+      const activePaperCount = Number(accountUsage.rows[0]?.count ?? 0);
+      if (activePaperCount + input.files.length > MAX_PAPERS_PER_ACCOUNT) {
+        const remaining = Math.max(0, MAX_PAPERS_PER_ACCOUNT - activePaperCount);
+        throw new UploadPolicyError(
+          `This account can store up to ${MAX_PAPERS_PER_ACCOUNT} papers. ${activePaperCount} are already active, so only ${remaining} more can be uploaded.`,
+          429
+        );
+      }
+
+      const hashes = input.files.map((file) => file.sha256?.toLowerCase()).filter(Boolean) as string[];
+      const repeatedHashes = hashes.filter((hash, index) => hashes.indexOf(hash) !== index);
+      if (repeatedHashes.length > 0) {
+        const repeatedNames = input.files
+          .filter((file) => repeatedHashes.includes(file.sha256?.toLowerCase() ?? ""))
+          .map((file) => file.name);
+        throw new UploadPolicyError(
+          `The same PDF was selected more than once: ${Array.from(new Set(repeatedNames)).join(", ")}.`,
+          409
+        );
+      }
+      const duplicateFingerprints = hashes.length > 0
+        ? await client.query<{ sha256: string; source_filename: string | null }>(
+            `
+              SELECT f.sha256, COALESCE(r.display_name, r.source_filename, f.source_filename) AS source_filename
+              FROM public.file_fingerprints f
+              JOIN public.ingestion_runs r
+                ON r.id = f.latest_run_id AND r.owner_user_id = f.owner_user_id
+              WHERE f.owner_user_id = $1
+                AND f.sha256 = ANY($2::text[])
+                AND r.status = 'succeeded'
+                AND EXISTS (
+                  SELECT 1
+                  FROM public.paper_content pc
+                  WHERE pc.owner_user_id = f.owner_user_id
+                    AND pc.ingestion_run_id = r.id
+                )
+            `,
+            [input.ownerUserId, hashes]
+          )
+        : { rows: [] as Array<{ sha256: string; source_filename: string | null }> };
+
+      const legacyDuplicates = await client.query<{ source_filename: string | null }>(
+        `
+          SELECT COALESCE(display_name, source_filename) AS source_filename
+          FROM public.ingestion_runs
+          WHERE owner_user_id = $1
+            AND status = 'succeeded'
+            AND EXISTS (
+              SELECT 1
+              FROM public.paper_content pc
+              WHERE pc.owner_user_id = ingestion_runs.owner_user_id
+                AND pc.ingestion_run_id = ingestion_runs.id
+            )
+            AND EXISTS (
+              SELECT 1
+              FROM unnest($2::text[], $3::bigint[]) AS incoming(name, size)
+              WHERE lower(COALESCE(ingestion_runs.source_filename, '')) = lower(incoming.name)
+                AND COALESCE(ingestion_runs.file_size_bytes, 0) = incoming.size
+            )
+        `,
+        [input.ownerUserId, input.files.map((file) => file.name), input.files.map((file) => file.size)]
+      );
+      const duplicateNames = new Set([
+        ...duplicateFingerprints.rows.map((row) => row.source_filename).filter(Boolean),
+        ...legacyDuplicates.rows.map((row) => row.source_filename).filter(Boolean),
+      ] as string[]);
+      if (duplicateNames.size > 0) {
+        throw new UploadPolicyError(
+          `Already analyzed in this account: ${Array.from(duplicateNames).slice(0, 5).join(", ")}. Remove the duplicate selection or restore the existing paper instead.`,
+          409
+        );
+      }
 
       const jobResult = await client.query<IngestionJobRow>(
         `
@@ -69,6 +172,7 @@ export class CloudSqlIngestionRepository {
               mime_type: file.type || "application/pdf",
               analysis_mode: "automatic",
               analysis_label: input.analysisLabel,
+              analysis_profile: input.analysisProfile ?? null,
               progress_stage: "uploading",
               progress_message: "Uploading",
               progress_detail: "Uploading file directly to storage before queueing analysis.",
@@ -77,6 +181,30 @@ export class CloudSqlIngestionRepository {
         );
         if (!result.rows[0]) throw new Error(`Failed to create run for ${file.name}`);
         runs.push(result.rows[0]);
+        if (file.sha256) {
+          await client.query(
+            `
+              INSERT INTO public.file_fingerprints (
+                owner_user_id, sha256, file_size_bytes, mime_type,
+                source_filename, latest_run_id, updated_at
+              ) VALUES ($1, $2, $3, $4, $5, $6, now())
+              ON CONFLICT (owner_user_id, sha256) DO UPDATE SET
+                file_size_bytes = EXCLUDED.file_size_bytes,
+                mime_type = EXCLUDED.mime_type,
+                source_filename = EXCLUDED.source_filename,
+                latest_run_id = EXCLUDED.latest_run_id,
+                updated_at = now()
+            `,
+            [
+              input.ownerUserId,
+              file.sha256.toLowerCase(),
+              file.size,
+              file.type || "application/pdf",
+              file.name,
+              result.rows[0].id,
+            ]
+          );
+        }
       }
       return { folderJob, runs };
     });

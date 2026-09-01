@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
   getAiDailyDeepResearchLimit,
   getAiDailyMessageLimit,
+  getAiDailyTokenLimit,
   getLoginRateLimitAttempts,
   getLoginRateLimitWindowSeconds,
   getDatabaseProvider,
@@ -129,6 +130,80 @@ export async function assertLoginRateLimit(request: Request, email: string): Pro
 }
 
 export type AiUsageKind = "chat_message" | "web_search" | "chart" | "deep_research";
+
+export async function assertAiTokenBudget(ownerUserId: string): Promise<number> {
+  const limit = getAiDailyTokenLimit();
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const since = today.toISOString();
+
+  if (getDatabaseProvider() === "cloud-sql") {
+    const used = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ units: string }>(
+        `SELECT COALESCE(sum(units), 0)::text AS units
+         FROM public.ai_usage_events
+         WHERE owner_user_id=$1 AND usage_kind='chat_message'
+           AND metadata->>'metric'='tokens' AND created_at >= $2`,
+        [ownerUserId, since]
+      );
+      return Number(result.rows[0]?.units ?? 0);
+    });
+    if (used >= limit) {
+      throw new GuardError(
+        `Daily chat token limit reached (${limit.toLocaleString()} tokens). Please try again tomorrow.`,
+        429
+      );
+    }
+    return Math.max(0, limit - used);
+  }
+
+  const { data, error } = await getSupabaseAdmin()
+    .from("ai_usage_events")
+    .select("units")
+    .eq("owner_user_id", ownerUserId)
+    .eq("usage_kind", "chat_message")
+    .contains("metadata", { metric: "tokens" })
+    .gte("created_at", since);
+  if (error) throw new Error(error.message);
+  const used = (data ?? []).reduce((total, row) => total + Number(row.units ?? 0), 0);
+  if (used >= limit) {
+    throw new GuardError(
+      `Daily chat token limit reached (${limit.toLocaleString()} tokens). Please try again tomorrow.`,
+      429
+    );
+  }
+  return Math.max(0, limit - used);
+}
+
+export async function persistAiTokenUsage(
+  ownerUserId: string,
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number; calls: number }
+): Promise<void> {
+  if (usage.totalTokens <= 0) return;
+  const metadata = {
+    metric: "tokens",
+    prompt_tokens: usage.promptTokens,
+    completion_tokens: usage.completionTokens,
+    model_calls: usage.calls,
+  };
+  if (getDatabaseProvider() === "cloud-sql") {
+    await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      await client.query(
+        `INSERT INTO public.ai_usage_events(owner_user_id,usage_kind,units,metadata)
+         VALUES($1,'chat_message',$2,$3)`,
+        [ownerUserId, usage.totalTokens, metadata]
+      );
+    });
+    return;
+  }
+  const { error } = await getSupabaseAdmin().from("ai_usage_events").insert({
+    owner_user_id: ownerUserId,
+    usage_kind: "chat_message",
+    units: usage.totalTokens,
+    metadata,
+  });
+  if (error) throw new Error(error.message);
+}
 
 export async function assertAndRecordAiUsage(
   ownerUserId: string,

@@ -2,7 +2,7 @@
    Mock-data generator — mirrors the Python generate_mock_data()
    ──────────────────────────────────────────────────────────────── */
 
-import { TrendRow, TrackRow, DashboardData } from "@/types/database";
+import { CategoryAssignmentRow, TrendRow, TrackRow, DashboardData } from "@/types/database";
 
 // ─── Simple seeded PRNG (mulberry32) ───────────────────────────
 class Rand {
@@ -192,6 +192,49 @@ export function generateMockData(): DashboardData {
     }
     return row;
   });
+  const categoryLabels: Record<"EL" | "ELI" | "LAE" | "Other", string> = {
+    EL: "Category 1",
+    ELI: "Category 2",
+    LAE: "Category 3",
+    Other: "Other / Unclassified",
+  };
+  const rowCategoryKeys = (row: TrackRow) =>
+    (["EL", "ELI", "LAE", "Other"] as const).filter((track) => {
+      const field = track.toLowerCase() as "el" | "eli" | "lae" | "other";
+      return row[field] === 1;
+    });
+  const categoryAssignments: CategoryAssignmentRow[] = [
+    ...tracksSingle.flatMap((row) =>
+      rowCategoryKeys(row).map((track, index) => ({
+        paper_id: row.paper_id,
+        folder_id: row.folder_id ?? null,
+        year: row.year,
+        title: row.title,
+        taxonomy_name: "Project categories",
+        category_key: track,
+        category_label: categoryLabels[track],
+        assignment_type: "single" as const,
+        is_other: track === "Other",
+        rationale: "Mock category assignment.",
+        position: index + 1,
+      }))
+    ),
+    ...tracksMulti.flatMap((row) =>
+      rowCategoryKeys(row).map((track, index) => ({
+        paper_id: row.paper_id,
+        folder_id: row.folder_id ?? null,
+        year: row.year,
+        title: row.title,
+        taxonomy_name: "Project categories",
+        category_key: track,
+        category_label: categoryLabels[track],
+        assignment_type: "multi" as const,
+        is_other: track === "Other",
+        rationale: "Mock category assignment.",
+        position: index + 1,
+      }))
+    ),
+  ];
 
   const topicMap = new Map<
     string,
@@ -244,5 +287,5 @@ export function generateMockData(): DashboardData {
     ),
   }));
 
-  return { trends, tracksSingle, tracksMulti, topicFamilies, useMock: true };
+  return { trends, tracksSingle, tracksMulti, categoryAssignments, topicFamilies, useMock: true };
 }

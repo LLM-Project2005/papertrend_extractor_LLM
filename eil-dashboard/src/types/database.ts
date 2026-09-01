@@ -45,10 +45,25 @@ export interface TrackRow {
   other: number;
 }
 
+export interface CategoryAssignmentRow {
+  paper_id: PaperId;
+  folder_id?: string | null;
+  year: string;
+  title: string;
+  taxonomy_name?: string | null;
+  category_key: string;
+  category_label: string;
+  assignment_type: "single" | "multi";
+  is_other?: boolean | null;
+  rationale?: string | null;
+  position?: number | null;
+}
+
 export interface DashboardData {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
+  categoryAssignments?: CategoryAssignmentRow[];
   topicFamilies?: CorpusTopicFamily[];
   useMock: boolean;
   diagnostics?: {

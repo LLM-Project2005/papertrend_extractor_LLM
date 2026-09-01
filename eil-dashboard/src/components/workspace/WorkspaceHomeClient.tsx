@@ -39,7 +39,7 @@ const AI_ACTIONS = [
   },
   {
     title: "Create a chart",
-    description: "Use Chart mode to visualize topics, keywords, years, or tracks.",
+    description: "Use Chart mode to visualize topics, keywords, years, or categories.",
     prompt: "Create the most useful chart from this repository.",
     icon: ChartIcon,
   },
@@ -793,14 +793,14 @@ export default function WorkspaceHomeClient() {
                 Operations
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
-                Recent library activity
+                Recent repository activity
               </h2>
             </div>
             <Link
               href="/workspace/library"
               className="text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
             >
-              Library
+              Repositories
             </Link>
           </div>
 
@@ -809,7 +809,7 @@ export default function WorkspaceHomeClient() {
               <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
                 <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#a1a1a1] border-t-transparent dark:border-[#8e8e8e]" />
                 <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
-                  Loading library activity
+                  Loading repository activity
                 </p>
               </div>
             ) : libraryError ? (
@@ -843,7 +843,7 @@ export default function WorkspaceHomeClient() {
               Review analytics
             </span>
             <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Trends, tracks, keywords
+              Trends, categories, keywords
             </span>
           </span>
           <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />

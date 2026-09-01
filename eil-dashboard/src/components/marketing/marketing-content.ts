@@ -47,7 +47,7 @@ export const marketingFeatures: MarketingFeature[] = [
     description:
       "Upload research papers and let Papertrend extract metadata, sections, keywords, topics, typologies, and confidence-backed year evidence in one guided flow.",
     homeSummary:
-      "Extract sections, metadata, keywords, topics, tracks, and evidence from messy research PDFs.",
+      "Extract sections, metadata, keywords, topics, categories, and evidence from messy research PDFs.",
     gradient: "from-[#007cf0] via-[#00dfd8] to-[#50e3c2]",
     icon: PaperIcon,
     heroPoints: ["PDF extraction", "keyword intelligence", "year evidence"],
@@ -77,15 +77,15 @@ export const marketingFeatures: MarketingFeature[] = [
     title: "A research dashboard that makes trends visible across the workspace.",
     eyebrow: "Insight Dashboard",
     description:
-      "Turn analyzed papers into searchable, filterable views of yearly movement, topics, keywords, research tracks, and workspace-wide coverage.",
+      "Turn analyzed papers into searchable, filterable views of yearly movement, topics, keywords, research categories, and workspace-wide coverage.",
     homeSummary:
-      "Explore trends, topics, tracks, and coverage across all analyzed papers in the workspace.",
+      "Explore trends, topics, categories, and coverage across all analyzed papers in the workspace.",
     gradient: "from-[#7928ca] via-[#ff0080] to-[#eb367f]",
     icon: ChartIcon,
     heroPoints: ["workspace-wide views", "trend charts", "filterable corpus"],
     proof: [
       { metric: "All", label: "workspace scope" },
-      { metric: "4", label: "track views" },
+      { metric: "4", label: "category views" },
       { metric: "Live", label: "library updates" },
     ],
     sections: [
@@ -93,7 +93,7 @@ export const marketingFeatures: MarketingFeature[] = [
         title: "Understand the shape of a corpus",
         copy:
           "The dashboard summarizes papers at the workspace level, so teams can see what topics dominate, which years are represented, and where research coverage is thin.",
-        bullets: ["Top topics and keywords", "Track distributions", "Year and coverage indicators"],
+        bullets: ["Top topics and keywords", "Category distributions", "Year and coverage indicators"],
       },
       {
         title: "Move from overview to detail",
@@ -177,7 +177,7 @@ export const workflowSteps = [
   },
   {
     title: "Analyze",
-    copy: "Extract sections, metadata, topics, keywords, evidence, and research tracks.",
+    copy: "Extract sections, metadata, topics, keywords, evidence, and research categories.",
     icon: SparkIcon,
   },
   {

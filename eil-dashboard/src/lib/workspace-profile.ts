@@ -1,4 +1,5 @@
 import type {
+  WorkspaceAnalysisCategory,
   WorkspaceGoal,
   WorkspaceOutput,
   WorkspaceProfile,
@@ -10,7 +11,12 @@ export const WORKSPACE_PROFILE_STORAGE_KEY = "papertrend_workspace_profile_v1";
 export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
   name: "Research Signal Lab",
   organization: "Faculty or department team",
-  domain: "Applied linguistics and education",
+  domain: "General academic research",
+  domainDefinition: "",
+  analysisContext: "",
+  categoryTaxonomyName: "Project categories",
+  categoryTaxonomyDefinition: "",
+  analysisCategories: [],
   goal: "trend-mapping",
   primarySource: "pdf-upload",
   desiredOutputs: ["dashboard", "chat", "paper-library"],
@@ -28,7 +34,7 @@ export const WORKSPACE_GOALS: Array<{
   {
     id: "trend-mapping",
     label: "Trend mapping",
-    description: "Surface themes, track shifts, and publication patterns over time.",
+    description: "Surface themes, category shifts, and publication patterns over time.",
   },
   {
     id: "corpus-chat",
@@ -93,7 +99,7 @@ export const WORKSPACE_OUTPUTS: Array<{
   {
     id: "dashboard",
     label: "Dashboard analytics",
-    description: "Monitor trends, topic clusters, and track-level patterns.",
+    description: "Monitor trends, topic clusters, and category-level patterns.",
   },
   {
     id: "chat",
@@ -103,11 +109,11 @@ export const WORKSPACE_OUTPUTS: Array<{
   {
     id: "paper-library",
     label: "Paper library",
-    description: "Browse titles, keywords, tracks, and detailed per-paper evidence.",
+    description: "Browse titles, keywords, categories, and detailed per-paper evidence.",
   },
   {
     id: "track-classification",
-    label: "Track classification",
+    label: "Category classification",
     description: "Keep single-label and multi-label categorization visible in the workspace.",
   },
   {
@@ -143,10 +149,77 @@ export function loadWorkspaceProfile(): WorkspaceProfile {
         parsed.desiredOutputs && parsed.desiredOutputs.length > 0
           ? parsed.desiredOutputs
           : DEFAULT_WORKSPACE_PROFILE.desiredOutputs,
+      analysisCategories: normalizeWorkspaceAnalysisCategories(parsed.analysisCategories),
     };
   } catch {
     return DEFAULT_WORKSPACE_PROFILE;
   }
+}
+
+export function normalizeWorkspaceAnalysisCategories(
+  categories: unknown,
+  limit = Number.POSITIVE_INFINITY
+): WorkspaceAnalysisCategory[] {
+  if (!Array.isArray(categories)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalized: WorkspaceAnalysisCategory[] = [];
+  for (const item of categories) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const row = item as Partial<WorkspaceAnalysisCategory>;
+    const label = String(row.label ?? "").trim().slice(0, 80);
+    if (!label) {
+      continue;
+    }
+    const key =
+      String(row.key ?? "")
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 40) || `category_${normalized.length + 1}`;
+    const uniqueKey = seen.has(key) ? `${key}_${normalized.length + 1}` : key;
+    seen.add(uniqueKey);
+    normalized.push({
+      key: uniqueKey,
+      label,
+      description: String(row.description ?? "").trim().slice(0, 600),
+    });
+    if (normalized.length >= limit) {
+      break;
+    }
+  }
+  return normalized;
+}
+
+export function createWorkspaceAnalysisCategoryDraft(index: number): WorkspaceAnalysisCategory {
+  const categoryNumber = Math.max(1, index + 1);
+  return {
+    key: `category_${categoryNumber}`,
+    label: "",
+    description: "",
+  };
+}
+
+export function normalizeWorkspaceAnalysisCategoryDrafts(
+  categories: WorkspaceAnalysisCategory[],
+  limit = Number.POSITIVE_INFINITY
+): WorkspaceAnalysisCategory[] {
+  return categories.slice(0, limit).map((category, index) => ({
+    key:
+      String(category.key || category.label || `category_${index + 1}`)
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "_")
+        .replace(/^_+|_+$/g, "")
+        .slice(0, 40) || `category_${index + 1}`,
+    label: String(category.label ?? "").slice(0, 80),
+    description: String(category.description ?? "").slice(0, 600),
+  }));
 }
 
 export function saveWorkspaceProfile(profile: WorkspaceProfile): void {

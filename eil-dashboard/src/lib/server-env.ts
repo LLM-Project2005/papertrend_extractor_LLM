@@ -108,6 +108,7 @@ export function getDatabaseUrl(): string {
 export function getAdminImportSecret(): string {
   return (
     process.env.ADMIN_IMPORT_SECRET ??
+    process.env.PAPERTREND_ADMIN_SECRET ??
     process.env.EIL_ADMIN_SECRET ??
     ""
   );
@@ -223,7 +224,11 @@ export function getAiDailyDeepResearchLimit(): number {
 }
 
 export function getMaxUploadBytes(): number {
-  return parseBoundedIntEnv("MAX_UPLOAD_BYTES", 25 * 1024 * 1024, 1024, 250 * 1024 * 1024);
+  return parseBoundedIntEnv("MAX_UPLOAD_BYTES", 10 * 1024 * 1024, 1024, 250 * 1024 * 1024);
+}
+
+export function getAiDailyTokenLimit(): number {
+  return parseBoundedIntEnv("AI_DAILY_TOKEN_LIMIT", 1_000_000, 1_000, 100_000_000);
 }
 
 export function getMaxPdfPages(): number {

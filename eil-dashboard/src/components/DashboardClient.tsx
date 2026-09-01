@@ -13,6 +13,8 @@ import Modal from "@/components/ui/Modal";
 import { ChartIcon, CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import { readCategoryLabelMap } from "@/lib/analysis-profile";
+import { buildCategoryOptions, normalizeCategoryKey } from "@/lib/category-options";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { DashboardData, DashboardDataMode, PaperId, TrackRow, TrendRow } from "@/types/database";
@@ -21,7 +23,7 @@ import type { NormalizedAnalyticsPayload, VisualizationPlan } from "@/types/visu
 const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
   { key: "trend_analysis", label: "Trend Analysis" },
-  { key: "track_analysis", label: "Track Analysis" },
+  { key: "track_analysis", label: "Category Analysis" },
   { key: "keyword_explorer", label: "Keyword Explorer" },
   { key: "adaptive", label: "Adaptive" },
 ] as const;
@@ -87,7 +89,15 @@ function normalizeTrackKey(value: string | null | undefined): TrackKey | null {
   ) ?? null;
 }
 
-function trackLabelsForRow(row: TrackRow | undefined): string[] {
+function normalizeDrilldownCategoryKey(value: string | null | undefined): string | null {
+  const cleaned = normalizeCategoryKey(String(value ?? ""));
+  return cleaned || normalizeTrackKey(value);
+}
+
+function trackLabelsForRow(
+  row: TrackRow | undefined,
+  categoryLabels: Record<TrackKey, string>
+): string[] {
   if (!row) {
     return [];
   }
@@ -95,7 +105,7 @@ function trackLabelsForRow(row: TrackRow | undefined): string[] {
   return TRACK_COLS.filter((track) => {
     const field = track.toLowerCase() as keyof TrackRow;
     return Number(row[field] ?? 0) > 0;
-  }).map((track) => `${track} - ${TRACK_NAMES[track as TrackKey]}`);
+  }).map((track) => categoryLabels[track as TrackKey] || TRACK_NAMES[track as TrackKey]);
 }
 
 function matchesTrack(row: TrackRow | undefined, track: TrackKey | null): boolean {
@@ -115,7 +125,7 @@ function buildDashboardDrilldownTitle(target: DashboardDrilldownTarget | null): 
   }
 
   const parts = [
-    target.track ? `Track: ${target.track}` : "",
+    target.track ? `Category: ${target.track}` : "",
     target.year ? `Year: ${target.year}` : "",
     target.keyword ? `Keyword: ${target.keyword}` : target.topic ? `Topic: ${target.topic}` : "",
   ].filter(Boolean);
@@ -149,6 +159,7 @@ function FilterPanel({
   onYearsChange,
   selectedTracks,
   onTracksChange,
+  categoryOptions,
   useMock,
   showHeader = true,
 }: {
@@ -161,6 +172,7 @@ function FilterPanel({
   onYearsChange: (years: string[]) => void;
   selectedTracks: string[];
   onTracksChange: (tracks: string[]) => void;
+  categoryOptions: ReturnType<typeof buildCategoryOptions>;
   useMock: boolean;
   showHeader?: boolean;
 }) {
@@ -175,9 +187,10 @@ function FilterPanel({
       onYearsChange={onYearsChange}
       selectedTracks={selectedTracks}
       onTracksChange={onTracksChange}
+      categoryOptions={categoryOptions}
       useMock={useMock}
       title="Analytics filters"
-      description="Choose folders, years, and tracks before reading the dashboard."
+      description="Choose folders, years, and categories before reading the dashboard."
       showHeader={showHeader}
     />
   );
@@ -193,6 +206,7 @@ export default function DashboardClient({
   const {
     selectedFolderId,
     selectedProjectId,
+    profile,
     folders,
     selectedYears,
     setSelectedYears,
@@ -202,6 +216,7 @@ export default function DashboardClient({
     setSearchQuery,
   } = useWorkspaceProfile();
   const { session } = useAuth();
+  const categoryLabels = useMemo(() => readCategoryLabelMap(profile), [profile]);
 
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const routeSelectedFolderIds = useMemo(
@@ -231,6 +246,10 @@ export default function DashboardClient({
       enabled: Boolean(selectedProjectId),
       refetchOnWindowFocus: false,
     }
+  );
+  const categoryOptions = useMemo(
+    () => buildCategoryOptions(data, profile, categoryLabels),
+    [categoryLabels, data, profile]
   );
   const [filterOpen, setFilterOpen] = useState(false);
   const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
@@ -368,7 +387,13 @@ export default function DashboardClient({
 
   const filteredData = useMemo(() => {
     if (!data) {
-      return { trends: [], tracksSingle: [], tracksMulti: [], topicFamilies: [] };
+      return {
+        trends: [],
+        tracksSingle: [],
+        tracksMulti: [],
+        categoryAssignments: [],
+        topicFamilies: [],
+      };
     }
 
     return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
@@ -382,8 +407,19 @@ export default function DashboardClient({
     const explicitPaperIds = new Set((drilldownTarget.paperIds ?? []).filter(Boolean));
     const hasExplicitPaperIds = explicitPaperIds.size > 0;
     const track = normalizeTrackKey(drilldownTarget.track);
+    const categoryKey = normalizeDrilldownCategoryKey(drilldownTarget.track);
+    const categoryLabelByKey = new Map(
+      categoryOptions.map((category) => [category.key, category.label])
+    );
     const singleByPaper = new Map(filteredData.tracksSingle.map((row) => [row.paper_id, row]));
     const multiByPaper = new Map(filteredData.tracksMulti.map((row) => [row.paper_id, row]));
+    const categoryRowsByPaper = (filteredData.categoryAssignments ?? []).reduce<
+      Record<string, NonNullable<typeof filteredData.categoryAssignments>>
+    >((accumulator, row) => {
+      (accumulator[row.paper_id] ??= []).push(row);
+      return accumulator;
+    }, {});
+    const hasDynamicCategories = (filteredData.categoryAssignments ?? []).length > 0;
     const trendsByPaper = filteredData.trends.reduce<Record<string, TrendRow[]>>(
       (accumulator, row) => {
         (accumulator[row.paper_id] ??= []).push(row);
@@ -396,6 +432,7 @@ export default function DashboardClient({
       ...filteredData.trends.map((row) => row.paper_id),
       ...filteredData.tracksSingle.map((row) => row.paper_id),
       ...filteredData.tracksMulti.map((row) => row.paper_id),
+      ...(filteredData.categoryAssignments ?? []).map((row) => row.paper_id),
     ]);
 
     return [...paperIds]
@@ -416,8 +453,17 @@ export default function DashboardClient({
           return [];
         }
 
+        const categoryRows = categoryRowsByPaper[paperId] ?? [];
+        const matchesDynamicCategory =
+          !categoryKey ||
+          categoryRows.some((row) => normalizeCategoryKey(row.category_key) === categoryKey);
+
+        if (categoryKey && hasDynamicCategories && !matchesDynamicCategory) {
+          return [];
+        }
         if (
           track &&
+          !hasDynamicCategories &&
           !matchesTrack(singleTrack, track) &&
           !matchesTrack(multiTrack, track)
         ) {
@@ -455,7 +501,23 @@ export default function DashboardClient({
             year: representative.year || "Unknown year",
             topics: [...new Set(trendRows.map((row) => row.topic).filter(Boolean))].slice(0, 6),
             keywords: [...new Set(trendRows.map((row) => row.keyword).filter(Boolean))].slice(0, 8),
-            tracks: [...new Set([...trackLabelsForRow(singleTrack), ...trackLabelsForRow(multiTrack)])],
+            tracks:
+              categoryRows.length > 0
+                ? [
+                    ...new Set(
+                      categoryRows.map(
+                        (row) =>
+                          categoryLabelByKey.get(normalizeCategoryKey(row.category_key)) ||
+                          row.category_label
+                      )
+                    ),
+                  ]
+                : [
+                    ...new Set([
+                      ...trackLabelsForRow(singleTrack, categoryLabels),
+                      ...trackLabelsForRow(multiTrack, categoryLabels),
+                    ]),
+                  ],
             evidence: matchingEvidence,
           },
         ];
@@ -465,7 +527,12 @@ export default function DashboardClient({
           String(right.year).localeCompare(String(left.year)) ||
           left.title.localeCompare(right.title)
       );
-  }, [drilldownTarget, filteredData.tracksMulti, filteredData.tracksSingle, filteredData.trends]);
+  }, [
+    categoryLabels,
+    categoryOptions,
+    drilldownTarget,
+    filteredData,
+  ]);
 
   const adaptivePlanSignature = useMemo(() => {
     if (!data || !isAdaptiveTab) {
@@ -474,6 +541,10 @@ export default function DashboardClient({
 
     const sampledTrends = filteredData.trends.slice(0, ADAPTIVE_SIGNATURE_SAMPLE_SIZE);
     const sampledTracksSingle = filteredData.tracksSingle.slice(
+      0,
+      ADAPTIVE_SIGNATURE_SAMPLE_SIZE
+    );
+    const sampledCategoryAssignments = (filteredData.categoryAssignments ?? []).slice(
       0,
       ADAPTIVE_SIGNATURE_SAMPLE_SIZE
     );
@@ -489,6 +560,7 @@ export default function DashboardClient({
       searchQuery: searchQuery.trim(),
       trendRowCount: filteredData.trends.length,
       tracksSingleRowCount: filteredData.tracksSingle.length,
+      categoryAssignmentRowCount: filteredData.categoryAssignments?.length ?? 0,
       topicFamilyCount: filteredData.topicFamilies?.length ?? 0,
       trendRows: sampledTrends.map((row) => ({
         paper_id: row.paper_id,
@@ -513,9 +585,17 @@ export default function DashboardClient({
         lae: row.lae,
         other: row.other,
       })),
+      categoryAssignments: sampledCategoryAssignments.map((row) => ({
+        paper_id: row.paper_id,
+        year: row.year,
+        category_key: row.category_key,
+        category_label: row.category_label,
+        assignment_type: row.assignment_type,
+      })),
     });
   }, [
     data,
+    filteredData.categoryAssignments,
     filteredData.topicFamilies,
     filteredData.tracksSingle,
     filteredData.trends,
@@ -655,7 +735,7 @@ export default function DashboardClient({
                 : `${selectedYears.length} year${selectedYears.length === 1 ? "" : "s"}`}
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
-              {selectedTracks.length} track{selectedTracks.length === 1 ? "" : "s"}
+              {selectedTracks.length} categor{selectedTracks.length === 1 ? "y" : "ies"}
             </span>
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#bdbdbd]">
               <span className="text-xs font-medium uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
@@ -812,6 +892,7 @@ export default function DashboardClient({
                   onYearsChange={setSelectedYears}
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
+                  categoryOptions={categoryOptions}
                   useMock={data?.useMock ?? true}
                   showHeader={false}
                 />
@@ -991,6 +1072,7 @@ export default function DashboardClient({
                   onYearsChange={setSelectedYears}
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
+                  categoryOptions={categoryOptions}
                   useMock={data?.useMock ?? true}
                   showHeader={false}
                 />
@@ -1005,7 +1087,10 @@ export default function DashboardClient({
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
+              categoryAssignments={filteredData.categoryAssignments}
+              categoryOptions={categoryOptions}
               selectedTracks={selectedTracks}
+              categoryLabels={categoryLabels}
               useMock={data?.useMock ?? true}
               onDrilldown={openPaperDrilldown}
             />
@@ -1021,7 +1106,10 @@ export default function DashboardClient({
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
               tracksMulti={filteredData.tracksMulti}
+              categoryAssignments={filteredData.categoryAssignments}
+              categoryOptions={categoryOptions}
               selectedTracks={selectedTracks}
+              categoryLabels={categoryLabels}
               onDrilldown={openPaperDrilldown}
             />
           ) : null}
@@ -1053,7 +1141,7 @@ export default function DashboardClient({
                   Build charts for this research scope
                 </h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                  The agent will inspect the selected folders, years, tracks, and search query, then call the chart builder with only statistically usable views.
+                  The agent will inspect the selected folders, years, categories, and search query, then call the chart builder with only statistically usable views.
                 </p>
                 <button
                   type="button"

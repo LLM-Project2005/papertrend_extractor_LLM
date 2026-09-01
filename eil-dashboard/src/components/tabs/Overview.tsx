@@ -15,14 +15,18 @@ import {
 import MetricCard from "@/components/MetricCard";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
-import type { PaperId, TrendRow, TrackRow } from "@/types/database";
+import { normalizeCategoryKey, type CategoryOption } from "@/lib/category-options";
+import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationChartKey } from "@/types/visualization";
 
 interface Props {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
   tracksMulti: TrackRow[];
+  categoryAssignments?: CategoryAssignmentRow[];
+  categoryOptions?: CategoryOption[];
   selectedTracks: string[];
+  categoryLabels?: Record<TrackKey, string>;
   useMock: boolean;
   visibleCharts?: VisualizationChartKey[];
   onDrilldown?: (target: {
@@ -37,7 +41,10 @@ export default function Overview({
   trends,
   tracksSingle,
   tracksMulti,
+  categoryAssignments = [],
+  categoryOptions = [],
   selectedTracks,
+  categoryLabels,
   useMock,
   visibleCharts,
   onDrilldown,
@@ -48,6 +55,7 @@ export default function Overview({
     ...trends.map((row) => row.paper_id),
     ...tracksSingle.map((row) => row.paper_id),
     ...tracksMulti.map((row) => row.paper_id),
+    ...categoryAssignments.map((row) => row.paper_id),
   ]).size;
   const nTopics = new Set(trends.map((row) => row.topic)).size;
   const nKeywords = new Set(trends.map((row) => row.keyword)).size;
@@ -56,13 +64,14 @@ export default function Overview({
       ...trends.map((row) => row.year),
       ...tracksSingle.map((row) => row.year),
       ...tracksMulti.map((row) => row.year),
+      ...categoryAssignments.map((row) => row.year),
     ]),
   ].sort();
   const yearSpan =
     years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data";
 
   const papersByYear = Object.entries(
-    [...trends, ...tracksSingle, ...tracksMulti].reduce<Record<string, Set<PaperId>>>(
+    [...trends, ...tracksSingle, ...tracksMulti, ...categoryAssignments].reduce<Record<string, Set<PaperId>>>(
       (accumulator, row) => {
         (accumulator[row.year] ??= new Set()).add(row.paper_id);
         return accumulator;
@@ -73,17 +82,51 @@ export default function Overview({
     .map(([year, ids]) => ({ year, papers: ids.size }))
     .sort((left, right) => left.year.localeCompare(right.year));
 
-  const buildDonut = (rows: TrackRow[]) =>
+  const buildDynamicDonut = (assignmentType: "single" | "multi") => {
+    const optionKeys = new Set(categoryOptions.map((category) => category.key));
+    const selectedKeys = selectedTracks
+      .map((track) => normalizeCategoryKey(track))
+      .filter((track) => optionKeys.has(track));
+    const activeKeys = new Set(selectedKeys.length > 0 ? selectedKeys : [...optionKeys]);
+    const papersByCategory = new Map<string, Set<PaperId>>();
+
+    categoryAssignments
+      .filter(
+        (row) =>
+          row.assignment_type === assignmentType &&
+          activeKeys.has(normalizeCategoryKey(row.category_key))
+      )
+      .forEach((row) => {
+        const key = normalizeCategoryKey(row.category_key);
+        const set = papersByCategory.get(key) ?? new Set<PaperId>();
+        set.add(row.paper_id);
+        papersByCategory.set(key, set);
+      });
+
+    return categoryOptions
+      .filter((category) => activeKeys.has(category.key))
+      .map((category) => ({
+        key: category.key,
+        name: category.label,
+        value: papersByCategory.get(category.key)?.size ?? 0,
+        color: category.color,
+      }));
+  };
+
+  const buildLegacyDonut = (rows: TrackRow[]) =>
     TRACK_COLS.filter((track) => selectedTracks.includes(track)).map((track) => ({
-      name: track,
+      key: track,
+      name: categoryLabels?.[track as TrackKey] || track,
       value: rows.reduce(
         (sum, row) => sum + (row[track.toLowerCase() as keyof TrackRow] as number),
         0
       ),
+      color: TRACK_COLORS[track as TrackKey],
     }));
 
-  const donutSingle = buildDonut(tracksSingle);
-  const donutMulti = buildDonut(tracksMulti);
+  const hasDynamicCategories = categoryAssignments.length > 0;
+  const donutSingle = hasDynamicCategories ? buildDynamicDonut("single") : buildLegacyDonut(tracksSingle);
+  const donutMulti = hasDynamicCategories ? buildDynamicDonut("multi") : buildLegacyDonut(tracksMulti);
   const chartGrid = isDark ? "#3f3f46" : "#d7dee8";
   const chartAxis = isDark ? "#a3a3a3" : "#7c8aa0";
   const barFill = isDark ? "#d4a574" : "#334155";
@@ -124,7 +167,7 @@ export default function Overview({
   function renderTrackBreakdown(
     title: string,
     subtitle: string,
-    items: { name: string; value: number }[]
+    items: { key: string; name: string; value: number; color: string }[]
   ) {
     const total = items.reduce((sum, item) => sum + item.value, 0);
 
@@ -150,14 +193,14 @@ export default function Overview({
                     paddingAngle={2}
                     stroke={isDark ? "#1f1f1f" : "#ffffff"}
                     onClick={(entry) => {
-                      if (entry && "name" in entry) {
-                        onDrilldown?.({ track: String(entry.name) });
+                      if (entry && "key" in entry) {
+                        onDrilldown?.({ track: String(entry.key) });
                       }
                     }}
                     className={onDrilldown ? "cursor-pointer" : undefined}
                   >
                     {items.map((item) => (
-                      <Cell key={item.name} fill={TRACK_COLORS[item.name as TrackKey]} />
+                      <Cell key={item.key} fill={item.color} />
                     ))}
                   </Pie>
                   <Tooltip {...tooltipTheme} />
@@ -171,16 +214,16 @@ export default function Overview({
               const share = total > 0 ? Math.round((item.value / total) * 100) : 0;
               return (
                 <button
-                  key={item.name}
+                  key={item.key}
                   type="button"
-                  onClick={() => onDrilldown?.({ track: item.name })}
+                  onClick={() => onDrilldown?.({ track: item.key })}
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                 >
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
                       <span
                         className="h-3 w-3 rounded-full"
-                        style={{ backgroundColor: TRACK_COLORS[item.name as TrackKey] }}
+                        style={{ backgroundColor: item.color }}
                       />
                       <span className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
                         {item.name}
@@ -200,7 +243,7 @@ export default function Overview({
                       className="h-full rounded-full"
                       style={{
                         width: `${Math.max(share, item.value > 0 ? 8 : 0)}%`,
-                        backgroundColor: TRACK_COLORS[item.name as TrackKey],
+                        backgroundColor: item.color,
                       }}
                     />
                   </div>
@@ -260,7 +303,7 @@ export default function Overview({
       return (
         <div key={chartKey}>
           {renderTrackBreakdown(
-            "Track distribution",
+            "Category distribution",
             "Single-label assignments",
             donutSingle
           )}
@@ -272,7 +315,7 @@ export default function Overview({
       return (
         <div key={chartKey}>
           {renderTrackBreakdown(
-            "Track overlap",
+            "Category overlap",
             "Multi-label assignments",
             donutMulti
           )}
@@ -290,7 +333,7 @@ export default function Overview({
           Overview
         </h2>
         <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-          A quick read on corpus coverage, publication volume, and track balance.
+          A quick read on corpus coverage, publication volume, and category balance.
         </p>
         {useMock && (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">

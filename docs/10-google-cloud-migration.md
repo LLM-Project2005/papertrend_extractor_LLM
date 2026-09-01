@@ -699,12 +699,13 @@ callback cannot leave queued papers stuck forever.
 - Scheduler job: `papertrend-process-queue-staging`
 - Region: `asia-southeast1`
 - Schedule: every 5 minutes during staging, Asia/Bangkok time
-- Target: `POST <Cloud Run staging URL>/process-queue`
+- Target: `POST https://papertrend-worker-cloudsql-pilot-javhavgdsq-as.a.run.app/process-queue`
 - Body: `{"async":true,"maxRuns":1,"reason":"cloud-scheduler-staging"}`
-- Auth: `Authorization: Bearer <WORKER_WEBHOOK_SECRET>`
+- Auth: OIDC with `papertrend-worker-trigger@research-trend-analysis.iam.gserviceaccount.com`
+- OIDC audience: `https://papertrend-worker-cloudsql-pilot-javhavgdsq-as.a.run.app`
 
 This works together with `NODE_SERVICE_ASYNC_MAX_RUNS=1`: each trigger starts at
-most one queued paper, then the next minute's trigger picks up the next queued
+most one queued paper, then the next five-minute trigger picks up the next queued
 paper. If a paper is already processing, the worker lock prevents duplicate
 processing.
 

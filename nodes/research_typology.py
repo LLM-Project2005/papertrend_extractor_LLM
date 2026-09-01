@@ -3,7 +3,7 @@ import re
 from typing import Any, Dict, Optional, Tuple
 
 from nodes import ModelTask, get_task_llm
-from nodes.common import load_prompt, normalize_whitespace
+from nodes.common import load_prompt, normalize_analysis_profile, normalize_whitespace
 from state import IngestionState, ResearchTypologySchema
 
 
@@ -174,7 +174,11 @@ def classify_research_typology_node(state: IngestionState) -> Dict[str, Any]:
             for topic in state.get("final_labeled_topics") or []
         ]
     )
+    analysis_profile = normalize_analysis_profile(state.get("input_payload") or {})
     prompt = load_prompt("research_typology_classifier.txt").format(
+        analysis_domain=analysis_profile.get("domain", "General academic research"),
+        domain_definition=analysis_profile.get("domain_definition") or "No research domain definition supplied.",
+        additional_context=analysis_profile.get("additional_context") or "No additional project context supplied.",
         title=sections.get("title", ""),
         abstract_claims=str(sections.get("abstract_claims", ""))[:5000],
         methods=str(sections.get("methods", ""))[:3500],

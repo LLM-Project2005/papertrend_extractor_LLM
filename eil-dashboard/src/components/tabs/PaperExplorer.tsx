@@ -1,14 +1,18 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { TRACK_COLS } from "@/lib/constants";
+import { TRACK_COLS, type TrackKey } from "@/lib/constants";
+import { normalizeCategoryKey, type CategoryOption } from "@/lib/category-options";
 import { CloseIcon, PaperIcon } from "@/components/ui/Icons";
 import Modal from "@/components/ui/Modal";
-import type { PaperId, TrendRow, TrackRow } from "@/types/database";
+import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 
 interface Props {
   trends: TrendRow[];
   tracksSingle: TrackRow[];
+  categoryAssignments?: CategoryAssignmentRow[];
+  categoryOptions?: CategoryOption[];
+  categoryLabels?: Record<TrackKey, string>;
   linkedPaperId?: string | null;
 }
 
@@ -18,6 +22,9 @@ const trackField = (track: string) =>
 export default function PaperExplorer({
   trends,
   tracksSingle,
+  categoryAssignments = [],
+  categoryOptions = [],
+  categoryLabels,
   linkedPaperId = null,
 }: Props) {
   const [selectedPaperId, setSelectedPaperId] = useState<PaperId | null>(null);
@@ -33,6 +40,9 @@ export default function PaperExplorer({
         keywords: Set<string>;
       }
     > = {};
+    const categoryLabelByKey = new Map(
+      categoryOptions.map((category) => [category.key, category.label])
+    );
 
     trends.forEach((row) => {
       const paper = (map[row.paper_id] ??= {
@@ -45,8 +55,29 @@ export default function PaperExplorer({
       paper.topics.add(row.topic);
       paper.keywords.add(row.keyword);
     });
+    categoryAssignments.forEach((row) => {
+      map[row.paper_id] ??= {
+        paper_id: row.paper_id,
+        year: row.year,
+        title: row.title,
+        topics: new Set(),
+        keywords: new Set(),
+      };
+    });
 
     const trackMap = new Map(tracksSingle.map((row) => [row.paper_id, row]));
+    const categoriesByPaper = categoryAssignments.reduce<Record<string, string[]>>(
+      (accumulator, row) => {
+        const label =
+          categoryLabelByKey.get(normalizeCategoryKey(row.category_key)) ||
+          row.category_label;
+        if (!accumulator[row.paper_id]?.includes(label)) {
+          (accumulator[row.paper_id] ??= []).push(label);
+        }
+        return accumulator;
+      },
+      {}
+    );
 
     return Object.values(map)
       .map((paper) => {
@@ -54,6 +85,7 @@ export default function PaperExplorer({
         const tracks = trackRow
           ? TRACK_COLS.filter((track) => trackRow[trackField(track)] === 1)
           : [];
+        const dynamicLabels = categoriesByPaper[paper.paper_id] ?? [];
 
         return {
           paper_id: paper.paper_id,
@@ -61,11 +93,14 @@ export default function PaperExplorer({
           title: paper.title,
           topics: [...paper.topics],
           keywords: [...paper.keywords],
-          trackLabels: tracks,
+          trackLabels:
+            dynamicLabels.length > 0
+              ? dynamicLabels
+              : tracks.map((track) => categoryLabels?.[track as TrackKey] || track),
         };
       })
       .sort((left, right) => right.year.localeCompare(left.year));
-  }, [tracksSingle, trends]);
+  }, [categoryAssignments, categoryLabels, categoryOptions, tracksSingle, trends]);
 
   const detail = useMemo(() => {
     if (selectedPaperId === null) {
@@ -73,7 +108,9 @@ export default function PaperExplorer({
     }
 
     const rows = trends.filter((row) => row.paper_id === selectedPaperId);
-    if (rows.length === 0) {
+    const categoryRows = categoryAssignments.filter((row) => row.paper_id === selectedPaperId);
+    const representative = rows[0] ?? categoryRows[0];
+    if (!representative) {
       return null;
     }
 
@@ -82,10 +119,26 @@ export default function PaperExplorer({
       ? TRACK_COLS.filter((track) => trackRow[trackField(track)] === 1)
       : [];
 
+    const categoryLabelByKey = new Map(
+      categoryOptions.map((category) => [category.key, category.label])
+    );
+    const dynamicLabels = [
+      ...new Set(
+        categoryRows.map(
+          (row) =>
+            categoryLabelByKey.get(normalizeCategoryKey(row.category_key)) ||
+            row.category_label
+        )
+      ),
+    ];
+
     return {
-      title: rows[0].title,
-      year: rows[0].year,
-      tracks,
+      title: representative.title,
+      year: representative.year,
+      tracks:
+        dynamicLabels.length > 0
+          ? dynamicLabels
+          : tracks.map((track) => categoryLabels?.[track as TrackKey] || track),
       keywords: rows.map((row) => ({
         keyword: row.keyword,
         frequency: row.keyword_frequency,
@@ -93,7 +146,7 @@ export default function PaperExplorer({
         evidence: row.evidence,
       })),
     };
-  }, [selectedPaperId, tracksSingle, trends]);
+  }, [categoryAssignments, categoryLabels, categoryOptions, selectedPaperId, tracksSingle, trends]);
 
   useEffect(() => {
     if (linkedPaperId === null) {
@@ -105,7 +158,7 @@ export default function PaperExplorer({
     }
   }, [linkedPaperId, papers]);
 
-  if (trends.length === 0) {
+  if (papers.length === 0) {
     return (
       <div className="app-surface px-5 py-5">
         <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">

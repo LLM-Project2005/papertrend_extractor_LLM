@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 from typing import Any, Dict, List, Sequence
 
 from nodes.common import (
@@ -9,6 +10,104 @@ from nodes.common import (
 )
 from nodes.year_resolver import normalize_publication_year
 from state import IngestionState
+
+OTHER_CATEGORY_KEY = "other"
+OTHER_CATEGORY_LABEL = "Other / Unclassified"
+
+
+def _clean_category_key(value: Any) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")[:80]
+
+
+def _build_category_rows(
+    paper_id: int,
+    owner_user_id: str | None,
+    folder_id: str | None,
+    classification: Dict[str, Any],
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    taxonomy_name = str(classification.get("taxonomy_name") or "Project categories")[:120]
+    taxonomy_definition = str(classification.get("taxonomy_definition") or "")[:1200]
+    domain = str(classification.get("domain") or "General academic research")[:160]
+    domain_definition = str(classification.get("domain_definition") or "")[:1200]
+    categories = [
+        category
+        for category in (classification.get("categories") or [])
+        if isinstance(category, dict) and category.get("key") and category.get("label")
+    ]
+    label_by_key = {
+        str(category.get("key")): str(category.get("label") or "")[:120]
+        for category in categories
+    }
+    label_to_key = {
+        _clean_category_key(category.get("label")): str(category.get("key"))
+        for category in categories
+    }
+    label_by_key[OTHER_CATEGORY_KEY] = OTHER_CATEGORY_LABEL
+
+    definition_rows = [
+        {
+            "paper_id": paper_id,
+            "owner_user_id": owner_user_id,
+            "folder_id": folder_id,
+            "taxonomy_name": taxonomy_name,
+            "taxonomy_definition": taxonomy_definition,
+            "domain": domain,
+            "domain_definition": domain_definition,
+            "category_key": str(category.get("key"))[:80],
+            "category_label": str(category.get("label") or "")[:120],
+            "category_description": str(category.get("description") or "")[:1200],
+            "position": index,
+        }
+        for index, category in enumerate(categories, start=1)
+    ]
+
+    def normalize_key(value: Any) -> str:
+        key = str(value or "").strip()
+        if key in label_by_key:
+            return key
+        cleaned = _clean_category_key(key)
+        if cleaned == OTHER_CATEGORY_KEY:
+            return OTHER_CATEGORY_KEY
+        return label_to_key.get(cleaned) or (cleaned if cleaned in label_by_key else OTHER_CATEGORY_KEY)
+
+    single_key = normalize_key(
+        classification.get("single_category_key") or classification.get("single_category")
+    )
+    raw_multi_keys = classification.get("multi_category_keys")
+    if not isinstance(raw_multi_keys, list):
+        raw_multi_keys = classification.get("multi_categories")
+    if not isinstance(raw_multi_keys, list):
+        raw_multi_keys = [single_key]
+
+    multi_keys: List[str] = []
+    for raw_key in raw_multi_keys:
+        key = normalize_key(raw_key)
+        if key not in multi_keys:
+            multi_keys.append(key)
+    if single_key not in multi_keys:
+        multi_keys.insert(0, single_key)
+    if not multi_keys:
+        multi_keys = [OTHER_CATEGORY_KEY]
+
+    assignment_rows: List[Dict[str, Any]] = []
+    for assignment_type, keys in (("single", [single_key]), ("multi", multi_keys)):
+        for position, key in enumerate(keys, start=1):
+            assignment_rows.append(
+                {
+                    "paper_id": paper_id,
+                    "owner_user_id": owner_user_id,
+                    "folder_id": folder_id,
+                    "taxonomy_name": taxonomy_name,
+                    "category_key": key[:80],
+                    "category_label": label_by_key.get(key) or OTHER_CATEGORY_LABEL,
+                    "assignment_type": assignment_type,
+                    "is_other": key == OTHER_CATEGORY_KEY,
+                    "rationale": str(classification.get("rationale") or "")[:5000],
+                    "position": position,
+                }
+            )
+
+    return definition_rows, assignment_rows
 
 
 def _match_topic_label(
@@ -168,6 +267,13 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         )
 
     typology = state.get("research_typology") or {}
+    category_classification = state.get("category_classification") or {}
+    category_definitions, category_assignments = _build_category_rows(
+        paper_id,
+        owner_user_id,
+        folder_id,
+        category_classification,
+    )
     typology_rows = []
     if typology.get("primary_group_number") and typology.get("primary_group_name"):
         secondary_group_number = typology.get("secondary_group_number")
@@ -234,6 +340,9 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         "paper_facets": facets,
         "author_keywords": author_keywords,
         "research_typologies": typology_rows,
+        "category_definitions": category_definitions,
+        "category_assignments": category_assignments,
+        "category_classification": category_classification,
     }
 
     return {
@@ -241,6 +350,9 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         "concept_rows": concept_rows,
         "author_keywords": author_keywords,
         "research_typology": typology,
+        "category_classification": category_classification,
+        "category_definitions": category_definitions,
+        "category_assignments": category_assignments,
         "dataset": dataset,
         "errors": [],
         "status": "dataset_ready",

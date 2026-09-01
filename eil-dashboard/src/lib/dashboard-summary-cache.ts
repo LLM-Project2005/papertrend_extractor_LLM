@@ -131,10 +131,21 @@ function addTrackCounts(
   trackRows: TrackRow[]
 ) {
   for (const row of trackRows) {
-    if (row.el > 0) addCount(rows, "English Linguistics", row.paper_id);
-    if (row.eli > 0) addCount(rows, "English Language Instruction", row.paper_id);
-    if (row.lae > 0) addCount(rows, "Language Assessment & Evaluation", row.paper_id);
-    if (row.other > 0) addCount(rows, "Other", row.paper_id);
+  if (row.el > 0) addCount(rows, "Category 1", row.paper_id);
+  if (row.eli > 0) addCount(rows, "Category 2", row.paper_id);
+  if (row.lae > 0) addCount(rows, "Category 3", row.paper_id);
+  if (row.other > 0) addCount(rows, "Other / Unclassified", row.paper_id);
+  }
+}
+
+function addCategoryAssignmentCounts(
+  rows: Map<string, { papers: Set<PaperId>; rowCount: number; totalFrequency: number }>,
+  categoryRows: NonNullable<DashboardData["categoryAssignments"]>,
+  assignmentType: "single" | "multi"
+) {
+  for (const row of categoryRows) {
+    if (row.assignment_type !== assignmentType) continue;
+    addCount(rows, row.category_label || row.category_key, row.paper_id);
   }
 }
 
@@ -155,6 +166,11 @@ export function buildDashboardSummaryPayload(
     addCount(byYear, row.year || "Unknown", row.paper_id);
   }
 
+  for (const row of data.categoryAssignments ?? []) {
+    paperIds.add(row.paper_id);
+    addCount(byYear, row.year || "Unknown", row.paper_id);
+  }
+
   for (const row of data.trends) {
     paperIds.add(row.paper_id);
     addCount(byYear, row.year || "Unknown", row.paper_id);
@@ -168,8 +184,13 @@ export function buildDashboardSummaryPayload(
     }
   }
 
-  addTrackCounts(byTrackSingle, data.tracksSingle);
-  addTrackCounts(byTrackMulti, data.tracksMulti);
+  if ((data.categoryAssignments?.length ?? 0) > 0) {
+    addCategoryAssignmentCounts(byTrackSingle, data.categoryAssignments ?? [], "single");
+    addCategoryAssignmentCounts(byTrackMulti, data.categoryAssignments ?? [], "multi");
+  } else {
+    addTrackCounts(byTrackSingle, data.tracksSingle);
+    addTrackCounts(byTrackMulti, data.tracksMulti);
+  }
 
   return {
     summaryVersion: DASHBOARD_SUMMARY_CACHE_VERSION,

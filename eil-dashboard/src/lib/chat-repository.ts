@@ -67,7 +67,7 @@ export interface ReplaceDeepResearchPlanInput {
 }
 
 export interface ChatRepository {
-  listThreads(ownerUserId: string, projectId?: string | null): Promise<WorkspaceThreadSummary[]>;
+  listThreads(ownerUserId: string): Promise<WorkspaceThreadSummary[]>;
   createThread(input: CreateThreadInput): Promise<WorkspaceThreadSummary>;
   updateThread(
     ownerUserId: string,
@@ -95,34 +95,8 @@ export interface ChatRepository {
 class SupabaseChatRepository implements ChatRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseAdmin()) {}
 
-  async listThreads(ownerUserId: string, projectId?: string | null) {
-    const threads = await listWorkspaceThreads(this.client, ownerUserId);
-    if (!projectId || threads.length === 0) return threads;
-
-    const { data, error } = await this.client
-      .from("workspace_messages")
-      .select("thread_id, metadata")
-      .eq("owner_user_id", ownerUserId)
-      .in("thread_id", threads.map((thread) => thread.id));
-    if (error) throw new Error(error.message);
-
-    const matchingThreadIds = new Set(
-      (data ?? [])
-        .filter((row) => {
-          const metadata = row.metadata && typeof row.metadata === "object"
-            ? row.metadata as Record<string, unknown>
-            : {};
-          const knowledgeScope = metadata.knowledgeScope && typeof metadata.knowledgeScope === "object"
-            ? metadata.knowledgeScope as Record<string, unknown>
-            : {};
-          const scopeSnapshot = metadata.scopeSnapshot && typeof metadata.scopeSnapshot === "object"
-            ? metadata.scopeSnapshot as Record<string, unknown>
-            : {};
-          return String(knowledgeScope.projectId ?? scopeSnapshot.projectId ?? "") === projectId;
-        })
-        .map((row) => String(row.thread_id))
-    );
-    return threads.filter((thread) => matchingThreadIds.has(thread.id));
+  listThreads(ownerUserId: string) {
+    return listWorkspaceThreads(this.client, ownerUserId);
   }
 
   createThread(input: CreateThreadInput) {
@@ -280,29 +254,17 @@ class CloudSqlChatRepository implements ChatRepository {
     return deepResearchSessionRow(session.rows[0], steps.rows.map(deepResearchStepRow));
   }
 
-  listThreads(ownerUserId: string, projectId?: string | null): Promise<WorkspaceThreadSummary[]> {
+  listThreads(ownerUserId: string): Promise<WorkspaceThreadSummary[]> {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `
           SELECT t.*
           FROM public.workspace_threads t
           WHERE t.owner_user_id = $1
-            AND (
-              $2::text IS NULL OR EXISTS (
-                SELECT 1
-                FROM public.workspace_messages m
-                WHERE m.thread_id = t.id
-                  AND m.owner_user_id = $1
-                  AND COALESCE(
-                    m.metadata #>> '{knowledgeScope,projectId}',
-                    m.metadata #>> '{scopeSnapshot,projectId}'
-                  ) = $2::text
-              )
-            )
           ORDER BY t.updated_at DESC
           LIMIT 100
         `,
-        [ownerUserId, projectId || null]
+        [ownerUserId]
       );
       return result.rows.map(threadRow);
     });

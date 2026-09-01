@@ -33,6 +33,8 @@ CHILD_TABLES = (
     "paper_analysis_facets",
     "paper_author_keywords",
     "paper_research_typologies",
+    "paper_category_definitions",
+    "paper_category_assignments",
 )
 
 TABLE_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
@@ -50,6 +52,8 @@ TABLE_PRIMARY_KEYS: dict[str, tuple[str, ...]] = {
     "paper_analysis_facets": ("id",),
     "paper_author_keywords": ("id",),
     "paper_research_typologies": ("paper_id",),
+    "paper_category_definitions": ("id",),
+    "paper_category_assignments": ("id",),
 }
 
 TABLE_OWNER_COLUMNS = {
@@ -58,7 +62,12 @@ TABLE_OWNER_COLUMNS = {
 }
 
 OPTIONAL_MIRROR_TABLES = frozenset(
-    {"paper_author_keywords", "paper_research_typologies"}
+    {
+        "paper_author_keywords",
+        "paper_research_typologies",
+        "paper_category_definitions",
+        "paper_category_assignments",
+    }
 )
 
 GENERATED_ID_TABLES = frozenset(
@@ -67,6 +76,8 @@ GENERATED_ID_TABLES = frozenset(
         "paper_keyword_concepts",
         "paper_analysis_facets",
         "paper_author_keywords",
+        "paper_category_definitions",
+        "paper_category_assignments",
     }
 )
 
@@ -368,6 +379,8 @@ def shadow_ingestion_dataset(
         "paper_analysis_facets": list(dataset.get("paper_facets") or []),
         "paper_author_keywords": list(dataset.get("author_keywords") or []),
         "paper_research_typologies": list(dataset.get("research_typologies") or []),
+        "paper_category_definitions": list(dataset.get("category_definitions") or []),
+        "paper_category_assignments": list(dataset.get("category_assignments") or []),
     }
 
     comparisons: dict[str, dict[str, Any]] = {}
@@ -541,6 +554,12 @@ def mirror_ingestion_dataset(
         ),
         "paper_research_typologies": _validate_owned_rows(
             "paper_research_typologies", dataset.get("research_typologies") or [], owner_user_id
+        ),
+        "paper_category_definitions": _validate_owned_rows(
+            "paper_category_definitions", dataset.get("category_definitions") or [], owner_user_id
+        ),
+        "paper_category_assignments": _validate_owned_rows(
+            "paper_category_assignments", dataset.get("category_assignments") or [], owner_user_id
         ),
     }
 

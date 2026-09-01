@@ -9,6 +9,8 @@ type TriggerResult = {
   payload: Record<string, unknown>;
 };
 
+const WORKER_REQUEST_TIMEOUT_MS = 20_000;
+
 let cachedIdentityToken: { audience: string; token: string; expiresAt: number } | null = null;
 
 async function getWorkerAuthorization(workerServiceUrl: string): Promise<string> {
@@ -70,7 +72,7 @@ async function postWorker(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6_000);
+  const timeout = setTimeout(() => controller.abort(), WORKER_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(`${workerServiceUrl}${path}`, {
       method: "POST",
@@ -83,6 +85,16 @@ async function postWorker(
       status: response.status,
       ok: response.ok,
       payload: (await response.json().catch(() => ({}))) as Record<string, unknown>,
+    };
+  } catch (error) {
+    const timedOut = error instanceof Error && error.name === "AbortError";
+    return {
+      status: 0,
+      ok: false,
+      payload: {
+        reason: timedOut ? "worker_request_timeout" : "worker_request_failed",
+        message: error instanceof Error ? error.message : "Unknown worker request error",
+      },
     };
   } finally {
     clearTimeout(timeout);

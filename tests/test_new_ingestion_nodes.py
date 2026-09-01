@@ -34,6 +34,7 @@ from nodes.keyword_extractor import grounded_keyword_extractor_node
 from nodes.keyword_search import keyword_search_node
 from nodes.research_typology import classify_research_typology_node
 from nodes.segmentation import _slice_span
+from nodes.track_classifier import classify_tracks_node
 from graphs import build_ingestion_graph
 from state import KeywordCandidate, KeywordCandidateSchema
 
@@ -210,6 +211,88 @@ class NewIngestionNodeTests(unittest.TestCase):
         self.assertEqual(typology["primary_group_number"], 3)
         self.assertEqual(typology["classifier_source"], "llm")
 
+    def test_category_classifier_uses_other_when_no_project_categories_exist(self) -> None:
+        result = classify_tracks_node(
+            {
+                "final_json": {
+                    "title": "Photovoltaic optimization",
+                    "abstract_claims": "This engineering paper optimizes photovoltaic cell efficiency.",
+                },
+                "input_payload": {
+                    "analysis_profile": {
+                        "domain": "General academic research",
+                        "taxonomyName": "Project categories",
+                        "categories": [],
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(result["track_single"], {"el": 0, "eli": 0, "lae": 0, "other": 1})
+        self.assertEqual(result["category_classification"]["single_category_key"], "other")
+        self.assertEqual(result["category_classification"]["single_category"], "Other / Unclassified")
+
+    def test_category_classifier_uses_user_defined_category_labels(self) -> None:
+        runnable = Mock()
+        runnable.invoke.return_value = types.SimpleNamespace(
+            single_category_key="workflow_intervention",
+            multi_category_keys=["workflow_intervention", "implementation_evaluation"],
+            rationale="The paper designs an intervention and also evaluates implementation outcomes.",
+        )
+
+        with patch("nodes.track_classifier.track_classification_llm") as llm:
+            llm.with_structured_output.return_value = runnable
+            result = classify_tracks_node(
+                {
+                    "final_json": {
+                        "title": "Hospital discharge chatbot",
+                        "abstract_claims": "This study develops a chatbot intervention for discharge planning.",
+                    },
+                    "final_labeled_topics": [],
+                    "input_payload": {
+                        "analysis_profile": {
+                            "domain": "Healthcare technology",
+                            "taxonomyName": "Health AI project taxonomy",
+                            "additionalContext": "Classify by the primary contribution to healthcare operations.",
+                            "categories": [
+                                {
+                                    "key": "clinical_prediction",
+                                    "label": "Clinical prediction",
+                                    "description": "Models that predict clinical risk or outcomes.",
+                                },
+                                {
+                                    "key": "workflow_intervention",
+                                    "label": "Workflow intervention",
+                                    "description": "Tools or processes implemented in healthcare workflows.",
+                                },
+                                {
+                                    "key": "implementation_evaluation",
+                                    "label": "Implementation evaluation",
+                                    "description": "Studies evaluating adoption, usability, or implementation.",
+                                },
+                                {
+                                    "key": "equity_audit",
+                                    "label": "Equity audit",
+                                    "description": "Studies primarily auditing differential access or fairness.",
+                                },
+                            ],
+                        }
+                    },
+                }
+            )
+
+        self.assertEqual(result["track_single"], {"el": 0, "eli": 1, "lae": 0, "other": 0})
+        self.assertEqual(result["category_classification"]["single_category_key"], "workflow_intervention")
+        self.assertEqual(
+            result["category_classification"]["multi_category_keys"],
+            ["workflow_intervention", "implementation_evaluation"],
+        )
+        self.assertEqual(result["category_classification"]["single_category"], "Workflow intervention")
+        self.assertEqual(
+            result["category_classification"]["multi_categories"],
+            ["Workflow intervention", "Implementation evaluation"],
+        )
+
     def test_dataset_builder_persists_author_keywords_and_typology_rows(self) -> None:
         result = build_dataset_node(
             {
@@ -232,6 +315,39 @@ class NewIngestionNodeTests(unittest.TestCase):
                 "final_labeled_topics": [],
                 "track_single": {"el": 1, "eli": 0, "lae": 0, "other": 0},
                 "track_multi": {"el": 1, "eli": 0, "lae": 0, "other": 0},
+                "category_classification": {
+                    "taxonomy_name": "Study design categories",
+                    "domain": "General academic research",
+                    "domain_definition": "",
+                    "taxonomy_definition": "Classify by primary study design.",
+                    "categories": [
+                        {
+                            "key": "descriptive",
+                            "label": "Descriptive",
+                            "description": "Describes observed phenomena.",
+                        },
+                        {
+                            "key": "intervention",
+                            "label": "Intervention",
+                            "description": "Tests an intervention.",
+                        },
+                        {
+                            "key": "measurement",
+                            "label": "Measurement",
+                            "description": "Develops or validates instruments.",
+                        },
+                        {
+                            "key": "critical_policy",
+                            "label": "Critical policy",
+                            "description": "Examines policy, identity, or power.",
+                        },
+                    ],
+                    "single_category_key": "critical_policy",
+                    "multi_category_keys": ["critical_policy", "descriptive"],
+                    "single_category": "Critical policy",
+                    "multi_categories": ["Critical policy", "Descriptive"],
+                    "rationale": "The paper examines identity as a socially situated issue.",
+                },
                 "author_keywords": [
                     {
                         "keyword": "learner identity",
@@ -257,6 +373,15 @@ class NewIngestionNodeTests(unittest.TestCase):
         dataset = result["dataset"]
         self.assertEqual(dataset["author_keywords"][0]["keyword"], "learner identity")
         self.assertEqual(dataset["research_typologies"][0]["primary_group_number"], 4)
+        self.assertEqual(len(dataset["category_definitions"]), 4)
+        self.assertEqual(
+            dataset["category_assignments"][0]["category_key"],
+            "critical_policy",
+        )
+        self.assertEqual(
+            [row["category_key"] for row in dataset["category_assignments"] if row["assignment_type"] == "multi"],
+            ["critical_policy", "descriptive"],
+        )
 
     def test_keyword_search_can_match_author_provided_keywords(self) -> None:
         result = keyword_search_node(

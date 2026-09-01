@@ -69,9 +69,13 @@ class TopicLabelerSchema(BaseModel):
 
 
 class TrackClassificationSchema(BaseModel):
-    single_track: Literal["EL", "ELI", "LAE", "Other"]
-    multi_tracks: List[Literal["EL", "ELI", "LAE", "Other"]]
-    rationale: str = Field(description="Grounded explanation for the selected tracks.")
+    single_category_key: str = Field(
+        description="Exactly one configured category key, or 'other' when no configured category fits."
+    )
+    multi_category_keys: List[str] = Field(
+        description="Configured category keys that genuinely fit the paper; always include single_category_key."
+    )
+    rationale: str = Field(description="Grounded explanation for the selected categories.")
 
 
 class PaperMetadataSchema(BaseModel):

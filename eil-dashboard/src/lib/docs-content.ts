@@ -76,10 +76,10 @@ const rawDocsCategories: DocsCategoryBase[] = [
             title: "What Papertrend does",
             body: [
               "Papertrend turns research PDFs into a reusable workspace of structured evidence, dashboard views, and AI conversations. Instead of treating each paper as an isolated file, Papertrend stores the paper, extracted sections, metadata, topics, keywords, track labels, facets, and chat context together.",
-              "The result is a research workspace where the same analyzed paper can power library search, trend charts, chart mode in chat, deep research reports, and paper detail inspection.",
+              "The result is a research workspace where the same analyzed paper can power repository search, trend charts, chart mode in chat, deep research reports, and paper detail inspection.",
             ],
             bullets: [
-              "Use the library to manage uploaded or imported files.",
+              "Use Repositories to manage uploaded or imported files across the account.",
               "Use analysis to extract structured signals from each paper.",
               "Use the dashboard to understand patterns across the workspace.",
               "Use chat and deep research to ask questions, build charts, and produce longer research outputs.",
@@ -89,11 +89,11 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "first-workflow",
             title: "Recommended first workflow",
             body: [
-              "The fastest way to understand Papertrend is to run one small paper batch, then inspect the same papers in the library, dashboard, and chat.",
+              "The fastest way to understand Papertrend is to run one small paper batch, then inspect the same papers in Repositories, Dashboard, and Chat.",
             ],
             steps: [
               "Open a workspace and choose or create a project.",
-              "Go to Library and upload a small set of PDFs.",
+              "Go to Repositories, open a repository, and upload a small set of PDFs.",
               "Start analysis and keep the page open until the first status update appears.",
               "Open the Dashboard after one or more papers finish analyzing.",
               "Open Chat, attach an analyzed paper, and ask for a summary, critique, or chart.",
@@ -109,8 +109,8 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "what-ready-means",
             title: "What ready means",
             body: [
-              "A paper is ready when the analysis run succeeds and its extracted outputs are persisted. Ready papers can appear in the dashboard, chart mode, library detail panels, and chat retrieval.",
-              "A queued or processing paper can still be visible in the library, but it may not have topics, keywords, year evidence, or chartable values yet.",
+              "A paper is ready when the analysis run succeeds and its extracted outputs are persisted. Ready papers can appear in the dashboard, chart mode, repository detail panels, and chat retrieval.",
+              "A queued or processing paper can still be visible in its repository, but it may not have topics, keywords, year evidence, or chartable values yet.",
             ],
             checklist: [
               "The file status is succeeded.",
@@ -127,7 +127,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "If a paper year is unknown, Papertrend could not find enough reliable year evidence in the extracted text or metadata. The evaluation guide explains how to interpret year confidence and when to reanalyze.",
             ],
             bullets: [
-              "Use Library for file status.",
+              "Use Repositories for file status.",
               "Use Dashboard for workspace-level patterns.",
               "Use Chat for paper-level questions and chart requests.",
               "Use Troubleshooting when queue, auth, or no-data states appear.",
@@ -149,7 +149,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             title: "Workspace, project, and folder",
             body: [
               "Papertrend separates organization-level identity from project-level research work. A workspace can contain multiple projects, and each project can contain folders. Folders are useful when a project has several datasets, courses, research themes, or collection phases.",
-              "The home page and dashboard are designed to show workspace or project-wide data depending on the current route. Library views can narrow into a folder, but the home page should be read as a command center for the current workspace context.",
+              "The home page and dashboard show the active repository context. The account-level Repositories page starts with every repository and can narrow into its folders and papers.",
             ],
             bullets: [
               "Workspace: the top-level place where research teams work.",
@@ -163,7 +163,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             title: "Analysis runs",
             body: [
               "An analysis run tracks one file as it moves through the queue. The run stores upload metadata, status, error messages, and a link to the persisted paper content when analysis succeeds.",
-              "A file can exist in the library before analysis succeeds. This is why a library file can be selectable in chat but still not produce a chart until the worker has generated and saved structured data.",
+              "A file can exist in a repository before analysis succeeds. This is why a queued file may be selectable in chat but still not produce a chart until the worker has generated and saved structured data.",
             ],
             bullets: [
               "queued means the file is waiting for a worker.",
@@ -206,23 +206,23 @@ const rawDocsCategories: DocsCategoryBase[] = [
   },
   {
     id: "workspace",
-    label: "Workspace and library",
-    description: "Manage files, imports, navigation, profile, and workspace settings.",
+    label: "Repositories and workspace",
+    description: "Manage account repositories, files, imports, navigation, profile, and settings.",
     pages: [
       {
         slug: "library-uploads",
-        title: "Library, uploads, and paper status",
+        title: "Repositories, uploads, and paper status",
         description:
-          "Use the library to upload papers, inspect analysis status, retry failed files, and open paper details.",
+          "Use the account repository browser to upload papers, inspect analysis status, retry failed files, and open paper details.",
         tags: ["library", "upload", "file", "analysis status", "retry", "failed", "paper detail"],
         popular: true,
         sections: [
           {
             id: "library-purpose",
-            title: "What the library is for",
+            title: "What Repositories is for",
             body: [
-              "The library is the operational center for files. It shows uploaded papers, imported files, analysis status, favorite and trash state, and paper detail access.",
-              "A library item is not always the same thing as an analyzed paper. The item appears when the file is registered, while chartable paper data appears only after analysis succeeds.",
+              "Repositories is the account-level operational center for research files. Each repository is a top-level container with folders, uploaded papers, analysis status, favorite and trash state, and paper detail access.",
+              "A repository file is not always the same thing as an analyzed paper. The item appears when the file is registered, while chartable paper data appears only after analysis succeeds.",
             ],
             bullets: [
               "Upload PDFs and start analysis.",
@@ -239,8 +239,8 @@ const rawDocsCategories: DocsCategoryBase[] = [
             ],
             steps: [
               "Choose a project or folder context.",
-              "Open Library and select upload or analysis.",
-              "Select one or more PDF files.",
+              "Open Repositories, choose a repository, and select upload.",
+              "Select up to 50 PDF files; every file must be 10 MB or smaller.",
               "Confirm the queue action.",
               "Watch the status indicators or continue working while Cloud Tasks triggers processing.",
             ],
@@ -261,14 +261,14 @@ const rawDocsCategories: DocsCategoryBase[] = [
               tone: "warning",
               title: "Failed files can still be attached",
               body:
-                "A failed library file may appear selectable, but it may not have chartable topics or keywords. If the source file is still available, retry analysis before asking for charts from that file.",
+                "A failed repository file may appear selectable, but it may not have chartable topics or keywords. Retry analysis before asking for charts from that file.",
             },
           },
           {
             id: "paper-detail",
             title: "Paper detail panel",
             body: [
-              "The paper detail panel is where users inspect the output of a single succeeded analysis. It should show the extracted paper identity, abstract or text sections, keywords, topics, tracks, facets, and other saved signals when available.",
+              "The paper detail panel is where users inspect the output of a single succeeded analysis. It should show the extracted paper identity, abstract or text sections, keywords, topics, categories, facets, and other saved signals when available.",
             ],
             checklist: [
               "Use the detail panel to validate whether the extracted title and year look correct.",
@@ -299,13 +299,13 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "import-flow",
             title: "Import flow",
             body: [
-              "A Drive import starts with authorization, then file selection, then queue creation. The app should show imported files in the library so users can track status like any other run.",
+              "A Drive import starts with authorization, then file selection, then queue creation. The app should show imported files in their repository so users can track status like any other run.",
             ],
             steps: [
               "Connect Google Drive from the import or integration entry point.",
               "Choose one or more accessible PDF files.",
               "Queue the selected files for analysis.",
-              "Return to Library or Home to watch progress.",
+              "Return to Repositories or Home to watch progress.",
               "Open Dashboard or Chat once files succeed.",
             ],
           },
@@ -326,7 +326,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "when-to-upload-instead",
             title: "When to upload instead",
             body: [
-              "If Drive authorization or file permissions are the blocker, downloading the PDF and uploading it through Library is usually faster. Both routes end in the same queue and analysis pipeline.",
+              "If Drive authorization or file permissions are the blocker, downloading the PDF and uploading it through Repositories is usually faster. Both routes end in the same queue and analysis pipeline.",
             ],
             callout: {
               tone: "info",
@@ -349,13 +349,13 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "global-search",
             title: "Workspace search",
             body: [
-              "Workspace search is a command menu for moving quickly through the app. It searches actions, pages, library files, workspaces, projects, folders, and documentation entries.",
+              "Workspace search is a command menu for moving quickly through the app. It searches actions, pages, repository files, projects, folders, and documentation entries.",
               "This search is different from docs search. Workspace search is optimized for navigation and app actions. Docs search is optimized for learning and troubleshooting content.",
             ],
             bullets: [
               "Search analyze paper to open upload and analysis actions.",
               "Search deep research to open chat workflows.",
-              "Search a paper title to open a library item.",
+              "Search a paper title to open its repository item.",
               "Search docs topics such as queue stuck or chart mode to open documentation.",
             ],
           },
@@ -421,7 +421,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             ],
             bullets: [
               "Use settings for naming and workspace preferences.",
-              "Use Library for file-level actions.",
+              "Use Repositories for file-level actions.",
               "Use Dashboard for analysis views.",
               "Use Workspaces for project switching.",
             ],
@@ -430,7 +430,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "safe-changes",
             title: "Safe changes",
             body: [
-              "Changing display preferences should be safe. Analysis outputs such as keywords, paper content, tracks, and year evidence are tied to paper records and should not be affected by profile display changes.",
+              "Changing display preferences should be safe. Analysis outputs such as keywords, paper content, categories, and year evidence are tied to paper records and should not be affected by profile display changes.",
             ],
             checklist: [
               "Confirm the selected workspace before changing workspace settings.",
@@ -459,8 +459,8 @@ const rawDocsCategories: DocsCategoryBase[] = [
         slug: "paper-analysis",
         title: "Paper analysis pipeline",
         description:
-          "Understand how Papertrend extracts metadata, sections, keywords, topics, tracks, typologies, facets, and year evidence.",
-        tags: ["analysis", "pipeline", "metadata", "year", "keyword", "topic", "track", "typology", "facet"],
+          "Understand how Papertrend extracts metadata, sections, keywords, topics, categories, typologies, facets, and year evidence.",
+        tags: ["analysis", "pipeline", "metadata", "year", "keyword", "topic", "category", "typology", "facet"],
         popular: true,
         sections: [
           {
@@ -475,7 +475,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Semantic section detection.",
               "Metadata and year evidence extraction.",
               "Keyword, topic, and concept extraction.",
-              "Track, typology, and facet classification.",
+              "Category, typology, and facet classification.",
               "Persistence into workspace-scoped tables.",
             ],
           },
@@ -483,13 +483,13 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "outputs",
             title: "Important outputs",
             body: [
-              "The most visible outputs are paper title, year, topics, keywords, tracks, paper content, and evidence snippets. Some outputs are used directly in charts, while others support quality review and grounded answers.",
+              "The most visible outputs are paper title, year, topics, keywords, categories, paper content, and evidence snippets. Some outputs are used directly in charts, while others support quality review and grounded answers.",
             ],
             bullets: [
               "Year values power timelines and dashboard filters.",
               "Topics group keywords into higher-level themes.",
               "Keywords provide searchable paper-level signals.",
-              "Tracks classify papers into research track buckets.",
+              "Categories classify papers into the active project taxonomy.",
               "Facets and typologies add higher-level interpretation.",
               "Paper content provides the grounding context for chat and detail panels.",
             ],
@@ -530,8 +530,8 @@ const rawDocsCategories: DocsCategoryBase[] = [
         slug: "research-dashboard",
         title: "Research dashboard and adaptive views",
         description:
-          "Use workspace-wide analytics, filters, top topics, top keywords, tracks, and year views to understand a corpus.",
-        tags: ["dashboard", "adaptive dashboard", "filters", "topics", "keywords", "tracks", "year", "charts"],
+          "Use workspace-wide analytics, filters, top topics, top keywords, categories, and year views to understand a corpus.",
+        tags: ["dashboard", "adaptive dashboard", "filters", "topics", "keywords", "categories", "year", "charts"],
         popular: true,
         sections: [
           {
@@ -784,7 +784,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Most users should not need to understand worker internals. They should watch status, retry failed files, and use the needs-attention surfaces when the app exposes them.",
             ],
             bullets: [
-              "Retry failed files from Library or analysis status surfaces.",
+              "Retry failed files from Repositories or analysis status surfaces.",
               "Reupload a corrupted or inaccessible PDF.",
               "Use smaller batches when validating a new collection.",
               "Open Troubleshooting when the queue does not start the next file.",
@@ -898,10 +898,10 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "missing-dashboard-data",
             title: "Dashboard shows missing data",
             body: [
-              "Dashboard data comes from succeeded analysis outputs. If the library has files but the dashboard has low counts, check whether those files succeeded and whether the current scope includes them.",
+              "Dashboard data comes from succeeded analysis outputs. If a repository has files but the dashboard has low counts, check whether those files succeeded and whether the current scope includes them.",
             ],
             steps: [
-              "Open Library and check file statuses.",
+              "Open Repositories and check file statuses.",
               "Switch to all folders if the current folder is narrow.",
               "Confirm the selected workspace and project.",
               "Open a succeeded paper detail panel to confirm topics and keywords exist.",
@@ -915,7 +915,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "This usually means the requested scope has no succeeded analysis rows that match the chart. It can happen when a user attaches a failed file, asks about a queued file, or requests a metric the paper does not have.",
             ],
             bullets: [
-              "If using an attached paper, confirm it succeeded in Library.",
+              "If using an attached paper, confirm it succeeded in Repositories.",
               "If using workspace scope, confirm at least one paper has relevant rows.",
               "If asking for a year chart, confirm papers have known years.",
               "If asking for topics or keywords, confirm paper_keywords or concepts exist for the paper.",

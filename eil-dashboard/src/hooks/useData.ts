@@ -34,6 +34,7 @@ function buildEmptyLiveData(projectId: string | null): DashboardData {
     trends: [],
     tracksSingle: [],
     tracksMulti: [],
+    categoryAssignments: [],
     topicFamilies: [],
     useMock: false,
     diagnostics: {
