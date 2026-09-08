@@ -33,6 +33,7 @@ import {
   dedupeConversationSources,
   previewConversationSources,
 } from "@/lib/conversation-sources";
+import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -1581,6 +1582,7 @@ export default function ChatClient() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const parameterMenuRef = useRef<HTMLDivElement | null>(null);
   const editComposerRef = useRef<HTMLTextAreaElement | null>(null);
+  const scopeTransferHandledRef = useRef(false);
 
   const canPersist = Boolean(user && session?.access_token);
   const effectiveSelectedYears = selectedYears.length > 0 ? selectedYears : allYears;
@@ -2072,6 +2074,37 @@ export default function ChatClient() {
     if (!showLibraryPicker) return;
     void loadLibraryRuns();
   }, [loadLibraryRuns, showLibraryPicker]);
+
+  useEffect(() => {
+    if (!canPersist || scopeTransferHandledRef.current) return;
+    scopeTransferHandledRef.current = true;
+    const raw = window.localStorage.getItem(CHAT_SCOPE_TRANSFER_STORAGE_KEY);
+    if (!raw) return;
+    window.localStorage.removeItem(CHAT_SCOPE_TRANSFER_STORAGE_KEY);
+    try {
+      const transfer = JSON.parse(raw) as { projectId?: string; runIds?: string[]; prompt?: string; createdAt?: string };
+      const runIds = [...new Set((transfer.runIds ?? []).filter((value) => typeof value === "string" && value))];
+      const age = Date.now() - new Date(transfer.createdAt ?? 0).getTime();
+      if (!transfer.projectId || runIds.length === 0 || !Number.isFinite(age) || age > 15 * 60 * 1000) return;
+      void fetch(`/api/workspace/library?projectId=${encodeURIComponent(transfer.projectId)}`, {
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      })
+        .then(async (response) => {
+          const payload = await response.json() as { runs?: IngestionRunRow[]; error?: string };
+          if (!response.ok) throw new Error(payload.error ?? "Failed to transfer papers to chat.");
+          const rows = payload.runs ?? [];
+          const allowed = new Set(runIds);
+          setLibraryRuns(rows);
+          setSelectedLibraryRuns(rows.filter((run) => allowed.has(run.id) && run.status === "succeeded"));
+          setChatScopeProjectId(transfer.projectId!);
+          setChatScopeFolderId("all");
+          if (transfer.prompt?.trim()) setDraft(transfer.prompt.trim());
+        })
+        .catch((transferError) => setError(transferError instanceof Error ? transferError.message : "Failed to transfer papers to chat."));
+    } catch {
+      // Ignore malformed or stale handoff data.
+    }
+  }, [canPersist, session?.access_token]);
 
   useEffect(() => {
     if (!searchModalOpen) return;

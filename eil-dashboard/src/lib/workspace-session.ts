@@ -4,6 +4,7 @@ export const WORKSPACE_FILTERS_STORAGE_KEY = "papertrend_workspace_filters_v1";
 export const WORKSPACE_ORGANIZATION_STORAGE_KEY = "papertrend_workspace_org_v1";
 export const WORKSPACE_PROJECT_STORAGE_KEY = "papertrend_workspace_project_v1";
 export const WORKSPACE_LAST_ROUTE_STORAGE_KEY = "papertrend_workspace_last_route_v1";
+export const CHAT_SCOPE_TRANSFER_STORAGE_KEY = "papertrend_chat_scope_transfer_v1";
 
 export function persistWorkspaceRoute(route: string) {
   if (typeof window === "undefined" || !route.startsWith("/workspace")) {
