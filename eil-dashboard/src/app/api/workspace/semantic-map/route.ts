@@ -11,6 +11,7 @@ import {
 } from "@/lib/semantic-map-repository";
 import { enqueueSemanticMapJob } from "@/lib/semantic-map-jobs";
 import { processSemanticMapJob } from "@/lib/semantic-map-service";
+import { getPublicRequestOrigin } from "@/lib/public-request-origin";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
       await processSemanticMapJob(user.id, mapId);
       return NextResponse.json({ mapId, queued: false }, { status: 201 });
     }
-    const callbackBaseUrl = new URL(request.url).origin;
+    const callbackBaseUrl = getPublicRequestOrigin(request);
     const queued = await enqueueSemanticMapJob(mapId, user.id, callbackBaseUrl);
     if (!queued) {
       await failSemanticMap(user.id, mapId, new Error("Cloud Tasks could not enqueue semantic map generation."));

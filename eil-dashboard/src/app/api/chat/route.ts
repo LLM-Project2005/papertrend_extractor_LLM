@@ -45,6 +45,7 @@ import {
   type AiUsageKind,
 } from "@/lib/security-guards";
 import { withAiTokenUsageTracking } from "@/lib/ai-token-usage";
+import { getPublicRequestOrigin } from "@/lib/public-request-origin";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
@@ -3982,7 +3983,7 @@ async function normalChat(
         model: selectedModel,
         forceChart: chartRequested,
         history: (body.messages ?? []).slice(-12),
-        jobCallbackBaseUrl: new URL(request.url).origin,
+        jobCallbackBaseUrl: getPublicRequestOrigin(request),
       });
       if (repositoryResult.handled) {
         let repositoryAnswer = repositoryResult.answer;
