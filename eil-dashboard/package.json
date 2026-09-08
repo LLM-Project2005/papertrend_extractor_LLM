@@ -13,6 +13,7 @@
     "auth:parity": "tsx scripts/auth-parity-smoke.ts",
     "test:repository-chat": "tsx --test --test-force-exit tests/*.test.ts",
     "test:semantic-map": "tsx --test --test-force-exit tests/semantic-map.test.ts",
+    "test:semantic-map:cloudsql": "tsx scripts/semantic-map-cloudsql-live.ts",
     "test:repository-chat:live": "tsx scripts/repository-chat-live-eval.ts",
     "test:repository-chat:v2-planner-live": "tsx scripts/repository-chat-v2-planner-live.ts",
     "test:repository-chat:cloudsql": "tsx scripts/repository-chat-cloudsql-live.ts",
