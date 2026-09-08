@@ -147,7 +147,7 @@ async function loadDocumentsWithClient(
 }
 
 export function semanticSourceHash(documents: SemanticPaperDocument[]): string {
-  return sha256(documents.map((paper) => [paper.paperId, paper.runId, paper.folderId, paper.contentHash].join(":"))
+  return sha256(documents.map((paper) => [paper.paperId, paper.runId, paper.folderId, paper.folderName, paper.contentHash].join(":"))
     .sort()
     .join("\n"));
 }

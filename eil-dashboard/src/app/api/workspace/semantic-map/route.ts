@@ -56,6 +56,9 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ error: "A valid repository ID is required." }, { status: 400 });
   try {
     const papers = await loadSemanticPaperDocuments(user.id, parsed.data.projectId);
+    if (papers.length === 0) {
+      return NextResponse.json({ error: "Analyze at least one paper before generating a semantic map." }, { status: 409 });
+    }
     const sourceHash = semanticSourceHash(papers);
     const existing = await getSemanticMap(user.id, parsed.data.projectId);
     if (!parsed.data.force && existing?.status === "succeeded" && !existing.stale) {

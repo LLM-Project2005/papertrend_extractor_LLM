@@ -59,6 +59,7 @@ test("source hash is order independent and changes with repository state", () =>
   const first = semanticSourceHash([paper(1), paper(2)]);
   assert.equal(first, semanticSourceHash([paper(2), paper(1)]));
   assert.notEqual(first, semanticSourceHash([{ ...paper(1), folderId: "00000000-0000-4000-8000-000000000099" }, paper(2)]));
+  assert.notEqual(first, semanticSourceHash([{ ...paper(1), folderName: "Renamed folder" }, paper(2)]));
 });
 
 test("semantic-map API derives ownership only from verified authentication", () => {
