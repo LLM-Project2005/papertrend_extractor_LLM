@@ -34,6 +34,7 @@ import {
   previewConversationSources,
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
+import { normalizeChatRequestPayload } from "@/lib/chat-request-payload";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -2134,7 +2135,7 @@ export default function ChatClient() {
     const response = await fetch("/api/chat", {
       method: "POST",
       headers: requestHeaders,
-      body: JSON.stringify(body),
+      body: JSON.stringify(normalizeChatRequestPayload(body)),
       signal: controller.signal,
     });
     const payload = (await response.json()) as ChatPayload;

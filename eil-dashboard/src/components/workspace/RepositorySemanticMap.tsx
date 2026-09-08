@@ -16,8 +16,8 @@ import {
 } from "@xyflow/react";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import type { IngestionRunRow, ResearchFolderRow } from "@/types/database";
-import type { RepositorySemanticMap, SemanticMapEdge, SemanticMapPoint } from "@/types/semantic-map";
-import { ChartIcon, CloseIcon, RefreshIcon, SearchIcon, SparkIcon } from "@/components/ui/Icons";
+import type { RepositorySemanticMap, SemanticMapCoverage, SemanticMapEdge, SemanticMapPoint } from "@/types/semantic-map";
+import { ChartIcon, CheckIcon, CloseIcon, FilterIcon, RefreshIcon, SearchIcon, SparkIcon } from "@/components/ui/Icons";
 
 type ColorMode = "cluster" | "category" | "year" | "track" | "folder";
 
@@ -101,11 +101,13 @@ export default function RepositorySemanticMapView({
   const router = useRouter();
   const [map, setMap] = useState<RepositorySemanticMap | null>(null);
   const [eligiblePapers, setEligiblePapers] = useState(0);
+  const [coverage, setCoverage] = useState<SemanticMapCoverage | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [paperFilterQuery, setPaperFilterQuery] = useState("");
   const [folderId, setFolderId] = useState(initialFolderId ?? "all");
   const [colorMode, setColorMode] = useState<ColorMode>("cluster");
   const [minimumSimilarity, setMinimumSimilarity] = useState(0.45);
@@ -113,6 +115,7 @@ export default function RepositorySemanticMapView({
   const [showPaperLabels, setShowPaperLabels] = useState(true);
   const [showClusterLabels, setShowClusterLabels] = useState(true);
   const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([]);
+  const [hiddenPaperIds, setHiddenPaperIds] = useState<string[]>([]);
   const [focusedPaperId, setFocusedPaperId] = useState<string | null>(null);
   const [hoveredPaperId, setHoveredPaperId] = useState<string | null>(null);
   const [focusedEdge, setFocusedEdge] = useState<SemanticMapEdge | null>(null);
@@ -121,10 +124,11 @@ export default function RepositorySemanticMapView({
     setLoading(true);
     try {
       const response = await fetch(`/api/workspace/semantic-map?projectId=${encodeURIComponent(projectId)}`, { headers: requestHeaders });
-      const payload = await response.json() as { map?: RepositorySemanticMap | null; eligiblePapers?: number; error?: string };
+      const payload = await response.json() as { map?: RepositorySemanticMap | null; eligiblePapers?: number; coverage?: SemanticMapCoverage; error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Failed to load semantic map.");
       setMap(payload.map ?? null);
       setEligiblePapers(payload.eligiblePapers ?? 0);
+      setCoverage(payload.coverage ?? null);
       setError(null);
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Failed to load semantic map.");
@@ -135,6 +139,12 @@ export default function RepositorySemanticMapView({
 
   useEffect(() => { void loadMap(); }, [loadMap]);
   useEffect(() => { setFolderId(initialFolderId ?? "all"); }, [initialFolderId, projectId]);
+  useEffect(() => {
+    setHiddenPaperIds([]);
+    setSelectedPaperIds([]);
+    setFocusedPaperId(null);
+    setFocusedEdge(null);
+  }, [map?.mapId, projectId]);
 
   useEffect(() => {
     if (!jobId) return;
@@ -191,10 +201,15 @@ export default function RepositorySemanticMapView({
     }
   }
 
-  const visiblePoints = useMemo(() => {
+  const folderPoints = useMemo(() => {
     if (!map) return [];
     return map.points.filter((point) => folderId === "all" || point.folderId === folderId);
   }, [folderId, map]);
+  const hiddenIds = useMemo(() => new Set(hiddenPaperIds), [hiddenPaperIds]);
+  const visiblePoints = useMemo(
+    () => folderPoints.filter((point) => !hiddenIds.has(point.paperId)),
+    [folderPoints, hiddenIds]
+  );
   const visibleIds = useMemo(() => new Set(visiblePoints.map((point) => point.paperId)), [visiblePoints]);
   useEffect(() => {
     setSelectedPaperIds((current) => current.filter((paperId) => visibleIds.has(paperId)));
@@ -204,6 +219,15 @@ export default function RepositorySemanticMapView({
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const matchedIds = useMemo(() => new Set(visiblePoints.filter((point) => !normalizedQuery || [point.title, point.year, point.folderName, ...point.categories, ...point.topics, ...point.keywords]
     .filter(Boolean).some((value) => String(value).toLocaleLowerCase().includes(normalizedQuery))).map((point) => point.paperId)), [normalizedQuery, visiblePoints]);
+  const normalizedPaperFilterQuery = paperFilterQuery.trim().toLocaleLowerCase();
+  const paperFilterPoints = useMemo(
+    () => folderPoints
+      .filter((point) => !normalizedPaperFilterQuery || [point.title, point.year, point.folderName]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase().includes(normalizedPaperFilterQuery)))
+      .sort((left, right) => left.title.localeCompare(right.title)),
+    [folderPoints, normalizedPaperFilterQuery]
+  );
 
   const nodes = useMemo<Node<PaperNodeData>[]>(() => visiblePoints.map((point) => {
     const matched = matchedIds.has(point.paperId);
@@ -275,6 +299,24 @@ export default function RepositorySemanticMapView({
     setSelectedPaperIds((current) => current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]);
   };
 
+  function setPaperVisible(paperId: string, visible: boolean) {
+    setHiddenPaperIds((current) => {
+      const next = new Set(current);
+      if (visible) next.delete(paperId);
+      else next.add(paperId);
+      return [...next];
+    });
+  }
+
+  function showAllPapersInScope() {
+    const scopedIds = new Set(folderPoints.map((point) => point.paperId));
+    setHiddenPaperIds((current) => current.filter((paperId) => !scopedIds.has(paperId)));
+  }
+
+  function hideAllPapersInScope() {
+    setHiddenPaperIds((current) => [...new Set([...current, ...folderPoints.map((point) => point.paperId)])]);
+  }
+
   function openFocusedPaper() {
     if (!focusedPoint?.runId) return;
     const run = runs.find((item) => item.id === focusedPoint.runId);
@@ -285,6 +327,21 @@ export default function RepositorySemanticMapView({
     const runIds = map?.points.filter((point) => selectedPaperIds.includes(point.paperId)).map((point) => point.runId).filter((id): id is string => Boolean(id)) ?? [];
     window.localStorage.setItem(CHAT_SCOPE_TRANSFER_STORAGE_KEY, JSON.stringify({ projectId, runIds, prompt, createdAt: new Date().toISOString() }));
     router.push("/workspace/chat");
+  }
+
+  const mappedPaperCount = map?.points.length ?? 0;
+  const waitingForMapCount = Math.max(eligiblePapers - mappedPaperCount, 0);
+  const hiddenInScopeCount = folderPoints.length - visiblePoints.length;
+  const repositoryFileCount = coverage?.repositoryFiles ?? eligiblePapers;
+  const activeFolderName = folderId === "all"
+    ? null
+    : folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
+
+  function resetViewFilters() {
+    setFolderId("all");
+    setQuery("");
+    setPaperFilterQuery("");
+    setHiddenPaperIds([]);
   }
 
   if (loading) return <div className="flex min-h-[520px] items-center justify-center text-sm text-slate-500 dark:text-[#999]">Loading semantic map...</div>;
@@ -310,7 +367,11 @@ export default function RepositorySemanticMapView({
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold text-slate-950 dark:text-white">Semantic map</h2>{map.stale ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Map out of date</span> : null}</div>
-          <p className="mt-1 text-sm text-slate-500 dark:text-[#999]">{visiblePoints.length} papers, {visibleEdges.length} visible relationships. Edge strength uses original embedding similarity.</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-[#999]">
+            {visiblePoints.length} shown / {mappedPaperCount} mapped / {eligiblePapers} analyzed
+            {repositoryFileCount !== eligiblePapers ? ` / ${repositoryFileCount} repository files` : ""}. {visibleEdges.length} visible relationships.
+          </p>
+          {activeFolderName || hiddenPaperIds.length > 0 ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600 dark:text-[#aaa]"><span>View filter: {activeFolderName ? `${activeFolderName}${hiddenInScopeCount ? `, ${hiddenInScopeCount} hidden` : ""}` : `${hiddenPaperIds.length} hidden`}</span><button type="button" onClick={resetViewFilters} className="font-semibold text-slate-900 underline decoration-slate-300 underline-offset-2 hover:decoration-slate-900 dark:text-white dark:decoration-[#555] dark:hover:decoration-white">Reset view</button></div> : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" disabled={generating} onClick={() => void generate(true)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400 disabled:opacity-50 dark:border-[#292929] dark:bg-[#050505] dark:text-white"><RefreshIcon className={`h-4 w-4 ${generating ? "animate-spin" : ""}`} />{map.stale ? "Update map" : "Regenerate"}</button>
@@ -318,7 +379,14 @@ export default function RepositorySemanticMapView({
         </div>
       </div>
 
-      {generating || jobId ? <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-950 dark:bg-blue-950/30 dark:text-blue-200"><span className="font-semibold capitalize">{map.progress.stage.replaceAll("_", " ")}</span><span className="ml-2">{map.progress.current}/{map.progress.total || eligiblePapers}</span></div> : null}
+      {map.stale ? <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100">
+        <div><span className="font-semibold">The saved map does not match the current repository.</span><span className="ml-1">{waitingForMapCount > 0 ? `${waitingForMapCount} analyzed paper${waitingForMapCount === 1 ? " is" : "s are"} waiting to be added.` : "Some mapped papers were moved, renamed, or removed."}</span></div>
+        <button type="button" disabled={generating} onClick={() => void generate(true)} className="h-9 flex-none rounded-md bg-amber-900 px-3 text-xs font-semibold text-white transition hover:bg-amber-800 disabled:opacity-50 dark:bg-amber-200 dark:text-black dark:hover:bg-amber-100">Update map</button>
+      </div> : null}
+      {coverage && (coverage.queuedFiles > 0 || coverage.processingFiles > 0 || coverage.failedFiles > 0 || coverage.missingAnalysis > 0) ? <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-600 dark:border-[#252525] dark:bg-[#080808] dark:text-[#aaa]">
+        The map uses successful papers with completed analysis. Excluded right now: {coverage.queuedFiles + coverage.processingFiles} queued or processing, {coverage.failedFiles} failed, and {coverage.missingAnalysis} successful file{coverage.missingAnalysis === 1 ? "" : "s"} without usable analysis data.
+      </div> : null}
+      {generating || jobId ? <div aria-live="polite" className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800 dark:border-blue-950 dark:bg-blue-950/30 dark:text-blue-200"><span className="font-semibold capitalize">{map.progress.stage.replaceAll("_", " ")}</span><span className="ml-2">{map.progress.current}/{map.progress.total || eligiblePapers}</span></div> : null}
       {error ? <div className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-950 dark:bg-red-950/30 dark:text-red-200"><span>{error}</span><button type="button" onClick={() => setError(null)} aria-label="Dismiss error"><CloseIcon className="h-4 w-4" /></button></div> : null}
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
@@ -327,11 +395,36 @@ export default function RepositorySemanticMapView({
             <label className="relative min-w-[180px] flex-1"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a paper, topic, or keyword" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-sm outline-none focus:border-slate-400 dark:border-[#292929] dark:text-white" /></label>
             <select value={folderId} onChange={(event) => setFolderId(event.target.value)} aria-label="Filter by folder" className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-[#292929] dark:bg-[#080808] dark:text-white"><option value="all">All folders</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select>
             <select value={colorMode} onChange={(event) => setColorMode(event.target.value as ColorMode)} aria-label="Color papers by" className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-[#292929] dark:bg-[#080808] dark:text-white"><option value="cluster">Color: neighborhood</option><option value="category">Color: category</option><option value="year">Color: year</option><option value="track">Color: track</option><option value="folder">Color: folder</option></select>
+            <details className="group relative">
+              <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-400 dark:border-[#292929] dark:bg-[#080808] dark:text-white">
+                <FilterIcon className="h-4 w-4" /> Papers {visiblePoints.length}/{folderPoints.length}
+              </summary>
+              <div className="absolute right-0 top-11 z-30 w-[min(360px,calc(100vw-3rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-[#292929] dark:bg-[#080808]">
+                <div className="flex items-center justify-between gap-3">
+                  <div><p className="text-sm font-semibold text-slate-950 dark:text-white">Papers in view</p><p className="text-xs text-slate-500 dark:text-[#999]">Hide papers without rebuilding the map.</p></div>
+                  <span className="flex-none text-xs tabular-nums text-slate-500 dark:text-[#999]">{hiddenInScopeCount} hidden</span>
+                </div>
+                <label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-sm text-slate-950 outline-none focus:border-slate-400 dark:border-[#292929] dark:text-white" /></label>
+                <div className="mt-2 flex gap-2"><button type="button" onClick={showAllPapersInScope} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-[#ddd] dark:hover:bg-[#151515]">Show all</button><button type="button" onClick={hideAllPapersInScope} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-[#ddd] dark:hover:bg-[#151515]">Hide all</button></div>
+                <div className="mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">
+                  {paperFilterPoints.map((point) => {
+                    const visible = !hiddenIds.has(point.paperId);
+                    return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-[#121212]">
+                      <input type="checkbox" checked={visible} onChange={(event) => setPaperVisible(point.paperId, event.target.checked)} className="sr-only" />
+                      <span className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border ${visible ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black" : "border-slate-300 dark:border-[#444]"}`}>{visible ? <CheckIcon className="h-3 w-3" /> : null}</span>
+                      <span className="min-w-0"><span className="block text-xs font-medium leading-5 text-slate-800 dark:text-[#eee]">{point.title}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{point.year}{point.folderName ? ` / ${point.folderName}` : ""}</span></span>
+                    </label>;
+                  })}
+                  {paperFilterPoints.length === 0 ? <p className="px-2 py-5 text-center text-xs text-slate-500 dark:text-[#888]">No papers match this filter.</p> : null}
+                </div>
+              </div>
+            </details>
           </div>
+          {visiblePoints.length === 0 ? <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-6 text-center"><div className="rounded-lg border border-slate-200 bg-white/95 px-5 py-4 shadow-sm backdrop-blur dark:border-[#292929] dark:bg-[#080808]/95"><p className="text-sm font-semibold text-slate-900 dark:text-white">No papers are visible</p><p className="mt-1 text-xs text-slate-500 dark:text-[#999]">Use the Papers filter to show at least one paper.</p></div></div> : null}
           <ReactFlow nodes={graphNodes} edges={edges} nodeTypes={NODE_TYPES} onNodeClick={onNodeClick} onNodeMouseEnter={(_event, node) => { if (!node.id.startsWith("cluster:")) setHoveredPaperId(node.id); }} onNodeMouseLeave={() => setHoveredPaperId(null)} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView minZoom={0.35} maxZoom={2.5} className="semantic-map-flow">
             <Background color="#64748b" gap={28} size={0.6} />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(node) => String(node.style?.background ?? "#64748b")} maskColor="rgba(15,23,42,.08)" />
+            <MiniMap pannable zoomable nodeColor={(node) => String((node.data as Partial<PaperNodeData>)?.color ?? node.style?.background ?? "#64748b")} maskColor="rgba(15,23,42,.08)" />
           </ReactFlow>
           <ul className="sr-only" aria-label={`Papers in ${projectName} semantic map`}>
             {visiblePoints.map((point) => <li key={point.paperId}><button type="button" onClick={() => { setFocusedPaperId(point.paperId); setSelectedPaperIds((current) => current.includes(point.paperId) ? current : [...current, point.paperId]); }}>{point.title}, {point.year}, {point.folderName ?? "repository root"}</button></li>)}

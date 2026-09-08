@@ -6,6 +6,7 @@ import type {
   SemanticMapCluster,
   SemanticMapEdge,
   SemanticMapPoint,
+  SemanticMapCoverage,
   SemanticPaperDocument,
 } from "@/types/semantic-map";
 
@@ -154,6 +155,72 @@ export function semanticSourceHash(documents: SemanticPaperDocument[]): string {
 
 export async function loadSemanticPaperDocuments(ownerUserId: string, projectId: string): Promise<SemanticPaperDocument[]> {
   return withCloudSqlOwnerTransaction(ownerUserId, (client) => loadDocumentsWithClient(client, ownerUserId, projectId));
+}
+
+export async function loadSemanticMapCoverage(
+  ownerUserId: string,
+  projectId: string
+): Promise<SemanticMapCoverage> {
+  return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+    await assertProject(client, ownerUserId, projectId);
+    const result = await client.query<{
+      repository_files: string;
+      analyzed_files: string;
+      eligible_papers: string;
+      queued_files: string;
+      processing_files: string;
+      failed_files: string;
+      missing_analysis: string;
+    }>(
+      `WITH scoped_runs AS (
+         SELECT ir.id, ir.status
+         FROM public.ingestion_runs ir
+         LEFT JOIN public.research_folders rf
+           ON rf.id=ir.folder_id AND rf.owner_user_id=$1
+         WHERE ir.owner_user_id=$1
+           AND ir.trashed_at IS NULL
+           AND COALESCE(
+             rf.project_id,
+             CASE
+               WHEN ir.input_payload->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+               THEN (ir.input_payload->>'project_id')::uuid
+             END
+           )=$2
+       ), eligible AS (
+         SELECT DISTINCT p.id AS paper_id, sr.id AS run_id
+         FROM scoped_runs sr
+         JOIN public.paper_content pc
+           ON pc.ingestion_run_id=sr.id AND pc.owner_user_id=$1
+         JOIN public.papers p
+           ON p.id=pc.paper_id AND p.owner_user_id=$1
+         WHERE sr.status='succeeded'
+       )
+       SELECT
+         COUNT(*)::text AS repository_files,
+         COUNT(*) FILTER (WHERE sr.status='succeeded')::text AS analyzed_files,
+         (SELECT COUNT(DISTINCT paper_id) FROM eligible)::text AS eligible_papers,
+         COUNT(*) FILTER (WHERE sr.status='queued')::text AS queued_files,
+         COUNT(*) FILTER (WHERE sr.status='processing')::text AS processing_files,
+         COUNT(*) FILTER (WHERE sr.status='failed')::text AS failed_files,
+         GREATEST(
+           COUNT(*) FILTER (WHERE sr.status='succeeded') -
+           (SELECT COUNT(DISTINCT run_id) FROM eligible),
+           0
+         )::text AS missing_analysis
+       FROM scoped_runs sr`,
+      [ownerUserId, projectId]
+    );
+    const row = result.rows[0];
+    return {
+      repositoryFiles: Number(row?.repository_files ?? 0),
+      analyzedFiles: Number(row?.analyzed_files ?? 0),
+      eligiblePapers: Number(row?.eligible_papers ?? 0),
+      queuedFiles: Number(row?.queued_files ?? 0),
+      processingFiles: Number(row?.processing_files ?? 0),
+      failedFiles: Number(row?.failed_files ?? 0),
+      missingAnalysis: Number(row?.missing_analysis ?? 0),
+    };
+  });
 }
 
 export interface StoredEmbedding {

@@ -70,6 +70,10 @@ test("semantic-map API derives ownership only from verified authentication", () 
   assert.doesNotMatch(route, /ownerUserId:\s*parsed\.data/);
   assert.match(repository, /p\.owner_user_id=\$1/);
   assert.match(repository, /workspace_projects WHERE id=\$1 AND owner_user_id=\$2/);
+  assert.match(route, /loadSemanticMapCoverage\(user\.id, projectId\)/);
+  assert.match(route, /eligiblePapers: coverage\.eligiblePapers/);
+  assert.match(repository, /ir\.owner_user_id=\$1/);
+  assert.match(repository, /missing_analysis/);
 });
 
 test("semantic-map browser contract never exposes embeddings or document text", () => {

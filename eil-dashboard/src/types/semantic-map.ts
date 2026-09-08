@@ -37,6 +37,16 @@ export interface SemanticMapCluster {
   source: "llm" | "deterministic";
 }
 
+export interface SemanticMapCoverage {
+  repositoryFiles: number;
+  analyzedFiles: number;
+  eligiblePapers: number;
+  queuedFiles: number;
+  processingFiles: number;
+  failedFiles: number;
+  missingAnalysis: number;
+}
+
 export interface RepositorySemanticMap {
   mapId: string;
   projectId: string;

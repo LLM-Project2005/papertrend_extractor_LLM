@@ -6,6 +6,7 @@ import {
   createSemanticMapJob,
   failSemanticMap,
   getSemanticMap,
+  loadSemanticMapCoverage,
   loadSemanticPaperDocuments,
   semanticSourceHash,
 } from "@/lib/semantic-map-repository";
@@ -34,11 +35,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "A valid repository ID is required." }, { status: 400 });
   }
   try {
-    const [map, papers] = await Promise.all([
+    const [map, coverage] = await Promise.all([
       getSemanticMap(user.id, projectId),
-      loadSemanticPaperDocuments(user.id, projectId),
+      loadSemanticMapCoverage(user.id, projectId),
     ]);
-    return NextResponse.json({ map, eligiblePapers: papers.length });
+    return NextResponse.json({ map, eligiblePapers: coverage.eligiblePapers, coverage });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to load semantic map.";
     return NextResponse.json({ error: message }, { status: message === "Repository not found." ? 404 : 500 });

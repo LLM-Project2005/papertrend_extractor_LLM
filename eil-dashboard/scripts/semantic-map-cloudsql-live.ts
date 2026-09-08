@@ -4,6 +4,7 @@ import { withCloudSqlOwnerTransaction } from "../src/lib/cloudsql/client";
 import {
   createSemanticMapJob,
   getSemanticMap,
+  loadSemanticMapCoverage,
   loadSemanticPaperDocuments,
   semanticSourceHash,
 } from "../src/lib/semantic-map-repository";
@@ -50,10 +51,26 @@ async function main() {
   useLocalProxyDatabaseUrl();
   const ownerUserId = argument("--owner-user-id");
   if (!ownerUserId) throw new Error("--owner-user-id is required.");
-  if (!process.argv.includes("--apply")) {
-    throw new Error("Live map generation uses the embedding provider and writes a map revision. Pass --apply to continue.");
-  }
   const projectId = await chooseProject(ownerUserId, argument("--project-id"));
+  if (process.argv.includes("--coverage")) {
+    const [documents, map, coverage] = await Promise.all([
+      loadSemanticPaperDocuments(ownerUserId, projectId),
+      getSemanticMap(ownerUserId, projectId),
+      loadSemanticMapCoverage(ownerUserId, projectId),
+    ]);
+    process.stdout.write(`${JSON.stringify({
+      ok: true,
+      projectId,
+      mappedPapers: map?.points.length ?? 0,
+      mapStale: map?.stale ?? false,
+      eligibleDocuments: documents.length,
+      coverage,
+    }, null, 2)}\n`);
+    return;
+  }
+  if (!process.argv.includes("--apply")) {
+    throw new Error("Pass --coverage for a read-only report or --apply to generate a map revision.");
+  }
   const documents = await loadSemanticPaperDocuments(ownerUserId, projectId);
   if (documents.length === 0) throw new Error("The selected repository has no eligible analyzed papers.");
   const sourceHash = semanticSourceHash(documents);

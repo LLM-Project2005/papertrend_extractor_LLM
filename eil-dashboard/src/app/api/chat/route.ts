@@ -281,7 +281,18 @@ const ChatRequestBodySchema = z
 function parseChatRequestBody(value: unknown): ChatRequestBody {
   const parsed = ChatRequestBodySchema.safeParse(value);
   if (!parsed.success) {
-    throw new GuardError("Malformed chat request.", 400);
+    const fields = [...new Set(parsed.error.issues.map((issue) => String(issue.path[0] ?? "request")))];
+    console.warn("Chat request validation failed.", {
+      fields,
+      issues: parsed.error.issues.map((issue) => ({ code: issue.code, path: issue.path.join(".") })),
+    });
+    const oversized = fields.some((field) => field === "messages" || field === "attachments" || field === "selectedRunIds");
+    throw new GuardError(
+      oversized
+        ? "This chat request exceeded its safe context limit. The page may be out of date; refresh it and try again."
+        : `Chat request contains invalid ${fields.join(", ") || "data"}. Refresh the page and try again.`,
+      400
+    );
   }
   return parsed.data as ChatRequestBody;
 }
