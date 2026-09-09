@@ -31,7 +31,7 @@ import type {
   WorkspaceOrganizationRow,
   WorkspaceProjectRow,
 } from "@/types/database";
-import type { WorkspaceProfile } from "@/types/workspace";
+import type { ProjectAnalysisProfile, WorkspaceProfile } from "@/types/workspace";
 
 interface AnalysisSession {
   runIds: string[];
@@ -92,7 +92,15 @@ interface WorkspaceContextValue {
   ) => Promise<WorkspaceOrganizationRow>;
   createProject: (
     name: string,
-    options?: { organizationId?: string | null; description?: string | null }
+    options?: {
+      organizationId?: string | null;
+      description?: string | null;
+      analysisProfile?: ProjectAnalysisProfile;
+    }
+  ) => Promise<WorkspaceProjectRow>;
+  updateProjectAnalysisProfile: (
+    projectId: string,
+    analysisProfile: ProjectAnalysisProfile
   ) => Promise<WorkspaceProjectRow>;
   createFolder: (folderName: string) => Promise<ResearchFolderRow>;
   renameProject: (projectId: string, name: string) => Promise<WorkspaceProjectRow>;
@@ -697,7 +705,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const createProject = useCallback(
     async (
       name: string,
-      options?: { organizationId?: string | null; description?: string | null }
+      options?: {
+        organizationId?: string | null;
+        description?: string | null;
+        analysisProfile?: ProjectAnalysisProfile;
+      }
     ) => {
       const organizationId =
         options?.organizationId ?? selectedOrganizationIdState ?? null;
@@ -716,6 +728,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           organizationId,
           name,
           description: options?.description ?? null,
+          analysisProfile: options?.analysisProfile,
         }),
       });
 
@@ -824,6 +837,38 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return payload.project;
     },
     [session?.access_token, user]
+  );
+
+  const updateProjectAnalysisProfile = useCallback(
+    async (projectId: string, analysisProfile: ProjectAnalysisProfile) => {
+      if (!user || !session?.access_token) {
+        throw new Error("Sign in before changing repository analysis settings.");
+      }
+      const current = allProjects.find((project) => project.id === projectId)
+        ?? projects.find((project) => project.id === projectId);
+      if (!current) throw new Error("Repository not found.");
+
+      const response = await fetch(
+        `/api/workspace/projects/${encodeURIComponent(projectId)}/analysis-profile`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ analysisProfile }),
+        }
+      );
+      const payload = (await response.json()) as { project?: WorkspaceProjectRow; error?: string };
+      if (!response.ok || !payload.project) {
+        throw new Error(payload.error ?? "Failed to update analysis profile.");
+      }
+      const project = payload.project;
+      setProjects((items) => sortByName(items.map((item) => item.id === projectId ? project : item)));
+      setAllProjects((items) => sortByName(items.map((item) => item.id === projectId ? project : item)));
+      return project;
+    },
+    [allProjects, projects, session?.access_token, user]
   );
 
   const renameFolder = useCallback(
@@ -1162,6 +1207,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       refreshFolders,
       createOrganization,
       createProject,
+      updateProjectAnalysisProfile,
       createFolder,
       renameProject,
       renameFolder,
@@ -1171,6 +1217,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       createFolder,
       createOrganization,
       createProject,
+      updateProjectAnalysisProfile,
       currentOrganization,
       currentProject,
       renameFolder,

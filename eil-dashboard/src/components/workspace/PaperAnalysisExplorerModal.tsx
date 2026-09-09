@@ -541,6 +541,22 @@ export default function PaperAnalysisExplorerModal({
 
               {activeTab === "overview" ? (
                 <div className="space-y-5">
+                  {detail.classification ? (
+                    <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#050505]">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-slate-400 dark:text-[#777]">{detail.classification.taxonomyName}</p>
+                          <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{detail.classification.primaryCategory}</p>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${detail.classification.status === "current" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}>
+                          {detail.classification.status === "current" ? "Current profile" : "Needs reclassification"}
+                        </span>
+                      </div>
+                      {detail.classification.additionalCategories.length ? <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">Also: {detail.classification.additionalCategories.join(", ")}</p> : null}
+                      <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#bbb]">{detail.classification.rationale}</p>
+                      <p className="mt-3 text-xs text-slate-400 dark:text-[#777]">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
+                    </section>
+                  ) : null}
                   <section className="grid gap-4 lg:grid-cols-3">
                     <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">

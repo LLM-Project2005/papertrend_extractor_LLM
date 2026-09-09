@@ -16,6 +16,11 @@ import {
   UploadPolicyError,
 } from "@/lib/cloudsql/ingestion-repository";
 import { sanitizeAnalysisProfilePayload } from "@/lib/analysis-profile";
+import {
+  createGeneralAnalysisProfile,
+  sanitizeProjectAnalysisProfile,
+  toIngestionAnalysisProfile,
+} from "@/lib/project-analysis-profile";
 import { createGcsSignedUploadUrl as signGcsUpload } from "@/lib/gcs-signed-urls";
 import {
   MAX_FILES_PER_BATCH,
@@ -88,7 +93,7 @@ export async function POST(request: Request) {
     const folder = sanitizeFolderName(String(body.folder ?? "Repository"));
     const sourceKind = String(body.source_kind ?? "pdf-upload") || "pdf-upload";
     const projectId = String(body.project_id ?? "").trim();
-    const analysisProfile = sanitizeAnalysisProfilePayload(body.analysis_profile);
+    let analysisProfile: unknown = sanitizeAnalysisProfilePayload(body.analysis_profile);
     const files = Array.isArray(body.files)
       ? body.files.filter((file) => file && typeof file.name === "string")
       : [];
@@ -121,6 +126,14 @@ export async function POST(request: Request) {
           401
         );
       }
+      const project = await getWorkspaceRepository().getProject(user.id, projectId);
+      if (!project) {
+        throw new UploadPreparationError("Repository not found.", 404);
+      }
+      const authoritativeProfile = project.analysis_profile
+        ? sanitizeProjectAnalysisProfile(project.analysis_profile)
+        : createGeneralAnalysisProfile();
+      analysisProfile = toIngestionAnalysisProfile(authoritativeProfile);
     } else if (!supabase) {
       throw new Error("Supabase database configuration is unavailable.");
     }
@@ -136,6 +149,7 @@ export async function POST(request: Request) {
     if (databaseProvider === "cloud-sql") {
       const batch = await cloudSqlIngestionRepository.createUploadBatch({
         ownerUserId: user!.id,
+        projectId,
         folderId,
         files,
         folderName: folder,

@@ -15,6 +15,7 @@ export class UploadPolicyError extends Error {
 export class CloudSqlIngestionRepository {
   async createUploadBatch(input: {
     ownerUserId: string;
+    projectId: string;
     folderId: string;
     files: Array<{ name: string; size: number; type?: string | null; sha256?: string | null }>;
     folderName: string;
@@ -172,6 +173,7 @@ export class CloudSqlIngestionRepository {
             {
               uploaded_from: "/workspace/imports",
               folder_name: input.folderName,
+              project_id: input.projectId,
               source_kind: input.sourceKind,
               original_size: file.size,
               mime_type: file.type || "application/pdf",

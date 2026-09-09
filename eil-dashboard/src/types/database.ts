@@ -104,8 +104,30 @@ export interface WorkspaceProjectRow {
   owner_user_id?: string | null;
   name: string;
   description?: string | null;
+  analysis_profile?: import("@/types/workspace").ProjectAnalysisProfile | null;
+  analysis_profile_version?: number | null;
+  analysis_profile_hash?: string | null;
+  analysis_profile_updated_at?: string | null;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface ProjectReclassificationJobRow {
+  id: string;
+  owner_user_id?: string;
+  project_id: string;
+  target_profile: import("@/types/workspace").ProjectAnalysisProfile;
+  target_profile_hash: string;
+  target_profile_version: number;
+  status: "queued" | "processing" | "succeeded" | "failed" | "canceled";
+  total_items: number;
+  processed_items: number;
+  failed_items: number;
+  progress_stage: string;
+  error_message?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  completed_at?: string | null;
 }
 
 export interface ResearchFolderRow {
@@ -263,6 +285,16 @@ export interface RunAnalysisDetail {
   facets: RunAnalysisFacet[];
   tracksSingle: string[];
   tracksMulti: string[];
+  classification?: {
+    taxonomyName: string;
+    primaryCategory: string;
+    additionalCategories: string[];
+    rationale: string;
+    profileVersion: number;
+    classifiedAt: string | null;
+    classifierModel: string;
+    status: "current" | "previous_profile";
+  } | null;
   warnings?: string[];
   diagnostics?: {
     dataSource?: string;

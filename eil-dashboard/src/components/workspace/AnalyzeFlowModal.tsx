@@ -4,11 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import { buildAnalysisProfileSnapshot } from "@/lib/analysis-profile";
-import {
-  createWorkspaceAnalysisCategoryDraft,
-  normalizeWorkspaceAnalysisCategoryDrafts,
-} from "@/lib/workspace-profile";
+import AnalysisProfileEditor, { profileSummary } from "@/components/workspace/AnalysisProfileEditor";
+import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile, toIngestionAnalysisProfile } from "@/lib/project-analysis-profile";
 import Modal from "@/components/ui/Modal";
 import {
   ArrowRightIcon,
@@ -18,12 +15,11 @@ import {
   FileIcon,
   FolderIcon,
   PaperIcon,
-  PlusIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
-import type { WorkspaceAnalysisCategory } from "@/types/workspace";
+import type { ProjectAnalysisProfile } from "@/types/workspace";
 
 type ImportSource =
   | "pdf-upload"
@@ -65,6 +61,8 @@ const SOURCE_OPTIONS: Array<{
 
 const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_FILES = 50;
+const PROJECT_ANALYSIS_PROFILES_ENABLED =
+  process.env.NEXT_PUBLIC_PROJECT_ANALYSIS_PROFILES_ENABLED === "true";
 
 async function readJsonPayload<T>(response: Response): Promise<T | null> {
   const text = await response.text();
@@ -103,7 +101,7 @@ export default function AnalyzeFlowModal({
 }: AnalyzeFlowModalProps) {
   const router = useRouter();
   const { session, user } = useAuth();
-  const { profile, updateProfile, selectedProjectId, currentProject } = useWorkspaceProfile();
+  const { selectedProjectId, currentProject, allProjects, updateProjectAnalysisProfile } = useWorkspaceProfile();
   const [adminSecret, setAdminSecret] = useState("");
   const [folder, setFolder] = useState(defaultFolder);
   const [files, setFiles] = useState<File[]>([]);
@@ -125,10 +123,38 @@ export default function AnalyzeFlowModal({
     fileName: string;
     warning?: string | null;
   } | null>(null);
+  const [showProfileEditor, setShowProfileEditor] = useState(false);
+  const [profileDraft, setProfileDraft] = useState<ProjectAnalysisProfile>(createGeneralAnalysisProfile);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [previousProfileCount, setPreviousProfileCount] = useState(0);
+  const [profileError, setProfileError] = useState<string | null>(null);
 
   useEffect(() => {
     setFolder(defaultFolder);
   }, [defaultFolder]);
+
+  useEffect(() => {
+    setProfileDraft(currentProject?.analysis_profile ?? createGeneralAnalysisProfile());
+    setProfileError(null);
+  }, [currentProject]);
+
+  useEffect(() => {
+    if (!PROJECT_ANALYSIS_PROFILES_ENABLED || !open || !currentProject?.id || !session?.access_token) {
+      setPreviousProfileCount(0);
+      return;
+    }
+    const controller = new AbortController();
+    fetch(`/api/workspace/projects/${encodeURIComponent(currentProject.id)}/analysis-profile`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      signal: controller.signal,
+    })
+      .then(async (response) => response.ok ? response.json() as Promise<{ coverage?: { previousProfile?: number } }> : null)
+      .then((payload) => setPreviousProfileCount(Number(payload?.coverage?.previousProfile ?? 0)))
+      .catch((coverageError) => {
+        if ((coverageError as Error).name !== "AbortError") setPreviousProfileCount(0);
+      });
+    return () => controller.abort();
+  }, [currentProject?.analysis_profile_hash, currentProject?.id, open, session?.access_token]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -147,40 +173,30 @@ export default function AnalyzeFlowModal({
     () => SOURCE_OPTIONS.find((source) => source.id === selectedSource)!,
     [selectedSource]
   );
-  const configuredCategoryCount = profile.analysisCategories.filter((category) =>
-    category.label.trim()
-  ).length;
+  const activeAnalysisProfile = currentProject?.analysis_profile ?? createGeneralAnalysisProfile();
 
-  function updateAnalysisCategory(
-    index: number,
-    patch: Partial<WorkspaceAnalysisCategory>
-  ) {
-    const categories = [...profile.analysisCategories];
-    categories[index] = {
-      ...(categories[index] ?? createWorkspaceAnalysisCategoryDraft(index)),
-      ...patch,
-    };
-    updateProfile({
-      analysisCategories: normalizeWorkspaceAnalysisCategoryDrafts(categories),
-    });
-  }
-
-  function addAnalysisCategory() {
-    updateProfile({
-      analysisCategories: [
-        ...profile.analysisCategories,
-        createWorkspaceAnalysisCategoryDraft(profile.analysisCategories.length),
-      ],
-    });
-    setError(null);
-  }
-
-  function removeAnalysisCategory(index: number) {
-    updateProfile({
-      analysisCategories: profile.analysisCategories.filter(
-        (_, itemIndex) => itemIndex !== index
-      ),
-    });
+  function selectPdfFiles(nextFiles: File[], replace = false) {
+    const validFiles = nextFiles.filter((file) =>
+      (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"))
+      && file.size <= MAX_UPLOAD_FILE_BYTES
+    );
+    const rejected = nextFiles.length - validFiles.length;
+    const candidates = replace ? validFiles : [...files, ...validFiles];
+    const unique = candidates.filter((file, index, rows) =>
+      rows.findIndex((candidate) =>
+        candidate.name === file.name
+        && candidate.size === file.size
+        && candidate.lastModified === file.lastModified
+      ) === index
+    );
+    if (unique.length > MAX_UPLOAD_FILES) {
+      setError(`Only the first ${MAX_UPLOAD_FILES} valid PDFs were selected.`);
+    } else if (rejected > 0) {
+      setError(`${rejected} file${rejected === 1 ? " was" : "s were"} skipped. Use PDF files no larger than 10 MB.`);
+    } else {
+      setError(null);
+    }
+    setFiles(unique.slice(0, MAX_UPLOAD_FILES));
   }
 
   async function loadDriveFiles(search = driveSearch, parentId = driveFolderTrail.at(-1)?.id ?? "root") {
@@ -312,7 +328,7 @@ export default function AnalyzeFlowModal({
     setError(null);
 
     try {
-      const analysisProfile = buildAnalysisProfileSnapshot(profile);
+      const analysisProfile = toIngestionAnalysisProfile(activeAnalysisProfile);
       if (selectedSource === "pdf-upload") {
         if (files.length === 0) {
           throw new Error("Choose at least one PDF file.");
@@ -670,158 +686,33 @@ export default function AnalyzeFlowModal({
             Upload up to 50 PDFs. Each file must be 10 MB or smaller; duplicates are blocked before queueing.
           </p>
 
-          <section className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-slate-950 dark:text-[#f2f2f2]">
-                  Analysis setup
-                </p>
-                <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
-                  Define the field context and categories for this project before queueing papers.
-                </p>
-              </div>
-              <span className="w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#9c9c9c]">
-                {configuredCategoryCount > 0
-                  ? `${configuredCategoryCount} active`
-                  : "No categories"}
-              </span>
-            </div>
-
-            <div className="mt-4 grid gap-3">
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                  Research domain
-                </span>
-                <input
-                  value={profile.domain}
-                  onChange={(event) => updateProfile({ domain: event.target.value })}
-                  placeholder="Example: Public health research"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                  Research domain definition
-                </span>
-                <textarea
-                  value={profile.domainDefinition}
-                  onChange={(event) => updateProfile({ domainDefinition: event.target.value })}
-                  rows={2}
-                  placeholder="Define the field or collection scope so the model knows what this domain includes and excludes."
-                  className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                  Taxonomy name
-                </span>
-                <input
-                  value={profile.categoryTaxonomyName}
-                  onChange={(event) =>
-                    updateProfile({ categoryTaxonomyName: event.target.value })
-                  }
-                  placeholder="Example: Study design categories"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                  Taxonomy definition
-                </span>
-                <textarea
-                  value={profile.categoryTaxonomyDefinition}
-                  onChange={(event) =>
-                    updateProfile({ categoryTaxonomyDefinition: event.target.value })
-                  }
-                  rows={2}
-                  placeholder="Explain what this classification schema is meant to separate, and what boundary rules matter."
-                  className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
-                />
-              </label>
-
-              <label className="grid gap-2">
-                <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                  Additional context
-                </span>
-                <textarea
-                  value={profile.analysisContext}
-                  onChange={(event) => updateProfile({ analysisContext: event.target.value })}
-                  rows={3}
-                  placeholder="Describe the collection, audience, review criteria, or classification caveats."
-                  className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
-                />
-              </label>
-
-              <div className="grid gap-3">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                    Categories
-                  </p>
-                  <button
-                    type="button"
-                    onClick={addAnalysisCategory}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-                  >
-                    <PlusIcon className="h-3.5 w-3.5" />
-                    <span>Add</span>
-                  </button>
-                </div>
-
-                {profile.analysisCategories.length === 0 ? (
-                  <p className="rounded-lg border border-dashed border-slate-300 bg-white px-3 py-3 text-sm leading-6 text-slate-500 dark:border-[#2c2c2c] dark:bg-[#050505] dark:text-[#9c9c9c]">
-                    Papers will stay unclassified unless categories are added.
-                  </p>
-                ) : null}
-
-                {profile.analysisCategories.map((category, index) => (
-                  <div
-                    key={`${category.key}-${index}`}
-                    className="grid gap-2 rounded-lg border border-slate-200 bg-white p-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                        Category {index + 1}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => removeAnalysisCategory(index)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-                      >
-                        <CloseIcon className="h-3.5 w-3.5" />
-                        <span>Remove</span>
-                      </button>
-                    </div>
-                    <input
-                      value={category.label}
-                      onChange={(event) =>
-                        updateAnalysisCategory(index, {
-                          key: event.target.value,
-                          label: event.target.value,
-                        })
-                      }
-                      placeholder="Category label"
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
-                    />
-                    <textarea
-                      value={category.description}
-                      onChange={(event) =>
-                        updateAnalysisCategory(index, { description: event.target.value })
-                      }
-                      rows={2}
-                      placeholder="Criteria, signals, or examples for this category."
-                      className="w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-
           <div className="grid gap-4">
-            <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center dark:border-[#3a3a3a] dark:bg-[#050505]">
+            <div>
+              <p className="text-sm font-medium text-slate-800 dark:text-[#ddd]">Repository</p>
+              <p className="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 dark:border-[#242424] dark:bg-black dark:text-white">
+                {currentProject?.name ?? "No repository selected"}
+              </p>
+            </div>
+            <label className="grid gap-2 text-sm font-medium text-slate-800 dark:text-[#ddd]">
+              Destination folder
+              <input
+                value={folder}
+                onChange={(event) => setFolder(event.target.value)}
+                placeholder={defaultFolder}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-normal outline-none focus:border-slate-500 dark:border-[#242424] dark:bg-black dark:text-white"
+              />
+            </label>
+            <div
+              className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center transition-colors hover:border-slate-500 dark:border-[#3a3a3a] dark:bg-[#050505] dark:hover:border-[#666]"
+              onDragOver={(event) => {
+                event.preventDefault();
+                event.dataTransfer.dropEffect = "copy";
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                selectPdfFiles(Array.from(event.dataTransfer.files), false);
+              }}
+            >
               <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-white text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                 <PaperIcon className="h-6 w-6" />
               </span>
@@ -832,7 +723,7 @@ export default function AnalyzeFlowModal({
                     Choose paper PDFs
                   </p>
                   <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
-                    The file will be uploaded, queued, and processed by the analysis worker.
+                    Drop PDFs here or choose them from your device. Valid files are uploaded and queued together.
                   </p>
                   <div className="mt-5 flex justify-center">
                     <input
@@ -840,9 +731,7 @@ export default function AnalyzeFlowModal({
                       type="file"
                       accept="application/pdf"
                       multiple
-                      onChange={(event) =>
-                        setFiles(Array.from(event.target.files ?? []).filter(Boolean).slice(0, MAX_UPLOAD_FILES))
-                      }
+                      onChange={(event) => selectPdfFiles(Array.from(event.target.files ?? []), true)}
                       className="sr-only"
                     />
                     <label
@@ -1022,30 +911,6 @@ export default function AnalyzeFlowModal({
             <div className="space-y-4">
               <div className="border-t border-slate-200 pt-4 dark:border-[#1f1f1f]">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                  Queue details
-                </p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                      Project
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                      {currentProject?.name ?? "No project selected"}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
-                      Destination
-                    </p>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                      {folder.trim() || defaultFolder}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t border-slate-200 pt-4 dark:border-[#1f1f1f]">
-                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                   Selected files
                 </p>
                 {!user && (
@@ -1069,21 +934,32 @@ export default function AnalyzeFlowModal({
                       No files selected yet.
                     </p>
                   ) : (
-                    <div className="mt-3 space-y-2">
-                      {files.map((file) => (
+                    <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                      {files.map((file, index) => (
                         <div
-                          key={`${file.name}-${file.size}`}
+                          key={`${file.name}-${file.size}-${file.lastModified}-${index}`}
                           className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex min-w-0 items-center gap-3">
                             <FileIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
-                            <span className="text-sm text-slate-900 dark:text-[#f2f2f2]">
+                            <span className="truncate text-sm text-slate-900 dark:text-[#f2f2f2]">
                               {file.name}
                             </span>
                           </div>
-                          <span className="text-xs text-slate-500 dark:text-[#9c9c9c]">
-                            {Math.max(1, Math.round(file.size / 1024))} KB
-                          </span>
+                          <div className="ml-3 flex flex-none items-center gap-2">
+                            <span className="text-xs text-slate-500 dark:text-[#9c9c9c]">
+                              {Math.max(1, Math.round(file.size / 1024))} KB
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:bg-[#111] dark:hover:text-white"
+                              aria-label={`Remove ${file.name}`}
+                              title="Remove file"
+                            >
+                              <CloseIcon className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -1121,6 +997,69 @@ export default function AnalyzeFlowModal({
                   </p>
                 )}
               </div>
+
+              {PROJECT_ANALYSIS_PROFILES_ENABLED ? (
+                <section className="border-t border-slate-200 pt-4 dark:border-[#242424]">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase text-slate-400 dark:text-[#777]">Analysis profile</p>
+                    <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{profileSummary(activeAnalysisProfile)}</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#999]">Applied to every file in this upload.</p>
+                    {previousProfileCount > 0 ? (
+                      <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
+                        {previousProfileCount} existing paper{previousProfileCount === 1 ? "" : "s"} still use an earlier profile. New files use this profile immediately.
+                      </p>
+                    ) : null}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (showProfileEditor) setProfileDraft(activeAnalysisProfile);
+                      setProfileError(null);
+                      setShowProfileEditor((visible) => !visible);
+                    }}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:border-[#333] dark:bg-black dark:text-[#ddd] dark:hover:bg-[#111]"
+                  >
+                    {showProfileEditor ? "Cancel" : "Change"}
+                  </button>
+                </div>
+                {showProfileEditor ? (
+                  <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4 dark:border-[#242424] dark:bg-[#080808]">
+                    <AnalysisProfileEditor
+                      value={profileDraft}
+                      onChange={(next) => { setProfileDraft(next); setProfileError(null); }}
+                      templates={allProjects.filter((project) => project.id !== currentProject?.id && project.analysis_profile).map((project) => ({ projectId: project.id, projectName: project.name, profile: project.analysis_profile! }))}
+                      compact
+                      error={profileError}
+                    />
+                    <div className="mt-4 flex justify-end gap-2">
+                      <button type="button" onClick={() => { setProfileDraft(activeAnalysisProfile); setProfileError(null); setShowProfileEditor(false); }} className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-[#333]">Discard</button>
+                      <button
+                        type="button"
+                        disabled={savingProfile || !currentProject}
+                        onClick={async () => {
+                          if (!currentProject) return;
+                          setSavingProfile(true);
+                          setProfileError(null);
+                          try {
+                            const normalized = sanitizeProjectAnalysisProfile(profileDraft);
+                            await updateProjectAnalysisProfile(currentProject.id, normalized);
+                            setProfileDraft(normalized);
+                            setShowProfileEditor(false);
+                            setError(null);
+                          } catch (profileError) {
+                            setProfileError(profileError instanceof Error ? profileError.message : "Could not save analysis profile.");
+                          } finally { setSavingProfile(false); }
+                        }}
+                        className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
+                      >
+                        {savingProfile ? "Saving..." : "Save for repository"}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+                </section>
+              ) : null}
             </div>
           </div>
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Sequence
 
 from nodes.common import (
@@ -25,10 +26,18 @@ def _build_category_rows(
     folder_id: str | None,
     classification: Dict[str, Any],
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    if classification.get("classification_enabled") is False:
+        return [], []
     taxonomy_name = str(classification.get("taxonomy_name") or "Project categories")[:120]
     taxonomy_definition = str(classification.get("taxonomy_definition") or "")[:1200]
     domain = str(classification.get("domain") or "General academic research")[:160]
     domain_definition = str(classification.get("domain_definition") or "")[:1200]
+    project_id = str(classification.get("project_id") or "").strip() or None
+    profile_hash = str(classification.get("profile_hash") or "legacy")[:80]
+    profile_version = int(classification.get("profile_version") or 1)
+    revision_id = str(classification.get("classification_revision_id") or "").strip() or None
+    classifier_model = str(classification.get("classifier_model") or "automatic-task-routing")[:160]
+    classified_at = datetime.now(timezone.utc).isoformat()
     categories = [
         category
         for category in (classification.get("categories") or [])
@@ -49,6 +58,12 @@ def _build_category_rows(
             "paper_id": paper_id,
             "owner_user_id": owner_user_id,
             "folder_id": folder_id,
+            "project_id": project_id,
+            "profile_hash": profile_hash,
+            "profile_version": profile_version,
+            "classification_revision_id": revision_id,
+            "classifier_model": classifier_model,
+            "classified_at": classified_at,
             "taxonomy_name": taxonomy_name,
             "taxonomy_definition": taxonomy_definition,
             "domain": domain,
@@ -97,6 +112,12 @@ def _build_category_rows(
                     "paper_id": paper_id,
                     "owner_user_id": owner_user_id,
                     "folder_id": folder_id,
+                    "project_id": project_id,
+                    "profile_hash": profile_hash,
+                    "profile_version": profile_version,
+                    "classification_revision_id": revision_id,
+                    "classifier_model": classifier_model,
+                    "classified_at": classified_at,
                     "taxonomy_name": taxonomy_name,
                     "category_key": key[:80],
                     "category_label": label_by_key.get(key) or OTHER_CATEGORY_LABEL,
@@ -268,6 +289,13 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
 
     typology = state.get("research_typology") or {}
     category_classification = state.get("category_classification") or {}
+    analysis_profile = (state.get("input_payload") or {}).get("analysis_profile") or {}
+    category_classification = {
+        **category_classification,
+        "project_id": (state.get("input_payload") or {}).get("project_id") or category_classification.get("project_id"),
+        "profile_hash": category_classification.get("profile_hash") or analysis_profile.get("profileHash"),
+        "profile_version": category_classification.get("profile_version") or analysis_profile.get("profileVersion") or analysis_profile.get("version"),
+    }
     category_definitions, category_assignments = _build_category_rows(
         paper_id,
         owner_user_id,

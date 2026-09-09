@@ -1,22 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import AnalysisProfileEditor from "@/components/workspace/AnalysisProfileEditor";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import {
-  createWorkspaceAnalysisCategoryDraft,
-  normalizeWorkspaceAnalysisCategoryDrafts,
   WORKSPACE_GOALS,
   WORKSPACE_OUTPUTS,
   WORKSPACE_SOURCES,
 } from "@/lib/workspace-profile";
-import type { WorkspaceAnalysisCategory, WorkspaceOutput } from "@/types/workspace";
+import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
+import type { ProjectAnalysisProfile, WorkspaceOutput } from "@/types/workspace";
 
 const SETTINGS_SECTIONS = [
   {
+    id: "analysis",
+    label: "Analysis & classification",
+    description: "Choose how this repository classifies new and existing papers.",
+  },
+  {
     id: "general",
     label: "General",
-    description: "Repository name, domain, and identity.",
+    description: "Workspace display preferences and saved account state.",
   },
   {
     id: "project",
@@ -30,15 +36,85 @@ const SETTINGS_SECTIONS = [
   },
 ] as const;
 
+const PROJECT_ANALYSIS_PROFILES_ENABLED =
+  process.env.NEXT_PUBLIC_PROJECT_ANALYSIS_PROFILES_ENABLED === "true";
+const VISIBLE_SETTINGS_SECTIONS = PROJECT_ANALYSIS_PROFILES_ENABLED
+  ? SETTINGS_SECTIONS
+  : SETTINGS_SECTIONS.filter((section) => section.id !== "analysis");
+
 type SectionId = (typeof SETTINGS_SECTIONS)[number]["id"];
 
 export default function WorkspaceSettingsClient() {
-  const { profile, updateProfile, resetProfile } = useWorkspaceProfile();
-  const { user, profile: authProfile, isAdmin } = useAuth();
+  const searchParams = useSearchParams();
+  const {
+    profile,
+    updateProfile,
+    resetProfile,
+    currentProject,
+    allProjects,
+    updateProjectAnalysisProfile,
+  } = useWorkspaceProfile();
+  const { user, session, profile: authProfile, isAdmin } = useAuth();
   const [activeSection, setActiveSection] = useState<SectionId>("general");
   const [message, setMessage] = useState<string | null>(null);
+  const [profileDraft, setProfileDraft] = useState<ProjectAnalysisProfile>(createGeneralAnalysisProfile);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [classificationCoverage, setClassificationCoverage] = useState({ classified: 0, previousProfile: 0, unclassified: 0, failed: 0 });
+  const [coverageRevision, setCoverageRevision] = useState(0);
+  const [reclassificationJob, setReclassificationJob] = useState<{ id: string; status: string; total_items: number; processed_items: number; failed_items: number; error_message?: string | null } | null>(null);
+  const [reclassificationBusy, setReclassificationBusy] = useState(false);
+  const currentProjectId = currentProject?.id ?? null;
+  const reclassificationJobId = reclassificationJob?.id ?? null;
+  const reclassificationJobStatus = reclassificationJob?.status ?? null;
 
-    function setSavedMessage(nextMessage = "Repository preferences updated.") {
+  const savedProjectProfile = useMemo(
+    () => currentProject?.analysis_profile ?? createGeneralAnalysisProfile(),
+    [currentProject]
+  );
+  const profileDirty = JSON.stringify(profileDraft) !== JSON.stringify(savedProjectProfile);
+
+  useEffect(() => {
+    const requested = searchParams.get("section");
+    if (VISIBLE_SETTINGS_SECTIONS.some((section) => section.id === requested)) {
+      setActiveSection(requested as SectionId);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    setProfileDraft(savedProjectProfile);
+    setProfileError(null);
+  }, [savedProjectProfile]);
+
+  useEffect(() => {
+    if (!PROJECT_ANALYSIS_PROFILES_ENABLED || !currentProjectId || !session?.access_token) return;
+    fetch(`/api/workspace/projects/${encodeURIComponent(currentProjectId)}/analysis-profile`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    }).then(async (response) => {
+      const payload = await response.json() as { coverage?: typeof classificationCoverage };
+      if (response.ok && payload.coverage) setClassificationCoverage(payload.coverage);
+    }).catch(() => undefined);
+  }, [coverageRevision, currentProjectId, session?.access_token]);
+
+  useEffect(() => {
+    if (!profileDirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    const warnLinkNavigation = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (target && !window.confirm("Discard unsaved analysis profile changes?")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    document.addEventListener("click", warnLinkNavigation, true);
+    return () => {
+      window.removeEventListener("beforeunload", warn);
+      document.removeEventListener("click", warnLinkNavigation, true);
+    };
+  }, [profileDirty]);
+
+  function setSavedMessage(nextMessage = "Repository preferences updated.") {
     setMessage(nextMessage);
   }
 
@@ -51,34 +127,80 @@ export default function WorkspaceSettingsClient() {
     setSavedMessage();
   }
 
-  function updateCategory(index: number, patch: Partial<WorkspaceAnalysisCategory>) {
-    const categories = [...profile.analysisCategories];
-    categories[index] = {
-      key: categories[index]?.key || `category_${index + 1}`,
-      label: categories[index]?.label || "",
-      description: categories[index]?.description || "",
-      ...patch,
-    };
-    updateProfile({ analysisCategories: normalizeWorkspaceAnalysisCategoryDrafts(categories) });
-    setSavedMessage();
+  async function saveAnalysisProfile() {
+    if (!currentProject) return;
+    setSavingProfile(true);
+    setProfileError(null);
+    try {
+      const normalized = sanitizeProjectAnalysisProfile(profileDraft);
+      await updateProjectAnalysisProfile(currentProject.id, normalized);
+      setProfileDraft(normalized);
+      setCoverageRevision((revision) => revision + 1);
+      setMessage("Analysis profile saved. New uploads will use it immediately.");
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "Could not save the analysis profile.");
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
-  function addCategory() {
-    updateProfile({
-      analysisCategories: [
-        ...profile.analysisCategories,
-        createWorkspaceAnalysisCategoryDraft(profile.analysisCategories.length),
-      ],
-    });
-    setSavedMessage("Category added.");
+  async function startReclassification() {
+    if (!currentProject || !session?.access_token || profileDirty) return;
+    setReclassificationBusy(true);
+    setProfileError(null);
+    try {
+      const response = await fetch(`/api/workspace/projects/${encodeURIComponent(currentProject.id)}/reclassify`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const payload = await response.json() as { jobId?: string; error?: string };
+      if (!response.ok || !payload.jobId) throw new Error(payload.error ?? "Could not start reclassification.");
+      setReclassificationJob({ id: payload.jobId, status: "queued", total_items: 0, processed_items: 0, failed_items: 0 });
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : "Could not start reclassification.");
+    } finally {
+      setReclassificationBusy(false);
+    }
   }
 
-  function removeCategory(index: number) {
-    updateProfile({
-      analysisCategories: profile.analysisCategories.filter((_, itemIndex) => itemIndex !== index),
-    });
-    setSavedMessage("Category removed.");
+  async function updateReclassification(action: "cancel" | "retry") {
+    if (!currentProject || !session?.access_token || !reclassificationJob) return;
+    setReclassificationBusy(true);
+    setProfileError(null);
+    try {
+      const response = await fetch(`/api/workspace/projects/${encodeURIComponent(currentProject.id)}/reclassify/${encodeURIComponent(reclassificationJob.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ action }),
+      });
+      const payload = await response.json() as { job?: typeof reclassificationJob; error?: string };
+      if (!response.ok || !payload.job) throw new Error(payload.error ?? `Could not ${action} reclassification.`);
+      setReclassificationJob(payload.job);
+    } catch (error) {
+      setProfileError(error instanceof Error ? error.message : `Could not ${action} reclassification.`);
+    } finally {
+      setReclassificationBusy(false);
+    }
   }
+
+  useEffect(() => {
+    if (!currentProjectId || !session?.access_token || !reclassificationJobId || !reclassificationJobStatus || !["queued", "processing"].includes(reclassificationJobStatus)) return;
+    const timer = window.setInterval(async () => {
+      try {
+        const response = await fetch(`/api/workspace/projects/${encodeURIComponent(currentProjectId)}/reclassify/${encodeURIComponent(reclassificationJobId)}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const payload = await response.json() as { job?: typeof reclassificationJob };
+        if (response.ok && payload.job) {
+          setReclassificationJob(payload.job);
+          if (payload.job.status === "succeeded") setClassificationCoverage((current) => ({ ...current, classified: payload.job!.total_items, previousProfile: 0, unclassified: 0 }));
+        }
+      } catch {
+        // A transient refresh failure should not change or cancel the server job.
+      }
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [currentProjectId, reclassificationJobId, reclassificationJobStatus, session?.access_token]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
@@ -95,7 +217,7 @@ export default function WorkspaceSettingsClient() {
               Configuration
             </p>
             <nav className="mt-3 space-y-1">
-              {SETTINGS_SECTIONS.map((section) => {
+              {VISIBLE_SETTINGS_SECTIONS.map((section) => {
                 const isActive = activeSection === section.id;
                 return (
                   <button
@@ -143,11 +265,102 @@ export default function WorkspaceSettingsClient() {
         <section>
           <p className="text-sm text-slate-500 dark:text-[#8f8f8f]">
             {
-              SETTINGS_SECTIONS.find((section) => section.id === activeSection)
+              VISIBLE_SETTINGS_SECTIONS.find((section) => section.id === activeSection)
                 ?.description
             }
           </p>
         </section>
+
+        {PROJECT_ANALYSIS_PROFILES_ENABLED && activeSection === "analysis" ? (
+          <section className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-[#242424] dark:bg-[#050505]">
+            <div className="border-b border-slate-200 px-6 py-5 dark:border-[#242424]">
+              <p className="text-xs font-semibold uppercase text-slate-400 dark:text-[#777]">{currentProject?.name ?? "Repository"}</p>
+              <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">Analysis & classification</h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#999]">
+                This profile is owned by this repository. Changing it affects new uploads; existing papers keep their previous result until you reclassify them.
+              </p>
+            </div>
+            <div className="px-6 py-6">
+              <AnalysisProfileEditor
+                value={profileDraft}
+                onChange={(next) => {
+                  setProfileDraft(next);
+                  setProfileError(null);
+                }}
+                templates={allProjects
+                  .filter((project) => project.id !== currentProject?.id && project.analysis_profile)
+                  .map((project) => ({ projectId: project.id, projectName: project.name, profile: project.analysis_profile! }))}
+                error={profileError}
+              />
+              <div className="mt-6 border-t border-slate-200 pt-5 dark:border-[#242424]">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Current-profile coverage</p>
+                    <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500 dark:text-[#999]">
+                      <span>{classificationCoverage.classified} classified</span>
+                      <span>{classificationCoverage.previousProfile} previous profile</span>
+                      <span>{classificationCoverage.unclassified} unclassified</span>
+                      <span>{classificationCoverage.failed} failed analyses</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={profileDirty || savingProfile || reclassificationBusy || classificationCoverage.previousProfile + classificationCoverage.unclassified === 0 || Boolean(reclassificationJob && ["queued", "processing"].includes(reclassificationJob.status))}
+                    onClick={() => void startReclassification()}
+                    className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#333] dark:text-[#ddd] dark:hover:bg-[#0a0a0a]"
+                  >
+                    {reclassificationBusy ? "Starting..." : reclassificationJob && ["queued", "processing"].includes(reclassificationJob.status) ? "Reclassifying..." : "Reclassify existing papers"}
+                  </button>
+                </div>
+                {reclassificationJob ? (
+                  <div className="mt-4" role="status">
+                    <div className="flex justify-between text-xs text-slate-500 dark:text-[#999]">
+                      <span>{reclassificationJob.status === "succeeded" ? "Published" : reclassificationJob.status === "failed" ? "Previous classification preserved" : reclassificationJob.status === "canceled" ? "Canceled; previous classification preserved" : "Classifying extracted papers"}</span>
+                      <span>{reclassificationJob.processed_items}/{reclassificationJob.total_items || "..."}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-[#181818]">
+                      <div className="h-full bg-slate-900 transition-[width] duration-300 dark:bg-white" style={{ width: `${reclassificationJob.total_items ? Math.round((reclassificationJob.processed_items / reclassificationJob.total_items) * 100) : 2}%` }} />
+                    </div>
+                    {reclassificationJob.error_message ? <p className="mt-2 text-xs text-red-600 dark:text-red-300">{reclassificationJob.error_message}</p> : null}
+                    <div className="mt-3 flex justify-end">
+                      {["queued", "processing"].includes(reclassificationJob.status) ? (
+                        <button type="button" disabled={reclassificationBusy} onClick={() => void updateReclassification("cancel")} className="text-xs font-medium text-slate-500 hover:text-slate-900 disabled:opacity-40 dark:text-[#999] dark:hover:text-white">Cancel reclassification</button>
+                      ) : reclassificationJob.status === "failed" ? (
+                        <button type="button" disabled={reclassificationBusy} onClick={() => void updateReclassification("retry")} className="text-xs font-medium text-slate-700 hover:text-slate-950 disabled:opacity-40 dark:text-[#ccc] dark:hover:text-white">Retry failed papers</button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4 dark:border-[#242424]">
+              <p className="text-xs text-slate-500 dark:text-[#999]">
+                {profileDirty ? "Unsaved changes" : `Profile ${savedProjectProfile.version} - ${savedProjectProfile.displayName}`}
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={!profileDirty || savingProfile}
+                  onClick={() => {
+                    setProfileDraft(savedProjectProfile);
+                    setProfileError(null);
+                  }}
+                  className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 disabled:opacity-40 dark:border-[#333] dark:text-[#ddd]"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  disabled={!profileDirty || savingProfile || !currentProject}
+                  onClick={() => void saveAnalysisProfile()}
+                  className="rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40 dark:bg-white dark:text-black"
+                >
+                  {savingProfile ? "Saving..." : "Save profile"}
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {activeSection === "general" ? (
           <>
@@ -165,10 +378,10 @@ export default function WorkspaceSettingsClient() {
                 <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
                   <div>
                     <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Repository profile name
+                      Workspace display name
                     </p>
                     <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Displayed across the repository shell.
+                      Used in account-level navigation. Classification rules live in Analysis & classification.
                     </p>
                   </div>
                   <input
@@ -181,66 +394,6 @@ export default function WorkspaceSettingsClient() {
                   />
                 </label>
 
-                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Research domain
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Used in the landing, repository, and chat framing.
-                    </p>
-                  </div>
-                  <input
-                    value={profile.domain}
-                    onChange={(event) => {
-                      updateProfile({ domain: event.target.value });
-                      setSavedMessage();
-                    }}
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                  />
-                </label>
-
-                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Research domain definition
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Defines what belongs inside the repository field context.
-                    </p>
-                  </div>
-                  <textarea
-                    value={profile.domainDefinition}
-                    onChange={(event) => {
-                      updateProfile({ domainDefinition: event.target.value });
-                      setSavedMessage();
-                    }}
-                    rows={4}
-                    placeholder="Example: Public health research includes population health, clinical service delivery, health policy, epidemiology, and intervention studies. Exclude unrelated biomedical bench science unless the paper connects it to population or care outcomes."
-                    className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                  />
-                </label>
-
-                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Additional analysis context
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Passed to analysis prompts so each repository can explain its field, audience, and review priorities.
-                    </p>
-                  </div>
-                  <textarea
-                    value={profile.analysisContext}
-                    onChange={(event) => {
-                      updateProfile({ analysisContext: event.target.value });
-                      setSavedMessage();
-                    }}
-                    rows={5}
-                    placeholder="Example: This repository contains policy briefs and empirical studies from multiple Chula faculties. Prefer evidence-grounded uncertainty and do not assume one discipline-specific taxonomy."
-                    className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                  />
-                </label>
               </div>
             </section>
 
@@ -251,7 +404,7 @@ export default function WorkspaceSettingsClient() {
                     Repository state
                   </h3>
                   <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                    Changes persist locally for guests and sync to Supabase for signed-in users.
+                    Changes persist locally for guests and sync to the signed-in account database.
                   </p>
                 </div>
                 <button
@@ -306,114 +459,6 @@ export default function WorkspaceSettingsClient() {
                     </button>
                   );
                 })}
-              </div>
-            </section>
-
-            <section className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
-              <div className="border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f]">
-                <h2 className="text-2xl font-semibold text-slate-950 dark:text-[#ececec]">
-                  Project taxonomy
-                </h2>
-                <p className="mt-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                  Define the categories the model should use for this repository. Leave blank to keep papers unclassified instead of forcing the wrong field.
-                </p>
-              </div>
-              <div className="divide-y divide-slate-200 dark:divide-[#2c2c2c]">
-                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Taxonomy name
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Shown in settings and saved with queued analysis runs.
-                    </p>
-                  </div>
-                  <input
-                    value={profile.categoryTaxonomyName}
-                    onChange={(event) => {
-                      updateProfile({ categoryTaxonomyName: event.target.value });
-                      setSavedMessage();
-                    }}
-                    placeholder="Example: Faculty research categories"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                  />
-                </label>
-
-                <label className="grid gap-3 px-6 py-5 md:grid-cols-[220px_minmax(0,1fr)] md:items-start">
-                  <div>
-                    <p className="text-sm font-medium text-slate-950 dark:text-[#ececec]">
-                      Taxonomy definition
-                    </p>
-                    <p className="mt-1 text-sm text-slate-500 dark:text-[#8f8f8f]">
-                      Explains what the category system is meant to distinguish.
-                    </p>
-                  </div>
-                  <textarea
-                    value={profile.categoryTaxonomyDefinition}
-                    onChange={(event) => {
-                      updateProfile({ categoryTaxonomyDefinition: event.target.value });
-                      setSavedMessage();
-                    }}
-                    rows={4}
-                    placeholder="Example: Study design categories classify papers by their primary research contribution, not by topic alone. Choose the category that best matches the stated aim, method, and deliverable."
-                    className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                  />
-                </label>
-
-                <div className="space-y-4 px-6 py-5">
-                  {profile.analysisCategories.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 px-4 py-5 text-sm leading-6 text-slate-500 dark:border-[#2c2c2c] dark:text-[#9b9b9b]">
-                      No categories configured. New analyses will preserve category uncertainty instead of applying field-specific labels.
-                    </div>
-                  ) : null}
-
-                  {profile.analysisCategories.map((category, index) => (
-                    <div
-                      key={`${category.key}-${index}`}
-                      className="rounded-xl border border-slate-200 p-4 dark:border-[#1f1f1f]"
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-slate-950 dark:text-[#ececec]">
-                          Category {index + 1}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => removeCategory(index)}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-                        <input
-                          value={category.label}
-                          onChange={(event) =>
-                            updateCategory(index, {
-                              key: event.target.value,
-                              label: event.target.value,
-                            })
-                          }
-                          placeholder="Category label"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                        />
-                        <input
-                          value={category.description}
-                          onChange={(event) => updateCategory(index, { description: event.target.value })}
-                          placeholder="What kind of paper belongs here?"
-                          className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:focus:border-[#5a5a5a]"
-                        />
-                      </div>
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    onClick={addCategory}
-                    className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-                  >
-                    Add category
-                  </button>
-                </div>
               </div>
             </section>
 

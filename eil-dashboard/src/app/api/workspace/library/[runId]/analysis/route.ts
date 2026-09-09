@@ -488,12 +488,21 @@ export async function GET(
       missingOutputs.push("facets");
     }
 
-    const tracksSingle = extractTrackLabels(
+    const runInputPayload = run.input_payload && typeof run.input_payload === "object"
+      ? run.input_payload as Record<string, unknown>
+      : {};
+    const runAnalysisProfile = runInputPayload.analysis_profile && typeof runInputPayload.analysis_profile === "object"
+      ? runInputPayload.analysis_profile as Record<string, unknown>
+      : {};
+    const classificationDisabled = runAnalysisProfile.classificationEnabled === false
+      || runAnalysisProfile.classification_enabled === false
+      || runAnalysisProfile.mode === "general";
+    const tracksSingle = classificationDisabled ? [] : extractTrackLabels(
       ((singleResult.data as Record<string, unknown> | null) ??
         (fallbackSingleResult.data as Record<string, unknown> | null) ??
         null)
     );
-    const tracksMulti = extractTrackLabels(
+    const tracksMulti = classificationDisabled ? [] : extractTrackLabels(
       ((multiResult.data as Record<string, unknown> | null) ??
         (fallbackMultiResult.data as Record<string, unknown> | null) ??
         null)
@@ -519,11 +528,11 @@ export async function GET(
       );
       missingOutputs.push("canonical_tracks_multi");
     }
-    if (tracksSingle.length === 0) {
+    if (!classificationDisabled && tracksSingle.length === 0) {
       warnings.push("No primary track label was stored for this paper.");
       missingOutputs.push("tracks_single");
     }
-    if (tracksMulti.length === 0) {
+    if (!classificationDisabled && tracksMulti.length === 0) {
       warnings.push("No cross-track label was stored for this paper.");
       missingOutputs.push("tracks_multi");
     }
@@ -544,6 +553,81 @@ export async function GET(
       warnings.push("No extracted conclusion text was available.");
       missingOutputs.push("conclusion");
     }
+
+    const classification = useCloudSql
+      ? await withCloudSqlOwnerTransaction(user.id, async (client) => {
+          const projectResult = await client.query<Record<string, unknown>>(
+            `SELECT project.analysis_profile,project.analysis_profile_hash,project.analysis_profile_updated_at
+             FROM public.papers paper
+             JOIN public.research_folders folder
+               ON folder.id=paper.folder_id AND folder.owner_user_id=$1
+             JOIN public.workspace_projects project
+               ON project.id=folder.project_id AND project.owner_user_id=$1
+             WHERE paper.id=$2 AND paper.owner_user_id=$1
+             LIMIT 1`,
+            [user.id, paperId]
+          );
+          const currentProjectProfile = projectResult.rows[0] ?? {};
+          const currentProfileHash = String(currentProjectProfile.analysis_profile_hash ?? "");
+          const currentAnalysisProfile = currentProjectProfile.analysis_profile && typeof currentProjectProfile.analysis_profile === "object"
+            ? currentProjectProfile.analysis_profile as Record<string, unknown>
+            : {};
+          if (classificationDisabled) {
+            const snapshotHash = String(runAnalysisProfile.profileHash ?? runAnalysisProfile.profile_hash ?? "");
+            return {
+              taxonomyName: String(runAnalysisProfile.displayName ?? runAnalysisProfile.taxonomyName ?? "General Research"),
+              primaryCategory: "Classification not enabled",
+              additionalCategories: [],
+              rationale: "This repository profile extracts research signals without forcing the paper into a category.",
+              profileVersion: Number(runAnalysisProfile.profileVersion ?? runAnalysisProfile.profile_version ?? runAnalysisProfile.version ?? 2),
+              classifiedAt: run.completed_at ? String(run.completed_at) : null,
+              classifierModel: "skipped",
+              status: snapshotHash && currentProfileHash && snapshotHash !== currentProfileHash ? "previous_profile" : "current",
+            };
+          }
+          const result = await client.query<Record<string, unknown>>(
+            `SELECT a.taxonomy_name,a.category_key,a.category_label,a.assignment_type,a.rationale,
+                    a.profile_hash,a.profile_version,a.classification_revision_id,a.classifier_model,a.classified_at,
+                    p.analysis_profile_hash AS current_profile_hash
+             FROM public.paper_category_assignments a
+             JOIN public.workspace_projects p ON p.id=a.project_id AND p.owner_user_id=$1
+             WHERE a.owner_user_id=$1 AND a.paper_id=$2
+             ORDER BY CASE WHEN a.profile_hash=p.analysis_profile_hash THEN 0 ELSE 1 END,
+                      CASE a.assignment_type WHEN 'single' THEN 0 ELSE 1 END,
+                      a.classified_at DESC NULLS LAST,a.position`,
+            [user.id, paperId]
+          );
+          const rows = result.rows;
+          const primary = rows.find((row) => row.assignment_type === "single") ?? null;
+          if (!primary && currentAnalysisProfile.classificationEnabled === false) {
+            return {
+              taxonomyName: String(currentAnalysisProfile.displayName ?? currentAnalysisProfile.taxonomyName ?? "General Research"),
+              primaryCategory: "Classification not enabled",
+              additionalCategories: [],
+              rationale: "This repository profile extracts research signals without forcing the paper into a category.",
+              profileVersion: Number(currentAnalysisProfile.version ?? 2),
+              classifiedAt: currentProjectProfile.analysis_profile_updated_at ? String(currentProjectProfile.analysis_profile_updated_at) : null,
+              classifierModel: "skipped",
+              status: "current",
+            };
+          }
+          return primary ? {
+            taxonomyName: String(primary.taxonomy_name ?? "Repository categories"),
+            primaryCategory: String(primary.category_label ?? "Other / Unclassified"),
+            additionalCategories: rows
+              .filter((row) => row.assignment_type === "multi"
+                && row.category_key !== primary.category_key
+                && row.profile_hash === primary.profile_hash
+                && String(row.classification_revision_id ?? "") === String(primary.classification_revision_id ?? ""))
+              .map((row) => String(row.category_label)),
+            rationale: String(primary.rationale ?? ""),
+            profileVersion: Number(primary.profile_version ?? 0),
+            classifiedAt: primary.classified_at ? String(primary.classified_at) : null,
+            classifierModel: String(primary.classifier_model ?? "unknown"),
+            status: primary.profile_hash === primary.current_profile_hash ? "current" : "previous_profile",
+          } : null;
+        })
+      : null;
 
     const topics = [
       ...new Set([
@@ -574,6 +658,7 @@ export async function GET(
         facets,
         tracksSingle,
         tracksMulti,
+        classification,
         warnings: [...new Set(warnings)],
         diagnostics: {
           dataSource:

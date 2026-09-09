@@ -47,6 +47,10 @@ CREATE TABLE IF NOT EXISTS workspace_projects (
   owner_user_id   UUID NOT NULL,
   name            TEXT NOT NULL,
   description     TEXT,
+  analysis_profile JSONB,
+  analysis_profile_version INT,
+  analysis_profile_hash TEXT,
+  analysis_profile_updated_at TIMESTAMPTZ,
   created_at      TIMESTAMPTZ DEFAULT now(),
   updated_at      TIMESTAMPTZ DEFAULT now(),
   UNIQUE (organization_id, name)
@@ -364,6 +368,12 @@ CREATE TABLE IF NOT EXISTS paper_category_definitions (
   paper_id              BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
   owner_user_id         UUID,
   folder_id             UUID,
+  project_id            UUID REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  profile_hash          TEXT,
+  profile_version       INT,
+  classification_revision_id UUID,
+  classifier_model      TEXT,
+  classified_at         TIMESTAMPTZ DEFAULT now(),
   taxonomy_name         TEXT NOT NULL DEFAULT 'Project categories',
   taxonomy_definition   TEXT,
   domain                TEXT,
@@ -381,6 +391,12 @@ CREATE TABLE IF NOT EXISTS paper_category_assignments (
   paper_id              BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
   owner_user_id         UUID,
   folder_id             UUID,
+  project_id            UUID REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  profile_hash          TEXT,
+  profile_version       INT,
+  classification_revision_id UUID,
+  classifier_model      TEXT,
+  classified_at         TIMESTAMPTZ DEFAULT now(),
   taxonomy_name         TEXT NOT NULL DEFAULT 'Project categories',
   category_key          TEXT NOT NULL,
   category_label        TEXT NOT NULL,
@@ -390,6 +406,42 @@ CREATE TABLE IF NOT EXISTS paper_category_assignments (
   position              INT NOT NULL DEFAULT 1,
   created_at            TIMESTAMPTZ DEFAULT now(),
   UNIQUE (owner_user_id, paper_id, assignment_type, category_key)
+);
+
+CREATE TABLE IF NOT EXISTS project_reclassification_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  target_profile JSONB NOT NULL,
+  target_profile_hash TEXT NOT NULL,
+  target_profile_version INT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','succeeded','failed','canceled')),
+  total_items INT NOT NULL DEFAULT 0,
+  processed_items INT NOT NULL DEFAULT 0,
+  failed_items INT NOT NULL DEFAULT 0,
+  progress_stage TEXT NOT NULL DEFAULT 'queued',
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS project_reclassification_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES project_reclassification_jobs(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES user_profiles(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  paper_id BIGINT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
+  ingestion_run_id UUID REFERENCES ingestion_runs(id) ON DELETE SET NULL,
+  folder_id UUID REFERENCES research_folders(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','succeeded','failed','canceled')),
+  result_payload JSONB,
+  classifier_model TEXT,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE (job_id,paper_id)
 );
 
 -- ------------------------------------------------------------------
@@ -528,7 +580,13 @@ ALTER TABLE paper_category_definitions
   ADD COLUMN IF NOT EXISTS domain TEXT,
   ADD COLUMN IF NOT EXISTS domain_definition TEXT,
   ADD COLUMN IF NOT EXISTS category_description TEXT,
-  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1;
+  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT,
+  ADD COLUMN IF NOT EXISTS profile_version INT,
+  ADD COLUMN IF NOT EXISTS classification_revision_id UUID,
+  ADD COLUMN IF NOT EXISTS classifier_model TEXT,
+  ADD COLUMN IF NOT EXISTS classified_at TIMESTAMPTZ DEFAULT now();
 
 ALTER TABLE paper_category_assignments
   ADD COLUMN IF NOT EXISTS owner_user_id UUID,
@@ -537,7 +595,13 @@ ALTER TABLE paper_category_assignments
   ADD COLUMN IF NOT EXISTS category_label TEXT,
   ADD COLUMN IF NOT EXISTS is_other BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN IF NOT EXISTS rationale TEXT,
-  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1;
+  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES workspace_projects(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT,
+  ADD COLUMN IF NOT EXISTS profile_version INT,
+  ADD COLUMN IF NOT EXISTS classification_revision_id UUID,
+  ADD COLUMN IF NOT EXISTS classifier_model TEXT,
+  ADD COLUMN IF NOT EXISTS classified_at TIMESTAMPTZ DEFAULT now();
 
 DO $$
 BEGIN

@@ -5,8 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
+import AnalysisProfileEditor from "@/components/workspace/AnalysisProfileEditor";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
 import { FileIcon, LogoMarkIcon, MoreHorizontalIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
+
+const PROJECT_ANALYSIS_PROFILES_ENABLED =
+  process.env.NEXT_PUBLIC_PROJECT_ANALYSIS_PROFILES_ENABLED === "true";
 
 export default function ProjectIndexClient() {
   const router = useRouter();
@@ -28,6 +33,8 @@ export default function ProjectIndexClient() {
   const [draftName, setDraftName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisProfileError, setAnalysisProfileError] = useState<string | null>(null);
+  const [analysisProfile, setAnalysisProfile] = useState(createGeneralAnalysisProfile);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -56,6 +63,7 @@ export default function ProjectIndexClient() {
 
     setCreating(true);
     setError(null);
+    setAnalysisProfileError(null);
     try {
       // Organizations remain internal for database compatibility. Users do
       // not need to choose one when creating a repository.
@@ -69,7 +77,17 @@ export default function ProjectIndexClient() {
         organizationId = organization.id;
       }
 
-      const project = await createProject(name, { organizationId });
+      let normalizedProfile;
+      try {
+        normalizedProfile = sanitizeProjectAnalysisProfile(analysisProfile);
+      } catch (profileValidationError) {
+        setAnalysisProfileError(profileValidationError instanceof Error ? profileValidationError.message : "Check the analysis profile fields.");
+        return;
+      }
+      const project = await createProject(name, {
+        organizationId,
+        analysisProfile: normalizedProfile,
+      });
       setSelectedProjectId(project.id);
       setDraftName("");
       setShowCreateModal(false);
@@ -146,7 +164,9 @@ export default function ProjectIndexClient() {
               type="button"
               onClick={() => {
                 setDraftName("");
+                setAnalysisProfile(createGeneralAnalysisProfile());
                 setError(null);
+                setAnalysisProfileError(null);
                 setShowCreateModal(true);
               }}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
@@ -188,6 +208,11 @@ export default function ProjectIndexClient() {
                   <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
                     {project.description || "Folders, papers, analytics, and research chat."}
                   </p>
+                  {PROJECT_ANALYSIS_PROFILES_ENABLED && project.analysis_profile ? (
+                    <span className="mt-4 inline-flex rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#2a2a2a] dark:text-[#aaa]">
+                      {project.analysis_profile.displayName}
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
@@ -229,9 +254,30 @@ export default function ProjectIndexClient() {
           if (creating) return;
           setShowCreateModal(false);
           setError(null);
+          setAnalysisProfileError(null);
         }}
         onSubmit={handleCreateProject}
-      />
+        wide
+      >
+        {PROJECT_ANALYSIS_PROFILES_ENABLED ? (
+          <AnalysisProfileEditor
+            value={analysisProfile}
+            onChange={(nextProfile) => {
+              setAnalysisProfile(nextProfile);
+              setAnalysisProfileError(null);
+            }}
+            templates={allProjects
+              .filter((project) => project.analysis_profile)
+              .map((project) => ({
+                projectId: project.id,
+                projectName: project.name,
+                profile: project.analysis_profile!,
+              }))}
+            compact
+            error={analysisProfileError}
+          />
+        ) : null}
+      </CreateEntityModal>
     </main>
   );
 }
