@@ -24,6 +24,22 @@ export interface WorkspaceAnalysisCategory {
   description: string;
 }
 
+export type AnalysisProfileMode = "general" | "eil" | "custom";
+
+export interface ProjectAnalysisProfile {
+  version: 2;
+  mode: AnalysisProfileMode;
+  displayName: string;
+  domain: string;
+  domainDefinition: string;
+  taxonomyName: string;
+  taxonomyDefinition: string;
+  additionalContext: string;
+  classificationEnabled: boolean;
+  categories: WorkspaceAnalysisCategory[];
+  profileHash: string;
+}
+
 export interface WorkspaceCorpusTopicFamilyCache {
   id: string;
   canonicalTopic: string;

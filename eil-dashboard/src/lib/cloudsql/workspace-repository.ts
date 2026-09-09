@@ -4,6 +4,11 @@ import type {
   WorkspaceOrganizationRow,
   WorkspaceProjectRow,
 } from "@/types/database";
+import type { ProjectAnalysisProfile } from "@/types/workspace";
+import {
+  createGeneralAnalysisProfile,
+  normalizeStoredProjectAnalysisProfile,
+} from "@/lib/project-analysis-profile";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { sanitizeFolderName } from "@/lib/research-folders";
 import { sanitizeWorkspaceName } from "@/lib/workspace-organizations";
@@ -12,6 +17,16 @@ type OrganizationType = WorkspaceOrganizationRow["type"];
 
 function rows<T>(result: { rows: T[] }): T[] {
   return result.rows;
+}
+
+function normalizeProject(row: WorkspaceProjectRow): WorkspaceProjectRow {
+  const analysisProfile = normalizeStoredProjectAnalysisProfile(row.analysis_profile);
+  return {
+    ...row,
+    analysis_profile: analysisProfile,
+    analysis_profile_version: analysisProfile.version,
+    analysis_profile_hash: analysisProfile.profileHash,
+  };
 }
 
 export class CloudSqlWorkspaceRepository {
@@ -75,7 +90,7 @@ export class CloudSqlWorkspaceRepository {
         `,
         values
       );
-      return rows(result);
+      return rows(result).map(normalizeProject);
     });
   }
 
@@ -83,15 +98,17 @@ export class CloudSqlWorkspaceRepository {
     ownerUserId: string,
     organizationId: string,
     name: string,
-    description?: string | null
+    description?: string | null,
+    analysisProfile: ProjectAnalysisProfile = createGeneralAnalysisProfile()
   ): Promise<WorkspaceProjectRow> {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       await assertOwnedOrganization(client, ownerUserId, organizationId);
       const result = await client.query<WorkspaceProjectRow>(
         `
           INSERT INTO public.workspace_projects
-            (organization_id, owner_user_id, name, description, updated_at)
-          VALUES ($1, $2, $3, $4, now())
+            (organization_id, owner_user_id, name, description, analysis_profile,
+             analysis_profile_version, analysis_profile_hash, analysis_profile_updated_at, updated_at)
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, now(), now())
           RETURNING *
         `,
         [
@@ -99,20 +116,23 @@ export class CloudSqlWorkspaceRepository {
           ownerUserId,
           sanitizeWorkspaceName(name, "Untitled project"),
           description?.trim() || null,
+          JSON.stringify(analysisProfile),
+          analysisProfile.version,
+          analysisProfile.profileHash,
         ]
       );
       const project = result.rows[0];
       if (!project) {
         throw new Error("Failed to create project.");
       }
-      return project;
+      return normalizeProject(project);
     });
   }
 
   async updateProject(
     ownerUserId: string,
     projectId: string,
-    patch: { name: string; description?: string | null }
+    patch: { name: string; description?: string | null; analysisProfile?: ProjectAnalysisProfile }
   ): Promise<WorkspaceProjectRow | null> {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const result = await client.query<WorkspaceProjectRow>(
@@ -123,6 +143,10 @@ export class CloudSqlWorkspaceRepository {
                 WHEN $4::boolean THEN $5::text
                 ELSE description
               END,
+              analysis_profile = CASE WHEN $6::boolean THEN $7::jsonb ELSE analysis_profile END,
+              analysis_profile_version = CASE WHEN $6::boolean THEN $8::int ELSE analysis_profile_version END,
+              analysis_profile_hash = CASE WHEN $6::boolean THEN $9::text ELSE analysis_profile_hash END,
+              analysis_profile_updated_at = CASE WHEN $6::boolean THEN now() ELSE analysis_profile_updated_at END,
               updated_at = now()
           WHERE id = $1 AND owner_user_id = $2
           RETURNING *
@@ -133,9 +157,37 @@ export class CloudSqlWorkspaceRepository {
           patch.name.trim(),
           patch.description !== undefined,
           patch.description ?? null,
+          patch.analysisProfile !== undefined,
+          patch.analysisProfile ? JSON.stringify(patch.analysisProfile) : null,
+          patch.analysisProfile?.version ?? null,
+          patch.analysisProfile?.profileHash ?? null,
         ]
       );
-      return result.rows[0] ?? null;
+      if (patch.analysisProfile !== undefined && result.rows[0]) {
+        await client.query(
+          `DELETE FROM public.workspace_analytics_cache
+           WHERE owner_user_id=$1 AND scope_type='project' AND scope_key=$2`,
+          [ownerUserId, projectId]
+        );
+        await client.query(
+          `UPDATE public.repository_semantic_maps
+           SET source_hash=CASE WHEN source_hash LIKE 'invalidated:%' THEN source_hash ELSE 'invalidated:'||source_hash END,
+               updated_at=now()
+           WHERE owner_user_id=$1 AND project_id=$2 AND status='succeeded'`,
+          [ownerUserId, projectId]
+        );
+      }
+      return result.rows[0] ? normalizeProject(result.rows[0]) : null;
+    });
+  }
+
+  async getProject(ownerUserId: string, projectId: string): Promise<WorkspaceProjectRow | null> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<WorkspaceProjectRow>(
+        `SELECT * FROM public.workspace_projects WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
+        [projectId, ownerUserId]
+      );
+      return result.rows[0] ? normalizeProject(result.rows[0]) : null;
     });
   }
 

@@ -5,8 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
+import AnalysisProfileEditor from "@/components/workspace/AnalysisProfileEditor";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
 import { FileIcon, LogoMarkIcon, MoreHorizontalIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
+
+const PROJECT_ANALYSIS_PROFILES_ENABLED =
+  process.env.NEXT_PUBLIC_PROJECT_ANALYSIS_PROFILES_ENABLED === "true";
 
 export default function ProjectIndexClient() {
   const router = useRouter();
@@ -17,7 +22,9 @@ export default function ProjectIndexClient() {
     profile,
     selectedOrganizationId,
     workspaceLoading,
+    workspaceLoadError,
     refreshOrganizations,
+    refreshAllProjects,
     createOrganization,
     createProject,
     renameProject,
@@ -28,6 +35,8 @@ export default function ProjectIndexClient() {
   const [draftName, setDraftName] = useState("");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisProfileError, setAnalysisProfileError] = useState<string | null>(null);
+  const [analysisProfile, setAnalysisProfile] = useState(createGeneralAnalysisProfile);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -56,6 +65,7 @@ export default function ProjectIndexClient() {
 
     setCreating(true);
     setError(null);
+    setAnalysisProfileError(null);
     try {
       // Organizations remain internal for database compatibility. Users do
       // not need to choose one when creating a repository.
@@ -69,7 +79,17 @@ export default function ProjectIndexClient() {
         organizationId = organization.id;
       }
 
-      const project = await createProject(name, { organizationId });
+      let normalizedProfile;
+      try {
+        normalizedProfile = sanitizeProjectAnalysisProfile(analysisProfile);
+      } catch (profileValidationError) {
+        setAnalysisProfileError(profileValidationError instanceof Error ? profileValidationError.message : "Check the analysis profile fields.");
+        return;
+      }
+      const project = await createProject(name, {
+        organizationId,
+        analysisProfile: normalizedProfile,
+      });
       setSelectedProjectId(project.id);
       setDraftName("");
       setShowCreateModal(false);
@@ -146,7 +166,9 @@ export default function ProjectIndexClient() {
               type="button"
               onClick={() => {
                 setDraftName("");
+                setAnalysisProfile(createGeneralAnalysisProfile());
                 setError(null);
+                setAnalysisProfileError(null);
                 setShowCreateModal(true);
               }}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
@@ -160,6 +182,24 @@ export default function ProjectIndexClient() {
         {error ? (
           <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
             {error}
+          </div>
+        ) : null}
+
+        {workspaceLoadError ? (
+          <div className="mt-6 flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+            <div>
+              <p className="font-semibold">Repositories could not be loaded</p>
+              <p className="mt-1 text-amber-800 dark:text-amber-200/80">
+                Your data has not been removed. {workspaceLoadError}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void refreshAllProjects()}
+              className="shrink-0 rounded-lg border border-amber-400 px-3 py-2 font-semibold transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-700 dark:hover:bg-amber-900/40"
+            >
+              Retry
+            </button>
           </div>
         ) : null}
 
@@ -188,6 +228,11 @@ export default function ProjectIndexClient() {
                   <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
                     {project.description || "Folders, papers, analytics, and research chat."}
                   </p>
+                  {PROJECT_ANALYSIS_PROFILES_ENABLED && project.analysis_profile ? (
+                    <span className="mt-4 inline-flex rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#2a2a2a] dark:text-[#aaa]">
+                      {project.analysis_profile.displayName}
+                    </span>
+                  ) : null}
                 </button>
                 <button
                   type="button"
@@ -203,11 +248,15 @@ export default function ProjectIndexClient() {
           ))}
         </div>
 
-        {visibleProjects.length === 0 ? (
+        {!workspaceLoadError && visibleProjects.length === 0 ? (
           <div className="mt-16 rounded-xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <p className="text-lg font-medium text-slate-900 dark:text-white">No repositories yet</p>
+            <p className="text-lg font-medium text-slate-900 dark:text-white">
+              {query.trim() ? "No matching repositories" : "No repositories yet"}
+            </p>
             <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-              Create a repository to start organizing and analyzing papers.
+              {query.trim()
+                ? "Try a different repository name."
+                : "Create a repository to start organizing and analyzing papers."}
             </p>
           </div>
         ) : null}
@@ -229,9 +278,30 @@ export default function ProjectIndexClient() {
           if (creating) return;
           setShowCreateModal(false);
           setError(null);
+          setAnalysisProfileError(null);
         }}
         onSubmit={handleCreateProject}
-      />
+        wide
+      >
+        {PROJECT_ANALYSIS_PROFILES_ENABLED ? (
+          <AnalysisProfileEditor
+            value={analysisProfile}
+            onChange={(nextProfile) => {
+              setAnalysisProfile(nextProfile);
+              setAnalysisProfileError(null);
+            }}
+            templates={allProjects
+              .filter((project) => project.analysis_profile)
+              .map((project) => ({
+                projectId: project.id,
+                projectName: project.name,
+                profile: project.analysis_profile!,
+              }))}
+            compact
+            error={analysisProfileError}
+          />
+        ) : null}
+      </CreateEntityModal>
     </main>
   );
 }

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
+import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
+import { getDatabaseProvider, projectAnalysisProfilesEnabled } from "@/lib/server-env";
+import type { ProjectAnalysisProfile } from "@/types/workspace";
 
 export const runtime = "nodejs";
 
@@ -38,6 +41,7 @@ export async function POST(request: Request) {
       organizationId?: string;
       name?: string;
       description?: string | null;
+      analysisProfile?: unknown;
     };
 
     if (!body.organizationId?.trim()) {
@@ -50,11 +54,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Project name is required." }, { status: 400 });
     }
 
+    const profilesEnabled = projectAnalysisProfilesEnabled() && getDatabaseProvider() === "cloud-sql";
+    let analysisProfile = createGeneralAnalysisProfile();
+    if (profilesEnabled && body.analysisProfile !== undefined) {
+      try {
+        analysisProfile = sanitizeProjectAnalysisProfile(body.analysisProfile);
+      } catch (validationError) {
+        return NextResponse.json(
+          { error: validationError instanceof Error ? validationError.message : "Invalid analysis profile." },
+          { status: 400 }
+        );
+      }
+    }
     const project = await getWorkspaceRepository().createProject(
       user.id,
       body.organizationId.trim(),
       body.name,
-      body.description ?? null
+      body.description ?? null,
+      analysisProfile
     );
 
     return NextResponse.json({ project }, { status: 201 });
@@ -80,6 +97,7 @@ export async function PATCH(request: Request) {
       projectId?: string;
       name?: string;
       description?: string | null;
+      analysisProfile?: unknown;
     };
 
     if (!body.projectId?.trim()) {
@@ -95,11 +113,23 @@ export async function PATCH(request: Request) {
     if (body.description !== undefined) {
       patch.description = body.description;
     }
+    const profilesEnabled = projectAnalysisProfilesEnabled() && getDatabaseProvider() === "cloud-sql";
+    let analysisProfile: ProjectAnalysisProfile | undefined;
+    if (profilesEnabled && body.analysisProfile !== undefined) {
+      try {
+        analysisProfile = sanitizeProjectAnalysisProfile(body.analysisProfile);
+      } catch (validationError) {
+        return NextResponse.json(
+          { error: validationError instanceof Error ? validationError.message : "Invalid analysis profile." },
+          { status: 400 }
+        );
+      }
+    }
 
     const project = await getWorkspaceRepository().updateProject(
       user.id,
       body.projectId.trim(),
-      patch
+      { ...patch, ...(analysisProfile ? { analysisProfile } : {}) }
     );
     if (!project) {
       return NextResponse.json({ error: "Project not found." }, { status: 404 });

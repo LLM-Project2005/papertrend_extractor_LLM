@@ -232,6 +232,32 @@ class NewIngestionNodeTests(unittest.TestCase):
         self.assertEqual(result["category_classification"]["single_category_key"], "other")
         self.assertEqual(result["category_classification"]["single_category"], "Other / Unclassified")
 
+    def test_general_profile_skips_category_model_and_marks_classification_disabled(self) -> None:
+        with patch("nodes.track_classifier.track_classification_llm") as llm:
+            result = classify_tracks_node(
+                {
+                    "final_json": {
+                        "title": "Broad interdisciplinary review",
+                        "abstract_claims": "This review combines evidence from several disciplines.",
+                    },
+                    "input_payload": {
+                        "analysis_profile": {
+                            "mode": "general",
+                            "profileVersion": 2,
+                            "profileHash": "general-profile-hash",
+                            "classificationEnabled": False,
+                            "categories": [],
+                        }
+                    },
+                }
+            )
+
+        llm.assert_not_called()
+        self.assertEqual(result["track_single"], {"el": 0, "eli": 0, "lae": 0, "other": 1})
+        self.assertFalse(result["category_classification"]["classification_enabled"])
+        self.assertEqual(result["category_classification"]["classifier_model"], "skipped")
+        self.assertEqual(result["category_classification"]["profile_hash"], "general-profile-hash")
+
     def test_category_classifier_uses_user_defined_category_labels(self) -> None:
         runnable = Mock()
         runnable.invoke.return_value = types.SimpleNamespace(
@@ -316,6 +342,12 @@ class NewIngestionNodeTests(unittest.TestCase):
                 "track_single": {"el": 1, "eli": 0, "lae": 0, "other": 0},
                 "track_multi": {"el": 1, "eli": 0, "lae": 0, "other": 0},
                 "category_classification": {
+                    "classification_enabled": True,
+                    "project_id": "11111111-1111-4111-8111-111111111111",
+                    "profile_hash": "profile-v2-hash",
+                    "profile_version": 2,
+                    "classification_revision_id": "22222222-2222-4222-8222-222222222222",
+                    "classifier_model": "test-classifier",
                     "taxonomy_name": "Study design categories",
                     "domain": "General academic research",
                     "domain_definition": "",
@@ -382,6 +414,9 @@ class NewIngestionNodeTests(unittest.TestCase):
             [row["category_key"] for row in dataset["category_assignments"] if row["assignment_type"] == "multi"],
             ["critical_policy", "descriptive"],
         )
+        self.assertTrue(all(row["project_id"] == "11111111-1111-4111-8111-111111111111" for row in dataset["category_assignments"]))
+        self.assertTrue(all(row["profile_hash"] == "profile-v2-hash" for row in dataset["category_assignments"]))
+        self.assertTrue(all(row["profile_version"] == 2 for row in dataset["category_definitions"]))
 
     def test_keyword_search_can_match_author_provided_keywords(self) -> None:
         result = keyword_search_node(

@@ -85,6 +85,10 @@ export function getStorageProvider(): StorageProvider {
   return provider === "gcs" || provider === "google" ? "gcs" : "supabase";
 }
 
+export function projectAnalysisProfilesEnabled(): boolean {
+  return String(process.env.PROJECT_ANALYSIS_PROFILES_ENABLED ?? "false").toLowerCase() === "true";
+}
+
 export function getGoogleCloudProjectId(): string {
   return process.env.GOOGLE_CLOUD_PROJECT_ID ?? process.env.GCLOUD_PROJECT ?? "";
 }

@@ -1,4 +1,5 @@
 import re
+import uuid
 from typing import Any, Dict, Iterable, List
 
 from nodes import ModelTask, get_task_llm
@@ -98,12 +99,19 @@ def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
     topics = state.get("final_labeled_topics") or []
     analysis_profile = normalize_analysis_profile(state.get("input_payload") or {})
 
-    if not analysis_profile.get("categories"):
+    revision_id = str(uuid.uuid4())
+    if not analysis_profile.get("classification_enabled") or not analysis_profile.get("categories"):
         return {
             "track_single": build_track_row(["Other"], ensure_single=True),
             "track_multi": build_track_row(["Other"], ensure_single=False),
             "category_classification": {
                 "taxonomy_name": analysis_profile.get("taxonomy_name"),
+                "profile_mode": analysis_profile.get("mode"),
+                "profile_hash": analysis_profile.get("profile_hash"),
+                "profile_version": analysis_profile.get("version"),
+                "classification_enabled": False,
+                "classification_revision_id": revision_id,
+                "classifier_model": "skipped",
                 "domain": analysis_profile.get("domain"),
                 "domain_definition": analysis_profile.get("domain_definition"),
                 "taxonomy_definition": analysis_profile.get("taxonomy_definition"),
@@ -112,7 +120,7 @@ def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
                 "multi_category_keys": [OTHER_CATEGORY_KEY],
                 "single_category": OTHER_CATEGORY_LABEL,
                 "multi_categories": [OTHER_CATEGORY_LABEL],
-                "rationale": "No project categories were configured for this analysis run.",
+                "rationale": "Category classification is disabled for this repository profile.",
             },
             "errors": [],
             "status": "tracks_ready",
@@ -158,6 +166,12 @@ def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
             "track_multi": build_track_row(legacy_multi_tracks, ensure_single=False),
             "category_classification": {
                 "taxonomy_name": analysis_profile.get("taxonomy_name"),
+                "profile_mode": analysis_profile.get("mode"),
+                "profile_hash": analysis_profile.get("profile_hash"),
+                "profile_version": analysis_profile.get("version"),
+                "classification_enabled": True,
+                "classification_revision_id": revision_id,
+                "classifier_model": track_classification_llm.model_name,
                 "domain": analysis_profile.get("domain"),
                 "domain_definition": analysis_profile.get("domain_definition"),
                 "taxonomy_definition": analysis_profile.get("taxonomy_definition"),
@@ -177,6 +191,12 @@ def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
             "track_multi": build_track_row(["Other"], ensure_single=False),
             "category_classification": {
                 "taxonomy_name": analysis_profile.get("taxonomy_name"),
+                "profile_mode": analysis_profile.get("mode"),
+                "profile_hash": analysis_profile.get("profile_hash"),
+                "profile_version": analysis_profile.get("version"),
+                "classification_enabled": True,
+                "classification_revision_id": revision_id,
+                "classifier_model": track_classification_llm.model_name,
                 "domain": analysis_profile.get("domain"),
                 "domain_definition": analysis_profile.get("domain_definition"),
                 "taxonomy_definition": analysis_profile.get("taxonomy_definition"),

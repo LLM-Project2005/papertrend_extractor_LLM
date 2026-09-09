@@ -16,6 +16,7 @@ interface CreateEntityModalProps {
   busy?: boolean;
   error?: string | null;
   children?: ReactNode;
+  wide?: boolean;
   onValueChange: (value: string) => void;
   onClose: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -33,6 +34,7 @@ export default function CreateEntityModal({
   busy = false,
   error,
   children,
+  wide = false,
   onValueChange,
   onClose,
   onSubmit,
@@ -45,7 +47,7 @@ export default function CreateEntityModal({
     <Modal onClose={onClose}>
       <form
         onSubmit={onSubmit}
-        className="w-full max-w-lg rounded-xl border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)]"
+        className={`max-h-[92vh] w-full overflow-y-auto rounded-lg border border-slate-200 bg-white text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)] ${wide ? "max-w-3xl" : "max-w-lg"}`}
       >
         <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f] sm:px-7">
           <div>

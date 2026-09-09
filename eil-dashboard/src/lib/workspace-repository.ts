@@ -11,6 +11,8 @@ import type {
   WorkspaceOrganizationRow,
   WorkspaceProjectRow,
 } from "@/types/database";
+import type { ProjectAnalysisProfile } from "@/types/workspace";
+import { createGeneralAnalysisProfile } from "@/lib/project-analysis-profile";
 
 export interface WorkspaceRepository {
   listOrganizations(ownerUserId: string): Promise<WorkspaceOrganizationRow[]>;
@@ -27,13 +29,15 @@ export interface WorkspaceRepository {
     ownerUserId: string,
     organizationId: string,
     name: string,
-    description?: string | null
+    description?: string | null,
+    analysisProfile?: ProjectAnalysisProfile
   ): Promise<WorkspaceProjectRow>;
   updateProject(
     ownerUserId: string,
     projectId: string,
-    patch: { name: string; description?: string | null }
+    patch: { name: string; description?: string | null; analysisProfile?: ProjectAnalysisProfile }
   ): Promise<WorkspaceProjectRow | null>;
+  getProject(ownerUserId: string, projectId: string): Promise<WorkspaceProjectRow | null>;
   listFolders(
     ownerUserId: string,
     projectId?: string | null
@@ -88,7 +92,8 @@ class SupabaseWorkspaceRepository implements WorkspaceRepository {
     ownerUserId: string,
     organizationId: string,
     name: string,
-    description?: string | null
+    description?: string | null,
+    _analysisProfile: ProjectAnalysisProfile = createGeneralAnalysisProfile()
   ): Promise<WorkspaceProjectRow> {
     return createWorkspaceProject(
       getSupabaseAdmin(),
@@ -102,7 +107,7 @@ class SupabaseWorkspaceRepository implements WorkspaceRepository {
   async updateProject(
     ownerUserId: string,
     projectId: string,
-    patch: { name: string; description?: string | null }
+    patch: { name: string; description?: string | null; analysisProfile?: ProjectAnalysisProfile }
   ): Promise<WorkspaceProjectRow | null> {
     const update: { name: string; description?: string | null; updated_at: string } = {
       name: patch.name.trim(),
@@ -115,6 +120,17 @@ class SupabaseWorkspaceRepository implements WorkspaceRepository {
       .eq("id", projectId)
       .eq("owner_user_id", ownerUserId)
       .select("*")
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    return (data ?? null) as WorkspaceProjectRow | null;
+  }
+
+  async getProject(ownerUserId: string, projectId: string): Promise<WorkspaceProjectRow | null> {
+    const { data, error } = await getSupabaseAdmin()
+      .from("workspace_projects")
+      .select("*")
+      .eq("id", projectId)
+      .eq("owner_user_id", ownerUserId)
       .maybeSingle();
     if (error) throw new Error(error.message);
     return (data ?? null) as WorkspaceProjectRow | null;

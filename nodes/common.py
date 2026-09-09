@@ -111,6 +111,14 @@ def normalize_analysis_profile(input_payload: Any) -> Dict[str, Any]:
             )
 
     return {
+        "version": int(profile.get("profileVersion") or profile.get("version") or 1),
+        "mode": normalize_whitespace(str(profile.get("mode") or "custom")).lower(),
+        "profile_hash": normalize_whitespace(
+            str(profile.get("profileHash") or profile.get("profile_hash") or "legacy")
+        )[:80],
+        "classification_enabled": bool(
+            profile.get("classificationEnabled", profile.get("classification_enabled", bool(categories)))
+        ),
         "domain": normalize_whitespace(str(profile.get("domain") or "General academic research"))[:160],
         "domain_definition": str(
             profile.get("domainDefinition") or profile.get("domain_definition") or ""

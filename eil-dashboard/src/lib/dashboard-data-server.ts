@@ -270,10 +270,13 @@ async function loadCategoryAssignments(
         return [];
       }
       const result = await client.query<Record<string, unknown>>(
-        `SELECT paper_id::text, folder_id, taxonomy_name, category_key, category_label,
-                assignment_type, is_other, rationale, position
-         FROM public.paper_category_assignments
-         WHERE owner_user_id = $1 AND paper_id = ANY($2::bigint[])`,
+        `SELECT a.paper_id::text, a.folder_id, a.taxonomy_name, a.category_key, a.category_label,
+                a.assignment_type, a.is_other, a.rationale, a.position
+         FROM public.paper_category_assignments a
+         JOIN public.workspace_projects p
+           ON p.id=a.project_id AND p.owner_user_id=a.owner_user_id
+          AND p.analysis_profile_hash=a.profile_hash
+         WHERE a.owner_user_id = $1 AND a.paper_id = ANY($2::bigint[])`,
         [ownerUserId, paperIds]
       );
       return result.rows
