@@ -45,6 +45,7 @@ import {
   type AiUsageKind,
 } from "@/lib/security-guards";
 import { withAiTokenUsageTracking } from "@/lib/ai-token-usage";
+import { getPublicRequestOrigin } from "@/lib/public-request-origin";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
@@ -230,7 +231,10 @@ const ChatRequestBodySchema = z
         z.object({
           name: z.string().max(240),
           type: z.string().max(120).optional(),
-          size: z.number().nonnegative().max(100 * 1024 * 1024).optional(),
+          size: z.preprocess(
+            (value) => typeof value === "string" && value.trim() ? Number(value) : value,
+            z.number().nonnegative().max(100 * 1024 * 1024)
+          ).optional(),
           url: z.string().max(5_000).optional(),
           previewUrl: z.string().max(5_000).optional(),
           dataUrl: z.string().max(2_000_000).optional(),
@@ -280,7 +284,18 @@ const ChatRequestBodySchema = z
 function parseChatRequestBody(value: unknown): ChatRequestBody {
   const parsed = ChatRequestBodySchema.safeParse(value);
   if (!parsed.success) {
-    throw new GuardError("Malformed chat request.", 400);
+    const fields = [...new Set(parsed.error.issues.map((issue) => String(issue.path[0] ?? "request")))];
+    console.warn("Chat request validation failed.", {
+      fields,
+      issues: parsed.error.issues.map((issue) => ({ code: issue.code, path: issue.path.join(".") })),
+    });
+    const oversized = parsed.error.issues.some((issue) => issue.code === "too_big");
+    throw new GuardError(
+      oversized
+        ? "This chat request exceeded its safe context limit. The page may be out of date; refresh it and try again."
+        : `Chat request contains invalid ${fields.join(", ") || "data"}. Refresh the page and try again.`,
+      400
+    );
   }
   return parsed.data as ChatRequestBody;
 }
@@ -3982,7 +3997,7 @@ async function normalChat(
         model: selectedModel,
         forceChart: chartRequested,
         history: (body.messages ?? []).slice(-12),
-        jobCallbackBaseUrl: new URL(request.url).origin,
+        jobCallbackBaseUrl: getPublicRequestOrigin(request),
       });
       if (repositoryResult.handled) {
         let repositoryAnswer = repositoryResult.answer;

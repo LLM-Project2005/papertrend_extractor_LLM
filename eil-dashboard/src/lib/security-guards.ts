@@ -9,6 +9,7 @@ import {
   getDatabaseProvider,
 } from "@/lib/server-env";
 import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
+import { isQuotaExemptRole } from "@/lib/quota-policy";
 
 export class GuardError extends Error {
   status: number;
@@ -138,7 +139,12 @@ export async function assertAiTokenBudget(ownerUserId: string): Promise<number> 
   const since = today.toISOString();
 
   if (getDatabaseProvider() === "cloud-sql") {
-    const used = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+    const budget = await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const profile = await client.query<{ role: string | null }>(
+        `SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`,
+        [ownerUserId]
+      );
+      if (isQuotaExemptRole(profile.rows[0]?.role)) return { exempt: true, used: 0 };
       const result = await client.query<{ units: string }>(
         `SELECT COALESCE(sum(units), 0)::text AS units
          FROM public.ai_usage_events
@@ -146,18 +152,26 @@ export async function assertAiTokenBudget(ownerUserId: string): Promise<number> 
            AND metadata->>'metric'='tokens' AND created_at >= $2`,
         [ownerUserId, since]
       );
-      return Number(result.rows[0]?.units ?? 0);
+      return { exempt: false, used: Number(result.rows[0]?.units ?? 0) };
     });
-    if (used >= limit) {
+    if (budget.exempt) return Number.MAX_SAFE_INTEGER;
+    if (budget.used >= limit) {
       throw new GuardError(
         `Daily chat token limit reached (${limit.toLocaleString()} tokens). Please try again tomorrow.`,
         429
       );
     }
-    return Math.max(0, limit - used);
+    return Math.max(0, limit - budget.used);
   }
 
-  const { data, error } = await getSupabaseAdmin()
+  const supabase = getSupabaseAdmin();
+  const { data: profile } = await supabase
+    .from("user_profiles")
+    .select("role")
+    .eq("id", ownerUserId)
+    .maybeSingle();
+  if (isQuotaExemptRole(profile?.role)) return Number.MAX_SAFE_INTEGER;
+  const { data, error } = await supabase
     .from("ai_usage_events")
     .select("units")
     .eq("owner_user_id", ownerUserId)
@@ -218,12 +232,18 @@ export async function assertAndRecordAiUsage(
   if (getDatabaseProvider() === "cloud-sql") {
     try {
       await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
-        const result = await client.query<{ count: string }>(
-          `SELECT count(*)::text AS count FROM public.ai_usage_events
-           WHERE owner_user_id=$1 AND usage_kind=$2 AND created_at >= $3`, [ownerUserId, kind, since]
+        const profile = await client.query<{ role: string | null }>(
+          `SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`,
+          [ownerUserId]
         );
-        if (Number(result.rows[0]?.count ?? 0) >= limit) {
-          throw new GuardError("Daily AI usage limit reached. Please try again tomorrow.", 429);
+        if (!isQuotaExemptRole(profile.rows[0]?.role)) {
+          const result = await client.query<{ count: string }>(
+            `SELECT count(*)::text AS count FROM public.ai_usage_events
+             WHERE owner_user_id=$1 AND usage_kind=$2 AND created_at >= $3`, [ownerUserId, kind, since]
+          );
+          if (Number(result.rows[0]?.count ?? 0) >= limit) {
+            throw new GuardError("Daily AI usage limit reached. Please try again tomorrow.", 429);
+          }
         }
         await client.query(
           `INSERT INTO public.ai_usage_events(owner_user_id,usage_kind,units,metadata)
@@ -240,19 +260,23 @@ export async function assertAndRecordAiUsage(
   const supabase = getSupabaseAdmin();
 
   try {
-    const { count, error } = await supabase
-      .from("ai_usage_events")
-      .select("id", { count: "exact", head: true })
-      .eq("owner_user_id", ownerUserId)
-      .eq("usage_kind", kind)
-      .gte("created_at", since);
+    const { data: profile } = await supabase
+      .from("user_profiles")
+      .select("role")
+      .eq("id", ownerUserId)
+      .maybeSingle();
+    if (!isQuotaExemptRole(profile?.role)) {
+      const { count, error } = await supabase
+        .from("ai_usage_events")
+        .select("id", { count: "exact", head: true })
+        .eq("owner_user_id", ownerUserId)
+        .eq("usage_kind", kind)
+        .gte("created_at", since);
 
-    if (error) {
-      throw error;
-    }
-
-    if ((count ?? 0) >= limit) {
-      throw new GuardError("Daily AI usage limit reached. Please try again tomorrow.", 429);
+      if (error) throw error;
+      if ((count ?? 0) >= limit) {
+        throw new GuardError("Daily AI usage limit reached. Please try again tomorrow.", 429);
+      }
     }
 
     await supabase.from("ai_usage_events").insert({

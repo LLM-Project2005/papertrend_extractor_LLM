@@ -37,19 +37,30 @@ function uniqueIds(values: unknown): string[] {
 export function normalizeKnowledgeScope(input: LegacyKnowledgeScopeInput): KnowledgeScope {
   const requested = input.knowledgeScope;
   const runIds = uniqueIds(requested?.runIds ?? input.selectedRunIds);
-  const projectId = String(requested?.projectId ?? input.projectId ?? "").trim() || undefined;
-  const folderId = String(requested?.folderId ?? input.folderId ?? "").trim() || undefined;
+  const rawProjectId = String(requested?.projectId ?? input.projectId ?? "").trim();
+  const rawFolderId = String(requested?.folderId ?? input.folderId ?? "").trim();
+  const projectId = rawProjectId && rawProjectId !== "all" && rawProjectId !== "all-projects"
+    ? rawProjectId
+    : undefined;
+  const folderId = rawFolderId && rawFolderId !== "all" && rawFolderId !== "all-projects"
+    ? rawFolderId
+    : undefined;
 
   if (runIds.length > 0) {
-    return { kind: "selected_papers", projectId, folderId, runIds };
+    return {
+      kind: "selected_papers",
+      ...(projectId ? { projectId } : {}),
+      ...(folderId ? { folderId } : {}),
+      runIds,
+    };
   }
-  if (folderId && folderId !== "all" && folderId !== "all-projects") {
+  if (folderId) {
     return { kind: "folder", projectId, folderId };
   }
   // A project-aware workspace must never widen "entire repository" into every
   // project owned by the user. Cross-project scope is reserved for callers
   // that intentionally omit a project ID.
-  if (projectId && projectId !== "all") {
+  if (projectId) {
     return { kind: "project", projectId };
   }
   return { kind: "all_projects" };

@@ -14,6 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
+import RepositorySemanticMapView from "@/components/workspace/RepositorySemanticMap";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
 import Modal from "@/components/ui/Modal";
@@ -48,7 +49,7 @@ import type {
 } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
 
-type ViewMode = "list" | "grid";
+type ViewMode = "list" | "grid" | "semantic-map";
 type TypeFilter = "all" | "folder" | "pdf" | "image" | "document" | "other";
 type ModifiedFilter = "all" | "7d" | "30d" | "year" | "older";
 type SourceFilter = "all" | "upload" | "google-drive" | "workspace";
@@ -2105,6 +2106,21 @@ export default function AdminImportClient() {
               >
                 <GridViewIcon className="h-4 w-4" />
               </button>
+              {libraryProject ? (
+                <button
+                  type="button"
+                  onClick={() => setViewMode("semantic-map")}
+                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                    viewMode === "semantic-map"
+                      ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
+                      : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
+                  }`}
+                  aria-label="Semantic map"
+                  title="Semantic map"
+                >
+                  <ChartIcon className="h-4 w-4" />
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -2192,7 +2208,19 @@ export default function AdminImportClient() {
           </div>
         </div>
 
-        {visibleEntries.length === 0 ? (
+        {viewMode === "semantic-map" && libraryProject ? (
+          <RepositorySemanticMapView
+            projectId={libraryProject.id}
+            projectName={libraryProject.name}
+            initialFolderId={selectedFolderId === "all" ? null : selectedFolderId}
+            folders={projectFolders}
+            runs={runs}
+            requestHeaders={requestHeaders}
+            onOpenRun={(run) => {
+              void handleOpenPrimaryFileAction(run);
+            }}
+          />
+        ) : visibleEntries.length === 0 ? (
           <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
             <div>
               <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
