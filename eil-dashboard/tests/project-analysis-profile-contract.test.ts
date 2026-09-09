@@ -22,18 +22,24 @@ test("reclassification schema stages results behind forced owner RLS", () => {
 
 test("transactional publication preserves live rows until all staged items succeeded", () => {
   const source = read("../src/lib/project-reclassification-repository.ts");
+  const invalidation = read("../src/lib/semantic-map-invalidation.ts");
   const validation = source.indexOf("Some papers were not classified");
   const deletion = source.indexOf("DELETE FROM public.paper_category_assignments");
   assert.ok(validation >= 0 && deletion > validation);
   assert.match(source, /status='succeeded',progress_stage='published'/);
-  assert.match(source, /repository_semantic_maps/);
+  assert.match(source, /markProjectSemanticMapsStale/);
+  assert.match(invalidation, /UPDATE public\.repository_semantic_maps/);
 });
 
 test("profile changes invalidate project analytics and semantic maps", () => {
   const source = read("../src/lib/cloudsql/workspace-repository.ts");
+  const invalidation = read("../src/lib/semantic-map-invalidation.ts");
   assert.match(source, /patch\.analysisProfile !== undefined/);
   assert.match(source, /DELETE FROM public\.workspace_analytics_cache/);
-  assert.match(source, /UPDATE public\.repository_semantic_maps/);
+  assert.match(source, /markProjectSemanticMapsStale/);
+  assert.equal((invalidation.match(/md5\(source_hash/g) ?? []).length, 2);
+  assert.doesNotMatch(invalidation, /invalidated:'\|\|source_hash/);
+  assert.match(invalidation, /status IN \('queued', 'processing', 'succeeded'\)/);
 });
 
 test("General Research coverage treats successful papers as current without category rows", () => {
