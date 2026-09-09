@@ -192,6 +192,39 @@ export function projectProfileFromLegacyWorkspace(profile: Partial<WorkspaceProf
   });
 }
 
+/**
+ * Stored rows can predate the repository-profile contract. A malformed legacy
+ * profile must not make its repository disappear from the product.
+ */
+export function normalizeStoredProjectAnalysisProfile(input: unknown): ProjectAnalysisProfile {
+  try {
+    return sanitizeProjectAnalysisProfile(input);
+  } catch {
+    const raw = input && typeof input === "object" && !Array.isArray(input)
+      ? input as Record<string, unknown>
+      : {};
+    return projectProfileFromLegacyWorkspace({
+      domain: cleanText(raw.domain, 160),
+      domainDefinition: cleanText(raw.domainDefinition ?? raw.domain_definition, 1200),
+      categoryTaxonomyName: cleanText(
+        raw.taxonomyName ?? raw.taxonomy_name ?? raw.displayName,
+        120
+      ),
+      categoryTaxonomyDefinition: cleanText(
+        raw.taxonomyDefinition ?? raw.taxonomy_definition,
+        1200
+      ),
+      analysisContext: cleanText(
+        raw.additionalContext ?? raw.additional_context,
+        2000
+      ),
+      analysisCategories: Array.isArray(raw.categories)
+        ? raw.categories as WorkspaceAnalysisCategory[]
+        : [],
+    });
+  }
+}
+
 export function toIngestionAnalysisProfile(profile: ProjectAnalysisProfile) {
   return {
     version: 2,

@@ -61,6 +61,16 @@ test("forced-RLS backfill requires an explicit owner context for the app role", 
   assert.match(source, /set_config\('app\.current_user_id'/);
 });
 
+test("legacy profile errors cannot masquerade as an empty repository account", () => {
+  const repository = read("../src/lib/cloudsql/workspace-repository.ts");
+  const provider = read("../src/components/workspace/WorkspaceProvider.tsx");
+  const index = read("../src/components/workspace/workspaces/ProjectIndexClient.tsx");
+  assert.match(repository, /normalizeStoredProjectAnalysisProfile/);
+  assert.match(provider, /workspaceLoadError/);
+  assert.match(index, /Your data has not been removed/);
+  assert.match(index, /!workspaceLoadError && visibleProjects\.length === 0/);
+});
+
 test("versioned taxonomy evaluation covers EIL, custom, Thai, ambiguity, and prompt injection", () => {
   const fixture = JSON.parse(read("../evals/project-taxonomy-v2.json")) as {
     version?: string;

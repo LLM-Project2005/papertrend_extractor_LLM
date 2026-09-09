@@ -47,6 +47,7 @@ interface WorkspaceContextValue {
   profile: WorkspaceProfile;
   hydrated: boolean;
   workspaceLoading: boolean;
+  workspaceLoadError: string | null;
   analysisSession: AnalysisSession | null;
   organizations: WorkspaceOrganizationRow[];
   projects: WorkspaceProjectRow[];
@@ -84,6 +85,7 @@ interface WorkspaceContextValue {
   setSearchQuery: (searchQuery: string) => void;
   resetWorkspaceFilters: () => void;
   refreshOrganizations: () => Promise<void>;
+  refreshAllProjects: () => Promise<void>;
   refreshProjects: (organizationId?: string | null) => Promise<void>;
   refreshFolders: () => Promise<void>;
   createOrganization: (
@@ -133,6 +135,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [allProjects, setAllProjects] = useState<WorkspaceProjectRow[]>([]);
   const [allProjectsLoading, setAllProjectsLoading] = useState(false);
   const [allProjectsLoadAttempted, setAllProjectsLoadAttempted] = useState(false);
+  const [workspaceLoadError, setWorkspaceLoadError] = useState<string | null>(null);
   const [folders, setFolders] = useState<ResearchFolderRow[]>([]);
   const [allFolders, setAllFolders] = useState<ResearchFolderRow[]>([]);
   const [selectedOrganizationIdState, setSelectedOrganizationIdState] =
@@ -247,6 +250,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     setAllProjectsLoadAttempted(false);
     setAllProjectsLoading(false);
+    setWorkspaceLoadError(null);
+    setProjects([]);
+    setAllProjects([]);
   }, [user?.id]);
 
   useEffect(() => {
@@ -534,9 +540,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
 
       setAllProjects(sortByName(payload.projects ?? []));
+      setWorkspaceLoadError(null);
     })();
 
     setAllProjectsLoading(true);
+    setWorkspaceLoadError(null);
     allProjectsRequestRef.current = {
       startedAt: now,
       promise: request,
@@ -544,6 +552,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
     try {
       await request;
+    } catch (error) {
+      setWorkspaceLoadError(
+        error instanceof Error ? error.message : "Failed to load repositories."
+      );
+      throw error;
     } finally {
       allProjectsRequestRef.current.promise = null;
       setAllProjectsLoading(false);
@@ -932,7 +945,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     refreshAllProjects().catch(() => {
-      setAllProjects([]);
+      // Preserve the explicit load error. An API failure is not an empty
+      // repository account.
     });
   }, [hydrated, refreshAllProjects, user]);
 
@@ -1031,6 +1045,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       profile,
       hydrated,
       workspaceLoading,
+      workspaceLoadError,
       analysisSession,
       organizations,
       projects,
@@ -1203,6 +1218,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         setSearchQueryState("");
       },
       refreshOrganizations,
+      refreshAllProjects,
       refreshProjects,
       refreshFolders,
       createOrganization,
@@ -1231,6 +1247,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       projects,
       refreshFolders,
       refreshOrganizations,
+      refreshAllProjects,
       refreshProjects,
       searchQuery,
       selectedFolderId,
@@ -1239,6 +1256,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedTracks,
       selectedYears,
       workspaceLoading,
+      workspaceLoadError,
     ]
   );
 

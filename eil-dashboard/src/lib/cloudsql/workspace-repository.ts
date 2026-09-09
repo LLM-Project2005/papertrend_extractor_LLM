@@ -7,7 +7,7 @@ import type {
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 import {
   createGeneralAnalysisProfile,
-  sanitizeProjectAnalysisProfile,
+  normalizeStoredProjectAnalysisProfile,
 } from "@/lib/project-analysis-profile";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { sanitizeFolderName } from "@/lib/research-folders";
@@ -20,7 +20,7 @@ function rows<T>(result: { rows: T[] }): T[] {
 }
 
 function normalizeProject(row: WorkspaceProjectRow): WorkspaceProjectRow {
-  const analysisProfile = sanitizeProjectAnalysisProfile(row.analysis_profile);
+  const analysisProfile = normalizeStoredProjectAnalysisProfile(row.analysis_profile);
   return {
     ...row,
     analysis_profile: analysisProfile,

@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createEilAnalysisProfile,
   createGeneralAnalysisProfile,
+  normalizeStoredProjectAnalysisProfile,
   projectProfileFromLegacyWorkspace,
   sanitizeProjectAnalysisProfile,
   toIngestionAnalysisProfile,
@@ -77,6 +78,26 @@ test("legacy custom profiles receive migration-safe descriptions without inventi
 
   const unusable = projectProfileFromLegacyWorkspace({
     analysisCategories: [{ key: "only", label: "Only category", description: "" }],
+  });
+  assert.equal(unusable.mode, "general");
+});
+
+test("malformed stored profiles recover safely instead of hiding repositories", () => {
+  const recovered = normalizeStoredProjectAnalysisProfile({
+    mode: "custom",
+    taxonomyName: "Legacy taxonomy",
+    categories: [
+      { key: "qual", label: "Qualitative", description: "" },
+      { key: "quant", label: "Quantitative", description: "Statistical research" },
+    ],
+  });
+  assert.equal(recovered.mode, "custom");
+  assert.equal(recovered.categories.length, 2);
+  assert.match(recovered.categories[0].description, /primary contribution fits Qualitative/);
+
+  const unusable = normalizeStoredProjectAnalysisProfile({
+    mode: "custom",
+    categories: [{ key: "only", label: "Only", description: "" }],
   });
   assert.equal(unusable.mode, "general");
 });

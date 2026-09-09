@@ -22,7 +22,9 @@ export default function ProjectIndexClient() {
     profile,
     selectedOrganizationId,
     workspaceLoading,
+    workspaceLoadError,
     refreshOrganizations,
+    refreshAllProjects,
     createOrganization,
     createProject,
     renameProject,
@@ -183,6 +185,24 @@ export default function ProjectIndexClient() {
           </div>
         ) : null}
 
+        {workspaceLoadError ? (
+          <div className="mt-6 flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+            <div>
+              <p className="font-semibold">Repositories could not be loaded</p>
+              <p className="mt-1 text-amber-800 dark:text-amber-200/80">
+                Your data has not been removed. {workspaceLoadError}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void refreshAllProjects()}
+              className="shrink-0 rounded-lg border border-amber-400 px-3 py-2 font-semibold transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-700 dark:hover:bg-amber-900/40"
+            >
+              Retry
+            </button>
+          </div>
+        ) : null}
+
         <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {visibleProjects.map((project) => (
             <article
@@ -228,11 +248,15 @@ export default function ProjectIndexClient() {
           ))}
         </div>
 
-        {visibleProjects.length === 0 ? (
+        {!workspaceLoadError && visibleProjects.length === 0 ? (
           <div className="mt-16 rounded-xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <p className="text-lg font-medium text-slate-900 dark:text-white">No repositories yet</p>
+            <p className="text-lg font-medium text-slate-900 dark:text-white">
+              {query.trim() ? "No matching repositories" : "No repositories yet"}
+            </p>
             <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-              Create a repository to start organizing and analyzing papers.
+              {query.trim()
+                ? "Try a different repository name."
+                : "Create a repository to start organizing and analyzing papers."}
             </p>
           </div>
         ) : null}
