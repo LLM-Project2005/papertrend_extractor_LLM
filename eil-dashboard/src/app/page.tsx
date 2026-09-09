@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: "Papertrend | Research libraries into living insight",
   description:
     "Papertrend turns research paper collections into structured analysis, dashboards, charts, and AI research chat.",
+  alternates: {
+    canonical: "/",
+  },
 };
 
 export default function LandingPage() {

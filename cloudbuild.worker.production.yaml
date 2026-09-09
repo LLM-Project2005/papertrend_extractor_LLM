@@ -49,7 +49,8 @@ substitutions:
   _GCS_UPLOAD_BUCKET: research-trend-analysis-papertrend-uploads-production
   _CLOUD_TASKS_QUEUE: papertrend-ingestion-production
   _WORKER_OIDC_AUDIENCE: https://papertrend-worker-production-javhavgdsq-as.a.run.app
-  _APP_ALLOWED_ORIGINS: https://papertrend-web-production-javhavgdsq-as.a.run.app
+  # Semicolons avoid gcloud's comma-delimited --set-env-vars parser.
+  _APP_ALLOWED_ORIGINS: https://papertrend-web-production-javhavgdsq-as.a.run.app;https://research-trend-analysis.web.app
 
 options:
   dynamicSubstitutions: true

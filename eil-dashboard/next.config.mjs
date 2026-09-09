@@ -16,6 +16,17 @@ const nextConfig = {
         source: "/:path*",
         headers: securityHeaders,
       },
+      ...["/api/:path*", "/workspace/:path*", "/workspaces/:path*", "/admin/:path*"].map(
+        (source) => ({
+          source,
+          headers: [
+            {
+              key: "Cache-Control",
+              value: "private, no-store, max-age=0",
+            },
+          ],
+        })
+      ),
     ];
   },
 };

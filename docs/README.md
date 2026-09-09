@@ -33,6 +33,7 @@ This documentation covers:
 11. [Google Cloud Phase 6: Cloud SQL Dual-Write And Shadow Verification](16-google-cloud-phase-6.md)
 12. [Google Cloud Phase 7: Frontend Hosting](17-google-cloud-phase-7.md)
 13. [Google Cloud Phase 8: Final Data And Service Cutover](18-google-cloud-phase-8.md)
+14. [Firebase Production Hostname](22-firebase-production-hostname.md)
 
 ## Reading Order
 

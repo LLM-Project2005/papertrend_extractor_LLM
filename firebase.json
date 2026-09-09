@@ -1,0 +1,85 @@
+{
+  "hosting": {
+    "target": "production",
+    "public": "firebase-hosting",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "/api/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "private, no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/workspace",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "private, no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/workspace/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "private, no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/workspaces",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "private, no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/workspaces/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "private, no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/admin/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "private, no-store, max-age=0"
+          }
+        ]
+      },
+      {
+        "source": "/_next/static/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      }
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "run": {
+          "serviceId": "papertrend-web-production",
+          "region": "asia-southeast1"
+        }
+      }
+    ]
+  }
+}

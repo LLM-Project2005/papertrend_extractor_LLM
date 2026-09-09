@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "research-trend-analysis"
+  },
+  "targets": {
+    "research-trend-analysis": {
+      "hosting": {
+        "production": [
+          "research-trend-analysis"
+        ]
+      }
+    }
+  }
+}

@@ -1,7 +1,8 @@
 [
   {
     "origin": [
-      "https://papertrend-web-production-javhavgdsq-as.a.run.app"
+      "https://papertrend-web-production-javhavgdsq-as.a.run.app",
+      "https://research-trend-analysis.web.app"
     ],
     "method": ["PUT", "GET", "HEAD", "OPTIONS"],
     "responseHeader": ["Content-Type", "x-goog-resumable"],

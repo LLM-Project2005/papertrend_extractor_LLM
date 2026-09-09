@@ -6,6 +6,9 @@ export const metadata: Metadata = {
   title: "Search Papertrend Docs",
   description:
     "Search Papertrend documentation for uploads, dashboards, chat, deep research, queue troubleshooting, and evaluation guidance.",
+  alternates: {
+    canonical: "/docs/search",
+  },
 };
 
 export default function DocsSearchPage() {

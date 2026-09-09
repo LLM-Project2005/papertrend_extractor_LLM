@@ -45,7 +45,7 @@ export function AnimatedProductFrame() {
           <span className="font-mono text-xs text-[#8f8f8f]">LIVE REPOSITORY</span>
           <span className="hidden items-center gap-2 font-mono text-xs text-[#8f8f8f] sm:flex">
             <span className="h-1.5 w-1.5 rounded-full bg-[#00dfd8]" />
-            papertrend.app/workspace
+            research-trend-analysis.web.app
           </span>
         </div>
       </div>
