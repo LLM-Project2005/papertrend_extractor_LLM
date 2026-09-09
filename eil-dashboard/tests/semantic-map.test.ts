@@ -92,5 +92,8 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /visiblePoints\.length <= 1/);
   assert.match(component, /const allHidden = \[\.\.\.nextScopeIds\]\.every/);
   assert.match(component, /anchorMembers = folderPoints/);
+  assert.match(component, /onInit=\{fitInitialView\}/);
+  assert.match(component, /autoPanOnNodeFocus=\{false\}/);
+  assert.doesNotMatch(component, /elementsSelectable fitView/);
   assert.doesNotMatch(component, /hideAllPapersInScope/);
 });

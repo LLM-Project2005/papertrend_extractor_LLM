@@ -43,6 +43,13 @@ test("knowledge scope precedence is selected papers, folder, project, then all p
     { kind: "project", projectId: "project-a" }
   );
   assert.deepEqual(normalizeKnowledgeScope({}), { kind: "all_projects" });
+  assert.deepEqual(
+    normalizeKnowledgeScope({
+      knowledgeScope: { kind: "selected_papers", runIds: ["run-a", "run-b", "run-c"] },
+      folderId: "all",
+    }),
+    { kind: "selected_papers", runIds: ["run-a", "run-b", "run-c"] }
+  );
 });
 
 test("message scope metadata resolves its repository project", () => {

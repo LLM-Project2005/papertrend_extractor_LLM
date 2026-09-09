@@ -2279,7 +2279,7 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: activeKnowledgeScope.folderId ?? "all",
+        folderId: activeKnowledgeScope.folderId,
         projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds: editedRunIds,
@@ -2357,7 +2357,7 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: activeKnowledgeScope.folderId ?? "all",
+        folderId: activeKnowledgeScope.folderId,
         projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
@@ -2433,7 +2433,7 @@ export default function ChatClient() {
         selectedYears: effectiveSelectedYears,
         selectedTracks: effectiveSelectedTracks,
         searchQuery,
-        folderId: activeKnowledgeScope.folderId ?? "all",
+        folderId: activeKnowledgeScope.folderId,
         projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
@@ -2539,7 +2539,7 @@ export default function ChatClient() {
       const payload = await sendRequest({
         message: prompt,
         attachments: selectedAttachments,
-        folderId: activeKnowledgeScope.folderId ?? "all",
+        folderId: activeKnowledgeScope.folderId,
         projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,
@@ -2570,7 +2570,7 @@ export default function ChatClient() {
     setError(null);
     try {
       const payload = await sendRequest({
-        folderId: activeKnowledgeScope.folderId ?? "all",
+        folderId: activeKnowledgeScope.folderId,
         projectId: activeKnowledgeScope.projectId ?? undefined,
         knowledgeScope: activeKnowledgeScope,
         selectedRunIds,

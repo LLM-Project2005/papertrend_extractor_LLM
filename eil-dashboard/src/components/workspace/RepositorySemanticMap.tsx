@@ -13,6 +13,7 @@ import {
   type Node,
   type NodeMouseHandler,
   type NodeProps,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import type { IngestionRunRow, ResearchFolderRow } from "@/types/database";
@@ -301,6 +302,12 @@ export default function RepositorySemanticMapView({
     setSelectedPaperIds((current) => current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]);
   };
 
+  const fitInitialView = useCallback((instance: ReactFlowInstance) => {
+    window.requestAnimationFrame(() => {
+      void instance.fitView({ padding: 0.16, minZoom: 0.35, maxZoom: 1.4 });
+    });
+  }, []);
+
   function setPaperVisible(paperId: string, visible: boolean) {
     if (!visible && visiblePoints.length <= 1 && visibleIds.has(paperId)) {
       setPaperFilterNotice("Keep at least one paper visible on the map.");
@@ -447,7 +454,7 @@ export default function RepositorySemanticMapView({
             </details>
           </div>
           {visiblePoints.length === 0 ? <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-6 text-center"><div className="rounded-lg border border-slate-200 bg-white/95 px-5 py-4 shadow-sm backdrop-blur dark:border-[#292929] dark:bg-[#080808]/95"><p className="text-sm font-semibold text-slate-900 dark:text-white">No papers are visible</p><p className="mt-1 text-xs text-slate-500 dark:text-[#999]">Use the Papers filter to show at least one paper.</p></div></div> : null}
-          <ReactFlow nodes={graphNodes} edges={edges} nodeTypes={NODE_TYPES} onNodeClick={onNodeClick} onNodeMouseEnter={(_event, node) => { if (!node.id.startsWith("cluster:")) setHoveredPaperId(node.id); }} onNodeMouseLeave={() => setHoveredPaperId(null)} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView fitViewOptions={{ padding: 0.16, minZoom: 0.35, maxZoom: 1.4 }} minZoom={0.35} maxZoom={2.5} className="semantic-map-flow">
+          <ReactFlow key={map.mapId} nodes={graphNodes} edges={edges} nodeTypes={NODE_TYPES} onInit={fitInitialView} onNodeClick={onNodeClick} onNodeMouseEnter={(_event, node) => { if (!node.id.startsWith("cluster:")) setHoveredPaperId(node.id); }} onNodeMouseLeave={() => setHoveredPaperId(null)} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable autoPanOnNodeFocus={false} minZoom={0.35} maxZoom={2.5} className="semantic-map-flow">
             <Background color="#64748b" gap={28} size={0.6} />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(node) => String((node.data as Partial<PaperNodeData>)?.color ?? node.style?.background ?? "#64748b")} maskColor="rgba(15,23,42,.08)" />
