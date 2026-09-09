@@ -6,6 +6,7 @@ import {
   recordAiTokenUsage,
   withAiTokenUsageTracking,
 } from "../src/lib/ai-token-usage";
+import { isQuotaExemptRole } from "../src/lib/quota-policy";
 
 const root = process.cwd();
 
@@ -65,6 +66,22 @@ test("chat uses account token accounting and the approved model pair", () => {
   assert.match(route, /withAiTokenUsageTracking/);
   assert.match(openai, /recordAiTokenUsage\(payload\.usage\)/);
   assert.match(guards, /AI usage events|metadata->>'metric'='tokens'|metric: "tokens"/);
+});
+
+test("trusted account roles bypass application quotas without disabling metering", () => {
+  assert.equal(isQuotaExemptRole("admin"), true);
+  assert.equal(isQuotaExemptRole("superuser"), true);
+  assert.equal(isQuotaExemptRole("member"), false);
+  assert.equal(isQuotaExemptRole(undefined), false);
+
+  const guards = readFileSync(join(root, "src/lib/security-guards.ts"), "utf8");
+  const ingestion = readFileSync(join(root, "src/lib/cloudsql/ingestion-repository.ts"), "utf8");
+  const migration = readFileSync(join(root, "cloudsql/20260909_quota_exempt_admins.sql"), "utf8");
+  assert.match(guards, /isQuotaExemptRole/);
+  assert.match(guards, /INSERT INTO public\.ai_usage_events/);
+  assert.match(ingestion, /!isQuotaExemptRole\(profile\.rows\[0\]\?\.role\)/);
+  assert.match(migration, /testosterone142@gmail\.com/);
+  assert.match(migration, /p\.chantarusorn@gmail\.com/);
 });
 
 test("token accounting aggregates every model call in one request context", async () => {

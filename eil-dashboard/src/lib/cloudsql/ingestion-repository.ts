@@ -1,6 +1,7 @@
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import type { IngestionRunRow } from "@/types/database";
 import { MAX_PAPERS_PER_ACCOUNT } from "@/lib/upload-safety";
+import { isQuotaExemptRole } from "@/lib/quota-policy";
 
 export type IngestionJobRow = Record<string, unknown> & { id: string };
 
@@ -34,6 +35,10 @@ export class CloudSqlIngestionRepository {
       );
       if (!folder.rows[0]) throw new Error("Folder not found.");
 
+      const profile = await client.query<{ role: string | null }>(
+        `SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`,
+        [input.ownerUserId]
+      );
       const accountUsage = await client.query<{ count: string }>(
         `
           SELECT (
@@ -52,7 +57,7 @@ export class CloudSqlIngestionRepository {
         [input.ownerUserId]
       );
       const activePaperCount = Number(accountUsage.rows[0]?.count ?? 0);
-      if (activePaperCount + input.files.length > MAX_PAPERS_PER_ACCOUNT) {
+      if (!isQuotaExemptRole(profile.rows[0]?.role) && activePaperCount + input.files.length > MAX_PAPERS_PER_ACCOUNT) {
         const remaining = Math.max(0, MAX_PAPERS_PER_ACCOUNT - activePaperCount);
         throw new UploadPolicyError(
           `This account can store up to ${MAX_PAPERS_PER_ACCOUNT} papers. ${activePaperCount} are already active, so only ${remaining} more can be uploaded.`,

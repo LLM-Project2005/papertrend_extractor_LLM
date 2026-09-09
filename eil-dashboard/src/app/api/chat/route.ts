@@ -231,7 +231,10 @@ const ChatRequestBodySchema = z
         z.object({
           name: z.string().max(240),
           type: z.string().max(120).optional(),
-          size: z.number().nonnegative().max(100 * 1024 * 1024).optional(),
+          size: z.preprocess(
+            (value) => typeof value === "string" && value.trim() ? Number(value) : value,
+            z.number().nonnegative().max(100 * 1024 * 1024)
+          ).optional(),
           url: z.string().max(5_000).optional(),
           previewUrl: z.string().max(5_000).optional(),
           dataUrl: z.string().max(2_000_000).optional(),
@@ -286,7 +289,7 @@ function parseChatRequestBody(value: unknown): ChatRequestBody {
       fields,
       issues: parsed.error.issues.map((issue) => ({ code: issue.code, path: issue.path.join(".") })),
     });
-    const oversized = fields.some((field) => field === "messages" || field === "attachments" || field === "selectedRunIds");
+    const oversized = parsed.error.issues.some((issue) => issue.code === "too_big");
     throw new GuardError(
       oversized
         ? "This chat request exceeded its safe context limit. The page may be out of date; refresh it and try again."

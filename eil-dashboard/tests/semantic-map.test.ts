@@ -81,3 +81,16 @@ test("semantic-map browser contract never exposes embeddings or document text", 
   const publicContract = types.slice(types.indexOf("export interface RepositorySemanticMap"), types.indexOf("export interface SemanticPaperDocument"));
   assert.doesNotMatch(publicContract, /embedding|documentText/);
 });
+
+test("semantic-map paper filters preserve the canvas and cannot hide every scoped paper", () => {
+  const component = readFileSync(
+    join(process.cwd(), "src/components/workspace/RepositorySemanticMap.tsx"),
+    "utf8"
+  );
+  assert.match(component, /className="nodrag nopan absolute/);
+  assert.match(component, /className="nowheel/);
+  assert.match(component, /visiblePoints\.length <= 1/);
+  assert.match(component, /const allHidden = \[\.\.\.nextScopeIds\]\.every/);
+  assert.match(component, /anchorMembers = folderPoints/);
+  assert.doesNotMatch(component, /hideAllPapersInScope/);
+});

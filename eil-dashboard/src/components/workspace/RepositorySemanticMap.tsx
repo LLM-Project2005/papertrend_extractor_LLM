@@ -108,6 +108,7 @@ export default function RepositorySemanticMapView({
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [paperFilterQuery, setPaperFilterQuery] = useState("");
+  const [paperFilterNotice, setPaperFilterNotice] = useState<string | null>(null);
   const [folderId, setFolderId] = useState(initialFolderId ?? "all");
   const [colorMode, setColorMode] = useState<ColorMode>("cluster");
   const [minimumSimilarity, setMinimumSimilarity] = useState(0.45);
@@ -252,13 +253,14 @@ export default function RepositorySemanticMapView({
   const clusterLabelNodes = useMemo<Node[]>(() => {
     if (!map || !showClusterLabels || colorMode !== "cluster") return [];
     return map.clusters.flatMap((cluster) => {
-      const members = visiblePoints.filter((point) => point.clusterId === cluster.id);
-      if (members.length === 0) return [];
+      const visibleMembers = visiblePoints.filter((point) => point.clusterId === cluster.id);
+      if (visibleMembers.length === 0) return [];
+      const anchorMembers = folderPoints.filter((point) => point.clusterId === cluster.id);
       return [{
         id: `cluster:${cluster.id}`,
         position: {
-          x: members.reduce((sum, point) => sum + point.x, 0) / members.length - 70,
-          y: members.reduce((sum, point) => sum + point.y, 0) / members.length - 58,
+          x: anchorMembers.reduce((sum, point) => sum + point.x, 0) / anchorMembers.length - 70,
+          y: anchorMembers.reduce((sum, point) => sum + point.y, 0) / anchorMembers.length - 58,
         },
         data: { label: cluster.label },
         selectable: false,
@@ -272,7 +274,7 @@ export default function RepositorySemanticMapView({
         },
       }];
     });
-  }, [colorMode, map, showClusterLabels, visiblePoints]);
+  }, [colorMode, folderPoints, map, showClusterLabels, visiblePoints]);
   const graphNodes = useMemo<Node[]>(() => [...nodes, ...clusterLabelNodes], [clusterLabelNodes, nodes]);
 
   const visibleEdges = useMemo(() => map?.edges.filter((edge) => showEdges && visibleIds.has(edge.sourcePaperId) && visibleIds.has(edge.targetPaperId) && edge.similarity >= minimumSimilarity) ?? [], [map, minimumSimilarity, showEdges, visibleIds]);
@@ -300,6 +302,11 @@ export default function RepositorySemanticMapView({
   };
 
   function setPaperVisible(paperId: string, visible: boolean) {
+    if (!visible && visiblePoints.length <= 1 && visibleIds.has(paperId)) {
+      setPaperFilterNotice("Keep at least one paper visible on the map.");
+      return;
+    }
+    setPaperFilterNotice(null);
     setHiddenPaperIds((current) => {
       const next = new Set(current);
       if (visible) next.delete(paperId);
@@ -309,12 +316,27 @@ export default function RepositorySemanticMapView({
   }
 
   function showAllPapersInScope() {
+    setPaperFilterNotice(null);
     const scopedIds = new Set(folderPoints.map((point) => point.paperId));
     setHiddenPaperIds((current) => current.filter((paperId) => !scopedIds.has(paperId)));
   }
 
-  function hideAllPapersInScope() {
-    setHiddenPaperIds((current) => [...new Set([...current, ...folderPoints.map((point) => point.paperId)])]);
+  function changeFolder(nextFolderId: string) {
+    setPaperFilterNotice(null);
+    setPaperFilterQuery("");
+    setFolderId(nextFolderId);
+    if (!map) return;
+
+    const nextScopeIds = new Set(
+      map.points
+        .filter((point) => nextFolderId === "all" || point.folderId === nextFolderId)
+        .map((point) => point.paperId)
+    );
+    if (nextScopeIds.size === 0) return;
+    setHiddenPaperIds((current) => {
+      const allHidden = [...nextScopeIds].every((paperId) => current.includes(paperId));
+      return allHidden ? current.filter((paperId) => !nextScopeIds.has(paperId)) : current;
+    });
   }
 
   function openFocusedPaper() {
@@ -341,6 +363,7 @@ export default function RepositorySemanticMapView({
     setFolderId("all");
     setQuery("");
     setPaperFilterQuery("");
+    setPaperFilterNotice(null);
     setHiddenPaperIds([]);
   }
 
@@ -366,7 +389,10 @@ export default function RepositorySemanticMapView({
     <div className="space-y-4 p-4 sm:p-5">
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <div className="flex flex-wrap items-center gap-2"><h2 className="text-base font-semibold text-slate-950 dark:text-white">Semantic map</h2>{map.stale ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Map out of date</span> : null}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-slate-950 dark:text-white">Semantic map</h2>
+            {map.stale ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Map out of date</span> : null}
+          </div>
           <p className="mt-1 text-sm text-slate-500 dark:text-[#999]">
             {visiblePoints.length} shown / {mappedPaperCount} mapped / {eligiblePapers} analyzed
             {repositoryFileCount !== eligiblePapers ? ` / ${repositoryFileCount} repository files` : ""}. {visibleEdges.length} visible relationships.
@@ -391,22 +417,22 @@ export default function RepositorySemanticMapView({
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
         <div className="relative min-h-[620px] overflow-hidden rounded-xl border border-slate-200 bg-[#f8fafc] dark:border-[#202020] dark:bg-black">
-          <div className="absolute left-3 right-3 top-3 z-10 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-[#242424] dark:bg-[#080808]/95">
+          <div className="nodrag nopan absolute left-3 right-3 top-3 z-10 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-[#242424] dark:bg-[#080808]/95">
             <label className="relative min-w-[180px] flex-1"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a paper, topic, or keyword" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-sm outline-none focus:border-slate-400 dark:border-[#292929] dark:text-white" /></label>
-            <select value={folderId} onChange={(event) => setFolderId(event.target.value)} aria-label="Filter by folder" className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-[#292929] dark:bg-[#080808] dark:text-white"><option value="all">All folders</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select>
+            <select value={folderId} onChange={(event) => changeFolder(event.target.value)} aria-label="Filter by folder" className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-[#292929] dark:bg-[#080808] dark:text-white"><option value="all">All folders</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}</select>
             <select value={colorMode} onChange={(event) => setColorMode(event.target.value as ColorMode)} aria-label="Color papers by" className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-[#292929] dark:bg-[#080808] dark:text-white"><option value="cluster">Color: neighborhood</option><option value="category">Color: category</option><option value="year">Color: year</option><option value="track">Color: track</option><option value="folder">Color: folder</option></select>
             <details className="group relative">
               <summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 transition hover:border-slate-400 dark:border-[#292929] dark:bg-[#080808] dark:text-white">
                 <FilterIcon className="h-4 w-4" /> Papers {visiblePoints.length}/{folderPoints.length}
               </summary>
-              <div className="absolute right-0 top-11 z-30 w-[min(360px,calc(100vw-3rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-[#292929] dark:bg-[#080808]">
+              <div className="nodrag nopan absolute right-0 top-11 z-30 w-[min(360px,calc(100vw-3rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-[#292929] dark:bg-[#080808]">
                 <div className="flex items-center justify-between gap-3">
                   <div><p className="text-sm font-semibold text-slate-950 dark:text-white">Papers in view</p><p className="text-xs text-slate-500 dark:text-[#999]">Hide papers without rebuilding the map.</p></div>
                   <span className="flex-none text-xs tabular-nums text-slate-500 dark:text-[#999]">{hiddenInScopeCount} hidden</span>
                 </div>
                 <label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-sm text-slate-950 outline-none focus:border-slate-400 dark:border-[#292929] dark:text-white" /></label>
-                <div className="mt-2 flex gap-2"><button type="button" onClick={showAllPapersInScope} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-[#ddd] dark:hover:bg-[#151515]">Show all</button><button type="button" onClick={hideAllPapersInScope} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-[#ddd] dark:hover:bg-[#151515]">Hide all</button></div>
-                <div className="mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">
+                <div className="mt-2 flex items-center justify-between gap-2"><button type="button" onClick={showAllPapersInScope} className="rounded-md px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:text-[#ddd] dark:hover:bg-[#151515]">Show all</button>{paperFilterNotice ? <span className="text-right text-[11px] text-amber-700 dark:text-amber-300">{paperFilterNotice}</span> : null}</div>
+                <div className="nowheel mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">
                   {paperFilterPoints.map((point) => {
                     const visible = !hiddenIds.has(point.paperId);
                     return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-[#121212]">
@@ -421,7 +447,7 @@ export default function RepositorySemanticMapView({
             </details>
           </div>
           {visiblePoints.length === 0 ? <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center px-6 text-center"><div className="rounded-lg border border-slate-200 bg-white/95 px-5 py-4 shadow-sm backdrop-blur dark:border-[#292929] dark:bg-[#080808]/95"><p className="text-sm font-semibold text-slate-900 dark:text-white">No papers are visible</p><p className="mt-1 text-xs text-slate-500 dark:text-[#999]">Use the Papers filter to show at least one paper.</p></div></div> : null}
-          <ReactFlow nodes={graphNodes} edges={edges} nodeTypes={NODE_TYPES} onNodeClick={onNodeClick} onNodeMouseEnter={(_event, node) => { if (!node.id.startsWith("cluster:")) setHoveredPaperId(node.id); }} onNodeMouseLeave={() => setHoveredPaperId(null)} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView minZoom={0.35} maxZoom={2.5} className="semantic-map-flow">
+          <ReactFlow nodes={graphNodes} edges={edges} nodeTypes={NODE_TYPES} onNodeClick={onNodeClick} onNodeMouseEnter={(_event, node) => { if (!node.id.startsWith("cluster:")) setHoveredPaperId(node.id); }} onNodeMouseLeave={() => setHoveredPaperId(null)} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable fitView fitViewOptions={{ padding: 0.16, minZoom: 0.35, maxZoom: 1.4 }} minZoom={0.35} maxZoom={2.5} className="semantic-map-flow">
             <Background color="#64748b" gap={28} size={0.6} />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(node) => String((node.data as Partial<PaperNodeData>)?.color ?? node.style?.background ?? "#64748b")} maskColor="rgba(15,23,42,.08)" />
@@ -442,7 +468,7 @@ export default function RepositorySemanticMapView({
           </div>
 
           {focusedPoint ? <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Selected paper</p><h3 className="mt-3 text-sm font-semibold leading-5 text-slate-950 dark:text-white">{focusedPoint.title}</h3><p className="mt-2 text-xs text-slate-500 dark:text-[#999]">{focusedPoint.year} / {focusedPoint.folderName ?? "Repository root"}</p><div className="mt-3 flex flex-wrap gap-1.5">{focusedPoint.categories.slice(0, 4).map((category) => <span key={category} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700 dark:bg-[#151515] dark:text-[#ddd]">{category}</span>)}</div><button type="button" onClick={openFocusedPaper} disabled={!focusedPoint.runId} className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 disabled:opacity-50 dark:border-[#303030] dark:text-white">Open analysis</button></div> : null}
-          {focusedEdge ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-950 dark:bg-amber-950/20"><p className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">Relationship</p><p className="mt-2 text-sm font-semibold leading-5 text-slate-950 dark:text-white">{edgeSource?.title ?? "Paper"}</p><p className="my-1 text-xs text-slate-500 dark:text-[#999]">and</p><p className="text-sm font-semibold leading-5 text-slate-950 dark:text-white">{edgeTarget?.title ?? "Paper"}</p><p className="mt-3 text-2xl font-semibold text-slate-950 dark:text-white">{Math.round(focusedEdge.similarity * 100)}%</p><p className="text-xs text-slate-500 dark:text-[#999]">Cosine similarity</p><div className="mt-3 space-y-1 text-xs text-slate-700 dark:text-[#ddd]">{sharedSignalText(focusedEdge).length ? sharedSignalText(focusedEdge).map((text) => <p key={text}>{text}</p>) : <p>No exact metadata overlap; similarity comes from document meaning.</p>}</div></div> : null}
+          {focusedEdge ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-950 dark:bg-amber-950/20 dark:text-amber-50"><p className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">Relationship</p><p className="mt-2 text-sm font-semibold leading-5">{edgeSource?.title ?? "Paper"}</p><p className="my-1 text-xs text-amber-800/70 dark:text-amber-200/70">and</p><p className="text-sm font-semibold leading-5">{edgeTarget?.title ?? "Paper"}</p><p className="mt-3 text-2xl font-semibold">{Math.round(focusedEdge.similarity * 100)}%</p><p className="text-xs text-amber-800/70 dark:text-amber-200/70">Cosine similarity</p><div className="mt-3 space-y-1 text-xs text-amber-900 dark:text-amber-100">{sharedSignalText(focusedEdge).length ? sharedSignalText(focusedEdge).map((text) => <p key={text}>{text}</p>) : <p>No exact metadata overlap; similarity comes from document meaning.</p>}</div></div> : null}
           {!focusedPoint && !focusedEdge ? <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-500 dark:border-[#202020] dark:bg-[#050505] dark:text-[#999]"><ChartIcon className="mb-3 h-5 w-5" />Select a paper to inspect it. Select multiple papers to send that exact evidence scope to chat.</div> : null}
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Legend</p><div className="mt-3 space-y-2">{legend.map(([label, color]) => <div key={label} className="flex items-center gap-2 text-xs text-slate-700 dark:text-[#ddd]"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: color }} /><span className="truncate" title={label}>{label}</span></div>)}</div></div>
         </aside>

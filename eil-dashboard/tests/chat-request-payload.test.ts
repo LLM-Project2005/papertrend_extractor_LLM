@@ -27,13 +27,14 @@ test("chat requests compact long context without dropping its beginning or concl
 
 test("large semantic-map selections keep full run scope while bounding attachment metadata", () => {
   const runIds = Array.from({ length: 50 }, (_, index) => `run-${index}`);
-  const attachments = runIds.map((runId) => ({ name: runId, runId }));
+  const attachments = runIds.map((runId, index) => ({ name: runId, runId, size: String(1024 + index) }));
   const payload = normalizeChatRequestPayload({
     attachments,
     selectedRunIds: runIds,
     knowledgeScope: { kind: "selected_papers", runIds },
   });
   assert.equal((payload.attachments as unknown[]).length, 10);
+  assert.equal((payload.attachments as Array<{ size: unknown }>)[0]?.size, 1024);
   assert.equal((payload.selectedRunIds as unknown[]).length, 50);
   assert.equal(((payload.knowledgeScope as { runIds: unknown[] }).runIds).length, 50);
 });

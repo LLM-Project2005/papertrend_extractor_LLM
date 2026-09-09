@@ -30,7 +30,18 @@ export function normalizeChatRequestPayload(body: Record<string, unknown>): Reco
       .map((item) => ({ role: item.role, content: compactChatMessage(item.content) }));
   }
   if (Array.isArray(body.attachments)) {
-    next.attachments = body.attachments.slice(0, CHAT_REQUEST_ATTACHMENT_LIMIT);
+    next.attachments = body.attachments.slice(0, CHAT_REQUEST_ATTACHMENT_LIMIT).map((attachment) => {
+      if (!attachment || typeof attachment !== "object") return attachment;
+      const normalized = { ...(attachment as Record<string, unknown>) };
+      if (normalized.size !== undefined && normalized.size !== null) {
+        const size = Number(normalized.size);
+        if (Number.isFinite(size) && size >= 0) normalized.size = size;
+        else delete normalized.size;
+      } else {
+        delete normalized.size;
+      }
+      return normalized;
+    });
   }
   if (Array.isArray(body.selectedRunIds)) {
     next.selectedRunIds = uniqueRunIds(body.selectedRunIds);
