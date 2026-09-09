@@ -99,6 +99,7 @@ test("Firebase project target and production URL split stay pinned to Papertrend
   );
 
   const workerBuild = readRootFile("cloudbuild.worker.production.yaml");
+  assert.match(workerBuild, /--clear-base-image/);
   assert.match(
     workerBuild,
     /_APP_ALLOWED_ORIGINS: https:\/\/papertrend-web-production-javhavgdsq-as\.a\.run\.app;https:\/\/research-trend-analysis\.web\.app/
