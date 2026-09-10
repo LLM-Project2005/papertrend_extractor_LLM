@@ -11,6 +11,7 @@ import {
 } from "@/lib/project-analysis-profile";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { sanitizeFolderName } from "@/lib/research-folders";
+import { markProjectSemanticMapsStale } from "@/lib/semantic-map-invalidation";
 import { sanitizeWorkspaceName } from "@/lib/workspace-organizations";
 
 type OrganizationType = WorkspaceOrganizationRow["type"];
@@ -169,13 +170,7 @@ export class CloudSqlWorkspaceRepository {
            WHERE owner_user_id=$1 AND scope_type='project' AND scope_key=$2`,
           [ownerUserId, projectId]
         );
-        await client.query(
-          `UPDATE public.repository_semantic_maps
-           SET source_hash=CASE WHEN source_hash LIKE 'invalidated:%' THEN source_hash ELSE 'invalidated:'||source_hash END,
-               updated_at=now()
-           WHERE owner_user_id=$1 AND project_id=$2 AND status='succeeded'`,
-          [ownerUserId, projectId]
-        );
+        await markProjectSemanticMapsStale(client, ownerUserId, projectId);
       }
       return result.rows[0] ? normalizeProject(result.rows[0]) : null;
     });

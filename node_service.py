@@ -150,7 +150,11 @@ def _json_response(handler: BaseHTTPRequestHandler, status: int, payload: Dict[s
 
 def _allowed_origins() -> set[str]:
     raw = os.getenv("APP_ALLOWED_ORIGINS", "").strip()
-    return {origin.rstrip("/") for origin in raw.split(",") if origin.strip()}
+    return {
+        origin.strip().rstrip("/")
+        for origin in re.split(r"[;,]", raw)
+        if origin.strip()
+    }
 
 
 def _cors_origin_for_request(handler: BaseHTTPRequestHandler) -> str:

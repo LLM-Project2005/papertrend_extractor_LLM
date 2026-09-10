@@ -28,6 +28,9 @@ export function generateMetadata({
   return {
     title: `${page.title} | Papertrend Docs`,
     description: page.description,
+    alternates: {
+      canonical: `/docs/${page.slug}`,
+    },
   };
 }
 

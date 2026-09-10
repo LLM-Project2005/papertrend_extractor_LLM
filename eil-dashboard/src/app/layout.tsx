@@ -5,7 +5,12 @@ import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
 import "@xyflow/react/dist/style.css";
 import "./globals.css";
 
+const metadataBase = new URL(
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000"
+);
+
 export const metadata: Metadata = {
+  metadataBase,
   title: "Papertrend Workspace",
   description:
     "Landing, onboarding, analytics, chat, and import tooling for reusable research-paper workspaces",

@@ -35,6 +35,7 @@ import {
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import { normalizeChatRequestPayload } from "@/lib/chat-request-payload";
+import { readChatResponse } from "@/lib/chat-http";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -2138,11 +2139,7 @@ export default function ChatClient() {
       body: JSON.stringify(normalizeChatRequestPayload(body)),
       signal: controller.signal,
     });
-    const payload = (await response.json()) as ChatPayload;
-    if (!response.ok) {
-      throw new Error(payload.error ?? "Chat request failed.");
-    }
-    return payload;
+    return readChatResponse<ChatPayload>(response);
   }
 
   async function waitForRepositoryJob(jobId: string) {

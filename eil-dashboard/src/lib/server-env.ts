@@ -198,7 +198,7 @@ export function getWorkerWebhookSecret(): string {
 
 export function getAllowedOrigins(): string[] {
   return (process.env.APP_ALLOWED_ORIGINS ?? process.env.NEXT_PUBLIC_SITE_URL ?? "")
-    .split(",")
+    .split(/[;,]/)
     .map((origin) => origin.trim().replace(/\/$/, ""))
     .filter(Boolean);
 }

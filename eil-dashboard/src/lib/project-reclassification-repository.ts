@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import type { ProjectReclassificationJobRow } from "@/types/database";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
+import { markProjectSemanticMapsStale } from "@/lib/semantic-map-invalidation";
 
 export interface ReclassificationPaper {
   itemId: string;
@@ -322,13 +323,7 @@ export async function publishReclassificationJob(ownerUserId: string, jobId: str
       );
     }
     await client.query(`DELETE FROM public.workspace_analytics_cache WHERE owner_user_id=$1 AND scope_type='project' AND scope_key=$2`, [ownerUserId, job.project_id]);
-    await client.query(
-      `UPDATE public.repository_semantic_maps
-       SET source_hash=CASE WHEN source_hash LIKE 'invalidated:%' THEN source_hash ELSE 'invalidated:'||source_hash END,
-           updated_at=now()
-       WHERE owner_user_id=$1 AND project_id=$2 AND status='succeeded'`,
-      [ownerUserId, job.project_id]
-    );
+    await markProjectSemanticMapsStale(client, ownerUserId, job.project_id);
     await client.query(
       `UPDATE public.project_reclassification_jobs SET status='succeeded',progress_stage='published',processed_items=total_items,
        failed_items=0,completed_at=now(),updated_at=now() WHERE id=$1 AND owner_user_id=$2`,
