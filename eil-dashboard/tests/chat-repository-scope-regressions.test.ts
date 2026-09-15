@@ -48,3 +48,11 @@ test("Cloud SQL chat writes normalize repository-wide folder scope", () => {
   const repository = readFileSync(join(root, "src/lib/chat-repository.ts"), "utf8");
   assert.doesNotMatch(repository, /input\.folderId \|\| null/);
 });
+
+test("Deep Research resolves selected runs through canonical paper content", () => {
+  const route = readFileSync(join(root, "src/app/api/chat/route.ts"), "utf8");
+  assert.match(route, /c\.ingestion_run_id=ANY/);
+  assert.match(route, /COALESCE\(c\.folder_id,p\.folder_id\)/);
+  assert.doesNotMatch(route, /p\.ingestion_run_id/);
+  assert.match(route, /chat_request_failed/);
+});
