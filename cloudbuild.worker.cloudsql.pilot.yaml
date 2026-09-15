@@ -48,6 +48,23 @@ steps:
       - --set-secrets
       - OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,DATABASE_URL=DATABASE_URL:latest
 
+  # Restore LATEST traffic even if an earlier controlled rollout used
+  # --no-traffic. Without this, Cloud Run can accept a healthy revision and
+  # immediately retire it while continuing to serve an old worker.
+  - id: promote-cloudsql-worker-pilot
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - ${_SERVICE_NAME}
+      - --project
+      - ${PROJECT_ID}
+      - --region
+      - ${_REGION}
+      - --to-latest
+
 substitutions:
   _REGION: asia-southeast1
   _SERVICE_NAME: papertrend-worker-cloudsql-pilot
