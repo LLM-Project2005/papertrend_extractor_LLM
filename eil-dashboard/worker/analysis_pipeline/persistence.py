@@ -126,6 +126,20 @@ def _persist_step(
 
 def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     paper_id = int(dataset["paper_id"])
+    paper_rows = list(dataset.get("papers") or [])
+    owner_user_id = str(
+        (paper_rows[0] if paper_rows else {}).get("owner_user_id") or ""
+    ).strip()
+    if not owner_user_id:
+        raise ValueError("The analysis dataset is missing its owner_user_id.")
+
+    def delete_owned_rows(table: str) -> None:
+        client.delete_rows_for_paper(
+            table,
+            paper_id,
+            owner_user_id=owner_user_id,
+        )
+
     _persist_step(
         "papers.upsert",
         _row_count(dataset.get("papers")),
@@ -134,7 +148,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     _persist_step(
         "paper_keywords.delete",
         0,
-        lambda: client.delete_rows_for_paper("paper_keywords", paper_id),
+        lambda: delete_owned_rows("paper_keywords"),
     )
     _persist_step(
         "paper_keywords.upsert",
@@ -159,7 +173,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     if _persist_step(
         "paper_keyword_concepts.delete",
         0,
-        lambda: client.delete_rows_for_paper("paper_keyword_concepts", paper_id),
+        lambda: delete_owned_rows("paper_keyword_concepts"),
         missing_relation_ok=True,
     ):
         _persist_step(
@@ -174,7 +188,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     if _persist_step(
         "paper_analysis_facets.delete",
         0,
-        lambda: client.delete_rows_for_paper("paper_analysis_facets", paper_id),
+        lambda: delete_owned_rows("paper_analysis_facets"),
         missing_relation_ok=True,
     ):
         _persist_step(
@@ -189,7 +203,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     if _persist_step(
         "paper_author_keywords.delete",
         0,
-        lambda: client.delete_rows_for_paper("paper_author_keywords", paper_id),
+        lambda: delete_owned_rows("paper_author_keywords"),
         missing_relation_ok=True,
     ):
         _persist_step(
@@ -204,7 +218,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     if _persist_step(
         "paper_research_typologies.delete",
         0,
-        lambda: client.delete_rows_for_paper("paper_research_typologies", paper_id),
+        lambda: delete_owned_rows("paper_research_typologies"),
         missing_relation_ok=True,
     ):
         _persist_step(
@@ -219,7 +233,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     if _persist_step(
         "paper_category_definitions.delete",
         0,
-        lambda: client.delete_rows_for_paper("paper_category_definitions", paper_id),
+        lambda: delete_owned_rows("paper_category_definitions"),
         missing_relation_ok=True,
     ):
         _persist_step(
@@ -234,7 +248,7 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     if _persist_step(
         "paper_category_assignments.delete",
         0,
-        lambda: client.delete_rows_for_paper("paper_category_assignments", paper_id),
+        lambda: delete_owned_rows("paper_category_assignments"),
         missing_relation_ok=True,
     ):
         _persist_step(

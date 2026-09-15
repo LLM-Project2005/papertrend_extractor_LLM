@@ -13,6 +13,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any, Dict, Iterable, Iterator, List, Optional
 
+from cloudsql_authorization import normalize_owner_id, set_transaction_owner
+
 
 ALLOWED_WRITE_TABLES = frozenset(
     {
@@ -54,6 +56,16 @@ GENERATED_ID_TABLES = frozenset(
         "paper_category_assignments",
     }
 )
+
+
+def _single_payload_owner(table: str, rows: Iterable[Dict[str, Any]]) -> str:
+    owners = {
+        normalize_owner_id(row.get("owner_user_id"), f"{table}.owner_user_id")
+        for row in rows
+    }
+    if len(owners) != 1:
+        raise PermissionError(f"Cloud SQL {table} writes must contain exactly one owner.")
+    return next(iter(owners))
 
 
 def _json_value(value: Any) -> Any:
@@ -331,12 +343,21 @@ class CloudSqlWorkerClient:
             "Supabase object download is unavailable in Cloud SQL mode; queued uploads must use GCS."
         )
 
-    def delete_rows_for_paper(self, table: str, paper_id: int) -> None:
+    def delete_rows_for_paper(
+        self,
+        table: str,
+        paper_id: int,
+        *,
+        owner_user_id: Optional[str] = None,
+    ) -> None:
         if table not in ALLOWED_WRITE_TABLES:
             raise ValueError(f"Unsupported analysis table: {table}")
+        if not owner_user_id:
+            raise ValueError("owner_user_id is required for an owner-scoped Cloud SQL delete.")
         from psycopg import sql
 
         with self._connection() as connection, connection.cursor() as cursor:
+            set_transaction_owner(cursor, owner_user_id)
             cursor.execute(
                 sql.SQL("DELETE FROM public.{table} WHERE paper_id = %s").format(
                     table=sql.Identifier(table)
@@ -344,8 +365,12 @@ class CloudSqlWorkerClient:
                 (paper_id,),
             )
 
-    def delete_keywords_for_paper(self, paper_id: int) -> None:
-        self.delete_rows_for_paper("paper_keywords", paper_id)
+    def delete_keywords_for_paper(
+        self, paper_id: int, *, owner_user_id: Optional[str] = None
+    ) -> None:
+        self.delete_rows_for_paper(
+            "paper_keywords", paper_id, owner_user_id=owner_user_id
+        )
 
     def upsert_rows(self, table: str, rows: Iterable[Dict[str, Any]]) -> None:
         payload = [dict(row) for row in rows]
@@ -353,11 +378,13 @@ class CloudSqlWorkerClient:
             return
         if table not in ALLOWED_WRITE_TABLES:
             raise ValueError(f"Unsupported analysis table: {table}")
+        owner_user_id = _single_payload_owner(table, payload)
 
         from psycopg import sql
 
         keys = PRIMARY_KEYS[table]
         with self._connection() as connection, connection.cursor() as cursor:
+            set_transaction_owner(cursor, owner_user_id)
             cursor.execute(
                 "SELECT column_name FROM information_schema.columns "
                 "WHERE table_schema = 'public' AND table_name = %s",

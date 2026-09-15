@@ -553,7 +553,14 @@ class SupabaseRestClient:
         )
         response.raise_for_status()
 
-    def delete_rows_for_paper(self, table: str, paper_id: int) -> None:
+    def delete_rows_for_paper(
+        self,
+        table: str,
+        paper_id: int,
+        *,
+        owner_user_id: Optional[str] = None,
+    ) -> None:
+        del owner_user_id
         response = self.session.delete(
             self._rest_url(table),
             params={"paper_id": f"eq.{paper_id}"},
