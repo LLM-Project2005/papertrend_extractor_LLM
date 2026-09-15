@@ -3,8 +3,9 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildSimilarityEdges, clusterEmbeddings, cosineSimilarity, euclideanDistance, projectEmbeddings } from "../src/lib/semantic-map-math";
+import { buildSemanticSelectionInsight, selectReadableOverviewEdges } from "../src/lib/semantic-map-presentation";
 import { semanticSourceHash } from "../src/lib/semantic-map-repository";
-import type { SemanticPaperDocument } from "../src/types/semantic-map";
+import type { SemanticMapEdge, SemanticMapPoint, SemanticPaperDocument } from "../src/types/semantic-map";
 
 function vectors(count: number, dimensions = 16): number[][] {
   return Array.from({ length: count }, (_, row) =>
@@ -62,6 +63,97 @@ test("clustering assigns every paper", () => {
   assert.ok(result.assignments.every(Number.isInteger));
 });
 
+function mapPoint(paperId: string, x: number, y: number, clusterId = 0, topics: string[] = []): SemanticMapPoint {
+  return {
+    paperId,
+    runId: `00000000-0000-4000-8000-${paperId.padStart(12, "0")}`,
+    folderId: null,
+    x,
+    y,
+    clusterId,
+    title: `Paper ${paperId}`,
+    year: "2026",
+    folderName: null,
+    categories: ["Assessment"],
+    topics,
+    keywords: ["feedback"],
+    track: "EL",
+  };
+}
+
+function mapEdge(sourcePaperId: string, targetPaperId: string, distance: number): SemanticMapEdge {
+  return {
+    sourcePaperId,
+    targetPaperId,
+    distance,
+    similarity: 1 / (1 + distance),
+    rank: 1,
+    sharedSignals: { categories: ["Assessment"], topics: [], keywords: ["feedback"], methods: ["survey"] },
+  };
+}
+
+test("readable overview edges remain semantic-first while avoiding visual collisions", () => {
+  const points = [
+    mapPoint("1", 0, 0),
+    mapPoint("2", 100, 100),
+    mapPoint("3", 0, 100),
+    mapPoint("4", 100, 0),
+    mapPoint("5", 50, 50),
+  ];
+  const edges = [
+    mapEdge("1", "2", 0.1),
+    mapEdge("3", "4", 0.11),
+    mapEdge("1", "3", 0.12),
+    mapEdge("2", "4", 0.13),
+    mapEdge("4", "5", 0.14),
+  ];
+  const selected = selectReadableOverviewEdges(edges, points, 3);
+  assert.equal(selected.length, 3);
+  assert.ok(selected.some((edge) => edge.sourcePaperId === "1" && edge.targetPaperId === "3"));
+  assert.ok(selected.some((edge) => edge.sourcePaperId === "4" && edge.targetPaperId === "5"));
+  assert.ok(selected.every((edge) => edges.includes(edge)));
+});
+
+test("multi-paper insight explains neighborhoods, retained links, and recurring evidence", () => {
+  const points = [
+    mapPoint("1", 0, 0, 0, ["formative assessment"]),
+    mapPoint("2", 100, 100, 0, ["formative assessment"]),
+    mapPoint("3", 50, 20, 1, ["learner autonomy"]),
+  ];
+  const edges = [mapEdge("1", "2", 0.25), mapEdge("2", "3", 0.6)];
+  const insight = buildSemanticSelectionInsight({
+    points,
+    edges,
+    clusters: [
+      { id: 0, label: "Assessment practices", paperCount: 2, terms: [], source: "deterministic" },
+      { id: 1, label: "Learner development", paperCount: 1, terms: [], source: "deterministic" },
+    ],
+  }, ["1", "2"]);
+  assert.ok(insight);
+  assert.equal(insight.selectedCount, 2);
+  assert.equal(insight.possiblePairs, 1);
+  assert.equal(insight.directConnections.length, 1);
+  assert.equal(insight.closestConnection?.distance, 0.25);
+  assert.deepEqual(insight.neighborhoodLabels, ["Assessment practices"]);
+  assert.ok(insight.recurringSignals.includes("formative assessment"));
+  assert.match(insight.summary, /Every selected pair is directly connected/);
+});
+
+test("multi-paper insight is honest when selected papers have no retained edge", () => {
+  const insight = buildSemanticSelectionInsight({
+    points: [mapPoint("1", 0, 0, 0), mapPoint("3", 100, 100, 1)],
+    edges: [],
+    clusters: [
+      { id: 0, label: "Assessment", paperCount: 1, terms: [], source: "deterministic" },
+      { id: 1, label: "Autonomy", paperCount: 1, terms: [], source: "deterministic" },
+    ],
+  }, ["1", "3"]);
+  assert.ok(insight);
+  assert.equal(insight.directConnections.length, 0);
+  assert.equal(insight.closestConnection, null);
+  assert.match(insight.summary, /not direct neighbors/);
+});
+
 test("source hash is order independent, content-sensitive, and folder-agnostic", () => {
   const first = semanticSourceHash([paper(1), paper(2)]);
   assert.equal(first, semanticSourceHash([paper(2), paper(1)]));
@@ -102,6 +194,9 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /OVERVIEW_EDGE_LIMIT = 8/);
   assert.match(component, /FOCUSED_EDGE_LIMIT = 6/);
   assert.match(component, /edge\.distance/);
+  assert.match(component, /selectReadableOverviewEdges/);
+  assert.match(component, /edgeTypes=\{EDGE_TYPES\}/);
+  assert.match(component, /Selection relationship/);
   assert.match(component, /onInit=\{fitInitialView\}/);
   assert.match(component, /autoPanOnNodeFocus=\{false\}/);
   assert.doesNotMatch(component, /folderFilter/);
