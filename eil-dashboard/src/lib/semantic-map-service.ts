@@ -151,7 +151,7 @@ export async function processSemanticMapJob(ownerUserId: string, mapId: string):
     }));
     const edges: SemanticMapEdge[] = edgeIndexes.map((edge) => ({
       sourcePaperId: documents[edge.source].paperId, targetPaperId: documents[edge.target].paperId,
-      similarity: edge.similarity, rank: edge.rank,
+      distance: edge.distance, similarity: edge.similarity, rank: edge.rank,
       sharedSignals: {
         categories: intersect(documents[edge.source].categories, documents[edge.target].categories),
         topics: intersect(documents[edge.source].topics, documents[edge.target].topics),
@@ -172,7 +172,11 @@ export async function processSemanticMapJob(ownerUserId: string, mapId: string):
       throw new Error("Repository changed while the map was generated. Please update the map again.");
     }
     await completeSemanticMap(ownerUserId, mapId, job.projectId, sourceHash,
-      { algorithm: projection.algorithm, parameters: projection.parameters, quality: projection.quality },
+      {
+        algorithm: projection.algorithm,
+        parameters: projection.parameters,
+        quality: { ...projection.quality, distanceMetricEuclidean: 1 },
+      },
       clusters, points, edges);
     return { skipped: false };
   } catch (error) {

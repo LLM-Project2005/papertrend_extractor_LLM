@@ -19,6 +19,7 @@ interface Props {
   title?: string;
   description?: string;
   showHeader?: boolean;
+  showFolders?: boolean;
 }
 
 export default function Sidebar({
@@ -36,6 +37,7 @@ export default function Sidebar({
   title = "Filters",
   description = "Narrow the dataset before exploring the analytics.",
   showHeader = true,
+  showFolders = true,
 }: Props) {
   const normalizedSelectedFolderIds = [...new Set(selectedFolderIds.filter(Boolean))];
   const allYearsSelected =
@@ -116,7 +118,7 @@ export default function Sidebar({
           </div>
         )}
 
-        {onFolderChange ? (
+        {showFolders && onFolderChange ? (
           <section>
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
               Folders
@@ -253,8 +255,7 @@ export default function Sidebar({
         </section>
 
         <p className="text-xs leading-6 text-slate-400 dark:text-[#7d7d7d]">
-          Data source: Supabase-backed views and imported research outputs inside
-          the workspace.
+          Data source: analyzed research outputs in this repository.
         </p>
       </div>
     </aside>

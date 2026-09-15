@@ -5,7 +5,7 @@ import test from "node:test";
 
 const root = process.cwd();
 
-test("chat history is account-wide while each message keeps an explicit repository scope", () => {
+test("chat history is account-wide while message scope is repository or selected papers", () => {
   const client = readFileSync(join(root, "src/components/chat/ChatClient.tsx"), "utf8");
   const chatRoute = readFileSync(join(root, "src/app/api/chat/route.ts"), "utf8");
   const threadRoute = readFileSync(
@@ -16,7 +16,8 @@ test("chat history is account-wide while each message keeps an explicit reposito
   assert.match(client, /fetch\("\/api\/chat\/threads"/);
   assert.doesNotMatch(client, /api\/chat\/threads\?projectId=/);
   assert.match(client, /allProjects\.map/);
-  assert.match(client, /allFolders\.filter/);
+  assert.doesNotMatch(client, /projectFolders/);
+  assert.doesNotMatch(client, /Show folders in/);
   assert.match(client, /menuView === "scope"/);
   assert.match(client, /All repositories/);
   assert.match(client, /return \{ kind: "all_projects" \}/);

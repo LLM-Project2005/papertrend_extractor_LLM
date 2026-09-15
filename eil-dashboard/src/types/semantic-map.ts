@@ -19,6 +19,8 @@ export interface SemanticMapPoint {
 export interface SemanticMapEdge {
   sourcePaperId: string;
   targetPaperId: string;
+  distance: number;
+  /** Compatibility score derived from Euclidean distance for older clients. */
   similarity: number;
   rank: number;
   sharedSignals: {

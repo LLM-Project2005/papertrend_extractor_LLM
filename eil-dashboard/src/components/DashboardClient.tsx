@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AdaptiveDashboardTab from "@/components/dashboard/AdaptiveDashboardTab";
+import RepositorySemanticMapView from "@/components/workspace/RepositorySemanticMap";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
@@ -25,11 +26,13 @@ const TAB_DEFINITIONS = [
   { key: "trend_analysis", label: "Trend Analysis" },
   { key: "track_analysis", label: "Category Analysis" },
   { key: "keyword_explorer", label: "Keyword Explorer" },
+  { key: "semantic_map", label: "Semantic Map" },
   { key: "adaptive", label: "Adaptive" },
 ] as const;
 
 const ADAPTIVE_SIGNATURE_SAMPLE_SIZE = 1200;
 const ADAPTIVE_RENDER_ROW_LIMIT = 10000;
+const EMPTY_FOLDER_FILTER: string[] = [];
 
 type DashboardDrilldownTarget = {
   track?: string;
@@ -133,27 +136,7 @@ function buildDashboardDrilldownTitle(target: DashboardDrilldownTarget | null): 
   return parts.length > 0 ? parts.join(" | ") : "Associated papers";
 }
 
-function parseSelectedFolderIds(
-  searchParams: URLSearchParams,
-  fallbackFolderId: string
-): string[] {
-  const raw = searchParams.get("folders");
-  if (raw) {
-    return [...new Set(raw.split(",").map((value) => value.trim()).filter(Boolean))];
-  }
-
-  if (fallbackFolderId && fallbackFolderId !== "all") {
-    return [fallbackFolderId];
-  }
-
-  return [];
-}
-
 function FilterPanel({
-  folders,
-  selectedFolderIds,
-  allFoldersSelected,
-  onFolderChange,
   allYears,
   selectedYears,
   onYearsChange,
@@ -163,10 +146,6 @@ function FilterPanel({
   useMock,
   showHeader = true,
 }: {
-  folders: ReturnType<typeof useWorkspaceProfile>["folders"];
-  selectedFolderIds: string[];
-  allFoldersSelected: boolean;
-  onFolderChange: (folderIds: string[], allSelected: boolean) => void;
   allYears: string[];
   selectedYears: string[];
   onYearsChange: (years: string[]) => void;
@@ -178,10 +157,6 @@ function FilterPanel({
 }) {
   return (
     <Sidebar
-      folders={folders}
-      selectedFolderIds={selectedFolderIds}
-      allFoldersSelected={allFoldersSelected}
-      onFolderChange={onFolderChange}
       allYears={allYears}
       selectedYears={selectedYears}
       onYearsChange={onYearsChange}
@@ -190,8 +165,9 @@ function FilterPanel({
       categoryOptions={categoryOptions}
       useMock={useMock}
       title="Analytics filters"
-      description="Choose folders, years, and categories before reading the dashboard."
+      description="Choose years and categories before reading the dashboard."
       showHeader={showHeader}
+      showFolders={false}
     />
   );
 }
@@ -204,8 +180,8 @@ export default function DashboardClient({
   const router = useRouter();
   const searchParams = useSearchParams();
   const {
-    selectedFolderId,
     selectedProjectId,
+    currentProject,
     profile,
     folders,
     selectedYears,
@@ -219,18 +195,7 @@ export default function DashboardClient({
   const categoryLabels = useMemo(() => readCategoryLabelMap(profile), [profile]);
 
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
-  const routeSelectedFolderIds = useMemo(
-    () => parseSelectedFolderIds(searchParams, selectedFolderId),
-    [searchParams, selectedFolderId]
-  );
-  const [optimisticFolderIds, setOptimisticFolderIds] = useState(routeSelectedFolderIds);
-  const selectedFolderIds = optimisticFolderIds;
-  const allFoldersSelected = selectedFolderIds.length === 0;
-  const folderNamesById = useMemo(
-    () =>
-      Object.fromEntries(folders.map((folder) => [folder.id, folder.name] as const)),
-    [folders]
-  );
+  const selectedFolderIds = EMPTY_FOLDER_FILTER;
   const dashboardDataMode: DashboardDataMode =
     searchParams.get("data") === "mock"
       ? "mock"
@@ -238,7 +203,7 @@ export default function DashboardClient({
         ? "live"
         : "auto";
   const { data, loading, refreshing, allYears, refresh } = useDashboardData(
-    allFoldersSelected ? "all" : selectedFolderIds,
+    "all",
     scopedFolderIds,
     {
       mode: dashboardDataMode,
@@ -264,10 +229,6 @@ export default function DashboardClient({
   const [adaptiveError, setAdaptiveError] = useState<string | null>(null);
   const previousAllYearsRef = useRef<string[]>([]);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
-
-  useEffect(() => {
-    setOptimisticFolderIds(routeSelectedFolderIds);
-  }, [routeSelectedFolderIds]);
 
   useEffect(() => {
     const previousAllYears = previousAllYearsRef.current;
@@ -320,6 +281,13 @@ export default function DashboardClient({
   const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
   const currentTabKey = optimisticTabKey;
   const isAdaptiveTab = currentTabKey === "adaptive";
+  const isSemanticMapTab = currentTabKey === "semantic_map";
+  const requestHeaders = useMemo<Record<string, string>>(
+    (): Record<string, string> => session?.access_token
+      ? { Authorization: `Bearer ${session.access_token}` }
+      : {},
+    [session?.access_token]
+  );
 
   useEffect(() => {
     setOptimisticTabKey(routeTabKey);
@@ -356,18 +324,6 @@ export default function DashboardClient({
     setOptimisticTabKey(tabKey);
     updateRoute((params) => {
       params.set("tab", tabKey);
-    });
-  };
-
-  const updateFolderSelection = (folderIds: string[], allSelected: boolean) => {
-    const nextFolderIds = allSelected || folderIds.length === 0 ? [] : [...folderIds];
-    setOptimisticFolderIds(nextFolderIds);
-    updateRoute((params) => {
-      if (nextFolderIds.length === 0) {
-        params.delete("folders");
-      } else {
-        params.set("folders", nextFolderIds.join(","));
-      }
     });
   };
 
@@ -709,7 +665,7 @@ export default function DashboardClient({
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
       <div className="space-y-4">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        {!isSemanticMapTab ? <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <label className="relative block w-full max-w-2xl">
             <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#8e8e8e]" />
             <input
@@ -723,11 +679,7 @@ export default function DashboardClient({
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
-              {allFoldersSelected
-                ? `All folders (${folders.length})`
-                : `${selectedFolderIds.length} folder${
-                    selectedFolderIds.length === 1 ? "" : "s"
-                  }`}
+              Repository-wide
             </span>
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#050505] dark:text-[#a3a3a3]">
               {selectedYears.length === 0
@@ -770,9 +722,9 @@ export default function DashboardClient({
               <span>Filters</span>
             </button>
           </div>
-        </div>
+        </div> : null}
 
-        <section className="app-surface px-4 py-4 sm:px-5">
+        {!isSemanticMapTab ? <section className="app-surface px-4 py-4 sm:px-5">
           {liveDataError ? (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
               Live dashboard data could not be loaded for this scope. {liveDataError}
@@ -838,7 +790,7 @@ export default function DashboardClient({
               ) : null}
             </div>
           </div>
-        </section>
+        </section> : null}
 
         <nav
           className="flex gap-2 overflow-x-auto pb-1"
@@ -866,7 +818,7 @@ export default function DashboardClient({
       </div>
 
       <div className="min-w-0">
-        {filterOpen && (
+        {!isSemanticMapTab && filterOpen && (
           <div className="fixed inset-0 z-40 bg-black/55 xl:hidden">
             <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] xl:max-w-md">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#1f1f1f] sm:px-5">
@@ -883,10 +835,6 @@ export default function DashboardClient({
               </div>
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <FilterPanel
-                  folders={folders}
-                  selectedFolderIds={selectedFolderIds}
-                  allFoldersSelected={allFoldersSelected}
-                  onFolderChange={updateFolderSelection}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
@@ -901,7 +849,7 @@ export default function DashboardClient({
           </div>
         )}
 
-        {filterOpen && (
+        {!isSemanticMapTab && filterOpen && (
           <div
             className="fixed inset-0 z-30 hidden bg-transparent xl:block"
             onClick={() => setFilterOpen(false)}
@@ -1042,7 +990,7 @@ export default function DashboardClient({
           </Modal>
         ) : null}
 
-        <div className="hidden xl:block">
+        {!isSemanticMapTab ? <div className="hidden xl:block">
           <div
             className={`fixed right-6 top-[124px] z-40 hidden w-full max-w-sm xl:block ${
               filterOpen ? "" : "pointer-events-none opacity-0"
@@ -1063,10 +1011,6 @@ export default function DashboardClient({
               </div>
               <div className="max-h-[70vh] overflow-y-auto p-4">
                 <FilterPanel
-                  folders={folders}
-                  selectedFolderIds={selectedFolderIds}
-                  allFoldersSelected={allFoldersSelected}
-                  onFolderChange={updateFolderSelection}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
@@ -1079,7 +1023,7 @@ export default function DashboardClient({
               </div>
             </div>
           </div>
-        </div>
+        </div> : null}
 
         <section className="min-w-0">
           {currentTabKey === "overview" ? (
@@ -1124,13 +1068,19 @@ export default function DashboardClient({
               onDrilldown={openPaperDrilldown}
             />
           ) : null}
+          {currentTabKey === "semantic_map" && selectedProjectId ? (
+            <RepositorySemanticMapView
+              projectId={selectedProjectId}
+              projectName={currentProject?.name ?? "Repository"}
+              requestHeaders={requestHeaders}
+            />
+          ) : null}
           {currentTabKey === "adaptive" ? (
             adaptiveSection && adaptiveSnapshot && adaptiveAnalytics ? (
               <AdaptiveDashboardTab
                 data={adaptiveSnapshot}
                 analytics={adaptiveAnalytics}
                 adaptiveSection={adaptiveSection}
-                folderNamesById={folderNamesById}
               />
             ) : (
               <section className="app-surface flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
@@ -1141,7 +1091,7 @@ export default function DashboardClient({
                   Build charts for this research scope
                 </h2>
                 <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                  The agent will inspect the selected folders, years, categories, and search query, then call the chart builder with only statistically usable views.
+                  The agent will inspect the selected repository, years, categories, and search query, then call the chart builder with only statistically usable views.
                 </p>
                 <button
                   type="button"

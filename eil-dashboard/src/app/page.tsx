@@ -74,7 +74,7 @@ export default function LandingPage() {
             One workspace for papers, charts, chat, and cloud analysis.
           </h2>
           <p className="mt-5 text-base leading-7 text-[#a3a3a3]">
-            Start with a folder of PDFs and move toward a searchable research
+            Start with a repository of PDFs and move toward a searchable research
             system with evidence, dashboard views, charts, and AI conversation.
           </p>
         </MotionReveal>

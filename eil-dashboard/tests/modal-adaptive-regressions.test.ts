@@ -83,8 +83,8 @@ test("flat topic series are rejected while reliable filtered distributions remai
   const analytics: NormalizedAnalyticsPayload = {
     mode: "live",
     approved_chart_types: [],
-    filters: { selected_years: [], selected_tracks: ["EL", "LAE"], search_query: "", folder_ids: ["folder-a"], all_folders_selected: false },
-    overview: { paper_count: 27, topic_count: 3, keyword_count: 20, year_range: "2017-2022", available_years: ["2017", "2022"], folder_count: 1 },
+    filters: { selected_years: [], selected_tracks: ["EL", "LAE"], search_query: "", folder_ids: [], all_folders_selected: true },
+    overview: { paper_count: 27, topic_count: 3, keyword_count: 20, year_range: "2017-2022", available_years: ["2017", "2022"], folder_count: 2 },
     canonical_topic_families: [
       { canonical_topic: "Assessment", aliases: [], representative_keywords: [], paper_count: 12, total_keyword_frequency: 30 },
       { canonical_topic: "Teacher learning", aliases: [], representative_keywords: [], paper_count: 9, total_keyword_frequency: 22 },
@@ -96,7 +96,10 @@ test("flat topic series are rejected while reliable filtered distributions remai
       { year: "2017", topics: [{ topic: "Methodology", papers: 1 }] },
       { year: "2022", topics: [{ topic: "Methodology", papers: 1 }] },
     ],
-    folder_topic_totals: [],
+    folder_topic_totals: [
+      { folder_id: "legacy-a", total_papers: 14, topics: [{ topic: "Assessment", papers: 8, frequency: 12 }] },
+      { folder_id: "legacy-b", total_papers: 13, topics: [{ topic: "Teacher learning", papers: 7, frequency: 10 }] },
+    ],
     yearly_topic_totals: [],
     keyword_heatmap: { years: ["2017", "2022"], rows: [] },
     topic_shifts: { emerging: [], declining: [] },
@@ -108,4 +111,5 @@ test("flat topic series are rejected while reliable filtered distributions remai
   assert.ok(viable.includes("adaptive_topic_distribution"));
   assert.ok(viable.includes("adaptive_track_distribution"));
   assert.ok(!viable.includes("adaptive_topic_momentum"));
+  assert.ok(!viable.includes("adaptive_folder_topic_comparison"));
 });

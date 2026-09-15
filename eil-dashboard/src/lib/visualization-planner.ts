@@ -308,7 +308,6 @@ export async function buildNormalizedAnalyticsPayload(
     approved_chart_types: [
       "adaptive_topic_momentum",
       "adaptive_emerging_topics",
-      "adaptive_folder_topic_comparison",
       "adaptive_keyword_family_heatmap",
       "adaptive_track_topic_comparison",
     ],
@@ -388,9 +387,6 @@ export function getViableAdaptiveCharts(
   if (analytics.topic_shifts.emerging.length + analytics.topic_shifts.declining.length >= 2) {
     viable.push("adaptive_emerging_topics");
   }
-  if (analytics.folder_topic_totals.filter((row) => row.topics.length > 0).length >= 2) {
-    viable.push("adaptive_folder_topic_comparison");
-  }
   const hasHeatmapVariation = analytics.keyword_heatmap.rows.some(
     (row) =>
       row.totals_by_year.filter((value) => value > 0).length >= 2 &&
@@ -415,7 +411,6 @@ function buildDataAwareFallbackPlan(
     "adaptive_track_distribution",
     "adaptive_topic_momentum",
     "adaptive_emerging_topics",
-    "adaptive_folder_topic_comparison",
     "adaptive_keyword_family_heatmap",
     "adaptive_track_topic_comparison",
   ];
@@ -567,7 +562,7 @@ Core chart selection rubric:
 Rubric guidance for the approved chart catalog:
 - Reliable baselines: adaptive_year_volume, adaptive_topic_distribution, adaptive_track_distribution
 - Time-based: adaptive_topic_momentum, adaptive_keyword_family_heatmap
-- Relationship/comparison: adaptive_folder_topic_comparison, adaptive_track_topic_comparison
+- Relationship/comparison: adaptive_track_topic_comparison
 - Distribution/structure: adaptive_emerging_topics, adaptive_keyword_family_heatmap, adaptive_track_topic_comparison
 
 The only chart keys proven viable for this exact filter snapshot are:
@@ -603,9 +598,6 @@ export async function planVisualization(
   source: "agent" | "fallback";
 }> {
   const analytics = await buildNormalizedAnalyticsPayload(request, ownerUserId);
-  const includeFolderComparison =
-    analytics.filters.folder_ids.length > 1 ||
-    (analytics.filters.all_folders_selected && analytics.overview.folder_count > 1);
   const viableChartKeys = getViableAdaptiveCharts(analytics);
   const dataAwareFallback = buildDataAwareFallbackPlan(analytics, viableChartKeys);
 
@@ -650,7 +642,7 @@ export async function planVisualization(
         rawPlan,
         analytics.mode,
         analytics.filters.selected_tracks,
-        includeFolderComparison,
+        false,
         viableChartKeys
       ),
       analytics,

@@ -9,29 +9,18 @@ def clean_and_route_node(state: IngestionState) -> Dict[str, Any]:
     if not text:
         return {"errors": ["No text provided for cleaning."], "status": "failed"}
 
-    pages = re.split(r"\n{3,}", text)
-    cleaned_pages = []
-    for index, page in enumerate(pages):
-        blocks = re.split(r"\n{2,}", page.strip())
-        if not blocks:
-            continue
-        if index == 0:
-            actual_content = "\n\n".join(blocks)
-        elif len(blocks) > 1:
-            actual_content = "\n\n".join(blocks[1:])
-        else:
-            actual_content = blocks[0] if len(blocks[0]) > 200 else ""
-        if actual_content:
-            cleaned_pages.append(actual_content)
-
-    cleaned_text = "\n\n".join(cleaned_pages)
+    cleaned_text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x00", "")
+    cleaned_text = re.sub(r"(?<=\w)-\n(?=[a-z])", "", cleaned_text)
     cleaned_text = re.sub(r"\|.*\|.*\n\|[\s\-\|]*\|.*\n(\|.*\|.*\n)*", "[TABLE_REMOVED]\n", cleaned_text)
-    cleaned_text = re.sub(r"\n\s*\d+\s*\n", "\n", cleaned_text)
-    cleaned_text = re.sub(r"\s+", " ", cleaned_text).strip()
+    cleaned_text = re.sub(r"(?m)^\s*(?:page\s+)?\d{1,4}\s*$", "", cleaned_text, flags=re.IGNORECASE)
+    cleaned_text = re.sub(r"[\t\f\v ]+", " ", cleaned_text)
+    cleaned_text = re.sub(r" *\n *", "\n", cleaned_text)
+    cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text).strip()
 
-    english_chars = re.findall(r"[a-zA-Z0-9\s.,!?;:'\"()\-]", cleaned_text)
-    total_len = len(cleaned_text) or 1
-    needs_translation = (len(english_chars) / total_len) < 0.85
+    alphabetic_chars = re.findall(r"[^\W\d_]", cleaned_text, flags=re.UNICODE)
+    latin_chars = re.findall(r"[A-Za-z]", cleaned_text)
+    latin_ratio = len(latin_chars) / max(len(alphabetic_chars), 1)
+    needs_translation = bool(alphabetic_chars) and latin_ratio < 0.72
 
     output: Dict[str, Any] = {
         "cleaned_text": cleaned_text,

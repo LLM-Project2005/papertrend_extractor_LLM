@@ -148,7 +148,7 @@ export default function ProjectIndexClient() {
               Your repositories
             </h1>
             <p className="mt-4 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-              Choose a repository to manage its folders, papers, dashboard, and research chat.
+              Choose a repository to manage its papers, dashboard, and research chat.
             </p>
           </div>
 
@@ -226,7 +226,7 @@ export default function ProjectIndexClient() {
                     {project.name}
                   </p>
                   <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-                    {project.description || "Folders, papers, analytics, and research chat."}
+                    {project.description || "Papers, analytics, and research chat."}
                   </p>
                   {PROJECT_ANALYSIS_PROFILES_ENABLED && project.analysis_profile ? (
                     <span className="mt-4 inline-flex rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#2a2a2a] dark:text-[#aaa]">
@@ -265,7 +265,7 @@ export default function ProjectIndexClient() {
       <CreateEntityModal
         open={showCreateModal}
         title="Create repository"
-        description="Give this research space a name. Folders and files will stay inside the repository."
+        description="Give this research space a name. Papers and analyses will stay inside the repository."
         value={draftName}
         fieldLabel="Repository name"
         fieldPlaceholder="Repository name"

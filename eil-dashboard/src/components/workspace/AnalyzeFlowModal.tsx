@@ -103,7 +103,7 @@ export default function AnalyzeFlowModal({
   const { session, user } = useAuth();
   const { selectedProjectId, currentProject, allProjects, updateProjectAnalysisProfile } = useWorkspaceProfile();
   const [adminSecret, setAdminSecret] = useState("");
-  const [folder, setFolder] = useState(defaultFolder);
+  const internalFolderName = "Repository";
   const [files, setFiles] = useState<File[]>([]);
   const [selectedSource, setSelectedSource] = useState<ImportSource>("pdf-upload");
   const [uploading, setUploading] = useState(false);
@@ -128,10 +128,6 @@ export default function AnalyzeFlowModal({
   const [savingProfile, setSavingProfile] = useState(false);
   const [previousProfileCount, setPreviousProfileCount] = useState(0);
   const [profileError, setProfileError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setFolder(defaultFolder);
-  }, [defaultFolder]);
 
   useEffect(() => {
     setProfileDraft(currentProject?.analysis_profile ?? createGeneralAnalysisProfile());
@@ -371,7 +367,7 @@ export default function AnalyzeFlowModal({
             ...headers,
           },
           body: JSON.stringify({
-            folder: folder.trim() || defaultFolder,
+            folder: internalFolderName,
             source_kind: selectedSource,
             project_id: selectedProjectId,
             analysis_profile: analysisProfile,
@@ -514,7 +510,7 @@ export default function AnalyzeFlowModal({
 
         if (finalizedRuns.length > 0) {
           onCreated?.(finalizedRuns, {
-            folder: folder.trim() || defaultFolder,
+            folder: internalFolderName,
             folderId: folderJob?.folder_id ?? null,
             folderJob,
             sourceKind: selectedSource,
@@ -554,7 +550,7 @@ export default function AnalyzeFlowModal({
           },
           body: JSON.stringify({
             fileIds: selectedDriveFileIds,
-            folder: folder.trim() || defaultFolder,
+            folder: internalFolderName,
             projectId: selectedProjectId,
             analysisProfile,
           }),
@@ -572,7 +568,7 @@ export default function AnalyzeFlowModal({
         }
 
         onCreated?.(payload.runs ?? [], {
-          folder: folder.trim() || defaultFolder,
+          folder: internalFolderName,
           folderId: payload.folderJob?.folder_id ?? null,
           folderJob: payload.folderJob ?? null,
           sourceKind: selectedSource,
@@ -693,15 +689,10 @@ export default function AnalyzeFlowModal({
                 {currentProject?.name ?? "No repository selected"}
               </p>
             </div>
-            <label className="grid gap-2 text-sm font-medium text-slate-800 dark:text-[#ddd]">
-              Destination folder
-              <input
-                value={folder}
-                onChange={(event) => setFolder(event.target.value)}
-                placeholder={defaultFolder}
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 font-normal outline-none focus:border-slate-500 dark:border-[#242424] dark:bg-black dark:text-white"
-              />
-            </label>
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm dark:border-[#242424] dark:bg-[#050505]">
+              <p className="font-medium text-slate-900 dark:text-white">Destination</p>
+              <p className="mt-1 text-slate-500 dark:text-[#999]">Files will be added directly to this repository.</p>
+            </div>
             <div
               className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-5 py-8 text-center transition-colors hover:border-slate-500 dark:border-[#3a3a3a] dark:bg-[#050505] dark:hover:border-[#666]"
               onDragOver={(event) => {

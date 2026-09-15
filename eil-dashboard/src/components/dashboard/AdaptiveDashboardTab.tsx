@@ -20,7 +20,6 @@ import type { NormalizedAnalyticsPayload, VisualizationPlanSection } from "@/typ
 
 const STRICT_MIN_TOPIC_PAPER_SUPPORT = 2;
 const STRICT_MIN_TOPIC_TRACK_SUPPORT = 2;
-const STRICT_MIN_TOPIC_FOLDER_SUPPORT = 2;
 const STRICT_MIN_TOPIC_YEAR_SUPPORT = 2;
 
 function truncateLabel(value: string, max = 34) {
@@ -57,23 +56,20 @@ export default function AdaptiveDashboardTab({
   data,
   analytics,
   adaptiveSection,
-  folderNamesById,
 }: {
   data: Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies">;
   analytics: NormalizedAnalyticsPayload;
   adaptiveSection: VisualizationPlanSection;
-  folderNamesById: Record<string, string>;
 }) {
   const years = [...new Set(data.trends.map((row) => row.year))].sort();
   const singleTrackByPaper = new Map(data.tracksSingle.map((row) => [row.paper_id, row]));
   const totalPapers = analytics.overview.paper_count;
   const totalTopics = analytics.overview.topic_count;
   const totalKeywords = analytics.overview.keyword_count;
-  const totalFolders = analytics.overview.folder_count;
+  const totalYears = analytics.overview.available_years.length;
   const sparseDataMode = totalPapers < 12 || years.length < 3;
   const minTopicPaperSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_PAPER_SUPPORT;
   const minTopicTrackSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_TRACK_SUPPORT;
-  const minTopicFolderSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_FOLDER_SUPPORT;
   const minTopicYearSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_YEAR_SUPPORT;
 
   const topicPaperSupport = new Map<string, Set<PaperId>>();
@@ -309,88 +305,6 @@ export default function AdaptiveDashboardTab({
       );
     }
 
-    if (chart.chart_key === "adaptive_folder_topic_comparison") {
-      const topicLimit = chart.config?.top_n ?? 6;
-      const trendsWithFolder = data.trends.filter((row) => Boolean(row.folder_id));
-      const folders = [...new Set(trendsWithFolder.map((row) => row.folder_id).filter(Boolean))];
-      if (folders.length < 2) {
-        return null;
-      }
-
-      const topTopics = Object.entries(
-        trendsWithFolder.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
-          if (!eligibleTopics.has(row.topic)) {
-            return accumulator;
-          }
-          (accumulator[row.topic] ??= new Set()).add(row.paper_id);
-          return accumulator;
-        }, {})
-      )
-        .sort((left, right) => right[1].size - left[1].size)
-        .slice(0, topicLimit)
-        .map(([topic]) => topic);
-      if (topTopics.length === 0) {
-        return null;
-      }
-
-      const chartData = topTopics.map((topic) => {
-        const entry: Record<string, string | number> = { topic };
-        let nonZeroFolders = 0;
-        folders.forEach((folderId) => {
-          const label = folderNamesById[folderId as string] ?? "Unsorted";
-          const value = new Set(
-            trendsWithFolder
-              .filter((row) => row.folder_id === folderId && row.topic === topic)
-              .map((row) => row.paper_id)
-          ).size;
-          if (value > 0) {
-            nonZeroFolders += 1;
-          }
-          entry[label] = value;
-        });
-        return nonZeroFolders >= minTopicFolderSupport ? entry : null;
-      });
-
-      const filteredChartData = chartData.filter(
-        (entry): entry is Record<string, string | number> => Boolean(entry)
-      );
-      if (filteredChartData.length === 0) {
-        return null;
-      }
-
-      return (
-        <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
-          <div className="h-[360px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={filteredChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis
-                  dataKey="topic"
-                  tick={{ fontSize: 11 }}
-                  tickFormatter={(value) => truncateLabel(String(value))}
-                  stroke="#94a3b8"
-                />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                {folders.map((folderId, index) => {
-                  const label = folderNamesById[folderId as string] ?? "Unsorted";
-                  return (
-                    <Bar
-                      key={label}
-                      dataKey={label}
-                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                      radius={[6, 6, 0, 0]}
-                    />
-                  );
-                })}
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </ChartShell>
-      );
-    }
-
     if (chart.chart_key === "adaptive_keyword_family_heatmap") {
       const heatN = chart.config?.heat_n ?? 12;
       const topFamilies = (data.topicFamilies ?? [])
@@ -530,7 +444,7 @@ export default function AdaptiveDashboardTab({
           { label: "Papers", value: totalPapers, tone: "text-slate-900 dark:text-white" },
           { label: "Canonical topics", value: totalTopics, tone: "text-slate-900 dark:text-white" },
           { label: "Grounded keywords", value: totalKeywords, tone: "text-slate-900 dark:text-white" },
-          { label: "Folders in view", value: totalFolders, tone: "text-slate-900 dark:text-white" },
+          { label: "Years represented", value: totalYears, tone: "text-slate-900 dark:text-white" },
         ].map((card) => (
           <section key={card.label} className="app-surface px-5 py-4">
             <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">

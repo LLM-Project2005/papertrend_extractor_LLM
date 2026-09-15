@@ -2,7 +2,7 @@ import { PCA } from "ml-pca";
 import { UMAP } from "umap-js";
 
 export const SEMANTIC_MAP_SEED = 42;
-export const SEMANTIC_MAP_PROJECTION_VERSION = "semantic-projection-v1";
+export const SEMANTIC_MAP_PROJECTION_VERSION = "semantic-projection-v2-euclidean";
 
 export interface ProjectionResult {
   coordinates: number[][];
@@ -14,6 +14,7 @@ export interface ProjectionResult {
 export interface SimilarityEdgeIndex {
   source: number;
   target: number;
+  distance: number;
   similarity: number;
   rank: number;
 }
@@ -58,10 +59,14 @@ function normalizeCoordinates(rows: number[][]): number[][] {
   ]);
 }
 
-function euclideanDistance(left: number[], right: number[]): number {
-  const dx = left[0] - right[0];
-  const dy = left[1] - right[1];
-  return Math.sqrt(dx * dx + dy * dy);
+export function euclideanDistance(left: number[], right: number[]): number {
+  const length = Math.min(left.length, right.length);
+  let squaredDistance = 0;
+  for (let index = 0; index < length; index += 1) {
+    const delta = left[index] - right[index];
+    squaredDistance += delta * delta;
+  }
+  return Math.sqrt(squaredDistance);
 }
 
 function nearestIndices(rows: number[][], index: number, count: number, distance: (a: number[], b: number[]) => number): number[] {
@@ -77,7 +82,7 @@ export function neighborhoodPreservation(embeddings: number[][], coordinates: nu
   const count = Math.min(5, Math.max(1, Math.floor((embeddings.length - 1) / 2)));
   let overlap = 0;
   for (let index = 0; index < embeddings.length; index += 1) {
-    const high = new Set(nearestIndices(embeddings, index, count, (a, b) => 1 - cosineSimilarity(a, b)));
+    const high = new Set(nearestIndices(embeddings, index, count, euclideanDistance));
     const low = nearestIndices(coordinates, index, count, euclideanDistance);
     overlap += low.filter((candidate) => high.has(candidate)).length / count;
   }
@@ -120,7 +125,7 @@ export function projectEmbeddings(embeddings: number[][], seed = SEMANTIC_MAP_SE
     nComponents: 2,
     nNeighbors,
     minDist,
-    distanceFn: (left, right) => 1 - cosineSimilarity(left, right),
+    distanceFn: euclideanDistance,
     random: seededRandom(seed),
   });
   const coordinates = normalizeCoordinates(umap.fit(embeddings));
@@ -142,27 +147,39 @@ export function buildSimilarityEdges(embeddings: number[][], neighbors = 3): Sim
   if (embeddings.length < 2) return [];
   const ranked = embeddings.map((embedding, source) =>
     embeddings
-      .map((candidate, target) => ({ target, similarity: source === target ? -1 : cosineSimilarity(embedding, candidate) }))
+      .map((candidate, target) => ({
+        target,
+        distance: source === target ? Number.POSITIVE_INFINITY : euclideanDistance(embedding, candidate),
+      }))
       .filter((item) => item.target !== source)
-      .sort((a, b) => b.similarity - a.similarity || a.target - b.target)
+      .sort((a, b) => a.distance - b.distance || a.target - b.target)
   );
-  const threshold = Math.max(0.45, percentile(ranked.flatMap((items) => items.slice(0, neighbors).map((item) => item.similarity)), 0.35));
+  const threshold = percentile(
+    ranked.flatMap((items) => items.slice(0, neighbors).map((item) => item.distance)),
+    0.65
+  );
   const edgeMap = new Map<string, SimilarityEdgeIndex>();
   for (let source = 0; source < ranked.length; source += 1) {
     for (let rank = 0; rank < Math.min(neighbors, ranked[source].length); rank += 1) {
       const candidate = ranked[source][rank];
       const reciprocal = ranked[candidate.target].slice(0, neighbors).some((item) => item.target === source);
-      if (!reciprocal && candidate.similarity < Math.max(0.7, threshold)) continue;
-      if (candidate.similarity < threshold) continue;
+      if (!reciprocal && candidate.distance > threshold * 0.75) continue;
+      if (candidate.distance > threshold) continue;
       const left = Math.min(source, candidate.target);
       const right = Math.max(source, candidate.target);
       const key = `${left}:${right}`;
       const existing = edgeMap.get(key);
-      const value = { source: left, target: right, similarity: candidate.similarity, rank: rank + 1 };
-      if (!existing || value.similarity > existing.similarity) edgeMap.set(key, value);
+      const value = {
+        source: left,
+        target: right,
+        distance: candidate.distance,
+        similarity: 1 / (1 + candidate.distance),
+        rank: rank + 1,
+      };
+      if (!existing || value.distance < existing.distance) edgeMap.set(key, value);
     }
   }
-  return [...edgeMap.values()].sort((a, b) => b.similarity - a.similarity || a.source - b.source || a.target - b.target);
+  return [...edgeMap.values()].sort((a, b) => a.distance - b.distance || a.source - b.source || a.target - b.target);
 }
 
 interface ClusterResult { assignments: number[]; score: number }
@@ -173,7 +190,7 @@ function deterministicKMeans(embeddings: number[][], k: number): number[] {
     let bestIndex = 0;
     let bestDistance = -1;
     embeddings.forEach((embedding, index) => {
-      const distance = Math.min(...centers.map((center) => 1 - cosineSimilarity(embedding, center)));
+      const distance = Math.min(...centers.map((center) => euclideanDistance(embedding, center)));
       if (distance > bestDistance) { bestDistance = distance; bestIndex = index; }
     });
     centers.push(embeddings[bestIndex]);
@@ -183,7 +200,7 @@ function deterministicKMeans(embeddings: number[][], k: number): number[] {
     const next = embeddings.map((embedding) => {
       let best = 0;
       for (let cluster = 1; cluster < centers.length; cluster += 1) {
-        if (cosineSimilarity(embedding, centers[cluster]) > cosineSimilarity(embedding, centers[best])) best = cluster;
+        if (euclideanDistance(embedding, centers[cluster]) < euclideanDistance(embedding, centers[best])) best = cluster;
       }
       return best;
     });
@@ -205,10 +222,10 @@ function silhouetteScore(embeddings: number[][], assignments: number[]): number 
   embeddings.forEach((embedding, index) => {
     const own = assignments[index];
     const same = embeddings.filter((_, candidate) => candidate !== index && assignments[candidate] === own);
-    const a = same.length ? same.reduce((sum, row) => sum + (1 - cosineSimilarity(embedding, row)), 0) / same.length : 0;
+    const a = same.length ? same.reduce((sum, row) => sum + euclideanDistance(embedding, row), 0) / same.length : 0;
     const alternatives = clusters.filter((cluster) => cluster !== own).map((cluster) => {
       const rows = embeddings.filter((_, candidate) => assignments[candidate] === cluster);
-      return rows.reduce((sum, row) => sum + (1 - cosineSimilarity(embedding, row)), 0) / rows.length;
+      return rows.reduce((sum, row) => sum + euclideanDistance(embedding, row), 0) / rows.length;
     });
     const b = Math.min(...alternatives);
     total += Math.max(a, b) === 0 ? 0 : (b - a) / Math.max(a, b);

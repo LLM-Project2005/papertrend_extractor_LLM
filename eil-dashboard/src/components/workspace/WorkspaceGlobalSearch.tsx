@@ -16,7 +16,6 @@ import {
   ChatIcon,
   CloudIcon,
   FileIcon,
-  FolderIcon,
   HomeIcon,
   PaperIcon,
   SearchIcon,
@@ -43,7 +42,6 @@ type SearchCategory =
   | "Pages"
   | "Papers"
   | "Repositories"
-  | "Folders"
   | "Docs";
 
 interface SearchResult {
@@ -62,7 +60,6 @@ const CATEGORY_ORDER: SearchCategory[] = [
   "Pages",
   "Papers",
   "Repositories",
-  "Folders",
   "Docs",
 ];
 
@@ -245,7 +242,6 @@ export default function WorkspaceGlobalSearch({
   const { session } = useAuth();
   const {
     allProjects,
-    allFolders,
     currentProject,
     selectedProjectId,
     setSelectedProjectId,
@@ -323,14 +319,8 @@ export default function WorkspaceGlobalSearch({
     return () => controller.abort();
   }, [selectedProjectId, session?.access_token]);
 
-  const projectById = useMemo(
-    () => new Map(allProjects.map((project) => [project.id, project])),
-    [allProjects]
-  );
   const projectIcon =
     pageItems.find((item) => item.id === "project-overview")?.icon ?? HomeIcon;
-  const folderIcon =
-    pageItems.find((item) => item.id === "library")?.icon ?? FolderIcon;
 
   const allResults = useMemo<SearchResult[]>(() => {
     const navigate = (href: string) => {
@@ -401,34 +391,6 @@ export default function WorkspaceGlobalSearch({
           },
         };
       }),
-      ...allFolders
-        .filter((folder) => folder.project_id)
-        .map((folder) => {
-          const project = folder.project_id
-            ? projectById.get(folder.project_id) ?? null
-            : null;
-
-          return {
-            id: `folder:${folder.id}`,
-            label: folder.name,
-            description: project
-              ? `Folder in ${project.name}`
-              : "Open this folder in the library",
-            category: "Folders" as const,
-            icon: folderIcon,
-            featured: false,
-            searchText: `${folder.name} ${folder.description ?? ""} ${
-              project?.name ?? ""
-            } library folder papers files`,
-            onSelect: () => {
-              if (folder.project_id) {
-                setSelectedProjectId(folder.project_id);
-              }
-              setSelectedFolderId(folder.id);
-              router.push("/workspace/library");
-            },
-          };
-        }),
       ...DOC_ITEMS.map((item) => ({
         id: `docs:${item.id}`,
         label: item.label,
@@ -441,13 +403,10 @@ export default function WorkspaceGlobalSearch({
       })),
     ];
   }, [
-    allFolders,
     allProjects,
     currentProject?.id,
-    folderIcon,
     libraryRuns,
     pageItems,
-    projectById,
     projectIcon,
     router,
     setSelectedFolderId,
@@ -516,8 +475,8 @@ export default function WorkspaceGlobalSearch({
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search actions, papers, repositories, folders, docs..."
-                aria-label="Search actions, papers, repositories, folders, and documentation"
+                placeholder="Search actions, papers, repositories, docs..."
+                aria-label="Search actions, papers, repositories, and documentation"
                 className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
               />
             </label>
