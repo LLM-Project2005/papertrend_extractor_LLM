@@ -14,6 +14,8 @@ steps:
       - ${_REGION}
       - --source
       - .
+      - --ignore-file
+      - .gcloudignore.worker
       - --clear-base-image
       - --add-cloudsql-instances
       - ${_CLOUD_SQL_INSTANCE_CONNECTION_NAME}

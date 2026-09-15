@@ -100,6 +100,7 @@ test("Firebase project target and production URL split stay pinned to Papertrend
 
   const workerBuild = readRootFile("cloudbuild.worker.production.yaml");
   assert.match(workerBuild, /--clear-base-image/);
+  assert.match(workerBuild, /--ignore-file\s+- \.gcloudignore\.worker/);
   assert.match(
     workerBuild,
     /_APP_ALLOWED_ORIGINS: https:\/\/papertrend-web-production-javhavgdsq-as\.a\.run\.app;https:\/\/research-trend-analysis\.web\.app/
@@ -126,8 +127,13 @@ test("Firebase project target and production URL split stay pinned to Papertrend
   );
 
   const pilotWorkerBuild = readRootFile("cloudbuild.worker.cloudsql.pilot.yaml");
+  assert.match(pilotWorkerBuild, /--ignore-file\s+- \.gcloudignore\.worker/);
   assert.doesNotMatch(pilotWorkerBuild, /--allow-unauthenticated/);
   assert.doesNotMatch(pilotWorkerBuild, /--no-allow-unauthenticated/);
+
+  const workerIgnore = readRootFile(".gcloudignore.worker");
+  assert.match(workerIgnore, /^#!include:\.gcloudignore$/m);
+  assert.match(workerIgnore, /^Dockerfile$/m);
 
   const deployScript = readRootFile("scripts/deploy-firebase-hosting-production.ps1");
   assert.match(deployScript, /\$Branch -ne "main"/);
