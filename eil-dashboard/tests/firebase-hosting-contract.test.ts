@@ -126,8 +126,8 @@ test("Firebase project target and production URL split stay pinned to Papertrend
   );
 
   const pilotWorkerBuild = readRootFile("cloudbuild.worker.cloudsql.pilot.yaml");
-  assert.match(pilotWorkerBuild, /--no-allow-unauthenticated/);
-  assert.doesNotMatch(pilotWorkerBuild, /^\s*- --allow-unauthenticated\s*$/m);
+  assert.doesNotMatch(pilotWorkerBuild, /--allow-unauthenticated/);
+  assert.doesNotMatch(pilotWorkerBuild, /--no-allow-unauthenticated/);
 
   const deployScript = readRootFile("scripts/deploy-firebase-hosting-production.ps1");
   assert.match(deployScript, /\$Branch -ne "main"/);
