@@ -223,8 +223,11 @@ export async function GET(
       .maybeSingle();
     const { data: run, error: runError } = runResult;
 
-    if (runError || !run) {
-      throw new Error(runError?.message ?? "Library file not found.");
+    if (runError) {
+      throw new Error(runError.message);
+    }
+    if (!run) {
+      return NextResponse.json({ error: "Library file not found." }, { status: 404 });
     }
 
     const papersResult = useCloudSql ? { data: cloudBase?.papers ?? [], error: null } : await supabase!
