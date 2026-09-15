@@ -6,6 +6,7 @@ import {
   deleteWorkspaceThread,
   getWorkspaceThreadDetail,
   listWorkspaceThreads,
+  normalizeChatFolderId,
   replaceDeepResearchPlan,
 } from "@/lib/chat-store";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
@@ -346,7 +347,7 @@ class CloudSqlChatRepository implements ChatRepository {
         [
           input.threadId,
           input.ownerUserId,
-          !input.folderId || input.folderId === "all" ? null : input.folderId,
+          normalizeChatFolderId(input.folderId),
           input.role,
           input.messageKind ?? "chat",
           input.content,
@@ -420,7 +421,7 @@ class CloudSqlChatRepository implements ChatRepository {
            SELECT $1,$2,$3,$4,$5,$6,$7,'planned',now()
            WHERE EXISTS (SELECT 1 FROM public.workspace_threads WHERE id=$1 AND owner_user_id=$2)
            RETURNING id`,
-          [input.threadId, input.ownerUserId, input.folderId || null, input.prompt, input.summary,
+          [input.threadId, input.ownerUserId, normalizeChatFolderId(input.folderId), input.prompt, input.summary,
             input.requiresAnalysis, input.pendingRunCount]
         );
         if (!created.rows[0]) throw new Error("Failed to create deep research session.");
@@ -447,7 +448,7 @@ class CloudSqlChatRepository implements ChatRepository {
         `INSERT INTO public.workspace_messages
            (thread_id,owner_user_id,folder_id,role,message_kind,content,citations,metadata,updated_at)
          VALUES ($1,$2,$3,'assistant','deep_research_plan',$4,'[]'::jsonb,$5::jsonb,now())`,
-        [input.threadId, input.ownerUserId, input.folderId || null, input.summary,
+        [input.threadId, input.ownerUserId, normalizeChatFolderId(input.folderId), input.summary,
           JSON.stringify({ sessionId, requiresAnalysis: input.requiresAnalysis,
             pendingRunCount: input.pendingRunCount, sourcePolicy: input.sourcePolicy ?? null })]
       );
