@@ -125,6 +125,10 @@ test("Firebase project target and production URL split stay pinned to Papertrend
     /_APP_PUBLIC_URL: https:\/\/papertrend-web-cloudsql-pilot-javhavgdsq-as\.a\.run\.app/
   );
 
+  const pilotWorkerBuild = readRootFile("cloudbuild.worker.cloudsql.pilot.yaml");
+  assert.match(pilotWorkerBuild, /--no-allow-unauthenticated/);
+  assert.doesNotMatch(pilotWorkerBuild, /^\s*- --allow-unauthenticated\s*$/m);
+
   const deployScript = readRootFile("scripts/deploy-firebase-hosting-production.ps1");
   assert.match(deployScript, /\$Branch -ne "main"/);
   assert.match(deployScript, /if \(-not \$Apply\)/);
