@@ -39,10 +39,15 @@ from database_client import create_worker_database_client
 
 try:
     from google.cloud import storage as gcs_storage
+    from google.api_core.exceptions import BadRequest as GoogleBadRequest
+    from google.api_core.exceptions import Forbidden as GoogleForbidden
+    from google.api_core.exceptions import NotFound as GoogleNotFound
+    from google.api_core.exceptions import Unauthorized as GoogleUnauthorized
     from google.api_core.retry import Retry as GoogleRetry
 except ImportError:  # pragma: no cover - only required when STORAGE_PROVIDER=gcs
     gcs_storage = None
     GoogleRetry = None  # type: ignore[assignment]
+    GoogleBadRequest = GoogleForbidden = GoogleNotFound = GoogleUnauthorized = ()  # type: ignore[assignment,misc]
 
 
 logger = logging.getLogger("papertrend_worker")
@@ -81,22 +86,83 @@ def download_gcs_object(config: WorkerConfig, source_path: str, destination: Pat
         )
 
     bucket_name, object_name = parse_gcs_source_path(source_path, config.gcs_upload_bucket)
-    client = gcs_storage.Client(project=config.google_cloud_project_id or None)
-    blob = client.bucket(bucket_name).blob(object_name)
-    retry_policy = GoogleRetry(deadline=90) if GoogleRetry is not None else None
-    try:
-        blob.download_to_filename(
-            str(destination),
-            timeout=90,
-            retry=retry_policy,
-            raw_download=True,
-            checksum=None,
+    attempts = _int_env("GCS_DOWNLOAD_ATTEMPTS", 3)
+    attempt_deadline = _float_env("GCS_DOWNLOAD_ATTEMPT_DEADLINE_SECONDS", 45.0, 5.0)
+    request_timeout = min(
+        _float_env("GCS_DOWNLOAD_REQUEST_TIMEOUT_SECONDS", 30.0, 5.0),
+        attempt_deadline,
+    )
+    non_retryable_errors = tuple(
+        error_type
+        for error_type in (
+            GoogleBadRequest,
+            GoogleForbidden,
+            GoogleNotFound,
+            GoogleUnauthorized,
         )
-    except TypeError:
-        blob.download_to_filename(str(destination), timeout=90)
+        if isinstance(error_type, type)
+    )
 
-    if not destination.exists() or destination.stat().st_size <= 0:
-        raise RuntimeError("The Cloud Storage download completed but produced an empty file.")
+    for attempt in range(1, attempts + 1):
+        if destination.exists():
+            destination.unlink()
+
+        client = gcs_storage.Client(project=config.google_cloud_project_id or None)
+        try:
+            blob = client.bucket(bucket_name).blob(object_name)
+            retry_policy = (
+                GoogleRetry(
+                    initial=1.0,
+                    maximum=8.0,
+                    multiplier=2.0,
+                    deadline=attempt_deadline,
+                )
+                if GoogleRetry is not None
+                else None
+            )
+            try:
+                blob.download_to_filename(
+                    str(destination),
+                    timeout=request_timeout,
+                    retry=retry_policy,
+                    raw_download=True,
+                    checksum=None,
+                )
+            except TypeError:
+                # Older storage clients do not expose raw_download/checksum.
+                blob.download_to_filename(str(destination), timeout=request_timeout)
+
+            if not destination.exists() or destination.stat().st_size <= 0:
+                raise RuntimeError(
+                    "The Cloud Storage download completed but produced an empty file."
+                )
+            return
+        except Exception as error:
+            retryable = not non_retryable_errors or not isinstance(
+                error, non_retryable_errors
+            )
+            if not retryable or attempt >= attempts:
+                raise
+
+            if destination.exists():
+                destination.unlink()
+            delay_seconds = min(2 ** (attempt - 1), 8)
+            logger.warning(
+                "GCS download attempt failed; retrying with a fresh client %s",
+                {
+                    "bucket": bucket_name,
+                    "object": object_name,
+                    "attempt": attempt,
+                    "max_attempts": attempts,
+                    "delay_seconds": delay_seconds,
+                    "error_type": type(error).__name__,
+                },
+            )
+            time.sleep(delay_seconds)
+        finally:
+            close_client = getattr(client, "close", None)
+            if callable(close_client):
+                close_client()
 
 
 def _int_env(name: str, default: int, minimum: int = 1) -> int:
