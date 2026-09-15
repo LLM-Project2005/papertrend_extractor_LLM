@@ -49,6 +49,13 @@ except ImportError:  # pragma: no cover - only required when STORAGE_PROVIDER=gc
     GoogleRetry = None  # type: ignore[assignment]
     GoogleBadRequest = GoogleForbidden = GoogleNotFound = GoogleUnauthorized = ()  # type: ignore[assignment,misc]
 
+try:
+    import google.auth as google_auth
+    from google.auth.transport.requests import Request as GoogleAuthRequest
+except ImportError:  # pragma: no cover - installed with the GCS worker dependencies
+    google_auth = None  # type: ignore[assignment]
+    GoogleAuthRequest = None  # type: ignore[assignment,misc]
+
 
 logger = logging.getLogger("papertrend_worker")
 
@@ -79,6 +86,51 @@ def parse_gcs_source_path(source_path: str, default_bucket: str) -> tuple[str, s
     return bucket, object_name
 
 
+def _download_gcs_object_via_authenticated_http(
+    bucket_name: str,
+    object_name: str,
+    destination: Path,
+    *,
+    request_timeout: float,
+    virtual_hosted: bool,
+) -> None:
+    if google_auth is None or GoogleAuthRequest is None:
+        raise RuntimeError("Google authentication support is unavailable for GCS fallback.")
+
+    credentials, _ = google_auth.default(
+        scopes=["https://www.googleapis.com/auth/devstorage.read_only"]
+    )
+    credentials.refresh(GoogleAuthRequest())
+    access_token = str(getattr(credentials, "token", "") or "").strip()
+    if not access_token:
+        raise RuntimeError("GCS fallback could not obtain an access token.")
+
+    encoded_object = urllib.parse.quote(object_name, safe="/")
+    if virtual_hosted:
+        url = f"https://{bucket_name}.storage.googleapis.com/{encoded_object}"
+    else:
+        encoded_bucket = urllib.parse.quote(bucket_name, safe="")
+        url = f"https://storage.googleapis.com/{encoded_bucket}/{encoded_object}"
+
+    with requests.Session() as session:
+        response = session.get(
+            url,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept-Encoding": "identity",
+                "Connection": "close",
+            },
+            stream=True,
+            allow_redirects=True,
+            timeout=(10.0, request_timeout),
+        )
+        response.raise_for_status()
+        with destination.open("wb") as output:
+            for chunk in response.iter_content(chunk_size=1024 * 1024):
+                if chunk:
+                    output.write(chunk)
+
+
 def download_gcs_object(config: WorkerConfig, source_path: str, destination: Path) -> None:
     if gcs_storage is None:
         raise RuntimeError(
@@ -87,9 +139,9 @@ def download_gcs_object(config: WorkerConfig, source_path: str, destination: Pat
 
     bucket_name, object_name = parse_gcs_source_path(source_path, config.gcs_upload_bucket)
     attempts = _int_env("GCS_DOWNLOAD_ATTEMPTS", 3)
-    attempt_deadline = _float_env("GCS_DOWNLOAD_ATTEMPT_DEADLINE_SECONDS", 45.0, 5.0)
+    attempt_deadline = _float_env("GCS_DOWNLOAD_ATTEMPT_DEADLINE_SECONDS", 25.0, 5.0)
     request_timeout = min(
-        _float_env("GCS_DOWNLOAD_REQUEST_TIMEOUT_SECONDS", 30.0, 5.0),
+        _float_env("GCS_DOWNLOAD_REQUEST_TIMEOUT_SECONDS", 20.0, 5.0),
         attempt_deadline,
     )
     non_retryable_errors = tuple(
@@ -107,30 +159,46 @@ def download_gcs_object(config: WorkerConfig, source_path: str, destination: Pat
         if destination.exists():
             destination.unlink()
 
-        client = gcs_storage.Client(project=config.google_cloud_project_id or None)
+        client = None
+        transport = "storage_json_api"
         try:
-            blob = client.bucket(bucket_name).blob(object_name)
-            retry_policy = (
-                GoogleRetry(
-                    initial=1.0,
-                    maximum=8.0,
-                    multiplier=2.0,
-                    deadline=attempt_deadline,
+            if attempt == 1 or google_auth is None or GoogleAuthRequest is None:
+                client = gcs_storage.Client(project=config.google_cloud_project_id or None)
+                blob = client.bucket(bucket_name).blob(object_name)
+                retry_policy = (
+                    GoogleRetry(
+                        initial=1.0,
+                        maximum=8.0,
+                        multiplier=2.0,
+                        deadline=attempt_deadline,
+                    )
+                    if GoogleRetry is not None
+                    else None
                 )
-                if GoogleRetry is not None
-                else None
-            )
-            try:
-                blob.download_to_filename(
-                    str(destination),
-                    timeout=request_timeout,
-                    retry=retry_policy,
-                    raw_download=True,
-                    checksum=None,
+                try:
+                    blob.download_to_filename(
+                        str(destination),
+                        timeout=request_timeout,
+                        retry=retry_policy,
+                        raw_download=True,
+                        checksum=None,
+                    )
+                except TypeError:
+                    # Older storage clients do not expose raw_download/checksum.
+                    blob.download_to_filename(str(destination), timeout=request_timeout)
+            else:
+                transport = (
+                    "authenticated_xml_virtual_host"
+                    if attempt == 2
+                    else "authenticated_xml_path"
                 )
-            except TypeError:
-                # Older storage clients do not expose raw_download/checksum.
-                blob.download_to_filename(str(destination), timeout=request_timeout)
+                _download_gcs_object_via_authenticated_http(
+                    bucket_name,
+                    object_name,
+                    destination,
+                    request_timeout=request_timeout,
+                    virtual_hosted=attempt == 2,
+                )
 
             if not destination.exists() or destination.stat().st_size <= 0:
                 raise RuntimeError(
@@ -141,6 +209,8 @@ def download_gcs_object(config: WorkerConfig, source_path: str, destination: Pat
             retryable = not non_retryable_errors or not isinstance(
                 error, non_retryable_errors
             )
+            if isinstance(error, requests.HTTPError) and error.response is not None:
+                retryable = error.response.status_code not in {400, 401, 403, 404}
             if not retryable or attempt >= attempts:
                 raise
 
@@ -154,13 +224,14 @@ def download_gcs_object(config: WorkerConfig, source_path: str, destination: Pat
                     "object": object_name,
                     "attempt": attempt,
                     "max_attempts": attempts,
+                    "transport": transport,
                     "delay_seconds": delay_seconds,
                     "error_type": type(error).__name__,
                 },
             )
             time.sleep(delay_seconds)
         finally:
-            close_client = getattr(client, "close", None)
+            close_client = getattr(client, "close", None) if client is not None else None
             if callable(close_client):
                 close_client()
 
