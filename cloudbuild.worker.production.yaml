@@ -1,6 +1,15 @@
 # Production worker deployment. The Cloud Build production trigger must watch
 # the main branch only; test continues to deploy the isolated pilot worker.
 steps:
+  - id: prepare-python-worker-source
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        test -f Dockerfile
+        mv Dockerfile Dockerfile.web
+
   - id: deploy-worker-production-candidate
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: gcloud
@@ -14,8 +23,6 @@ steps:
       - ${_REGION}
       - --source
       - .
-      - --ignore-file
-      - .gcloudignore.worker
       - --clear-base-image
       - --add-cloudsql-instances
       - ${_CLOUD_SQL_INSTANCE_CONNECTION_NAME}

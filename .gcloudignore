@@ -43,6 +43,7 @@ eil-dashboard/.next/
 eil-dashboard/out/
 eil-dashboard/.vercel/
 eil-dashboard/tsconfig.tsbuildinfo
+Dockerfile.web
 
 # Local/prototype artifacts not needed by the Cloud Run node service.
 .ipynb_checkpoints/

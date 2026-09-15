@@ -1,7 +1,0 @@
-# Python worker source deploy filter. The repository root Dockerfile builds the
-# Next.js web service, so worker deploys must explicitly exclude it and use
-# Google buildpacks with GOOGLE_ENTRYPOINT instead.
-#!include:.gcloudignore
-
-Dockerfile
-Dockerfile.notebook-job
