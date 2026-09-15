@@ -406,12 +406,21 @@ const FaithfulnessSchema = z.object({
   reason: z.string().max(500).default(""),
 });
 
+const DocumentAnalysisBatchSchema = z.object({
+  overview: z.string().min(1),
+  items: z.array(z.object({
+    paperId: z.coerce.string().min(1),
+    analysis: z.string().min(1),
+  })).min(1).max(8),
+});
+
 const TERM_INDEX_VERSION = "papertrend-term-index-v2";
 const REPOSITORY_MEMORY_MAX_PAPERS = 500;
 const REPOSITORY_MEMORY_MAX_CHARS = 18_000;
 const REPOSITORY_PAPER_BRIEF_MAX_CHARS = 360;
 const REPOSITORY_CACHE_MAX_ROWS_PER_OWNER = 24;
 const REPOSITORY_CACHE_MAX_AGE_DAYS = 30;
+const DOCUMENT_ANALYSIS_BATCH_SIZE = 6;
 
 function promptRequestsChart(prompt: string, forceChart = false): boolean {
   return forceChart || /\b(chart|charts|graph|graphs|plot|plots|visuali[sz]e|bar chart|line chart|pie chart|table)\b|กราฟ|แผนภูมิ/i.test(prompt);
@@ -2298,7 +2307,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
 
     if (operation === "converse") result = await converseResult(input, context, stepExecution);
     else if (operation === "list_documents") result = listDocumentsResult(context);
-    else if (operation === "analyze_each_document") result = analyzeEachDocumentResult(context);
+    else if (operation === "analyze_each_document") result = await analyzeEachDocumentResult(input, context, stepExecution);
     else if (operation === "aggregate_corpus") result = await aggregateCorpusResult(input, context, stepExecution);
     else if (operation === "inspect_scope") result = {
       ...repositoryStatisticsResult(context, stepPlan, input.prompt),
@@ -2384,32 +2393,198 @@ function listDocumentsResult(context: RepositoryContext): Pick<RepositoryChatRes
   };
 }
 
-function concisePaperExplanation(paper: RepositoryPaper): string {
+function answerLanguageIsThai(answerLanguage: string): boolean {
+  return /thai|\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22/i.test(answerLanguage.trim());
+}
+
+function answerMatchesRequestedLanguage(answer: string, answerLanguage: string): boolean {
+  if (!answerLanguageIsThai(answerLanguage)) return true;
+  return (answer.match(/[\u0e00-\u0e7f]/g)?.length ?? 0) >= 8;
+}
+
+function concisePaperExplanation(paper: RepositoryPaper, answerLanguage: string): string {
   const focus = paper.abstract || paper.content;
   const method = paper.methods.trim();
   const finding = paper.results.trim() || paper.conclusion.trim();
+  const thai = answerLanguageIsThai(answerLanguage);
   return [
-    focus ? focus.slice(0, 360).trim() : "No abstract or extracted overview is available.",
-    method ? `Method: ${method.slice(0, 220).trim()}` : "",
-    finding ? `Finding: ${finding.slice(0, 280).trim()}` : "",
-    paper.topics.size > 0 ? `Topics: ${[...paper.topics.keys()].slice(0, 6).join(", ")}.` : "",
+    focus
+      ? `${thai ? "\u0e20\u0e32\u0e1e\u0e23\u0e27\u0e21" : "Overview"}: ${focus.slice(0, 360).trim()}`
+      : thai
+        ? "\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e1a\u0e17\u0e04\u0e31\u0e14\u0e22\u0e48\u0e2d\u0e2b\u0e23\u0e37\u0e2d\u0e20\u0e32\u0e1e\u0e23\u0e27\u0e21\u0e17\u0e35\u0e48\u0e2a\u0e01\u0e31\u0e14\u0e44\u0e14\u0e49"
+        : "No abstract or extracted overview is available.",
+    method ? `${thai ? "\u0e27\u0e34\u0e18\u0e35\u0e27\u0e34\u0e08\u0e31\u0e22" : "Method"}: ${method.slice(0, 220).trim()}` : "",
+    finding ? `${thai ? "\u0e1c\u0e25\u0e01\u0e32\u0e23\u0e27\u0e34\u0e08\u0e31\u0e22" : "Finding"}: ${finding.slice(0, 280).trim()}` : "",
+    paper.topics.size > 0
+      ? `${thai ? "\u0e2b\u0e31\u0e27\u0e02\u0e49\u0e2d" : "Topics"}: ${[...paper.topics.keys()].slice(0, 6).join(", ")}.`
+      : "",
   ].filter(Boolean).join(" ");
 }
 
-function analyzeEachDocumentResult(context: RepositoryContext): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations"> {
+export function buildDocumentAnalysisFallbackAnswer(
+  papersInput: RepositoryPaper[],
+  scopeLabel: string,
+  answerLanguage: string
+): string {
+  const papers = [...papersInput].sort((left, right) => left.title.localeCompare(right.title));
+  const thai = answerLanguageIsThai(answerLanguage);
+  return [
+    thai
+      ? `## \u0e01\u0e32\u0e23\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21: ${scopeLabel}`
+      : `## Paper-by-paper analysis: ${scopeLabel}`,
+    thai
+      ? `\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a **${papers.length} \u0e08\u0e32\u0e01 ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23** \u0e17\u0e35\u0e48\u0e2d\u0e22\u0e39\u0e48\u0e43\u0e19\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15`
+      : `Processed **${papers.length} of ${papers.length} eligible papers**.`,
+    "",
+    ...papers.map((paper, index) => `### ${index + 1}. ${paper.title}\n${concisePaperExplanation(paper, answerLanguage)}`),
+  ].join("\n\n");
+}
+
+function documentAnalysisEvidence(paper: RepositoryPaper) {
+  return {
+    paperId: paper.paperId,
+    title: paper.title,
+    year: paper.year,
+    abstract: paper.abstract.slice(0, 1_200),
+    methods: paper.methods.slice(0, 900),
+    results: paper.results.slice(0, 1_100),
+    conclusion: paper.conclusion.slice(0, 900),
+    topics: [...paper.topics.keys()].slice(0, 10),
+    keywords: [...paper.keywords.keys()].slice(0, 12),
+  };
+}
+
+function validDocumentAnalysisBatch(
+  candidate: z.infer<typeof DocumentAnalysisBatchSchema>,
+  papers: RepositoryPaper[],
+  answerLanguage: string
+): boolean {
+  const expectedIds = papers.map((paper) => paper.paperId);
+  const returnedIds = candidate.items.map((item) => item.paperId);
+  if (
+    returnedIds.length !== expectedIds.length ||
+    new Set(returnedIds).size !== returnedIds.length ||
+    expectedIds.some((paperId) => !returnedIds.includes(paperId))
+  ) return false;
+  if (!answerMatchesRequestedLanguage(candidate.overview, answerLanguage)) return false;
+  return candidate.items.every((item) => answerMatchesRequestedLanguage(item.analysis, answerLanguage));
+}
+
+async function generateDocumentAnalysisBatch(
+  input: RepositoryChatInput,
+  execution: RepositoryExecutionPlan,
+  papers: RepositoryPaper[]
+): Promise<z.infer<typeof DocumentAnalysisBatchSchema> | null> {
+  const evidence = papers.map(documentAnalysisEvidence);
+  const system = buildPapertrendSystemPrompt("grounded_answer", [
+    "Analyze every supplied paper exactly once and directly satisfy the user's requested dimensions. " +
+      "The overview must answer the cross-paper intent, including meaningful similarities and differences when comparison is requested. " +
+      "Each item must give a substantive, evidence-bounded explanation of that paper using readable prose and bullets where useful. " +
+      "Do not expose database IDs in prose; use paper titles. Keep missing evidence explicit and never infer an unreported method, finding, or limitation. " +
+      "Return JSON only: {overview, items:[{paperId, analysis}]}. Preserve each supplied paperId only in its JSON paperId field, include every supplied ID exactly once, and write overview and every analysis in the required answer language.",
+  ]);
+  const request = JSON.stringify({
+    originalRequest: input.prompt,
+    refinedRequest: execution.refinedQuestion,
+    requestedFields: execution.requestedFields,
+    evidenceNeeds: execution.evidenceNeeds,
+    requiredAnswerLanguage: execution.answerLanguage,
+    papers: evidence,
+  });
+
+  let raw = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const completion = await createChatCompletionResult(
+        attempt === 0
+          ? [{ role: "system", content: system }, { role: "user", content: request }]
+          : [
+              { role: "system", content: system },
+              {
+                role: "user",
+                content: JSON.stringify({
+                  request: JSON.parse(request),
+                  invalidOutput: raw.slice(0, 12_000),
+                  correction: "Repair the output. Include every supplied paper exactly once and use the required answer language throughout.",
+                }),
+              },
+            ],
+        0.15,
+        input.model,
+        attempt === 0 ? "CHAT_DOCUMENT_ANALYSIS" : "CHAT_DOCUMENT_ANALYSIS_REPAIR",
+        { maxTokens: Math.min(4_800, 1_300 + papers.length * 550) }
+      );
+      raw = completion?.content?.trim() ?? "";
+      const parsed = DocumentAnalysisBatchSchema.safeParse(extractJsonObject(raw));
+      if (parsed.success && validDocumentAnalysisBatch(parsed.data, papers, execution.answerLanguage)) {
+        return parsed.data;
+      }
+    } catch {
+      // Retry once, then retain complete deterministic coverage below.
+    }
+  }
+  return null;
+}
+
+async function analyzeEachDocumentResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  execution: RepositoryExecutionPlan
+): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
   const papers = [...context.papers].sort((left, right) => left.title.localeCompare(right.title));
   const missingExtraction = papers.filter((paper) => !paper.abstract && !paper.methods && !paper.results && !paper.conclusion).length;
+  const batches: RepositoryPaper[][] = [];
+  for (let index = 0; index < papers.length; index += DOCUMENT_ANALYSIS_BATCH_SIZE) {
+    batches.push(papers.slice(index, index + DOCUMENT_ANALYSIS_BATCH_SIZE));
+  }
+  const generated = [] as Array<{ papers: RepositoryPaper[]; result: z.infer<typeof DocumentAnalysisBatchSchema> | null }>;
+  for (const batch of batches) {
+    generated.push({ papers: batch, result: await generateDocumentAnalysisBatch(input, execution, batch) });
+  }
+  const providerFallbackCount = generated.filter((batch) => !batch.result).reduce((total, batch) => total + batch.papers.length, 0);
+  const overviewParts = generated
+    .map((batch) => batch.result?.overview.trim() ?? "")
+    .filter(Boolean);
+  const detailSections = generated.flatMap((batch) => {
+    const byId = new Map(batch.result?.items.map((item) => [item.paperId, item.analysis.trim()]) ?? []);
+    return batch.papers.map((paper) => {
+      const analysis = byId.get(paper.paperId) || concisePaperExplanation(paper, execution.answerLanguage);
+      return `### ${papers.indexOf(paper) + 1}. ${paper.title}\n${formatPaperReferencesForReaders(analysis, papers)}`;
+    });
+  });
+  const thai = answerLanguageIsThai(execution.answerLanguage);
+  const answer = [
+    thai ? "## \u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e42\u0e14\u0e22\u0e2a\u0e23\u0e38\u0e1b" : "## Direct answer",
+    overviewParts.length > 0
+      ? overviewParts.map((overview) => formatPaperReferencesForReaders(overview, papers)).join("\n\n")
+      : thai
+        ? `\u0e23\u0e30\u0e1a\u0e1a\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e15\u0e32\u0e21\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15\u0e17\u0e35\u0e48\u0e40\u0e25\u0e37\u0e2d\u0e01 \u0e41\u0e25\u0e30\u0e41\u0e2a\u0e14\u0e07\u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e17\u0e35\u0e48\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e44\u0e14\u0e49\u0e41\u0e22\u0e01\u0e15\u0e32\u0e21\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21\u0e14\u0e49\u0e32\u0e19\u0e25\u0e48\u0e32\u0e07`
+        : `All ${papers.length} selected papers were processed. The complete evidence-bounded detail is organized by paper below.`,
+    "",
+    thai ? "## \u0e23\u0e32\u0e22\u0e25\u0e30\u0e40\u0e2d\u0e35\u0e22\u0e14\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21" : "## Paper-by-paper detail",
+    thai
+      ? `\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e04\u0e23\u0e1a **${papers.length} \u0e08\u0e32\u0e01 ${papers.length} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23** \u0e17\u0e35\u0e48\u0e2d\u0e22\u0e39\u0e48\u0e43\u0e19\u0e02\u0e2d\u0e1a\u0e40\u0e02\u0e15`
+      : `Processed **${papers.length} of ${papers.length} eligible papers**.`,
+    "",
+    ...detailSections,
+  ].join("\n\n");
+  const limitations: string[] = [];
+  if (missingExtraction > 0) {
+    limitations.push(thai
+      ? `\u0e21\u0e35\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23 ${missingExtraction} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e17\u0e35\u0e48\u0e2a\u0e01\u0e31\u0e14\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e2a\u0e33\u0e04\u0e31\u0e0d\u0e44\u0e14\u0e49\u0e08\u0e33\u0e01\u0e31\u0e14 \u0e04\u0e33\u0e2d\u0e18\u0e34\u0e1a\u0e32\u0e22\u0e08\u0e36\u0e07\u0e21\u0e35\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e2a\u0e48\u0e27\u0e19\u0e17\u0e35\u0e48\u0e21\u0e35\u0e2b\u0e25\u0e31\u0e01\u0e10\u0e32\u0e19`
+      : `${missingExtraction} paper(s) had limited extracted sections, so their explanations contain only the available evidence.`);
+  }
+  if (providerFallbackCount > 0) {
+    limitations.push(thai
+      ? `\u0e21\u0e35\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23 ${providerFallbackCount} \u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e17\u0e35\u0e48\u0e43\u0e0a\u0e49\u0e04\u0e33\u0e2d\u0e18\u0e34\u0e1a\u0e32\u0e22\u0e2a\u0e33\u0e23\u0e2d\u0e07\u0e08\u0e32\u0e01\u0e2a\u0e48\u0e27\u0e19\u0e17\u0e35\u0e48\u0e2a\u0e01\u0e31\u0e14\u0e44\u0e14\u0e49 \u0e40\u0e19\u0e37\u0e48\u0e2d\u0e07\u0e08\u0e32\u0e01\u0e1c\u0e39\u0e49\u0e43\u0e2b\u0e49\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23\u0e2a\u0e31\u0e07\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e44\u0e21\u0e48\u0e15\u0e2d\u0e1a\u0e2a\u0e19\u0e2d\u0e07\u0e2a\u0e21\u0e1a\u0e39\u0e23\u0e13\u0e4c`
+      : `${providerFallbackCount} paper(s) used the complete extracted-section fallback because the synthesis provider did not return a valid result.`);
+  }
   return {
-    answer: [
-      `## Paper-by-paper analysis: ${context.scopeLabel}`,
-      `Processed **${papers.length} of ${papers.length} eligible papers**.`,
-      "",
-      ...papers.map((paper, index) => `### ${index + 1}. ${paper.title}\n${concisePaperExplanation(paper)}`),
-    ].join("\n\n"),
+    answer,
     citations: papers.map((paper) => citationForPaper(paper, "Included in the complete paper-by-paper analysis.")),
     charts: [],
     coverage: completeCoverage(context, papers.length),
-    limitations: missingExtraction > 0 ? [`${missingExtraction} paper(s) had limited extracted sections, so their explanations are correspondingly brief.`] : [],
+    limitations,
   };
 }
 
@@ -2631,7 +2806,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
         };
       }
     }
-    return { handled: true, ...analyzeEachDocumentResult(context), plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
+    return { handled: true, ...await analyzeEachDocumentResult(input, context, execution), plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   if (execution?.operation === "aggregate_corpus") {
     const result = await aggregateCorpusResult(input, context, execution);
