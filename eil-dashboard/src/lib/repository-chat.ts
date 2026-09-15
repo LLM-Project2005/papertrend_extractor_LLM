@@ -2394,7 +2394,8 @@ function listDocumentsResult(context: RepositoryContext): Pick<RepositoryChatRes
 }
 
 function answerLanguageIsThai(answerLanguage: string): boolean {
-  return /thai|\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22/i.test(answerLanguage.trim());
+  const normalized = answerLanguage.trim().toLowerCase().replace(/_/g, "-");
+  return normalized === "th" || normalized.startsWith("th-") || /thai|\u0e20\u0e32\u0e29\u0e32\u0e44\u0e17\u0e22/i.test(normalized);
 }
 
 function answerMatchesRequestedLanguage(answer: string, answerLanguage: string): boolean {

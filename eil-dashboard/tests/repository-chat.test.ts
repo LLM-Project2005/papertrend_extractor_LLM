@@ -305,6 +305,10 @@ test("complete document-analysis fallback preserves coverage and requested langu
   assert.match(thai, /1 \u0e08\u0e32\u0e01 1/);
   assert.doesNotMatch(thai, /Paper 101/);
 
+  const thaiIso = buildDocumentAnalysisFallbackAnswer([paper], "Selected papers", "th-TH");
+  assert.match(thaiIso, /\u0e01\u0e32\u0e23\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21/u);
+  assert.doesNotMatch(thaiIso, /Paper-by-paper analysis/);
+
   const english = buildDocumentAnalysisFallbackAnswer([paper], "Selected papers", "English");
   assert.match(english, /Processed \*\*1 of 1 eligible papers\*\*/);
 });
