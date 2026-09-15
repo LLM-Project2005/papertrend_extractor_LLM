@@ -3080,11 +3080,11 @@ async function loadScopedPlanPapers(
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const values: unknown[] = [ownerUserId];
       let scope = "";
-      if (normalizedRunIds.length) { values.push(normalizedRunIds); scope = ` AND p.ingestion_run_id=ANY($${values.length}::uuid[])`; }
-      else if (folderId && folderId !== "all") { values.push(folderId); scope = ` AND p.folder_id=$${values.length}`; }
-      else if (folderIds.length) { values.push(folderIds); scope = ` AND p.folder_id=ANY($${values.length}::uuid[])`; }
+      if (normalizedRunIds.length) { values.push(normalizedRunIds); scope = ` AND c.ingestion_run_id=ANY($${values.length}::uuid[])`; }
+      else if (folderId && folderId !== "all") { values.push(folderId); scope = ` AND COALESCE(c.folder_id,p.folder_id)=$${values.length}`; }
+      else if (folderIds.length) { values.push(folderIds); scope = ` AND COALESCE(c.folder_id,p.folder_id)=ANY($${values.length}::uuid[])`; }
       const result = await client.query<LocalPlanPaper>(
-        `SELECT p.id AS paper_id,p.title,p.year,p.folder_id,p.ingestion_run_id,
+        `SELECT p.id AS paper_id,p.title,p.year,COALESCE(c.folder_id,p.folder_id) AS folder_id,c.ingestion_run_id,
          c.abstract_claims,c.methods,c.results,c.conclusion FROM public.papers p
          LEFT JOIN public.paper_content c ON c.paper_id=p.id AND c.owner_user_id=$1
          WHERE p.owner_user_id=$1${scope}`, values
@@ -4402,6 +4402,10 @@ async function handlePost(request: Request) {
     if (error instanceof GuardError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
+    console.error("chat_request_failed", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      message: error instanceof Error ? error.message : "Unknown chat request failure.",
+    });
     return NextResponse.json(
       { error: "Chat request failed." },
       { status: 500 }

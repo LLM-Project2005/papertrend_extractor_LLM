@@ -7,7 +7,7 @@ import type {
   WorkspaceThreadSummary,
 } from "@/types/research";
 
-function normalizeFolderId(folderId?: string | null): string | null {
+export function normalizeChatFolderId(folderId?: string | null): string | null {
   if (!folderId || folderId === "all") {
     return null;
   }
@@ -114,7 +114,7 @@ export async function appendWorkspaceMessage(
     .insert({
       thread_id: input.threadId,
       owner_user_id: input.ownerUserId,
-      folder_id: normalizeFolderId(input.folderId),
+      folder_id: normalizeChatFolderId(input.folderId),
       role: input.role,
       message_kind: input.messageKind ?? "chat",
       content: input.content,
@@ -191,7 +191,7 @@ export async function replaceDeepResearchPlan(
       .insert({
         thread_id: input.threadId,
         owner_user_id: input.ownerUserId,
-        folder_id: normalizeFolderId(input.folderId),
+        folder_id: normalizeChatFolderId(input.folderId),
         prompt: input.prompt,
         plan_summary: input.summary,
         requires_analysis: input.requiresAnalysis,
