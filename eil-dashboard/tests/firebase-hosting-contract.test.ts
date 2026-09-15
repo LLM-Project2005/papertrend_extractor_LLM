@@ -101,6 +101,9 @@ test("Firebase project target and production URL split stay pinned to Papertrend
   const workerBuild = readRootFile("cloudbuild.worker.production.yaml");
   assert.match(workerBuild, /--clear-base-image/);
   assert.match(workerBuild, /mv Dockerfile Dockerfile\.web/);
+  assert.match(workerBuild, /promote-worker-production/);
+  assert.match(workerBuild, /update-traffic/);
+  assert.match(workerBuild, /--to-latest/);
   assert.match(
     workerBuild,
     /_APP_ALLOWED_ORIGINS: https:\/\/papertrend-web-production-javhavgdsq-as\.a\.run\.app;https:\/\/research-trend-analysis\.web\.app/
@@ -128,6 +131,9 @@ test("Firebase project target and production URL split stay pinned to Papertrend
 
   const pilotWorkerBuild = readRootFile("cloudbuild.worker.cloudsql.pilot.yaml");
   assert.match(pilotWorkerBuild, /mv Dockerfile Dockerfile\.web/);
+  assert.match(pilotWorkerBuild, /promote-cloudsql-worker-pilot/);
+  assert.match(pilotWorkerBuild, /update-traffic/);
+  assert.match(pilotWorkerBuild, /--to-latest/);
   assert.doesNotMatch(pilotWorkerBuild, /--allow-unauthenticated/);
   assert.doesNotMatch(pilotWorkerBuild, /--no-allow-unauthenticated/);
 

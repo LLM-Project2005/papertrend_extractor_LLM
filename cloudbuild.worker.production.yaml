@@ -49,6 +49,23 @@ steps:
       - --set-secrets
       - OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,DATABASE_URL=DATABASE_URL:latest
 
+  # A historical --no-traffic deployment pins Cloud Run away from LATEST even
+  # after later successful deploys. Always restore the normal production
+  # contract explicitly so the revision built above actually serves requests.
+  - id: promote-worker-production
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - ${_SERVICE_NAME}
+      - --project
+      - ${PROJECT_ID}
+      - --region
+      - ${_REGION}
+      - --to-latest
+
 substitutions:
   _REGION: asia-southeast1
   _SERVICE_NAME: papertrend-worker-production
