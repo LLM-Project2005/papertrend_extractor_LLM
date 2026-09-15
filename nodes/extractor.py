@@ -11,17 +11,44 @@ logger = logging.getLogger("papertrend.extractor")
 
 
 def _looks_like_garbage(text: str) -> bool:
-    content_only = re.sub(r"[^a-zA-Z]", "", text or "")
-    if not content_only or len(content_only) < 200:
+    source = text or ""
+    letters = re.findall(r"[^\W\d_]", source, flags=re.UNICODE)
+    if len(letters) < 200:
         return True
 
-    real_words = re.findall(r"[a-zA-Z]{3,}", text or "")
+    thai_letters = re.findall(r"[\u0E00-\u0E7F]", source)
+    if len(thai_letters) >= 200 and len(set(thai_letters)) >= 10:
+        return False
+
+    real_words = re.findall(r"[^\W\d_]{2,}", source, flags=re.UNICODE)
     if not real_words:
         return True
 
     unique_ratio = len(set(word.lower() for word in real_words)) / len(real_words)
     avg_word_len = sum(len(word) for word in real_words) / len(real_words)
     return unique_ratio < 0.10 or avg_word_len < 2.5
+
+
+def _select_vision_page_indices(page_count: int, page_limit: int) -> list[int]:
+    if page_count <= 0 or page_limit <= 0:
+        return []
+    if page_count <= page_limit:
+        return list(range(page_count))
+
+    front_count = min(8, max(1, page_limit // 3))
+    back_count = min(8, max(1, page_limit // 3))
+    selected = set(range(front_count))
+    selected.update(range(max(front_count, page_count - back_count), page_count))
+
+    remaining = page_limit - len(selected)
+    if remaining > 0:
+        start = front_count
+        end = max(start, page_count - back_count - 1)
+        for step in range(1, remaining + 1):
+            position = start + round((end - start) * step / (remaining + 1))
+            selected.add(min(max(position, start), end))
+
+    return sorted(selected)[:page_limit]
 
 
 def _extract_with_fitz(document: Any) -> str:
@@ -46,8 +73,10 @@ def _extract_with_vision(document: Any, pdf_path: str) -> str:
     vision_client = get_task_llm(ModelTask.VISION_OCR, **llm_kwargs)
 
     vision_pages = []
-    total_pages = min(len(document), 15)
-    for page_num in range(total_pages):
+    document_pages = len(document)
+    page_limit = max(1, int(os.getenv("VISION_OCR_MAX_PAGES", "24")))
+    page_indices = _select_vision_page_indices(document_pages, page_limit)
+    for page_num in page_indices:
         page = document.load_page(page_num)
         pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
         image_b64 = base64.b64encode(pixmap.tobytes("png")).decode("utf-8")
@@ -55,7 +84,7 @@ def _extract_with_vision(document: Any, pdf_path: str) -> str:
             content=[
                 {
                     "type": "text",
-                    "text": f"Page {page_num + 1}/{total_pages}. OCR the page verbatim in Markdown.",
+                    "text": f"Page {page_num + 1}/{document_pages}. OCR the page verbatim in Markdown. Preserve headings and Thai or English text exactly.",
                 },
                 {
                     "type": "image_url",
@@ -66,7 +95,7 @@ def _extract_with_vision(document: Any, pdf_path: str) -> str:
         response = vision_client.invoke([message])
         page_text = str(response.content).strip()
         if page_text:
-            vision_pages.append(page_text)
+            vision_pages.append(f"[Page {page_num + 1}]\n\n{page_text}")
 
     combined = "\n\n---\n\n".join(vision_pages).strip()
     if not combined:

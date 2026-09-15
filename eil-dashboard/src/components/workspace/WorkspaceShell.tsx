@@ -105,7 +105,7 @@ const SEARCH_PAGE_ITEMS = [
   {
     id: "library",
     label: "Repositories",
-    description: "Browse account repositories, folders, and analyzed papers",
+    description: "Browse account repositories and analyzed papers",
     href: "/workspace/library",
     icon: FolderIcon,
     keywords: ["papers", "files", "imports", "documents", "upload", "analyze paper", "search library", "paper detail"],
@@ -547,7 +547,7 @@ export default function WorkspaceShell({
                 </h1>
                 <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
                   Choose a repository to open its overview, dashboard, chat, library,
-                  folders, and paper details.
+                  repositories and paper details.
                 </p>
                 <Link
                   href="/workspaces"

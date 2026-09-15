@@ -415,7 +415,7 @@ export default function AnalysisStatusCard({
           >
             <div>
               <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
-                {folderJob ? "Folder analysis" : "Analysis active"}
+                {folderJob ? "Batch analysis" : "Analysis active"}
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
                 {loading
@@ -495,7 +495,7 @@ export default function AnalysisStatusCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-            {folderJob ? "Folder analysis status" : "Analysis status"}
+            {folderJob ? "Batch analysis status" : "Analysis status"}
           </p>
           <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
             {folderJob
@@ -619,7 +619,7 @@ export default function AnalysisStatusCard({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                  Folder batch progress
+                  Upload batch progress
                 </p>
                 <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
                   {folderJob.progress_message || folderJob.status}

@@ -857,7 +857,7 @@ export default function WorkspaceHomeClient() {
               Manage library
             </span>
             <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Files, folders, analysis
+              Files and analysis
             </span>
           </span>
           <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />

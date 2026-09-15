@@ -14,7 +14,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
-import RepositorySemanticMapView from "@/components/workspace/RepositorySemanticMap";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
 import Modal from "@/components/ui/Modal";
@@ -44,18 +43,16 @@ import {
 import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
-  ResearchFolderRow,
   RunAnalysisDetail,
 } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
 
-type ViewMode = "list" | "grid" | "semantic-map";
-type TypeFilter = "all" | "folder" | "pdf" | "image" | "document" | "other";
+type ViewMode = "list" | "grid";
+type TypeFilter = "all" | "pdf" | "image" | "document" | "other";
 type ModifiedFilter = "all" | "7d" | "30d" | "year" | "older";
-type SourceFilter = "all" | "upload" | "google-drive" | "workspace";
+type SourceFilter = "all" | "upload" | "google-drive";
 type SortKey = "name" | "modified" | "size";
 type SortDirection = "asc" | "desc";
-type FolderPlacement = "on-top" | "mixed";
 type ToolbarPopoverKind = "new" | "type" | "modified" | "source" | "sort";
 
 type ToolbarPopoverState = {
@@ -67,7 +64,7 @@ type ToolbarPopoverState = {
 
 type LibraryEntry = {
   id: string;
-  kind: "folder" | "file";
+  kind: "file";
   name: string;
   ownerLabel: string;
   modifiedAt: string | null;
@@ -80,8 +77,7 @@ type LibraryEntry = {
   subtitle: string;
   statusLabel: string | null;
   favorite: boolean;
-  folder?: ResearchFolderRow;
-  run?: IngestionRunRow;
+  run: IngestionRunRow;
 };
 
 type ItemMenuState = {
@@ -90,9 +86,7 @@ type ItemMenuState = {
   left: number;
 };
 
-type RenameTarget =
-  | { kind: "file"; run: IngestionRunRow }
-  | { kind: "folder"; folder: ResearchFolderRow };
+type RenameTarget = { kind: "file"; run: IngestionRunRow };
 
 type RunAnalysisResponse = {
   run?: IngestionRunRow;
@@ -102,7 +96,6 @@ type RunAnalysisResponse = {
 
 const TYPE_OPTIONS: Array<{ id: TypeFilter; label: string }> = [
   { id: "all", label: "All types" },
-  { id: "folder", label: "Folders" },
   { id: "pdf", label: "PDF" },
   { id: "image", label: "Images" },
   { id: "document", label: "Documents" },
@@ -120,18 +113,12 @@ const MODIFIED_OPTIONS: Array<{ id: ModifiedFilter; label: string }> = [
 const SOURCE_OPTIONS: Array<{ id: SourceFilter; label: string }> = [
   { id: "all", label: "All sources" },
   { id: "upload", label: "Upload" },
-  { id: "workspace", label: "Workspace folders" },
 ];
 
 const SORT_KEY_OPTIONS: Array<{ id: SortKey; label: string }> = [
   { id: "name", label: "Name" },
   { id: "modified", label: "Date modified" },
   { id: "size", label: "File size" },
-];
-
-const FOLDER_PLACEMENT_OPTIONS: Array<{ id: FolderPlacement; label: string }> = [
-  { id: "on-top", label: "On top" },
-  { id: "mixed", label: "Mixed with files" },
 ];
 
 function titleOf(run: IngestionRunRow) {
@@ -159,7 +146,7 @@ function sourceOf(run: IngestionRunRow) {
   return value === "google-drive" ? "Google Drive" : "Upload";
 }
 
-function typeOfRun(run: IngestionRunRow): Exclude<TypeFilter, "all" | "folder"> {
+function typeOfRun(run: IngestionRunRow): Exclude<TypeFilter, "all"> {
   const ext = extOf(run);
   if (ext === "pdf") return "pdf";
   if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) return "image";
@@ -237,17 +224,6 @@ function getPopoverPosition(rect: DOMRect, width: number, estimatedHeight: numbe
   return { top, left };
 }
 
-function getFolderUploadName(files: File[]) {
-  for (const file of files) {
-    const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
-    if (relativePath && relativePath.includes("/")) {
-      const [folder] = relativePath.split("/");
-      if (folder?.trim()) return folder.trim();
-    }
-  }
-  return "Uploaded folder";
-}
-
 const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_UPLOAD_FILES = 50;
 
@@ -269,7 +245,6 @@ function buildUploadErrorMessage(fallback: string, payload: { error?: string } |
 }
 
 function glyphForEntry(item: LibraryEntry) {
-  if (item.kind === "folder") return FolderIcon;
   if (item.sourceFilter === "google-drive") return DriveIcon;
   if (item.typeFilter === "pdf") return PaperIcon;
   if (item.typeFilter === "image") return ImageIcon;
@@ -277,9 +252,6 @@ function glyphForEntry(item: LibraryEntry) {
 }
 
 function badgeToneForEntry(item: LibraryEntry) {
-  if (item.kind === "folder") {
-    return "bg-[#f7c948]/15 text-[#b88900] dark:bg-[#f7c948]/10 dark:text-[#f7d05a]";
-  }
   if (item.typeFilter === "pdf") {
     return "bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-300";
   }
@@ -446,14 +418,10 @@ export default function AdminImportClient() {
   const { session } = useAuth();
   const {
     currentProject,
-    folders,
     allFolders,
     allProjects,
     setSelectedProjectId,
-    selectedFolderId,
     setSelectedFolderId,
-    createFolder,
-    renameFolder,
     refreshFolders,
     startAnalysisSession,
   } = useWorkspaceProfile();
@@ -466,16 +434,9 @@ export default function AdminImportClient() {
   const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
   const [sortKey, setSortKey] = useState<SortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [folderPlacement, setFolderPlacement] = useState<FolderPlacement>("on-top");
   const [showTrash, setShowTrash] = useState(false);
-  const [showFolderModal, setShowFolderModal] = useState(false);
-  const [draftFolderName, setDraftFolderName] = useState("");
-  const [creatingFolder, setCreatingFolder] = useState(false);
-  const [folderModalError, setFolderModalError] = useState<string | null>(null);
   const [toolbarPopover, setToolbarPopover] = useState<ToolbarPopoverState | null>(null);
   const [itemMenuState, setItemMenuState] = useState<ItemMenuState | null>(null);
-  const [moveRun, setMoveRun] = useState<IngestionRunRow | null>(null);
-  const [movingRun, setMovingRun] = useState(false);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -525,10 +486,6 @@ export default function AdminImportClient() {
     () => allProjects.find((project) => project.id === libraryProjectId) ?? null,
     [allProjects, libraryProjectId]
   );
-  const projectFolders = useMemo(
-    () => allFolders.filter((folder) => folder.project_id === libraryProjectId),
-    [allFolders, libraryProjectId]
-  );
   const succeededRunIds = useMemo(
     () =>
       runs
@@ -539,21 +496,18 @@ export default function AdminImportClient() {
   );
   const visualizationWarmKeyRef = useRef("");
 
-  const activeFolder =
-    selectedFolderId === "all" ? null : folderById.get(selectedFolderId) ?? null;
   const ownerInitial = (session?.user?.email?.charAt(0) ?? "M").toUpperCase();
   const projectStats = useMemo(() => {
-    const stats = new Map<string, { folders: number; papers: number; latest: string | null }>();
+    const stats = new Map<string, { papers: number; latest: string | null }>();
     for (const project of allProjects) {
-      stats.set(project.id, { folders: 0, papers: 0, latest: project.updated_at ?? project.created_at ?? null });
-    }
-    for (const folder of allFolders) {
-      const current = stats.get(folder.project_id ?? "");
-      if (current) current.folders += 1;
+      stats.set(project.id, { papers: 0, latest: project.updated_at ?? project.created_at ?? null });
     }
     for (const run of runs) {
-      if (run.trashed_at || !run.folder_id) continue;
-      const projectId = folderById.get(run.folder_id)?.project_id;
+      if (run.trashed_at) continue;
+      const payloadProjectId = typeof run.input_payload?.project_id === "string"
+        ? run.input_payload.project_id
+        : null;
+      const projectId = run.folder_id ? folderById.get(run.folder_id)?.project_id ?? payloadProjectId : payloadProjectId;
       const current = projectId ? stats.get(projectId) : null;
       if (!current) continue;
       current.papers += 1;
@@ -561,7 +515,7 @@ export default function AdminImportClient() {
       if (timeToMs(updated) > timeToMs(current.latest)) current.latest = updated;
     }
     return stats;
-  }, [allFolders, allProjects, folderById, runs]);
+  }, [allProjects, folderById, runs]);
 
   async function loadRuns() {
     if (!session?.access_token) {
@@ -630,7 +584,7 @@ export default function AdminImportClient() {
       return;
     }
 
-    const scopeKey = `${currentProject.id}:${selectedFolderId}:${succeededRunIds.join(",")}`;
+    const scopeKey = `${currentProject.id}:${succeededRunIds.join(",")}`;
     if (visualizationWarmKeyRef.current === scopeKey) {
       return;
     }
@@ -640,7 +594,7 @@ export default function AdminImportClient() {
       method: "POST",
       headers: jsonRequestHeaders,
       body: JSON.stringify({
-        folderId: selectedFolderId,
+        folderId: "all",
         projectId: currentProject.id,
         context: {
           workspaceName: currentProject.name,
@@ -653,7 +607,6 @@ export default function AdminImportClient() {
     currentProject?.id,
     currentProject?.name,
     jsonRequestHeaders,
-    selectedFolderId,
     session?.access_token,
     succeededRunIds,
   ]);
@@ -708,28 +661,6 @@ export default function AdminImportClient() {
   async function getRunOpenUrl(run: IngestionRunRow) {
     const payload = await postRun(run.id, "open");
     return payload.url ?? null;
-  }
-
-  async function handleCreateFolder(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!draftFolderName.trim()) return;
-    setCreatingFolder(true);
-    setFolderModalError(null);
-    try {
-      const folder = await createFolder(draftFolderName.trim());
-      setSelectedFolderId(folder.id);
-      setDraftFolderName("");
-      setShowFolderModal(false);
-      setMessage(`Folder "${folder.name}" created.`);
-      setError(null);
-    } catch (createError) {
-      const nextError =
-        createError instanceof Error ? createError.message : "Failed to create folder.";
-      setFolderModalError(nextError);
-      setError(nextError);
-    } finally {
-      setCreatingFolder(false);
-    }
   }
 
   async function handlePreviewRun(run: IngestionRunRow) {
@@ -890,39 +821,6 @@ export default function AdminImportClient() {
     }
   }
 
-  async function handleMoveRun(run: IngestionRunRow) {
-    setItemMenuState(null);
-    setMoveRun(run);
-    setError(null);
-  }
-
-  async function handleMoveRunToFolder(folderId: string) {
-    if (!moveRun || folderId === moveRun.folder_id) {
-      setMoveRun(null);
-      return;
-    }
-
-    setMovingRun(true);
-    try {
-      const folder = allFolders.find((candidate) => candidate.id === folderId);
-      if (!folder) {
-        throw new Error("That folder is no longer available. Refresh and try again.");
-      }
-
-      await patchRun(moveRun.id, { action: "move", folderId });
-      await refreshFolders();
-      setMessage(`Moved "${titleOf(moveRun)}" to "${folder.name}".`);
-      setError(null);
-      setMoveRun(null);
-    } catch (moveError) {
-      setError(
-        moveError instanceof Error ? moveError.message : "Failed to move file."
-      );
-    } finally {
-      setMovingRun(false);
-    }
-  }
-
   async function handleTrashRun(run: IngestionRunRow) {
     await patchRun(run.id, { action: "trash" });
     setMessage(`Moved "${titleOf(run)}" to Trash.`);
@@ -933,7 +831,7 @@ export default function AdminImportClient() {
     setMessage(`Restored "${titleOf(run)}" to its repository.`);
   }
 
-  async function queueUploads(selectedFiles: File[], mode: "files" | "folder") {
+  async function queueUploads(selectedFiles: File[]) {
     setToolbarPopover(null);
     if (!session?.access_token) {
       setError("Sign in before uploading files.");
@@ -972,8 +870,7 @@ export default function AdminImportClient() {
       return;
     }
 
-    const targetFolderName =
-      mode === "folder" ? getFolderUploadName(pdfFiles) : activeFolder?.name ?? "Repository";
+    const targetFolderName = "Repository";
 
     setLoading(true);
     try {
@@ -1140,18 +1037,11 @@ export default function AdminImportClient() {
           warning: queueWarning,
         });
       }
-      if (nextFolderId && (mode === "folder" || selectedFolderId !== "all")) {
-        setSelectedFolderId(nextFolderId);
-      }
       const failedUploadCount = failed.length;
       setMessage(
-        mode === "folder"
-          ? ignoredCount > 0
-            ? `Created repository folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-            : `Created repository folder "${targetFolderName}" and queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} inside it.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
-          : ignoredCount > 0
-            ? `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"}.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-            : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis. You can track live progress on Home.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
+        ignoredCount > 0
+          ? `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"}.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
+          : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis. You can track live progress on Home.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
       );
       if (failedUploadCount > 0 && !queueWarning) {
         setError(`${failedUploadCount} file${failedUploadCount === 1 ? "" : "s"} failed to upload. Check internet connection and retry.`);
@@ -1171,14 +1061,7 @@ export default function AdminImportClient() {
     const selectedFiles = Array.from(event.target.files ?? []).filter(Boolean);
     event.target.value = "";
     if (selectedFiles.length === 0) return;
-    void queueUploads(selectedFiles.slice(0, MAX_UPLOAD_FILES), "files");
-  }
-
-  async function handleRenameActiveFolder() {
-    if (!activeFolder) return;
-    setRenameTarget({ kind: "folder", folder: activeFolder });
-    setRenameDraft(activeFolder.name);
-    setRenameError(null);
+    void queueUploads(selectedFiles.slice(0, MAX_UPLOAD_FILES));
   }
 
   async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1186,8 +1069,7 @@ export default function AdminImportClient() {
     if (!renameTarget) return;
 
     const nextName = renameDraft.trim();
-    const currentName =
-      renameTarget.kind === "file" ? titleOf(renameTarget.run) : renameTarget.folder.name;
+    const currentName = titleOf(renameTarget.run);
     if (!nextName) {
       setRenameError("A name is required.");
       return;
@@ -1200,19 +1082,14 @@ export default function AdminImportClient() {
     setRenaming(true);
     setRenameError(null);
     try {
-      if (renameTarget.kind === "file") {
-        const updatedRun = await patchRun(renameTarget.run.id, {
-          action: "rename",
-          value: nextName,
-        });
-        if (analysisRun?.id === updatedRun.id) {
-          setAnalysisRun(updatedRun);
-        }
-        setMessage(`Renamed file to "${nextName}".`);
-      } else {
-        await renameFolder(renameTarget.folder.id, nextName);
-        setMessage(`Renamed folder to "${nextName}".`);
+      const updatedRun = await patchRun(renameTarget.run.id, {
+        action: "rename",
+        value: nextName,
+      });
+      if (analysisRun?.id === updatedRun.id) {
+        setAnalysisRun(updatedRun);
       }
+      setMessage(`Renamed file to "${nextName}".`);
       setError(null);
       setRenameTarget(null);
     } catch (renameActionError) {
@@ -1224,26 +1101,6 @@ export default function AdminImportClient() {
     } finally {
       setRenaming(false);
     }
-  }
-
-  function openFolderPicker() {
-    setToolbarPopover(null);
-    const picker = document.createElement("input");
-    picker.type = "file";
-    picker.multiple = true;
-    picker.accept = ".pdf,application/pdf";
-    const folderPicker = picker as HTMLInputElement & {
-      webkitdirectory?: boolean;
-      directory?: boolean;
-    };
-    folderPicker.webkitdirectory = true;
-    folderPicker.directory = true;
-    picker.onchange = () => {
-      const selectedFiles = Array.from(picker.files ?? []).filter(Boolean);
-      if (selectedFiles.length === 0) return;
-      void queueUploads(selectedFiles, "folder");
-    };
-    picker.click();
   }
 
   function openToolbarMenu(
@@ -1271,7 +1128,7 @@ export default function AdminImportClient() {
     item: LibraryEntry
   ) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const position = getPopoverPosition(rect, 224, item.kind === "folder" ? 160 : 390);
+    const position = getPopoverPosition(rect, 224, 390);
     setItemMenuState({
       item,
       top: position.top,
@@ -1289,85 +1146,22 @@ export default function AdminImportClient() {
     setSortDirection(defaultDirectionForSort(nextSortKey));
   }
 
-  const folderStats = useMemo(() => {
-    const stats = new Map<string, { count: number; latest: string | null }>();
-    for (const folder of projectFolders) {
-      stats.set(folder.id, {
-        count: 0,
-        latest: folder.updated_at ?? folder.created_at ?? null,
-      });
-    }
-    for (const run of runs) {
-      if (run.trashed_at) continue;
-      if (!run.folder_id) continue;
-      const current = stats.get(run.folder_id) ?? { count: 0, latest: null };
-      current.count += 1;
-      const updatedAt = run.updated_at ?? run.created_at ?? null;
-      if (timeToMs(updatedAt) >= timeToMs(current.latest)) {
-        current.latest = updatedAt;
-      }
-      stats.set(run.folder_id, current);
-    }
-    return stats;
-  }, [projectFolders, runs]);
-
-  const folderEntries = useMemo<LibraryEntry[]>(() => {
-    if (selectedFolderId !== "all" || showTrash) return [];
-    return projectFolders.map((folder) => {
-      const stats = folderStats.get(folder.id);
-      const fileCount = stats?.count ?? 0;
-      const modifiedAt = stats?.latest ?? folder.updated_at ?? folder.created_at ?? null;
-      return {
-        id: `folder:${folder.id}`,
-        kind: "folder",
-        name: folder.name,
-        ownerLabel: "me",
-        modifiedAt,
-        modifiedMs: timeToMs(modifiedAt),
-        sizeBytes: null,
-        sizeLabel: "\u2014",
-        typeFilter: "folder",
-        sourceFilter: "workspace",
-        sourceLabel: "Workspace folder",
-        subtitle: `${fileCount} file${fileCount === 1 ? "" : "s"} \u2022 Workspace folder`,
-        statusLabel: null,
-        favorite: false,
-        folder,
-      };
-    });
-  }, [folderStats, projectFolders, selectedFolderId, showTrash]);
-
   const fileEntries = useMemo<LibraryEntry[]>(() => {
     return runs
       .filter((run) => {
-        const runProjectId = run.folder_id
-          ? folderById.get(run.folder_id)?.project_id ?? null
+        const payloadProjectId = typeof run.input_payload?.project_id === "string"
+          ? run.input_payload.project_id
           : null;
+        const runProjectId = run.folder_id
+          ? folderById.get(run.folder_id)?.project_id ?? payloadProjectId
+          : payloadProjectId;
         if (!libraryProjectId && !showTrash) return false;
         if (libraryProjectId && runProjectId !== libraryProjectId) return false;
-        if (showTrash) {
-          if (selectedFolderId !== "all" && run.folder_id !== selectedFolderId) {
-            return false;
-          }
-          return Boolean(run.trashed_at);
-        }
-        if (selectedFolderId === "all") {
-          return !run.folder_id;
-        }
-        if (run.folder_id !== selectedFolderId) {
-          return false;
-        }
-        return !run.trashed_at;
+        return showTrash ? Boolean(run.trashed_at) : !run.trashed_at;
       })
       .map((run) => {
-        const folderName = run.folder_id
-          ? folderById.get(run.folder_id)?.name ?? "Folder"
-          : "Repository";
         const sourceLabel = sourceOf(run);
-        const subtitle =
-          selectedFolderId === "all"
-            ? `${folderName} \u2022 ${sourceLabel}`
-            : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
+        const subtitle = `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
         return {
           id: `file:${run.id}`,
           kind: "file",
@@ -1386,11 +1180,11 @@ export default function AdminImportClient() {
           run,
         };
       });
-  }, [folderById, libraryProjectId, runs, selectedFolderId, showTrash]);
+  }, [folderById, libraryProjectId, runs, showTrash]);
 
   const visibleEntries = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const combined = [...folderEntries, ...fileEntries].filter((item) => {
+    const combined = fileEntries.filter((item) => {
       if (typeFilter !== "all" && item.typeFilter !== typeFilter) return false;
       if (sourceFilter !== "all" && item.sourceFilter !== sourceFilter) return false;
       if (!matchesModifiedFilter(item.modifiedMs, modifiedFilter)) return false;
@@ -1401,14 +1195,6 @@ export default function AdminImportClient() {
     });
 
     return combined.sort((left, right) => {
-      if (
-        selectedFolderId === "all" &&
-        folderPlacement === "on-top" &&
-        left.kind !== right.kind
-      ) {
-        return left.kind === "folder" ? -1 : 1;
-      }
-
       let result = 0;
       if (sortKey === "name") {
         result = compareText(left.name, right.name);
@@ -1426,25 +1212,15 @@ export default function AdminImportClient() {
     });
   }, [
     fileEntries,
-    folderEntries,
-    folderPlacement,
     modifiedFilter,
     query,
-    selectedFolderId,
     sortDirection,
     sortKey,
     sourceFilter,
     typeFilter,
   ]);
 
-  const rootGridFolders = useMemo(
-    () => visibleEntries.filter((item) => item.kind === "folder"),
-    [visibleEntries]
-  );
-  const rootGridFiles = useMemo(
-    () => visibleEntries.filter((item) => item.kind === "file"),
-    [visibleEntries]
-  );
+  const rootGridFiles = visibleEntries;
 
   const typeFilterLabel =
     TYPE_OPTIONS.find((option) => option.id === typeFilter)?.label ?? "Type";
@@ -1494,27 +1270,13 @@ export default function AdminImportClient() {
             type="button"
             onClick={() => {
               setToolbarPopover(null);
-              setFolderModalError(null);
-              setShowFolderModal(true);
-            }}
-            className={itemClass}
-          >
-            <span className="flex items-center gap-3">
-              <FolderIcon className="h-4 w-4" />
-              <span>Create new folder</span>
-            </span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setToolbarPopover(null);
               fileInputRef.current?.click();
             }}
             className={itemClass}
           >
             <span className="flex items-center gap-3">
               <UploadIcon className="h-4 w-4" />
-              <span>Upload file</span>
+              <span>Upload PDFs</span>
             </span>
           </button>
         </div>
@@ -1651,22 +1413,6 @@ export default function AdminImportClient() {
           ))}
         </div>
 
-        <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]">
-          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#808080]">
-            Folders
-          </p>
-          {FOLDER_PLACEMENT_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => setFolderPlacement(option.id)}
-              className={itemClass}
-            >
-              <span>{option.label}</span>
-              {folderPlacement === option.id ? <CheckIcon className="h-4 w-4" /> : null}
-            </button>
-          ))}
-        </div>
       </div>
     );
   }
@@ -1677,37 +1423,6 @@ export default function AdminImportClient() {
     const itemClass =
       "flex w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
     const menuItem = itemMenuState.item;
-
-    if (menuItem.kind === "folder" && menuItem.folder) {
-      return (
-        <div
-          className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]"
-          style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedFolderId(menuItem.folder!.id);
-              setItemMenuState(null);
-            }}
-            className={itemClass}
-          >
-            Open folder
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setSelectedFolderId(menuItem.folder!.id);
-              setItemMenuState(null);
-              fileInputRef.current?.click();
-            }}
-            className={itemClass}
-          >
-            Upload files here
-          </button>
-        </div>
-      );
-    }
 
     if (!activeMenuRun) return null;
 
@@ -1832,23 +1547,6 @@ export default function AdminImportClient() {
           type="button"
           onClick={async () => {
             try {
-              await handleMoveRun(activeMenuRun);
-            } catch (moveError) {
-              setError(
-                moveError instanceof Error ? moveError.message : "Failed to move file."
-              );
-            } finally {
-              setItemMenuState(null);
-            }
-          }}
-          className={itemClass}
-        >
-          Move to folder
-        </button>
-        <button
-          type="button"
-          onClick={async () => {
-            try {
               await handleToggleFavorite(activeMenuRun);
             } catch (favoriteError) {
               setError(
@@ -1950,20 +1648,6 @@ export default function AdminImportClient() {
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
               {showTrash ? (
                 <span>Trash</span>
-              ) : activeFolder ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFolderId("all")}
-                    className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                  >
-                    {libraryProject?.name ?? "Repository"}
-                  </button>
-                  <span>/</span>
-                  <span className="font-medium text-slate-900 dark:text-white">
-                    {activeFolder.name}
-                  </span>
-                </>
               ) : libraryProject ? (
                 <>
                   <button
@@ -1984,26 +1668,15 @@ export default function AdminImportClient() {
               )}
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-              {showTrash ? "Trash" : activeFolder?.name ?? libraryProject?.name ?? "Repositories"}
+              {showTrash ? "Trash" : libraryProject?.name ?? "Repositories"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
               {showTrash
                 ? "Review files moved out of repositories and restore them when needed."
                 : libraryProject
-                  ? `Browse folders and analyzed papers inside ${libraryProject.name}.`
-                  : "Open a repository to browse its folders and analyzed papers."}
+                  ? `Browse and manage every paper inside ${libraryProject.name}.`
+                  : "Open a repository to browse its research papers."}
             </p>
-            {activeFolder ? (
-              <button
-                type="button"
-                onClick={() => {
-                  void handleRenameActiveFolder();
-                }}
-                className="mt-4 inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-              >
-                Rename folder
-              </button>
-            ) : null}
           </div>
 
           <div className="flex w-full max-w-2xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
@@ -2011,7 +1684,7 @@ export default function AdminImportClient() {
               type="button"
               onClick={(event) => {
                 if (!libraryProject) {
-                  setMessage("Open a repository before adding folders or papers.");
+                  setMessage("Open a repository before adding papers.");
                   return;
                 }
                 openToolbarMenu(event, "new", 240);
@@ -2106,21 +1779,6 @@ export default function AdminImportClient() {
               >
                 <GridViewIcon className="h-4 w-4" />
               </button>
-              {libraryProject ? (
-                <button
-                  type="button"
-                  onClick={() => setViewMode("semantic-map")}
-                  className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
-                    viewMode === "semantic-map"
-                      ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
-                      : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
-                  }`}
-                  aria-label="Semantic map"
-                  title="Semantic map"
-                >
-                  <ChartIcon className="h-4 w-4" />
-                </button>
-              ) : null}
             </div>
           </div>
         </div>
@@ -2200,27 +1858,13 @@ export default function AdminImportClient() {
               <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
                 {showTrash
                   ? "Showing files currently in Trash."
-                  : activeFolder
-                  ? `Showing everything inside ${activeFolder.name}.`
-                  : "Showing top-level folders and root files in this project."}
+                  : "Showing every file in this repository."}
               </p>
             </div>
           </div>
         </div>
 
-        {viewMode === "semantic-map" && libraryProject ? (
-          <RepositorySemanticMapView
-            projectId={libraryProject.id}
-            projectName={libraryProject.name}
-            initialFolderId={selectedFolderId === "all" ? null : selectedFolderId}
-            folders={projectFolders}
-            runs={runs}
-            requestHeaders={requestHeaders}
-            onOpenRun={(run) => {
-              void handleOpenPrimaryFileAction(run);
-            }}
-          />
-        ) : visibleEntries.length === 0 ? (
+        {visibleEntries.length === 0 ? (
           <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
             <div>
               <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
@@ -2294,27 +1938,15 @@ export default function AdminImportClient() {
                         </span>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            {item.kind === "folder" ? (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedFolderId(item.folder!.id)}
-                                className="truncate text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
-                              >
-                                {item.name}
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => void handleOpenPrimaryFileAction(item.run!)}
-                                className="truncate text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
-                              >
-                                {item.name}
-                              </button>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => void handleOpenPrimaryFileAction(item.run)}
+                              className="truncate text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
+                            >
+                              {item.name}
+                            </button>
                             <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]">
-                              {item.kind === "folder"
-                                ? "Folder"
-                                : extOf(item.run!).toUpperCase()}
+                              {extOf(item.run).toUpperCase()}
                             </span>
                             {item.favorite ? (
                               <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
@@ -2353,13 +1985,12 @@ export default function AdminImportClient() {
                     </div>
 
                     <div className="flex items-center justify-end gap-1">
-                      {item.kind === "file" ? (
-                        <>
+                      <>
                           <button
                             type="button"
                             onClick={async () => {
                               try {
-                                await handleDownloadRun(item.run!);
+                                await handleDownloadRun(item.run);
                               } catch (downloadError) {
                                 setError(
                                   downloadError instanceof Error
@@ -2377,7 +2008,7 @@ export default function AdminImportClient() {
                             type="button"
                             onClick={async () => {
                               try {
-                                await handleRenameRun(item.run!);
+                                await handleRenameRun(item.run);
                               } catch (renameError) {
                                 setError(
                                   renameError instanceof Error
@@ -2395,7 +2026,7 @@ export default function AdminImportClient() {
                             type="button"
                             onClick={async () => {
                               try {
-                                await handleToggleFavorite(item.run!);
+                                await handleToggleFavorite(item.run);
                               } catch (favoriteError) {
                                 setError(
                                   favoriteError instanceof Error
@@ -2415,17 +2046,7 @@ export default function AdminImportClient() {
                           >
                             <StarIcon className="h-4 w-4" />
                           </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => setSelectedFolderId(item.folder!.id)}
-                          className="inline-flex h-9 items-center gap-2 rounded-full px-3 text-sm font-medium text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#b6b6b6] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                        >
-                          <FolderIcon className="h-4 w-4" />
-                          <span>Open</span>
-                        </button>
-                      )}
+                      </>
                       <button
                         type="button"
                         onClick={(event) => openItemMenu(event, item)}
@@ -2442,113 +2063,15 @@ export default function AdminImportClient() {
           </div>
         ) : (
           <div className="space-y-8 px-4 py-5 sm:px-6">
-            {selectedFolderId === "all" && folderPlacement === "on-top" && rootGridFolders.length > 0 ? (
+            {rootGridFiles.length > 0 ? (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h2 className="text-sm font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8b8b8b]">
-                    Folders
-                  </h2>
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  {rootGridFolders.map((item) => {
-                    const Glyph = glyphForEntry(item);
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => setSelectedFolderId(item.folder!.id)}
-                        className="group flex items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-white dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-                      >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-3">
-                            <span
-                              className={`flex h-11 w-11 flex-none items-center justify-center rounded-[16px] ${badgeToneForEntry(item)}`}
-                            >
-                              <Glyph className="h-5 w-5" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                                {item.name}
-                              </p>
-                              <p className="mt-1 truncate text-xs text-slate-500 dark:text-[#9c9c9c]">
-                                {item.subtitle}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            openItemMenu(event, item);
-                          }}
-                          className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                          aria-label={`Open actions for ${item.name}`}
-                        >
-                          <MoreHorizontalIcon className="h-4 w-4" />
-                        </button>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
-
-            {(selectedFolderId !== "all" || folderPlacement === "mixed" || rootGridFiles.length > 0) ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-sm font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8b8b8b]">
-                    {selectedFolderId === "all" ? "Files" : "Folder contents"}
+                    Files
                   </h2>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-                  {(selectedFolderId === "all" && folderPlacement === "mixed"
-                    ? visibleEntries
-                    : selectedFolderId === "all"
-                      ? rootGridFiles
-                      : visibleEntries
-                  ).map((item) => {
-                    if (item.kind === "folder") {
-                      const Glyph = glyphForEntry(item);
-                      return (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => setSelectedFolderId(item.folder!.id)}
-                          className="group flex items-center justify-between gap-3 rounded-[22px] border border-slate-200 bg-slate-50 px-4 py-4 text-left transition hover:border-slate-300 hover:bg-white dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-3">
-                              <span
-                                className={`flex h-11 w-11 flex-none items-center justify-center rounded-[16px] ${badgeToneForEntry(item)}`}
-                              >
-                                <Glyph className="h-5 w-5" />
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                                  {item.name}
-                                </p>
-                                <p className="mt-1 truncate text-xs text-slate-500 dark:text-[#9c9c9c]">
-                                  {item.subtitle}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openItemMenu(event, item);
-                            }}
-                            className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-200 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                            aria-label={`Open actions for ${item.name}`}
-                          >
-                            <MoreHorizontalIcon className="h-4 w-4" />
-                          </button>
-                        </button>
-                      );
-                    }
-
+                  {rootGridFiles.map((item) => {
                     const Glyph = glyphForEntry(item);
                     return (
                       <article
@@ -2686,7 +2209,7 @@ export default function AdminImportClient() {
               {allProjects
                 .filter((project) => !query.trim() || project.name.toLowerCase().includes(query.trim().toLowerCase()))
                 .map((project) => {
-                  const stats = projectStats.get(project.id) ?? { folders: 0, papers: 0, latest: null };
+                  const stats = projectStats.get(project.id) ?? { papers: 0, latest: null };
                   return (
                     <button
                       key={project.id}
@@ -2705,7 +2228,7 @@ export default function AdminImportClient() {
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">{project.name}</span>
                         <span className="mt-2 block text-sm text-slate-500 dark:text-[#9c9c9c]">
-                          {stats.papers} paper{stats.papers === 1 ? "" : "s"} · {stats.folders} folder{stats.folders === 1 ? "" : "s"}
+                          {stats.papers} paper{stats.papers === 1 ? "" : "s"}
                         </span>
                         <span className="mt-3 block text-xs text-slate-400 dark:text-[#777777]">Updated {formatShortDate(stats.latest)}</span>
                       </span>
@@ -2723,38 +2246,12 @@ export default function AdminImportClient() {
       )}
 
       <CreateEntityModal
-        open={showFolderModal}
-        title="Create folder"
-        description="Create a new folder inside the current project."
-        value={draftFolderName}
-        fieldLabel="Folder name"
-        fieldPlaceholder="For example: Syntax papers"
-        submitLabel="Create folder"
-        busyLabel="Creating..."
-        busy={creatingFolder}
-        error={folderModalError}
-        onValueChange={setDraftFolderName}
-        onClose={() => {
-          setDraftFolderName("");
-          setFolderModalError(null);
-          setShowFolderModal(false);
-        }}
-        onSubmit={handleCreateFolder}
-      />
-
-      <CreateEntityModal
         open={Boolean(renameTarget)}
-        title={renameTarget?.kind === "folder" ? "Rename folder" : "Rename file"}
-        description={
-          renameTarget?.kind === "folder"
-            ? "Choose a clear name for this workspace folder."
-            : "Choose a clear name for this research file."
-        }
+        title="Rename file"
+        description="Choose a clear name for this research file."
         value={renameDraft}
-        fieldLabel={renameTarget?.kind === "folder" ? "Folder name" : "File name"}
-        fieldPlaceholder={
-          renameTarget?.kind === "folder" ? "For example: Syntax papers" : "File name"
-        }
+        fieldLabel="File name"
+        fieldPlaceholder="File name"
         submitLabel="Save name"
         busyLabel="Saving..."
         busy={renaming}
@@ -2768,89 +2265,6 @@ export default function AdminImportClient() {
         }}
         onSubmit={handleRenameSubmit}
       />
-
-      {moveRun ? (
-        <Modal onClose={() => (movingRun ? undefined : setMoveRun(null))}>
-          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white">
-            <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5 dark:border-[#1f1f1f] sm:px-7">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
-                  Organize file
-                </p>
-                <h2 className="mt-2 text-2xl font-semibold">Move to folder</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#9b9b9b]">
-                  Choose a folder from this workspace for {titleOf(moveRun)}.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setMoveRun(null)}
-                disabled={movingRun}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#c8c8c8] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                aria-label="Close move dialog"
-              >
-                <CloseIcon className="h-4 w-4" />
-              </button>
-            </div>
-
-            <div className="max-h-[min(55vh,420px)] overflow-y-auto px-6 py-5 sm:px-7">
-              {(allFolders.length > 0 ? allFolders : folders).length > 0 ? (
-                <div className="space-y-2">
-                  {(allFolders.length > 0 ? allFolders : folders).map((folder) => {
-                    const isCurrentFolder = folder.id === moveRun.folder_id;
-                    return (
-                      <button
-                        key={folder.id}
-                        type="button"
-                        disabled={movingRun || isCurrentFolder}
-                        onClick={() => void handleMoveRunToFolder(folder.id)}
-                        className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 px-4 py-3 text-left transition hover:border-slate-400 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#1f1f1f] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-                      >
-                        <span className="flex min-w-0 items-center gap-3">
-                          <FolderIcon className="h-5 w-5 flex-none text-slate-500 dark:text-[#9c9c9c]" />
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-medium">{folder.name}</span>
-                            {folder.project_id ? (
-                              <span className="mt-1 block truncate text-xs text-slate-500 dark:text-[#808080]">
-                                {folder.project_id === currentProject?.id
-                                  ? "Current project"
-                                  : "Another project in this workspace"}
-                              </span>
-                            ) : null}
-                          </span>
-                        </span>
-                        {isCurrentFolder ? (
-                          <span className="flex-none text-xs text-slate-500 dark:text-[#808080]">
-                            Current folder
-                          </span>
-                        ) : null}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-[#2a2a2a] dark:text-[#9b9b9b]">
-                  No folders are available in this workspace yet.
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-6 py-5 dark:border-[#1f1f1f] sm:px-7">
-              <p className="text-xs text-slate-500 dark:text-[#808080]">
-                {movingRun ? "Moving file..." : "The file stays in its current folder until you choose one."}
-              </p>
-              <button
-                type="button"
-                onClick={() => setMoveRun(null)}
-                disabled={movingRun}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </Modal>
-      ) : null}
 
       {(toolbarPopover || itemMenuState) && typeof document !== "undefined"
         ? createPortal(

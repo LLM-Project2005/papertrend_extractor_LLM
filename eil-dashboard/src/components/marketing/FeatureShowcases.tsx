@@ -266,7 +266,7 @@ export function AdaptiveDashboardShowcase() {
     ["Emerging topics", "structure"],
     ["Keyword heatmap", "time + structure"],
     ["Track comparison", "comparison"],
-    ["Folder contrast", "comparison"],
+    ["Repository contrast", "comparison"],
   ];
 
   return (

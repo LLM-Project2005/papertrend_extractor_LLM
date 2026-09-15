@@ -7,6 +7,7 @@ import {
 } from "../src/lib/repository-text";
 import {
   buildRepositoryStatisticsSummary,
+  buildDocumentAnalysisFallbackAnswer,
   fallbackExecutionPlan,
   fallbackPromptPlan,
   formatPaperReferencesForReaders,
@@ -278,6 +279,38 @@ test("conversation language follows Thai dialogue despite embedded English terms
     ]),
     "Thai"
   );
+});
+
+test("complete document-analysis fallback preserves coverage and requested language", () => {
+  const paper = {
+    paperId: "101",
+    runId: "run-101",
+    folderId: "folder-101",
+    title: "Peer Feedback in EFL Writing",
+    year: "2022",
+    abstract: "This study examines peer feedback in writing classrooms.",
+    methods: "A mixed-method classroom intervention was used.",
+    results: "Revision quality improved after structured feedback.",
+    conclusion: "Peer feedback supported writing development.",
+    content: "",
+    contentHash: "hash-101",
+    totalWords: 20,
+    termCounts: {},
+    topics: new Map([["Peer feedback", 1]]),
+    keywords: new Map([["writing", 1]]),
+  };
+  const thai = buildDocumentAnalysisFallbackAnswer([paper], "Selected papers", "Thai");
+  assert.match(thai, /[\u0e00-\u0e7f]/u);
+  assert.match(thai, /Peer Feedback in EFL Writing/);
+  assert.match(thai, /1 \u0e08\u0e32\u0e01 1/);
+  assert.doesNotMatch(thai, /Paper 101/);
+
+  const thaiIso = buildDocumentAnalysisFallbackAnswer([paper], "Selected papers", "th-TH");
+  assert.match(thaiIso, /\u0e01\u0e32\u0e23\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e23\u0e32\u0e22\u0e1a\u0e17\u0e04\u0e27\u0e32\u0e21/u);
+  assert.doesNotMatch(thaiIso, /Paper-by-paper analysis/);
+
+  const english = buildDocumentAnalysisFallbackAnswer([paper], "Selected papers", "English");
+  assert.match(english, /Processed \*\*1 of 1 eligible papers\*\*/);
 });
 
 test("reader-facing citations use paper titles instead of database ids", () => {

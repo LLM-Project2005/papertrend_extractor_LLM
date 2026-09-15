@@ -106,4 +106,5 @@ test("Library starts from the account repository index", () => {
   assert.match(source, /setLibraryProjectId\(project\.id\)/);
   assert.match(source, /\/api\/workspace\/library\?includeTrashed=/);
   assert.match(source, /Repositories are the top-level containers for this account/);
+  assert.doesNotMatch(source, /New folder|Move to folder|Rename folder/);
 });

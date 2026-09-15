@@ -1562,7 +1562,6 @@ export default function ChatClient() {
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuView, setMenuView] = useState<"root" | "scope">("root");
-  const [expandedScopeProjectId, setExpandedScopeProjectId] = useState<string | null>(null);
   const [threadMenuId, setThreadMenuId] = useState<string | null>(null);
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [reportFullViewOpen, setReportFullViewOpen] = useState(false);
@@ -3691,67 +3690,23 @@ export default function ChatClient() {
                                   <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Repositories</p>
                                 ) : null}
                                 {allProjects.map((project) => {
-                                  const projectFolders = allFolders.filter((folder) => folder.project_id === project.id);
                                   const projectActive = chatScopeProjectId === project.id && chatScopeFolderId === "all";
-                                  const expanded = expandedScopeProjectId === project.id;
                                   return (
-                                    <div
+                                    <button
                                       key={project.id}
-                                      onMouseEnter={() => setExpandedScopeProjectId(project.id)}
-                                      onMouseLeave={() => setExpandedScopeProjectId((current) => current === project.id ? null : current)}
-                                      className="rounded-lg"
+                                      type="button"
+                                      onClick={() => {
+                                        setChatScopeProjectId(project.id);
+                                        setChatScopeFolderId("all");
+                                        setSelectedLibraryRuns([]);
+                                        setMenuOpen(false);
+                                      }}
+                                      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${projectActive ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                     >
-                                      <div className={`flex items-center rounded-lg ${projectActive ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setChatScopeProjectId(project.id);
-                                            setChatScopeFolderId("all");
-                                            setSelectedLibraryRuns([]);
-                                            setMenuOpen(false);
-                                          }}
-                                          className="flex min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left"
-                                        >
-                                          <DriveIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
-                                          <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{project.name}</span>
-                                          {projectActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
-                                        </button>
-                                        {projectFolders.length > 0 ? (
-                                          <button
-                                            type="button"
-                                            onClick={() => setExpandedScopeProjectId(expanded ? null : project.id)}
-                                            className="mr-1 inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-400 hover:bg-white hover:text-slate-900 dark:hover:bg-[#181818] dark:hover:text-white"
-                                            aria-label={`Show folders in ${project.name}`}
-                                          >
-                                            <ChevronDownIcon className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
-                                          </button>
-                                        ) : null}
-                                      </div>
-                                      {expanded && projectFolders.length > 0 ? (
-                                        <div className="ml-7 border-l border-slate-200 py-1 pl-2 dark:border-[#242424]">
-                                          {projectFolders.map((folder) => {
-                                            const folderActive = chatScopeFolderId === folder.id;
-                                            return (
-                                              <button
-                                                key={folder.id}
-                                                type="button"
-                                                onClick={() => {
-                                                  setChatScopeProjectId(project.id);
-                                                  setChatScopeFolderId(folder.id);
-                                                  setSelectedLibraryRuns([]);
-                                                  setMenuOpen(false);
-                                                }}
-                                                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm ${folderActive ? "bg-slate-100 text-slate-950 dark:bg-[#111111] dark:text-white" : "text-slate-600 hover:bg-slate-50 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a]"}`}
-                                              >
-                                                <FolderIcon className="h-4 w-4 flex-none" />
-                                                <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-                                                {folderActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
-                                              </button>
-                                            );
-                                          })}
-                                        </div>
-                                      ) : null}
-                                    </div>
+                                      <DriveIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                      <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{project.name}</span>
+                                      {projectActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
+                                    </button>
                                   );
                                 })}
                               </div>

@@ -29,7 +29,7 @@ export default function WorkspacePapersClient() {
   const categoryLabels = useMemo(() => readCategoryLabelMap(profile), [profile]);
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const { data, loading, allYears } = useDashboardData(
-    selectedFolderId,
+    "all",
     scopedFolderIds,
     {
       projectId: selectedProjectId,
@@ -83,6 +83,12 @@ export default function WorkspacePapersClient() {
   }, [searchParams]);
 
   useEffect(() => {
+    if (selectedFolderId !== "all") {
+      setSelectedFolderId("all");
+    }
+  }, [selectedFolderId, setSelectedFolderId]);
+
+  useEffect(() => {
     if (allYears.length > 0 && selectedYears.length === 0) {
       setSelectedYears(allYears);
     }
@@ -93,9 +99,6 @@ export default function WorkspacePapersClient() {
       return;
     }
 
-    if (drilldown.folder && folders.some((folder) => folder.id === drilldown.folder)) {
-      setSelectedFolderId(drilldown.folder);
-    }
     if (drilldown.track) {
       setSelectedTracks([drilldown.track]);
     }
@@ -109,13 +112,11 @@ export default function WorkspacePapersClient() {
     }
   }, [
     drilldown.active,
-    drilldown.folder,
     drilldown.paperIds,
     drilldown.query,
     drilldown.signature,
     drilldown.track,
     drilldown.year,
-    folders,
     setSearchQuery,
     setSelectedFolderId,
     setSelectedTracks,
@@ -235,18 +236,10 @@ export default function WorkspacePapersClient() {
               </div>
               <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
                 <Sidebar
-                  folders={folders}
-                  selectedFolderIds={
-                    selectedFolderId && selectedFolderId !== "all"
-                      ? [selectedFolderId]
-                      : []
-                  }
-                  allFoldersSelected={selectedFolderId === "all"}
-                  onFolderChange={(folderIds, allSelected) =>
-                    setSelectedFolderId(
-                      allSelected || folderIds.length === 0 ? "all" : folderIds[0]
-                    )
-                  }
+                  folders={[]}
+                  selectedFolderIds={[]}
+                  allFoldersSelected
+                  onFolderChange={() => undefined}
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
@@ -256,6 +249,7 @@ export default function WorkspacePapersClient() {
                   useMock={data.useMock}
                   title="Paper filters"
                   description="Filter the library before reviewing titles, keywords, evidence, and category assignments."
+                  showFolders={false}
                 />
               </div>
             </div>

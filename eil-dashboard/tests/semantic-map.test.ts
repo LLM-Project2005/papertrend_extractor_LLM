@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildSimilarityEdges, clusterEmbeddings, cosineSimilarity, projectEmbeddings } from "../src/lib/semantic-map-math";
+import { buildSimilarityEdges, clusterEmbeddings, cosineSimilarity, euclideanDistance, projectEmbeddings } from "../src/lib/semantic-map-math";
 import { semanticSourceHash } from "../src/lib/semantic-map-repository";
 import type { SemanticPaperDocument } from "../src/types/semantic-map";
 
@@ -27,6 +27,11 @@ test("cosine similarity handles identical and opposite vectors", () => {
   assert.equal(cosineSimilarity([1, 0], [-1, 0]), -1);
 });
 
+test("euclidean distance is measured in the original vector space", () => {
+  assert.equal(euclideanDistance([0, 0], [3, 4]), 5);
+  assert.equal(euclideanDistance([1, 2, 3], [1, 2, 3]), 0);
+});
+
 for (const count of [1, 4, 5, 12, 13, 50]) {
   test(`projection is deterministic and complete for ${count} papers`, () => {
     const first = projectEmbeddings(vectors(count));
@@ -42,11 +47,13 @@ for (const count of [1, 4, 5, 12, 13, 50]) {
   });
 }
 
-test("similarity edges are canonical and unique", () => {
+test("Euclidean relationship edges are canonical, unique, and nearest-first", () => {
   const edges = buildSimilarityEdges([[1, 0], [0.99, 0.01], [0, 1], [0.01, 0.99]]);
   const keys = edges.map((edge) => `${edge.source}:${edge.target}`);
   assert.equal(new Set(keys).size, keys.length);
   assert.ok(edges.every((edge) => edge.source < edge.target));
+  assert.ok(edges.every((edge) => edge.distance >= 0));
+  assert.deepEqual(edges.map((edge) => edge.distance), [...edges.map((edge) => edge.distance)].sort((a, b) => a - b));
 });
 
 test("clustering assigns every paper", () => {
@@ -55,11 +62,12 @@ test("clustering assigns every paper", () => {
   assert.ok(result.assignments.every(Number.isInteger));
 });
 
-test("source hash is order independent and changes with repository state", () => {
+test("source hash is order independent, content-sensitive, and folder-agnostic", () => {
   const first = semanticSourceHash([paper(1), paper(2)]);
   assert.equal(first, semanticSourceHash([paper(2), paper(1)]));
-  assert.notEqual(first, semanticSourceHash([{ ...paper(1), folderId: "00000000-0000-4000-8000-000000000099" }, paper(2)]));
-  assert.notEqual(first, semanticSourceHash([{ ...paper(1), folderName: "Renamed folder" }, paper(2)]));
+  assert.equal(first, semanticSourceHash([{ ...paper(1), folderId: "00000000-0000-4000-8000-000000000099" }, paper(2)]));
+  assert.equal(first, semanticSourceHash([{ ...paper(1), folderName: "Renamed folder" }, paper(2)]));
+  assert.notEqual(first, semanticSourceHash([{ ...paper(1), contentHash: "f".repeat(64) }, paper(2)]));
 });
 
 test("semantic-map API derives ownership only from verified authentication", () => {
@@ -90,10 +98,22 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /className="nodrag nopan absolute/);
   assert.match(component, /className="nowheel/);
   assert.match(component, /visiblePoints\.length <= 1/);
-  assert.match(component, /const allHidden = \[\.\.\.nextScopeIds\]\.every/);
-  assert.match(component, /anchorMembers = folderPoints/);
+  assert.match(component, /Neighborhoods/);
+  assert.match(component, /OVERVIEW_EDGE_LIMIT = 8/);
+  assert.match(component, /FOCUSED_EDGE_LIMIT = 6/);
+  assert.match(component, /edge\.distance/);
   assert.match(component, /onInit=\{fitInitialView\}/);
   assert.match(component, /autoPanOnNodeFocus=\{false\}/);
+  assert.doesNotMatch(component, /folderFilter/);
+  assert.doesNotMatch(component, /cluster-label/);
   assert.doesNotMatch(component, /elementsSelectable fitView/);
   assert.doesNotMatch(component, /hideAllPapersInScope/);
+});
+
+test("semantic map is a dashboard tab and no longer a library view", () => {
+  const dashboard = readFileSync(join(process.cwd(), "src/components/DashboardClient.tsx"), "utf8");
+  const library = readFileSync(join(process.cwd(), "src/components/admin/AdminImportClient.tsx"), "utf8");
+  assert.match(dashboard, /key: "semantic_map", label: "Semantic Map"/);
+  assert.match(dashboard, /<RepositorySemanticMapView/);
+  assert.doesNotMatch(library, /<RepositorySemanticMapView/);
 });

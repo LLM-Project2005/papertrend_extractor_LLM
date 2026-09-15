@@ -1,5 +1,6 @@
+import os
 import re
-from typing import Any, Dict
+from typing import Any, Dict, Tuple
 
 from nodes import ModelTask, get_task_llm
 from nodes.common import load_prompt, pick_title
@@ -8,39 +9,126 @@ from state import IngestionState, SemanticIndexSchema
 segmentation_llm = get_task_llm(ModelTask.SEGMENTATION)
 
 
+SECTION_ALIASES = {
+    "abstract_claims": (
+        "abstract",
+        "executive summary",
+        "บทคัดย่อ",
+        "บทคัดย่อภาษาไทย",
+        "บทคัดย่อภาษาอังกฤษ",
+    ),
+    "introduction": (
+        "introduction",
+        "background",
+        "ความเป็นมาและความสำคัญของปัญหา",
+        "บทนำ",
+    ),
+    "methods": (
+        "materials and methods",
+        "research methodology",
+        "research method",
+        "methodology",
+        "methods",
+        "ระเบียบวิธีวิจัย",
+        "วิธีดำเนินการวิจัย",
+        "วิธีการดำเนินการวิจัย",
+        "วิธีการวิจัย",
+    ),
+    "results": (
+        "results and discussion",
+        "results",
+        "findings",
+        "data analysis",
+        "ผลการวิจัยและอภิปรายผล",
+        "ผลการวิเคราะห์ข้อมูล",
+        "ผลการวิจัย",
+        "ผลการศึกษา",
+    ),
+    "conclusion": (
+        "conclusions and recommendations",
+        "summary discussion and recommendations",
+        "conclusion and discussion",
+        "conclusions",
+        "conclusion",
+        "implications",
+        "สรุปผลการวิจัย อภิปรายผล และข้อเสนอแนะ",
+        "สรุป อภิปรายผล และข้อเสนอแนะ",
+        "สรุปผลและข้อเสนอแนะ",
+        "สรุปผลการวิจัย",
+        "บทสรุป",
+    ),
+    "bibliography": (
+        "references",
+        "bibliography",
+        "works cited",
+        "เอกสารอ้างอิง",
+        "บรรณานุกรม",
+    ),
+}
+
+
 def _clean_section_text(value: str) -> str:
-    return re.sub(r"\s+", " ", (value or "")).strip()
+    cleaned = (value or "").replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = re.sub(r"[\t\f\v ]+", " ", cleaned)
+    cleaned = re.sub(r" *\n *", "\n", cleaned)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip()
+
+
+def _heading_key(line: str) -> str | None:
+    normalized = re.sub(r"^\s*(?:#+\s*)?", "", line).strip().casefold()
+    normalized = re.sub(r"^[\[(]?(?:chapter|บทที่)?\s*(?:\d+|[ivxlcdm]+)[\]).:\-\s]+", "", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip(" .:-")
+    if not normalized or len(normalized) > 180 or re.search(r"\.{4,}\s*\d+\s*$", normalized):
+        return None
+
+    for key, aliases in SECTION_ALIASES.items():
+        for alias in aliases:
+            folded_alias = alias.casefold()
+            if normalized == folded_alias or normalized.startswith(f"{folded_alias} "):
+                return key
+            if normalized.startswith(("chapter ", "บทที่ ")) and folded_alias in normalized:
+                return key
+    return None
+
+
+def _segment_by_headings_with_spans(text: str) -> Tuple[Dict[str, str], Dict[str, Dict[str, int]]]:
+    headings: list[tuple[int, int, str]] = []
+    for match in re.finditer(r"(?m)^.*$", text):
+        key = _heading_key(match.group(0))
+        if key:
+            headings.append((match.start(), match.end(), key))
+
+    candidates: Dict[str, list[tuple[int, int]]] = {}
+    for index, (_, heading_end, key) in enumerate(headings):
+        if key == "introduction":
+            continue
+        next_start = headings[index + 1][0] if index + 1 < len(headings) else len(text)
+        if next_start > heading_end:
+            candidates.setdefault(key, []).append((heading_end, next_start))
+
+    sections: Dict[str, str] = {}
+    spans: Dict[str, Dict[str, int]] = {}
+    for key, options in candidates.items():
+        start, end = max(options, key=lambda item: len(_clean_section_text(text[item[0]:item[1]])))
+        sections[key] = _clean_section_text(text[start:end])
+        spans[key] = {"start": start, "end": end}
+
+    bibliography_start = spans.get("bibliography", {}).get("start", len(text))
+    if "abstract_claims" not in sections:
+        end = min(3000, bibliography_start)
+        sections["abstract_claims"] = _clean_section_text(text[:end])
+        spans["abstract_claims"] = {"start": 0, "end": end}
+    if "conclusion" not in sections and len(text) > 3000:
+        end = bibliography_start
+        start = max(0, end - 3500)
+        sections["conclusion"] = _clean_section_text(text[start:end])
+        spans["conclusion"] = {"start": start, "end": end}
+
+    return sections, spans
 
 
 def _segment_by_headings(text: str) -> Dict[str, str]:
-    section_patterns = [
-        ("abstract_claims", ["abstract", "summary"]),
-        ("methods", ["methods", "methodology", "materials and methods", "research method"]),
-        ("results", ["results", "findings", "results and discussion", "discussion"]),
-        ("conclusion", ["conclusion", "conclusions", "implications", "closing remarks"]),
-        ("bibliography", ["references", "bibliography"]),
-    ]
-
-    matches = []
-    for key, labels in section_patterns:
-        pattern = r"(?im)^\s*(?:#+\s*)?(?:" + "|".join(re.escape(label) for label in labels) + r")\s*$"
-        match = re.search(pattern, text)
-        if match:
-            matches.append((match.start(), match.end(), key))
-
-    matches.sort(key=lambda item: item[0])
-    sections: Dict[str, str] = {}
-
-    for index, (_, end_pos, key) in enumerate(matches):
-        next_start = matches[index + 1][0] if index + 1 < len(matches) else len(text)
-        sections[key] = _clean_section_text(text[end_pos:next_start])
-
-    if "abstract_claims" not in sections:
-        sections["abstract_claims"] = _clean_section_text(text[:1800])
-    if "conclusion" not in sections and len(text) > 1800:
-        sections["conclusion"] = _clean_section_text(text[-1800:])
-
-    return sections
+    return _segment_by_headings_with_spans(text)[0]
 
 
 def _slice_span(text: str, start: int, end: int) -> str:
@@ -53,18 +141,8 @@ def _slice_span(text: str, start: int, end: int) -> str:
     return _clean_section_text(text[safe_start:safe_end])
 
 
-def _looks_weak(section_name: str, value: str) -> bool:
-    if not value:
-        return True
-    if len(value) < 120:
-        return True
-    if section_name != "abstract_claims" and re.match(r"^[a-z]", value) and not re.match(
-        r"^(this|the|we|our|in|participants|phase|data|results|findings|conclusion|project|three|two|one)\b",
-        value,
-        flags=re.IGNORECASE,
-    ):
-        return True
-    return False
+def _looks_weak(value: str) -> bool:
+    return len(_clean_section_text(value)) < 120
 
 
 def _resolve_section(
@@ -75,24 +153,62 @@ def _resolve_section(
 ) -> str:
     span = getattr(coords, section_name)
     primary = _slice_span(text, span.start, span.end)
-    if not _looks_weak(section_name, primary):
+    if not _looks_weak(primary):
         return primary
-
     fallback = _clean_section_text(fallback_sections.get(section_name, ""))
-    if fallback and not _looks_weak(section_name, fallback):
-        return fallback
+    return fallback if fallback else primary
 
-    return primary or fallback
+
+def _fallback_semantic_map(text: str, title: str, spans: Dict[str, Dict[str, int]]) -> Dict[str, Dict[str, int]]:
+    title_start = text.find(title) if title else -1
+    result: Dict[str, Dict[str, int]] = {
+        "title": {
+            "start": max(title_start, 0),
+            "end": max(title_start, 0) + (len(title) if title_start >= 0 else 0),
+        }
+    }
+    for key in ("abstract_claims", "methods", "results", "conclusion", "bibliography"):
+        result[key] = spans.get(key, {"start": 0, "end": 0})
+    return result
+
+
+def _fallback_result(text: str, warning: str | None = None) -> Dict[str, Any]:
+    sections, spans = _segment_by_headings_with_spans(text)
+    title = pick_title(text, "paper")
+    output: Dict[str, Any] = {
+        "semantic_map": _fallback_semantic_map(text, title, spans),
+        "final_json": {
+            "title": title,
+            "abstract_claims": sections.get("abstract_claims", ""),
+            "methods": sections.get("methods", ""),
+            "results": sections.get("results", ""),
+            "conclusion": sections.get("conclusion", ""),
+            "bibliography": sections.get("bibliography", ""),
+        },
+        "status": "segmented",
+        "errors": [],
+        "segmentation_strategy": "multilingual_headings",
+    }
+    if warning:
+        output["segmentation_warning"] = warning
+    return output
 
 
 def segment_to_json_node(state: IngestionState) -> Dict[str, Any]:
-    text = state.get("cleaned_english_text") or state.get("raw_text", "")
+    text = state.get("cleaned_english_text") or state.get("cleaned_text") or state.get("raw_text", "")
     if not text:
         return {"errors": ["No text available for segmentation."], "status": "failed"}
 
+    maximum_llm_chars = max(12000, int(os.getenv("SEGMENTATION_LLM_MAX_CHARS", "48000")))
+    if len(text) > maximum_llm_chars:
+        return _fallback_result(
+            text,
+            "Long document segmented from multilingual article and thesis headings without an oversized model request.",
+        )
+
+    fallback_sections, _ = _segment_by_headings_with_spans(text)
     full_prompt = load_prompt("segmenter.txt").format(text_preview=text)
     structured_llm = segmentation_llm.with_structured_output(SemanticIndexSchema)
-    fallback_sections = _segment_by_headings(text)
 
     try:
         coords = structured_llm.invoke(full_prompt)
@@ -109,9 +225,7 @@ def segment_to_json_node(state: IngestionState) -> Dict[str, Any]:
             "final_json": final_json,
             "status": "segmented",
             "errors": [],
+            "segmentation_strategy": "model_with_multilingual_heading_fallback",
         }
     except Exception as error:
-        return {
-            "errors": [f"Indexing and segmentation failed: {error}"],
-            "status": "failed",
-        }
+        return _fallback_result(text, f"Model segmentation was unavailable; used grounded heading segmentation: {error}")

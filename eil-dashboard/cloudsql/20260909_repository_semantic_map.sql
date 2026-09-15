@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS public.repository_semantic_edges (
   source_paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
   target_paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
   cosine_similarity DOUBLE PRECISION NOT NULL CHECK (cosine_similarity >= -1 AND cosine_similarity <= 1),
+  euclidean_distance DOUBLE PRECISION CHECK (euclidean_distance IS NULL OR euclidean_distance >= 0),
   edge_rank INT NOT NULL DEFAULT 1 CHECK (edge_rank > 0),
   shared_signals JSONB NOT NULL DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),

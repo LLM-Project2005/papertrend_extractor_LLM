@@ -15,6 +15,10 @@ const CATEGORY_COLUMNS = [
   "paper_category_assignments.assignment_type",
 ] as const;
 
+const SEMANTIC_COLUMNS = [
+  "repository_semantic_edges.euclidean_distance",
+] as const;
+
 function localConnectionConfig(value: string): ClientConfig {
   return {
     ...parseIntoClientConfig(value.trim()),
@@ -56,15 +60,23 @@ async function main() {
        WHERE table_schema='public'
          AND table_name IN ('paper_category_definitions','paper_category_assignments')`
     );
+    const semanticColumns = await client.query<{ identity: string }>(
+      `SELECT table_name || '.' || column_name AS identity
+       FROM information_schema.columns
+       WHERE table_schema='public'
+         AND table_name IN ('repository_semantic_edges')`
+    );
     const tableState = new Map(tables.rows.map((row) => [row.table_name, row]));
     const policyState = new Map(policies.rows.map((row) => [row.table_name, row]));
     const categoryState = new Set(categoryColumns.rows.map((row) => row.identity));
+    const semanticColumnState = new Set(semanticColumns.rows.map((row) => row.identity));
     const failures = [
       ...SEMANTIC_TABLES.filter((name) => !tableState.has(name)).map((name) => `missing table ${name}`),
       ...SEMANTIC_TABLES.filter((name) => tableState.has(name) && (!tableState.get(name)!.rls || !tableState.get(name)!.force_rls)).map((name) => `RLS is not forced on ${name}`),
       ...SEMANTIC_TABLES.filter((name) => tableState.has(name) && !tableState.get(name)!.app_access).map((name) => `papertrend_app lacks CRUD on ${name}`),
       ...SEMANTIC_TABLES.filter((name) => !policyState.get(name)?.policy_expression.includes("papertrend_current_user_id")).map((name) => `owner policy is missing on ${name}`),
       ...CATEGORY_COLUMNS.filter((name) => !categoryState.has(name)).map((name) => `dynamic category schema is missing ${name}`),
+      ...SEMANTIC_COLUMNS.filter((name) => !semanticColumnState.has(name)).map((name) => `semantic map schema is missing ${name}`),
     ];
     if (!extension.rows[0]?.installed) failures.push("pgvector extension is missing");
     process.stdout.write(`${JSON.stringify({
@@ -73,6 +85,7 @@ async function main() {
       semanticTables: tables.rows,
       ownerPolicies: policies.rows.map(({ table_name, policy_name }) => ({ table_name, policy_name })),
       dynamicCategorySchema: CATEGORY_COLUMNS.every((name) => categoryState.has(name)),
+      euclideanRelationshipSchema: SEMANTIC_COLUMNS.every((name) => semanticColumnState.has(name)),
       failures,
     }, null, 2)}\n`);
     if (failures.length > 0) process.exitCode = 1;

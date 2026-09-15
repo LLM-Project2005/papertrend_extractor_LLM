@@ -11,6 +11,7 @@ import type {
 } from "@/types/semantic-map";
 
 export const SEMANTIC_REPRESENTATION_VERSION = "paper-semantic-document-v1";
+const SEMANTIC_RELATIONSHIP_VERSION = "euclidean-relationships-v2";
 
 type PaperSourceRow = {
   paper_id: string;
@@ -148,7 +149,7 @@ async function loadDocumentsWithClient(
 }
 
 export function semanticSourceHash(documents: SemanticPaperDocument[]): string {
-  return sha256(documents.map((paper) => [paper.paperId, paper.runId, paper.folderId, paper.folderName, paper.contentHash].join(":"))
+  return sha256([SEMANTIC_RELATIONSHIP_VERSION, ...documents.map((paper) => [paper.paperId, paper.runId, paper.contentHash].join(":"))]
     .sort()
     .join("\n"));
 }
@@ -355,15 +356,15 @@ export async function completeSemanticMap(
       const [source, target] = BigInt(edge.sourcePaperId) < BigInt(edge.targetPaperId)
         ? [edge.sourcePaperId, edge.targetPaperId] : [edge.targetPaperId, edge.sourcePaperId];
       await client.query(
-        `INSERT INTO public.repository_semantic_edges
-         (map_id,owner_user_id,project_id,source_paper_id,target_paper_id,cosine_similarity,edge_rank,shared_signals)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
-        [mapId, ownerUserId, projectId, source, target, edge.similarity, edge.rank, JSON.stringify(edge.sharedSignals)]
+       `INSERT INTO public.repository_semantic_edges
+         (map_id,owner_user_id,project_id,source_paper_id,target_paper_id,cosine_similarity,euclidean_distance,edge_rank,shared_signals)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb)`,
+        [mapId, ownerUserId, projectId, source, target, edge.similarity, edge.distance, edge.rank, JSON.stringify(edge.sharedSignals)]
       );
     }
     await client.query(
       `UPDATE public.repository_semantic_maps SET status='succeeded',projection_algorithm=$3,
-       projection_version='semantic-projection-v1',projection_parameters=$4::jsonb,quality_metrics=$5::jsonb,
+       projection_version='semantic-projection-v2-euclidean',projection_parameters=$4::jsonb,quality_metrics=$5::jsonb,
        clusters=$6::jsonb,progress_stage='published',progress_current=paper_count,completed_at=now(),updated_at=now()
        WHERE id=$1 AND owner_user_id=$2`,
       [mapId, ownerUserId, projection.algorithm, JSON.stringify(projection.parameters), JSON.stringify(projection.quality), JSON.stringify(clusters)]
@@ -428,7 +429,8 @@ export async function getSemanticMap(ownerUserId: string, projectId: string, map
       `SELECT * FROM public.repository_semantic_points WHERE map_id=$1 AND owner_user_id=$2 ORDER BY paper_id`, [displayRow.id, ownerUserId]
     );
     const edgeResult = await client.query<Record<string, unknown>>(
-      `SELECT * FROM public.repository_semantic_edges WHERE map_id=$1 AND owner_user_id=$2 ORDER BY cosine_similarity DESC`, [displayRow.id, ownerUserId]
+      `SELECT * FROM public.repository_semantic_edges WHERE map_id=$1 AND owner_user_id=$2
+       ORDER BY euclidean_distance ASC NULLS LAST, cosine_similarity DESC`, [displayRow.id, ownerUserId]
     );
     const points: SemanticMapPoint[] = pointResult.rows.map((point) => ({
       paperId: String(point.paper_id), runId: point.ingestion_run_id ? String(point.ingestion_run_id) : null,
@@ -438,7 +440,11 @@ export async function getSemanticMap(ownerUserId: string, projectId: string, map
       keywords: stringList(point.keywords), track: typeof (point.metadata as Record<string, unknown> | null)?.track === "string" ? String((point.metadata as Record<string, unknown>).track) : null,
     }));
     const edges: SemanticMapEdge[] = edgeResult.rows.map((edge) => ({
-      sourcePaperId: String(edge.source_paper_id), targetPaperId: String(edge.target_paper_id), similarity: Number(edge.cosine_similarity),
+      sourcePaperId: String(edge.source_paper_id), targetPaperId: String(edge.target_paper_id),
+      distance: Number.isFinite(Number(edge.euclidean_distance))
+        ? Number(edge.euclidean_distance)
+        : Math.sqrt(Math.max(0, 2 - 2 * Number(edge.cosine_similarity))),
+      similarity: Number(edge.cosine_similarity),
       rank: Number(edge.edge_rank), sharedSignals: (edge.shared_signals as SemanticMapEdge["sharedSignals"]) ?? { categories: [], topics: [], keywords: [], methods: [] },
     }));
     const mapped = mapSemanticMap(displayRow, points, edges, String(displayRow.source_hash) !== sourceHash);
