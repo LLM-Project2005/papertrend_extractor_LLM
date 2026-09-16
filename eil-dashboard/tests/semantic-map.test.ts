@@ -191,10 +191,7 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /className="nowheel/);
   assert.match(component, /visiblePoints\.length <= 1/);
   assert.match(component, /Neighborhoods/);
-  assert.match(component, /OVERVIEW_EDGE_LIMIT = 8/);
-  assert.match(component, /FOCUSED_EDGE_LIMIT = 6/);
   assert.match(component, /edge\.distance/);
-  assert.match(component, /selectReadableOverviewEdges/);
   assert.match(component, /edgeTypes=\{EDGE_TYPES\}/);
   assert.match(component, /Selection relationship/);
   assert.match(component, /onInit=\{fitInitialView\}/);
@@ -202,9 +199,14 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /forceSimulation/);
   assert.match(component, /forceCollide/);
   assert.match(component, /forceManyBody/);
-  assert.match(component, /nodesDraggable/);
-  assert.match(component, /Drag to pin a paper/);
-  assert.match(component, /Projection coordinates remain the layout anchor/);
+  assert.match(component, /forceCenter/);
+  assert.match(component, /nodesDraggable=\{layoutMode === "force"\}/);
+  assert.match(component, /Projection/);
+  assert.match(component, /Force graph/);
+  assert.match(component, /candidateEdges\.map/);
+  assert.match(component, /All retained relationships are visible/);
+  assert.match(component, /forceNode\.fx = null/);
+  assert.match(component, /forceNode\.fy = null/);
   assert.match(component, /prefers-reduced-motion: reduce/);
   assert.doesNotMatch(component, /nodesDraggable=\{false\}/);
   assert.doesNotMatch(component, /folderFilter/);
