@@ -3998,8 +3998,40 @@ async function normalChat(
         forceChart: chartRequested,
         history: (body.messages ?? []).slice(-12),
         jobCallbackBaseUrl: getPublicRequestOrigin(request),
+        sourceMessageId: persistedUserMessage?.id ?? null,
       });
       if (repositoryResult.handled) {
+        if (repositoryResult.jobId) {
+          if (persistedUserMessage) {
+            await chatRepository.updateMessageMetadata(ownerUserId, thread.id, persistedUserMessage.id, {
+              ...(persistedUserMessage.metadata ?? {}),
+              attachments: body.attachments ?? [],
+              selectedRunIds: knowledgeScope.runIds ?? [],
+              knowledgeScope,
+              scopeSnapshot: repositoryResult.scopeSnapshot,
+              requestId,
+              repositoryJobId: repositoryResult.jobId,
+            });
+          }
+          const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
+          return NextResponse.json({
+            mode: "analysis_queued",
+            groundingMode: "repository_processing",
+            scopeSnapshot: repositoryResult.scopeSnapshot,
+            requestId,
+            answer: repositoryResult.answer,
+            citations: [],
+            toolResults: [],
+            charts: [],
+            execution: repositoryResult.execution ?? null,
+            coverage: repositoryResult.coverage ?? null,
+            limitations: repositoryResult.limitations ?? [],
+            jobId: repositoryResult.jobId,
+            thread: detail.thread,
+            messages: detail.messages,
+            deepResearchSession: detail.deepResearchSession,
+          }, { status: 202 });
+        }
         let repositoryAnswer = repositoryResult.answer;
         const repositoryCharts = repositoryResult.charts as ChatChartPayload[];
         const repositoryCitations = repositoryResult.citations as Citation[];

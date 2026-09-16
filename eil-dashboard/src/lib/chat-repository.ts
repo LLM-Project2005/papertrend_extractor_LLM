@@ -389,6 +389,13 @@ class CloudSqlChatRepository implements ChatRepository {
       );
       if (updated.rowCount === 0) throw new Error("Chat message not found.");
       await client.query(
+        `UPDATE public.repository_chat_jobs
+         SET status='canceled',completed_at=now(),updated_at=now()
+         WHERE thread_id=$1 AND owner_user_id=$2 AND status IN ('queued','processing')
+           AND created_at > $3::timestamptz`,
+        [input.threadId, input.ownerUserId, input.createdAt]
+      );
+      await client.query(
         `
           DELETE FROM public.workspace_messages
           WHERE thread_id = $1 AND owner_user_id = $2 AND created_at > $3::timestamptz

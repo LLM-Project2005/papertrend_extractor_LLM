@@ -8,7 +8,7 @@ const FIREBASE_GATEWAY_TIMEOUT_MESSAGE =
 export async function readChatResponse<T extends ChatErrorPayload>(
   response: Response
 ): Promise<T> {
-  if (response.status === 504) {
+  if (response.status === 502 || response.status === 504) {
     throw new Error(FIREBASE_GATEWAY_TIMEOUT_MESSAGE);
   }
 

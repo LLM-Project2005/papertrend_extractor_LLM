@@ -1581,6 +1581,9 @@ export default function ChatClient() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const repositoryJobPollsRef = useRef(
+    new Map<string, { controller: AbortController; threadId: string }>()
+  );
   const parameterMenuRef = useRef<HTMLDivElement | null>(null);
   const editComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const scopeTransferHandledRef = useRef(false);
@@ -2141,33 +2144,96 @@ export default function ChatClient() {
     return readChatResponse<ChatPayload>(response);
   }
 
-  async function waitForRepositoryJob(jobId: string) {
-    for (let attempt = 0; attempt < 240; attempt += 1) {
-      await new Promise((resolve) => window.setTimeout(resolve, 2_500));
-      const response = await fetch(`/api/chat/jobs/${encodeURIComponent(jobId)}`, {
-        headers: requestHeaders,
-      });
-      if (!response.ok) throw new Error("Could not read repository report progress.");
-      const payload = await response.json() as { job?: {
-        status?: string; resultText?: string | null; citations?: Citation[];
-        charts?: ChatChartPayload[]; errorMessage?: string | null; coverage?: Record<string, unknown>;
-      } };
-      const job = payload.job;
-      if (job?.status === "succeeded") {
-        setMessages((current) => [...current, localMessage(
-          "assistant",
-          job.resultText ?? "Repository report completed.",
-          job.citations ?? [],
-          { mode: "grounded", charts: job.charts ?? [], repositoryCoverage: job.coverage ?? null }
-        )]);
-        return;
+  const waitForRepositoryJob = useCallback(async (jobId: string, threadId = activeThreadId) => {
+    if (!threadId || repositoryJobPollsRef.current.has(jobId)) return;
+    const controller = new AbortController();
+    repositoryJobPollsRef.current.set(jobId, { controller, threadId });
+    let transientFailures = 0;
+    try {
+      for (let attempt = 0; attempt < 240; attempt += 1) {
+        const delayMs = Math.min(10_000, 2_000 + attempt * 250);
+        await new Promise<void>((resolve) => {
+          const timeoutId = window.setTimeout(resolve, delayMs);
+          controller.signal.addEventListener("abort", () => {
+            window.clearTimeout(timeoutId);
+            resolve();
+          }, { once: true });
+        });
+        if (controller.signal.aborted) return;
+        try {
+          const response = await fetch(`/api/chat/jobs/${encodeURIComponent(jobId)}`, {
+            headers: requestHeaders,
+            signal: controller.signal,
+          });
+          if (!response.ok) {
+            if (response.status >= 500 && transientFailures < 5) {
+              transientFailures += 1;
+              continue;
+            }
+            throw new Error("Could not read repository report progress.");
+          }
+          transientFailures = 0;
+          const payload = await response.json() as { job?: {
+            status?: string; errorMessage?: string | null;
+          } };
+          const job = payload.job;
+          if (job?.status === "succeeded") {
+            await loadThreadDetail(threadId);
+            await refreshThreads(threadId);
+            return;
+          }
+          if (job?.status === "failed" || job?.status === "canceled") {
+            await loadThreadDetail(threadId);
+            if (job.status === "failed") {
+              setError(job.errorMessage ?? "Repository report did not complete.");
+            }
+            return;
+          }
+        } catch (pollError) {
+          if (controller.signal.aborted) return;
+          if (transientFailures < 5) {
+            transientFailures += 1;
+            continue;
+          }
+          throw pollError;
+        }
       }
-      if (job?.status === "failed" || job?.status === "canceled") {
-        throw new Error(job.errorMessage ?? "Repository report did not complete.");
+      setError("Repository analysis is still running. It will remain attached to this conversation.");
+    } catch (pollError) {
+      if (!controller.signal.aborted) {
+        setError(pollError instanceof Error ? pollError.message : "Could not read repository report progress.");
+      }
+    } finally {
+      repositoryJobPollsRef.current.delete(jobId);
+    }
+  }, [activeThreadId, loadThreadDetail, refreshThreads, requestHeaders]);
+
+  useEffect(() => {
+    if (!canPersist || !activeThreadId) return;
+    for (const message of messages) {
+      const jobId = typeof message.metadata?.repositoryJobId === "string"
+        ? message.metadata.repositoryJobId
+        : null;
+      const status = message.metadata?.repositoryJobStatus;
+      if (jobId && (status === "queued" || status === "processing")) {
+        void waitForRepositoryJob(jobId, activeThreadId);
       }
     }
-    throw new Error("Repository report is still running. You can return to this chat later.");
-  }
+  }, [activeThreadId, canPersist, messages, waitForRepositoryJob]);
+
+  useEffect(() => {
+    for (const [jobId, poll] of repositoryJobPollsRef.current) {
+      if (!activeThreadId || poll.threadId !== activeThreadId) {
+        poll.controller.abort();
+        repositoryJobPollsRef.current.delete(jobId);
+      }
+    }
+  }, [activeThreadId]);
+
+  useEffect(() => () => {
+    for (const poll of repositoryJobPollsRef.current.values()) poll.controller.abort();
+    repositoryJobPollsRef.current.clear();
+  }, []);
 
   function stopGenerating() {
     abortControllerRef.current?.abort();
@@ -2300,7 +2366,7 @@ export default function ChatClient() {
         ]);
       }
       if (payload.jobId) {
-        await waitForRepositoryJob(payload.jobId);
+        void waitForRepositoryJob(payload.jobId, payload.thread?.id ?? activeThreadId);
       }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
@@ -2378,7 +2444,7 @@ export default function ChatClient() {
         ]);
       }
       if (payload.jobId) {
-        await waitForRepositoryJob(payload.jobId);
+        void waitForRepositoryJob(payload.jobId, payload.thread?.id ?? activeThreadId);
       }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;

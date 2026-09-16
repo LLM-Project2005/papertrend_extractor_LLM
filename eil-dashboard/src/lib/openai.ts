@@ -15,6 +15,7 @@ export interface ChatCompletionParameters {
   tools?: unknown[];
   toolChoice?: unknown;
   parallelToolCalls?: boolean;
+  timeoutMs?: number;
 }
 
 export interface ChatCompletionAnnotation {
@@ -120,6 +121,10 @@ export async function createChatCompletionResult(
       Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify(requestBody),
+    signal:
+      typeof parameters.timeoutMs === "number"
+        ? AbortSignal.timeout(Math.max(1_000, parameters.timeoutMs))
+        : undefined,
   });
 
   if (!response.ok) {
