@@ -352,8 +352,14 @@ export default function DashboardClient({
       };
     }
 
-    return filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
-  }, [data, searchQuery, selectedTracks, selectedYears]);
+    return filterDashboardData(
+      data,
+      selectedYears,
+      selectedTracks,
+      searchQuery,
+      categoryOptions.map((category) => category.key)
+    );
+  }, [categoryOptions, data, searchQuery, selectedTracks, selectedYears]);
 
   const drilldownPapers = useMemo<DashboardDrilldownPaper[]>(() => {
     if (!drilldownTarget) {
