@@ -21,6 +21,7 @@ import { createRepositoryChatJob, enqueueRepositoryChatJob } from "@/lib/reposit
 import { buildPapertrendSystemPrompt } from "@/lib/papertrend-system-prompt";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
+import { shouldQueueRepositoryChat } from "@/lib/repository-chat-routing";
 
 export type RepositoryIntent =
   | "general"
@@ -38,7 +39,7 @@ export interface RepositoryCitation {
   year: string;
   href: string;
   reason: string;
-  sourceType: "paper";
+  sourceType: "paper" | "web";
 }
 
 export interface RepositoryChartPayload {
@@ -181,6 +182,7 @@ export interface RepositoryChatResult {
     retrievalRounds?: number;
     sufficiencyChecked?: boolean;
     missingEvidenceNeeds?: string[];
+    webAugmentation?: "succeeded" | "skipped";
   };
 }
 
@@ -198,6 +200,8 @@ export interface RepositoryChatInput {
   history?: Array<{ role: "user" | "assistant"; content: string }>;
   jobCallbackBaseUrl?: string;
   bypassAsyncJob?: boolean;
+  sourceMessageId?: string | null;
+  executionPlan?: RepositoryExecutionPlan;
 }
 
 const THAI_CHARACTER_PATTERN = /[\u0e00-\u0e7f]/g;
@@ -2219,13 +2223,13 @@ export async function planRepositoryExecution(
     },
   ];
   try {
-    const first = await createChatCompletionResult(messages, 0, input.model, "CHAT_EXECUTION_PLAN", { maxTokens: 700 });
+    const first = await createChatCompletionResult(messages, 0, input.model, "CHAT_EXECUTION_PLAN", { maxTokens: 700, timeoutMs: 12_000 });
     let parsed = ExecutionPlanSchema.safeParse(normalizeExecutionPlanCandidate(extractJsonObject(first?.content ?? "")));
     if (!parsed.success) {
       const repair = await createChatCompletionResult([
         { role: "system", content: buildPapertrendSystemPrompt("request_director", ["Repair the supplied planner output to the requested JSON schema. Return JSON only and preserve the user's scope."]) },
         { role: "user", content: JSON.stringify({ request: input.prompt, invalidOutput: first?.content ?? "", schema: "RepositoryExecutionPlan" }) },
-      ], 0, input.model, "CHAT_EXECUTION_PLAN_REPAIR", { maxTokens: 700 });
+      ], 0, input.model, "CHAT_EXECUTION_PLAN_REPAIR", { maxTokens: 700, timeoutMs: 12_000 });
       parsed = ExecutionPlanSchema.safeParse(normalizeExecutionPlanCandidate(extractJsonObject(repair?.content ?? "")));
     }
     if (!parsed.success) {
@@ -2727,7 +2731,9 @@ async function converseResult(
 export async function runRepositoryChat(input: RepositoryChatInput): Promise<RepositoryChatResult> {
   const context = await loadRepositoryContext(input);
   const chatV2Enabled = process.env.REPOSITORY_CHAT_V2_ENABLED !== "false";
-  const execution = chatV2Enabled ? await planRepositoryExecution(input, context) : undefined;
+  const execution = chatV2Enabled
+    ? input.executionPlan ?? await planRepositoryExecution(input, context)
+    : undefined;
   const plan = execution
     ? legacyPlanForExecution(execution)
     : requestsRepositoryStatistics(input.prompt)
@@ -2772,6 +2778,46 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       diagnostics,
     };
   }
+  const asyncThreshold = Math.max(
+    20,
+    Number.parseInt(process.env.REPOSITORY_CHAT_ASYNC_PAPER_THRESHOLD ?? "80", 10) || 80
+  );
+  if (
+    execution &&
+    input.jobCallbackBaseUrl &&
+    input.sourceMessageId &&
+    getDatabaseProvider() === "cloud-sql" &&
+    shouldQueueRepositoryChat({
+      execution,
+      paperCount: context.papers.length,
+      allowWeb: Boolean(input.allowWeb),
+      bypassAsyncJob: Boolean(input.bypassAsyncJob),
+      asyncPaperThreshold: asyncThreshold,
+    })
+  ) {
+    const jobId = await createRepositoryChatJob(input, execution, context.papers.length);
+    const queued = await enqueueRepositoryChatJob(jobId, input.ownerUserId, input.jobCallbackBaseUrl);
+    if (!queued) throw new Error("The repository report could not be queued safely.");
+    return {
+      handled: true,
+      answer: `I found ${context.papers.length} eligible papers. This repository analysis is continuing in the background and will appear in this conversation when complete.`,
+      citations: [],
+      charts: [],
+      plan,
+      execution,
+      jobId,
+      coverage: {
+        eligiblePapers: context.papers.length,
+        processedPapers: 0,
+        returnedPapers: 0,
+        complete: false,
+        scopeLabel: context.scopeLabel,
+      },
+      limitations: ["The result is processing as a durable background job to avoid the public gateway deadline."],
+      scopeSnapshot: context.scopeSnapshot,
+      diagnostics,
+    };
+  }
   if (execution && execution.operations.length > 1) {
     const result = await runMultiCapabilityPlan(input, context, execution);
     return {
@@ -2791,22 +2837,6 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     return { handled: true, ...listDocumentsResult(context), plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   if (execution?.operation === "analyze_each_document") {
-    const asyncThreshold = Math.max(20, Number.parseInt(process.env.REPOSITORY_CHAT_ASYNC_PAPER_THRESHOLD ?? "80", 10) || 80);
-    if (!input.bypassAsyncJob && context.papers.length > asyncThreshold && input.jobCallbackBaseUrl) {
-      const jobId = await createRepositoryChatJob(input, execution, context.papers.length);
-      const queued = await enqueueRepositoryChatJob(jobId, input.ownerUserId, input.jobCallbackBaseUrl).catch(() => false);
-      if (queued) {
-        return {
-          handled: true,
-          answer: `I found ${context.papers.length} eligible papers. A complete paper-by-paper report is now processing; no papers will be omitted.`,
-          citations: [], charts: [], plan, execution, jobId,
-          coverage: { eligiblePapers: context.papers.length, processedPapers: 0, returnedPapers: 0, complete: false, scopeLabel: context.scopeLabel },
-          limitations: ["The complete result is running asynchronously because it is too large for one interactive response."],
-          scopeSnapshot: context.scopeSnapshot,
-          diagnostics,
-        };
-      }
-    }
     return { handled: true, ...await analyzeEachDocumentResult(input, context, execution), plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   if (execution?.operation === "aggregate_corpus") {

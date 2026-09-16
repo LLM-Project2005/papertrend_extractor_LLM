@@ -23,7 +23,7 @@ steps:
       - "1"
       - --cpu-throttling
       - --timeout
-      - "300"
+      - "1800"
       - --concurrency
       - "20"
       - --min-instances

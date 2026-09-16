@@ -19,9 +19,9 @@ test("chat errors preserve structured server messages", async () => {
   await assert.rejects(() => readChatResponse(response), /Repository scope is unavailable/);
 });
 
-test("chat errors recover cleanly from non-JSON gateway responses", async () => {
+test("502 gateway responses use the same recoverable timeout guidance", async () => {
   const response = new Response("upstream unavailable", { status: 502 });
-  await assert.rejects(() => readChatResponse(response), /Chat request failed \(502\)/);
+  await assert.rejects(() => readChatResponse(response), /public gateway allows/);
 });
 
 test("successful chat JSON is returned unchanged", async () => {
