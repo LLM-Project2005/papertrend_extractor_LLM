@@ -199,6 +199,14 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /Selection relationship/);
   assert.match(component, /onInit=\{fitInitialView\}/);
   assert.match(component, /autoPanOnNodeFocus=\{false\}/);
+  assert.match(component, /forceSimulation/);
+  assert.match(component, /forceCollide/);
+  assert.match(component, /forceManyBody/);
+  assert.match(component, /nodesDraggable/);
+  assert.match(component, /Drag to pin a paper/);
+  assert.match(component, /Projection coordinates remain the layout anchor/);
+  assert.match(component, /prefers-reduced-motion: reduce/);
+  assert.doesNotMatch(component, /nodesDraggable=\{false\}/);
   assert.doesNotMatch(component, /folderFilter/);
   assert.doesNotMatch(component, /cluster-label/);
   assert.doesNotMatch(component, /elementsSelectable fitView/);

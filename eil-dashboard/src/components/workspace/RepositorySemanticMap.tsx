@@ -1,7 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  forceCollide,
+  forceLink,
+  forceManyBody,
+  forceSimulation,
+  forceX,
+  forceY,
+  type Simulation,
+  type SimulationLinkDatum,
+  type SimulationNodeDatum,
+} from "d3-force";
 import {
   BaseEdge,
   Background,
@@ -13,6 +24,7 @@ import {
   type Edge,
   type EdgeProps,
   type Node,
+  type OnNodeDrag,
   type NodeMouseHandler,
   type NodeProps,
   type ReactFlowInstance,
@@ -39,11 +51,24 @@ type PaperNodeData = {
   label: string;
   title: string;
   dimmed: boolean;
+  pinned: boolean;
 };
 
 type RelationshipEdgeData = {
   bend: number;
 };
+
+type MapPosition = { x: number; y: number };
+
+interface ForcePaperNode extends SimulationNodeDatum {
+  id: string;
+  anchorX: number;
+  anchorY: number;
+}
+
+interface ForcePaperLink extends SimulationLinkDatum<ForcePaperNode> {
+  distance: number;
+}
 
 const HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left] as const;
 
@@ -59,7 +84,7 @@ function PaperMapNode({ data, selected }: NodeProps) {
         <Handle key={handleId(position, "target")} id={handleId(position, "target")} type="target" position={position} className="!h-0 !w-0 !border-0 !bg-transparent" />
       ))}
       <span
-        className={`block h-6 w-6 rounded-full border-[3px] transition-[transform,box-shadow] duration-200 ${selected ? "scale-125 border-white shadow-[0_0_0_3px_var(--node-color),0_8px_24px_rgba(0,0,0,.28)]" : "scale-100 shadow-[0_3px_12px_rgba(0,0,0,.2)]"}`}
+        className={`block h-6 w-6 rounded-full border-[3px] transition-[transform,box-shadow] duration-200 ${selected ? "scale-125 border-white shadow-[0_0_0_3px_var(--node-color),0_8px_24px_rgba(0,0,0,.28)]" : node.pinned ? "scale-110 shadow-[0_0_0_2px_var(--node-color),0_3px_12px_rgba(0,0,0,.2)]" : "scale-100 shadow-[0_3px_12px_rgba(0,0,0,.2)]"}`}
         style={{ backgroundColor: node.color, borderColor: selected ? undefined : node.color, "--node-color": node.color } as React.CSSProperties}
       />
       {node.label ? <span className="pointer-events-none absolute left-1/2 top-[calc(100%+7px)] w-[150px] -translate-x-1/2 truncate rounded bg-white/85 px-1.5 py-0.5 text-center text-[10px] font-semibold text-slate-800 shadow-sm dark:bg-black/85 dark:text-[#eee]">{node.label}</span> : null}
@@ -146,6 +171,9 @@ function relationshipHandles(source: SemanticMapPoint, target: SemanticMapPoint)
 
 export default function RepositorySemanticMapView({ projectId, projectName, requestHeaders }: Props) {
   const router = useRouter();
+  const simulationRef = useRef<Simulation<ForcePaperNode, undefined> | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const layoutPositionsRef = useRef<Record<string, MapPosition>>({});
   const [map, setMap] = useState<RepositorySemanticMap | null>(null);
   const [eligiblePapers, setEligiblePapers] = useState(0);
   const [coverage, setCoverage] = useState<SemanticMapCoverage | null>(null);
@@ -166,6 +194,10 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   const [hoveredPaperId, setHoveredPaperId] = useState<string | null>(null);
   const [focusedClusterId, setFocusedClusterId] = useState<number | null>(null);
   const [focusedEdge, setFocusedEdge] = useState<SemanticMapEdge | null>(null);
+  const [physicsEnabled, setPhysicsEnabled] = useState(true);
+  const [layoutPositions, setLayoutPositions] = useState<Record<string, MapPosition>>({});
+  const [pinnedPaperIds, setPinnedPaperIds] = useState<string[]>([]);
+  const [physicsVersion, setPhysicsVersion] = useState(0);
 
   const loadMap = useCallback(async () => {
     setLoading(true);
@@ -191,7 +223,14 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     setFocusedPaperId(null);
     setFocusedClusterId(null);
     setFocusedEdge(null);
+    setLayoutPositions({});
+    setPinnedPaperIds([]);
   }, [map?.mapId, projectId]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (media.matches) setPhysicsEnabled(false);
+  }, []);
 
   useEffect(() => {
     if (!jobId) return;
@@ -263,6 +302,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   }, [visibleIds]);
 
   const activeClusterId = focusedClusterId;
+  const pinnedIdSet = useMemo(() => new Set(pinnedPaperIds), [pinnedPaperIds]);
   const nodes = useMemo<Node<PaperNodeData>[]>(() => visiblePoints.map((point) => {
     const searchMatched = matchedIds.has(point.paperId);
     const clusterMatched = activeClusterId === null || point.clusterId === activeClusterId;
@@ -271,17 +311,18 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     return {
       id: point.paperId,
       type: "paper",
-      position: { x: point.x, y: point.y },
+      position: layoutPositions[point.paperId] ?? { x: point.x, y: point.y },
       data: {
         color,
         title: `${point.title} (${point.year})`,
         dimmed: !clusterMatched || Boolean(normalizedQuery && !searchMatched),
+        pinned: pinnedIdSet.has(point.paperId),
         label: showPaperLabels && (selected || focusedPaperId === point.paperId || hoveredPaperId === point.paperId || visiblePoints.length <= 12) ? point.title : "",
       },
       ariaLabel: `${point.title}, ${point.year}, ${colorLabel(point, colorMode, map!)}`,
       selected,
     };
-  }), [activeClusterId, colorMode, focusedPaperId, hoveredPaperId, map, matchedIds, normalizedQuery, selectedPaperIds, showPaperLabels, visiblePoints]);
+  }), [activeClusterId, colorMode, focusedPaperId, hoveredPaperId, layoutPositions, map, matchedIds, normalizedQuery, pinnedIdSet, selectedPaperIds, showPaperLabels, visiblePoints]);
 
   const candidateEdges = useMemo(() => (map?.edges ?? [])
     .filter((edge) => showEdges && visibleIds.has(edge.sourcePaperId) && visibleIds.has(edge.targetPaperId))
@@ -295,6 +336,83 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     () => selectReadableOverviewEdges(candidateEdges, visiblePoints, overviewEdgeCount),
     [candidateEdges, overviewEdgeCount, visiblePoints]
   );
+
+  useEffect(() => {
+    layoutPositionsRef.current = layoutPositions;
+  }, [layoutPositions]);
+
+  useEffect(() => {
+    simulationRef.current?.stop();
+    if (frameRef.current !== null) {
+      window.cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    }
+    if (!physicsEnabled || visiblePoints.length < 2) return;
+
+    const pinned = new Set(pinnedPaperIds);
+    const forceNodes: ForcePaperNode[] = visiblePoints.map((point) => {
+      const position = layoutPositionsRef.current[point.paperId] ?? point;
+      return {
+        id: point.paperId,
+        x: position.x,
+        y: position.y,
+        anchorX: point.x,
+        anchorY: point.y,
+        ...(pinned.has(point.paperId) ? { fx: position.x, fy: position.y } : {}),
+      };
+    });
+    const forceLinks: ForcePaperLink[] = overviewEdges.map((edge) => ({
+      source: edge.sourcePaperId,
+      target: edge.targetPaperId,
+      distance: edge.distance,
+    }));
+    const linkDistances = forceLinks.map((link) => link.distance);
+    const minimumDistance = Math.min(...linkDistances, 0);
+    const maximumDistance = Math.max(...linkDistances, 1);
+    const normalizeDistance = (distance: number) =>
+      (distance - minimumDistance) / Math.max(maximumDistance - minimumDistance, 0.0001);
+
+    const simulation = forceSimulation<ForcePaperNode>(forceNodes)
+      .alpha(0.9)
+      .alphaDecay(0.032)
+      .velocityDecay(0.46)
+      .force("anchor-x", forceX<ForcePaperNode>((node) => node.anchorX).strength(0.11))
+      .force("anchor-y", forceY<ForcePaperNode>((node) => node.anchorY).strength(0.11))
+      .force("charge", forceManyBody<ForcePaperNode>().strength(-115).distanceMax(260))
+      .force("collision", forceCollide<ForcePaperNode>(19).strength(0.9).iterations(2));
+    if (forceLinks.length > 0) {
+      simulation.force(
+        "relationship",
+        forceLink<ForcePaperNode, ForcePaperLink>(forceLinks)
+          .id((node) => node.id)
+          .distance((link) => 82 + normalizeDistance(link.distance) * 100)
+          .strength((link) => 0.16 - normalizeDistance(link.distance) * 0.08)
+          .iterations(1)
+      );
+    }
+    simulation.on("tick", () => {
+      if (frameRef.current !== null) return;
+      frameRef.current = window.requestAnimationFrame(() => {
+        frameRef.current = null;
+        const next = Object.fromEntries(forceNodes.map((node) => [
+          node.id,
+          { x: Number(node.x ?? node.anchorX), y: Number(node.y ?? node.anchorY) },
+        ]));
+        layoutPositionsRef.current = { ...layoutPositionsRef.current, ...next };
+        setLayoutPositions((current) => ({ ...current, ...next }));
+      });
+    });
+    simulationRef.current = simulation;
+
+    return () => {
+      simulation.stop();
+      if (simulationRef.current === simulation) simulationRef.current = null;
+      if (frameRef.current !== null) {
+        window.cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
+  }, [map?.mapId, overviewEdges, physicsEnabled, physicsVersion, pinnedPaperIds, visiblePoints]);
   const contextPaperId = hoveredPaperId ?? (selectedPaperIds.length <= 1 ? focusedPaperId : null);
   const visibleEdges = useMemo(() => {
     if (!showEdges) return [];
@@ -326,9 +444,14 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     const sourcePoint = visiblePoints.find((point) => point.paperId === edge.sourcePaperId);
     const targetPoint = visiblePoints.find((point) => point.paperId === edge.targetPaperId);
     if (!sourcePoint || !targetPoint) return [];
-    const handles = relationshipHandles(sourcePoint, targetPoint);
+    const sourcePosition = layoutPositions[sourcePoint.paperId] ?? sourcePoint;
+    const targetPosition = layoutPositions[targetPoint.paperId] ?? targetPoint;
+    const handles = relationshipHandles(
+      { ...sourcePoint, x: sourcePosition.x, y: sourcePosition.y },
+      { ...targetPoint, x: targetPosition.x, y: targetPosition.y }
+    );
     const routeSign = (edge.sourcePaperId.localeCompare(edge.targetPaperId) + index) % 2 === 0 ? 1 : -1;
-    const routeLength = Math.hypot(targetPoint.x - sourcePoint.x, targetPoint.y - sourcePoint.y);
+    const routeLength = Math.hypot(targetPosition.x - sourcePosition.x, targetPosition.y - sourcePosition.y);
     const bend = routeSign * Math.min(34, Math.max(8, routeLength * 0.055 + (index % 3) * 4));
     return [{
       id: `${edge.sourcePaperId}:${edge.targetPaperId}`,
@@ -347,7 +470,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
         opacity: isFocused ? 1 : highlighted ? 0.88 : muted ? 0.2 : 0.5 + strength * 0.2,
       },
     } as Edge];
-  }), [contextPaperId, distanceCeiling, focusedEdge, overviewEdgeKeys, selectedIdSet, selectedPaperIds.length, visibleEdges, visiblePoints]);
+  }), [contextPaperId, distanceCeiling, focusedEdge, layoutPositions, overviewEdgeKeys, selectedIdSet, selectedPaperIds.length, visibleEdges, visiblePoints]);
 
   const focusedPoint = map?.points.find((point) => point.paperId === focusedPaperId) ?? null;
   const edgeSource = focusedEdge ? map?.points.find((point) => point.paperId === focusedEdge.sourcePaperId) ?? null : null;
@@ -380,6 +503,41 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     setFocusedPaperId(removing ? null : node.id);
     setSelectedPaperIds((current) => current.includes(node.id) ? current.filter((id) => id !== node.id) : [...current, node.id]);
   };
+  const onNodeDragStart: OnNodeDrag<Node<PaperNodeData>> = (_event, node) => {
+    const forceNode = simulationRef.current?.nodes().find((candidate) => candidate.id === node.id);
+    if (forceNode) {
+      forceNode.fx = node.position.x;
+      forceNode.fy = node.position.y;
+      simulationRef.current?.alphaTarget(0.16).restart();
+    }
+  };
+  const onNodeDrag: OnNodeDrag<Node<PaperNodeData>> = (_event, node) => {
+    const position = { x: node.position.x, y: node.position.y };
+    layoutPositionsRef.current = { ...layoutPositionsRef.current, [node.id]: position };
+    setLayoutPositions((current) => ({ ...current, [node.id]: position }));
+    const forceNode = simulationRef.current?.nodes().find((candidate) => candidate.id === node.id);
+    if (forceNode) {
+      forceNode.fx = position.x;
+      forceNode.fy = position.y;
+    }
+  };
+  const onNodeDragStop: OnNodeDrag<Node<PaperNodeData>> = (_event, node) => {
+    const position = { x: node.position.x, y: node.position.y };
+    layoutPositionsRef.current = { ...layoutPositionsRef.current, [node.id]: position };
+    setLayoutPositions((current) => ({ ...current, [node.id]: position }));
+    setPinnedPaperIds((current) => current.includes(node.id) ? current : [...current, node.id]);
+    simulationRef.current?.alphaTarget(0);
+  };
+  const releaseNode: NodeMouseHandler = (event, node) => {
+    event.stopPropagation();
+    setPinnedPaperIds((current) => current.filter((id) => id !== node.id));
+    const forceNode = simulationRef.current?.nodes().find((candidate) => candidate.id === node.id);
+    if (forceNode) {
+      forceNode.fx = null;
+      forceNode.fy = null;
+      simulationRef.current?.alpha(0.45).alphaTarget(0).restart();
+    }
+  };
   const fitInitialView = useCallback((instance: ReactFlowInstance<Node<PaperNodeData>, Edge>) => {
     window.requestAnimationFrame(() => void instance.fitView({ padding: 0.18, minZoom: 0.35, maxZoom: 1.25 }));
   }, []);
@@ -402,6 +560,24 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     setPaperFilterNotice(null);
     setHiddenPaperIds([]);
     setFocusedClusterId(null);
+  }
+  function resetPhysicsLayout() {
+    const projected = Object.fromEntries((map?.points ?? []).map((point) => [
+      point.paperId,
+      { x: point.x, y: point.y },
+    ]));
+    layoutPositionsRef.current = projected;
+    setLayoutPositions(projected);
+    setPinnedPaperIds([]);
+    setPhysicsVersion((current) => current + 1);
+  }
+  function releaseAllNodes() {
+    setPinnedPaperIds([]);
+    simulationRef.current?.nodes().forEach((node) => {
+      node.fx = null;
+      node.fy = null;
+    });
+    simulationRef.current?.alpha(0.45).alphaTarget(0).restart();
   }
   function openFocusedPaper() {
     if (focusedPoint?.runId) router.push(`/workspace/library?runId=${encodeURIComponent(focusedPoint.runId)}`);
@@ -465,14 +641,28 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
             <select value={colorMode} onChange={(event) => { setColorMode(event.target.value as ColorMode); setFocusedClusterId(null); }} aria-label="Color papers by" className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-[#292929] dark:bg-[#080808] dark:text-white"><option value="cluster">Color: neighborhood</option><option value="category">Color: category</option><option value="year">Color: year</option><option value="track">Color: track</option></select>
             <details className="group relative"><summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 dark:border-[#292929] dark:bg-[#080808] dark:text-white"><FilterIcon className="h-4 w-4" /> Papers {visiblePoints.length}/{map.points.length}</summary><div className="nodrag nopan absolute right-0 top-11 z-30 w-[min(380px,calc(100vw-3rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-[#292929] dark:bg-[#080808]"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950 dark:text-white">Papers in view</p><p className="text-xs text-slate-500 dark:text-[#999]">Hide papers without rebuilding the map.</p></div><button type="button" onClick={() => setHiddenPaperIds([])} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Show all</button></div><label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-sm text-slate-950 outline-none dark:border-[#292929] dark:text-white" /></label>{paperFilterNotice ? <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{paperFilterNotice}</p> : null}<div className="nowheel mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">{paperFilterPoints.map((point) => { const visible = !hiddenIds.has(point.paperId); return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#121212]"><input type="checkbox" checked={visible} onChange={(event) => setPaperVisible(point.paperId, event.target.checked)} className="sr-only" /><span className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border ${visible ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black" : "border-slate-300 dark:border-[#444]"}`}>{visible ? <CheckIcon className="h-3 w-3" /> : null}</span><span className="min-w-0"><span className="block text-xs font-medium leading-5 text-slate-800 dark:text-[#eee]">{point.title}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{point.year}</span></span></label>; })}</div></div></details>
           </div>
-          <ReactFlow key={map.mapId} nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onInit={fitInitialView} onNodeClick={onNodeClick} onNodeMouseEnter={(_event, node) => setHoveredPaperId(node.id)} onNodeMouseLeave={() => setHoveredPaperId(null)} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable autoPanOnNodeFocus={false} minZoom={0.35} maxZoom={2.5} className="semantic-map-flow">
+          <ReactFlow key={map.mapId} nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onInit={fitInitialView} onNodeClick={onNodeClick} onNodeDoubleClick={releaseNode} onNodeDragStart={onNodeDragStart} onNodeDrag={onNodeDrag} onNodeDragStop={onNodeDragStop} onNodeMouseEnter={(_event, node) => setHoveredPaperId(node.id)} onNodeMouseLeave={() => setHoveredPaperId(null)} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable nodesConnectable={false} elementsSelectable autoPanOnNodeFocus={false} minZoom={0.35} maxZoom={2.5} className="semantic-map-flow">
             <Background color="#64748b" gap={28} size={0.6} /><Controls showInteractive={false} /><MiniMap pannable zoomable nodeColor={(node) => String((node.data as Partial<PaperNodeData>)?.color ?? "#64748b")} maskColor="rgba(15,23,42,.08)" />
           </ReactFlow>
           <ul className="sr-only" aria-label={`Papers in ${projectName} semantic map`}>{visiblePoints.map((point) => <li key={point.paperId}><button type="button" onClick={() => setFocusedPaperId(point.paperId)}>{point.title}, {point.year}</button></li>)}</ul>
         </div>
 
         <aside className="self-start space-y-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Display</p><div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-[#999]"><label htmlFor="semantic-relationship-detail">Relationship detail</label><span className="font-semibold text-slate-800 dark:text-[#eee]">{relationshipDensityLabel}</span></div><input id="semantic-relationship-detail" type="range" min="10" max="100" step="5" value={relationshipDetail} onChange={(event) => setRelationshipDetail(Number(event.target.value))} className="mt-2 w-full accent-slate-900 dark:accent-white" /><label className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Relationships</span><input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} /></label><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Paper labels</span><input type="checkbox" checked={showPaperLabels} onChange={(event) => setShowPaperLabels(event.target.checked)} /></label></div>
+          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Display</p>
+              <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${physicsEnabled ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-slate-100 text-slate-500 dark:bg-[#151515] dark:text-[#999]"}`}>{physicsEnabled ? "Physics on" : "Physics paused"}</span>
+            </div>
+            <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-[#252525] dark:bg-[#0a0a0a]">
+              <label className="flex items-center justify-between gap-3 text-sm font-medium text-slate-800 dark:text-[#eee]"><span>Force layout</span><input type="checkbox" checked={physicsEnabled} onChange={(event) => setPhysicsEnabled(event.target.checked)} /></label>
+              <p className="mt-2 text-[11px] leading-5 text-slate-500 dark:text-[#888]">Drag to pin a paper. Double-click it to release. Projection coordinates remain the layout anchor.</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <button type="button" onClick={resetPhysicsLayout} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">Reset layout</button>
+                <button type="button" onClick={releaseAllNodes} disabled={pinnedPaperIds.length === 0} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">Release all</button>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-[#999]"><label htmlFor="semantic-relationship-detail">Relationship detail</label><span className="font-semibold text-slate-800 dark:text-[#eee]">{relationshipDensityLabel}</span></div><input id="semantic-relationship-detail" type="range" min="10" max="100" step="5" value={relationshipDetail} onChange={(event) => setRelationshipDetail(Number(event.target.value))} className="mt-2 w-full accent-slate-900 dark:accent-white" /><label className="mt-4 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Relationships</span><input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} /></label><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Paper labels</span><input type="checkbox" checked={showPaperLabels} onChange={(event) => setShowPaperLabels(event.target.checked)} /></label>
+          </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Neighborhoods</p>{focusedClusterId !== null ? <button type="button" onClick={() => setFocusedClusterId(null)} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Clear</button> : null}</div><div className="mt-3 space-y-1.5">{map.clusters.map((cluster) => { const active = focusedClusterId === cluster.id; return <button key={cluster.id} type="button" onClick={() => setFocusedClusterId(active ? null : cluster.id)} className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition ${active ? "bg-slate-100 dark:bg-[#151515]" : "hover:bg-slate-50 dark:hover:bg-[#101010]"}`}><span className="mt-1 h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: PALETTE[Math.abs(cluster.id) % PALETTE.length] }} /><span className="min-w-0 flex-1"><span className="block text-xs font-semibold leading-5 text-slate-800 dark:text-[#eee]">{cluster.label}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{cluster.paperCount} papers</span></span></button>; })}</div></div>
 
@@ -483,7 +673,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
           {colorMode !== "cluster" ? <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Legend</p><div className="mt-3 space-y-2">{legend.map(([label, color]) => <div key={label} className="flex items-center gap-2 text-xs text-slate-700 dark:text-[#ddd]"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: color }} /><span className="truncate" title={label}>{label}</span></div>)}</div></div> : null}
         </aside>
       </div>
-      <p className="text-xs leading-5 text-slate-500 dark:text-[#888]">Euclidean distance is computed from the original document embeddings, not the screen coordinates. The map is a reading aid: proximity does not establish citation, causation, quality, or agreement.</p>
+      <p className="text-xs leading-5 text-slate-500 dark:text-[#888]">Euclidean distance is computed from the original document embeddings, not the screen coordinates. Physics only separates and connects the display around its saved UMAP/PCA anchors. The map is a reading aid: proximity does not establish citation, causation, quality, or agreement.</p>
     </div>
   );
 }
