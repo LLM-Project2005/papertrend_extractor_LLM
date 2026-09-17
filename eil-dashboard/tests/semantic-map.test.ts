@@ -187,18 +187,39 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
     join(process.cwd(), "src/components/workspace/RepositorySemanticMap.tsx"),
     "utf8"
   );
+  const forceGraph = readFileSync(
+    join(process.cwd(), "src/components/workspace/ForceDirectedSemanticGraph.tsx"),
+    "utf8"
+  );
   assert.match(component, /className="nodrag nopan absolute/);
   assert.match(component, /className="nowheel/);
   assert.match(component, /visiblePoints\.length <= 1/);
   assert.match(component, /Neighborhoods/);
-  assert.match(component, /OVERVIEW_EDGE_LIMIT = 8/);
-  assert.match(component, /FOCUSED_EDGE_LIMIT = 6/);
   assert.match(component, /edge\.distance/);
-  assert.match(component, /selectReadableOverviewEdges/);
   assert.match(component, /edgeTypes=\{EDGE_TYPES\}/);
   assert.match(component, /Selection relationship/);
   assert.match(component, /onInit=\{fitInitialView\}/);
   assert.match(component, /autoPanOnNodeFocus=\{false\}/);
+  assert.match(forceGraph, /forceSimulation/);
+  assert.match(forceGraph, /forceCollide/);
+  assert.match(forceGraph, /forceManyBody/);
+  assert.match(forceGraph, /forceCenter/);
+  assert.match(forceGraph, /forceLink/);
+  assert.match(forceGraph, /setPointerCapture/);
+  assert.match(forceGraph, /node\.fx = null/);
+  assert.match(forceGraph, /node\.fy = null/);
+  assert.match(forceGraph, /x1=\{source\.x\}/);
+  assert.match(forceGraph, /x2=\{target\.x\}/);
+  assert.match(component, /nodesDraggable=\{false\}/);
+  assert.match(component, /Projection/);
+  assert.match(component, /Force graph/);
+  assert.match(component, /All retained relationships are visible/);
+  assert.match(component, /label: showPaperLabels \? point\.title : ""/);
+  assert.match(forceGraph, /\{point\.title\}/);
+  assert.doesNotMatch(component, /onNodeMouseEnter/);
+  assert.doesNotMatch(component, /onNodeMouseLeave/);
+  assert.doesNotMatch(component, /w-\[150px\].*truncate/);
+  assert.match(component, /prefers-reduced-motion: reduce/);
   assert.doesNotMatch(component, /folderFilter/);
   assert.doesNotMatch(component, /cluster-label/);
   assert.doesNotMatch(component, /elementsSelectable fitView/);

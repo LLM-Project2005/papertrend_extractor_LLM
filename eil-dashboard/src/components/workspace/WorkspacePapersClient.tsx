@@ -137,7 +137,13 @@ export default function WorkspacePapersClient() {
       return { trends: [], tracksSingle: [], tracksMulti: [], categoryAssignments: [] };
     }
 
-    const base = filterDashboardData(data, selectedYears, selectedTracks, searchQuery);
+    const base = filterDashboardData(
+      data,
+      selectedYears,
+      selectedTracks,
+      searchQuery,
+      categoryOptions.map((category) => category.key)
+    );
     if (drilldown.paperIds.length === 0) {
       return base;
     }
@@ -151,7 +157,7 @@ export default function WorkspacePapersClient() {
         allowedPaperIds.has(row.paper_id)
       ),
     };
-  }, [data, drilldown.paperIds, searchQuery, selectedTracks, selectedYears]);
+  }, [categoryOptions, data, drilldown.paperIds, searchQuery, selectedTracks, selectedYears]);
 
   if (loading || !data) {
     return (

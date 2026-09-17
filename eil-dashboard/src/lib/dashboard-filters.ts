@@ -34,11 +34,15 @@ export function filterDashboardData(
   data: DashboardData,
   selectedYears: string[],
   selectedTracks: string[],
-  searchQuery = ""
+  searchQuery = "",
+  availableCategoryKeys: string[] = []
 ): Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "categoryAssignments" | "topicFamilies"> {
   const categoryRows = data.categoryAssignments ?? [];
   const dynamicCategoryKeys = [
-    ...new Set(categoryRows.map((row) => normalizeCategoryKey(row.category_key)).filter(Boolean)),
+    ...new Set([
+      ...availableCategoryKeys.map(normalizeCategoryKey).filter(Boolean),
+      ...categoryRows.map((row) => normalizeCategoryKey(row.category_key)).filter(Boolean),
+    ]),
   ];
   const availableYears = [
     ...new Set([
@@ -58,7 +62,12 @@ export function filterDashboardData(
     .map((track) => normalizeCategoryKey(track))
     .filter((track) => dynamicCategoryKeys.includes(track));
   const useDynamicCategories = dynamicCategoryKeys.length > 0;
-  const hasExplicitDynamicSelection = useDynamicCategories && dynamicSelectedTracks.length > 0;
+  const legacyShowAllSelection = TRACK_COLS.every((track) => selectedTracks.includes(track));
+  const hasExplicitDynamicSelection =
+    useDynamicCategories &&
+    !legacyShowAllSelection &&
+    dynamicSelectedTracks.length > 0 &&
+    dynamicSelectedTracks.length < dynamicCategoryKeys.length;
   const tracks = useDynamicCategories
     ? dynamicSelectedTracks.length > 0
       ? dynamicSelectedTracks
@@ -154,15 +163,14 @@ export function filterDashboardData(
 
   const fallbackPaperIds = collectFallbackPaperIds(data, years);
   let allowedPaperIds = fallbackPaperIds;
-  if (singleCategoryRows.length > 0) {
-    allowedPaperIds = new Set(singleCategoryRows.map((row) => row.paper_id));
-  } else if (multiCategoryRows.length > 0) {
-    allowedPaperIds = new Set(multiCategoryRows.map((row) => row.paper_id));
-  } else if (hasExplicitDynamicSelection) {
-    allowedPaperIds = new Set<PaperId>();
-  } else if (singleTrackRows.length > 0) {
+  if (hasExplicitDynamicSelection) {
+    allowedPaperIds = new Set([
+      ...singleCategoryRows.map((row) => row.paper_id),
+      ...multiCategoryRows.map((row) => row.paper_id),
+    ]);
+  } else if (!useDynamicCategories && singleTrackRows.length > 0) {
     allowedPaperIds = new Set(singleTrackRows.map((row) => row.paper_id));
-  } else if (multiTrackRows.length > 0) {
+  } else if (!useDynamicCategories && multiTrackRows.length > 0) {
     allowedPaperIds = new Set(multiTrackRows.map((row) => row.paper_id));
   }
 
