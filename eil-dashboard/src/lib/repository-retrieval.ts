@@ -1,6 +1,7 @@
 import {
   normalizeRepositoryText,
   tokenizeRepositoryText,
+  splitTextPassages,
 } from "@/lib/repository-text";
 
 export interface RepositoryRetrievalDocument {
@@ -52,11 +53,7 @@ function splitEvidencePassages(document: RepositoryRetrievalDocument): string[] 
     document.results,
     document.conclusion,
   ].filter(Boolean);
-  const body = document.content
-    .split(/\n{2,}|(?<=[.!?])\s+(?=[\p{Lu}\d])/u)
-    .map((part) => part.replace(/\s+/g, " ").trim())
-    .filter((part) => part.length >= 80)
-    .slice(0, 240);
+  const body = splitTextPassages(document.content);
   return [...new Set([...preferred, ...body])];
 }
 

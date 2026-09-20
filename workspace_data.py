@@ -632,6 +632,28 @@ def _resolve_scoped_paper_ids(
     )
 
 
+def select_research_rows(
+    resource: str,
+    params: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """Read rows through the configured provider (Cloud SQL in production).
+
+    Callers that talked to Supabase directly returned empty results once
+    production stopped setting Supabase credentials, which silently looked like
+    "nothing pending" rather than "cannot tell". Routing through the provider
+    switch keeps those callers correct on Cloud SQL.
+    """
+    client = _query_client()
+    if client is None:
+        return []
+    return client.select_rows(resource, params)
+
+
+def research_provider_available() -> bool:
+    """True when a database provider is configured for research reads."""
+    return _query_client() is not None
+
+
 def load_workspace_dataset(
     owner_user_id: Optional[str] = None,
     folder_id: Optional[str] = None,

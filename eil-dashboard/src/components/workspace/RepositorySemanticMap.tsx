@@ -17,7 +17,7 @@ import {
   type NodeProps,
   type ReactFlowInstance,
 } from "@xyflow/react";
-import { buildSemanticSelectionInsight } from "@/lib/semantic-map-presentation";
+import { buildSemanticSelectionInsight, semanticMapMethodology } from "@/lib/semantic-map-presentation";
 import ForceDirectedSemanticGraph from "@/components/workspace/ForceDirectedSemanticGraph";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import type { RepositorySemanticMap, SemanticMapCoverage, SemanticMapEdge, SemanticMapPoint } from "@/types/semantic-map";
@@ -360,6 +360,10 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   const closestSelectionTarget = selectionInsight?.closestConnection
     ? map?.points.find((point) => point.paperId === selectionInsight.closestConnection?.targetPaperId) ?? null
     : null;
+  const methodology = useMemo(
+    () => semanticMapMethodology(map?.quality ?? {}, map?.projection?.algorithm ?? null),
+    [map?.quality, map?.projection]
+  );
   const legend = useMemo(() => {
     if (!map) return [];
     const rows = new Map<string, string>();
@@ -495,6 +499,31 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
           {focusedPoint && !selectionInsight ? <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Selected paper</p><h3 className="mt-3 text-sm font-semibold leading-5 text-slate-950 dark:text-white">{focusedPoint.title}</h3><p className="mt-2 text-xs text-slate-500 dark:text-[#999]">{focusedPoint.year}</p><div className="mt-3 flex flex-wrap gap-1.5">{focusedPoint.categories.slice(0, 4).map((category) => <span key={category} className="rounded-full bg-slate-100 px-2 py-1 text-[11px] text-slate-700 dark:bg-[#151515] dark:text-[#ddd]">{category}</span>)}</div><button type="button" onClick={openFocusedPaper} disabled={!focusedPoint.runId} className="mt-4 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-800 disabled:opacity-50 dark:border-[#303030] dark:text-white">Open analysis</button></div> : null}
           {focusedEdge ? <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-950 dark:bg-amber-950/20 dark:text-amber-50"><p className="text-xs font-semibold uppercase text-amber-700 dark:text-amber-300">Relationship</p><p className="mt-2 text-sm font-semibold leading-5">{edgeSource?.title ?? "Paper"}</p><p className="my-1 text-xs text-amber-800/70 dark:text-amber-200/70">and</p><p className="text-sm font-semibold leading-5">{edgeTarget?.title ?? "Paper"}</p><p className="mt-3 text-2xl font-semibold">{focusedEdge.distance.toFixed(3)}</p><p className="text-xs text-amber-800/70 dark:text-amber-200/70">Euclidean distance · lower means closer</p><div className="mt-3 space-y-1 text-xs text-amber-900 dark:text-amber-100">{sharedSignalText(focusedEdge).length ? sharedSignalText(focusedEdge).map((text) => <p key={text}>{text}</p>) : <p>No exact metadata overlap; closeness comes from the document embedding.</p>}</div></div> : null}
           {!focusedPoint && !focusedEdge && !selectionInsight ? <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm leading-6 text-slate-500 dark:border-[#202020] dark:bg-[#050505] dark:text-[#999]"><ChartIcon className="mb-3 h-5 w-5" />All retained relationships are visible. Select a paper to emphasize its connections, or select two or more papers for a relationship brief.</div> : null}
+          <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]">
+            <summary className="cursor-pointer text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">How this map is built</summary>
+            <dl className="mt-3 space-y-3 text-[11px] leading-5 text-slate-600 dark:text-[#aaa]">
+              <div>
+                <dt className="font-semibold text-slate-800 dark:text-[#eee]">What decides a neighborhood</dt>
+                <dd className="mt-0.5">{methodology.clustering}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-800 dark:text-[#eee]">What decides a position</dt>
+                <dd className="mt-0.5">{methodology.position}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-800 dark:text-[#eee]">What decides a line</dt>
+                <dd className="mt-0.5">{methodology.lines}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-800 dark:text-[#eee]">Same colour but no line</dt>
+                <dd className="mt-0.5">{methodology.colourVersusLines}</dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-slate-800 dark:text-[#eee]">How to read distance</dt>
+                <dd className="mt-0.5">{methodology.caution}</dd>
+              </div>
+            </dl>
+          </details>
           {colorMode !== "cluster" ? <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Legend</p><div className="mt-3 space-y-2">{legend.map(([label, color]) => <div key={label} className="flex items-center gap-2 text-xs text-slate-700 dark:text-[#ddd]"><span className="h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: color }} /><span className="truncate" title={label}>{label}</span></div>)}</div></div> : null}
         </aside>
       </div>

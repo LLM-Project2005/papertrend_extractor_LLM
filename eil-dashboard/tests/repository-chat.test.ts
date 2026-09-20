@@ -294,6 +294,7 @@ test("complete document-analysis fallback preserves coverage and requested langu
     conclusion: "Peer feedback supported writing development.",
     content: "",
     contentHash: "hash-101",
+    contentSource: "full_text" as const,
     totalWords: 20,
     termCounts: {},
     topics: new Map([["Peer feedback", 1]]),
