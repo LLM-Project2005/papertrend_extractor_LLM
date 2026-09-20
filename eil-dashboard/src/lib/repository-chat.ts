@@ -2919,6 +2919,19 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     const result = await converseResult(input, context, converseExecution);
     return { handled: true, ...result, plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
+  if (requestsTotalWordCount(input.prompt) && context.papers.length > 0) {
+    const lengthPlan: RepositoryPromptPlan = { ...plan, intent: "word_count", terms: [] };
+    const result = wordCountResult(context, lengthPlan);
+    return {
+      handled: true,
+      ...result,
+      plan: lengthPlan,
+      execution,
+      coverage: completeCoverage(context, context.papers.length),
+      scopeSnapshot: context.scopeSnapshot,
+      diagnostics,
+    };
+  }
   if (context.papers.length === 0) {
     return {
       handled: true,
