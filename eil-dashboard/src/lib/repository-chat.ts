@@ -1889,7 +1889,7 @@ export function buildRepositoryFactsAnswer(
   const overview = buildRepositoryStatisticsSummary(papers, scopeLabel, prompt, runStats);
   const targeted = sections.filter(Boolean);
   if (targeted.length === 0) return overview;
-  return [...targeted, "", overview].join("\n\n");
+  return [...targeted, overview].join("\n\n");
 }
 
 function repositoryStatisticsResult(
