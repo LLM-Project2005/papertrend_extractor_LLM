@@ -4,6 +4,8 @@ import {
   CLUSTER_BRIDGE_EDGE_RANK,
   SEMANTIC_MAP_CANVAS,
   clusterEmbeddings,
+  enforceMinimumClusterSize,
+  minimumClusterSize,
   connectClusters,
   buildSimilarityEdges,
   euclideanDistance,
@@ -258,4 +260,54 @@ test("the explainer never claims causation or academic agreement", () => {
   // Degrades cleanly when quality metrics are absent.
   assert.doesNotMatch(text.clustering, /currently 0/);
   assert.doesNotMatch(text.position, /About 0%/);
+});
+
+test("a lone outlier does not become its own neighborhood", () => {
+  // Live regression: a real 38-paper repository was split 37 to 1, because
+  // seeding promotes the point farthest from existing centres.
+  const vectors: number[][] = [];
+  for (let index = 0; index < 37; index += 1) {
+    vectors.push(new Array(16).fill(0).map((_, d) => (d % 2 === 0 ? 1 : 0) + ((index * 3 + d) % 4) / 100));
+  }
+  vectors.push(new Array(16).fill(50)); // a far outlier
+
+  const assignments = clusterEmbeddings(vectors).assignments;
+  const counts = new Map<number, number>();
+  assignments.forEach((cluster) => counts.set(cluster, (counts.get(cluster) ?? 0) + 1));
+  const floor = minimumClusterSize(vectors.length);
+  counts.forEach((count, cluster) => {
+    assert.ok(
+      count >= floor || counts.size === 1,
+      `neighborhood ${cluster} has ${count} papers, below the floor of ${floor}`
+    );
+  });
+});
+
+test("the minimum neighborhood size scales with the repository", () => {
+  assert.equal(minimumClusterSize(10), 2);
+  assert.equal(minimumClusterSize(38), 2);
+  assert.equal(minimumClusterSize(100), 5);
+  assert.equal(minimumClusterSize(400), 20);
+});
+
+test("merging undersized neighborhoods keeps every paper assigned", () => {
+  const vectors = [
+    [0, 0], [0, 1], [1, 0], [1, 1],
+    [50, 50],
+  ];
+  const merged = enforceMinimumClusterSize(vectors, [0, 0, 0, 0, 1], 2);
+  assert.equal(merged.length, vectors.length);
+  assert.equal(new Set(merged).size, 1, "the singleton should fold into the main group");
+  merged.forEach((cluster) => assert.ok(Number.isInteger(cluster) && cluster >= 0));
+});
+
+test("neighborhood ids stay contiguous from zero after merging", () => {
+  const vectors = [[0, 0], [0, 1], [9, 9], [9, 8], [50, 50]];
+  const merged = enforceMinimumClusterSize(vectors, [3, 3, 7, 7, 5], 2);
+  assert.deepEqual([...new Set(merged)].sort((a, b) => a - b), [0, 1]);
+});
+
+test("balanced neighborhoods are left alone", () => {
+  const vectors = [[0, 0], [0, 1], [9, 9], [9, 8]];
+  assert.deepEqual(enforceMinimumClusterSize(vectors, [0, 0, 1, 1], 2), [0, 0, 1, 1]);
 });
