@@ -10,6 +10,7 @@ import {
   contentSourceNote,
   countTermInRepositoryPaper,
   fallbackPromptPlan,
+  legacyPlanForExecution,
   requestsRepositoryStatistics,
   requestsTotalWordCount,
   wordCountResult,
@@ -273,4 +274,91 @@ test("a charted length request produces a per-paper word chart", () => {
     chart.data.map((row) => row.words),
     [3, 2]
   );
+});
+
+test("a length question ignores planner-supplied meta terms", () => {
+  // Live regression: the V2 planner answered "how many words is each paper"
+  // with terms ["word count", "words per paper"], so the term-frequency path
+  // counted those literal phrases and reported 0 for every paper.
+  const execution = {
+    operation: "analyze_text" as const,
+    operations: ["analyze_text" as const],
+    scopeMode: "complete" as const,
+    refinedQuestion: "How many words is each paper in this repository?",
+    terms: ["word count", "words per paper"],
+    retrievalQueries: [],
+    evidenceNeeds: [],
+    requestedFields: [],
+    answerLanguage: "English",
+    outputFormat: "table" as const,
+    chartType: "bar" as const,
+    reason: "planner",
+    confidence: "high" as const,
+    source: "llm" as const,
+  };
+  const converted = legacyPlanForExecution(
+    execution,
+    "How many words is each paper in this repository?"
+  );
+  assert.equal(converted.intent, "word_count");
+  assert.deepEqual(converted.terms, [], "meta terms must be dropped for a length question");
+
+  const result = wordCountResult(
+    context([
+      paper({ paperId: "1", title: "Alpha", content: "one two three four" }),
+      paper({ paperId: "2", title: "Beta", content: "five six" }),
+    ]),
+    converted
+  );
+  assert.match(result.answer, /Word count per paper/);
+  assert.match(result.answer, /\*\*6\*\*/, "must report the real total, not zero");
+  assert.doesNotMatch(result.answer, /Exact word count/);
+});
+
+test("a genuine term question keeps its planner terms", () => {
+  const execution = {
+    operation: "analyze_text" as const,
+    operations: ["analyze_text" as const],
+    scopeMode: "complete" as const,
+    refinedQuestion: 'How often does "feedback" appear?',
+    terms: ["feedback"],
+    retrievalQueries: [],
+    evidenceNeeds: [],
+    requestedFields: [],
+    answerLanguage: "English",
+    outputFormat: "table" as const,
+    chartType: "bar" as const,
+    reason: "planner",
+    confidence: "high" as const,
+    source: "llm" as const,
+  };
+  const converted = legacyPlanForExecution(execution, 'How often does "feedback" appear?');
+  assert.deepEqual(converted.terms, ["feedback"]);
+});
+
+test("a Thai length question answers fully in Thai", () => {
+  const execution = {
+    operation: "analyze_text" as const,
+    operations: ["analyze_text" as const],
+    scopeMode: "complete" as const,
+    refinedQuestion: "เอกสารในคลังนี้มีกี่คำ",
+    terms: ["จำนวนคำทั้งหมด"],
+    retrievalQueries: [],
+    evidenceNeeds: [],
+    requestedFields: [],
+    answerLanguage: "Thai",
+    outputFormat: "table" as const,
+    chartType: "bar" as const,
+    reason: "planner",
+    confidence: "high" as const,
+    source: "llm" as const,
+  };
+  const converted = legacyPlanForExecution(execution, "เอกสารในคลังนี้มีกี่คำ");
+  assert.deepEqual(converted.terms, []);
+  const result = wordCountResult(
+    context([paper({ paperId: "1", title: "งานวิจัย", content: "หนึ่ง สอง สาม" })]),
+    converted
+  );
+  assert.match(result.answer, /จำนวนคำต่อเอกสาร/);
+  assert.doesNotMatch(result.answer, /Exact word count/);
 });
