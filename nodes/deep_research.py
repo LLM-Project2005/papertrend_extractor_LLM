@@ -14,6 +14,8 @@ from state import DeepResearchPlanSchema, DeepResearchState
 from supabase_http import build_retrying_session
 from workspace_data import (
     build_visualization_analytics,
+    research_provider_available,
+    select_research_rows,
     filter_dashboard_data,
     load_papers_full_by_paper_ids,
     load_papers_full_by_run_ids,
@@ -719,26 +721,19 @@ def _ensure_target_paper_in_filtered_scope(
 
 
 def _project_folder_ids(owner_user_id: str, project_id: Optional[str]) -> List[str]:
-    if not owner_user_id or not project_id or not _get_supabase_url() or not _get_service_key():
+    if not owner_user_id or not project_id or not research_provider_available():
         return []
 
-    session = build_retrying_session(_build_headers())
-    response = session.get(
-        f"{_get_supabase_url()}/rest/v1/research_folders",
-        params={
-            "select": "id",
+    rows = select_research_rows(
+        "research_folders",
+        {
             "owner_user_id": f"eq.{owner_user_id}",
             "project_id": f"eq.{project_id}",
         },
-        timeout=30,
     )
-    response.raise_for_status()
-    payload = response.json()
-    if not isinstance(payload, list):
-        return []
     return [
         str(row.get("id") or "").strip()
-        for row in payload
+        for row in rows
         if str(row.get("id") or "").strip()
     ]
 
@@ -749,11 +744,10 @@ def _pending_runs(
     project_id: Optional[str],
     selected_run_ids: Optional[Sequence[str]] = None,
 ) -> int:
-    if not owner_user_id or not _get_supabase_url() or not _get_service_key():
+    if not owner_user_id or not research_provider_available():
         return 0
 
     params: Dict[str, Any] = {
-        "select": "id",
         "owner_user_id": f"eq.{owner_user_id}",
         "status": "in.(queued,processing)",
     }
@@ -774,15 +768,7 @@ def _pending_runs(
     else:
         return 0
 
-    session = build_retrying_session(_build_headers())
-    response = session.get(
-        f"{_get_supabase_url()}/rest/v1/ingestion_runs",
-        params=params,
-        timeout=30,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    return len(payload) if isinstance(payload, list) else 0
+    return len(select_research_rows("ingestion_runs", params))
 
 
 def _safe_papers(filtered: Dict[str, Any], limit: int = 6) -> List[Dict[str, Any]]:
@@ -801,18 +787,44 @@ def _normalize_space(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+_THAI_PATTERN = re.compile(r"[\u0e00-\u0e7f]")
+
+
+def _thai_ngrams(value: str, size: int = 3) -> List[str]:
+    """Character n-grams so Thai strings match partially rather than not at all."""
+    if len(value) <= size:
+        return []
+    return [value[index : index + size] for index in range(0, len(value) - size + 1)]
+
+
 def _normalize_title(value: str) -> str:
+    r"""Lowercase and strip punctuation while preserving every script.
+
+    The previous implementation replaced anything outside [a-z0-9\s], which
+    deleted every Thai character and left Thai titles as empty strings.
+    """
     normalized = _normalize_space(value).lower()
-    normalized = re.sub(r"[^a-z0-9\s]", " ", normalized)
+    normalized = re.sub(r"[^\w\s]", " ", normalized, flags=re.UNICODE)
     return _normalize_space(normalized)
 
 
 def _tokenize(value: str) -> List[str]:
-    return [
-        token
-        for token in re.findall(r"[a-z0-9]+", _normalize_title(value))
-        if len(token) >= 3 and token not in STOPWORDS
-    ]
+    """Token list for lexical matching, including Thai.
+
+    Thai has no spaces, so a whitespace split yields one long token per run of
+    Thai text. Character n-grams give partial credit on top of that, which is
+    far better than the previous behaviour of discarding Thai entirely.
+    """
+    tokens: List[str] = []
+    for token in re.findall(r"[^\W_]+", _normalize_title(value), flags=re.UNICODE):
+        if token in STOPWORDS:
+            continue
+        if _THAI_PATTERN.search(token):
+            tokens.append(token)
+            tokens.extend(_thai_ngrams(token))
+        elif len(token) >= 3:
+            tokens.append(token)
+    return tokens
 
 
 def _detect_requested_sections(prompt: str) -> List[str]:

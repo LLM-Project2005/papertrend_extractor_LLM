@@ -75,3 +75,59 @@ export function countTermInRepositoryText(content: string, term: string): number
   }
   return count;
 }
+
+/**
+ * Splits document text into retrieval passages, for Thai as well as English.
+ *
+ * The previous splitter relied on a blank line or an English sentence ending
+ * followed by a capital letter. Thai has no capital letters and rarely uses
+ * terminal punctuation, so a Thai document collapsed into one enormous passage
+ * and retrieval could only ever quote its opening. Thai does separate clauses
+ * with spaces, so long Thai runs are grouped into readable windows instead.
+ */
+export function splitTextPassages(
+  text: string,
+  options: { minLength?: number; targetLength?: number; maxPassages?: number } = {}
+): string[] {
+  const minLength = options.minLength ?? 80;
+  const targetLength = options.targetLength ?? 700;
+  const maxPassages = options.maxPassages ?? 240;
+  const source = String(text ?? "").trim();
+  if (!source) return [];
+
+  const passages: string[] = [];
+  const pushWindowed = (block: string) => {
+    const clean = block.replace(/\s+/g, " ").trim();
+    if (!clean) return;
+    if (clean.length <= targetLength * 1.5) {
+      passages.push(clean);
+      return;
+    }
+    // Group space-delimited clauses up to the target size. This is the path
+    // Thai text takes, and it also handles unpunctuated English fragments.
+    let buffer = "";
+    for (const clause of clean.split(" ")) {
+      const candidate = buffer ? `${buffer} ${clause}` : clause;
+      if (candidate.length > targetLength && buffer) {
+        passages.push(buffer);
+        buffer = clause;
+      } else {
+        buffer = candidate;
+      }
+    }
+    if (buffer) passages.push(buffer);
+  };
+
+  for (const paragraph of source.split(/\n{2,}/)) {
+    const block = paragraph.trim();
+    if (!block) continue;
+    if (containsThaiScript(block)) {
+      pushWindowed(block);
+      continue;
+    }
+    const sentences = block.split(/(?<=[.!?])\s+(?=[\p{Lu}\d])/u);
+    sentences.forEach(pushWindowed);
+  }
+
+  return [...new Set(passages.filter((passage) => passage.length >= minLength))].slice(0, maxPassages);
+}

@@ -166,3 +166,66 @@ Stated plainly so it is not mistaken for finished work:
 - `SEMANTIC_MAP_PROJECTION_VERSION` was left unchanged, so existing saved maps
   keep their stored coordinates until they are regenerated. Decide whether to
   bump it to force a rebuild for everyone.
+
+## Round 2 — deep research and Thai retrieval
+
+### F. Deep research silently ran on incomplete corpora (severity: high)
+
+`research_preflight_node` is the gate that decides whether analysis is still
+running before research starts. It called `_pending_runs`, which queried
+Supabase REST directly instead of going through the `workspace_data` provider
+switch. Production Cloud Run sets `DATABASE_PROVIDER=cloud-sql` and carries **no**
+Supabase credentials at all, so `_pending_runs` hit its
+`if not _get_supabase_url(): return 0` guard and always reported zero pending
+runs. Deep research therefore treated a half-ingested repository as ready and
+reported it as complete.
+
+`_project_folder_ids` had the same problem and always returned an empty list,
+so project-scoped pending detection could not work either.
+
+**Fix.** `workspace_data` gained `select_research_rows` and
+`research_provider_available`, which honour the same provider switch the rest of
+the loader uses. Both functions now read through it, so they work on Cloud SQL.
+No direct Supabase REST reads remain in `nodes/deep_research.py`.
+
+### G. Deep research deleted Thai text entirely (severity: high)
+
+`_normalize_title` applied `re.sub(r"[^a-z0-9\s]", " ", ...)`, which removes
+every Thai character. A Thai title normalized to an empty string and `_tokenize`
+returned no tokens, so Thai papers could never match lexically during candidate
+selection or title resolution.
+
+**Fix.** Normalization now strips punctuation with a Unicode-aware `\w` class,
+preserving every script. Tokenization keeps Thai runs and adds character
+trigrams so Thai strings match partially rather than not at all. English
+tokenization, including the stopword and minimum-length rules, is unchanged.
+
+### H. Thai documents collapsed into a single retrieval passage (severity: medium)
+
+`splitEvidencePassages` split on a blank line or an English sentence ending
+followed by a capital letter. Thai has no capital letters and rarely uses
+terminal punctuation, so an entire Thai document became one passage; retrieval
+could only ever quote its opening 1,400 characters.
+
+**Fix.** `splitTextPassages` is script-aware. Thai text is grouped into windows
+on its natural space-delimited clause boundaries; English keeps the existing
+sentence splitting. Paragraph breaks are honoured for both.
+
+### Round 2 verification
+
+- TypeScript suite: **162 passing** (from 152), 0 failing
+- Python suite: **134 passing** (from 119), 0 failing
+- `npx tsc --noEmit` clean; production Next.js build clean
+- Pilot Cloud Build `ab832411` succeeded; pilot revision
+  `papertrend-web-cloudsql-pilot-00081-df7` returned `200` on `/api/health`
+
+### Still outstanding after round 2
+
+- **No live authenticated test was run.** Connecting to Cloud SQL from this
+  machine requires the Cloud SQL Auth Proxy, and starting it was blocked by the
+  local sandbox policy. The deterministic suites, the production build and the
+  pilot health check all pass, but no query has been run against real
+  repository rows.
+- The semantic map still needs a visual check against a real repository.
+- `SEMANTIC_MAP_PROJECTION_VERSION` is unchanged, so saved maps keep their old
+  coordinates until regenerated.
