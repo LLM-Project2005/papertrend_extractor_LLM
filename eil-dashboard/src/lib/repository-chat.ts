@@ -425,22 +425,67 @@ const EvidenceSufficiencySchema = z.object({
   confidence: z.number().min(0).max(1).default(0.5),
 });
 
+const CONFIDENCE_WORDS: Record<string, number> = {
+  "very high": 0.95,
+  high: 0.85,
+  strong: 0.85,
+  moderate: 0.6,
+  medium: 0.6,
+  fair: 0.5,
+  low: 0.3,
+  weak: 0.3,
+  "very low": 0.15,
+  none: 0,
+};
+
+/** Accepts a number, a numeric string, or a confidence word. */
+const confidenceValue = z.preprocess((value) => {
+  if (typeof value === "number") return Math.min(1, Math.max(0, value));
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    const numeric = Number.parseFloat(text);
+    if (Number.isFinite(numeric)) {
+      return Math.min(1, Math.max(0, numeric > 1 ? numeric / 100 : numeric));
+    }
+    if (text in CONFIDENCE_WORDS) return CONFIDENCE_WORDS[text];
+  }
+  return 0.5;
+}, z.number().min(0).max(1));
+
+/** Accepts a boolean or the strings "true"/"false"/"yes"/"no". */
+const booleanValue = z.preprocess((value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    if (["true", "yes", "y", "1"].includes(text)) return true;
+    if (["false", "no", "n", "0"].includes(text)) return false;
+  }
+  return undefined;
+}, z.boolean());
+
+/** Accepts a list of strings or a single string. */
+const stringListValue = z.preprocess((value) => {
+  if (typeof value === "string") return value.trim() ? [value.trim()] : [];
+  if (Array.isArray(value)) return value.map((item) => String(item)).filter((item) => item.trim());
+  return [];
+}, z.array(z.string()).max(12));
+
 const GroundedAnswerSchema = z.object({
   answer: z.string().min(1),
-  citedPaperIds: z.array(z.string().min(1)).max(100).default([]),
-  confidence: z.number().min(0).max(1).default(0.5),
-  limitations: z.array(z.string().max(300)).max(6).default([]),
+  citedPaperIds: stringListValue.default([]),
+  confidence: confidenceValue.default(0.5),
+  limitations: stringListValue.default([]),
 });
 
 const FaithfulnessSchema = z.object({
-  supported: z.boolean(),
-  answersIntent: z.boolean(),
-  completeForRequest: z.boolean(),
-  languageMatched: z.boolean(),
+  supported: booleanValue,
+  answersIntent: booleanValue,
+  completeForRequest: booleanValue,
+  languageMatched: booleanValue,
   correctedAnswer: z.string().default(""),
-  citedPaperIds: z.array(z.string().min(1)).max(100).default([]),
-  confidence: z.number().min(0).max(1).default(0.5),
-  reason: z.string().max(500).default(""),
+  citedPaperIds: stringListValue.default([]),
+  confidence: confidenceValue.default(0.5),
+  reason: z.string().default(""),
 });
 
 const DocumentAnalysisBatchSchema = z.object({
@@ -450,6 +495,18 @@ const DocumentAnalysisBatchSchema = z.object({
     analysis: z.string().min(1),
   })).min(1).max(8),
 });
+
+/** Parses a grounded-answer payload, tolerating common shape drift. */
+export function parseGroundedAnswer(content: string): z.infer<typeof GroundedAnswerSchema> | null {
+  const parsed = GroundedAnswerSchema.safeParse(extractJsonObject(content));
+  return parsed.success ? parsed.data : null;
+}
+
+/** Parses a faithfulness audit payload, tolerating common shape drift. */
+export function parseFaithfulnessAudit(content: string): z.infer<typeof FaithfulnessSchema> | null {
+  const parsed = FaithfulnessSchema.safeParse(extractJsonObject(content));
+  return parsed.success ? parsed.data : null;
+}
 
 const TERM_INDEX_VERSION = "papertrend-term-index-v3-icu";
 const SECTION_JOINER = "\n\n";
@@ -1120,6 +1177,28 @@ export async function loadRepositoryContext(input: RepositoryChatInput): Promise
   };
   await saveRepositoryCache(context);
   return context;
+}
+
+/**
+ * Recovers readable prose when a structured answer could not be parsed.
+ *
+ * Falling back to the raw completion printed the whole `{"answer": ...}`
+ * envelope into the conversation. If the payload is JSON carrying an answer
+ * field, use that field; only use the raw text when it is not JSON at all.
+ */
+export function readableAnswerText(content: string): string {
+  const text = (content ?? "").trim();
+  if (!text) return "";
+  const parsed = extractJsonObject(text);
+  if (parsed) {
+    for (const key of ["answer", "correctedAnswer", "text", "content"]) {
+      const value = parsed[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+    // A JSON object with no readable field is not something to show a reader.
+    return "";
+  }
+  return text;
 }
 
 function extractJsonObject(value: string): Record<string, unknown> | null {
@@ -2242,7 +2321,7 @@ async function checkFaithfulness(input: {
       };
     }
     // An empty correctedAnswer means "the draft is already correct".
-    const corrected = parsed.data.correctedAnswer.trim() || input.answer;
+    const corrected = readableAnswerText(parsed.data.correctedAnswer) || input.answer;
     const validation = validateInlinePaperCitations(corrected, input.allowedPaperIds);
     const citationsOk =
       validation.invalidPaperIds.length === 0 &&
@@ -2323,7 +2402,7 @@ async function repositoryQaResult(
       answer = parsed.data.answer.trim();
       groundingConfidence = parsed.data.confidence;
     } else {
-      answer = completion?.content?.trim() ?? "";
+      answer = readableAnswerText(completion?.content ?? "");
       groundingConfidence = answer ? 0.45 : 0;
     }
   } catch {
@@ -2408,7 +2487,7 @@ async function repositoryQaResult(
     .map((paperId) => paperById.get(paperId))
     .filter((paper): paper is RepositoryPaper => Boolean(paper));
   return {
-    answer: formatPaperReferencesForReaders(answer, citedPapers),
+    answer: formatPaperReferencesForReaders(readableAnswerText(answer) || answer, citedPapers),
     citations: citedPapers.map((paper) =>
       citationForPaper(paper, "Cited in the grounded repository answer.")
     ),
