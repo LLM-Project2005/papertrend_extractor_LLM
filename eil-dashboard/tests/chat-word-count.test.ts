@@ -412,3 +412,35 @@ test("an unknown year is omitted rather than printed as Unknown", () => {
   assert.equal(answer, "See (Alpha Study).");
   assert.doesNotMatch(answer, /Unknown/);
 });
+
+test("a citation is dropped when the sentence already names that paper", () => {
+  const papers = [{ paperId: "1", title: "Rhythmical Patterns in Thai Readings", year: "2016" }];
+  const answer = formatPaperReferencesForReaders(
+    "The study is Rhythmical Patterns in Thai Readings. It found a rhythm effect. [Paper 1]",
+    papers
+  );
+  assert.doesNotMatch(answer, /\(Rhythmical Patterns in Thai Readings/);
+  assert.match(answer, /It found a rhythm effect\./);
+});
+
+test("a citation is kept when the paper was not just named", () => {
+  const papers = [{ paperId: "1", title: "Rhythmical Patterns in Thai Readings", year: "2016" }];
+  const answer = formatPaperReferencesForReaders(
+    "Learner rhythm shifts boundaries in ways listeners find hard to follow. [Paper 1]",
+    papers
+  );
+  assert.match(answer, /\(Rhythmical Patterns in Thai Readings, 2016\)/);
+});
+
+test("only the redundant citation is dropped from a group", () => {
+  const papers = [
+    { paperId: "1", title: "Alpha Study of Reading", year: "2016" },
+    { paperId: "2", title: "Beta Study of Writing", year: "2017" },
+  ];
+  const answer = formatPaperReferencesForReaders(
+    "Alpha Study of Reading reported gains. [Paper 1] [Paper 2]",
+    papers
+  );
+  assert.doesNotMatch(answer, /Alpha Study of Reading, 2016/);
+  assert.match(answer, /\(Beta Study of Writing, 2017\)/);
+});
