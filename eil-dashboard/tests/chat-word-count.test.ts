@@ -10,6 +10,7 @@ import {
   contentSourceNote,
   countTermInRepositoryPaper,
   fallbackPromptPlan,
+  formatPaperReferencesForReaders,
   legacyPlanForExecution,
   requestsRepositoryStatistics,
   requestsTotalWordCount,
@@ -361,4 +362,53 @@ test("a Thai length question answers fully in Thai", () => {
   );
   assert.match(result.answer, /จำนวนคำต่อเอกสาร/);
   assert.doesNotMatch(result.answer, /Exact word count/);
+});
+
+test("consecutive citations collapse into one readable group", () => {
+  // Live regression: a corpus report cited five papers in a row and rendered
+  // five full bold titles run together mid-paragraph.
+  const papers = [
+    { paperId: "1", title: "Alpha Study", year: "2016" },
+    { paperId: "2", title: "Beta Study", year: "2017" },
+    { paperId: "3", title: "Gamma Study", year: "Unknown" },
+  ];
+  const answer = formatPaperReferencesForReaders(
+    "All three agree. [Paper 1] [Paper 2] [Paper 3]",
+    papers
+  );
+  assert.equal(answer, "All three agree. (Alpha Study, 2016; Beta Study, 2017; Gamma Study)");
+  assert.doesNotMatch(answer, /\*\*/, "citations should not be bolded inline");
+});
+
+test("long citation titles are shortened", () => {
+  const long =
+    "Rhythmical Patterns in the Readings of Thai Learners with High and Low English Language Experience";
+  const answer = formatPaperReferencesForReaders("See [Paper 1].", [
+    { paperId: "1", title: long, year: "2016" },
+  ]);
+  assert.ok(answer.length < long.length + 20, "long titles must be shortened");
+  assert.match(answer, /…/, "shortened titles end with an ellipsis");
+  assert.match(answer, /2016/);
+});
+
+test("a repeated citation is not listed twice", () => {
+  const answer = formatPaperReferencesForReaders("Both say so. [Paper 1] [Paper 1]", [
+    { paperId: "1", title: "Alpha Study", year: "2016" },
+  ]);
+  assert.equal(answer, "Both say so. (Alpha Study, 2016)");
+});
+
+test("unknown paper markers are left untouched", () => {
+  const answer = formatPaperReferencesForReaders("See [Paper 99].", [
+    { paperId: "1", title: "Alpha Study", year: "2016" },
+  ]);
+  assert.equal(answer, "See [Paper 99].");
+});
+
+test("an unknown year is omitted rather than printed as Unknown", () => {
+  const answer = formatPaperReferencesForReaders("See [Paper 1].", [
+    { paperId: "1", title: "Alpha Study", year: "Unknown" },
+  ]);
+  assert.equal(answer, "See (Alpha Study).");
+  assert.doesNotMatch(answer, /Unknown/);
 });
