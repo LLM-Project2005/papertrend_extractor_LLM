@@ -43,20 +43,86 @@ export function cosineSimilarity(left: number[], right: number[]): number {
   return Math.max(-1, Math.min(1, dot / Math.sqrt(leftNorm * rightNorm)));
 }
 
+export const SEMANTIC_MAP_CANVAS = { minX: 40, maxX: 960, minY: 40, maxY: 760 } as const;
+
+/** Percentile span used for scaling so single outliers cannot squash the map. */
+const SPREAD_CLIP = 0.03;
+
+function clamp(value: number, low: number, high: number): number {
+  return Math.min(high, Math.max(low, value));
+}
+
 function normalizeCoordinates(rows: number[][]): number[][] {
   if (rows.length === 0) return [];
-  const xs = rows.map((row) => Number.isFinite(row[0]) ? row[0] : 0);
-  const ys = rows.map((row) => Number.isFinite(row[1]) ? row[1] : 0);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const xSpan = maxX - minX || 1;
-  const ySpan = maxY - minY || 1;
+  const xs = rows.map((row) => (Number.isFinite(row[0]) ? row[0] : 0));
+  const ys = rows.map((row) => (Number.isFinite(row[1]) ? row[1] : 0));
+  const lowX = percentile(xs, SPREAD_CLIP);
+  const highX = percentile(xs, 1 - SPREAD_CLIP);
+  const lowY = percentile(ys, SPREAD_CLIP);
+  const highY = percentile(ys, 1 - SPREAD_CLIP);
+  const xSpan = highX - lowX || Math.max(...xs) - Math.min(...xs) || 1;
+  const ySpan = highY - lowY || Math.max(...ys) - Math.min(...ys) || 1;
+  const width = SEMANTIC_MAP_CANVAS.maxX - SEMANTIC_MAP_CANVAS.minX;
+  const height = SEMANTIC_MAP_CANVAS.maxY - SEMANTIC_MAP_CANVAS.minY;
   return rows.map((_, index) => [
-    80 + ((xs[index] - minX) / xSpan) * 840,
-    80 + ((ys[index] - minY) / ySpan) * 640,
+    clamp(
+      SEMANTIC_MAP_CANVAS.minX + ((xs[index] - lowX) / xSpan) * width,
+      SEMANTIC_MAP_CANVAS.minX,
+      SEMANTIC_MAP_CANVAS.maxX
+    ),
+    clamp(
+      SEMANTIC_MAP_CANVAS.minY + ((ys[index] - lowY) / ySpan) * height,
+      SEMANTIC_MAP_CANVAS.minY,
+      SEMANTIC_MAP_CANVAS.maxY
+    ),
   ]);
+}
+
+/**
+ * Pulls each neighborhood together and pushes neighborhoods apart in the 2D
+ * layout.
+ *
+ * Neighborhood colour comes from k-means over the full-dimensional embeddings,
+ * while position comes from an independent 2D projection. The two do not have to
+ * agree, which is why papers could appear inside a neighborhood they were not a
+ * member of. Reconciling them here keeps the honest high-dimensional membership
+ * while making the picture match the colours.
+ */
+export function separateClusters(
+  coordinates: number[][],
+  assignments: number[],
+  cohesion = 0.3,
+  separation = 0.55
+): number[][] {
+  if (coordinates.length === 0) return [];
+  const ids = [...new Set(assignments)];
+  if (ids.length < 2) return coordinates;
+
+  const centroids = new Map<number, [number, number]>();
+  ids.forEach((id) => {
+    const members = coordinates.filter((_, index) => assignments[index] === id);
+    if (members.length === 0) return;
+    centroids.set(id, [
+      members.reduce((sum, row) => sum + row[0], 0) / members.length,
+      members.reduce((sum, row) => sum + row[1], 0) / members.length,
+    ]);
+  });
+  const globalX = coordinates.reduce((sum, row) => sum + row[0], 0) / coordinates.length;
+  const globalY = coordinates.reduce((sum, row) => sum + row[1], 0) / coordinates.length;
+
+  const moved = coordinates.map((row, index) => {
+    const centroid = centroids.get(assignments[index]);
+    if (!centroid) return [row[0], row[1]];
+    // Tighten the paper toward its own neighborhood centre...
+    const cohesiveX = centroid[0] + (row[0] - centroid[0]) * (1 - cohesion);
+    const cohesiveY = centroid[1] + (row[1] - centroid[1]) * (1 - cohesion);
+    // ...then move the whole neighborhood away from the map centre.
+    return [
+      cohesiveX + (centroid[0] - globalX) * separation,
+      cohesiveY + (centroid[1] - globalY) * separation,
+    ];
+  });
+  return normalizeCoordinates(moved);
 }
 
 export function euclideanDistance(left: number[], right: number[]): number {
@@ -97,7 +163,12 @@ function pcaProjection(embeddings: number[][]): { rows: number[][]; explainedVar
   return { rows, explainedVariance: Number.isFinite(explained) ? explained : 0 };
 }
 
-export function projectEmbeddings(embeddings: number[][], seed = SEMANTIC_MAP_SEED, forcePca = false): ProjectionResult {
+export function projectEmbeddings(
+  embeddings: number[][],
+  seed = SEMANTIC_MAP_SEED,
+  forcePca = false,
+  assignments?: number[]
+): ProjectionResult {
   if (embeddings.length === 0) {
     return { coordinates: [], algorithm: "single", parameters: { seed }, quality: { neighborhoodPreservation: 1 } };
   }
@@ -107,7 +178,7 @@ export function projectEmbeddings(embeddings: number[][], seed = SEMANTIC_MAP_SE
 
   if (embeddings.length <= 12 || forcePca) {
     const projected = pcaProjection(embeddings);
-    const coordinates = normalizeCoordinates(projected.rows);
+    const coordinates = applyClusterSeparation(normalizeCoordinates(projected.rows), assignments);
     return {
       coordinates,
       algorithm: "pca",
@@ -128,13 +199,18 @@ export function projectEmbeddings(embeddings: number[][], seed = SEMANTIC_MAP_SE
     distanceFn: euclideanDistance,
     random: seededRandom(seed),
   });
-  const coordinates = normalizeCoordinates(umap.fit(embeddings));
+  const coordinates = applyClusterSeparation(normalizeCoordinates(umap.fit(embeddings)), assignments);
   return {
     coordinates,
     algorithm: "umap",
     parameters: { seed, components: 2, nNeighbors, minDist },
     quality: { neighborhoodPreservation: neighborhoodPreservation(embeddings, coordinates) },
   };
+}
+
+function applyClusterSeparation(coordinates: number[][], assignments?: number[]): number[][] {
+  if (!assignments || assignments.length !== coordinates.length) return coordinates;
+  return separateClusters(coordinates, assignments);
 }
 
 function percentile(values: number[], fraction: number): number {
@@ -180,6 +256,79 @@ export function buildSimilarityEdges(embeddings: number[][], neighbors = 3): Sim
     }
   }
   return [...edgeMap.values()].sort((a, b) => a.distance - b.distance || a.source - b.source || a.target - b.target);
+}
+
+/**
+ * Adds the fewest edges needed so each neighborhood is a connected subgraph.
+ *
+ * Neighborhood colour and relationship lines are computed separately: colour is
+ * k-means membership, lines are mutual nearest-neighbour links above a distance
+ * threshold. Two papers could therefore share a colour with no line between
+ * them, which readers reasonably read as a contradiction. Linking each
+ * neighborhood with its own minimum spanning tree removes that contradiction
+ * without inventing links between unrelated neighborhoods.
+ */
+export function connectClusters(
+  embeddings: number[][],
+  edges: SimilarityEdgeIndex[],
+  assignments: number[]
+): SimilarityEdgeIndex[] {
+  if (embeddings.length < 2) return edges;
+  const result = [...edges];
+  const key = (left: number, right: number) => `${Math.min(left, right)}:${Math.max(left, right)}`;
+  const present = new Set(result.map((edge) => key(edge.source, edge.target)));
+
+  for (const id of [...new Set(assignments)]) {
+    const members = assignments.map((value, index) => (value === id ? index : -1)).filter((index) => index >= 0);
+    if (members.length < 2) continue;
+    // Union-find over the edges this neighborhood already has.
+    const parent = new Map<number, number>(members.map((index) => [index, index]));
+    const find = (node: number): number => {
+      let current = node;
+      while (parent.get(current) !== current) {
+        const next = parent.get(current)!;
+        parent.set(current, parent.get(next)!);
+        current = next;
+      }
+      return current;
+    };
+    const union = (left: number, right: number): boolean => {
+      const a = find(left);
+      const b = find(right);
+      if (a === b) return false;
+      parent.set(a, b);
+      return true;
+    };
+    result.forEach((edge) => {
+      if (parent.has(edge.source) && parent.has(edge.target)) union(edge.source, edge.target);
+    });
+    // Candidate links inside the neighborhood, shortest first.
+    const candidates: Array<{ source: number; target: number; distance: number }> = [];
+    for (let left = 0; left < members.length; left += 1) {
+      for (let right = left + 1; right < members.length; right += 1) {
+        candidates.push({
+          source: members[left],
+          target: members[right],
+          distance: euclideanDistance(embeddings[members[left]], embeddings[members[right]]),
+        });
+      }
+    }
+    candidates.sort((a, b) => a.distance - b.distance || a.source - b.source || a.target - b.target);
+    for (const candidate of candidates) {
+      if (!union(candidate.source, candidate.target)) continue;
+      const edgeKey = key(candidate.source, candidate.target);
+      if (present.has(edgeKey)) continue;
+      present.add(edgeKey);
+      result.push({
+        source: Math.min(candidate.source, candidate.target),
+        target: Math.max(candidate.source, candidate.target),
+        distance: candidate.distance,
+        similarity: 1 / (1 + candidate.distance),
+        rank: 0,
+      });
+    }
+  }
+  return result.sort((a, b) => a.distance - b.distance || a.source - b.source || a.target - b.target);
 }
 
 interface ClusterResult { assignments: number[]; score: number }

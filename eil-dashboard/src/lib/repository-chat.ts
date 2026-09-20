@@ -58,6 +58,9 @@ export interface RepositoryChartPayload {
   };
 }
 
+/** Which text the word index was built from, so counts can be reported honestly. */
+export type PaperContentSource = "full_text" | "extracted_sections" | "empty";
+
 export interface RepositoryPaper {
   paperId: string;
   runId: string;
@@ -70,6 +73,7 @@ export interface RepositoryPaper {
   conclusion: string;
   content: string;
   contentHash: string;
+  contentSource: PaperContentSource;
   totalWords: number;
   termCounts: Record<string, number>;
   topics: Map<string, number>;
@@ -418,7 +422,8 @@ const DocumentAnalysisBatchSchema = z.object({
   })).min(1).max(8),
 });
 
-const TERM_INDEX_VERSION = "papertrend-term-index-v2";
+const TERM_INDEX_VERSION = "papertrend-term-index-v3-icu";
+const SECTION_JOINER = "\n\n";
 const REPOSITORY_MEMORY_MAX_PAPERS = 500;
 const REPOSITORY_MEMORY_MAX_CHARS = 18_000;
 const REPOSITORY_PAPER_BRIEF_MAX_CHARS = 360;
@@ -434,13 +439,14 @@ function hashText(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-function canonicalPaperContent(row: PaperRow): string {
+function canonicalPaperContent(row: PaperRow): { text: string; source: PaperContentSource } {
   const fullText = String(row.body ?? row.raw_text ?? "").trim();
-  if (fullText) return fullText;
-  return [row.abstract_claims, row.abstract, row.methods, row.results, row.conclusion]
+  if (fullText) return { text: fullText, source: "full_text" };
+  const sections = [row.abstract_claims, row.abstract, row.methods, row.results, row.conclusion]
     .map((value) => String(value ?? "").trim())
     .filter(Boolean)
-    .join("\n\n");
+    .join(SECTION_JOINER);
+  return { text: sections, source: sections ? "extracted_sections" : "empty" };
 }
 
 function normalizedIdList(values: string[] | undefined): string[] {
@@ -470,7 +476,7 @@ function buildRunStats(rows: Array<{ status?: unknown }>): RepositoryRunStats {
 }
 
 function paperFromRow(row: PaperRow): RepositoryPaper {
-  const content = canonicalPaperContent(row);
+  const { text: content, source: contentSource } = canonicalPaperContent(row);
   const index = buildRepositoryTermCounts(content);
   return {
     paperId: String(row.paper_id),
@@ -484,6 +490,7 @@ function paperFromRow(row: PaperRow): RepositoryPaper {
     conclusion: String(row.conclusion ?? "").trim(),
     content,
     contentHash: hashText(`${TERM_INDEX_VERSION}\u0000${content}`),
+    contentSource,
     totalWords: index.totalWords,
     termCounts: index.termCounts,
     topics: new Map(),
@@ -1143,20 +1150,33 @@ export function requestsRepositoryStatistics(prompt: string): boolean {
   );
 }
 
+/** Detects requests for document length rather than a specific term frequency. */
+export function requestsTotalWordCount(prompt: string): boolean {
+  const normalized = prompt.toLowerCase().replace(/\s+/g, " ").trim();
+  return (
+    /\b(?:how many|number of|total)\s+(?:words|word count)\b/.test(normalized) ||
+    /\bword count\b/.test(normalized) ||
+    /\bhow (?:long|big|large)\s+(?:is|are)\b.*\b(?:paper|papers|document|documents|thesis)\b/.test(normalized) ||
+    /\b(?:length)\s+of\s+(?:the\s+)?(?:paper|papers|document|documents|thesis)\b/.test(normalized) ||
+    /(?:\u0e01\u0e35\u0e48\u0e04\u0e33|\u0e08\u0e33\u0e19\u0e27\u0e19\u0e04\u0e33|\u0e19\u0e31\u0e1a\u0e04\u0e33|\u0e04\u0e27\u0e32\u0e21\u0e22\u0e32\u0e27)/.test(normalized)
+  );
+}
+
 export function fallbackPromptPlan(prompt: string, forceChart: boolean): RepositoryPromptPlan {
   const lower = prompt.toLowerCase();
-  const countIntent = /\b(count|frequency|frequencies|occurrence|occurrences|how many times)\b|นับ|จำนวนครั้ง/i.test(prompt);
+  const totalWordIntent = requestsTotalWordCount(prompt);
+  const countIntent = totalWordIntent || /\b(count|frequency|frequencies|occurrence|occurrences|how many times)\b|นับ|จำนวนครั้ง/i.test(prompt);
   const topicIntent = /\b(topic|topics|theme|themes|concept|concepts|summari[sz]e)\b|หัวข้อ|ประเด็น|สรุป/i.test(prompt);
   const chartIntent = promptRequestsChart(prompt, forceChart);
   const exhaustiveIntent = /\b(all|entire|whole|every|repository-wide|corpus-wide|across the repository|across my papers)\b|ทั้งหมด|ทั้ง repository|ทุกบทความ/i.test(prompt);
   const repositoryAggregateIntent = topicIntent && /\b(repository|folder|corpus|project)\b|คลัง|โฟลเดอร์|โปรเจกต์/i.test(prompt);
   const comparativeIntent = /\b(compare|comparison|contrast|across|differences?|similarities|trends?|gaps?)\b|เปรียบเทียบ|แนวโน้ม|ช่องว่าง/i.test(prompt);
-  let terms = quotedTerms(prompt);
-  if (countIntent && terms.length === 0) {
+  let terms = totalWordIntent ? [] : quotedTerms(prompt);
+  if (countIntent && !totalWordIntent && terms.length === 0) {
     const match = lower.match(/(?:count|frequency of|occurrences? of)\s+(?:the\s+)?(?:word\s+)?([\p{L}\p{N}'-]{2,64})/iu);
     if (match?.[1]) terms = [match[1]];
   }
-  const statisticsIntent = requestsRepositoryStatistics(prompt);
+  const statisticsIntent = !totalWordIntent && requestsRepositoryStatistics(prompt);
   const intent: RepositoryIntent = statisticsIntent
     ? "repository_statistics"
     : countIntent
@@ -1173,7 +1193,7 @@ export function fallbackPromptPlan(prompt: string, forceChart: boolean): Reposit
     retrievalQueries: [prompt.trim()],
     evidenceNeeds: [],
     answerLanguage: "same as user",
-    retrievalMode: statisticsIntent || exhaustiveIntent || repositoryAggregateIntent
+    retrievalMode: statisticsIntent || totalWordIntent || exhaustiveIntent || repositoryAggregateIntent
       ? "exhaustive"
       : comparativeIntent
         ? "comparative"
@@ -1310,17 +1330,115 @@ function shortLabel(value: string, max = 54): string {
   return value.length > max ? `${value.slice(0, max - 3)}...` : value;
 }
 
-function wordCountResult(
+/** Human-readable note about which text a count was taken over. */
+export function contentSourceNote(papers: RepositoryPaper[], thai: boolean): string {
+  const sections = papers.filter((paper) => paper.contentSource === "extracted_sections").length;
+  const empty = papers.filter((paper) => paper.contentSource === "empty").length;
+  if (sections === 0 && empty === 0) {
+    return thai
+      ? "นับจากข้อความเต็มของเอกสารทุกฉบับ"
+      : "Counted over the full extracted document text for every paper.";
+  }
+  const parts: string[] = [];
+  if (sections > 0) {
+    parts.push(
+      thai
+        ? `${sections} ฉบับมีเฉพาะส่วนที่สกัดไว้ (บทคัดย่อ วิธีการ ผล และสรุป) จึงนับได้ต่ำกว่าความยาวจริง`
+        : `${sections} paper(s) have only extracted sections (abstract, methods, results, conclusion) stored, so their counts understate the real document length.`
+    );
+  }
+  if (empty > 0) {
+    parts.push(
+      thai
+        ? `${empty} ฉบับไม่มีข้อความที่ใช้นับได้`
+        : `${empty} paper(s) have no stored text to count.`
+    );
+  }
+  return parts.join(" ");
+}
+
+/** Totals the indexed words per paper. Answers "how many words is this paper". */
+function totalWordCountResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan
-): Pick<RepositoryChatResult, "answer" | "citations" | "charts"> {
-  if (plan.terms.length === 0) {
-    return {
-      answer: "Which exact word or phrase should I count? Put it in quotation marks so I can preserve it exactly.",
-      citations: [],
-      charts: [],
-    };
+): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "limitations"> {
+  const thai = answerLanguageIsThai(plan.answerLanguage);
+  const rows = [...context.papers].sort((left, right) => right.totalWords - left.totalWords);
+  const total = rows.reduce((sum, paper) => sum + paper.totalWords, 0);
+  const header = thai ? `| เอกสาร | ปี | จำนวนคำ |` : `| Paper | Year | Words |`;
+  const divider = `| --- | --- | ---: |`;
+  const tableRows = rows.map(
+    (paper) =>
+      `| ${paper.title.replace(/\|/g, "-")} | ${paper.year} | ${paper.totalWords.toLocaleString()} |`
+  );
+  const totalLabel = thai ? `**รวม (${rows.length} ฉบับ)**` : `**Total (${rows.length} papers)**`;
+  const totalRow = `| ${totalLabel} |  | **${total.toLocaleString()}** |`;
+  const average = rows.length > 0 ? Math.round(total / rows.length) : 0;
+  const note = contentSourceNote(rows, thai);
+  const answer = [
+    thai ? `## จำนวนคำต่อเอกสาร` : `## Word count per paper`,
+    thai
+      ? `นับคำที่จัดทำดัชนีไว้ใน **${context.scopeLabel}**`
+      : `Indexed word totals across **${context.scopeLabel}**.`,
+    "",
+    header,
+    divider,
+    ...tableRows,
+    totalRow,
+    "",
+    thai
+      ? `ค่าเฉลี่ยประมาณ ${average.toLocaleString()} คำต่อฉบับ`
+      : `That averages about ${average.toLocaleString()} words per paper.`,
+    note,
+    thai
+      ? "การนับใช้การตัดคำตามพจนานุกรมสำหรับภาษาไทย และตัดตามขอบเขตคำสำหรับภาษาอังกฤษ ยัติภังค์ถือเป็นขอบเขตคำ"
+      : "Thai is segmented with a dictionary-based word breaker and English on word boundaries; hyphens act as word boundaries.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const charts: RepositoryChartPayload[] = plan.needsChart
+    ? [
+        {
+          chartType: plan.chartType === "line" || plan.chartType === "pie" ? "bar" : plan.chartType,
+          title: thai ? "จำนวนคำต่อเอกสาร" : "Words per paper",
+          scopeLabel: context.scopeLabel,
+          metric: "word_count",
+          xKey: "label",
+          yKeys: ["words"],
+          data: rows.map((paper) => ({ label: shortLabel(paper.title), words: paper.totalWords })),
+          planner: {
+            source: plan.source,
+            reason: "Indexed word totals grouped by paper.",
+            confidence: "high",
+            warnings: [],
+          },
+        },
+      ]
+    : [];
+  const limitations: string[] = [];
+  if (rows.some((paper) => paper.contentSource !== "full_text")) {
+    limitations.push(
+      "Some papers store only extracted sections, so their word totals are lower than the original document."
+    );
   }
+  return {
+    answer,
+    citations: rows.map((paper) =>
+      citationForPaper(paper, `Indexed word total: ${paper.totalWords.toLocaleString()}.`)
+    ),
+    charts,
+    limitations,
+  };
+}
+
+export function wordCountResult(
+  context: RepositoryContext,
+  plan: RepositoryPromptPlan
+): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "limitations"> {
+  // No specific term means the reader is asking how long the papers are, not how
+  // often a word appears. Answer that directly instead of demanding a term.
+  if (plan.terms.length === 0) return totalWordCountResult(context, plan);
+  const thai = answerLanguageIsThai(plan.answerLanguage);
   const terms = plan.terms.slice(0, 6);
   const rows = context.papers.map((paper) => {
     const values = Object.fromEntries(terms.map((term) => [term, countTermInRepositoryPaper(paper, term)]));
@@ -1345,8 +1463,11 @@ function wordCountResult(
     ...tableRows,
     totalRow,
     "",
-    "Counting is case-insensitive. Hyphens act as word boundaries, apostrophe-containing words are preserved, and multi-word terms require an exact consecutive phrase.",
-  ].join("\n");
+    contentSourceNote(context.papers, thai),
+    "Counting is case-insensitive. Thai uses dictionary-based word segmentation. Hyphens act as word boundaries, apostrophe-containing words are preserved, and multi-word terms require an exact consecutive phrase.",
+  ]
+    .filter(Boolean)
+    .join("\n");
   const charts: RepositoryChartPayload[] = plan.needsChart
     ? [
         {
@@ -1366,10 +1487,17 @@ function wordCountResult(
         },
       ]
     : [];
+  const limitations: string[] = [];
+  if (context.papers.some((paper) => paper.contentSource !== "full_text")) {
+    limitations.push(
+      "Some papers store only extracted sections, so term counts cover less text than the original document."
+    );
+  }
   return {
     answer,
     citations: rows.map(({ paper }) => citationForPaper(paper, `Included in exact count for ${terms.join(", ")}.`)),
     charts,
+    limitations,
   };
 }
 

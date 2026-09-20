@@ -136,6 +136,58 @@ function clusterLabel(clusterId: number | null, clusters: SemanticMapCluster[]):
   return clusters.find((cluster) => cluster.id === clusterId)?.label ?? `Neighborhood ${clusterId + 1}`;
 }
 
+/** Plain-language account of how the map is computed, shown next to the canvas. */
+export interface SemanticMapMethodology {
+  clustering: string;
+  position: string;
+  lines: string;
+  colourVersusLines: string;
+  caution: string;
+}
+
+export function semanticMapMethodology(
+  quality: Record<string, number> = {},
+  algorithm: string | null = null
+): SemanticMapMethodology {
+  const clusterCount = Number(quality.clusterCount ?? 0);
+  const silhouette = Number(quality.clusterSilhouette ?? 0);
+  const bridges = Number(quality.clusterBridgeEdgeCount ?? 0);
+  const preservation = Number(quality.neighborhoodPreservation ?? 0);
+  const layout = algorithm === "pca" ? "PCA" : algorithm === "umap" ? "UMAP" : "a deterministic projection";
+  return {
+    clustering:
+      `Neighborhoods come from k-means over the full document embedding of each paper, ` +
+      `not over the two coordinates you see. Each paper is embedded from its title, year, ` +
+      `categories, topics, keywords, abstract, research objectives, methods, findings and ` +
+      `conclusion. The number of neighborhoods` +
+      (clusterCount > 0 ? ` (currently ${clusterCount})` : "") +
+      ` is chosen automatically by the best silhouette score` +
+      (silhouette > 0 ? `, currently ${silhouette.toFixed(2)}` : "") +
+      `, using Euclidean distance.`,
+    position:
+      `Positions come from ${layout} reducing those same embeddings to two dimensions, ` +
+      `then each neighborhood is tightened and pushed away from the map centre so the ` +
+      `picture agrees with the colours.` +
+      (preservation > 0
+        ? ` About ${Math.round(preservation * 100)}% of each paper's nearest neighbours in the full embedding space remain its nearest neighbours on screen.`
+        : ""),
+    lines:
+      `A line is drawn between two papers that are mutual nearest neighbours and close ` +
+      `enough in the full embedding space to pass the distance threshold. Lines are not ` +
+      `citations and do not mean the authors agree.`,
+    colourVersusLines:
+      `Colour answers "which theme does this paper belong to"; a line answers "are these two ` +
+      `papers individually close". Two papers can share a colour without a line when they sit ` +
+      `at opposite edges of the same broad theme. Every neighborhood is now also linked ` +
+      `internally so no coloured group is left with no lines at all` +
+      (bridges > 0 ? ` (${bridges} such link${bridges === 1 ? "" : "s"} were added here)` : "") +
+      `.`,
+    caution:
+      `Distance on this map is a reduced view of semantic similarity in the extracted text. ` +
+      `It is not evidence of citation, influence, quality or academic agreement.`,
+  };
+}
+
 export function buildSemanticSelectionInsight(
   map: Pick<RepositorySemanticMap, "points" | "edges" | "clusters">,
   selectedPaperIds: string[]

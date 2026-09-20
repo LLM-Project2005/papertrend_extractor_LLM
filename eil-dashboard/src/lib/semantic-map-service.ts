@@ -13,6 +13,7 @@ import {
 import {
   buildSimilarityEdges,
   clusterEmbeddings,
+  connectClusters,
   projectEmbeddings,
 } from "@/lib/semantic-map-math";
 import type { SemanticMapCluster, SemanticMapEdge, SemanticMapPoint, SemanticPaperDocument } from "@/types/semantic-map";
@@ -129,17 +130,21 @@ export async function processSemanticMapJob(ownerUserId: string, mapId: string):
     if (vectors.length !== documents.length) throw new Error("Not every paper received an embedding.");
 
     await updateSemanticMapProgress(ownerUserId, mapId, "computing_relationships", documents.length, documents.length);
-    const edgeIndexes = buildSimilarityEdges(vectors);
     const clustering = clusterEmbeddings(vectors);
+    const nearestEdges = buildSimilarityEdges(vectors);
+    const edgeIndexes = connectClusters(vectors, nearestEdges, clustering.assignments);
     let projection;
     try {
-      projection = projectEmbeddings(vectors);
+      projection = projectEmbeddings(vectors, 42, false, clustering.assignments);
     } catch (error) {
       if (vectors.length <= 1) throw error;
-      projection = projectEmbeddings(vectors, 42, true);
+      projection = projectEmbeddings(vectors, 42, true, clustering.assignments);
       projection.quality.umapFallback = 1;
     }
     projection.quality.clusterSilhouette = clustering.score;
+    projection.quality.clusterCount = new Set(clustering.assignments).size;
+    projection.quality.nearestNeighborEdgeCount = nearestEdges.length;
+    projection.quality.clusterBridgeEdgeCount = edgeIndexes.length - nearestEdges.length;
     projection.quality.edgeCount = edgeIndexes.length;
     projection.quality.disconnectedPapers = documents.filter((_, index) => !edgeIndexes.some((edge) => edge.source === index || edge.target === index)).length;
 
