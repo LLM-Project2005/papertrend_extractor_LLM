@@ -2,6 +2,15 @@ import { PCA } from "ml-pca";
 import { UMAP } from "umap-js";
 
 export const SEMANTIC_MAP_SEED = 42;
+/**
+ * Rank stamped on links added purely to connect a neighborhood.
+ *
+ * Nearest-neighbour ranks start at 1 and the stored schema enforces
+ * CHECK (edge_rank > 0), so this marker must stay above zero while remaining
+ * clearly outside the normal nearest-neighbour range.
+ */
+export const CLUSTER_BRIDGE_EDGE_RANK = 99;
+
 export const SEMANTIC_MAP_PROJECTION_VERSION = "semantic-projection-v2-euclidean";
 
 export interface ProjectionResult {
@@ -324,7 +333,7 @@ export function connectClusters(
         target: Math.max(candidate.source, candidate.target),
         distance: candidate.distance,
         similarity: 1 / (1 + candidate.distance),
-        rank: 0,
+        rank: CLUSTER_BRIDGE_EDGE_RANK,
       });
     }
   }

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  CLUSTER_BRIDGE_EDGE_RANK,
   SEMANTIC_MAP_CANVAS,
   clusterEmbeddings,
   connectClusters,
@@ -223,7 +224,11 @@ test("added neighborhood links are marked so they can be styled apart", () => {
   const added = after.filter(
     (edge) => !before.some((item) => item.source === edge.source && item.target === edge.target)
   );
-  added.forEach((edge) => assert.equal(edge.rank, 0, "neighborhood links use rank 0"));
+  added.forEach((edge) =>
+    assert.equal(edge.rank, CLUSTER_BRIDGE_EDGE_RANK, "neighborhood links use the bridge rank")
+  );
+  // The stored schema enforces CHECK (edge_rank > 0).
+  added.forEach((edge) => assert.ok(edge.rank > 0, "bridge rank must satisfy the database constraint"));
 });
 
 test("the methodology explainer answers what computes a neighborhood", () => {
