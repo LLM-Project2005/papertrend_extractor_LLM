@@ -2277,7 +2277,11 @@ export function fallbackExecutionPlan(
   };
 }
 
-function legacyPlanForExecution(plan: RepositoryExecutionPlan): RepositoryPromptPlan {
+export function legacyPlanForExecution(
+  plan: RepositoryExecutionPlan,
+  prompt?: string
+): RepositoryPromptPlan {
+  const lengthQuestion = requestsTotalWordCount(prompt ?? plan.refinedQuestion ?? "");
   const intent: RepositoryIntent = plan.operation === "inspect_scope"
     ? "repository_statistics"
     : plan.operation === "analyze_text"
@@ -2292,7 +2296,7 @@ function legacyPlanForExecution(plan: RepositoryExecutionPlan): RepositoryPrompt
   return {
     intent,
     refinedQuestion: plan.refinedQuestion,
-    terms: plan.terms,
+    terms: lengthQuestion ? [] : plan.terms,
     retrievalQueries: plan.retrievalQueries,
     evidenceNeeds: plan.evidenceNeeds,
     answerLanguage: plan.answerLanguage,
@@ -2434,7 +2438,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
       operation,
       operations: [operation],
     };
-    const stepPlan = legacyPlanForExecution(stepExecution);
+    const stepPlan = legacyPlanForExecution(stepExecution, input.prompt);
     let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
 
     if (operation === "converse") result = await converseResult(input, context, stepExecution);
@@ -2863,7 +2867,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     ? input.executionPlan ?? await planRepositoryExecution(input, context)
     : undefined;
   const plan = execution
-    ? legacyPlanForExecution(execution)
+    ? legacyPlanForExecution(execution, input.prompt)
     : requestsRepositoryStatistics(input.prompt)
       ? fallbackPromptPlan(input.prompt, Boolean(input.forceChart))
       : await refineRepositoryPrompt(
