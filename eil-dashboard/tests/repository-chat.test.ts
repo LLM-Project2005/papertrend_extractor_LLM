@@ -319,6 +319,6 @@ test("reader-facing citations use paper titles instead of database ids", () => {
     "Feedback improved revision quality [Paper 101].",
     [{ paperId: "101", title: "Peer Feedback in EFL Writing", year: "2022" }]
   );
-  assert.equal(answer, "Feedback improved revision quality **Peer Feedback in EFL Writing** (2022).");
+  assert.equal(answer, "Feedback improved revision quality (Peer Feedback in EFL Writing, 2022).");
   assert.doesNotMatch(answer, /Paper 101/);
 });

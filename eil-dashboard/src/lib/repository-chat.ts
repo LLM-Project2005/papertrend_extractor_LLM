@@ -242,18 +242,47 @@ export function inferConversationAnswerLanguage(
   return "English";
 }
 
+/** Longest inline citation title before it is shortened for readability. */
+const CITATION_TITLE_MAX = 58;
+
+function citationLabel(paper: Pick<RepositoryPaper, "title" | "year">): string {
+  const title = paper.title.trim() || "Untitled paper";
+  const short = title.length > CITATION_TITLE_MAX
+    ? `${title.slice(0, CITATION_TITLE_MAX - 1).trimEnd()}\u2026`
+    : title;
+  const year = paper.year && paper.year !== "Unknown" ? `, ${paper.year}` : "";
+  return `${short}${year}`;
+}
+
+/**
+ * Renders `[Paper 12]` markers as readable citations.
+ *
+ * Titles rather than database ids are what a reader can act on, but expanding
+ * every marker to a full bold title produced a wall of run-together titles
+ * whenever a model cited several papers in a row. Adjacent markers are now
+ * collapsed into one parenthetical group, and long titles are shortened, which
+ * matches how citations normally read in prose.
+ */
 export function formatPaperReferencesForReaders(
   answer: string,
   papers: Iterable<Pick<RepositoryPaper, "paperId" | "title" | "year">>
 ): string {
   const paperById = new Map([...papers].map((paper) => [String(paper.paperId), paper]));
-  return answer.replace(/\[Paper\s+([^\]]+)\]/gi, (reference, rawId: string) => {
-    const paper = paperById.get(String(rawId).trim());
-    if (!paper) return reference;
-    const title = paper.title.trim() || "Untitled paper";
-    const year = paper.year && paper.year !== "Unknown" ? ` (${paper.year})` : "";
-    return `**${title}**${year}`;
-  });
+  return answer.replace(
+    /\[Paper\s+[^\]]+\](?:[\s,;]*\[Paper\s+[^\]]+\])*/gi,
+    (run: string) => {
+      const ids = [...run.matchAll(/\[Paper\s+([^\]]+)\]/gi)].map((match) => String(match[1]).trim());
+      const labels: string[] = [];
+      for (const id of ids) {
+        const paper = paperById.get(id);
+        if (!paper) return run;
+        const label = citationLabel(paper);
+        if (!labels.includes(label)) labels.push(label);
+      }
+      if (labels.length === 0) return run;
+      return `(${labels.join("; ")})`;
+    }
+  );
 }
 
 interface PaperRow {
@@ -2277,7 +2306,11 @@ export function fallbackExecutionPlan(
   };
 }
 
-function legacyPlanForExecution(plan: RepositoryExecutionPlan): RepositoryPromptPlan {
+export function legacyPlanForExecution(
+  plan: RepositoryExecutionPlan,
+  prompt?: string
+): RepositoryPromptPlan {
+  const lengthQuestion = requestsTotalWordCount(prompt ?? plan.refinedQuestion ?? "");
   const intent: RepositoryIntent = plan.operation === "inspect_scope"
     ? "repository_statistics"
     : plan.operation === "analyze_text"
@@ -2292,7 +2325,7 @@ function legacyPlanForExecution(plan: RepositoryExecutionPlan): RepositoryPrompt
   return {
     intent,
     refinedQuestion: plan.refinedQuestion,
-    terms: plan.terms,
+    terms: lengthQuestion ? [] : plan.terms,
     retrievalQueries: plan.retrievalQueries,
     evidenceNeeds: plan.evidenceNeeds,
     answerLanguage: plan.answerLanguage,
@@ -2434,7 +2467,7 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
       operation,
       operations: [operation],
     };
-    const stepPlan = legacyPlanForExecution(stepExecution);
+    const stepPlan = legacyPlanForExecution(stepExecution, input.prompt);
     let result: Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">;
 
     if (operation === "converse") result = await converseResult(input, context, stepExecution);
@@ -2863,7 +2896,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     ? input.executionPlan ?? await planRepositoryExecution(input, context)
     : undefined;
   const plan = execution
-    ? legacyPlanForExecution(execution)
+    ? legacyPlanForExecution(execution, input.prompt)
     : requestsRepositoryStatistics(input.prompt)
       ? fallbackPromptPlan(input.prompt, Boolean(input.forceChart))
       : await refineRepositoryPrompt(
