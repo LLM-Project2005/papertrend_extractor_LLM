@@ -229,3 +229,127 @@ sentence splitting. Paragraph breaks are honoured for both.
 - The semantic map still needs a visual check against a real repository.
 - `SEMANTIC_MAP_PROJECTION_VERSION` is unchanged, so saved maps keep their old
   coordinates until regenerated.
+
+## Round 3 — live testing against real data
+
+Rounds 1 and 2 passed every deterministic test, the production build, and the
+pilot health check. Signing in as a real user and asking real questions against
+real repositories then found **five further defects**, three of which the offline
+suites could not have caught. This section is the argument for treating live
+testing as part of the definition of done.
+
+### I. Word counts returned zero for every paper (severity: high)
+
+The professor's own example, on real data:
+
+```text
+| Paper                                     | word count | words per paper |
+| Development of English Oral Communication |          0 |               0 |
+| **Total (5 papers)**                      |      **0** |           **0** |
+```
+
+The V2 execution planner, which is the live path in production, answers a
+document-length question by putting meta phrases into `plan.terms` --
+`["word count", "words per paper"]` -- and the term-frequency path counted those
+literal phrases. The index was never wrong: the same repository separately
+reported 26,339 words. The round-1 guard only ran in `fallbackPromptPlan`, which
+production bypasses whenever the planner succeeds.
+
+### J. The planner could also divert the question entirely (severity: high)
+
+After fixing term selection, production still failed where the pilot succeeded,
+because the planner is not deterministic. It chose `analyze_each_document`, so a
+model was asked to count words in excerpts it could not see and answered, quite
+correctly, that it could not. A question whose answer is stored exactly must not
+depend on planner discretion. `runRepositoryChat` now answers it before dispatch.
+
+Together with round 1, a document-length question could be diverted in three
+places: intent detection, term selection, and operation choice. All three are now
+closed.
+
+### K. Citations rendered as a wall of bold titles (severity: medium)
+
+An asynchronous corpus report cited five papers in a row, and each expanded to a
+full bold title run together mid-paragraph. Adjacent markers now collapse into a
+single parenthetical group, repeats appear once, long titles are shortened, and
+an unknown year is omitted.
+
+### L. Bridge edges violated a database constraint (severity: high, self-inflicted)
+
+Round 1 stamped `rank: 0` on the links added to connect a neighborhood, but
+`repository_semantic_edges` declares `CHECK (edge_rank > 0)`. Every map needing a
+bridge failed to persist. The five-paper repository hid it, because its
+neighborhoods were already connected and needed no bridges; only the 38-paper
+repository exercised the path. This shipped to production in PR #29 and was fixed
+in PR #32.
+
+### M. A lone outlier became its own neighborhood (severity: medium)
+
+The real 38-paper map was split **37 to 1**. `deterministicKMeans` seeds each new
+centre with the point farthest from the existing centres, which reliably promotes
+an outlier into a neighborhood of its own. That is a second, independent cause of
+"clusters need to be separate", unrelated to the colour/position mismatch.
+Neighborhoods below 5% of the repository, floor of two, now merge into their
+nearest survivor.
+
+## Measured on real repositories
+
+The 38-paper repository `testtest`, before and after, read back from the live API:
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Neighborhood split | 37 / 1 | 35 / 3 |
+| Papers drawn nearer another neighborhood's centre | 11 / 38 | 6 / 38 |
+| Neighborhoods with no internal connection | 1 | 0 |
+| Disconnected papers | 11 | 0 |
+| Relationship lines | 26 | 41 (26 nearest + 15 bridges) |
+| Canvas used | 840 x 640 | 920 x 720 |
+
+The five-paper repository now resolves to a single neighborhood rather than a
+4/1 split, which is the more honest reading of five topically similar EFL papers.
+
+Word counts on real data, verified through `research-trend-analysis.web.app`:
+
+```text
+| Rhythmical Patterns in the Readings of Thai Learners... | Unknown | 8,754 |
+| Effects of Personal Intelligence Reading Instruction... |    2016 | 6,150 |
+| ปรากฎร่วมเชิงวิชาการสำหรับนิสิต...                        | Unknown | 6,091 |
+| Enhancing Learner Autonomy amongst Young EFL Learners... |    2017 | 3,618 |
+| Development of English Oral Communication...             | Unknown | 1,726 |
+| **Total (5 papers)**                                     |         | **26,339** |
+```
+
+That total cross-checks exactly against the independent `inspect_scope` figure,
+which is computed by a different code path. The Thai phrasing
+`เอกสารในคลังนี้มีกี่คำ` returns the same table fully in Thai.
+
+The asynchronous corpus-report path was also verified end to end: the job
+reached `status: succeeded` at 5/5 and returned a substantive grounded report.
+
+## Final state
+
+- TypeScript suite: **175 passing** (from 120), 0 failing
+- Python suite: **134 passing** (from 119), 0 failing
+- Typecheck and production Next.js build clean
+- Production web `papertrend-web-production-00022-d6w`, worker
+  `papertrend-worker-production-00015-lg9`, both healthy, no errors in logs
+- Direct Cloud Run and Firebase Hosting serve the same revision
+- Live authenticated checks pass against both the pilot and production
+
+## Still open
+
+- **6 of 38 papers still measure as sitting nearer another neighborhood's
+  centre.** With a 35/3 split this is partly an artefact of the metric on very
+  unbalanced groups, and this corpus is topically homogeneous -- all EFL and
+  assessment work, silhouette 0.148. No clustering produces clean separation from
+  genuinely homogeneous data. A human visual check is the right next step.
+- A **duplicate paper** appears in `testtest`: "Effects of a Learning-oriented
+  Reading Assessment Model on Thai Undergraduate Students' Reading Ability"
+  (2022) is listed twice with an identical 11,995-word count. This looks like
+  the same file ingested twice rather than a counting defect, but it is worth
+  confirming against the duplicate-detection rule.
+- `SEMANTIC_MAP_PROJECTION_VERSION` is still unchanged. Both test repositories
+  were regenerated manually; other repositories keep their old coordinates until
+  someone regenerates them. Bumping it would force a rebuild everywhere.
+- Deep research's provider and Thai fixes are covered by unit tests but have not
+  been exercised against a live deep-research session.
