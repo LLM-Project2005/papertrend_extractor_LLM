@@ -3190,6 +3190,34 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     const result = await converseResult(input, context, converseExecution);
     return { handled: true, ...result, plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
+  // inspect_scope and list_documents produce a fixed overview or title list, so
+  // neither can answer "which is the oldest" or "which is the longest". When the
+  // question asks for a stored fact, compute it instead of describing the scope.
+  if (
+    execution &&
+    (execution.operation === "inspect_scope" || execution.operation === "list_documents") &&
+    context.papers.length > 0
+  ) {
+    const facts = detectRepositoryFacts(input.prompt);
+    if (facts.years || facts.yearExtremes || facts.lengthExtremes || facts.status) {
+      return {
+        handled: true,
+        answer: buildRepositoryFactsAnswer(
+          context.papers,
+          context.scopeLabel,
+          input.prompt,
+          context.runStats
+        ),
+        citations: [],
+        charts: [],
+        plan,
+        execution,
+        coverage: completeCoverage(context, context.papers.length),
+        scopeSnapshot: context.scopeSnapshot,
+        diagnostics,
+      };
+    }
+  }
   if (requestsTotalWordCount(input.prompt) && context.papers.length > 0) {
     const lengthPlan: RepositoryPromptPlan = { ...plan, intent: "word_count", terms: [] };
     const result = wordCountResult(context, lengthPlan);

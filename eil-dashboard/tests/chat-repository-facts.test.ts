@@ -141,3 +141,21 @@ test("Thai questions produce Thai section headings", () => {
   const answer = buildRepositoryFactsAnswer(PAPERS, "คลังทดสอบ", "เอกสารเหล่านี้ตีพิมพ์ปีไหน", RUN_STATS);
   assert.match(answer, /จำนวนเอกสารตามปี/);
 });
+
+test("a fact question is not mistaken for a general listing request", () => {
+  // Live regression: "Which paper is the longest?" was routed to list_documents
+  // by the planner and answered with a plain list of every title.
+  const listing = detectRepositoryFacts("List every paper title.");
+  assert.equal(listing.lengthExtremes, false);
+  assert.equal(listing.yearExtremes, false);
+  assert.equal(listing.years, false);
+  assert.equal(listing.status, false);
+
+  const longest = detectRepositoryFacts("Which paper is the longest?");
+  assert.equal(longest.lengthExtremes, true);
+});
+
+test("Thai extreme questions are detected", () => {
+  assert.equal(detectRepositoryFacts("เอกสารไหนยาวที่สุด").lengthExtremes, true);
+  assert.equal(detectRepositoryFacts("เอกสารไหนเก่าสุด").yearExtremes, true);
+});
