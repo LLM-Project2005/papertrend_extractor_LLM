@@ -391,12 +391,88 @@ function silhouetteScore(embeddings: number[][], assignments: number[]): number 
   return total / embeddings.length;
 }
 
+/** Smallest useful neighborhood, as a share of the repository. */
+export function minimumClusterSize(paperCount: number): number {
+  return Math.max(2, Math.round(paperCount * 0.05));
+}
+
+function centroidOf(embeddings: number[][], members: number[]): number[] {
+  const dimensions = embeddings[0].length;
+  const centre = new Array(dimensions).fill(0);
+  members.forEach((index) => {
+    for (let dimension = 0; dimension < dimensions; dimension += 1) {
+      centre[dimension] += embeddings[index][dimension];
+    }
+  });
+  return centre.map((value) => value / members.length);
+}
+
+/**
+ * Folds undersized neighborhoods into their nearest surviving neighborhood.
+ *
+ * Seeding picks the point farthest from the existing centres, which reliably
+ * promotes an outlier into a neighborhood of its own. A repository split 37 to 1
+ * is technically a partition but tells a reader nothing, so groups below the
+ * minimum size are merged into whichever surviving group they sit closest to.
+ */
+export function enforceMinimumClusterSize(
+  embeddings: number[][],
+  assignments: number[],
+  minSize: number
+): number[] {
+  const next = [...assignments];
+  for (let guard = 0; guard < 16; guard += 1) {
+    const members = new Map<number, number[]>();
+    next.forEach((cluster, index) => {
+      if (!members.has(cluster)) members.set(cluster, []);
+      members.get(cluster)!.push(index);
+    });
+    if (members.size <= 1) break;
+    let smallest: [number, number[]] | null = null;
+    members.forEach((rows, cluster) => {
+      if (rows.length >= minSize) return;
+      if (!smallest || rows.length < smallest[1].length || (rows.length === smallest[1].length && cluster < smallest[0])) {
+        smallest = [cluster, rows];
+      }
+    });
+    if (!smallest) break;
+    const [smallCluster, smallRows] = smallest as [number, number[]];
+    const centres = [...members.entries()]
+      .filter(([cluster]) => cluster !== smallCluster)
+      .map(([cluster, rows]) => ({ cluster, centre: centroidOf(embeddings, rows) }));
+    if (centres.length === 0) break;
+    const smallCentre = centroidOf(embeddings, smallRows);
+    let target = centres[0];
+    centres.forEach((candidate) => {
+      if (
+        euclideanDistance(smallCentre, candidate.centre) <
+        euclideanDistance(smallCentre, target.centre)
+      ) {
+        target = candidate;
+      }
+    });
+    smallRows.forEach((index) => {
+      next[index] = target.cluster;
+    });
+  }
+  // Renumber so neighborhood ids stay contiguous from zero.
+  const order = [...new Set(next)].sort((a, b) => a - b);
+  const remap = new Map(order.map((cluster, position) => [cluster, position]));
+  return next.map((cluster) => remap.get(cluster)!);
+}
+
 export function clusterEmbeddings(embeddings: number[][]): ClusterResult {
   if (embeddings.length < 5) return { assignments: embeddings.map(() => 0), score: 0 };
   const maxK = Math.min(7, Math.max(2, Math.round(Math.sqrt(embeddings.length))));
+  const minSize = minimumClusterSize(embeddings.length);
   let best: ClusterResult = { assignments: embeddings.map(() => 0), score: 0 };
   for (let k = 2; k <= maxK; k += 1) {
-    const assignments = deterministicKMeans(embeddings, k);
+    const assignments = enforceMinimumClusterSize(
+      embeddings,
+      deterministicKMeans(embeddings, k),
+      minSize
+    );
+    if (new Set(assignments).size < 2) continue;
     const score = silhouetteScore(embeddings, assignments);
     if (score > best.score) best = { assignments, score };
   }
