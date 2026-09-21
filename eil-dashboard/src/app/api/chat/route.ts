@@ -22,6 +22,8 @@ import {
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
+import { runWithCancellation } from "@/lib/chat-cancellation";
+import { runWithModelLatency, summarizeModelLatency } from "@/lib/model-latency";
 import {
   encodeErrorFrame,
   encodeProgressFrame,
@@ -4461,6 +4463,8 @@ async function handlePost(request: Request) {
  * `Accept: text/event-stream`; everything else keeps the plain JSON response.
  */
 function streamPostWithProgress(request: Request): Response {
+  // The work happens inside start(), after this function has already returned,
+  // so the cancellation and latency scopes must be installed in there.
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -4478,7 +4482,20 @@ function streamPostWithProgress(request: Request): Response {
       send(": open\n\n");
       const emit = (event: ChatProgressEvent) => send(encodeProgressFrame(event));
       try {
-        const response = await runWithChatProgress(emit, () => handlePost(request));
+        const { value: response, timings } = await runWithModelLatency(() =>
+          runWithCancellation(request.signal, () =>
+            runWithChatProgress(emit, () => handlePost(request))
+          )
+        );
+        if (timings.length > 0) {
+          const summary = summarizeModelLatency(timings);
+          console.info("chat_model_latency", JSON.stringify({
+            totalMs: summary.totalMs,
+            callCount: summary.callCount,
+            byTask: summary.byTask,
+            cancelled: request.signal.aborted,
+          }));
+        }
         const body = await response.clone().text();
         let payload: unknown;
         try {
@@ -4545,9 +4562,19 @@ export async function POST(request: Request) {
 
   return withAiTokenUsageTracking(async (usage) => {
     try {
-      const response = wantsStream
-        ? streamPostWithProgress(request)
-        : await handlePost(request);
+      if (wantsStream) return withChatCors(streamPostWithProgress(request), request);
+      const { value: response, timings } = await runWithModelLatency(() =>
+        runWithCancellation(request.signal, () => handlePost(request))
+      );
+      if (timings.length > 0) {
+        const summary = summarizeModelLatency(timings);
+        console.info("chat_model_latency", JSON.stringify({
+          totalMs: summary.totalMs,
+          callCount: summary.callCount,
+          byTask: summary.byTask,
+          cancelled: request.signal.aborted,
+        }));
+      }
       return withChatCors(response, request);
     } finally {
       if (user?.id && usage.totalTokens > 0) {

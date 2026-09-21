@@ -2449,6 +2449,48 @@ async function checkFaithfulness(input: {
   }
 }
 
+/** Self-reported confidence above which a clean draft is trusted unaudited. */
+export const AUDIT_SKIP_CONFIDENCE = 0.75;
+
+/**
+ * Whether the answer audit has anything left to do.
+ *
+ * Measured on a live focused question, the audit costs 7.9 of 28.0 seconds of
+ * model time - 28% of the whole answer. It earns that when it has something to
+ * repair: an ungrounded claim, an invalid citation, an unreadable shape. When
+ * the draft parsed cleanly, cites only real papers, reports high confidence and
+ * raises no readability issue, the audit reliably returns "already correct" and
+ * the reader waits eight seconds for nothing.
+ *
+ * The conditions are deliberately conservative and all must hold. Anything that
+ * hints at a problem - a parse fallback, a low confidence, a missing or invalid
+ * citation, an awkward shape - sends the answer through the audit as before.
+ */
+export function auditSkipBlocker(input: {
+  parsedCleanly: boolean;
+  confidence: number;
+  answer: string;
+  validation: { invalidPaperIds: string[]; citedPaperIds: string[]; hasSubstantiveText: boolean };
+}): string | null {
+  if (!input.parsedCleanly) return "parse_fallback";
+  if (input.confidence < AUDIT_SKIP_CONFIDENCE) return `low_confidence:${input.confidence.toFixed(2)}`;
+  if (input.validation.invalidPaperIds.length > 0) return "invalid_citation";
+  if (input.validation.hasSubstantiveText && input.validation.citedPaperIds.length === 0) {
+    return "uncited_claims";
+  }
+  const issues = readabilityIssues(input.answer);
+  return issues.length > 0 ? issues.map((issue) => issue.kind).join(",") : null;
+}
+
+export function auditCanBeSkipped(input: {
+  parsedCleanly: boolean;
+  confidence: number;
+  answer: string;
+  validation: { invalidPaperIds: string[]; citedPaperIds: string[]; hasSubstantiveText: boolean };
+}): boolean {
+  return auditSkipBlocker(input) === null;
+}
+
 async function repositoryQaResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
@@ -2468,6 +2510,7 @@ async function repositoryQaResult(
   }));
   let answer = "";
   let groundingConfidence = Math.min(evidence.rerankerConfidence, 0.5);
+  let parsedCleanly = false;
   reportChatProgress("synthesizing");
   for (let attempt = 0; attempt < 2 && !answer; attempt += 1) {
   try {
@@ -2511,6 +2554,7 @@ async function repositoryQaResult(
     if (parsed.success) {
       answer = parsed.data.answer.trim();
       groundingConfidence = parsed.data.confidence;
+      parsedCleanly = true;
     } else {
       answer = readableAnswerText(completion?.content ?? "");
       groundingConfidence = answer ? 0.45 : 0;
@@ -2545,6 +2589,42 @@ async function repositoryQaResult(
     groundingConfidence < 0.55 ||
     validation.invalidPaperIds.length > 0 ||
     (validation.hasSubstantiveText && validation.citedPaperIds.length === 0);
+  const skipBlocker = auditSkipBlocker({
+    parsedCleanly,
+    confidence: groundingConfidence,
+    answer,
+    validation,
+  });
+  // Recorded so the reason an eight-second audit was needed is visible, rather
+  // than having to guess which condition failed.
+  console.info("chat_audit_decision", JSON.stringify({ skipped: skipBlocker === null, blocker: skipBlocker }));
+  if (skipBlocker === null) {
+    reportChatProgress("formatting");
+    const cleanCited = validation.citedPaperIds
+      .map((paperId) => paperById.get(paperId))
+      .filter((paper): paper is RepositoryPaper => Boolean(paper));
+    return {
+      answer: formatPaperReferencesForReaders(readableAnswerText(answer) || answer, cleanCited),
+      citations: cleanCited.map((paper) =>
+        citationForPaper(paper, "Cited in the grounded repository answer.")
+      ),
+      charts: [],
+      auditLimitations: [],
+      quality: {
+        retrievalCandidateCount: evidence.candidateCount,
+        selectedEvidenceCount: evidence.papers.length,
+        rerankerSource: evidence.rerankerSource,
+        groundingConfidence,
+        faithfulnessChecked: false,
+        invalidCitationCount: 0,
+        repositoryCoverageCount: evidence.repositoryCoverageCount,
+        retrievalRounds: evidence.retrievalRounds,
+        sufficiencyChecked: evidence.sufficiencyChecked,
+        missingEvidenceNeeds: evidence.missingEvidenceNeeds,
+      },
+    };
+  }
+
   const faithfulnessChecked = true;
   reportChatProgress("checking");
   const checked = await checkFaithfulness({
