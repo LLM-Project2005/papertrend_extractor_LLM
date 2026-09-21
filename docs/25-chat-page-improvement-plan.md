@@ -38,10 +38,12 @@ Unit and contract tests: **234 passing**.
 
 These are measured, not suspected.
 
-1. `aggregate_corpus` runs with **no faithfulness audit**. The synthesis path
-   that answers "summarise this repository" and "what are the gaps" has no
-   groundedness check at all. This is how a fabricated citation forecast reached
-   a user before it was blocked by a separate guard.
+1. `aggregate_corpus` **runs the faithfulness audit and then discards the
+   verdict**: `review.valid ? review.answer : answer` shipped a draft the
+   auditor had judged ungrounded, byte for byte, with no warning. Worse than no
+   audit, because it looks checked. `analyze_each_document` has no audit at
+   all, relying instead on each section being generated from only its own
+   paper's evidence.
 2. **Corpus answers cite inconsistently.** Several synthesis answers attribute
    only some claims, scoring 2 on groundedness.
 3. **Thai synthesis is weaker than English**, attributing claims less
