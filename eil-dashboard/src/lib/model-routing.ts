@@ -7,25 +7,33 @@
  * other code reads:
  *
  *   CHAT_EXECUTION_PLAN        ~3.2s   {refinedQuestion, retrievalQueries, ...}
- *   CHAT_RERANK                ~4.2s   {paperIds, reason, confidence}
  *   CHAT_EVIDENCE_SUFFICIENCY  ~3.2s   {sufficient, expansionQueries, ...}
  *
- * That is roughly half the model time of an answer spent on structured
- * bookkeeping. Those steps are classification and ordering, not writing, so
- * they run on the fast model while synthesis and the answer audit - the two
- * steps whose output a reader actually sees - keep the primary model.
+ * Those two steps route, classify and bookkeep; they do not write and they do
+ * not decide what the answer is grounded in. They run on the fast model, while
+ * every step that either writes for a reader or chooses the evidence keeps the
+ * primary model.
  *
- * Every structural step already degrades safely: a malformed or missing result
- * falls back to deterministic reciprocal-rank fusion, to the plan repair pass,
- * or to skipping expansion. So the worst case of a fast model that returns
- * nothing usable is the pre-LLM behaviour, not a failed answer.
+ * CHAT_RERANK is deliberately NOT on this list, although it looked like the
+ * best candidate: it is the slowest of the three and also emits only JSON.
+ * Measured on the 38-paper repository, the fast model returned the full source
+ * limit of ten papers on 10 of 10 questions - it never once narrowed the field.
+ * The primary model narrowed to a single paper on 5 of 12. A reranker that
+ * returns everything is not ranking, and the papers it waves through become the
+ * evidence the answer is built from, so the step belongs with synthesis rather
+ * than with bookkeeping. The measurement is recorded in
+ * docs/25-chat-page-improvement-plan.md.
+ *
+ * Both routed steps degrade safely: a malformed or missing result falls back to
+ * the plan repair pass or to skipping expansion, so the worst case of a fast
+ * model returning nothing usable is the previous behaviour, not a failed
+ * answer.
  */
 
 /** Tasks whose output is parsed by code and never shown to a reader. */
 const STRUCTURAL_TASKS: ReadonlySet<string> = new Set([
   "CHAT_EXECUTION_PLAN",
   "CHAT_EXECUTION_PLAN_REPAIR",
-  "CHAT_RERANK",
   "CHAT_EVIDENCE_SUFFICIENCY",
 ]);
 

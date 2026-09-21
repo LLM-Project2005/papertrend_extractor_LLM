@@ -20,12 +20,22 @@ function route(taskName: string | undefined, overrides: Partial<Parameters<typeo
   });
 }
 
-test("the three JSON-only steps run on the fast model", () => {
-  // Measured on the pilot these cost ~3.2s, ~4.2s and ~3.2s of model time and
-  // produce nothing a reader ever sees.
-  for (const task of ["CHAT_EXECUTION_PLAN", "CHAT_RERANK", "CHAT_EVIDENCE_SUFFICIENCY"]) {
+test("the two bookkeeping steps run on the fast model", () => {
+  // Measured on the pilot these cost ~3.2s each and produce nothing a reader
+  // ever sees, nor anything that decides what the answer is grounded in.
+  for (const task of ["CHAT_EXECUTION_PLAN", "CHAT_EVIDENCE_SUFFICIENCY"]) {
     assert.equal(route(task), DEFAULT_FAST_MODEL, task);
   }
+});
+
+test("reranking stays on the primary model even though it only emits JSON", () => {
+  // The regression this encodes: on the 38-paper repository the fast model
+  // returned the full source limit of ten papers on 10 of 10 questions, never
+  // narrowing the field, while the primary model narrowed to one paper on 5 of
+  // 12. A reranker that returns everything is not ranking, and what it waves
+  // through becomes the evidence the answer is built from.
+  assert.equal(route("CHAT_RERANK"), PRIMARY);
+  assert.equal(isStructuralTask("CHAT_RERANK"), false);
 });
 
 test("the plan repair pass follows the plan it repairs", () => {
@@ -38,6 +48,14 @@ test("the two steps a reader sees keep the primary model", () => {
   assert.equal(route("CHAT_FAITHFULNESS"), PRIMARY);
 });
 
+test("no step that chooses or writes the answer is ever routed", () => {
+  // One list, so adding a task to STRUCTURAL_TASKS cannot quietly demote a step
+  // that decides what the answer says.
+  for (const task of ["CHAT_RERANK", "CHAT_SYNTHESIS", "CHAT_FAITHFULNESS"]) {
+    assert.equal(route(task), PRIMARY, task);
+  }
+});
+
 test("an unknown or unnamed task is never rerouted", () => {
   assert.equal(route("SOME_OTHER_TASK"), PRIMARY);
   assert.equal(route(undefined), PRIMARY);
@@ -46,13 +64,17 @@ test("an unknown or unnamed task is never rerouted", () => {
 test("a non-OpenRouter deployment is left alone", () => {
   // The fast model is named in OpenRouter's namespace and means nothing to
   // another provider, so sending it there would break every structural step.
-  assert.equal(route("CHAT_RERANK", { usesOpenRouter: false }), PRIMARY);
+  assert.equal(route("CHAT_EVIDENCE_SUFFICIENCY", { usesOpenRouter: false }), PRIMARY);
+});
+
+test("switching off is honoured for the steps that do route", () => {
+  assert.equal(route("CHAT_EXECUTION_PLAN", { fastModel: null }), PRIMARY);
 });
 
 test("routing can be switched off without a code change", () => {
   assert.equal(fastModelSetting("off"), null);
   assert.equal(fastModelSetting("OFF"), null);
-  assert.equal(route("CHAT_RERANK", { fastModel: null }), PRIMARY);
+  assert.equal(route("CHAT_EVIDENCE_SUFFICIENCY", { fastModel: null }), PRIMARY);
 });
 
 test("an unset variable still routes, and a set one is honoured", () => {
@@ -63,13 +85,13 @@ test("an unset variable still routes, and a set one is honoured", () => {
 
 test("switching routing off with no caller model falls through to the config default", () => {
   assert.equal(
-    modelForTask({ taskName: "CHAT_RERANK", requestedModel: "  ", usesOpenRouter: true, fastModel: null }),
+    modelForTask({ taskName: "CHAT_EXECUTION_PLAN", requestedModel: "  ", usesOpenRouter: true, fastModel: null }),
     undefined
   );
 });
 
 test("structural membership is stated once, not duplicated per call site", () => {
-  assert.equal(isStructuralTask("CHAT_RERANK"), true);
+  assert.equal(isStructuralTask("CHAT_EVIDENCE_SUFFICIENCY"), true);
   assert.equal(isStructuralTask("CHAT_SYNTHESIS"), false);
   assert.equal(isStructuralTask(undefined), false);
 });
@@ -77,7 +99,7 @@ test("structural membership is stated once, not duplicated per call site", () =>
 test("every structural task name matches a real call site", () => {
   // A renamed task would silently stop routing and quietly cost seconds again.
   const chat = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
-  for (const task of ["CHAT_EXECUTION_PLAN", "CHAT_RERANK", "CHAT_EVIDENCE_SUFFICIENCY"]) {
+  for (const task of ["CHAT_EXECUTION_PLAN", "CHAT_EVIDENCE_SUFFICIENCY"]) {
     assert.ok(chat.includes(`"${task}"`), `${task} has no call site`);
   }
 });

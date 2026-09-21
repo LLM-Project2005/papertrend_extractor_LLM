@@ -2288,6 +2288,7 @@ async function selectEvidence(
       sufficiencyChecked = true;
       missingEvidenceNeeds = sufficiency.missingEvidenceNeeds;
       if (!sufficiency.sufficient && sufficiency.expansionQueries.length > 0) {
+        const beforeExpansion = selectedIds.length;
         const expandedLimit = Math.min(
           context.papers.length,
           Math.max(budgets.sourceLimit, Math.min(20, budgets.sourceLimit * 2))
@@ -2315,6 +2316,10 @@ async function selectEvidence(
         expanded.forEach((candidate) => mergedById.set(candidate.paperId, candidate));
         candidates = [...mergedById.values()];
         retrievalRounds = 2;
+        console.info(
+          "chat_expansion_applied",
+          JSON.stringify({ before: beforeExpansion, after: selectedIds.length, scoped: context.papers.length })
+        );
       }
     }
   }
