@@ -135,3 +135,32 @@ test("the cancel route refuses an unauthenticated caller", () => {
   assert.match(route, /if \(!user\) return NextResponse\.json\(\{ error: "Unauthorized" \}, \{ status: 401 \}\)/);
   assert.match(route, /cancelRequest\(user\.id, requestId\)/);
 });
+
+test("a cancelled answer leaves no partial assistant message behind", () => {
+  // The criterion is that Stop leaves nothing half-written in the thread. That
+  // holds because every assistant message is written once, from inside
+  // handlePost, after the answer exists - a cancelled request throws before
+  // reaching the write. Nothing persists from the streaming wrapper, which is
+  // the only place a partial answer could be observed.
+  const route = readFileSync(
+    new URL("../src/app/api/chat/route.ts", import.meta.url),
+    "utf8"
+  );
+  const streamStart = route.indexOf("function streamPostWithProgress");
+  const streamEnd = route.indexOf("export async function POST", streamStart);
+  assert.ok(streamStart > 0 && streamEnd > streamStart, "streaming wrapper not found");
+  const wrapper = route.slice(streamStart, streamEnd);
+  assert.equal(
+    wrapper.includes("appendMessage"),
+    false,
+    "the streaming wrapper must not persist messages; only the finished answer is written"
+  );
+  assert.equal(
+    wrapper.includes('role: "assistant"'),
+    false,
+    "no assistant message may be written from the streaming path"
+  );
+  // And the reader's own question is kept, which is what a reader expects after
+  // pressing Stop: the thread shows what they asked, with no half answer.
+  assert.match(route, /persistedUserMessage = await chatRepository\.appendMessage/);
+});
