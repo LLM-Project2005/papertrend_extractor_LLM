@@ -22,6 +22,8 @@ import {
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
+import { runWithCancellation } from "@/lib/chat-cancellation";
+import { runWithModelLatency, summarizeModelLatency } from "@/lib/model-latency";
 import {
   encodeErrorFrame,
   encodeProgressFrame,
@@ -4545,9 +4547,20 @@ export async function POST(request: Request) {
 
   return withAiTokenUsageTracking(async (usage) => {
     try {
-      const response = wantsStream
-        ? streamPostWithProgress(request)
-        : await handlePost(request);
+      const { value: response, timings } = await runWithModelLatency(() =>
+        runWithCancellation(request.signal, async () =>
+          wantsStream ? streamPostWithProgress(request) : await handlePost(request)
+        )
+      );
+      if (timings.length > 0) {
+        const summary = summarizeModelLatency(timings);
+        console.info("chat_model_latency", {
+          totalMs: summary.totalMs,
+          callCount: summary.callCount,
+          byTask: summary.byTask,
+          cancelled: request.signal.aborted,
+        });
+      }
       return withChatCors(response, request);
     } finally {
       if (user?.id && usage.totalTokens > 0) {
