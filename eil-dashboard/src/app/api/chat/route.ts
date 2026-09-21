@@ -21,6 +21,7 @@ import {
 } from "@/lib/chart-agent";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
+import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
 import {
   encodeErrorFrame,
   encodeProgressFrame,
@@ -4519,6 +4520,11 @@ function streamPostWithProgress(request: Request): Response {
   });
 }
 
+/** Allows the browser to reach this endpoint directly on the Cloud Run origin. */
+export async function OPTIONS(request: Request) {
+  return chatCorsPreflight(request);
+}
+
 export async function POST(request: Request) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (user?.id) {
@@ -4526,7 +4532,10 @@ export async function POST(request: Request) {
       await assertAiTokenBudget(user.id);
     } catch (error) {
       if (error instanceof GuardError) {
-        return NextResponse.json({ error: error.message }, { status: error.status });
+        return withChatCors(
+          NextResponse.json({ error: error.message }, { status: error.status }),
+          request
+        );
       }
       throw error;
     }
@@ -4536,7 +4545,10 @@ export async function POST(request: Request) {
 
   return withAiTokenUsageTracking(async (usage) => {
     try {
-      return wantsStream ? streamPostWithProgress(request) : await handlePost(request);
+      const response = wantsStream
+        ? streamPostWithProgress(request)
+        : await handlePost(request);
+      return withChatCors(response, request);
     } finally {
       if (user?.id && usage.totalTokens > 0) {
         await persistAiTokenUsage(user.id, usage).catch((error) => {

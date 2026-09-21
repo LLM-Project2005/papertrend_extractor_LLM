@@ -1894,6 +1894,85 @@ export function buildRepositoryFactsAnswer(
   return [...targeted, overview].join("\n\n");
 }
 
+/** Facts a repository of paper text simply does not contain. */
+export type UnavailableMetric =
+  | "citation_counts"
+  | "author_metrics"
+  | "venue_metrics"
+  | "future_prediction"
+  | "usage_metrics";
+
+const UNAVAILABLE_METRIC_PATTERNS: Array<[UnavailableMetric, RegExp]> = [
+  // "how many citations", "times cited" - not "the citations in this paper",
+  // which means its reference list.
+  ["citation_counts", /\b(?:how many|number of|count of|total)\s+citations\b|\bcitation count\b|\btimes cited\b|\bcited by\b/i],
+  ["author_metrics", /\bh-?index\b|\bi10-?index\b|\bauthor (?:ranking|impact|metrics)\b/i],
+  ["venue_metrics", /\bimpact factor\b|\bjournal (?:rank|ranking|quartile)\b|\bscimago\b|\bq[1-4] journal\b/i],
+  ["future_prediction", /\b(?:will|going to|expect(?:ed)?|predict|forecast|projection)\b[^.?!]{0,60}\b(?:cite|citations|impact|popular|influence)\b/i],
+  ["usage_metrics", /\b(?:downloads?|altmetric|readership|views|reads)\b\s*(?:count|number|statistics|stats)?\b/i],
+];
+
+export function detectUnavailableMetric(prompt: string): UnavailableMetric | null {
+  for (const [metric, pattern] of UNAVAILABLE_METRIC_PATTERNS) {
+    if (pattern.test(prompt)) return metric;
+  }
+  return null;
+}
+
+const UNAVAILABLE_METRIC_REASONS: Record<UnavailableMetric, { en: string; th: string }> = {
+  citation_counts: {
+    en: "how often these papers have been cited",
+    th: "\u0e08\u0e33\u0e19\u0e27\u0e19\u0e01\u0e32\u0e23\u0e2d\u0e49\u0e32\u0e07\u0e2d\u0e34\u0e07\u0e02\u0e2d\u0e07\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23\u0e40\u0e2b\u0e25\u0e48\u0e32\u0e19\u0e35\u0e49",
+  },
+  author_metrics: {
+    en: "author-level metrics such as an h-index",
+    th: "\u0e14\u0e31\u0e0a\u0e19\u0e35\u0e23\u0e30\u0e14\u0e31\u0e1a\u0e1c\u0e39\u0e49\u0e41\u0e15\u0e48\u0e07 \u0e40\u0e0a\u0e48\u0e19 h-index",
+  },
+  venue_metrics: {
+    en: "journal metrics such as an impact factor or quartile",
+    th: "\u0e14\u0e31\u0e0a\u0e19\u0e35\u0e27\u0e32\u0e23\u0e2a\u0e32\u0e23 \u0e40\u0e0a\u0e48\u0e19 impact factor",
+  },
+  future_prediction: {
+    en: "future citation or impact predictions",
+    th: "\u0e01\u0e32\u0e23\u0e04\u0e32\u0e14\u0e01\u0e32\u0e23\u0e13\u0e4c\u0e01\u0e32\u0e23\u0e2d\u0e49\u0e32\u0e07\u0e2d\u0e34\u0e07\u0e43\u0e19\u0e2d\u0e19\u0e32\u0e04\u0e15",
+  },
+  usage_metrics: {
+    en: "download, view or altmetric statistics",
+    th: "\u0e2a\u0e16\u0e34\u0e15\u0e34\u0e01\u0e32\u0e23\u0e14\u0e32\u0e27\u0e19\u0e4c\u0e42\u0e2b\u0e25\u0e14\u0e2b\u0e23\u0e37\u0e2d\u0e01\u0e32\u0e23\u0e40\u0e02\u0e49\u0e32\u0e14\u0e39",
+  },
+};
+
+/**
+ * Declines questions whose answer is not in the repository at all.
+ *
+ * A corpus of paper text holds no bibliometrics and no future. Asked to predict
+ * next year's citations, the corpus synthesiser produced "approximately 3
+ * citations, range 0-10" in a table, attributed to a paper containing no such
+ * data. Refusing plainly is the only honest answer, and it must not depend on a
+ * model choosing to refuse.
+ */
+export function unavailableMetricAnswer(
+  metric: UnavailableMetric,
+  scopeLabel: string,
+  thai: boolean
+): string {
+  const reason = UNAVAILABLE_METRIC_REASONS[metric];
+  if (thai) {
+    return [
+      `\u0e04\u0e25\u0e31\u0e07 **${scopeLabel}** \u0e40\u0e01\u0e47\u0e1a\u0e40\u0e09\u0e1e\u0e32\u0e30\u0e40\u0e19\u0e37\u0e49\u0e2d\u0e2b\u0e32\u0e41\u0e25\u0e30\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e17\u0e35\u0e48\u0e2a\u0e01\u0e31\u0e14\u0e08\u0e32\u0e01\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23 \u0e08\u0e36\u0e07\u0e44\u0e21\u0e48\u0e21\u0e35\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e40\u0e01\u0e35\u0e48\u0e22\u0e27\u0e01\u0e31\u0e1a${reason.th}`,
+      "",
+      "\u0e01\u0e32\u0e23\u0e04\u0e32\u0e14\u0e40\u0e14\u0e32\u0e15\u0e31\u0e27\u0e40\u0e25\u0e02\u0e08\u0e30\u0e17\u0e33\u0e43\u0e2b\u0e49\u0e44\u0e14\u0e49\u0e04\u0e33\u0e15\u0e2d\u0e1a\u0e17\u0e35\u0e48\u0e44\u0e21\u0e48\u0e21\u0e35\u0e2b\u0e25\u0e31\u0e01\u0e10\u0e32\u0e19 \u0e42\u0e1b\u0e23\u0e14\u0e15\u0e23\u0e27\u0e08\u0e08\u0e32\u0e01 Scopus, Web of Science \u0e2b\u0e23\u0e37\u0e2d Google Scholar",
+    ].join("\n");
+  }
+  return [
+    `**${scopeLabel}** holds the text and extracted analysis of your papers, not bibliographic database records, so it contains no information about ${reason.en}.`,
+    "",
+    "Guessing would produce a number with nothing behind it. Scopus, Web of Science, Google Scholar or the publisher's page carry these figures.",
+    "",
+    "I can answer questions about what these papers say, how they were conducted, what they found, how they compare, and how long they are.",
+  ].join("\n");
+}
+
 function repositoryStatisticsResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
@@ -3200,6 +3279,25 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     const converseExecution = execution ?? fallbackExecutionPlan(input.prompt, input.forceChart, input.history);
     const result = await converseResult(input, context, converseExecution);
     return { handled: true, ...result, plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
+  }
+  const unavailableMetric = detectUnavailableMetric(input.prompt);
+  if (unavailableMetric) {
+    return {
+      handled: true,
+      answer: unavailableMetricAnswer(
+        unavailableMetric,
+        context.scopeLabel,
+        answerLanguageIsThai(plan.answerLanguage) || /[\u0e00-\u0e7f]/.test(input.prompt)
+      ),
+      citations: [],
+      charts: [],
+      plan,
+      execution,
+      coverage: completeCoverage(context, 0),
+      limitations: ["The repository does not contain bibliometric or forward-looking data."],
+      scopeSnapshot: context.scopeSnapshot,
+      diagnostics,
+    };
   }
   // inspect_scope and list_documents produce a fixed overview or title list, so
   // neither can answer "which is the oldest" or "which is the longest". When the
