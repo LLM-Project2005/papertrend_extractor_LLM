@@ -126,6 +126,9 @@ async function judge(record: EvalRecord, model: string, apiKey: string, baseUrl:
   }
 }
 
+/** Judge passes averaged per answer. More passes, less noise, more cost. */
+const JUDGE_PASSES = Math.max(1, Number.parseInt(process.env.JUDGE_PASSES ?? "3", 10) || 3);
+
 async function main() {
   const file = process.argv[2];
   if (!file) {
@@ -148,12 +151,31 @@ async function main() {
       console.log(`${record.id.padEnd(18)} (no answer)`);
       continue;
     }
-    const verdict = await judge(record, model, apiKey, baseUrl);
-    if (!verdict) continue;
+    // A single pass is not repeatable enough to check a threshold: the same
+    // answers scored 3.43, 3.81, 3.76 and 3.62 on groundedness across runs.
+    // Averaging several passes separates a real change from judge noise.
+    const passes: Verdict[] = [];
+    for (let attempt = 0; attempt < JUDGE_PASSES; attempt += 1) {
+      const single = await judge(record, model, apiKey, baseUrl);
+      if (single) passes.push(single);
+    }
+    if (passes.length === 0) continue;
+    const mean = (pick: (v: Verdict) => number) =>
+      passes.reduce((sum, v) => sum + pick(v), 0) / passes.length;
+    const verdict: Verdict = {
+      grounded: mean((v) => v.grounded),
+      direct: mean((v) => v.direct),
+      readable: mean((v) => v.readable),
+      honest: mean((v) => v.honest),
+      worstProblem: passes[0].worstProblem,
+      wouldSatisfyResearcher:
+        passes.filter((v) => v.wouldSatisfyResearcher).length > passes.length / 2,
+    };
     rows.push({ record, verdict });
     const mean = (verdict.grounded + verdict.direct + verdict.readable + verdict.honest) / 4;
     console.log(
-      `${record.id.padEnd(18)} g${verdict.grounded} d${verdict.direct} r${verdict.readable} h${verdict.honest}` +
+      `${record.id.padEnd(18)} g${verdict.grounded.toFixed(1)} d${verdict.direct.toFixed(1)} ` +
+        `r${verdict.readable.toFixed(1)} h${verdict.honest.toFixed(1)}` +
         `  mean ${mean.toFixed(2)}  ${verdict.wouldSatisfyResearcher ? "OK " : "NO "} ${verdict.worstProblem}`
     );
   }
