@@ -2466,17 +2466,29 @@ export const AUDIT_SKIP_CONFIDENCE = 0.75;
  * hints at a problem - a parse fallback, a low confidence, a missing or invalid
  * citation, an awkward shape - sends the answer through the audit as before.
  */
+export function auditSkipBlocker(input: {
+  parsedCleanly: boolean;
+  confidence: number;
+  answer: string;
+  validation: { invalidPaperIds: string[]; citedPaperIds: string[]; hasSubstantiveText: boolean };
+}): string | null {
+  if (!input.parsedCleanly) return "parse_fallback";
+  if (input.confidence < AUDIT_SKIP_CONFIDENCE) return `low_confidence:${input.confidence.toFixed(2)}`;
+  if (input.validation.invalidPaperIds.length > 0) return "invalid_citation";
+  if (input.validation.hasSubstantiveText && input.validation.citedPaperIds.length === 0) {
+    return "uncited_claims";
+  }
+  const issues = readabilityIssues(input.answer);
+  return issues.length > 0 ? issues.map((issue) => issue.kind).join(",") : null;
+}
+
 export function auditCanBeSkipped(input: {
   parsedCleanly: boolean;
   confidence: number;
   answer: string;
   validation: { invalidPaperIds: string[]; citedPaperIds: string[]; hasSubstantiveText: boolean };
 }): boolean {
-  if (!input.parsedCleanly) return false;
-  if (input.confidence < AUDIT_SKIP_CONFIDENCE) return false;
-  if (input.validation.invalidPaperIds.length > 0) return false;
-  if (input.validation.hasSubstantiveText && input.validation.citedPaperIds.length === 0) return false;
-  return readabilityIssues(input.answer).length === 0;
+  return auditSkipBlocker(input) === null;
 }
 
 async function repositoryQaResult(
@@ -2577,9 +2589,16 @@ async function repositoryQaResult(
     groundingConfidence < 0.55 ||
     validation.invalidPaperIds.length > 0 ||
     (validation.hasSubstantiveText && validation.citedPaperIds.length === 0);
-  if (
-    auditCanBeSkipped({ parsedCleanly, confidence: groundingConfidence, answer, validation })
-  ) {
+  const skipBlocker = auditSkipBlocker({
+    parsedCleanly,
+    confidence: groundingConfidence,
+    answer,
+    validation,
+  });
+  // Recorded so the reason an eight-second audit was needed is visible, rather
+  // than having to guess which condition failed.
+  console.info("chat_audit_decision", JSON.stringify({ skipped: skipBlocker === null, blocker: skipBlocker }));
+  if (skipBlocker === null) {
     reportChatProgress("formatting");
     const cleanCited = validation.citedPaperIds
       .map((paperId) => paperById.get(paperId))

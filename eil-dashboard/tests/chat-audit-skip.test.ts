@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AUDIT_SKIP_CONFIDENCE, auditCanBeSkipped } from "../src/lib/repository-chat";
+import { AUDIT_SKIP_CONFIDENCE, auditCanBeSkipped, auditSkipBlocker } from "../src/lib/repository-chat";
 
 /** A well-formed answer: direct opening, structure, emphasis, a citation. */
 const CLEAN_ANSWER = [
@@ -98,4 +98,24 @@ test("every condition must hold, not merely most of them", () => {
 
 test("the skip threshold is documented as a constant, not a magic number", () => {
   assert.ok(AUDIT_SKIP_CONFIDENCE > 0.5 && AUDIT_SKIP_CONFIDENCE <= 1);
+});
+
+test("the reason an audit was needed is reported, not just that it was", () => {
+  assert.equal(auditSkipBlocker(input()), null);
+  assert.equal(auditSkipBlocker(input({ parsedCleanly: false })), "parse_fallback");
+  assert.match(auditSkipBlocker(input({ confidence: 0.4 })) ?? "", /^low_confidence:0\.40$/);
+  assert.equal(
+    auditSkipBlocker(input({ validation: { ...OK_VALIDATION, invalidPaperIds: ["9"] } })),
+    "invalid_citation"
+  );
+  assert.equal(
+    auditSkipBlocker(input({ validation: { ...OK_VALIDATION, citedPaperIds: [] } })),
+    "uncited_claims"
+  );
+});
+
+test("a readability blocker names which rule failed", () => {
+  const wall = "This study examined teacher attitudes in Thai classrooms. ".repeat(20);
+  const blocker = auditSkipBlocker(input({ answer: wall })) ?? "";
+  assert.match(blocker, /long_paragraph|no_structure|no_emphasis|unattributed_claims/);
 });
