@@ -50,6 +50,20 @@ wouldSatisfyResearcher: true only if a researcher would accept this as an answer
  * stored repository, so they carry no inline citations by design. Judging them
  * as if they were unsupported claims measures the harness, not the product.
  */
+/**
+ * Counts citations as they actually appear to a reader.
+ *
+ * Answers are rendered before display, so `[Paper 12]` markers have already
+ * become "(Title, Year)". Trusting the API's citation array instead made the
+ * judge report "no citations" for answers carrying a dozen of them.
+ */
+function countInlineCitations(answer: string): number {
+  const markers = answer.match(/\[Paper\s+[^\]]+\]/gi)?.length ?? 0;
+  const rendered = answer.match(/\([^()]{12,120}?,\s*(?:\d{4}|Unknown)\)/g)?.length ?? 0;
+  const titleOnly = answer.match(/\([A-Z฀-๿][^()]{14,120}…\)/g)?.length ?? 0;
+  return markers + rendered + titleOnly;
+}
+
 function describeKind(category: string): string {
   if (category === "deterministic") {
     return "Computed directly from repository database records. It carries no inline citations "
@@ -86,7 +100,7 @@ async function judge(record: EvalRecord, model: string, apiKey: string, baseUrl:
             `Question asked: ${record.prompt}`,
             `Answer kind: ${describeKind(record.category)}`,
             `What a good answer must do: ${record.expectation}`,
-            `Citations returned: ${record.citations ?? 0}`,
+            `Inline citations found in the answer: ${countInlineCitations(record.answer)}`,
             `Limitations reported: ${(record.limitations ?? []).join(" | ") || "none"}`,
             "",
             "# Answer",
