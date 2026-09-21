@@ -3114,6 +3114,46 @@ async function analyzeEachDocumentResult(
   };
 }
 
+/** What to present after an answer audit, and what to warn the reader about. */
+export interface AuditDecision {
+  useCorrected: boolean;
+  limitations: string[];
+}
+
+/**
+ * Turns an audit verdict into a presentation decision.
+ *
+ * The corpus path previously used `review.valid ? review.answer : answer`, which
+ * silently shipped a draft the auditor had judged ungrounded. A failed audit
+ * must change what the reader is told, never be discarded.
+ */
+export function decideFromAudit(review: {
+  valid: boolean;
+  grounded: boolean;
+  incomplete: boolean;
+  reason: string;
+}): AuditDecision {
+  if (review.valid) return { useCorrected: true, limitations: [] };
+  if (!review.grounded) {
+    return {
+      useCorrected: false,
+      limitations: [
+        "This synthesis could not be verified against the paper evidence, so treat its claims as unconfirmed and check them against the cited papers.",
+      ],
+    };
+  }
+  return {
+    useCorrected: true,
+    limitations: review.incomplete
+      ? [
+          review.reason
+            ? `This synthesis may not cover the full request: ${review.reason}`
+            : "This synthesis may not cover every part of the request.",
+        ]
+      : [],
+  };
+}
+
 async function aggregateCorpusResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
@@ -3175,16 +3215,25 @@ async function aggregateCorpusResult(
         scopeMode: "exhaustive",
         model: input.model,
       });
-      const finalAnswer = review.valid ? review.answer : answer;
+      // The auditor may approve, approve with gaps, or judge the synthesis
+      // ungrounded. Only the first two are safe to present without a warning.
+      const decision = decideFromAudit(review);
+      const finalAnswer = decision.useCorrected ? review.answer : answer;
+      const auditLimitations = [...decision.limitations];
       const validation = validateInlinePaperCitations(finalAnswer, allowed);
       const paperById = new Map(context.papers.map((paper) => [paper.paperId, paper]));
       const cited = validation.citedPaperIds.map((id) => paperById.get(id)).filter((paper): paper is RepositoryPaper => Boolean(paper));
+      if (validation.invalidPaperIds.length > 0) {
+        auditLimitations.push(
+          "Some generated citation identifiers were removed from the citation panel because they were not in the selected scope."
+        );
+      }
       return {
-        answer: formatPaperReferencesForReaders(finalAnswer, cited),
+        answer: formatPaperReferencesForReaders(readableAnswerText(finalAnswer) || finalAnswer, cited),
         citations: cited.map((paper) => citationForPaper(paper, "Cited in the complete corpus synthesis.")),
         charts: [],
         coverage: completeCoverage(context, context.papers.length),
-        limitations: validation.invalidPaperIds.length > 0 ? ["Some generated citation identifiers were removed from the citation panel because they were not in the selected scope."] : [],
+        limitations: auditLimitations,
       };
     }
   } catch {
