@@ -2,6 +2,7 @@ import { getOpenAIConfig } from "@/lib/server-env";
 import { recordAiTokenUsage } from "@/lib/ai-token-usage";
 import { recordModelCallLatency } from "@/lib/model-latency";
 import { requestSignal } from "@/lib/chat-cancellation";
+import { modelForTask } from "@/lib/model-routing";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -85,8 +86,11 @@ export async function createChatCompletionResult(
   }
 
   const usesOpenRouter = config.baseUrl.includes("openrouter.ai");
+  // Steps that only emit JSON for other code run on the fast model; the two
+  // steps a reader sees keep whatever the caller asked for.
+  const routedModel = modelForTask({ taskName, requestedModel: modelOverride, usesOpenRouter });
   const requestBody: Record<string, unknown> = {
-    model: modelOverride?.trim() || config.model,
+    model: routedModel || config.model,
     temperature,
     messages,
   };
@@ -132,13 +136,13 @@ export async function createChatCompletionResult(
       signal: requestSignal(parameters.timeoutMs),
     });
   } catch (error) {
-    recordModelCallLatency(taskName, performance.now() - startedAt, "failed");
+    recordModelCallLatency(taskName, performance.now() - startedAt, "failed", String(requestBody.model));
     throw error;
   }
 
   if (!response.ok) {
     const errorText = await response.text();
-    recordModelCallLatency(taskName, performance.now() - startedAt, "failed");
+    recordModelCallLatency(taskName, performance.now() - startedAt, "failed", String(requestBody.model));
     throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
   }
 
@@ -155,7 +159,7 @@ export async function createChatCompletionResult(
   };
 
   const message = payload.choices?.[0]?.message;
-  recordModelCallLatency(taskName, performance.now() - startedAt, "ok");
+  recordModelCallLatency(taskName, performance.now() - startedAt, "ok", String(requestBody.model));
   recordAiTokenUsage(payload.usage);
   return {
     content: normalizeMessageContent(message?.content),
