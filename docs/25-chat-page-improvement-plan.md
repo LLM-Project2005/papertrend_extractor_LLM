@@ -167,6 +167,26 @@ The small-repository quality suite (21 cases, three judge passes) showed no
 regression from the routing that was kept: grounded 3.84 -> 3.98, direct
 4.63 -> 4.75, readable 4.57 -> 4.73, honest 4.25 -> 4.21.
 
+**Stop: what the transport does not tell you**
+
+The disconnect never reaches the container. A reader that dropped the connection
+0.6 seconds into a focused question still had **all five model calls run to
+completion - 25.0 seconds of model time** - with `cancelled: false` in the
+request's own log. Neither `request.signal` nor the response stream's `cancel`
+callback fired behind the Cloud Run proxy. Both are wired, because both are
+correct on a plain Node server, but neither can be relied on here.
+
+Stop therefore sends an explicit message. Each request carries an
+`X-Chat-Request-Id`, the route registers itself under that id for as long as it
+runs, and `POST /api/chat/cancel` aborts it by name. The id is keyed by the
+authenticated user, so one reader can never cancel another's answer by guessing.
+
+The registry lives in one container's memory, so a cancel only reaches the
+request when both land on the same instance. At this project's traffic there is
+usually one instance, and when there is not, the failure mode is the previous
+behaviour - the answer finishes unread - rather than anything worse.
+
+
 **Dropped from this phase**
 
 Token-level streaming, at the user's direction on 2026-09-22: it shows tokens in

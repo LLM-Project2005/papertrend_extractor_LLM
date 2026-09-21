@@ -1,3 +1,20 @@
+/**
+ * Names one chat request so Stop can identify it to the server.
+ *
+ * The browser disconnecting does not reach the container behind the Cloud Run
+ * proxy, so Stop names the answer rather than relying on the transport. Kept to
+ * the characters the server accepts as an id: letters, digits, dash, underscore.
+ */
+export function newChatRequestId(): string {
+  const globalCrypto = typeof crypto !== "undefined" ? crypto : undefined;
+  if (globalCrypto?.randomUUID) return globalCrypto.randomUUID();
+  // Older browsers still get an id, and a collision only means one reader's
+  // Stop could miss, never that it reaches someone else's answer: the server
+  // keys ids by the authenticated user.
+  const random = Math.random().toString(36).slice(2);
+  return `r-${Date.now().toString(36)}-${random}`;
+}
+
 interface ChatErrorPayload {
   error?: string;
 }
