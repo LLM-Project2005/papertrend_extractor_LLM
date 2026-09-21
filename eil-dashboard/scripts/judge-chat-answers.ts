@@ -172,11 +172,11 @@ async function main() {
         passes.filter((v) => v.wouldSatisfyResearcher).length > passes.length / 2,
     };
     rows.push({ record, verdict });
-    const mean = (verdict.grounded + verdict.direct + verdict.readable + verdict.honest) / 4;
+    const overall = (verdict.grounded + verdict.direct + verdict.readable + verdict.honest) / 4;
     console.log(
       `${record.id.padEnd(18)} g${verdict.grounded.toFixed(1)} d${verdict.direct.toFixed(1)} ` +
         `r${verdict.readable.toFixed(1)} h${verdict.honest.toFixed(1)}` +
-        `  mean ${mean.toFixed(2)}  ${verdict.wouldSatisfyResearcher ? "OK " : "NO "} ${verdict.worstProblem}`
+        `  mean ${overall.toFixed(2)}  ${verdict.wouldSatisfyResearcher ? "OK " : "NO "} ${verdict.worstProblem}`
     );
   }
 

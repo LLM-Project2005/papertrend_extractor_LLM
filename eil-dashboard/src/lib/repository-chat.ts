@@ -2469,6 +2469,7 @@ async function repositoryQaResult(
   let answer = "";
   let groundingConfidence = Math.min(evidence.rerankerConfidence, 0.5);
   reportChatProgress("synthesizing");
+  for (let attempt = 0; attempt < 2 && !answer; attempt += 1) {
   try {
     const completion = await createChatCompletionResult(
       [
@@ -2517,6 +2518,7 @@ async function repositoryQaResult(
   } catch {
     answer = "";
     groundingConfidence = 0;
+  }
   }
 
   if (!answer) {
@@ -3553,10 +3555,23 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       diagnostics: { ...diagnostics, ...result.quality },
     };
   }
+  // A visualization answer previously always described topics, so "a chart of
+  // papers by publication year" arrived under the heading "Repository topics".
+  const chartFacts = detectRepositoryFacts(input.prompt);
   const result = plan.intent === "repository_statistics"
     ? repositoryStatisticsResult(context, plan, input.prompt)
     : plan.intent === "word_count"
     ? wordCountResult(context, plan)
+    : chartFacts.years || chartFacts.yearExtremes || chartFacts.lengthExtremes
+    ? {
+        ...topicResult(context, plan),
+        answer: buildRepositoryFactsAnswer(
+          context.papers,
+          context.scopeLabel,
+          input.prompt,
+          context.runStats
+        ),
+      }
     : topicResult(context, plan);
   return {
     handled: true,
