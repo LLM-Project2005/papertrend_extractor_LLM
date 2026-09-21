@@ -43,6 +43,27 @@ honest: states coverage and gaps plainly. Claims of completeness it cannot
 worstProblem: one short sentence naming the single biggest flaw, or "none".
 wouldSatisfyResearcher: true only if a researcher would accept this as an answer.`;
 
+/**
+ * Tells the judge how groundedness should be read for this kind of answer.
+ *
+ * Counts, year breakdowns and length rankings are computed directly from the
+ * stored repository, so they carry no inline citations by design. Judging them
+ * as if they were unsupported claims measures the harness, not the product.
+ */
+function describeKind(category: string): string {
+  if (category === "deterministic") {
+    return "Computed directly from repository database records. It carries no inline citations "
+      + "by design; judge groundedness on whether it states what it counted and its scope, not on citations.";
+  }
+  if (category === "honesty") {
+    return "A question the repository cannot answer. A clear refusal that explains why is the correct answer and scores 5.";
+  }
+  if (category === "chart") {
+    return "A chart request. The chart itself is returned separately, so judge the accompanying text.";
+  }
+  return "A synthesis over paper evidence. Substantive claims should be attributed to specific papers.";
+}
+
 async function judge(record: EvalRecord, model: string, apiKey: string, baseUrl: string): Promise<Verdict | null> {
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
@@ -63,6 +84,7 @@ async function judge(record: EvalRecord, model: string, apiKey: string, baseUrl:
           role: "user",
           content: [
             `Question asked: ${record.prompt}`,
+            `Answer kind: ${describeKind(record.category)}`,
             `What a good answer must do: ${record.expectation}`,
             `Citations returned: ${record.citations ?? 0}`,
             `Limitations reported: ${(record.limitations ?? []).join(" | ") || "none"}`,
