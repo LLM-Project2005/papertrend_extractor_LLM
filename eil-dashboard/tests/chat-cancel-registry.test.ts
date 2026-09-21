@@ -132,7 +132,16 @@ test("the cancel route refuses an unauthenticated caller", () => {
     new URL("../src/app/api/chat/cancel/route.ts", import.meta.url),
     "utf8"
   );
-  assert.match(route, /if \(!user\) return NextResponse\.json\(\{ error: "Unauthorized" \}, \{ status: 401 \}\)/);
+  // The behaviour, not its formatting: no authenticated user means 401, and
+  // nothing is cancelled without one.
+  const guard = route.slice(route.indexOf("if (!user)"), route.indexOf("const body"));
+  assert.ok(guard.length > 0, "no unauthenticated guard found");
+  assert.match(guard, /error: "Unauthorized"/);
+  assert.match(guard, /status: 401/);
+  assert.ok(
+    route.indexOf("if (!user)") < route.indexOf("cancelRequest("),
+    "the guard must come before anything is cancelled"
+  );
   assert.match(route, /cancelRequest\(user\.id, requestId\)/);
 });
 
