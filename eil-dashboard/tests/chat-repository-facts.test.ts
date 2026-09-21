@@ -193,3 +193,25 @@ test("the provenance note never claims a bibliographic source", () => {
   const answer = buildRepositoryFactsAnswer(PAPERS, "Test repo", "How many papers?", RUN_STATS);
   assert.match(answer, /not from a bibliographic database/);
 });
+
+test("a year chart request is described by year, not by topic", () => {
+  // Live regression: "Show me a chart of papers by publication year" returned
+  // prose headed "Repository topics" listing topic mention counts.
+  const facts = detectRepositoryFacts("Show me a chart of papers by publication year.");
+  assert.equal(facts.years, true);
+  const answer = buildRepositoryFactsAnswer(
+    PAPERS,
+    "Test repo",
+    "Show me a chart of papers by publication year.",
+    RUN_STATS
+  );
+  assert.match(answer, /Papers by publication year/);
+  assert.doesNotMatch(answer, /Repository topics/);
+});
+
+test("a topic chart request is not diverted to the year breakdown", () => {
+  const facts = detectRepositoryFacts("Make a bar chart of the most common topics.");
+  assert.equal(facts.years, false);
+  assert.equal(facts.yearExtremes, false);
+  assert.equal(facts.lengthExtremes, false);
+});
