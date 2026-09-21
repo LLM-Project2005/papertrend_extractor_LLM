@@ -218,9 +218,25 @@ rather than asserted.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
-| 1 Ground every answer path | Not started | — |
-| 2 Honest, short waiting | Partly done: stage streaming shipped and verified | Frames at 0.9s/1.4s/6.5s/14.1s/20.6s/26.5s on production |
-| 3 Readable answers | Not started | — |
+| 1 Ground every answer path | Mostly done | Corpus audit verdict honoured; per-claim attribution enforced; computed answers state their source. `grounded` 3.43 -> 3.81, target 4.2 not yet met |
+| 2 Honest, short waiting | Partly done | Stage streaming shipped and verified on production: frames at 0.9s/1.4s/6.5s/14.1s/20.6s/26.5s. Token streaming and latency work not started |
+| 3 Readable answers | Mostly done ahead of schedule | Owner reported walls of text. Zero-bullet answers 13/21 -> 9/21, worst paragraph 2,812 -> 833 chars. `readable` 3.95 -> 4.62, above the 4.5 target. `direct` 4.29 -> 4.52 |
 | 4 Page teaches itself | Not started | — |
 | 5 Aesthetics and motion | Not started | — |
 | 6 Reliability and cost | Not started | — |
+
+### Measured progress
+
+| Dimension | Round 1 baseline | Latest |
+| --- | ---: | ---: |
+| grounded | 2.43 | 3.81 |
+| direct | 3.67 | 4.52 |
+| readable | 3.95 | 4.62 |
+| honest | 3.00 | 4.05 |
+| would satisfy a researcher | 8/21 | 16/21 |
+
+Tests: 120 at the start of this work, 266 now.
+
+The two persistently weakest cases are both chart cases, which are paused by
+owner decision: the chart renders correctly but the prose answers a different
+question than the one asked.
