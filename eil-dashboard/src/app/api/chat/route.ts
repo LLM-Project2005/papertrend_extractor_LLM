@@ -4466,6 +4466,14 @@ function streamPostWithProgress(request: Request): Response {
   // The work happens inside start(), after this function has already returned,
   // so the cancellation and latency scopes must be installed in there.
   const encoder = new TextEncoder();
+  // A disconnect reaches a streaming route by one of two paths depending on the
+  // runtime: the request signal aborts, or the stream the client was reading is
+  // cancelled. Relying on the request signal alone left Stop working locally and
+  // silently doing nothing behind the Cloud Run proxy, which kept paying for
+  // model calls nobody would read. Listening for both and combining them means
+  // whichever path the platform uses, the work stops.
+  const readerLeft = new AbortController();
+  const disconnected = AbortSignal.any([request.signal, readerLeft.signal]);
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
@@ -4483,7 +4491,7 @@ function streamPostWithProgress(request: Request): Response {
       const emit = (event: ChatProgressEvent) => send(encodeProgressFrame(event));
       try {
         const { value: response, timings } = await runWithModelLatency(() =>
-          runWithCancellation(request.signal, () =>
+          runWithCancellation(disconnected, () =>
             runWithChatProgress(emit, () => handlePost(request))
           )
         );
@@ -4493,7 +4501,7 @@ function streamPostWithProgress(request: Request): Response {
             totalMs: summary.totalMs,
             callCount: summary.callCount,
             byTask: summary.byTask,
-            cancelled: request.signal.aborted,
+            cancelled: disconnected.aborted,
           }));
         }
         const body = await response.clone().text();
@@ -4524,6 +4532,11 @@ function streamPostWithProgress(request: Request): Response {
           // Already closed by a disconnecting client.
         }
       }
+    },
+    cancel() {
+      // The reader went away. Nothing will read what the remaining model calls
+      // would produce, so stop them rather than finishing the answer in private.
+      readerLeft.abort();
     },
   });
   return new Response(stream, {
