@@ -35,7 +35,7 @@ import {
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import { normalizeChatRequestPayload } from "@/lib/chat-request-payload";
-import { readChatResponse } from "@/lib/chat-http";
+import { readChatStream, type ChatProgressUpdate } from "@/lib/chat-http";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -1559,6 +1559,7 @@ export default function ChatClient() {
   const [threadsLoading, setThreadsLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<ChatProgressUpdate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuView, setMenuView] = useState<"root" | "scope">("root");
@@ -2135,13 +2136,20 @@ export default function ChatClient() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
+    setProgress(null);
     const response = await fetch("/api/chat", {
       method: "POST",
-      headers: requestHeaders,
+      headers: { ...requestHeaders, Accept: "text/event-stream" },
       body: JSON.stringify(normalizeChatRequestPayload(body)),
       signal: controller.signal,
     });
-    return readChatResponse<ChatPayload>(response);
+    try {
+      return await readChatStream<ChatPayload>(response, (update) => {
+        if (!controller.signal.aborted) setProgress(update);
+      });
+    } finally {
+      setProgress(null);
+    }
   }
 
   const waitForRepositoryJob = useCallback(async (jobId: string, threadId = activeThreadId) => {
@@ -2238,6 +2246,7 @@ export default function ChatClient() {
   function stopGenerating() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    setProgress(null);
     setLoading(false);
   }
 
@@ -3537,11 +3546,21 @@ export default function ChatClient() {
                   <div className="flex items-start gap-3">
                     <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                      {renderLoadingLabel(
-                        deepResearchEnabled,
-                        chartModeEnabled,
-                        deepSession
-                      )}
+                      <span className="flex flex-wrap items-baseline gap-x-2">
+                        <span aria-live="polite">
+                          {progress?.label ??
+                            renderLoadingLabel(
+                              deepResearchEnabled,
+                              chartModeEnabled,
+                              deepSession
+                            )}
+                        </span>
+                        {progress?.detail ? (
+                          <span className="text-xs text-slate-400 dark:text-[#777]">
+                            {progress.detail}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
                   </div>
                 ) : null}
