@@ -2861,8 +2861,20 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     };
     else if (operation === "visualize") {
       const visualizesTextAnalysis = execution.operations.includes("analyze_text") && stepPlan.terms.length > 0;
+      // A chart of publication years must not be described as a topic summary.
+      const visualFacts = detectRepositoryFacts(input.prompt);
       const visualResult = visualizesTextAnalysis
         ? wordCountResult(context, { ...stepPlan, intent: "word_count", needsChart: true })
+        : visualFacts.years || visualFacts.yearExtremes || visualFacts.lengthExtremes
+        ? {
+            ...topicResult(context, stepPlan),
+            answer: buildRepositoryFactsAnswer(
+              context.papers,
+              context.scopeLabel,
+              input.prompt,
+              context.runStats
+            ),
+          }
         : topicResult(context, stepPlan);
       result = {
         ...visualResult,
