@@ -23,6 +23,7 @@ import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
 import { runWithCancellation } from "@/lib/chat-cancellation";
+import { isValidRequestId, registerCancellable } from "@/lib/chat-cancel-registry";
 import { runWithModelLatency, summarizeModelLatency } from "@/lib/model-latency";
 import {
   encodeErrorFrame,
@@ -4462,13 +4463,35 @@ async function handlePost(request: Request) {
  * a static spinner for half a minute. Clients opt in with
  * `Accept: text/event-stream`; everything else keeps the plain JSON response.
  */
+/** The id Stop will name, when the client supplied a usable one. */
+function cancellationId(request: Request): string | null {
+  const header = request.headers.get("x-chat-request-id");
+  return isValidRequestId(header) ? header : null;
+}
+
 function streamPostWithProgress(request: Request): Response {
   // The work happens inside start(), after this function has already returned,
   // so the cancellation and latency scopes must be installed in there.
   const encoder = new TextEncoder();
+  // A disconnect reaches a streaming route by one of two paths depending on the
+  // runtime: the request signal aborts, or the stream the client was reading is
+  // cancelled. Relying on the request signal alone left Stop working locally and
+  // silently doing nothing behind the Cloud Run proxy, which kept paying for
+  // model calls nobody would read. Listening for both and combining them means
+  // whichever path the platform uses, the work stops.
+  const readerLeft = new AbortController();
+  const disconnected = AbortSignal.any([request.signal, readerLeft.signal]);
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
+      // Stop cannot rely on the disconnect reaching this container, so the
+      // request makes itself cancellable by name for as long as it runs.
+      let unregister: (() => void) | null = null;
+      const requestId = cancellationId(request);
+      if (requestId) {
+        const user = await getAuthenticatedUserFromRequest(request).catch(() => null);
+        if (user) unregister = registerCancellable(user.id, requestId, readerLeft);
+      }
       const send = (chunk: string) => {
         if (closed) return;
         try {
@@ -4483,7 +4506,7 @@ function streamPostWithProgress(request: Request): Response {
       const emit = (event: ChatProgressEvent) => send(encodeProgressFrame(event));
       try {
         const { value: response, timings } = await runWithModelLatency(() =>
-          runWithCancellation(request.signal, () =>
+          runWithCancellation(disconnected, () =>
             runWithChatProgress(emit, () => handlePost(request))
           )
         );
@@ -4493,7 +4516,7 @@ function streamPostWithProgress(request: Request): Response {
             totalMs: summary.totalMs,
             callCount: summary.callCount,
             byTask: summary.byTask,
-            cancelled: request.signal.aborted,
+            cancelled: disconnected.aborted,
           }));
         }
         const body = await response.clone().text();
@@ -4518,12 +4541,18 @@ function streamPostWithProgress(request: Request): Response {
         ));
       } finally {
         closed = true;
+        unregister?.();
         try {
           controller.close();
         } catch {
           // Already closed by a disconnecting client.
         }
       }
+    },
+    cancel() {
+      // The reader went away. Nothing will read what the remaining model calls
+      // would produce, so stop them rather than finishing the answer in private.
+      readerLeft.abort();
     },
   });
   return new Response(stream, {

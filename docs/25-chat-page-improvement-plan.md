@@ -110,6 +110,93 @@ confident-sounding output and the least checked.
 - Tests: stream cancellation, append-only guarantee, concurrent retrieval
   correctness, and that progress still reports when streaming is unavailable.
 
+**Measured result (2026-09-22, pilot)**
+
+Latency, focused questions, wall-clock end to end:
+
+| Repository | p50 | p95 | Criterion |
+| --- | ---: | ---: | --- |
+| 5 papers (`Test 2`), before this phase | 21.5s | 25.9s | - |
+| 5 papers, after | **19.0s** | **24.1s** | both pass |
+| 38 papers (`testtest`), before | 28.2s | 34.3s | - |
+| 38 papers, after | **28.0s** | **30.6s** | p95 passes, p50 does not |
+
+The p50 criterion holds on a small repository and **fails on a realistic one**.
+The reason is measurable rather than mysterious: a focused answer makes five
+model calls in sequence, and on the 38-paper repository they account for 22-25
+of the 28 seconds.
+
+```text
+CHAT_FAITHFULNESS   ~6.5s   primary model
+CHAT_SYNTHESIS      ~4.5s   primary model
+CHAT_RERANK         ~4.1s   primary model
+CHAT_EVIDENCE_SUFF  ~4.2s   fast model
+CHAT_EXECUTION_PLAN ~3.9s   fast model
+```
+
+Each call depends on the one before it - the plan produces the retrieval
+queries, retrieval produces the candidates, reranking produces the selection,
+synthesis produces the text the audit checks - so none of them can be moved off
+the critical path by overlapping alone. Reaching 20 seconds at the median on a
+38-paper repository needs one of the five calls removed, not merely made
+faster. That is a Phase 5 change, not a tuning pass, and it is recorded here
+rather than absorbed by relaxing the number.
+
+What did land in this phase:
+
+- Retrieval no longer queues: the embedding search overlaps the in-memory
+  ranking.
+- The sufficiency call is skipped when every scoped paper is already selected,
+  which removes it entirely on repositories of ten papers or fewer.
+- The answer audit is skipped when it has nothing to repair.
+- Planning and sufficiency run on the fast model.
+- Per-call latency and every skip decision are logged with the serving model, so
+  the next round is evidence-led.
+
+**A regression this phase found and reverted**
+
+Reranking was routed to the fast model first, on the reasoning that it emits
+only JSON. Measurement contradicted the reasoning. On the 38-paper repository
+the fast model returned the full source limit of **ten papers on 10 of 10
+questions** - it never once narrowed the field - where the primary model
+narrowed to a single paper on **5 of 12**. A reranker that returns everything is
+not ranking, and what it waves through becomes the evidence the answer is built
+from. Reranking was returned to the primary model and a test now encodes why.
+
+The small-repository quality suite (21 cases, three judge passes) showed no
+regression from the routing that was kept: grounded 3.84 -> 3.98, direct
+4.63 -> 4.75, readable 4.57 -> 4.73, honest 4.25 -> 4.21.
+
+**Stop: what the transport does not tell you**
+
+The disconnect never reaches the container. A reader that dropped the connection
+0.6 seconds into a focused question still had **all five model calls run to
+completion - 25.0 seconds of model time** - with `cancelled: false` in the
+request's own log. Neither `request.signal` nor the response stream's `cancel`
+callback fired behind the Cloud Run proxy. Both are wired, because both are
+correct on a plain Node server, but neither can be relied on here.
+
+Stop therefore sends an explicit message. Each request carries an
+`X-Chat-Request-Id`, the route registers itself under that id for as long as it
+runs, and `POST /api/chat/cancel` aborts it by name. The id is keyed by the
+authenticated user, so one reader can never cancel another's answer by guessing.
+
+The registry lives in one container's memory, so a cancel only reaches the
+request when both land on the same instance. At this project's traffic there is
+usually one instance, and when there is not, the failure mode is the previous
+behaviour - the answer finishes unread - rather than anything worse.
+
+
+**Dropped from this phase**
+
+Token-level streaming, at the user's direction on 2026-09-22: it shows tokens in
+the UI without improving anything behind it, and the audit that rewrites the
+answer after synthesis makes an append-only stream a large change for that
+benefit. Stage-level progress over SSE already ships and covers the honesty half
+of this phase. The two streaming-specific criteria above - first token under 8
+seconds, and no streamed text ever replaced - therefore do not apply.
+
+
 ## Phase 3 — Make the answer readable
 
 **Work**
