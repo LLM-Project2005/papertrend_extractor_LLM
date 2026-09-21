@@ -3051,8 +3051,11 @@ async function generateDocumentAnalysisBatch(
   const system = buildPapertrendSystemPrompt("grounded_answer", [
     "Analyze every supplied paper exactly once and directly satisfy the user's requested dimensions. " +
       "The overview must answer the cross-paper intent, including meaningful similarities and differences when comparison is requested. " +
-      "Each item must give a substantive, evidence-bounded explanation of that paper using readable prose and bullets where useful. " +
-      "Do not expose database IDs in prose; use paper titles. Keep missing evidence explicit and never infer an unreported method, finding, or limitation. " +
+      "Every claim in the overview about what a paper did or found must name that paper in the sentence, so a reader can check it; " +
+      "a claim that holds across several papers must name them or say how many of them it covers. " +
+      "Each item must give a substantive, evidence-bounded explanation of that paper, and must state plainly which requested dimensions its evidence does not cover. " +
+      `${ANSWER_FORMAT_RULES} ` +
+      "Do not expose database IDs in prose; name papers by title. Keep missing evidence explicit and never infer an unreported method, finding, or limitation. " +
       "Return JSON only: {overview, items:[{paperId, analysis}]}. Preserve each supplied paperId only in its JSON paperId field, include every supplied ID exactly once, and write overview and every analysis in the required answer language.",
   ]);
   const request = JSON.stringify({
