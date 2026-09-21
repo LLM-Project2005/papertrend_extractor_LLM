@@ -154,4 +154,5 @@ export const ANSWER_FORMAT_RULES = [
   "Do not pad. Say less rather than repeating a claim in different words.",
   `Stay under ${MAX_ANSWER_CHARS} characters; depth means specifics, not length.`,
   "Attribute every substantive claim to the paper it came from.",
+  "Cite a paper by its title exactly as stored, even when answering in another language; a translated title cannot be matched against the repository or checked by the reader.",
 ].join(" ");
