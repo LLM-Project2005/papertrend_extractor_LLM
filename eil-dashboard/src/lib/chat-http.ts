@@ -99,3 +99,18 @@ export async function readChatStream<T extends ChatErrorPayload>(
   }
   return result;
 }
+
+/**
+ * Origin to send chat requests to.
+ *
+ * Firebase Hosting buffers streamed responses and enforces a fixed 60-second
+ * deadline, so progress frames arrive in one burst and long answers are cut
+ * off. When NEXT_PUBLIC_DIRECT_API_URL names the Cloud Run origin, chat
+ * requests go straight there and both limits disappear; the rest of the site
+ * keeps serving through Hosting. Unset, everything stays same-origin.
+ */
+export function chatEndpoint(path = "/api/chat"): string {
+  const direct = (process.env.NEXT_PUBLIC_DIRECT_API_URL ?? "").trim().replace(/\/$/, "");
+  if (!direct || !/^https:\/\//i.test(direct)) return path;
+  return `${direct}${path}`;
+}

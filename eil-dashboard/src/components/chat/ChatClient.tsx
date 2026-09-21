@@ -35,7 +35,7 @@ import {
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import { normalizeChatRequestPayload } from "@/lib/chat-request-payload";
-import { readChatStream, type ChatProgressUpdate } from "@/lib/chat-http";
+import { chatEndpoint, readChatStream, type ChatProgressUpdate } from "@/lib/chat-http";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -2137,7 +2137,7 @@ export default function ChatClient() {
     abortControllerRef.current = controller;
 
     setProgress(null);
-    const response = await fetch("/api/chat", {
+    const response = await fetch(chatEndpoint(), {
       method: "POST",
       headers: { ...requestHeaders, Accept: "text/event-stream" },
       body: JSON.stringify(normalizeChatRequestPayload(body)),
