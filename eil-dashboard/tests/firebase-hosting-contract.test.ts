@@ -10,45 +10,58 @@ function readRootFile(path: string): string {
   return readFileSync(resolve(repositoryRoot, path), "utf8");
 }
 
-test("Firebase Hosting only rewrites public traffic to the production web service", () => {
-  const config = JSON.parse(readRootFile("firebase.json")) as {
-    hosting: {
-      target: string;
-      public: string;
-      headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
-      rewrites: Array<{
-        source: string;
-        run?: { serviceId?: string; region?: string; pinTag?: boolean };
-      }>;
-    };
-  };
+interface HostingSite {
+  target: string;
+  public: string;
+  headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
+  rewrites: Array<{ source: string; run?: { serviceId?: string; region?: string; pinTag?: boolean } }>;
+}
 
-  assert.equal(config.hosting.target, "production");
-  assert.equal(config.hosting.public, "firebase-hosting");
-  assert.deepEqual(config.hosting.rewrites, [
-    {
-      source: "**",
-      run: {
-        serviceId: "papertrend-web-production",
-        region: "asia-southeast1",
-      },
-    },
-  ]);
-  assert.equal(
-    Object.prototype.hasOwnProperty.call(config.hosting.rewrites[0]?.run ?? {}, "pinTag"),
-    false
-  );
-  assert.doesNotMatch(JSON.stringify(config.hosting.rewrites), /worker/i);
+/**
+ * Every hosting site, whichever shape firebase.json uses.
+ *
+ * A second short-name site was added, so `hosting` became an array. Both sites
+ * serve the same application and must carry identical protections; reading them
+ * together is what keeps them from drifting apart.
+ */
+function hostingSites(): HostingSite[] {
+  const config = JSON.parse(readRootFile("firebase.json")) as
+    | { hosting: HostingSite | HostingSite[] };
+  return Array.isArray(config.hosting) ? config.hosting : [config.hosting];
+}
+
+test("Firebase Hosting only rewrites public traffic to the production web service", () => {
+  const sites = hostingSites();
+  assert.ok(sites.length >= 1, "at least one hosting site must be configured");
+  const targets = sites.map((site) => site.target);
+  assert.ok(targets.includes("production"), "the production target must remain");
+  assert.equal(new Set(targets).size, targets.length, "each site needs its own target");
+
+  for (const site of sites) {
+    assert.equal(site.public, "firebase-hosting", `${site.target}: wrong public directory`);
+    assert.deepEqual(
+      site.rewrites,
+      [
+        {
+          source: "**",
+          run: { serviceId: "papertrend-web-production", region: "asia-southeast1" },
+        },
+      ],
+      `${site.target}: must rewrite only to the production web service`
+    );
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(site.rewrites[0]?.run ?? {}, "pinTag"),
+      false,
+      `${site.target}: pinTag would freeze the served revision`
+    );
+    assert.doesNotMatch(JSON.stringify(site.rewrites), /worker/i, `${site.target}: must never expose the worker`);
+  }
 });
 
 test("Firebase Hosting prevents authenticated caching and preserves immutable Next assets", () => {
-  const config = JSON.parse(readRootFile("firebase.json")) as {
-    hosting: {
-      headers: Array<{ source: string; headers: Array<{ key: string; value: string }> }>;
-    };
-  };
+  for (const site of hostingSites()) {
   const cacheValue = (source: string) =>
-    config.hosting.headers
+    site.headers
       .find((entry) => entry.source === source)
       ?.headers.find((header) => header.key.toLowerCase() === "cache-control")
       ?.value;
@@ -67,6 +80,7 @@ test("Firebase Hosting prevents authenticated caching and preserves immutable Ne
     cacheValue("/_next/static/**"),
     "public, max-age=31536000, immutable"
   );
+  }
 });
 
 test("Firebase project target and production URL split stay pinned to Papertrend", () => {
