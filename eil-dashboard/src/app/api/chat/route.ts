@@ -22,6 +22,13 @@ import {
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import {
+  encodeErrorFrame,
+  encodeProgressFrame,
+  encodeResultFrame,
+  runWithChatProgress,
+  type ChatProgressEvent,
+} from "@/lib/chat-progress";
+import {
   knowledgeScopeLabel,
   normalizeKnowledgeScope,
   type KnowledgeScope,
@@ -4445,6 +4452,73 @@ async function handlePost(request: Request) {
   }
 }
 
+/**
+ * Streams pipeline progress, then the same payload the JSON route returns.
+ *
+ * A repository answer takes several model calls, so a reader otherwise watches
+ * a static spinner for half a minute. Clients opt in with
+ * `Accept: text/event-stream`; everything else keeps the plain JSON response.
+ */
+function streamPostWithProgress(request: Request): Response {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      let closed = false;
+      const send = (chunk: string) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(chunk));
+        } catch {
+          closed = true;
+        }
+      };
+      // A comment frame opens the stream immediately so the client can render a
+      // first stage without waiting for the first model call to finish.
+      send(": open\n\n");
+      const emit = (event: ChatProgressEvent) => send(encodeProgressFrame(event));
+      try {
+        const response = await runWithChatProgress(emit, () => handlePost(request));
+        const body = await response.clone().text();
+        let payload: unknown;
+        try {
+          payload = body ? JSON.parse(body) : {};
+        } catch {
+          payload = { error: "The answer could not be read." };
+        }
+        if (response.ok) send(encodeResultFrame(payload));
+        else {
+          const message =
+            typeof payload === "object" && payload && "error" in payload
+              ? String((payload as { error: unknown }).error)
+              : "The request failed.";
+          send(encodeErrorFrame(message, response.status));
+        }
+      } catch (error) {
+        send(encodeErrorFrame(
+          error instanceof Error ? error.message : "The request failed.",
+          500
+        ));
+      } finally {
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // Already closed by a disconnecting client.
+        }
+      }
+    },
+  });
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      // Proxies that buffer would defeat the point of streaming.
+      "X-Accel-Buffering": "no",
+    },
+  });
+}
+
 export async function POST(request: Request) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (user?.id) {
@@ -4458,9 +4532,11 @@ export async function POST(request: Request) {
     }
   }
 
+  const wantsStream = (request.headers.get("accept") ?? "").includes("text/event-stream");
+
   return withAiTokenUsageTracking(async (usage) => {
     try {
-      return await handlePost(request);
+      return wantsStream ? streamPostWithProgress(request) : await handlePost(request);
     } finally {
       if (user?.id && usage.totalTokens > 0) {
         await persistAiTokenUsage(user.id, usage).catch((error) => {

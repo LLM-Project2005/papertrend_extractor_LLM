@@ -12,6 +12,7 @@ import {
   type RepositoryRetrievalCandidate,
 } from "@/lib/repository-retrieval";
 import { hybridRepositorySearch } from "@/lib/repository-memory";
+import { reportChatProgress } from "@/lib/chat-progress";
 import {
   normalizeKnowledgeScope,
   type KnowledgeScope,
@@ -1135,6 +1136,7 @@ async function pruneRepositoryCacheForOwner(ownerUserId: string): Promise<void> 
 }
 
 export async function loadRepositoryContext(input: RepositoryChatInput): Promise<RepositoryContext> {
+  reportChatProgress("loading_repository");
   const knowledgeScope = normalizeKnowledgeScope(input);
   const selectedRunIds = normalizedIdList(knowledgeScope.runIds ?? input.selectedRunIds);
   const loaded = getDatabaseProvider() === "cloud-sql"
@@ -2361,7 +2363,12 @@ async function repositoryQaResult(
   context: RepositoryContext,
   plan: RepositoryPromptPlan
 ): Promise<RepositoryQaOutput> {
+  reportChatProgress("retrieving");
   const evidence = await selectEvidence(context, plan, input.model);
+  reportChatProgress(
+    "reading_evidence",
+    evidence.papers.length === 1 ? "1 paper" : `${evidence.papers.length} papers`
+  );
   const allowedIds = evidence.papers.map((paper) => paper.paperId);
   const paperById = new Map(evidence.papers.map((paper) => [paper.paperId, paper]));
   const history = (input.history ?? []).slice(-8).map((message) => ({
@@ -2370,6 +2377,7 @@ async function repositoryQaResult(
   }));
   let answer = "";
   let groundingConfidence = Math.min(evidence.rerankerConfidence, 0.5);
+  reportChatProgress("synthesizing");
   try {
     const completion = await createChatCompletionResult(
       [
@@ -2444,6 +2452,7 @@ async function repositoryQaResult(
     validation.invalidPaperIds.length > 0 ||
     (validation.hasSubstantiveText && validation.citedPaperIds.length === 0);
   const faithfulnessChecked = true;
+  reportChatProgress("checking");
   const checked = await checkFaithfulness({
     question: plan.refinedQuestion,
     answer,
@@ -2492,6 +2501,7 @@ async function repositoryQaResult(
       };
   }
 
+  reportChatProgress("formatting");
   const citedPapers = validation.citedPaperIds
     .map((paperId) => paperById.get(paperId))
     .filter((paper): paper is RepositoryPaper => Boolean(paper));
@@ -3162,6 +3172,7 @@ async function converseResult(
 
 export async function runRepositoryChat(input: RepositoryChatInput): Promise<RepositoryChatResult> {
   const context = await loadRepositoryContext(input);
+  reportChatProgress("planning");
   const chatV2Enabled = process.env.REPOSITORY_CHAT_V2_ENABLED !== "false";
   const execution = chatV2Enabled
     ? input.executionPlan ?? await planRepositoryExecution(input, context)
@@ -3268,6 +3279,7 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       asyncPaperThreshold: asyncThreshold,
     })
   ) {
+    reportChatProgress("queued");
     const jobId = await createRepositoryChatJob(input, execution, context.papers.length);
     const queued = await enqueueRepositoryChatJob(jobId, input.ownerUserId, input.jobCallbackBaseUrl);
     if (!queued) throw new Error("The repository report could not be queued safely.");
