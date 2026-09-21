@@ -100,11 +100,13 @@ Move to `db-f1-micro` and leave it running:
 gcloud sql instances patch papertrend-pg --tier=db-f1-micro
 ```
 
-The change restarts the instance, so expect a short interruption. An on-demand
-backup was taken beforehand (`pre-tier-change`), which matters because this
-instance still has **no automated backups**.
+Applied 2026-09-22; the operation took 10 minutes and the instance has been
+healthy on the new tier since. An on-demand backup was taken beforehand
+(`pre-tier-change-20260922`), which matters because this instance still has
+**no automated backups**.
 
-Reverting is the same command with `--tier=db-g1-small`.
+Reverting is the same command with `--tier=db-g1-small`, and costs another
+10-minute interruption.
 
 ## How to run the tier change, step by step
 
@@ -176,9 +178,24 @@ gcloud sql instances patch papertrend-pg --tier=db-f1-micro
 `gcloud` warns that the instance will restart and asks `Do you want to
 continue (Y/n)?`. Type `Y` and press Enter.
 
-**The site is down while it restarts** - usually one to three minutes. Do this
-when nobody is testing. The command keeps running until the restart finishes;
-do not close the window.
+**The site is down while it restarts.** Measured on 2026-09-22 the operation
+took **10 minutes 2 seconds** end to end (22:05:23 to 22:15:25 UTC), and the
+`gcloud` spinner sits on `Patching Cloud SQL instance...` for all of it. That is
+normal and not a hang: the instance comes back on the new tier partway through
+and the command stays attached until the server-side operation is marked DONE.
+
+Do this when nobody is testing. Closing the terminal does not cancel anything -
+the operation runs server-side - but leave it open if you want to see it finish.
+
+To check progress from another terminal:
+
+```powershell
+gcloud sql operations list --instance=papertrend-pg --limit=1
+gcloud sql instances describe papertrend-pg --format="value(settings.tier,state)"
+```
+
+The instance reporting the new tier and `RUNNABLE` means the database is already
+serving, even while the operation still shows `RUNNING`.
 
 ### Step 6 - confirm it worked
 
@@ -205,19 +222,44 @@ by a tier change in either direction - only the machine underneath it changes.
 
 ### What to watch afterwards
 
-The risk of the smaller tier is memory, not disk or CPU. Watch it for a few days:
+### Do not panic at 100% memory
 
-```powershell
-gcloud monitoring time-series list --project=research-trend-analysis `
-  --filter='metric.type="cloudsql.googleapis.com/database/memory/utilization" AND resource.labels.database_id="research-trend-analysis:papertrend-pg"' `
-  --format="value(points[0].value.doubleValue)"
+**On `db-f1-micro`, `database/memory/utilization` reads 100% permanently, and
+that is normal.** Measured immediately after the change, at idle:
+
+| Metric | Reading | Meaning |
+| --- | ---: | --- |
+| `memory/utilization` | **100%** | all RAM accounted for |
+| `memory/usage` | 614 MB | the whole machine - f1-micro has ~0.6 GB |
+| `memory/total_usage` | **105-131 MB** | what is genuinely in use |
+| `database/up` | 1.0 throughout | no restart, no OOM kill |
+| `cpu/utilization` | ~8% | idle |
+
+Linux uses whatever RAM is free as reclaimable page cache, so utilization pins
+at 100% on a small machine while the real working set stays near 130 MB. An
+earlier version of this document said to roll back above 90% utilization. That
+advice was wrong and would have triggered a needless rollback. **Judge
+`total_usage` and `database/up`, not `utilization`.**
+
+Roll back if you see `database/up` dropping to 0 outside a deliberate restart,
+`total_usage` approaching 614 MB, or connection errors during ordinary use.
+
+There is no `gcloud monitoring time-series` command; read the metrics through
+the API (this is the exact command, run and verified):
+
+```bash
+TOKEN=$(gcloud auth print-access-token)
+curl -s -G "https://monitoring.googleapis.com/v3/projects/research-trend-analysis/timeSeries"   -H "Authorization: Bearer $TOKEN"   --data-urlencode 'filter=metric.type="cloudsql.googleapis.com/database/memory/total_usage" AND resource.labels.database_id="research-trend-analysis:papertrend-pg"'   --data-urlencode "interval.startTime=$(date -u -d '30 minutes ago' +%Y-%m-%dT%H:%M:%SZ)"   --data-urlencode "interval.endTime=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ```
 
-Measured on `db-g1-small` the peak was 41% of 1.7 GB, about 0.70 GB, against a
-176 MB database - most of that is cache PostgreSQL takes because it is free, and
-it sizes down on a smaller machine. If utilization sits above roughly 90% under
-normal use, or you see connection errors during testing, roll back and tell me;
-that would mean the working set is genuinely larger than the measurement showed.
+Or open Cloud Console -> SQL -> papertrend-pg -> Monitoring, which needs no
+command at all.
+
+### Verified after the change
+
+Ten consecutive real questions against production on the new tier: **10 of 10
+succeeded**, p50 27.3s, p95 29.5s - within noise of the 25.0s p50 measured on
+the larger tier. Peak connections 3, peak working set 131 MB, no restart.
 
 ## Still open
 
