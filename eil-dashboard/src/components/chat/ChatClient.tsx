@@ -2300,7 +2300,7 @@ export default function ChatClient() {
     const requestId = requestIdRef.current;
     requestIdRef.current = null;
     if (requestId) {
-      void fetch("/api/chat/cancel", {
+      void fetch(chatEndpoint("/api/chat/cancel"), {
         method: "POST",
         headers: { ...requestHeaders },
         body: JSON.stringify({ requestId }),

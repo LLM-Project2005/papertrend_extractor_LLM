@@ -21,7 +21,10 @@ export function chatCorsHeaders(request: Request): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": normalized,
     "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept",
+    // X-Chat-Request-Id names the answer so Stop can cancel it. A custom
+    // header missing from this list fails the preflight, which blocks the
+    // whole request rather than just the header.
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, Accept, X-Chat-Request-Id",
     "Access-Control-Max-Age": "3600",
     // The allowed origin varies by request, so caches must key on it.
     Vary: "Origin",
