@@ -1221,6 +1221,41 @@ function MessageAttachmentList({
   );
 }
 
+/**
+ * Shows how much of the repository an answer covered and what it could not do.
+ *
+ * The server already records both on every repository answer, but nothing
+ * displayed them, so the honesty work was invisible: a reader could not tell a
+ * complete answer from one based on a handful of retrieved passages.
+ */
+function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null }) {
+  if (!metadata) return null;
+  const limitations = Array.isArray(metadata.repositoryLimitations)
+    ? (metadata.repositoryLimitations as unknown[]).map(String).filter((item) => item.trim())
+    : [];
+  const coverage = (metadata.repositoryCoverage ?? null) as
+    | { returnedPapers?: number; eligiblePapers?: number; complete?: boolean; scopeLabel?: string }
+    | null;
+  const hasCoverage =
+    coverage && typeof coverage.eligiblePapers === "number" && coverage.eligiblePapers > 0;
+  if (!hasCoverage && limitations.length === 0) return null;
+
+  return (
+    <div className="max-w-[720px] space-y-1 border-l-2 border-slate-200 pl-3 text-xs leading-5 text-slate-500 dark:border-[#242424] dark:text-[#8e8e8e]">
+      {hasCoverage ? (
+        <p>
+          {coverage!.complete
+            ? `Covered all ${coverage!.eligiblePapers} paper${coverage!.eligiblePapers === 1 ? "" : "s"} in ${coverage!.scopeLabel ?? "this scope"}.`
+            : `Based on ${coverage!.returnedPapers ?? 0} of ${coverage!.eligiblePapers} paper${coverage!.eligiblePapers === 1 ? "" : "s"} in ${coverage!.scopeLabel ?? "this scope"}.`}
+        </p>
+      ) : null}
+      {limitations.map((limitation, index) => (
+        <p key={`limitation-${index}`}>{limitation}</p>
+      ))}
+    </div>
+  );
+}
+
 function renderLoadingLabel(
   deepResearchEnabled: boolean,
   chartModeEnabled: boolean,
@@ -3515,6 +3550,7 @@ export default function ChatClient() {
                               chart={chart}
                             />
                           ))}
+                          <AnswerCaveats metadata={message.metadata} />
                           {message.citations.length > 0 ? (
                             <div className="max-w-[720px] space-y-1.5">
                               {citationPreview.visible.map((citation) => (
