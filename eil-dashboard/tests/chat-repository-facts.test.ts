@@ -159,3 +159,37 @@ test("Thai extreme questions are detected", () => {
   assert.equal(detectRepositoryFacts("เอกสารไหนยาวที่สุด").lengthExtremes, true);
   assert.equal(detectRepositoryFacts("เอกสารไหนเก่าสุด").yearExtremes, true);
 });
+
+test("computed answers say what they were computed from", () => {
+  // Reviewers repeatedly flagged counts and listings as having "no scope or
+  // limitations stated", because a database-derived answer carries no citation.
+  const answer = buildRepositoryFactsAnswer(PAPERS, "Test repo", "How many papers?", RUN_STATS);
+  assert.match(answer, /Computed from stored repository records/);
+  assert.match(answer, /4 successfully analyzed papers/);
+});
+
+test("excluded files are named rather than quietly dropped", () => {
+  // RUN_STATS has 6 total files but only 4 analyzed.
+  const answer = buildRepositoryFactsAnswer(PAPERS, "Test repo", "How many papers?", RUN_STATS);
+  assert.match(answer, /2 files that failed, were canceled or are still processing are excluded/);
+});
+
+test("nothing is claimed excluded when every file analyzed", () => {
+  const clean: RepositoryRunStats = {
+    total: 4, succeeded: 4, queued: 0, processing: 0, failed: 0, canceled: 0, other: 0,
+  };
+  const answer = buildRepositoryFactsAnswer(PAPERS, "Test repo", "How many papers?", clean);
+  assert.match(answer, /Computed from stored repository records/);
+  assert.doesNotMatch(answer, /excluded/);
+});
+
+test("the provenance note is stated in Thai for Thai questions", () => {
+  const answer = buildRepositoryFactsAnswer(PAPERS, "คลังทดสอบ", "เอกสารเหล่านี้ตีพิมพ์ปีไหน", RUN_STATS);
+  assert.match(answer, /[฀-๿]/u);
+  assert.doesNotMatch(answer, /Computed from stored repository records/);
+});
+
+test("the provenance note never claims a bibliographic source", () => {
+  const answer = buildRepositoryFactsAnswer(PAPERS, "Test repo", "How many papers?", RUN_STATS);
+  assert.match(answer, /not from a bibliographic database/);
+});
