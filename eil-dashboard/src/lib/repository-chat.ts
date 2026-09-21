@@ -1894,9 +1894,13 @@ export function buildRepositoryFactsAnswer(
   if (facts.lengthExtremes) sections.push(lengthExtremesSection(papers, thai));
   if (facts.status) sections.push(statusSection(runStats, thai));
   const overview = buildRepositoryStatisticsSummary(papers, scopeLabel, prompt, runStats);
+  const provenance = computedFromNote(
+    { papers, runStats, scopeLabel } as RepositoryContext,
+    thai
+  );
   const targeted = sections.filter(Boolean);
-  if (targeted.length === 0) return overview;
-  return [...targeted, overview].join("\n\n");
+  if (targeted.length === 0) return [overview, provenance].join("\n\n");
+  return [...targeted, overview, provenance].join("\n\n");
 }
 
 /** Facts a repository of paper text simply does not contain. */
@@ -2911,6 +2915,37 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
   };
 }
 
+/**
+ * States what a computed answer was derived from.
+ *
+ * Counts and listings carry no citations because they come from the stored
+ * repository rather than from paper text. Without saying so they read as
+ * unsourced assertions: reviewers of these answers repeatedly noted "no scope
+ * or limitations stated". Naming the source and what is excluded costs one line
+ * and makes the answer checkable.
+ */
+export function computedFromNote(context: RepositoryContext, thai: boolean): string {
+  const excluded = Math.max(0, (context.runStats?.total ?? context.papers.length) - context.papers.length);
+  if (thai) {
+    return [
+      `\u0e04\u0e33\u0e19\u0e27\u0e13\u0e08\u0e32\u0e01\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e17\u0e35\u0e48\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01\u0e44\u0e27\u0e49\u0e02\u0e2d\u0e07\u0e40\u0e2d\u0e01\u0e2a\u0e32\u0e23 ${context.papers.length} \u0e09\u0e1a\u0e31\u0e1a\u0e17\u0e35\u0e48\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08`,
+      excluded > 0
+        ? `\u0e44\u0e21\u0e48\u0e23\u0e27\u0e21\u0e44\u0e1f\u0e25\u0e4c\u0e2d\u0e35\u0e01 ${excluded} \u0e44\u0e1f\u0e25\u0e4c\u0e17\u0e35\u0e48\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+  }
+  return [
+    `Computed from stored repository records for the ${context.papers.length} successfully analyzed paper${context.papers.length === 1 ? "" : "s"}, not from a bibliographic database.`,
+    excluded > 0
+      ? `${excluded} file${excluded === 1 ? "" : "s"} that failed, were canceled or are still processing are excluded.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 function listDocumentsResult(context: RepositoryContext): Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations"> {
   const papers = [...context.papers].sort((left, right) => left.title.localeCompare(right.title));
   return {
@@ -2919,6 +2954,8 @@ function listDocumentsResult(context: RepositoryContext): Pick<RepositoryChatRes
       `Complete listing of **${papers.length} analyzed paper${papers.length === 1 ? "" : "s"}**:`,
       "",
       ...papers.map((paper, index) => `${index + 1}. **${paper.title}** (${paper.year})`),
+      "",
+      computedFromNote(context, false),
     ].join("\n"),
     citations: papers.map((paper) => citationForPaper(paper, "Included in the complete repository listing.")),
     charts: [],
