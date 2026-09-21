@@ -2140,6 +2140,18 @@ async function evaluateEvidenceSufficiency(input: {
   }
 }
 
+/**
+ * Whether widening the search could reach a paper it has not already selected.
+ *
+ * The sufficiency check exists to find evidence worth expanding to. For a
+ * focused question the source limit is 10, so any repository of ten or fewer
+ * papers already has every paper selected and expansion has nowhere to go. The
+ * call still costs 3.4 seconds of the 28 seconds of model time an answer spends.
+ */
+export function expansionIsPossible(selectedIds: string[], scopedPaperCount: number): boolean {
+  return new Set(selectedIds).size < scopedPaperCount;
+}
+
 async function selectEvidence(
   context: RepositoryContext,
   plan: RepositoryPromptPlan,
@@ -2147,6 +2159,23 @@ async function selectEvidence(
 ): Promise<SelectedEvidence> {
   const queries = [plan.refinedQuestion, ...plan.retrievalQueries, ...plan.evidenceNeeds];
   const budgets = retrievalBudgets(plan.retrievalMode, context.papers.length);
+  const hybridEnabled =
+    getDatabaseProvider() === "cloud-sql" &&
+    process.env.REPOSITORY_HYBRID_RETRIEVAL_ENABLED === "true";
+  // Started before the in-memory ranking rather than after it. The two share
+  // only the queries and the scope, and the merge below is order-independent,
+  // so the embedding round trip overlaps the tokenising instead of following it.
+  const persistentHitsPromise = hybridEnabled
+    ? hybridRepositorySearch(
+        {
+          ownerUserId: context.ownerUserId,
+          projectId: context.projectId,
+          folderId: context.folderId,
+        },
+        queries.join("\n"),
+        budgets.candidateLimit
+      ).catch(() => null)
+    : null;
   let candidates = rankRepositoryEvidence(
     context.papers.map((paper) => ({
       paperId: paper.paperId,
@@ -2162,20 +2191,9 @@ async function selectEvidence(
     queries,
     budgets.candidateLimit
   );
-  if (
-    getDatabaseProvider() === "cloud-sql" &&
-    process.env.REPOSITORY_HYBRID_RETRIEVAL_ENABLED === "true"
-  ) {
-    try {
-      const persistentHits = await hybridRepositorySearch(
-        {
-          ownerUserId: context.ownerUserId,
-          projectId: context.projectId,
-          folderId: context.folderId,
-        },
-        queries.join("\n"),
-        budgets.candidateLimit
-      );
+  if (persistentHitsPromise) {
+    const persistentHits = await persistentHitsPromise;
+    if (persistentHits) {
       const byId = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
       const orderedIds = [...new Set([
         ...persistentHits.map((hit) => hit.paperId),
@@ -2185,9 +2203,9 @@ async function selectEvidence(
         .map((paperId) => byId.get(paperId))
         .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate))
         .slice(0, budgets.candidateLimit);
-    } catch {
-      // Lexical in-memory retrieval remains available during rollout/backfill.
     }
+    // A failed hybrid search resolves to null; lexical in-memory retrieval
+    // remains available during rollout and backfill.
   }
   let selectedIds = candidates.slice(0, budgets.sourceLimit).map((candidate) => candidate.paperId);
   let rerankerSource: SelectedEvidence["rerankerSource"] = "fallback";
@@ -2253,12 +2271,19 @@ async function selectEvidence(
     const selectedCandidates = selectedIds
       .map((paperId) => candidateById.get(paperId))
       .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate));
-    const sufficiency = await evaluateEvidenceSufficiency({
-      question: plan.refinedQuestion,
-      evidenceNeeds: plan.evidenceNeeds,
-      candidates: selectedCandidates,
-      model,
-    });
+    const canExpand = expansionIsPossible(selectedIds, context.papers.length);
+    console.info(
+      "chat_sufficiency_decision",
+      JSON.stringify({ skipped: !canExpand, selected: selectedIds.length, scoped: context.papers.length })
+    );
+    const sufficiency = canExpand
+      ? await evaluateEvidenceSufficiency({
+          question: plan.refinedQuestion,
+          evidenceNeeds: plan.evidenceNeeds,
+          candidates: selectedCandidates,
+          model,
+        })
+      : null;
     if (sufficiency) {
       sufficiencyChecked = true;
       missingEvidenceNeeds = sufficiency.missingEvidenceNeeds;
