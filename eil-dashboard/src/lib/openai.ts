@@ -1,5 +1,7 @@
 import { getOpenAIConfig } from "@/lib/server-env";
 import { recordAiTokenUsage } from "@/lib/ai-token-usage";
+import { recordModelCallLatency } from "@/lib/model-latency";
+import { requestSignal } from "@/lib/chat-cancellation";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -114,21 +116,29 @@ export async function createChatCompletionResult(
     requestBody.parallel_tool_calls = parameters.parallelToolCalls;
   }
 
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify(requestBody),
-    signal:
-      typeof parameters.timeoutMs === "number"
-        ? AbortSignal.timeout(Math.max(1_000, parameters.timeoutMs))
-        : undefined,
-  });
+  // Latency per call was never recorded, so a slow answer could not be
+  // attributed to a particular step. Measuring is a precondition for tuning it.
+  const startedAt = performance.now();
+  let response: Response;
+  try {
+    response = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify(requestBody),
+      // Stops when the reader leaves as well as when the call takes too long.
+      signal: requestSignal(parameters.timeoutMs),
+    });
+  } catch (error) {
+    recordModelCallLatency(taskName, performance.now() - startedAt, "failed");
+    throw error;
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
+    recordModelCallLatency(taskName, performance.now() - startedAt, "failed");
     throw new Error(`OpenAI request failed: ${response.status} ${errorText}`);
   }
 
@@ -145,6 +155,7 @@ export async function createChatCompletionResult(
   };
 
   const message = payload.choices?.[0]?.message;
+  recordModelCallLatency(taskName, performance.now() - startedAt, "ok");
   recordAiTokenUsage(payload.usage);
   return {
     content: normalizeMessageContent(message?.content),
