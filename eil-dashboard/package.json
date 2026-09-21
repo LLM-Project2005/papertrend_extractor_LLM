@@ -16,6 +16,7 @@
     "test:semantic-map:layout": "tsx --test --test-force-exit tests/semantic-map-clustering.test.ts",
     "test:chat:word-count": "tsx --test --test-force-exit tests/chat-word-count.test.ts",
     "evaluate:semantic-map-layout": "tsx scripts/evaluate-semantic-map-layout.ts",
+    "judge:chat": "tsx scripts/judge-chat-answers.ts",
     "test:semantic-map:cloudsql": "tsx scripts/semantic-map-cloudsql-live.ts",
     "test:semantic-map:pilot": "tsx scripts/semantic-map-pilot-live.ts",
     "test:chat:selected-papers:pilot": "tsx scripts/chat-selected-papers-pilot-live.ts",
