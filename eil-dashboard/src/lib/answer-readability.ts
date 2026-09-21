@@ -13,7 +13,18 @@ export const MAX_PARAGRAPH_CHARS = 700;
 /** Above this length an answer needs headings, bullets or a table. */
 export const STRUCTURE_REQUIRED_CHARS = 900;
 
-export type ReadabilityIssueKind = "long_paragraph" | "no_structure" | "no_emphasis";
+/** Beyond this an answer is a document, not a reply, and stops being read. */
+export const MAX_ANSWER_CHARS = 7_000;
+
+/** A prose paragraph longer than this is expected to carry a citation. */
+const CLAIM_PARAGRAPH_CHARS = 220;
+
+export type ReadabilityIssueKind =
+  | "long_paragraph"
+  | "no_structure"
+  | "no_emphasis"
+  | "too_long"
+  | "unattributed_claims";
 
 export interface ReadabilityIssue {
   kind: ReadabilityIssueKind;
@@ -77,6 +88,31 @@ export function readabilityIssues(answer: string): ReadabilityIssue[] {
     });
   }
 
+  if (text.length > MAX_ANSWER_CHARS) {
+    issues.push({
+      kind: "too_long",
+      detail:
+        `The answer is ${text.length} characters, past the ${MAX_ANSWER_CHARS} a reader will work through. ` +
+        "Cut repetition and secondary detail rather than summarising away the substance.",
+    });
+  }
+
+  const unattributed = paragraphsOf(text).filter(
+    (paragraph) =>
+      !isStructural(paragraph) &&
+      paragraph.length > CLAIM_PARAGRAPH_CHARS &&
+      !/\[Paper\s+[^\]]+\]/i.test(paragraph) &&
+      !/\([^()]{12,120}?,\s*(?:\d{4}|Unknown)\)/.test(paragraph)
+  );
+  if (unattributed.length > 0) {
+    issues.push({
+      kind: "unattributed_claims",
+      detail:
+        `${unattributed.length} substantive paragraph${unattributed.length === 1 ? "" : "s"} cite no paper. ` +
+        "Attribute each claim to the paper it came from, or say plainly that the evidence does not support it.",
+    });
+  }
+
   if (text.length > STRUCTURE_REQUIRED_CHARS && countBold(text) === 0) {
     issues.push({
       kind: "no_emphasis",
@@ -116,4 +152,6 @@ export const ANSWER_FORMAT_RULES = [
   "Bold the specific findings, figures and paper names a reader scans for, but no more than a few per paragraph.",
   "Use a descriptive heading for each distinct part of a long answer.",
   "Do not pad. Say less rather than repeating a claim in different words.",
+  `Stay under ${MAX_ANSWER_CHARS} characters; depth means specifics, not length.`,
+  "Attribute every substantive claim to the paper it came from.",
 ].join(" ");
