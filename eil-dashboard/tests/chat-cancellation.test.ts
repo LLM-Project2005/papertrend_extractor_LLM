@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   ChatCancelledError,
@@ -102,4 +103,28 @@ test("an empty request summarises to zero rather than failing", () => {
   assert.equal(summary.callCount, 0);
   assert.equal(summary.totalMs, 0);
   assert.deepEqual(summary.byTask, []);
+});
+
+test("the streaming path installs its scopes inside the stream callback", () => {
+  // The streaming Response is returned before any work runs, so wrapping the
+  // call that creates it left the real work outside both scopes: latency was
+  // always empty and cancellation never reached a model call.
+  const route = readFileSync(
+    new URL("../src/app/api/chat/route.ts", import.meta.url),
+    "utf8"
+  );
+  const startIndex = route.indexOf("async start(controller)");
+  const endIndex = route.indexOf("return new Response(stream");
+  assert.ok(startIndex > 0 && endIndex > startIndex, "stream callback not found");
+  const inside = route.slice(startIndex, endIndex);
+  assert.match(inside, /runWithCancellation\(request\.signal/);
+  assert.match(inside, /runWithModelLatency/);
+});
+
+test("the non-streaming path keeps its own scopes", () => {
+  const route = readFileSync(
+    new URL("../src/app/api/chat/route.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(route, /runWithCancellation\(request\.signal, \(\) => handlePost\(request\)\)/);
 });
