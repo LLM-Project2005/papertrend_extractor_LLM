@@ -106,6 +106,119 @@ instance still has **no automated backups**.
 
 Reverting is the same command with `--tier=db-g1-small`.
 
+## How to run the tier change, step by step
+
+You do not need to install anything. `gcloud` is already on this machine
+(SDK 560.0.0) and already signed in as `p.chantarusorn@gmail.com` on project
+`research-trend-analysis`, which is the account that owns the instance.
+
+### Step 1 - open a terminal
+
+Open **PowerShell** on Windows (Start menu, type `powershell`). Any folder is
+fine; this command does not touch the repository.
+
+If you would rather not use your own machine at all, open
+<https://console.cloud.google.com> , make sure the project selector at the top
+says **research-trend-analysis**, and click the **Activate Cloud Shell** icon
+(`>_`) in the top right. That gives you the same `gcloud`, already signed in, in
+a browser tab. Every command below works unchanged in either place.
+
+### Step 2 - confirm you are pointed at the right project
+
+```powershell
+gcloud config list
+```
+
+Expected:
+
+```text
+account = p.chantarusorn@gmail.com
+project = research-trend-analysis
+```
+
+If the project is different, fix it before going further:
+
+```powershell
+gcloud config set project research-trend-analysis
+```
+
+### Step 3 - check the backup exists
+
+The instance has **no automated backups**, so the on-demand backup is the only
+thing standing between a mistake and data loss. Verify it before changing
+anything:
+
+```powershell
+gcloud sql backups list --instance=papertrend-pg --limit=3
+```
+
+You should see `pre-tier-change-20260922` with status `SUCCESSFUL`. If you do
+not, take a fresh one and wait for it to finish:
+
+```powershell
+gcloud sql backups create --instance=papertrend-pg --description=pre-tier-change
+```
+
+### Step 4 - note the current tier, so you know what to go back to
+
+```powershell
+gcloud sql instances describe papertrend-pg --format="value(settings.tier)"
+```
+
+This prints `db-g1-small` today. That string is your rollback value.
+
+### Step 5 - run the change
+
+```powershell
+gcloud sql instances patch papertrend-pg --tier=db-f1-micro
+```
+
+`gcloud` warns that the instance will restart and asks `Do you want to
+continue (Y/n)?`. Type `Y` and press Enter.
+
+**The site is down while it restarts** - usually one to three minutes. Do this
+when nobody is testing. The command keeps running until the restart finishes;
+do not close the window.
+
+### Step 6 - confirm it worked
+
+```powershell
+gcloud sql instances describe papertrend-pg --format="value(settings.tier,state)"
+```
+
+Expected: `db-f1-micro  RUNNABLE`.
+
+Then open the site and ask the chat one question. A real answer end to end is
+better proof than any metric, because it exercises the database through the
+same path a visitor uses.
+
+### If something goes wrong
+
+Go back with the value from step 4:
+
+```powershell
+gcloud sql instances patch papertrend-pg --tier=db-g1-small
+```
+
+That is another restart of the same length. The database contents are untouched
+by a tier change in either direction - only the machine underneath it changes.
+
+### What to watch afterwards
+
+The risk of the smaller tier is memory, not disk or CPU. Watch it for a few days:
+
+```powershell
+gcloud monitoring time-series list --project=research-trend-analysis `
+  --filter='metric.type="cloudsql.googleapis.com/database/memory/utilization" AND resource.labels.database_id="research-trend-analysis:papertrend-pg"' `
+  --format="value(points[0].value.doubleValue)"
+```
+
+Measured on `db-g1-small` the peak was 41% of 1.7 GB, about 0.70 GB, against a
+176 MB database - most of that is cache PostgreSQL takes because it is free, and
+it sizes down on a smaller machine. If utilization sits above roughly 90% under
+normal use, or you see connection errors during testing, roll back and tell me;
+that would mean the working set is genuinely larger than the measurement showed.
+
 ## Still open
 
 - **Automated backups remain disabled** on the production database, with no
