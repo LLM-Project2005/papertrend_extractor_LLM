@@ -41,5 +41,16 @@ test("planner calls are bounded while final generation remains unshortened", () 
   const openai = read("src/lib/openai.ts");
   assert.match(chat, /CHAT_EXECUTION_PLAN[\s\S]{0,120}timeoutMs: 12_000/);
   assert.match(chat, /CHAT_EXECUTION_PLAN_REPAIR[\s\S]{0,120}timeoutMs: 12_000/);
-  assert.match(openai, /AbortSignal\.timeout/);
+  // The deadline now lives in requestSignal, which also carries the caller's
+  // abort so an abandoned question stops the work it started.
+  assert.match(openai, /signal: requestSignal\(parameters\.timeoutMs\)/);
+  assert.match(read("src/lib/chat-cancellation.ts"), /AbortSignal\.timeout/);
+});
+
+test("a model call stops when the reader leaves, not only when it times out", () => {
+  // Pressing Stop aborted the browser fetch while the server kept generating,
+  // so the answer went unseen and its tokens were still paid for.
+  const cancellation = read("src/lib/chat-cancellation.ts");
+  assert.match(cancellation, /AbortSignal\.any\(\[caller, timeout\]\)/);
+  assert.match(read("src/app/api/chat/route.ts"), /runWithCancellation\(request\.signal/);
 });
