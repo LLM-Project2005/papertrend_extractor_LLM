@@ -2469,6 +2469,7 @@ async function repositoryQaResult(
   let answer = "";
   let groundingConfidence = Math.min(evidence.rerankerConfidence, 0.5);
   reportChatProgress("synthesizing");
+  for (let attempt = 0; attempt < 2 && !answer; attempt += 1) {
   try {
     const completion = await createChatCompletionResult(
       [
@@ -2517,6 +2518,7 @@ async function repositoryQaResult(
   } catch {
     answer = "";
     groundingConfidence = 0;
+  }
   }
 
   if (!answer) {
@@ -2859,8 +2861,20 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     };
     else if (operation === "visualize") {
       const visualizesTextAnalysis = execution.operations.includes("analyze_text") && stepPlan.terms.length > 0;
+      // A chart of publication years must not be described as a topic summary.
+      const visualFacts = detectRepositoryFacts(input.prompt);
       const visualResult = visualizesTextAnalysis
         ? wordCountResult(context, { ...stepPlan, intent: "word_count", needsChart: true })
+        : visualFacts.years || visualFacts.yearExtremes || visualFacts.lengthExtremes
+        ? {
+            ...topicResult(context, stepPlan),
+            answer: buildRepositoryFactsAnswer(
+              context.papers,
+              context.scopeLabel,
+              input.prompt,
+              context.runStats
+            ),
+          }
         : topicResult(context, stepPlan);
       result = {
         ...visualResult,
@@ -3051,8 +3065,11 @@ async function generateDocumentAnalysisBatch(
   const system = buildPapertrendSystemPrompt("grounded_answer", [
     "Analyze every supplied paper exactly once and directly satisfy the user's requested dimensions. " +
       "The overview must answer the cross-paper intent, including meaningful similarities and differences when comparison is requested. " +
-      "Each item must give a substantive, evidence-bounded explanation of that paper using readable prose and bullets where useful. " +
-      "Do not expose database IDs in prose; use paper titles. Keep missing evidence explicit and never infer an unreported method, finding, or limitation. " +
+      "Every claim in the overview about what a paper did or found must name that paper in the sentence, so a reader can check it; " +
+      "a claim that holds across several papers must name them or say how many of them it covers. " +
+      "Each item must give a substantive, evidence-bounded explanation of that paper, and must state plainly which requested dimensions its evidence does not cover. " +
+      `${ANSWER_FORMAT_RULES} ` +
+      "Do not expose database IDs in prose; name papers by title. Keep missing evidence explicit and never infer an unreported method, finding, or limitation. " +
       "Return JSON only: {overview, items:[{paperId, analysis}]}. Preserve each supplied paperId only in its JSON paperId field, include every supplied ID exactly once, and write overview and every analysis in the required answer language.",
   ]);
   const request = JSON.stringify({
@@ -3098,6 +3115,83 @@ async function generateDocumentAnalysisBatch(
   return null;
 }
 
+/** Distinctive words from a title, used to tell whether prose names a paper. */
+function titleFingerprints(paper: RepositoryPaper): string[] {
+  return paper.title
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length >= 5)
+    .slice(0, 6)
+    .map((word) => word.toLowerCase());
+}
+
+/** Papers whose title is actually named somewhere in the text. */
+export function papersNamedIn(text: string, papers: RepositoryPaper[]): RepositoryPaper[] {
+  // Whole words only: substring matching let "learner" match inside "learners",
+  // so a generic sentence about learners falsely attributed a paper.
+  const present = new Set(
+    text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  );
+  return papers.filter((paper) => {
+    const words = [...new Set(titleFingerprints(paper))];
+    if (words.length < 2) return false;
+    const hits = words.filter((word) => present.has(word)).length;
+    // Two distinctive words identify a paper without demanding the whole title
+    // be quoted, which would read badly.
+    return hits >= 2;
+  });
+}
+
+/**
+ * Rewrites a cross-paper overview so its claims name the papers they rest on.
+ *
+ * The per-paper path forbids database IDs in prose, so its overview carried no
+ * attribution of any kind, and reviewers consistently reported that its claims
+ * could not be checked. Repairing only the overview keeps the cost small: the
+ * per-paper sections are already bounded to one paper each.
+ */
+async function attributeOverview(
+  overview: string,
+  papers: RepositoryPaper[],
+  execution: RepositoryExecutionPlan,
+  model?: string
+): Promise<string> {
+  if (!overview.trim() || papers.length < 2) return overview;
+  if (papersNamedIn(overview, papers).length >= Math.min(2, papers.length)) return overview;
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content: buildPapertrendSystemPrompt("grounded_answer", [
+            "Rewrite the summary so every claim about what a paper did or found names that paper by title in the same sentence. " +
+              "A claim spanning several papers must name them or say how many it covers. " +
+              "Change no claim, number or conclusion, and add nothing that is not already stated. " +
+              `${ANSWER_FORMAT_RULES} ` +
+              "Return JSON only: {overview}. Write it in the required answer language.",
+          ]),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            requiredAnswerLanguage: execution.answerLanguage,
+            availablePaperTitles: papers.map((paper) => paper.title),
+            summary: overview,
+          }),
+        },
+      ],
+      0,
+      model,
+      "CHAT_SYNTHESIS",
+      { maxTokens: 1_600 }
+    );
+    const parsed = extractJsonObject(completion?.content ?? "");
+    const repaired = typeof parsed?.overview === "string" ? parsed.overview.trim() : "";
+    return repaired || overview;
+  } catch {
+    return overview;
+  }
+}
+
 async function analyzeEachDocumentResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
@@ -3114,9 +3208,12 @@ async function analyzeEachDocumentResult(
     generated.push({ papers: batch, result: await generateDocumentAnalysisBatch(input, execution, batch) });
   }
   const providerFallbackCount = generated.filter((batch) => !batch.result).reduce((total, batch) => total + batch.papers.length, 0);
-  const overviewParts = generated
+  const rawOverviewParts = generated
     .map((batch) => batch.result?.overview.trim() ?? "")
     .filter(Boolean);
+  const overviewParts = await Promise.all(
+    rawOverviewParts.map((overview) => attributeOverview(overview, papers, execution, input.model))
+  );
   const detailSections = generated.flatMap((batch) => {
     const byId = new Map(batch.result?.items.map((item) => [item.paperId, item.analysis.trim()]) ?? []);
     return batch.papers.map((paper) => {
@@ -3550,10 +3647,23 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
       diagnostics: { ...diagnostics, ...result.quality },
     };
   }
+  // A visualization answer previously always described topics, so "a chart of
+  // papers by publication year" arrived under the heading "Repository topics".
+  const chartFacts = detectRepositoryFacts(input.prompt);
   const result = plan.intent === "repository_statistics"
     ? repositoryStatisticsResult(context, plan, input.prompt)
     : plan.intent === "word_count"
     ? wordCountResult(context, plan)
+    : chartFacts.years || chartFacts.yearExtremes || chartFacts.lengthExtremes
+    ? {
+        ...topicResult(context, plan),
+        answer: buildRepositoryFactsAnswer(
+          context.papers,
+          context.scopeLabel,
+          input.prompt,
+          context.runStats
+        ),
+      }
     : topicResult(context, plan);
   return {
     handled: true,
