@@ -117,7 +117,8 @@ test("the streaming path installs its scopes inside the stream callback", () => 
   const endIndex = route.indexOf("return new Response(stream");
   assert.ok(startIndex > 0 && endIndex > startIndex, "stream callback not found");
   const inside = route.slice(startIndex, endIndex);
-  assert.match(inside, /runWithCancellation\(request\.signal/);
+  // The combined disconnect signal, not request.signal alone; see below.
+  assert.match(inside, /runWithCancellation\(disconnected,/);
   assert.match(inside, /runWithModelLatency/);
 });
 
@@ -127,4 +128,39 @@ test("the non-streaming path keeps its own scopes", () => {
     "utf8"
   );
   assert.match(route, /runWithCancellation\(request\.signal, \(\) => handlePost\(request\)\)/);
+});
+
+test("a disconnect is caught whether the signal aborts or the stream is cancelled", () => {
+  // Behind the Cloud Run proxy the request signal did not always fire, so Stop
+  // aborted the browser's fetch while the server finished the answer in private
+  // and paid for every remaining model call.
+  const route = readFileSync(
+    new URL("../src/app/api/chat/route.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(route, /const readerLeft = new AbortController\(\)/);
+  assert.match(route, /AbortSignal\.any\(\[request\.signal, readerLeft\.signal\]\)/);
+  assert.match(route, /cancel\(\) \{[\s\S]*readerLeft\.abort\(\)/);
+});
+
+test("the work and the log both follow the combined signal, not the request alone", () => {
+  const route = readFileSync(
+    new URL("../src/app/api/chat/route.ts", import.meta.url),
+    "utf8"
+  );
+  // A log that reads request.signal would report cancelled:false for a stream
+  // cancellation, hiding exactly the case this guards against.
+  assert.match(route, /runWithCancellation\(disconnected,/);
+  assert.match(route, /cancelled: disconnected\.aborted/);
+});
+
+test("both disconnect paths abort the combined signal", () => {
+  for (const abortWhich of ["request", "reader"] as const) {
+    const requestSide = new AbortController();
+    const readerLeft = new AbortController();
+    const disconnected = AbortSignal.any([requestSide.signal, readerLeft.signal]);
+    assert.equal(disconnected.aborted, false);
+    (abortWhich === "request" ? requestSide : readerLeft).abort();
+    assert.equal(disconnected.aborted, true, `${abortWhich} disconnect must abort`);
+  }
 });
