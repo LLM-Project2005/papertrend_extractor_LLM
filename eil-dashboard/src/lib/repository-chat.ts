@@ -3115,6 +3115,83 @@ async function generateDocumentAnalysisBatch(
   return null;
 }
 
+/** Distinctive words from a title, used to tell whether prose names a paper. */
+function titleFingerprints(paper: RepositoryPaper): string[] {
+  return paper.title
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length >= 5)
+    .slice(0, 6)
+    .map((word) => word.toLowerCase());
+}
+
+/** Papers whose title is actually named somewhere in the text. */
+export function papersNamedIn(text: string, papers: RepositoryPaper[]): RepositoryPaper[] {
+  // Whole words only: substring matching let "learner" match inside "learners",
+  // so a generic sentence about learners falsely attributed a paper.
+  const present = new Set(
+    text.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  );
+  return papers.filter((paper) => {
+    const words = [...new Set(titleFingerprints(paper))];
+    if (words.length < 2) return false;
+    const hits = words.filter((word) => present.has(word)).length;
+    // Two distinctive words identify a paper without demanding the whole title
+    // be quoted, which would read badly.
+    return hits >= 2;
+  });
+}
+
+/**
+ * Rewrites a cross-paper overview so its claims name the papers they rest on.
+ *
+ * The per-paper path forbids database IDs in prose, so its overview carried no
+ * attribution of any kind, and reviewers consistently reported that its claims
+ * could not be checked. Repairing only the overview keeps the cost small: the
+ * per-paper sections are already bounded to one paper each.
+ */
+async function attributeOverview(
+  overview: string,
+  papers: RepositoryPaper[],
+  execution: RepositoryExecutionPlan,
+  model?: string
+): Promise<string> {
+  if (!overview.trim() || papers.length < 2) return overview;
+  if (papersNamedIn(overview, papers).length >= Math.min(2, papers.length)) return overview;
+  try {
+    const completion = await createChatCompletionResult(
+      [
+        {
+          role: "system",
+          content: buildPapertrendSystemPrompt("grounded_answer", [
+            "Rewrite the summary so every claim about what a paper did or found names that paper by title in the same sentence. " +
+              "A claim spanning several papers must name them or say how many it covers. " +
+              "Change no claim, number or conclusion, and add nothing that is not already stated. " +
+              `${ANSWER_FORMAT_RULES} ` +
+              "Return JSON only: {overview}. Write it in the required answer language.",
+          ]),
+        },
+        {
+          role: "user",
+          content: JSON.stringify({
+            requiredAnswerLanguage: execution.answerLanguage,
+            availablePaperTitles: papers.map((paper) => paper.title),
+            summary: overview,
+          }),
+        },
+      ],
+      0,
+      model,
+      "CHAT_SYNTHESIS",
+      { maxTokens: 1_600 }
+    );
+    const parsed = extractJsonObject(completion?.content ?? "");
+    const repaired = typeof parsed?.overview === "string" ? parsed.overview.trim() : "";
+    return repaired || overview;
+  } catch {
+    return overview;
+  }
+}
+
 async function analyzeEachDocumentResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
@@ -3131,9 +3208,12 @@ async function analyzeEachDocumentResult(
     generated.push({ papers: batch, result: await generateDocumentAnalysisBatch(input, execution, batch) });
   }
   const providerFallbackCount = generated.filter((batch) => !batch.result).reduce((total, batch) => total + batch.papers.length, 0);
-  const overviewParts = generated
+  const rawOverviewParts = generated
     .map((batch) => batch.result?.overview.trim() ?? "")
     .filter(Boolean);
+  const overviewParts = await Promise.all(
+    rawOverviewParts.map((overview) => attributeOverview(overview, papers, execution, input.model))
+  );
   const detailSections = generated.flatMap((batch) => {
     const byId = new Map(batch.result?.items.map((item) => [item.paperId, item.analysis.trim()]) ?? []);
     return batch.papers.map((paper) => {
