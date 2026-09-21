@@ -23,6 +23,7 @@ import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
 import { runWithCancellation } from "@/lib/chat-cancellation";
+import { isValidRequestId, registerCancellable } from "@/lib/chat-cancel-registry";
 import { runWithModelLatency, summarizeModelLatency } from "@/lib/model-latency";
 import {
   encodeErrorFrame,
@@ -4462,6 +4463,12 @@ async function handlePost(request: Request) {
  * a static spinner for half a minute. Clients opt in with
  * `Accept: text/event-stream`; everything else keeps the plain JSON response.
  */
+/** The id Stop will name, when the client supplied a usable one. */
+function cancellationId(request: Request): string | null {
+  const header = request.headers.get("x-chat-request-id");
+  return isValidRequestId(header) ? header : null;
+}
+
 function streamPostWithProgress(request: Request): Response {
   // The work happens inside start(), after this function has already returned,
   // so the cancellation and latency scopes must be installed in there.
@@ -4477,6 +4484,14 @@ function streamPostWithProgress(request: Request): Response {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       let closed = false;
+      // Stop cannot rely on the disconnect reaching this container, so the
+      // request makes itself cancellable by name for as long as it runs.
+      let unregister: (() => void) | null = null;
+      const requestId = cancellationId(request);
+      if (requestId) {
+        const user = await getAuthenticatedUserFromRequest(request).catch(() => null);
+        if (user) unregister = registerCancellable(user.id, requestId, readerLeft);
+      }
       const send = (chunk: string) => {
         if (closed) return;
         try {
@@ -4526,6 +4541,7 @@ function streamPostWithProgress(request: Request): Response {
         ));
       } finally {
         closed = true;
+        unregister?.();
         try {
           controller.close();
         } catch {

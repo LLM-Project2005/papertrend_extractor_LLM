@@ -35,7 +35,12 @@ import {
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import { normalizeChatRequestPayload } from "@/lib/chat-request-payload";
-import { chatEndpoint, readChatStream, type ChatProgressUpdate } from "@/lib/chat-http";
+import {
+  chatEndpoint,
+  newChatRequestId,
+  readChatStream,
+  type ChatProgressUpdate,
+} from "@/lib/chat-http";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -1617,6 +1622,8 @@ export default function ChatClient() {
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Names the in-flight answer so Stop can tell the server which one to drop.
+  const requestIdRef = useRef<string | null>(null);
   const repositoryJobPollsRef = useRef(
     new Map<string, { controller: AbortController; threadId: string }>()
   );
@@ -2170,11 +2177,17 @@ export default function ChatClient() {
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const requestId = newChatRequestId();
+    requestIdRef.current = requestId;
 
     setProgress(null);
     const response = await fetch(chatEndpoint(), {
       method: "POST",
-      headers: { ...requestHeaders, Accept: "text/event-stream" },
+      headers: {
+        ...requestHeaders,
+        Accept: "text/event-stream",
+        "X-Chat-Request-Id": requestId,
+      },
       body: JSON.stringify(normalizeChatRequestPayload(body)),
       signal: controller.signal,
     });
@@ -2281,6 +2294,21 @@ export default function ChatClient() {
   function stopGenerating() {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    // Aborting the fetch only stops this browser reading. The server does not
+    // learn that the reader left, so it is told explicitly or it runs every
+    // remaining model call for an answer nobody will see.
+    const requestId = requestIdRef.current;
+    requestIdRef.current = null;
+    if (requestId) {
+      void fetch("/api/chat/cancel", {
+        method: "POST",
+        headers: { ...requestHeaders },
+        body: JSON.stringify({ requestId }),
+        keepalive: true,
+      }).catch(() => {
+        // Stopping the screen already worked; a failed cancel only costs tokens.
+      });
+    }
     setProgress(null);
     setLoading(false);
   }
