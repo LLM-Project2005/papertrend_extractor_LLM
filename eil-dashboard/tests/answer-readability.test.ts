@@ -120,3 +120,52 @@ test("empty input is handled without issues", () => {
   assert.deepEqual(readabilityIssues(""), []);
   assert.deepEqual(readabilityIssues("   "), []);
 });
+
+test("an answer that balloons past the reading ceiling is flagged", () => {
+  // Live regression: enforcing structure made one comparison grow from 5,982 to
+  // 28,521 characters. Verbosity is its own readability failure.
+  const issues = readabilityIssues(wall(28_521));
+  assert.ok(issues.some((issue) => issue.kind === "too_long"));
+  assert.match(
+    issues.find((issue) => issue.kind === "too_long")!.detail,
+    /Cut repetition/
+  );
+});
+
+test("a normal-length answer is not flagged as too long", () => {
+  const answer = ["## Findings", "- **one** finding [Paper 1]", "- **two** finding [Paper 2]"].join("\n\n");
+  assert.ok(!readabilityIssues(answer).some((issue) => issue.kind === "too_long"));
+});
+
+test("substantive paragraphs with no citation are flagged", () => {
+  const claim =
+    "The five papers converge on the finding that context-sensitive instruction matters more than the specific method chosen, and that learner characteristics shape outcomes more strongly than the materials do in any of these classroom settings.";
+  assert.ok(
+    readabilityIssues(claim).some((issue) => issue.kind === "unattributed_claims"),
+    "an uncited substantive claim must be flagged"
+  );
+});
+
+test("a paragraph carrying a marker or a rendered citation is accepted", () => {
+  const withMarker =
+    "The five papers converge on the finding that context-sensitive instruction matters more than the specific method chosen, and that learner characteristics shape outcomes strongly. [Paper 12]";
+  const withRendered =
+    "The five papers converge on the finding that context-sensitive instruction matters more than the specific method chosen, and learner characteristics shape outcomes. (Effects of Personal Intelligence Reading, 2016)";
+  for (const answer of [withMarker, withRendered]) {
+    assert.ok(
+      !readabilityIssues(answer).some((issue) => issue.kind === "unattributed_claims"),
+      `cited paragraph must pass: ${answer.slice(0, 40)}`
+    );
+  }
+});
+
+test("short connective sentences are not treated as uncited claims", () => {
+  const answer = "Here is what the papers show.\n\n- **Reading** improved [Paper 1]\n\n- **Autonomy** grew [Paper 2]";
+  assert.ok(!readabilityIssues(answer).some((issue) => issue.kind === "unattributed_claims"));
+});
+
+test("a deterministic answer with no papers to cite is not penalised", () => {
+  // Counts computed from the database legitimately cite nothing, and are short.
+  const answer = "**Test 2 repository** contains **5 successfully analyzed papers**.";
+  assert.deepEqual(readabilityIssues(answer), []);
+});
