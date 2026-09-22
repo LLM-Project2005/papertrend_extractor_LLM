@@ -114,3 +114,12 @@ test("relationship lines are legible rather than hairlines", () => {
   assert.match(map, /strokeWidth: isFocused \? 3 : highlighted \? 2\.4 : 1\.6 \+ strength \* 0\.9/);
   assert.match(map, /opacity: isFocused \? 1 : highlighted \? 0\.92 : muted \? 0\.18 : 0\.68 \+ strength \* 0\.22/);
 });
+
+test("the minimap shows which part of the map you are looking at", () => {
+  // The mask is the whole point of a minimap: at 8% opacity it was invisible,
+  // so the panel showed dots and told the reader nothing about where they were.
+  const map = source("components/workspace/RepositorySemanticMap.tsx");
+  const mask = map.match(/maskColor="rgba\(15,23,42,\.(\d+)\)"/);
+  assert.ok(mask, "no minimap mask found");
+  assert.ok(Number(mask![1]) >= 15, `mask at .${mask![1]} is too faint to read`);
+});
