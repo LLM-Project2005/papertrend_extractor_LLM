@@ -3270,7 +3270,11 @@ export default function ChatClient() {
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          <AssistantAnswer content={message.content} messageId={message.id} citations={message.citations} />
+                          {/* A stable hook for the layout-shift measurement, which has to
+                              tell an answer arriving from the intro disappearing. */}
+                          <div data-testid="assistant-message">
+                            <AssistantAnswer content={message.content} messageId={message.id} citations={message.citations} />
+                          </div>
                           {groundingMode === "general" ? (
                             <div className="text-xs text-slate-600 dark:text-[#8e8e8e]">
                               Repository context not used
