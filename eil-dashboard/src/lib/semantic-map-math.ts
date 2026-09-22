@@ -380,7 +380,14 @@ function silhouetteScore(embeddings: number[][], assignments: number[]): number 
   embeddings.forEach((embedding, index) => {
     const own = assignments[index];
     const same = embeddings.filter((_, candidate) => candidate !== index && assignments[candidate] === own);
-    const a = same.length ? same.reduce((sum, row) => sum + euclideanDistance(embedding, row), 0) / same.length : 0;
+    // Rousseeuw defines the silhouette of a point alone in its cluster as 0.
+    // Treating its mean intra-cluster distance as 0 instead scores it 1.0 - the
+    // maximum - so a split that isolates a paper would look like the best split
+    // available. enforceMinimumClusterSize means singletons do not currently
+    // reach here, but a metric that rewards them is a trap for whoever relaxes
+    // that.
+    if (same.length === 0) return;
+    const a = same.reduce((sum, row) => sum + euclideanDistance(embedding, row), 0) / same.length;
     const alternatives = clusters.filter((cluster) => cluster !== own).map((cluster) => {
       const rows = embeddings.filter((_, candidate) => assignments[candidate] === cluster);
       return rows.reduce((sum, row) => sum + euclideanDistance(embedding, row), 0) / rows.length;

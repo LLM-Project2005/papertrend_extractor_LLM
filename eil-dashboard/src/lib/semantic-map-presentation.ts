@@ -229,3 +229,36 @@ export function buildSemanticSelectionInsight(
     summary: `${neighborhoodText} ${connectionText} ${signalText}`,
   };
 }
+
+/**
+ * How much of a paper title a map node may show.
+ *
+ * Measured on the live map: the longest rendered label was 199 characters and
+ * the median 117, every one of them past 60. At 10px in a 220px box that wraps
+ * to six or seven lines, so the label block became several times the size of
+ * the dot it belongs to - the position of that dot is the entire point of a
+ * semantic map, and the labels were burying it.
+ *
+ * The full title is never lost: it stays on the node's tooltip, in the paper
+ * list, and in the detail panel that opens on selection.
+ */
+export const NODE_LABEL_MAX_CHARS = 52;
+
+/**
+ * Shortens a title for a map node, on a word boundary where there is one.
+ *
+ * Thai writes without spaces between words, so splitting on spaces does not
+ * split a Thai title at all and the whole thing would be kept. When there is no
+ * usable space to cut at, it falls back to characters.
+ */
+export function nodeLabel(title: string, maxChars: number = NODE_LABEL_MAX_CHARS): string {
+  const clean = String(title ?? "").trim().replace(/\s+/g, " ");
+  if (clean.length <= maxChars) return clean;
+
+  const window = clean.slice(0, maxChars);
+  const lastSpace = window.lastIndexOf(" ");
+  // Only cut at a space when it leaves most of the budget used; otherwise the
+  // label becomes uselessly short for the sake of a tidy boundary.
+  const cut = lastSpace > maxChars * 0.6 ? window.slice(0, lastSpace) : window;
+  return `${cut.trimEnd()}…`;
+}
