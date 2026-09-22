@@ -391,3 +391,18 @@ test("a step that can degrade still degrades rather than failing the answer", ()
   const rerank = chat.slice(chat.indexOf('"CHAT_RERANK"'));
   assert.match(rerank.slice(0, 900), /catch \{[\s\S]*Deterministic reciprocal-rank fusion remains the fallback/);
 });
+
+test("a cached answer is marked in the response and shown to the reader", () => {
+  // An answer that arrives in a second is either cached or wrong, and a reader
+  // should not have to guess which. The first version of this put the flag only
+  // in message metadata, so the live check reported cached=false while the
+  // cache was in fact working.
+  const route = server("app/api/chat/route.ts");
+  assert.match(route, /cached: repositoryResult\.diagnostics\.cached === true/);
+
+  const client = server("components/chat/ChatClient.tsx");
+  assert.match(client, /Answered from an earlier identical question/);
+  // And the caveat block renders for a cached answer even when there is
+  // nothing else to say.
+  assert.match(client, /if \(!hasCoverage && limitations\.length === 0 && !cached\) return null;/);
+});

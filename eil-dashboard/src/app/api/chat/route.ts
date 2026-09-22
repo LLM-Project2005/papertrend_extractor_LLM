@@ -4155,6 +4155,10 @@ async function normalChat(
           execution: repositoryResult.execution ?? null,
           coverage: repositoryResult.coverage ?? null,
           limitations: repositoryResult.limitations ?? [],
+          // Says so when the answer came from the cache rather than the models.
+          // An answer that arrives in a second is either cached or wrong, and a
+          // reader should not have to guess which.
+          cached: repositoryResult.diagnostics.cached === true,
           jobId: repositoryResult.jobId ?? null,
           thread: detail.thread,
           messages: detail.messages,
