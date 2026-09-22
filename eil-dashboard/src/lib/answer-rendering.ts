@@ -162,20 +162,31 @@ export function brokenTables(answer: string): RenderingIssue[] {
  * most visible shape defect an answer can have and costs nothing to detect.
  */
 export function emptySections(answer: string): RenderingIssue[] {
-  const lines = withoutCodeBlocks(answer)
+  // A fenced block is content, so it must not be removed here the way it is
+  // for the other checks. Running this over live answers flagged a section
+  // whose whole body was a chart block: stripping the block made its heading
+  // look as though it sat directly on the next one.
+  const lines = answer
+    .replace(/```[\s\S]*?(?:```|$)/g, "\ncode block\n")
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
-  const heading = /^#{1,6}\s+/;
+  const heading = /^(#{1,6})\s+/;
   const issues: RenderingIssue[] = [];
   for (let index = 0; index < lines.length - 1; index += 1) {
-    if (heading.test(lines[index]) && heading.test(lines[index + 1])) {
-      issues.push({
-        kind: "empty-section",
-        detail: "a heading is followed immediately by another heading",
-        sample: sampleOf(lines[index]),
-      });
-    }
+    const current = lines[index].match(heading);
+    const next = lines[index + 1].match(heading);
+    if (!current || !next) continue;
+    // A parent heading followed by its first child is ordinary document
+    // structure, not an empty section: "## Findings" then "### 1. Method" reads
+    // correctly. Only a heading followed by a sibling or a shallower heading
+    // has genuinely promised content and delivered none.
+    if (next[1].length > current[1].length) continue;
+    issues.push({
+      kind: "empty-section",
+      detail: "a heading is followed immediately by another heading",
+      sample: sampleOf(lines[index]),
+    });
   }
   return issues;
 }
