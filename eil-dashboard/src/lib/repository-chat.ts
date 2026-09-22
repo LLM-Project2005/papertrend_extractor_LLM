@@ -3631,7 +3631,15 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
   // A follow-up means something different depending on what came before it, so
   // only a question asked with no conversation behind it is cacheable. Charts
   // are excluded too: the payload carries rendering state the cache does not.
-  const cacheable = (input.history?.length ?? 0) === 0 && !input.forceChart;
+  //
+  // The history the route passes ends with the question being asked, so its
+  // length is 1 on a first turn rather than 0. Requiring 0 meant nothing was
+  // ever cacheable, which is how this was found: the second identical question
+  // still took 21 seconds.
+  const priorTurns = (input.history ?? []).filter(
+    (turn, index, all) => !(index === all.length - 1 && turn.content.trim() === input.prompt.trim())
+  );
+  const cacheable = priorTurns.length === 0 && !input.forceChart;
   const keyParts = {
     ownerUserId: input.ownerUserId,
     versionHash: context.versionHash,

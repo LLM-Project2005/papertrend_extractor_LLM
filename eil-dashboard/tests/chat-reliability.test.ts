@@ -269,8 +269,13 @@ test("the cache is bounded", () => {
 
 test("a follow-up is never answered from the cache", () => {
   // A follow-up means something different depending on what came before it.
+  // The history the route passes ends with the question being asked, so its
+  // length is 1 on a first turn; requiring 0 meant nothing was ever cacheable,
+  // which is how that was found - the second identical question still took 21
+  // seconds against the live pilot.
   const chat = server("lib/repository-chat.ts");
-  assert.match(chat, /const cacheable = \(input\.history\?\.length \?\? 0\) === 0 && !input\.forceChart;/);
+  assert.match(chat, /const priorTurns = \(input\.history \?\? \[\]\)\.filter\(/);
+  assert.match(chat, /const cacheable = priorTurns\.length === 0 && !input\.forceChart;/);
 });
 
 test("a deferred answer is not cached as if it were the answer", () => {
