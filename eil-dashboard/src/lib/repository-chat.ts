@@ -27,6 +27,7 @@ import { hybridRepositorySearch } from "@/lib/repository-memory";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
   ANSWER_FORMAT_RULES,
+  formatConstraintInstruction,
   readabilityInstruction,
   readabilityIssues,
 } from "@/lib/answer-readability";
@@ -2588,6 +2589,7 @@ async function repositoryQaResult(
           content: [
             `Original request: ${input.prompt}`,
             `Refined request: ${plan.refinedQuestion}`,
+            formatConstraintInstruction(input.prompt) ?? "",
             `Answer language: ${plan.answerLanguage}`,
             `Evidence needs: ${plan.evidenceNeeds.join("; ") || "Answer the request directly"}`,
             "",
@@ -3503,7 +3505,7 @@ async function aggregateCorpusResult(
       },
       {
         role: "user",
-        content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, `Eligible papers: ${context.papers.length}`, ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
+        content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
       },
     ], 0.15, input.model, "CHAT_CORPUS_REDUCE", { maxTokens: 3_000 });
     const answer = completion?.content?.trim();
