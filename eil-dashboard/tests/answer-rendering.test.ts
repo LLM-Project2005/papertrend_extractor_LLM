@@ -405,3 +405,21 @@ test("the fallback text itself passes the readability checks", () => {
   assert.deepEqual(renderingIssues(fallback), []);
   assert.equal(leadsWithDirectAnswer(fallback).ok, true);
 });
+
+test("an explicit format request in the question outranks the house style", () => {
+  // Asked to summarise "in one paragraph", the model returned 4,378 characters
+  // across many paragraphs, and a judge marked it down for directness. The
+  // house rules push towards headings and bullets, and nothing said that what
+  // the reader actually asked for comes first.
+  const rules = readFileSync(
+    new URL("../src/lib/answer-readability.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(rules, /If the request names a format or a length/);
+  assert.match(rules, /It overrides every rule below/);
+  // It has to come before the rules it overrides, or it reads as an exception
+  // to nothing.
+  const override = rules.indexOf("If the request names a format or a length");
+  const headings = rules.indexOf("Use a descriptive heading for each distinct part");
+  assert.ok(override > 0 && override < headings, "the override must precede what it overrides");
+});
