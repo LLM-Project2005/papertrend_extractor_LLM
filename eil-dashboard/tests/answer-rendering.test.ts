@@ -13,6 +13,7 @@ import {
   renderingInstruction,
   unsupportedMarkdown,
 } from "../src/lib/answer-rendering";
+import { formatPaperReferencesForReaders } from "../src/lib/repository-chat";
 
 /** The chat page is two files since the answer renderer was extracted. */
 function client(): string {
@@ -422,4 +423,55 @@ test("an explicit format request in the question outranks the house style", () =
   const override = rules.indexOf("If the request names a format or a length");
   const headings = rules.indexOf("Use a descriptive heading for each distinct part");
   assert.ok(override > 0 && override < headings, "the override must precede what it overrides");
+});
+
+/* ------------------------------------------------ invented citation identifiers */
+
+test("an identifier the model invented never reaches the reader", () => {
+  // Seen on the 38-paper repository and never on the five-paper one: a larger
+  // corpus gives the model more room to make an id up, and the formatter used
+  // to return the whole run unchanged, leaving the raw marker in the answer.
+  const papers = [{ paperId: "7", title: "Reading instruction", year: "2016" }];
+  const out = formatPaperReferencesForReaders(
+    "The study reported gains [Paper 1142409511210558589].",
+    papers
+  );
+  assert.equal(/\[Paper/.test(out), false, `marker survived: ${out}`);
+  assert.deepEqual(renderingIssues(out), []);
+});
+
+test("a real identifier beside an invented one still renders", () => {
+  const papers = [{ paperId: "7", title: "Reading instruction", year: "2016" }];
+  const out = formatPaperReferencesForReaders("Both agree [Paper 7][Paper 99999999].", papers);
+  assert.match(out, /\(Reading instruction, 2016\)/);
+  assert.equal(/\[Paper/.test(out), false);
+});
+
+test("a run of only invented identifiers leaves clean prose behind", () => {
+  const out = formatPaperReferencesForReaders("The study reported gains [Paper 12345].", []);
+  assert.equal(out, "The study reported gains.");
+  assert.deepEqual(renderingIssues(out), []);
+});
+
+test("resolvable identifiers are unaffected", () => {
+  const papers = [
+    { paperId: "7", title: "Reading instruction", year: "2016" },
+    { paperId: "8", title: "Writing feedback", year: "2017" },
+  ];
+  const out = formatPaperReferencesForReaders("Both [Paper 7]; [Paper 8] agree.", papers);
+  assert.match(out, /\(Reading instruction, 2016; Writing feedback, 2017\)/);
+});
+
+test("removing a citation does not leave a space before the full stop", () => {
+  const out = formatPaperReferencesForReaders("Gains held [Paper 999], then fell [Paper 998].", []);
+  assert.equal(out, "Gains held, then fell.");
+});
+
+test("tidying the seam does not disturb an ordinary sentence", () => {
+  const papers = [{ paperId: "7", title: "Reading instruction", year: "2016" }];
+  const out = formatPaperReferencesForReaders(
+    "The study reported gains [Paper 7], and the effect held.",
+    papers
+  );
+  assert.equal(out, "The study reported gains (Reading instruction, 2016), and the effect held.");
 });

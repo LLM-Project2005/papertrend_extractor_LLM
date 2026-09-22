@@ -277,11 +277,18 @@ export function formatPaperReferencesForReaders(
       const labels: string[] = [];
       for (const id of ids) {
         const paper = paperById.get(id);
-        if (!paper) return run;
+        // An id that is not in scope was invented by the model. Returning the
+        // run unchanged left "[Paper 1142409511210558589]" sitting in the
+        // reader's answer - seen on the 38-paper repository, never on the
+        // five-paper one, because a larger corpus gives the model more room to
+        // make an id up. The unresolvable id is dropped and any real ones
+        // beside it are still rendered; the answer audit separately records
+        // that a citation was removed.
+        if (!paper) continue;
         const label = citationLabel(paper);
         if (!labels.includes(label)) labels.push(label);
       }
-      if (labels.length === 0) return run;
+      if (labels.length === 0) return "";
       // A sentence that already names the paper does not need its title
       // repeated immediately afterwards.
       const preceding = whole.slice(Math.max(0, offset - 180), offset).toLowerCase();
@@ -292,7 +299,14 @@ export function formatPaperReferencesForReaders(
       if (remaining.length === 0) return "";
       return `(${remaining.join("; ")})`;
     }
-  );
+  )
+    // Removing a citation leaves the space that preceded it, so a sentence ends
+    // "reported gains ." Tidy the seam rather than leaving the reader to notice
+    // it: a stray space before punctuation is exactly the kind of small wrong
+    // thing that makes a generated answer look generated.
+    .replace(/[ \t]+([.,;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+$/gm, "");
 }
 
 interface PaperRow {
