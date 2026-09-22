@@ -363,3 +363,44 @@ test("the section assembly does not stack a heading on a heading", () => {
     "the unconditional heading must be gone"
   );
 });
+
+/* ------------------------------------------------------- the failure fallback */
+
+test("the fallback shown when synthesis fails is readable and direct", () => {
+  // A judge scored the old version 3.0 readable and 2.0 direct, the worst of
+  // the whole suite: it appended 260 characters of each paper's raw extracted
+  // abstract, so the reader met a 2,400 character wall of PDF fragments at
+  // exactly the moment the answer had failed.
+  const chat = readFileSync(
+    new URL("../src/lib/repository-chat.ts", import.meta.url),
+    "utf8"
+  );
+  const fallback = chat.slice(
+    chat.indexOf("function deterministicEvidenceFallback"),
+    chat.indexOf("async function checkFaithfulness")
+  );
+  assert.ok(fallback.length > 0, "fallback not found");
+  assert.equal(
+    /paper\.abstract\.slice/.test(fallback),
+    false,
+    "the fallback must not paste raw abstract text at the reader"
+  );
+  assert.match(fallback, /I could not finish this answer/);
+  // It must say what to do, not only what broke.
+  assert.match(fallback, /Please ask again/);
+});
+
+test("the fallback text itself passes the readability checks", () => {
+  const fallback = [
+    "**I could not finish this answer.** The evidence was retrieved, but the step that writes and checks the answer did not complete, and an unchecked answer is not worth showing. Please ask again.",
+    "",
+    "These 2 papers are the ones the search found relevant in Test 2 repository:",
+    "",
+    "- **Effects of Personal Intelligence Reading Instruction** (2016)",
+    "- **Enhancing Learner Autonomy amongst Young EFL Learners** (2017)",
+    "",
+    "This was a relevance search across 5 eligible paper(s), not a complete listing.",
+  ].join("\n");
+  assert.deepEqual(renderingIssues(fallback), []);
+  assert.equal(leadsWithDirectAnswer(fallback).ok, true);
+});

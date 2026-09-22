@@ -73,7 +73,16 @@ function describeKind(category: string): string {
     return "A question the repository cannot answer. A clear refusal that explains why is the correct answer and scores 5.";
   }
   if (category === "chart") {
-    return "A chart request. The chart itself is returned separately, so judge the accompanying text.";
+    // The figures in a chart answer come from the same repository records the
+    // deterministic answers are computed from, so they carry no inline
+    // citations either. Without saying so the judge scored an accurate,
+    // well-formed topic breakdown 1.0 for groundedness while scoring the
+    // identical kind of answer 4.0 when it happened to be labelled
+    // deterministic - the same answer judged by two standards.
+    return "A chart request. The chart itself is returned separately, so judge the accompanying text. "
+      + "Its figures are computed directly from repository database records and carry no inline "
+      + "citations by design; judge groundedness on whether the text states what was counted and over "
+      + "what scope, not on citations.";
   }
   return "A synthesis over paper evidence. Substantive claims should be attributed to specific papers.";
 }
