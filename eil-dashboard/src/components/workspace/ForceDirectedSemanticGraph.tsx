@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent } from "react";
+import { nodeLabel } from "@/lib/semantic-map-presentation";
 import {
   forceCenter,
   forceCollide,
@@ -343,7 +344,8 @@ export default function ForceDirectedSemanticGraph({
             const position = positions[point.paperId] ?? point;
             const selected = selectedPaperIds.has(point.paperId);
             const dimmed = dimmedPaperIds.has(point.paperId);
-            const labelY = position.y > 610 ? -130 : 18;
+            // Flip above the node near the bottom edge so the label is not clipped.
+            const labelY = position.y > 700 ? -56 : 18;
             return (
               <g
                 key={point.paperId}
@@ -357,9 +359,9 @@ export default function ForceDirectedSemanticGraph({
               >
                 <circle r={selected ? 15 : 11} fill={colors[point.paperId] ?? "#64748b"} stroke={selected ? "white" : colors[point.paperId] ?? "#64748b"} strokeWidth={selected ? 4 : 3} vectorEffect="non-scaling-stroke" />
                 {showLabels ? (
-                  <foreignObject x={-90} y={labelY} width={180} height={112} pointerEvents="none" overflow="visible">
+                  <foreignObject x={-84} y={labelY} width={168} height={48} pointerEvents="none" overflow="visible">
                     <div className="mx-auto w-fit max-w-[180px] rounded-md bg-white/92 px-2 py-1 text-center text-[10px] font-semibold leading-[14px] text-slate-800 shadow-sm backdrop-blur-sm dark:bg-black/92 dark:text-[#eee]">
-                      {point.title}
+                      {nodeLabel(point.title)}
                     </div>
                   </foreignObject>
                 ) : null}

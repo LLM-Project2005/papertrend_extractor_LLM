@@ -214,8 +214,12 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(component, /Projection/);
   assert.match(component, /Force graph/);
   assert.match(component, /All retained relationships are visible/);
-  assert.match(component, /label: showPaperLabels \? point\.title : ""/);
-  assert.match(forceGraph, /\{point\.title\}/);
+  // Labels still come from the point's title and are still gated on the
+  // toggle; they are now shortened for the canvas, because the longest one
+  // measured 199 characters in a 220px box. The full title stays on the
+  // tooltip and in the detail panel.
+  assert.match(component, /label: showPaperLabels \? nodeLabel\(point\.title\) : ""/);
+  assert.match(forceGraph, /\{nodeLabel\(point\.title\)\}/);
   assert.doesNotMatch(component, /onNodeMouseEnter/);
   assert.doesNotMatch(component, /onNodeMouseLeave/);
   assert.doesNotMatch(component, /w-\[150px\].*truncate/);
