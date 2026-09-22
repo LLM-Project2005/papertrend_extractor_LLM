@@ -12,6 +12,10 @@ import {
   type RepositoryRetrievalCandidate,
 } from "@/lib/repository-retrieval";
 import { citationLabel } from "@/lib/answer-citations";
+import {
+  renderingInstruction,
+  renderingIssues,
+} from "@/lib/answer-rendering";
 import { hybridRepositorySearch } from "@/lib/repository-memory";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
@@ -2417,6 +2421,9 @@ async function checkFaithfulness(input: {
             `Evidence needs: ${input.evidenceNeeds.join("; ") || "Answer the request directly"}`,
             `Allowed paper IDs: ${input.allowedPaperIds.join(", ")}`,
             readabilityInstruction(readabilityIssues(input.answer)),
+            renderingInstruction(
+              renderingIssues(input.answer, { beforeCitationFormatting: true })
+            ),
             "",
             "# Draft answer",
             input.answer,
@@ -2499,6 +2506,10 @@ export function auditSkipBlocker(input: {
   if (input.validation.invalidPaperIds.length > 0) return "invalid_citation";
   if (input.validation.hasSubstantiveText && input.validation.citedPaperIds.length === 0) {
     return "uncited_claims";
+  }
+  const rendering = renderingIssues(input.answer, { beforeCitationFormatting: true });
+  if (rendering.length > 0) {
+    return rendering.map((issue) => issue.detail).join(",");
   }
   const issues = readabilityIssues(input.answer);
   return issues.length > 0 ? issues.map((issue) => issue.kind).join(",") : null;
