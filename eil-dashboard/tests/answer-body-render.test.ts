@@ -175,3 +175,60 @@ test("a whole realistic answer renders every part", () => {
   assert.match(html, /<button[^>]*>1<\/button>/);
   assert.equal(html.includes("[[cite:"), false);
 });
+
+/* ---------------------------------------------------------------- dark theme */
+
+/**
+ * Every colour the answer renders with must have a dark counterpart, or that
+ * element is invisible or glaring in the other theme. Checking the rendered
+ * markup rather than the source catches an element that was added without one.
+ */
+function lightOnlyColours(html: string): string[] {
+  const classAttributes = [...html.matchAll(/class="([^"]*)"/g)].map((match) => match[1]);
+  const offenders: string[] = [];
+  for (const classes of classAttributes) {
+    const tokens = classes.split(/\s+/).filter(Boolean);
+    const light = tokens.filter((token) =>
+      /^(?:text|bg|border|decoration)-(?:slate|white|black|sky)/.test(token)
+    );
+    if (light.length === 0) continue;
+    const hasDark = tokens.some((token) => token.startsWith("dark:"));
+    if (!hasDark) offenders.push(light.join(" "));
+  }
+  return offenders;
+}
+
+test("every coloured element in an answer has a dark-theme counterpart", () => {
+  const answer = [
+    "The five papers study English teaching.",
+    "",
+    "## What they measured",
+    "",
+    "- **Reading comprehension** with `inline code`",
+    "- A [link](https://example.com)",
+    "",
+    "> A quoted line",
+    "",
+    "| Paper | Year |",
+    "| --- | --- |",
+    "| A | 2016 |",
+    "",
+    "```python",
+    "print(1)",
+    "```",
+  ].join("\n");
+  const offenders = lightOnlyColours(renderBody(answer));
+  assert.deepEqual(offenders, [], `light-only colours: ${offenders.join(" | ")}`);
+});
+
+test("the citation marker and its card work in both themes", () => {
+  const html = renderAnswer(`Gains (${citationLabel(PAPER)}).`, [PAPER]);
+  const offenders = lightOnlyColours(html);
+  assert.deepEqual(offenders, [], `light-only colours: ${offenders.join(" | ")}`);
+});
+
+test("the fold control works in both themes", () => {
+  const html = renderAnswer("Sentence about the corpus. ".repeat(200), []);
+  const offenders = lightOnlyColours(html);
+  assert.deepEqual(offenders, [], `light-only colours: ${offenders.join(" | ")}`);
+});
