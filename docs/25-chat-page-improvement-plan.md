@@ -323,6 +323,62 @@ reader sees anything.
 - Tests cover empty state, example generation from real papers, and
   scope-indicator agreement.
 
+**Measured result (2026-09-22, pilot)**
+
+| Criterion | Result | |
+| --- | --- | --- |
+| A new user with one repository sees three relevant, clickable examples | 3 examples, drawn from the reader's own titles | pass |
+| The composer scope matches the scope the answer reports, asserted by a test | both read `loadRepositoryContext` | pass |
+| Suggestions never propose a question the assistant refuses | filtered through the server's own patterns | pass |
+| Tests cover empty state, example generation, and scope agreement | 32 tests | pass |
+
+Verified live against the scope route on the pilot:
+
+```text
+scopeLabel: Test 2 repository
+eligiblePaperCount: 5
+  corpus:     What are the main research topics across Test 2 repository?
+  specific:   What method did "ปรากฎร่วมเชิงวิชาการสำหรับนิสิตระดับบัณฑิต..." use, and what did it find?
+  comparison: Compare the methodologies used across these papers.
+```
+
+What shipped:
+
+- **An empty page that teaches itself.** It said "Where should we begin?" and
+  nothing else. It now opens with three questions built from the reader's own
+  paper titles, clickable to send; what it can answer, in a researcher's terms
+  rather than the pipeline's; and what it cannot answer, each with the reason.
+- **A composer that states what it will search.** It passed a hardcoded count of
+  zero, so the number before sending never matched the number the answer
+  reported. Both now come from the same scope loader.
+- **Follow-ups from the answer's own gaps** - its coverage line, limitations and
+  unmet evidence needs - filtered through the server's refusal patterns, which
+  moved into the shared module rather than being copied.
+
+**Two defects the production run exposed, fixed here**
+
+The corpus reduce step was the only synthesis that never saw the reader's
+original words. Asked to "summarise this whole repository in one paragraph" it
+returned seven, because the planner's refined question had dropped the
+constraint and nothing downstream could know it had been asked for.
+
+Passing the constraint was not enough on its own. The answer audit rewrites the
+answer afterwards and was being told the opposite: its readability rules demand
+a heading per part and a paragraph under 700 characters, which is precisely what
+one paragraph forbids. The shape rules now yield to a shape the reader named;
+the substance rules - overall length, claims without attribution - do not,
+because those are not matters of taste.
+
+The planner was also told to use per-document analysis "when every document
+needs an explanation, summary, classification", and "summary" is the word in
+"summarise this repository". A Thai summary took that path and returned 17,176
+characters across 49 paragraphs and 16 headings.
+
+Measured after: the one-paragraph request returns **1 paragraph and 0 headings**,
+and the Thai summary **4,534 characters across 19 paragraphs**, routed to corpus
+synthesis.
+
+
 ## Phase 5 — Aesthetics and motion
 
 **Work**
