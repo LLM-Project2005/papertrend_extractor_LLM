@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { isDatedYear } from "@/lib/dated-year";
 import {
   Bar,
   BarChart,
@@ -61,7 +62,15 @@ export default function AdaptiveDashboardTab({
   analytics: NormalizedAnalyticsPayload;
   adaptiveSection: VisualizationPlanSection;
 }) {
-  const years = [...new Set(data.trends.map((row) => row.year))].sort();
+  // Dated years only. Every use of this list is a temporal axis - the
+  // heatmap columns, the momentum series, and the early/late split that
+  // decides what counts as emerging - and "Unknown" sorts after "2026",
+  // so an undated paper was being plotted as the most recent period and
+  // counted as recent growth. The planner had the same bug; fixing it
+  // there did not reach this component, which does its own split.
+  const years = [...new Set(data.trends.map((row) => row.year))]
+    .filter(isDatedYear)
+    .sort();
   const singleTrackByPaper = new Map(data.tracksSingle.map((row) => [row.paper_id, row]));
   const totalPapers = analytics.overview.paper_count;
   const totalTopics = analytics.overview.topic_count;
@@ -392,7 +401,17 @@ export default function AdaptiveDashboardTab({
       const filteredChartData = chartData.filter(
         (entry): entry is Record<string, string | number> => Boolean(entry)
       );
-      if (filteredChartData.length === 0) {
+      // One topic is not a comparison. The live chart drew a single bar group
+      // with a legend of four tracks, two of which had no bar at all - it read
+      // as a broken chart rather than as a finding.
+      if (filteredChartData.length < 2) {
+        return null;
+      }
+      // Only tracks that actually draw something belong in the legend.
+      const drawnTracks = supportedTracks.filter((track) =>
+        filteredChartData.some((entry) => Number(entry[track] ?? 0) > 0)
+      );
+      if (drawnTracks.length < 2) {
         return null;
       }
 
@@ -411,7 +430,7 @@ export default function AdaptiveDashboardTab({
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                {supportedTracks.map((track) => (
+                {drawnTracks.map((track) => (
                   <Bar
                     key={track}
                     dataKey={track}

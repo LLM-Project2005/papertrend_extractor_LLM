@@ -1,4 +1,7 @@
 import { TRACK_COLS, type TrackKey } from "@/lib/constants";
+import { isDatedYear } from "@/lib/dated-year";
+
+export { isDatedYear };
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { loadDashboardDataServer } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
@@ -11,19 +14,6 @@ import type {
   VisualizationPlannerRequest,
 } from "@/types/visualization";
 
-/**
- * Whether a year value is a point in time rather than a placeholder.
- *
- * A paper whose year could not be read is stored as "Unknown". Sorted as a
- * string it lands after "2026", which put it on the end of the publication
- * volume axis - the chart was titled "Publication Volume Trends from 2016 to
- * Unknown" - and, worse, into the late half of the early/late split that
- * decides which topics are emerging. Every paper with no recorded year was
- * counted as evidence of recent growth.
- */
-export function isDatedYear(year: string): boolean {
-  return /^\d{4}$/.test(String(year ?? "").trim());
-}
 
 function toTrackField(track: string) {
   return track.toLowerCase() as keyof TrackRow;

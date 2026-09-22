@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { getViableAdaptiveCharts, isDatedYear } from "../src/lib/visualization-planner";
+import { getViableAdaptiveCharts } from "../src/lib/visualization-planner";
+import { isDatedYear } from "../src/lib/dated-year";
 import type { NormalizedAnalyticsPayload } from "../src/types/visualization";
 
 function planner(): string {
@@ -163,4 +164,54 @@ test("the chart says how many papers it leaves out", () => {
   assert.match(tab, /analytics\.overview\.papers_without_year > 0 \?/);
   assert.match(tab, /no publication year could be read/);
   assert.match(tab, /A missing year is not a\s*\n?\s*period/);
+});
+
+/* ------------------------------------ the same bug lived in two places */
+
+test("the dashboard component also refuses to treat Unknown as a year", () => {
+  // The planner and this component each do their own early/late split, so
+  // fixing the planner did not reach the chart a reader actually sees. Every
+  // use of this year list is a temporal axis: the heatmap columns, the momentum
+  // series, and the split that decides what counts as emerging.
+  const tab = readFileSync(
+    new URL("../src/components/dashboard/AdaptiveDashboardTab.tsx", import.meta.url),
+    "utf8"
+  );
+  const yearsDecl = tab.slice(tab.indexOf("const years ="), tab.indexOf("const singleTrackByPaper"));
+  assert.match(yearsDecl, /\.filter\(isDatedYear\)/);
+});
+
+test("a comparison chart with one topic is not rendered", () => {
+  const tab = readFileSync(
+    new URL("../src/components/dashboard/AdaptiveDashboardTab.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(tab, /if \(filteredChartData\.length < 2\) \{/);
+});
+
+test("the legend lists only tracks that actually draw a bar", () => {
+  // Four colours in the legend, two of which drew nothing, read as a broken
+  // chart rather than as a finding.
+  const tab = readFileSync(
+    new URL("../src/components/dashboard/AdaptiveDashboardTab.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(tab, /const drawnTracks = supportedTracks\.filter/);
+  assert.match(tab, /\{drawnTracks\.map\(\(track\) => \(/);
+});
+
+test("the year predicate stays out of the browser bundle's way", () => {
+  // The planner reaches the database. Importing the predicate from there pulled
+  // `pg` into the client bundle and broke the build, which is the only reason
+  // that mistake was caught rather than shipped.
+  const tab = readFileSync(
+    new URL("../src/components/dashboard/AdaptiveDashboardTab.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(tab, /import \{ isDatedYear \} from "@\/lib\/dated-year"/);
+  assert.equal(
+    /from "@\/lib\/visualization-planner"/.test(tab),
+    false,
+    "a client component must not import the planner"
+  );
 });
