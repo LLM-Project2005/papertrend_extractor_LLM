@@ -41,6 +41,12 @@ import {
   readChatStream,
   type ChatProgressUpdate,
 } from "@/lib/chat-http";
+import {
+  ANSWER_BODY_CLASS,
+  ANSWER_META_CLASS,
+  ANSWER_META_SM_CLASS,
+} from "@/lib/answer-typography";
+import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -338,380 +344,6 @@ const localMessage = (
   metadata: metadata ?? null,
 });
 
-function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
-  const nodes: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
-  let lastIndex = 0;
-  let match: RegExpExecArray | null;
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index));
-    }
-
-    const token = match[0];
-    if (token.startsWith("**") && token.endsWith("**")) {
-      nodes.push(
-        <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-slate-900 dark:text-white">
-          {token.slice(2, -2)}
-        </strong>
-      );
-    } else if (token.startsWith("[") && token.includes("](") && token.endsWith(")")) {
-      const parts = token.match(/^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/);
-      if (parts) {
-        nodes.push(
-          <a
-            key={`${keyPrefix}-link-${match.index}`}
-            href={parts[2]}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="font-medium text-sky-700 underline underline-offset-4 transition-colors hover:text-sky-900 dark:text-sky-300 dark:hover:text-sky-200"
-          >
-            {parts[1]}
-          </a>
-        );
-      } else {
-        nodes.push(token);
-      }
-    } else if (token.startsWith("`") && token.endsWith("`")) {
-      nodes.push(
-        <code
-          key={`${keyPrefix}-code-${match.index}`}
-          className="rounded bg-slate-200 px-1.5 py-0.5 font-mono text-[0.95em] text-slate-800 dark:bg-white/10 dark:text-[#f3f3f3]"
-        >
-          {token.slice(1, -1)}
-        </code>
-      );
-    }
-
-    lastIndex = match.index + token.length;
-  }
-
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex));
-  }
-
-  return nodes;
-}
-
-function isMarkdownTable(lines: string[]) {
-  if (lines.length < 2) {
-    return false;
-  }
-  const separator = lines[1].trim();
-  return (
-    lines[0].includes("|") &&
-    /^\|?[\s:-]+(\|[\s:-]+)+\|?$/.test(separator)
-  );
-}
-
-function parseMarkdownTableRow(line: string) {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((cell) => cell.trim());
-}
-
-function groupMarkdownLines(lines: string[]) {
-  const groups: string[][] = [];
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-
-    if (/^#{1,6}\s+/.test(line)) {
-      groups.push([line]);
-      index += 1;
-      continue;
-    }
-
-    if (line.includes("|") && index + 1 < lines.length) {
-      const tableCandidate = [line, lines[index + 1]];
-      let cursor = index + 2;
-      while (cursor < lines.length && lines[cursor].includes("|")) {
-        tableCandidate.push(lines[cursor]);
-        cursor += 1;
-      }
-      if (isMarkdownTable(tableCandidate)) {
-        groups.push(tableCandidate);
-        index = cursor;
-        continue;
-      }
-    }
-
-    if (/^[-*]\s+/.test(line)) {
-      const listGroup = [line];
-      index += 1;
-      while (index < lines.length && /^[-*]\s+/.test(lines[index])) {
-        listGroup.push(lines[index]);
-        index += 1;
-      }
-      groups.push(listGroup);
-      continue;
-    }
-
-    if (/^\d+\.\s+/.test(line)) {
-      const listGroup = [line];
-      index += 1;
-      while (index < lines.length && /^\d+\.\s+/.test(lines[index])) {
-        listGroup.push(lines[index]);
-        index += 1;
-      }
-      groups.push(listGroup);
-      continue;
-    }
-
-    if (/^>\s?/.test(line)) {
-      const quoteGroup = [line];
-      index += 1;
-      while (index < lines.length && /^>\s?/.test(lines[index])) {
-        quoteGroup.push(lines[index]);
-        index += 1;
-      }
-      groups.push(quoteGroup);
-      continue;
-    }
-
-    const paragraphGroup = [line];
-    index += 1;
-    while (
-      index < lines.length &&
-      !/^#{1,6}\s+/.test(lines[index]) &&
-      !/^[-*]\s+/.test(lines[index]) &&
-      !/^\d+\.\s+/.test(lines[index]) &&
-      !/^>\s?/.test(lines[index])
-    ) {
-      if (lines[index].includes("|") && index + 1 < lines.length) {
-        const candidate = [lines[index], lines[index + 1]];
-        if (isMarkdownTable(candidate)) {
-          break;
-        }
-      }
-      paragraphGroup.push(lines[index]);
-      index += 1;
-    }
-    groups.push(paragraphGroup);
-  }
-
-  return groups;
-}
-
-function renderRichMessage(content: string, keyPrefix: string, tone: "assistant" | "user" = "assistant") {
-  const normalized = content.replace(/\r\n/g, "\n");
-  const blocks: string[] = [];
-  const lines = normalized.split("\n");
-  let index = 0;
-
-  while (index < lines.length) {
-    const line = lines[index];
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-
-    if (line.trim().startsWith("```")) {
-      const codeLines = [line];
-      index += 1;
-      while (index < lines.length) {
-        codeLines.push(lines[index]);
-        if (lines[index].trim().startsWith("```")) {
-          index += 1;
-          break;
-        }
-        index += 1;
-      }
-      blocks.push(codeLines.join("\n"));
-      continue;
-    }
-
-    const chunk = [line];
-    index += 1;
-    while (index < lines.length && lines[index].trim()) {
-      if (lines[index].trim().startsWith("```")) {
-        break;
-      }
-      chunk.push(lines[index]);
-      index += 1;
-    }
-    blocks.push(chunk.join("\n"));
-  }
-
-  const headingClass =
-    tone === "assistant"
-      ? "text-lg font-semibold text-slate-900 dark:text-white"
-      : "text-base font-semibold text-slate-900 dark:text-[#f3f3f3]";
-  const paragraphClass =
-    tone === "assistant"
-      ? "text-[15px] leading-7 text-slate-700 dark:text-[#ececec]"
-      : "text-[15px] leading-7 text-slate-800 dark:text-[#f3f3f3]";
-
-  return (
-    <div className="space-y-4">
-      {blocks.map((block, blockIndex) => {
-        const rawLines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-        if (rawLines.length === 0) {
-          return null;
-        }
-
-        if (block.trim().startsWith("```")) {
-          const rawLines = block.split("\n");
-          const fence = rawLines[0].trim();
-          const language = fence.replace(/^```/, "").trim();
-          const code = rawLines
-            .slice(1, rawLines[rawLines.length - 1]?.trim().startsWith("```") ? -1 : undefined)
-            .join("\n");
-          return (
-            <div
-              key={`${keyPrefix}-codeblock-${blockIndex}`}
-              className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505]"
-            >
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:text-[#8e8e8e]">
-                <span>{language || "Code"}</span>
-              </div>
-              <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#e6e6e6]">
-                <code>{code}</code>
-              </pre>
-            </div>
-          );
-        }
-
-        return (
-          <div key={`${keyPrefix}-block-${blockIndex}`} className="space-y-4">
-            {groupMarkdownLines(rawLines).map((lines, groupIndex) => {
-              if (isMarkdownTable(lines)) {
-                const header = parseMarkdownTableRow(lines[0]);
-                const rows = lines.slice(2).map(parseMarkdownTableRow).filter((row) => row.length > 0);
-                return (
-                  <div
-                    key={`${keyPrefix}-table-${blockIndex}-${groupIndex}`}
-                    className="overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#0a0a0a]"
-                  >
-                    <table className="min-w-full border-collapse text-left text-sm text-slate-700 dark:text-[#ececec]">
-                      <thead className="bg-slate-100 dark:bg-white/5">
-                        <tr>
-                          {header.map((cell, cellIndex) => (
-                            <th
-                              key={`${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`}
-                              className="border-b border-slate-200 px-4 py-3 font-semibold dark:border-[#1f1f1f]"
-                            >
-                              {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`)}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rows.map((row, rowIndex) => (
-                          <tr key={`${keyPrefix}-tr-${blockIndex}-${groupIndex}-${rowIndex}`} className="border-t border-slate-200 dark:border-[#1f1f1f]">
-                            {row.map((cell, cellIndex) => (
-                              <td
-                                key={`${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`}
-                                className="px-4 py-3 align-top text-slate-600 dark:text-[#d8d8d8]"
-                              >
-                                {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`)}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                );
-              }
-
-              const bulletLines = lines.filter((line) => /^[-*]\s+/.test(line));
-              if (bulletLines.length === lines.length) {
-                return (
-                  <ul
-                    key={`${keyPrefix}-list-${blockIndex}-${groupIndex}`}
-                    className={`space-y-2 ${paragraphClass}`}
-                  >
-                    {bulletLines.map((line, lineIndex) => (
-                      <li key={`${keyPrefix}-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
-                        <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-400 dark:bg-white/60" />
-                        <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
-                      </li>
-                    ))}
-                  </ul>
-                );
-              }
-
-              const numberedLines = lines.filter((line) => /^\d+\.\s+/.test(line));
-              if (numberedLines.length === lines.length) {
-                return (
-                  <ol
-                    key={`${keyPrefix}-ordered-${blockIndex}-${groupIndex}`}
-                    className={`space-y-2 ${paragraphClass}`}
-                  >
-                    {numberedLines.map((line, lineIndex) => (
-                      <li key={`${keyPrefix}-ordered-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
-                        <span className="min-w-[1.5rem] flex-none font-semibold text-slate-500 dark:text-white/75">
-                          {line.match(/^(\d+)\./)?.[1]}.
-                        </span>
-                        <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
-                      </li>
-                    ))}
-                  </ol>
-                );
-              }
-
-              const quoteLines = lines.filter((line) => /^>\s?/.test(line));
-              if (quoteLines.length === lines.length) {
-                return (
-                  <blockquote
-                    key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] leading-7 text-slate-800 dark:border-[#2a2a2a] dark:bg-[#0a0a0a] dark:text-[#d4d4d4]"
-                  >
-                    <div className="space-y-2">
-                      {quoteLines.map((line, lineIndex) => (
-                        <p key={`${keyPrefix}-quote-line-${blockIndex}-${groupIndex}-${lineIndex}`}>
-                          {renderInlineMarkdown(line.replace(/^>\s?/, ""), `${keyPrefix}-quote-${blockIndex}-${groupIndex}-${lineIndex}`)}
-                        </p>
-                      ))}
-                    </div>
-                  </blockquote>
-                );
-              }
-
-              if (lines.length === 1 && /^#{1,6}\s+/.test(lines[0])) {
-                const headingMatch = lines[0].match(/^(#{1,6})\s+(.+)$/);
-                const headingLevel = headingMatch?.[1].length ?? 3;
-                const headingText = headingMatch?.[2] ?? lines[0];
-                const headingContent = renderInlineMarkdown(
-                  headingText,
-                  `${keyPrefix}-heading-${blockIndex}-${groupIndex}`
-                );
-                const headingKey = `${keyPrefix}-heading-${blockIndex}-${groupIndex}`;
-                if (headingLevel === 1) {
-                  return <h2 key={headingKey} className={`${headingClass} text-xl`}>{headingContent}</h2>;
-                }
-                if (headingLevel === 2) {
-                  return <h3 key={headingKey} className={headingClass}>{headingContent}</h3>;
-                }
-                if (headingLevel === 3) {
-                  return <h4 key={headingKey} className={`${headingClass} text-base`}>{headingContent}</h4>;
-                }
-                return (
-                  <h5 key={headingKey} className="text-sm font-semibold text-slate-800 dark:text-[#ececec]">
-                    {headingContent}
-                  </h5>
-                );
-              }
-
-              return (
-                <p key={`${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`} className={paragraphClass}>
-                  {renderInlineMarkdown(lines.join(" "), `${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`)}
-                </p>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 function safeCitationHref(href: string): string {
   const value = String(href || "").trim();
   if (value.startsWith("/workspace/") || value.startsWith("/docs/")) {
@@ -746,7 +378,7 @@ function CitationLink({ citation, compact = false }: { citation: Citation; compa
           {citation.sourceType === "web" ? "Web source" : citation.year || "Paper"}
         </span>
         {!compact && citation.reason ? (
-          <span className="mt-1.5 block text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+          <span className={`mt-1.5 block ${ANSWER_META_CLASS} text-slate-500 dark:text-[#8e8e8e]`}>
             {citation.reason}
           </span>
         ) : null}
@@ -3200,7 +2832,7 @@ export default function ChatClient() {
                           ) : null}
                         </div>
                         {deepSession.plan_summary ? (
-                          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#b4b4b4]">
+                          <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-slate-500 dark:text-[#b4b4b4]`}>
                             {deepSession.plan_summary}
                           </p>
                         ) : null}
@@ -3317,7 +2949,7 @@ export default function ChatClient() {
                             </span>
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[15px] leading-7 text-slate-900 dark:text-[#ececec]">
+                                <p className="text-[15px] leading-8 text-slate-900 dark:text-[#ececec]">
                                   {step.title}
                                 </p>
                                 {isAppended ? (
@@ -3352,7 +2984,7 @@ export default function ChatClient() {
                                 ) : null}
                               </div>
                               {stepBody ? (
-                                <p className="text-sm leading-6 text-slate-500 dark:text-[#b4b4b4]">
+                                <p className={`${ANSWER_META_SM_CLASS} text-slate-500 dark:text-[#b4b4b4]`}>
                                   {stepBody}
                                 </p>
                               ) : null}
@@ -3417,7 +3049,7 @@ export default function ChatClient() {
                                       <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-700 dark:text-[#d4d4d4]">
                                         {item.title}
                                       </p>
-                                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-[#a3a3a3]">
+                                      <p className={`mt-1 line-clamp-2 ${ANSWER_META_CLASS} text-slate-500 dark:text-[#a3a3a3]`}>
                                         {item.snippet}
                                       </p>
                                     </div>
@@ -3494,7 +3126,7 @@ export default function ChatClient() {
                                   value={editingDraft}
                                   onChange={(event) => setEditingDraft(event.target.value)}
                                   rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
-                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-8 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8e8e8e]"
                                 />
                                 <div className="mt-4 flex justify-end gap-2">
                                   <button
@@ -3540,7 +3172,7 @@ export default function ChatClient() {
                                     <PencilSquareIcon className="h-4 w-4" />
                                   </button>
                                 </div>
-                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-7 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
+                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-8 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
                                   {renderRichMessage(message.content, message.id, "user")}
                                 </div>
                                 <MessageAttachmentList attachments={attachments} />
@@ -3566,7 +3198,7 @@ export default function ChatClient() {
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          {renderRichMessage(message.content, message.id, "assistant")}
+                          <AssistantAnswer content={message.content} messageId={message.id} citations={message.citations} />
                           {groundingMode === "general" ? (
                             <div className="text-xs text-slate-400 dark:text-[#8e8e8e]">
                               Repository context not used
@@ -3781,7 +3413,7 @@ export default function ChatClient() {
                       : "Ask the repository"
                   }
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

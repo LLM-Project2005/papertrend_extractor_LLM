@@ -73,7 +73,16 @@ function describeKind(category: string): string {
     return "A question the repository cannot answer. A clear refusal that explains why is the correct answer and scores 5.";
   }
   if (category === "chart") {
-    return "A chart request. The chart itself is returned separately, so judge the accompanying text.";
+    // The figures in a chart answer come from the same repository records the
+    // deterministic answers are computed from, so they carry no inline
+    // citations either. Without saying so the judge scored an accurate,
+    // well-formed topic breakdown 1.0 for groundedness while scoring the
+    // identical kind of answer 4.0 when it happened to be labelled
+    // deterministic - the same answer judged by two standards.
+    return "A chart request. The chart itself is returned separately, so judge the accompanying text. "
+      + "Its figures are computed directly from repository database records and carry no inline "
+      + "citations by design; judge groundedness on whether the text states what was counted and over "
+      + "what scope, not on citations.";
   }
   return "A synthesis over paper evidence. Substantive claims should be attributed to specific papers.";
 }
@@ -190,6 +199,27 @@ async function main() {
   console.log(`honest    ${average((v) => v.honest).toFixed(2)}`);
   const satisfied = rows.filter((row) => row.verdict.wouldSatisfyResearcher).length;
   console.log(`would satisfy a researcher: ${satisfied}/${rows.length}`);
+
+  // The Phase 3 gate, reported rather than eyeballed from the rows. The
+  // "no case below 4" clause is the one that is easy to miss by scanning: an
+  // average of 4.78 can still hide a single answer at 3.0.
+  const minReadable = Math.min(...rows.map((row) => row.verdict.readable));
+  const worstReadable = rows.find((row) => row.verdict.readable === minReadable);
+  const readableAverage = average((v) => v.readable);
+  const directAverage = average((v) => v.direct);
+  const checks: Array<[string, boolean, string]> = [
+    ["readable average >= 4.5", readableAverage >= 4.5, readableAverage.toFixed(2)],
+    ["direct average >= 4.5", directAverage >= 4.5, directAverage.toFixed(2)],
+    [
+      "no readable case below 4",
+      minReadable >= 4,
+      `lowest ${minReadable.toFixed(1)} (${worstReadable?.record.id ?? "n/a"})`,
+    ],
+  ];
+  console.log("\n--- phase 3 criteria ---");
+  for (const [label, ok, detail] of checks) {
+    console.log(`${ok ? "PASS" : "FAIL"}  ${label.padEnd(26)} ${detail}`);
+  }
 
   const weakest = [...rows]
     .sort(

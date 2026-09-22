@@ -11,6 +11,11 @@ import {
   validateInlinePaperCitations,
   type RepositoryRetrievalCandidate,
 } from "@/lib/repository-retrieval";
+import { citationLabel } from "@/lib/answer-citations";
+import {
+  renderingInstruction,
+  renderingIssues,
+} from "@/lib/answer-rendering";
 import { hybridRepositorySearch } from "@/lib/repository-memory";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
@@ -249,16 +254,7 @@ export function inferConversationAnswerLanguage(
 }
 
 /** Longest inline citation title before it is shortened for readability. */
-const CITATION_TITLE_MAX = 58;
 
-function citationLabel(paper: Pick<RepositoryPaper, "title" | "year">): string {
-  const title = paper.title.trim() || "Untitled paper";
-  const short = title.length > CITATION_TITLE_MAX
-    ? `${title.slice(0, CITATION_TITLE_MAX - 1).trimEnd()}\u2026`
-    : title;
-  const year = paper.year && paper.year !== "Unknown" ? `, ${paper.year}` : "";
-  return `${short}${year}`;
-}
 
 /**
  * Renders `[Paper 12]` markers as readable citations.
@@ -281,11 +277,18 @@ export function formatPaperReferencesForReaders(
       const labels: string[] = [];
       for (const id of ids) {
         const paper = paperById.get(id);
-        if (!paper) return run;
+        // An id that is not in scope was invented by the model. Returning the
+        // run unchanged left "[Paper 1142409511210558589]" sitting in the
+        // reader's answer - seen on the 38-paper repository, never on the
+        // five-paper one, because a larger corpus gives the model more room to
+        // make an id up. The unresolvable id is dropped and any real ones
+        // beside it are still rendered; the answer audit separately records
+        // that a citation was removed.
+        if (!paper) continue;
         const label = citationLabel(paper);
         if (!labels.includes(label)) labels.push(label);
       }
-      if (labels.length === 0) return run;
+      if (labels.length === 0) return "";
       // A sentence that already names the paper does not need its title
       // repeated immediately afterwards.
       const preceding = whole.slice(Math.max(0, offset - 180), offset).toLowerCase();
@@ -296,7 +299,14 @@ export function formatPaperReferencesForReaders(
       if (remaining.length === 0) return "";
       return `(${remaining.join("; ")})`;
     }
-  );
+  )
+    // Removing a citation leaves the space that preceded it, so a sentence ends
+    // "reported gains ." Tidy the seam rather than leaving the reader to notice
+    // it: a stray space before punctuation is exactly the kind of small wrong
+    // thing that makes a generated answer look generated.
+    .replace(/[ \t]+([.,;:!?])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/[ \t]+$/gm, "");
 }
 
 interface PaperRow {
@@ -2364,15 +2374,30 @@ function deterministicEvidenceFallback(
   context: RepositoryContext,
   evidence: SelectedEvidence
 ): Pick<RepositoryQaOutput, "answer" | "citations" | "charts"> {
+  // Titles and years only. This used to append 260 characters of each paper's
+  // abstract, and those abstracts are raw extracted PDF text - author names,
+  // university boilerplate, "a b s t r a c t" - so the reader met a 2,400
+  // character wall of fragments at exactly the moment the answer had failed.
+  // A judge scored one such reply 3.0 for readability and 2.0 for directness,
+  // the worst of the whole suite. What a reader needs here is what went wrong,
+  // what to do, and which papers were found; the papers themselves are one
+  // click away.
+  const count = evidence.papers.length;
   return {
     answer: [
-      `I could not verify a fully synthesized answer because the answer-generation or citation check did not complete. Here is the grounded evidence that was retrieved from ${context.scopeLabel}:`,
+      "**I could not finish this answer.** The evidence was retrieved, but the "
+        + "step that writes and checks the answer did not complete, and an unchecked "
+        + "answer is not worth showing. Please ask again.",
       "",
-      ...evidence.papers.map((paper) =>
-        `- **${paper.title}** (${paper.year})${paper.abstract ? `: ${paper.abstract.slice(0, 260)}` : ""}`
+      count > 0
+        ? `These ${count === 1 ? "paper is" : `${count} papers are`} the ones the search found relevant in ${context.scopeLabel}:`
+        : `No relevant papers were found in ${context.scopeLabel}.`,
+      "",
+      ...evidence.papers.map(
+        (paper) => `- **${paper.title}**${paper.year && paper.year !== "Unknown" ? ` (${paper.year})` : ""}`
       ),
       "",
-      `Coverage: ${evidence.papers.length} focused evidence source(s) were returned from ${context.papers.length} eligible paper(s). This is a relevance search, not a complete repository listing.`,
+      `This was a relevance search across ${context.papers.length} eligible paper(s), not a complete listing.`,
     ].join("\n"),
     citations: evidence.papers.map((paper) =>
       citationForPaper(paper, "Retrieved as relevant repository evidence.")
@@ -2425,6 +2450,9 @@ async function checkFaithfulness(input: {
             `Evidence needs: ${input.evidenceNeeds.join("; ") || "Answer the request directly"}`,
             `Allowed paper IDs: ${input.allowedPaperIds.join(", ")}`,
             readabilityInstruction(readabilityIssues(input.answer)),
+            renderingInstruction(
+              renderingIssues(input.answer, { beforeCitationFormatting: true })
+            ),
             "",
             "# Draft answer",
             input.answer,
@@ -2507,6 +2535,10 @@ export function auditSkipBlocker(input: {
   if (input.validation.invalidPaperIds.length > 0) return "invalid_citation";
   if (input.validation.hasSubstantiveText && input.validation.citedPaperIds.length === 0) {
     return "uncited_claims";
+  }
+  const rendering = renderingIssues(input.answer, { beforeCitationFormatting: true });
+  if (rendering.length > 0) {
+    return rendering.map((issue) => issue.detail).join(",");
   }
   const issues = readabilityIssues(input.answer);
   return issues.length > 0 ? issues.map((issue) => issue.kind).join(",") : null;
@@ -2927,6 +2959,29 @@ function completeCoverage(context: RepositoryContext, returned: number): Reposit
   };
 }
 
+/**
+ * Joins one step's answer to the reply, with a section heading only if it helps.
+ *
+ * A heading was prepended unconditionally, so a step whose answer already opened
+ * with its own heading produced two headings in a row with nothing between them
+ * - "## Document analysis" immediately followed by "## Direct answer". The
+ * reader sees a label promising content and gets another label.
+ *
+ * The step's own heading is also the more useful of the two: "Direct answer" and
+ * "Repository topics" describe the content, while the operation label is
+ * internal vocabulary. So the wrapper is added only when it adds something:
+ * when there is more than one section to tell apart, and when the answer does
+ * not already introduce itself.
+ */
+export function composeAnswerSection(label: string, answer: string, sectionCount: number): string {
+  const body = answer.trim();
+  if (sectionCount <= 1) return body;
+  if (/^\s*#{1,6}\s+\S/.test(body)) return body;
+  return `## ${label}
+
+${body}`;
+}
+
 const OPERATION_LABELS: Record<RepositoryOperation, string> = {
   converse: "Conversation",
   inspect_scope: "Repository scope",
@@ -3015,7 +3070,9 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
       };
     }
 
-    sections.push(`## ${OPERATION_LABELS[operation]}\n\n${result.answer}`);
+    sections.push(
+      composeAnswerSection(OPERATION_LABELS[operation], result.answer, execution.operations.length)
+    );
     result.citations.forEach((citation) => citations.set(`${citation.paperId}:${citation.href}`, citation));
     charts.push(...result.charts);
     result.limitations?.forEach((limitation) => limitations.add(limitation));
