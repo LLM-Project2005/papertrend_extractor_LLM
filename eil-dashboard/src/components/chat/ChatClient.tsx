@@ -47,6 +47,13 @@ import {
   ANSWER_META_SM_CLASS,
 } from "@/lib/answer-typography";
 import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody";
+import { ChatIntro, FollowUpSuggestions } from "@/components/chat/ChatIntro";
+import {
+  exampleQuestions,
+  followUpSuggestions,
+  scopeDescription,
+  type ExampleQuestion,
+} from "@/lib/chat-guidance";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -865,6 +872,25 @@ function MessageAttachmentList({
  * displayed them, so the honesty work was invisible: a reader could not tell a
  * complete answer from one based on a handful of retrieved passages.
  */
+/** The gaps an answer reported about itself, read back off the message. */
+function limitationsFromMetadata(metadata?: Record<string, unknown> | null): string[] {
+  if (!metadata || !Array.isArray(metadata.repositoryLimitations)) return [];
+  return (metadata.repositoryLimitations as unknown[]).map(String).filter((item) => item.trim());
+}
+
+/** Evidence the retrieval looked for and did not find, if it reported any. */
+function missingEvidenceNeedsFromMetadata(metadata?: Record<string, unknown> | null): string[] {
+  const diagnostics = metadata?.repositoryDiagnostics as { missingEvidenceNeeds?: unknown } | null;
+  if (!diagnostics || !Array.isArray(diagnostics.missingEvidenceNeeds)) return [];
+  return (diagnostics.missingEvidenceNeeds as unknown[]).map(String).filter((item) => item.trim());
+}
+
+/** How many papers the answer actually drew on, for widening suggestions. */
+function coveredPaperCount(metadata?: Record<string, unknown> | null): number {
+  const coverage = metadata?.repositoryCoverage as { eligiblePapers?: unknown } | null;
+  return typeof coverage?.eligiblePapers === "number" ? coverage.eligiblePapers : 0;
+}
+
 function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null }) {
   if (!metadata) return null;
   const limitations = Array.isArray(metadata.repositoryLimitations)
@@ -1224,6 +1250,14 @@ export default function ChatClient() {
   const [messages, setMessages] = useState<MessageView[]>([]);
   const [deepSession, setDeepSession] = useState<DeepResearchSessionRecord | null>(null);
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
+  // What a question in the current scope would actually search. The composer
+  // used to show a hardcoded zero, so the number a reader saw before sending
+  // never matched the number the answer reported afterwards.
+  const [scopeSummary, setScopeSummary] = useState<{
+    scopeLabel: string;
+    eligiblePaperCount: number;
+    examples: ExampleQuestion[];
+  } | null>(null);
   const [selectedLibraryRuns, setSelectedLibraryRuns] = useState<IngestionRunRow[]>([]);
   const [showLibraryPicker, setShowLibraryPicker] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -1427,6 +1461,32 @@ export default function ChatClient() {
       eligiblePaperCount: 0,
     };
   }, [activeKnowledgeScope, allFolders, allProjects, selectedRunIds.length]);
+  useEffect(() => {
+    if (!session?.access_token) return;
+    const controller = new AbortController();
+    const params = new URLSearchParams();
+    if (activeKnowledgeScope.projectId) params.set("projectId", activeKnowledgeScope.projectId);
+    if (activeKnowledgeScope.folderId) params.set("folderId", activeKnowledgeScope.folderId);
+    void fetch(chatEndpoint(`/api/chat/scope-summary?${params.toString()}`), {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+      signal: controller.signal,
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload) => {
+        if (!payload || typeof payload.eligiblePaperCount !== "number") return;
+        setScopeSummary({
+          scopeLabel: String(payload.scopeLabel ?? ""),
+          eligiblePaperCount: payload.eligiblePaperCount,
+          examples: Array.isArray(payload.examples) ? payload.examples : [],
+        });
+      })
+      .catch(() => {
+        // An unreadable scope is not worth an error on an empty page; the
+        // composer falls back to naming the scope without a count.
+      });
+    return () => controller.abort();
+  }, [activeKnowledgeScope.projectId, activeKnowledgeScope.folderId, session?.access_token]);
+
   const conversationSources = useMemo(
     () => dedupeConversationSources(visibleMessages.flatMap((message) => message.citations)),
     [visibleMessages]
@@ -2083,8 +2143,8 @@ export default function ChatClient() {
     }
   }
 
-  async function handleNormalSend() {
-    const prompt = draft.trim();
+  async function handleNormalSend(promptOverride?: string) {
+    const prompt = (promptOverride ?? draft).trim();
     if (!prompt) return;
 
     setLoading(true);
@@ -2381,6 +2441,13 @@ export default function ChatClient() {
       return;
     }
     await handleNormalSend();
+  }
+
+  /** Sends a question the reader clicked rather than typed. */
+  async function askQuestion(question: string) {
+    if (loading) return;
+    setDraft(question);
+    await handleNormalSend(question);
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -3099,11 +3166,16 @@ export default function ChatClient() {
             ) : null}
 
             {!hasContent && !loading ? (
-              <div className="flex min-h-[52vh] items-center justify-center">
-                <h1 className="text-center text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.5rem]">
-                  Where should we begin?
-                </h1>
-              </div>
+              <ChatIntro
+                scopeLabel={scopeSummary?.scopeLabel || activeScopeSnapshot.label}
+                eligiblePaperCount={scopeSummary?.eligiblePaperCount ?? null}
+                examples={
+                  scopeSummary?.examples?.length
+                    ? scopeSummary.examples
+                    : exampleQuestions([], activeScopeSnapshot.label)
+                }
+                onAsk={(question) => void askQuestion(question)}
+              />
             ) : (
               <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
                 {visibleMessages.map((message) => {
@@ -3211,6 +3283,17 @@ export default function ChatClient() {
                             />
                           ))}
                           <AnswerCaveats metadata={message.metadata} />
+                          {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading ? (
+                            <FollowUpSuggestions
+                              suggestions={followUpSuggestions({
+                                limitations: limitationsFromMetadata(message.metadata),
+                                missingEvidenceNeeds: missingEvidenceNeedsFromMetadata(message.metadata),
+                                citedPaperCount: message.citations.length,
+                                scopedPaperCount: coveredPaperCount(message.metadata),
+                              })}
+                              onAsk={(question) => void askQuestion(question)}
+                            />
+                          ) : null}
                           {message.citations.length > 0 ? (
                             <div className="max-w-[720px] space-y-1.5">
                               {citationPreview.visible.map((citation) => (
@@ -3401,6 +3484,20 @@ export default function ChatClient() {
                     </div>
                   </div>
                 ) : null}
+
+                {/* What this question will search, before it is sent. The
+                    count comes from the same scope loader the answer uses, so
+                    the number here and the number the answer reports cannot
+                    disagree. */}
+                <p
+                  data-testid="composer-scope"
+                  className={`px-1 pb-1 ${ANSWER_META_CLASS} text-slate-400 dark:text-[#6f6f6f]`}
+                >
+                  {scopeDescription(
+                    scopeSummary?.scopeLabel || activeScopeSnapshot.label,
+                    scopeSummary?.eligiblePaperCount ?? null
+                  )}
+                </p>
 
                 <textarea
                   ref={composerRef}
