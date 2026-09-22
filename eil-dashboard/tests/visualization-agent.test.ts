@@ -215,3 +215,16 @@ test("the year predicate stays out of the browser bundle's way", () => {
     "a client component must not import the planner"
   );
 });
+
+test("a chart the agent planned but the data could not support is named", () => {
+  // Only the render layer knows whether the data supports drawing a chart, and
+  // the narrative above it was written before that decision. The live section
+  // promised "track comparisons" while the comparison chart was being
+  // suppressed for having a single topic.
+  const tab = readFileSync(
+    new URL("../src/components/dashboard/AdaptiveDashboardTab.tsx", import.meta.url),
+    "utf8"
+  );
+  assert.match(tab, /const droppedCharts = planned\.filter\(\(entry\) => !entry\.node\)/);
+  assert.match(tab, /planned and not drawn, because this data does not support/);
+});

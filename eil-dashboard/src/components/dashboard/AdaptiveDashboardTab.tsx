@@ -449,9 +449,20 @@ export default function AdaptiveDashboardTab({
     return null;
   }
 
-  const renderedCharts = adaptiveSection.charts
-    .map((chart) => renderChart(chart))
+  // A chart the agent planned can still be dropped here, because only this
+  // layer knows whether the data supports drawing it. The narrative above was
+  // written before that happened, so it promised "track comparisons" while the
+  // comparison chart was being suppressed for having a single topic. Saying
+  // which charts were dropped keeps the section honest without rewriting the
+  // agent's own words.
+  const planned = adaptiveSection.charts.map((chart) => ({
+    chart,
+    node: renderChart(chart),
+  }));
+  const renderedCharts = planned
+    .map((entry) => entry.node)
     .filter((chart): chart is ReactNode => Boolean(chart));
+  const droppedCharts = planned.filter((entry) => !entry.node).map((entry) => entry.chart.title);
 
   return (
     <div className="space-y-5">
@@ -465,6 +476,14 @@ export default function AdaptiveDashboardTab({
         <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
           {adaptiveSection.reason}
         </p>
+        {droppedCharts.length > 0 ? (
+          <p className="mt-3 text-xs leading-5 text-slate-600 dark:text-[#999]">
+            {droppedCharts.length === 1 ? "One chart was" : `${droppedCharts.length} charts were`}{" "}
+            planned and not drawn, because this data does not support{" "}
+            {droppedCharts.length === 1 ? "it" : "them"}:{" "}
+            {droppedCharts.join("; ")}.
+          </p>
+        ) : null}
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
