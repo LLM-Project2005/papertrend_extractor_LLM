@@ -11,6 +11,7 @@ import {
   validateInlinePaperCitations,
   type RepositoryRetrievalCandidate,
 } from "@/lib/repository-retrieval";
+import { citationLabel } from "@/lib/answer-citations";
 import { hybridRepositorySearch } from "@/lib/repository-memory";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
@@ -249,16 +250,7 @@ export function inferConversationAnswerLanguage(
 }
 
 /** Longest inline citation title before it is shortened for readability. */
-const CITATION_TITLE_MAX = 58;
 
-function citationLabel(paper: Pick<RepositoryPaper, "title" | "year">): string {
-  const title = paper.title.trim() || "Untitled paper";
-  const short = title.length > CITATION_TITLE_MAX
-    ? `${title.slice(0, CITATION_TITLE_MAX - 1).trimEnd()}\u2026`
-    : title;
-  const year = paper.year && paper.year !== "Unknown" ? `, ${paper.year}` : "";
-  return `${short}${year}`;
-}
 
 /**
  * Renders `[Paper 12]` markers as readable citations.
@@ -2927,6 +2919,29 @@ function completeCoverage(context: RepositoryContext, returned: number): Reposit
   };
 }
 
+/**
+ * Joins one step's answer to the reply, with a section heading only if it helps.
+ *
+ * A heading was prepended unconditionally, so a step whose answer already opened
+ * with its own heading produced two headings in a row with nothing between them
+ * - "## Document analysis" immediately followed by "## Direct answer". The
+ * reader sees a label promising content and gets another label.
+ *
+ * The step's own heading is also the more useful of the two: "Direct answer" and
+ * "Repository topics" describe the content, while the operation label is
+ * internal vocabulary. So the wrapper is added only when it adds something:
+ * when there is more than one section to tell apart, and when the answer does
+ * not already introduce itself.
+ */
+export function composeAnswerSection(label: string, answer: string, sectionCount: number): string {
+  const body = answer.trim();
+  if (sectionCount <= 1) return body;
+  if (/^\s*#{1,6}\s+\S/.test(body)) return body;
+  return `## ${label}
+
+${body}`;
+}
+
 const OPERATION_LABELS: Record<RepositoryOperation, string> = {
   converse: "Conversation",
   inspect_scope: "Repository scope",
@@ -3015,7 +3030,9 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
       };
     }
 
-    sections.push(`## ${OPERATION_LABELS[operation]}\n\n${result.answer}`);
+    sections.push(
+      composeAnswerSection(OPERATION_LABELS[operation], result.answer, execution.operations.length)
+    );
     result.citations.forEach((citation) => citations.set(`${citation.paperId}:${citation.href}`, citation));
     charts.push(...result.charts);
     result.limitations?.forEach((limitation) => limitations.add(limitation));
