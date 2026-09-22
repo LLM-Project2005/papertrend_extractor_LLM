@@ -400,6 +400,63 @@ synthesis.
 - Keyboard navigation reaches every control in a sensible order, and focus is
   always visible.
 
+**Measured result (2026-09-22, pilot)**
+
+| Criterion | Result | |
+| --- | --- | --- |
+| All text meets WCAG AA in both themes, against the rendered palette | 0 failures, 101 tokens raised | pass |
+| Every animation is disabled under `prefers-reduced-motion` | universal rule | pass |
+| No layout shift when an answer arrives, CLS under 0.1 | **0.0032** | pass |
+| Keyboard reaches every control, focus always visible | **119 controls**, 0 without a ring | pass |
+
+The last two are measured in a real browser, because neither can be read off
+the source. A container that looks fixed in the markup still shifts if a font
+swaps or a block appears above the reader's position, and a focus rule that
+exists in CSS still does not help if the control never receives focus.
+
+What the contrast arithmetic found:
+
+| Colour | Ratio | Uses |
+| --- | ---: | ---: |
+| `slate-500` on `slate-100` | **4.34** | 70 |
+| `slate-400` | **2.34** | 20 |
+| `slate-300` | **1.36** | 3 |
+| `#777777` (dark) | **4.18** | 6 |
+| `#6f6f6f` (dark) | **3.73** | 2 |
+
+`slate-500` is the caveat line under an answer and the citation previews - the
+text this plan named at the outset as probably the lowest-contrast content on
+the page. It was, by three hundredths.
+
+Reduced motion previously applied to a list of components, so anything added
+later moved regardless of the setting, including everything on the chat page.
+It is universal now, and collapses duration rather than removing animation so
+that `animationend` still fires and nothing waiting on it hangs.
+
+Answer prose now has a reading measure. The column is 1040px, about 138
+characters per line at 15px against a comfortable 45 to 75. Tables and fenced
+blocks keep the full width, because narrowing those makes them worse.
+
+**What the measurements got wrong before they got it right**
+
+Worth recording, because a check that reports confidently and wrongly is worse
+than no check:
+
+- The contrast checker paired a background from one branch of a button's
+  class string with text from another - a pairing that never renders.
+- It assumed dark-theme text sits on a dark surface. An inverted control carries
+  dark text on a white button deliberately.
+- It read `text-[#173868]` as a text size, so every icon was treated as text and
+  checked against a background it does not have.
+- The layout-shift measurement returned 0 while nothing had happened: it watched
+  total page text, and sending a question removes the intro, so the page gets
+  shorter while the answer is still being written. It now waits for the
+  assistant message and reports inconclusive rather than pass.
+- The keyboard walk stopped after 4 controls on a page with 224, first because
+  focus passing through the browser chrome looked like the end, then because two
+  links legitimately share the label "Repositories".
+
+
 ## Phase 6 — Reliability and cost
 
 **Work**

@@ -71,3 +71,18 @@ export const ANSWER_META_SM_CLASS = "text-sm leading-7 break-words";
 export function metaSmLineHeightRatio(): number {
   return ANSWER_META_SM_LINE_PX / ANSWER_META_SM_FONT_PX;
 }
+
+/**
+ * The widest a line of answer prose may run.
+ *
+ * The message column is 1040px, which at 15px is roughly 138 characters per
+ * line. Typographic practice puts comfortable reading at 45 to 75: past that
+ * the eye loses its place on the return sweep, and a long answer becomes work
+ * to read for a reason that has nothing to do with what it says.
+ *
+ * Applied to prose only. A table or a fenced block needs the full column, and
+ * narrowing those would make them worse rather than better.
+ */
+export const ANSWER_MEASURE_CH = 72;
+export const ANSWER_MEASURE_CLASS = "max-w-[72ch]";
+

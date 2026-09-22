@@ -40,7 +40,7 @@ export function ChatIntro({
         <h1 className="text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.5rem]">
           Ask your papers
         </h1>
-        <p className={`${ANSWER_META_CLASS} text-slate-500 dark:text-[#8e8e8e]`}>
+        <p className={`${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}>
           {scopeDescription(scopeLabel, eligiblePaperCount)}
         </p>
       </div>
@@ -65,7 +65,7 @@ export function ChatIntro({
           {CAPABILITIES.map((capability) => (
             <li
               key={capability.label}
-              className={`rounded-xl border border-slate-200 px-3 py-2 ${ANSWER_META_CLASS} text-slate-500 dark:border-[#1f1f1f] dark:text-[#8e8e8e]`}
+              className={`rounded-xl border border-slate-200 px-3 py-2 ${ANSWER_META_CLASS} text-slate-600 dark:border-[#1f1f1f] dark:text-[#8e8e8e]`}
             >
               <span className="block font-semibold text-slate-800 dark:text-[#ececec]">
                 {capability.label}
@@ -79,7 +79,7 @@ export function ChatIntro({
           type="button"
           onClick={() => setShowLimits((previous) => !previous)}
           aria-expanded={showLimits}
-          className={`${ANSWER_META_CLASS} text-slate-500 underline underline-offset-4 transition-colors hover:text-slate-800 dark:text-[#8e8e8e] dark:hover:text-[#ececec]`}
+          className={`${ANSWER_META_CLASS} text-slate-600 underline underline-offset-4 transition-colors hover:text-slate-800 dark:text-[#8e8e8e] dark:hover:text-[#ececec]`}
         >
           {showLimits ? "Hide what it cannot answer" : "What it cannot answer"}
         </button>
@@ -89,7 +89,7 @@ export function ChatIntro({
             {LIMITS.map((limit) => (
               <li
                 key={limit.label}
-                className={`rounded-xl border border-slate-200 px-3 py-2 ${ANSWER_META_CLASS} text-slate-500 dark:border-[#1f1f1f] dark:text-[#8e8e8e]`}
+                className={`rounded-xl border border-slate-200 px-3 py-2 ${ANSWER_META_CLASS} text-slate-600 dark:border-[#1f1f1f] dark:text-[#8e8e8e]`}
               >
                 <span className="block font-semibold text-slate-800 dark:text-[#ececec]">
                   {limit.label}
