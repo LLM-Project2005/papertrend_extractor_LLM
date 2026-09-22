@@ -475,3 +475,30 @@ test("tidying the seam does not disturb an ordinary sentence", () => {
   );
   assert.equal(out, "The study reported gains (Reading instruction, 2016), and the effect held.");
 });
+
+test("a citation removed from its own line does not leave punctuation stranded", () => {
+  // Found in a live production answer, not in any test: the model put the
+  // marker on its own line, so removing it left a line beginning ", and the
+  // newest is ...". The renderer joins a paragraph's lines with a space, and
+  // the reader saw "(2016) , and".
+  // The title has to be long enough for the "already named" rule to suppress
+  // the citation; a short one is kept and then nothing is stranded. The live
+  // case was a full thesis title.
+  const title = "Effects of Personal Intelligence Reading Instruction on Thai university students";
+  const papers = [{ paperId: "7", title, year: "2016" }];
+  const answer = [`the oldest is **${title}** (2016)`, "[Paper 7], and the newest is X."].join("\n");
+  const out = formatPaperReferencesForReaders(answer, papers);
+  assert.equal(/\s,/.test(out), false, `stranded punctuation: ${JSON.stringify(out)}`);
+  assert.match(out, /\(2016\), and the newest is X\./);
+});
+
+test("a line that legitimately starts with a full stop is left alone", () => {
+  // A CSS class in a code sample starts with a dot and no space follows it.
+  const answer = ["Use this:", "", "```css", ".highlight { color: red; }", "```"].join("\n");
+  assert.equal(formatPaperReferencesForReaders(answer, []), answer);
+});
+
+test("a genuine paragraph break is not collapsed", () => {
+  const answer = ["First paragraph.", "", "Second paragraph."].join("\n");
+  assert.equal(formatPaperReferencesForReaders(answer, []), answer);
+});
