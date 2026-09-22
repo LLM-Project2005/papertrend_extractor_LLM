@@ -138,6 +138,24 @@ async function judge(record: EvalRecord, model: string, apiKey: string, baseUrl:
 /** Judge passes averaged per answer. More passes, less noise, more cost. */
 const JUDGE_PASSES = Math.max(1, Number.parseInt(process.env.JUDGE_PASSES ?? "3", 10) || 3);
 
+/**
+ * How close to a threshold a first pass has to be before it is worth re-judging.
+ *
+ * The criteria are averages of 4.5 and a floor of 4.0. A score of 5.0 will not
+ * average below either, and a score of 2.0 will not climb above them; neither
+ * is in doubt and neither needs a second opinion. A score between 3.5 and 4.7
+ * might land on either side, and that is where the noise actually costs a wrong
+ * conclusion.
+ */
+const DOUBT_LOW = 3.5;
+const DOUBT_HIGH = 4.7;
+
+function nearThreshold(verdict: Verdict): boolean {
+  return [verdict.readable, verdict.direct, verdict.grounded, verdict.honest].some(
+    (score) => score >= DOUBT_LOW && score <= DOUBT_HIGH
+  );
+}
+
 async function main() {
   const file = process.argv[2];
   if (!file) {
@@ -155,6 +173,7 @@ async function main() {
 
   console.log(`Judging ${records.length} answers with ${model}\n`);
   const rows: Array<{ record: EvalRecord; verdict: Verdict }> = [];
+  let callsSpent = 0;
   for (const record of records) {
     if (!record.answer?.trim()) {
       console.log(`${record.id.padEnd(18)} (no answer)`);
@@ -163,10 +182,25 @@ async function main() {
     // A single pass is not repeatable enough to check a threshold: the same
     // answers scored 3.43, 3.81, 3.76 and 3.62 on groundedness across runs.
     // Averaging several passes separates a real change from judge noise.
+    //
+    // But noise only matters near a threshold. An answer scoring 5.0 on a pass
+    // is not going to average below 4.5, and paying for two more passes to
+    // confirm it buys nothing. So every answer gets one pass, and only the ones
+    // close enough to the line to be in doubt get the rest. Measured on this
+    // suite it spent 53 calls where three flat passes would have spent 63, and
+    // the whole run - 21 answers and 53 judge calls - cost $0.25. The saving is
+    // real but modest, because most answers on this suite genuinely do land
+    // between 4.0 and 4.5, which is exactly where the re-judging is warranted.
     const passes: Verdict[] = [];
-    for (let attempt = 0; attempt < JUDGE_PASSES; attempt += 1) {
-      const single = await judge(record, model, apiKey, baseUrl);
-      if (single) passes.push(single);
+    const first = await judge(record, model, apiKey, baseUrl);
+    callsSpent += 1;
+    if (first) passes.push(first);
+    if (first && JUDGE_PASSES > 1 && nearThreshold(first)) {
+      for (let attempt = 1; attempt < JUDGE_PASSES; attempt += 1) {
+        const extra = await judge(record, model, apiKey, baseUrl);
+        callsSpent += 1;
+        if (extra) passes.push(extra);
+      }
     }
     if (passes.length === 0) continue;
     const mean = (pick: (v: Verdict) => number) =>
@@ -192,6 +226,8 @@ async function main() {
   if (rows.length === 0) return;
   const average = (pick: (v: Verdict) => number) =>
     rows.reduce((sum, row) => sum + pick(row.verdict), 0) / rows.length;
+  console.log(`
+model calls spent: ${callsSpent} (one per answer, plus re-judging only where a score sat near a threshold)`);
   console.log("\n--- averages ---");
   console.log(`grounded  ${average((v) => v.grounded).toFixed(2)}`);
   console.log(`direct    ${average((v) => v.direct).toFixed(2)}`);

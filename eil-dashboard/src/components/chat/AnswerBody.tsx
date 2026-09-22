@@ -20,6 +20,7 @@ import {
 import {
   ANSWER_BODY_CLASS,
   ANSWER_CELL_CLASS,
+  ANSWER_MEASURE_CLASS,
   ANSWER_META_CLASS,
 } from "@/lib/answer-typography";
 
@@ -65,7 +66,7 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
         {referenced.map((source) => (
           <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-slate-200 [&+&]:pt-2 dark:[&+&]:border-[#2a2a2a]">
             <span className="block font-semibold text-slate-900 dark:text-white">{source.title}</span>
-            <span className="block text-slate-500 dark:text-[#8e8e8e]">
+            <span className="block text-slate-600 dark:text-[#8e8e8e]">
               {source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
             </span>
           </span>
@@ -316,8 +317,8 @@ export function renderRichMessage(
       : "text-base font-semibold text-slate-900 dark:text-[#f3f3f3]";
   const paragraphClass =
     tone === "assistant"
-      ? `${ANSWER_BODY_CLASS} text-slate-700 dark:text-[#ececec]`
-      : `${ANSWER_BODY_CLASS} text-slate-800 dark:text-[#f3f3f3]`;
+      ? `${ANSWER_BODY_CLASS} ${ANSWER_MEASURE_CLASS} text-slate-700 dark:text-[#ececec]`
+      : `${ANSWER_BODY_CLASS} ${ANSWER_MEASURE_CLASS} text-slate-800 dark:text-[#f3f3f3]`;
 
   return (
     <div className="space-y-4">
@@ -339,7 +340,7 @@ export function renderRichMessage(
               key={`${keyPrefix}-codeblock-${blockIndex}`}
               className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505]"
             >
-              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:text-[#8e8e8e]">
+              <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-xs uppercase tracking-normal text-slate-600 dark:border-[#1f1f1f] dark:text-[#8e8e8e]">
                 <span>{language || "Code"}</span>
               </div>
               <pre className="overflow-x-auto px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#e6e6e6]">
@@ -418,7 +419,7 @@ export function renderRichMessage(
                   >
                     {numberedLines.map((line, lineIndex) => (
                       <li key={`${keyPrefix}-ordered-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
-                        <span className="min-w-[1.5rem] flex-none font-semibold text-slate-500 dark:text-white/75">
+                        <span className="min-w-[1.5rem] flex-none font-semibold text-slate-600 dark:text-white/75">
                           {line.match(/^(\d+)\./)?.[1]}.
                         </span>
                         <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`, sources)}</span>

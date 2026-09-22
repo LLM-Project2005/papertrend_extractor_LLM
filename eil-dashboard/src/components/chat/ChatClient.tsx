@@ -373,19 +373,19 @@ function CitationLink({ citation, compact = false }: { citation: Citation; compa
       }`}
     >
       {citation.sourceType === "web" ? (
-        <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+        <SearchIcon className="mt-0.5 h-4 w-4 flex-none text-slate-600 dark:text-[#8e8e8e]" />
       ) : (
-        <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+        <PaperIcon className="mt-0.5 h-4 w-4 flex-none text-slate-600 dark:text-[#8e8e8e]" />
       )}
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium text-slate-900 dark:text-[#ececec]">
           {citation.title}
         </span>
-        <span className="mt-0.5 block text-xs text-slate-500 dark:text-[#8e8e8e]">
+        <span className="mt-0.5 block text-xs text-slate-600 dark:text-[#8e8e8e]">
           {citation.sourceType === "web" ? "Web source" : citation.year || "Paper"}
         </span>
         {!compact && citation.reason ? (
-          <span className={`mt-1.5 block ${ANSWER_META_CLASS} text-slate-500 dark:text-[#8e8e8e]`}>
+          <span className={`mt-1.5 block ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}>
             {citation.reason}
           </span>
         ) : null}
@@ -430,13 +430,13 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+          <p className="text-xs font-semibold uppercase tracking-normal text-slate-600 dark:text-[#8e8e8e]">
             Chart
           </p>
           <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
             {chart.title}
           </h3>
-          <p className="mt-1 text-xs text-slate-500 dark:text-[#a3a3a3]">
+          <p className="mt-1 text-xs text-slate-600 dark:text-[#a3a3a3]">
             {chart.scopeLabel}
             {chart.planner?.reason ? ` - ${chart.planner.reason}` : ""}
           </p>
@@ -904,7 +904,7 @@ function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null
   if (!hasCoverage && limitations.length === 0) return null;
 
   return (
-    <div className="max-w-[720px] space-y-1 border-l-2 border-slate-200 pl-3 text-xs leading-5 text-slate-500 dark:border-[#242424] dark:text-[#8e8e8e]">
+    <div className="max-w-[720px] space-y-1 border-l-2 border-slate-200 pl-3 text-xs leading-5 text-slate-600 dark:border-[#242424] dark:text-[#8e8e8e]">
       {hasCoverage ? (
         <p>
           {coverage!.complete
@@ -1107,7 +1107,7 @@ function ResearchEvidenceSummary({
       <div className="grid gap-3 sm:grid-cols-4">
         {metrics.map(([label, value]) => (
           <div key={label}>
-            <p className="text-[11px] font-medium uppercase tracking-normal text-slate-400 dark:text-[#777777]">
+            <p className="text-[11px] font-medium uppercase tracking-normal text-slate-600 dark:text-[#8e8e8e]">
               {label}
             </p>
             <p className="mt-1 text-sm font-semibold text-slate-800 dark:text-[#ececec]">
@@ -1129,7 +1129,7 @@ function ResearchEvidenceSummary({
           {visibleUnresolved.map((section) => (
             <span
               key={`unresolved-${section}`}
-              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]"
+              className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]"
             >
               Missing: {section}
             </span>
@@ -2569,7 +2569,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setSidebarCollapsed(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                 aria-label="Open chat sidebar"
               >
                 <SidebarIcon className="h-5 w-5" />
@@ -2620,7 +2620,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setSidebarCollapsed(true)}
-                className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                 aria-label="Close chat sidebar"
               >
                 <SidebarIcon className="h-5 w-5" />
@@ -2637,13 +2637,13 @@ export default function ChatClient() {
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
               {threadsLoading ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
                   Loading...
                 </div>
               ) : null}
 
               {!threadsLoading && sortedThreads.length === 0 ? (
-                <div className="rounded-xl px-3 py-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
+                <div className="rounded-xl px-3 py-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
                   {canPersist ? "No chats yet." : "Sign in to save chats."}
                 </div>
               ) : null}
@@ -2670,7 +2670,7 @@ export default function ChatClient() {
                     >
                       <div className="flex items-center gap-2">
                         {pinned ? (
-                          <PinIcon className="h-3.5 w-3.5 flex-none text-slate-500 dark:text-[#8e8e8e]" />
+                          <PinIcon className="h-3.5 w-3.5 flex-none text-slate-600 dark:text-[#8e8e8e]" />
                         ) : null}
                         <span className="truncate text-[13px] font-medium text-slate-800 dark:text-[#ececec]">
                           {thread.title}
@@ -2685,7 +2685,7 @@ export default function ChatClient() {
                           current === thread.id ? null : thread.id
                         )
                       }
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-500 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
@@ -2752,7 +2752,7 @@ export default function ChatClient() {
 
             <div className="relative flex items-center gap-2">
               {deepSession ? (
-                <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   {sessionLabel(deepSession) ?? "Saved"}
                 </span>
               ) : null}
@@ -2791,7 +2791,7 @@ export default function ChatClient() {
                   >
                     <PaperIcon className="h-4 w-4" />
                     <span className="min-w-0 flex-1">Files in this conversation</span>
-                    <span className="text-xs text-slate-400 dark:text-[#777777]">{conversationSources.length}</span>
+                    <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">{conversationSources.length}</span>
                   </button>
                 </div>
               ) : null}
@@ -2803,10 +2803,10 @@ export default function ChatClient() {
               <section className="mx-auto mb-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
                   <div className="space-y-3">
-                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-500 dark:text-[#b4b4b4]">
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600 dark:text-[#b4b4b4]">
                       <div className="flex flex-wrap items-center gap-2">
                         <span>Research completed</span>
-                        <span className="text-slate-300 dark:text-white/20">·</span>
+                        <span className="text-slate-600 dark:text-[#8e8e8e]">·</span>
                         <span>
                           {researchProgress.completedSteps}/{Math.max(
                             researchProgress.totalSteps,
@@ -2816,7 +2816,7 @@ export default function ChatClient() {
                         </span>
                         {deepSession.folder_id ? (
                           <>
-                            <span className="text-slate-300 dark:text-white/20">·</span>
+                            <span className="text-slate-600 dark:text-[#8e8e8e]">·</span>
                             <span>{buildFolderLabel(deepSession.folder_id, folders)}</span>
                           </>
                         ) : null}
@@ -2842,7 +2842,7 @@ export default function ChatClient() {
                             <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">
                               {researchTitle}
                             </p>
-                            <p className="text-xs text-slate-500 dark:text-[#8e8e8e]">
+                            <p className="text-xs text-slate-600 dark:text-[#8e8e8e]">
                               Deep research report
                             </p>
                           </div>
@@ -2874,7 +2874,7 @@ export default function ChatClient() {
                           ))}
                         </div>
                         {researchBlocks.length > 6 ? (
-                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                             Continue in full view to read the rest of the report.
                           </div>
                         ) : null}
@@ -2893,13 +2893,13 @@ export default function ChatClient() {
                             {researchTitle}
                           </p>
                           {deepSession.folder_id ? (
-                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                               {buildFolderLabel(deepSession.folder_id, folders)}
                             </span>
                           ) : null}
                         </div>
                         {deepSession.plan_summary ? (
-                          <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-slate-500 dark:text-[#b4b4b4]`}>
+                          <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
                             {deepSession.plan_summary}
                           </p>
                         ) : null}
@@ -2918,7 +2918,7 @@ export default function ChatClient() {
                             <button
                               type="button"
                               onClick={() => resetChat("deep_research")}
-                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             >
                               Cancel
                             </button>
@@ -3025,7 +3025,7 @@ export default function ChatClient() {
                                   </span>
                                 ) : null}
                                 {phaseLabel ? (
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#8e8e8e]">
+                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#8e8e8e]">
                                     {phaseLabel}
                                   </span>
                                 ) : null}
@@ -3035,7 +3035,7 @@ export default function ChatClient() {
                                   </span>
                                 ) : null}
                                 {isObsolete ? (
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]">
+                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium uppercase tracking-normal text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]">
                                     Obsolete
                                   </span>
                                 ) : null}
@@ -3051,24 +3051,24 @@ export default function ChatClient() {
                                 ) : null}
                               </div>
                               {stepBody ? (
-                                <p className={`${ANSWER_META_SM_CLASS} text-slate-500 dark:text-[#b4b4b4]`}>
+                                <p className={`${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
                                   {stepBody}
                                 </p>
                               ) : null}
                               {statusReason ? (
-                                <p className="text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+                                <p className="text-xs leading-5 text-slate-600 dark:text-[#8e8e8e]">
                                   {statusReason}
                                 </p>
                               ) : null}
                               {sourceCounts ? (
-                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+                                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-[#8e8e8e]">
                                   Sources: {sourceCounts.total ?? 0} total,{" "}
                                   {sourceCounts.paper ?? 0} library,{" "}
                                   {sourceCounts.web ?? 0} web
                                 </p>
                               ) : null}
                               {citationCount > 0 ? (
-                                <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+                                <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-[#8e8e8e]">
                                   Evidence ledger: {citationCount} citation
                                   {citationCount === 1 ? "" : "s"}
                                 </p>
@@ -3087,7 +3087,7 @@ export default function ChatClient() {
                                   {unresolvedSections.slice(0, 3).map((section) => (
                                     <span
                                       key={`${step.id}-missing-${section}`}
-                                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]"
+                                      className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#b4b4b4]"
                                     >
                                       Missing: {section}
                                     </span>
@@ -3101,9 +3101,9 @@ export default function ChatClient() {
                                       key={`${step.id}-evidence-${item.paperId}-${evidenceIndex}`}
                                       className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 dark:border-[#1f1f1f] dark:bg-[#030303]"
                                     >
-                                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-normal text-slate-400 dark:text-[#777777]">
+                                      <div className="flex flex-wrap items-center gap-2 text-[11px] font-medium uppercase tracking-normal text-slate-600 dark:text-[#8e8e8e]">
                                         <span>{item.section || item.requested_section}</span>
-                                        <span className="text-slate-300 dark:text-white/20">
+                                        <span className="text-slate-600 dark:text-[#8e8e8e]">
                                           |
                                         </span>
                                         <span>
@@ -3116,7 +3116,7 @@ export default function ChatClient() {
                                       <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-700 dark:text-[#d4d4d4]">
                                         {item.title}
                                       </p>
-                                      <p className={`mt-1 line-clamp-2 ${ANSWER_META_CLASS} text-slate-500 dark:text-[#a3a3a3]`}>
+                                      <p className={`mt-1 line-clamp-2 ${ANSWER_META_CLASS} text-slate-600 dark:text-[#a3a3a3]`}>
                                         {item.snippet}
                                       </p>
                                     </div>
@@ -3131,7 +3131,7 @@ export default function ChatClient() {
 
                     {deepSession.status !== "planned" ? (
                       <div className="mt-6">
-                        <div className="flex items-center justify-between gap-3 text-sm text-slate-500 dark:text-[#b4b4b4]">
+                        <div className="flex items-center justify-between gap-3 text-sm text-slate-600 dark:text-[#b4b4b4]">
                           <span>{researchProgress.detail}</span>
                           <span>
                             {researchProgress.completedSteps}/{Math.max(
@@ -3198,7 +3198,7 @@ export default function ChatClient() {
                                   value={editingDraft}
                                   onChange={(event) => setEditingDraft(event.target.value)}
                                   rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
-                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-8 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-8 text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
                                 />
                                 <div className="mt-4 flex justify-end gap-2">
                                   <button
@@ -3272,7 +3272,7 @@ export default function ChatClient() {
                         <div className="space-y-4">
                           <AssistantAnswer content={message.content} messageId={message.id} citations={message.citations} />
                           {groundingMode === "general" ? (
-                            <div className="text-xs text-slate-400 dark:text-[#8e8e8e]">
+                            <div className="text-xs text-slate-600 dark:text-[#8e8e8e]">
                               Repository context not used
                             </div>
                           ) : null}
@@ -3335,7 +3335,7 @@ export default function ChatClient() {
                             )}
                         </span>
                         {progress?.detail ? (
-                          <span className="text-xs text-slate-400 dark:text-[#777]">
+                          <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">
                             {progress.detail}
                           </span>
                         ) : null}
@@ -3347,7 +3347,7 @@ export default function ChatClient() {
             )}
 
             {detailLoading ? (
-              <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-500 dark:text-[#8e8e8e]">
+              <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                 <span>Loading chat...</span>
               </div>
@@ -3388,7 +3388,7 @@ export default function ChatClient() {
                                 current.filter((item) => item.id !== run.id)
                               )
                             }
-                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-500 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
+                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
                             aria-label={`Remove ${runTitleOf(run)}`}
                           >
                             <CloseIcon className="h-3 w-3" />
@@ -3419,7 +3419,7 @@ export default function ChatClient() {
                       <button
                         type="button"
                         onClick={() => setChartSuggestionDismissedFor(trimmedDraft)}
-                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sky-700 hover:bg-sky-100 dark:text-sky-100 dark:hover:bg-[#0a0a0a]"
+                        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-sky-800 hover:bg-sky-100 dark:text-sky-100 dark:hover:bg-[#0a0a0a]"
                         aria-label="Dismiss chart mode suggestion"
                       >
                         <CloseIcon className="h-3.5 w-3.5" />
@@ -3478,7 +3478,7 @@ export default function ChatClient() {
                       >
                         Charts/data
                       </button>
-                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-400 dark:border-[#1f1f1f] dark:bg-black dark:text-[#6f6f6f]">
+                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-600 dark:border-[#1f1f1f] dark:bg-black dark:text-[#8e8e8e]">
                         Code analysis later
                       </span>
                     </div>
@@ -3491,7 +3491,7 @@ export default function ChatClient() {
                     disagree. */}
                 <p
                   data-testid="composer-scope"
-                  className={`px-1 pb-1 ${ANSWER_META_CLASS} text-slate-400 dark:text-[#6f6f6f]`}
+                  className={`px-1 pb-1 ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}
                 >
                   {scopeDescription(
                     scopeSummary?.scopeLabel || activeScopeSnapshot.label,
@@ -3510,7 +3510,7 @@ export default function ChatClient() {
                       : "Ask the repository"
                   }
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none placeholder:text-slate-600 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -3536,14 +3536,14 @@ export default function ChatClient() {
                                 <button
                                   type="button"
                                   onClick={() => setMenuView("root")}
-                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0f0f0f] dark:hover:text-white"
+                                  className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0f0f0f] dark:hover:text-white"
                                   aria-label="Back to chat tools"
                                 >
                                   <ChevronDownIcon className="h-4 w-4 rotate-90" />
                                 </button>
                                 <div className="min-w-0">
                                   <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">Repository scope</p>
-                                  <p className="truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">Choose what this message can use</p>
+                                  <p className="truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose what this message can use</p>
                                 </div>
                               </div>
                               <div className="max-h-80 overflow-y-auto p-2">
@@ -3557,15 +3557,15 @@ export default function ChatClient() {
                                   }}
                                   className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeProjectId === "all" && chatScopeFolderId === "all" ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                 >
-                                  <DriveIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                  <DriveIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">All repositories</span>
-                                    <span className="block truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">Every analyzed paper in this account</span>
+                                    <span className="block truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">Every analyzed paper in this account</span>
                                   </span>
                                   {chatScopeProjectId === "all" && chatScopeFolderId === "all" ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                 </button>
                                 {allProjects.length > 0 ? (
-                                  <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Repositories</p>
+                                  <p className="px-3 pb-1 pt-3 text-[11px] font-medium text-slate-600 dark:text-[#8e8e8e]">Repositories</p>
                                 ) : null}
                                 {allProjects.map((project) => {
                                   const projectActive = chatScopeProjectId === project.id && chatScopeFolderId === "all";
@@ -3581,7 +3581,7 @@ export default function ChatClient() {
                                       }}
                                       className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${projectActive ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                     >
-                                      <DriveIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                      <DriveIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                       <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{project.name}</span>
                                       {projectActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                     </button>
@@ -3591,18 +3591,18 @@ export default function ChatClient() {
                             </>
                           ) : (
                             <div className="p-2">
-                              <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Context</p>
+                              <p className="px-3 pb-1 pt-1 text-[11px] font-medium text-slate-600 dark:text-[#8e8e8e]">Context</p>
                               <button
                                 type="button"
                                 onClick={() => setMenuView("scope")}
                                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
                               >
-                                <FolderIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                <FolderIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
                                   <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Repository scope</span>
-                                  <span className="block truncate text-[11px] text-slate-500 dark:text-[#8e8e8e]">{activeFolderLabel}</span>
+                                  <span className="block truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">{activeFolderLabel}</span>
                                 </span>
-                                <ChevronDownIcon className="h-4 w-4 flex-none -rotate-90 text-slate-400" />
+                                <ChevronDownIcon className="h-4 w-4 flex-none -rotate-90 text-slate-600" />
                               </button>
                               <button
                                 type="button"
@@ -3612,10 +3612,10 @@ export default function ChatClient() {
                                 }}
                                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
                               >
-                                <FileIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                <FileIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
                                   <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Attach papers</span>
-                                  <span className="block text-[11px] text-slate-500 dark:text-[#8e8e8e]">Choose specific files from this repository</span>
+                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose specific files from this repository</span>
                                 </span>
                                 {selectedLibraryRuns.length > 0 ? <span className="text-xs font-medium">{selectedLibraryRuns.length}</span> : null}
                               </button>
@@ -3627,15 +3627,15 @@ export default function ChatClient() {
                                 }}
                                 className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
                               >
-                                <PaperIcon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                <PaperIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
                                   <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Upload a paper</span>
-                                  <span className="block text-[11px] text-slate-500 dark:text-[#8e8e8e]">Analyze and add it to this repository</span>
+                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Analyze and add it to this repository</span>
                                 </span>
                               </button>
 
                               <div className="my-2 border-t border-slate-200 dark:border-[#1f1f1f]" />
-                              <p className="px-3 pb-1 text-[11px] font-medium text-slate-400 dark:text-[#777777]">Tools</p>
+                              <p className="px-3 pb-1 text-[11px] font-medium text-slate-600 dark:text-[#8e8e8e]">Tools</p>
                               {[
                                 { key: "chart", label: "Chart mode", description: "Build a chart from repository data", icon: ChartIcon, active: chartModeEnabled },
                                 { key: "web", label: "Web search", description: "Add current external sources", icon: SearchIcon, active: webSearchEnabled },
@@ -3664,10 +3664,10 @@ export default function ChatClient() {
                                     }}
                                     className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${item.active ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                   >
-                                    <Icon className="h-4 w-4 flex-none text-slate-500 dark:text-[#b4b4b4]" />
+                                    <Icon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                     <span className="min-w-0 flex-1">
                                       <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">{item.label}</span>
-                                      <span className="block text-[11px] text-slate-500 dark:text-[#8e8e8e]">{item.description}</span>
+                                      <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">{item.description}</span>
                                     </span>
                                     {item.active ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                   </button>
@@ -3708,7 +3708,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setDeepResearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable deep research"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3723,7 +3723,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setChartModeEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable chart mode"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3738,7 +3738,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setWebSearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-700 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
                           aria-label="Disable web search"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3774,13 +3774,13 @@ export default function ChatClient() {
                     {parameterMenuOpen && !deepResearchEnabled && !chartModeEnabled ? (
                       <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
                         <div className="mb-3 flex items-center justify-between">
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#9b9b9b]">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-600 dark:text-[#9b9b9b]">
                             Generation
                           </p>
                           <button
                             type="button"
                             onClick={() => setChatParameters(DEFAULT_CHAT_PARAMETERS)}
-                            className="text-xs font-medium text-sky-700 hover:text-sky-900 dark:text-[#f3f3f3] dark:hover:text-[#c9e2ff]"
+                            className="text-xs font-medium text-sky-800 hover:text-sky-900 dark:text-[#f3f3f3] dark:hover:text-[#c9e2ff]"
                           >
                             Reset
                           </button>
@@ -3790,7 +3790,7 @@ export default function ChatClient() {
                           <label className="block">
                             <div className="mb-1 flex items-center justify-between">
                               <span>Temperature</span>
-                              <span className="text-slate-500 dark:text-[#9b9b9b]">{chatParameters.temperature.toFixed(2)}</span>
+                              <span className="text-slate-600 dark:text-[#9b9b9b]">{chatParameters.temperature.toFixed(2)}</span>
                             </div>
                             <input
                               type="range"
@@ -3808,7 +3808,7 @@ export default function ChatClient() {
                           <label className="block">
                             <div className="mb-1 flex items-center justify-between">
                               <span>Top P</span>
-                              <span className="text-slate-500 dark:text-[#9b9b9b]">{chatParameters.topP.toFixed(2)}</span>
+                              <span className="text-slate-600 dark:text-[#9b9b9b]">{chatParameters.topP.toFixed(2)}</span>
                             </div>
                             <input
                               type="range"
@@ -3907,7 +3907,7 @@ export default function ChatClient() {
                           ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
                           : draft.trim().length > 0 || chartModeEnabled
                             ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
-                            : "bg-slate-200 text-slate-400 dark:bg-[#1f1f1f] dark:text-[#8e8e8e]"
+                            : "bg-slate-200 text-slate-600 dark:bg-[#1f1f1f] dark:text-[#8e8e8e]"
                       } disabled:cursor-not-allowed`}
                       aria-label={loading ? "Stop generating" : "Send message"}
                     >
@@ -3936,12 +3936,12 @@ export default function ChatClient() {
               <div className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-[#1f1f1f]">
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">Files in this conversation</p>
-                  <p className="text-xs text-slate-500 dark:text-[#8e8e8e]">{conversationSources.length} unique sources</p>
+                  <p className="text-xs text-slate-600 dark:text-[#8e8e8e]">{conversationSources.length} unique sources</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setSourcesPanelOpen(false)}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   aria-label="Close conversation sources"
                 >
                   <CloseIcon className="h-4 w-4" />
@@ -3958,7 +3958,7 @@ export default function ChatClient() {
                     ))}
                   </div>
                 ) : (
-                  <div className="px-2 py-8 text-center text-sm leading-6 text-slate-500 dark:text-[#8e8e8e]">
+                  <div className="px-2 py-8 text-center text-sm leading-6 text-slate-600 dark:text-[#8e8e8e]">
                     Sources cited by answers in this conversation will appear here.
                   </div>
                 )}
@@ -3976,12 +3976,12 @@ export default function ChatClient() {
                 <button
                   type="button"
                   onClick={() => setReportFullViewOpen(false)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   aria-label="Close full report"
                 >
                   <CloseIcon className="h-4 w-4" />
                 </button>
-                <span className="text-sm font-medium text-slate-500 dark:text-[#b4b4b4]">
+                <span className="text-sm font-medium text-slate-600 dark:text-[#b4b4b4]">
                   Deep research report
                 </span>
               </div>
@@ -3998,7 +3998,7 @@ export default function ChatClient() {
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-10 sm:px-10">
               <article className="mx-auto max-w-[900px] space-y-8">
                 <div className="space-y-3">
-                  <p className="text-sm text-slate-500 dark:text-[#8e8e8e]">
+                  <p className="text-sm text-slate-600 dark:text-[#8e8e8e]">
                     Research completed in the selected library scope.
                   </p>
                   <h1 className="text-[2.2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[3rem]">
@@ -4029,20 +4029,20 @@ export default function ChatClient() {
           <div className="flex h-[min(660px,86vh)] w-[min(860px,94vw)] flex-col overflow-hidden rounded-[22px] border border-slate-200 bg-white text-slate-900 shadow-[0_28px_80px_rgba(15,23,42,0.24)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f4f4f4] dark:shadow-[0_28px_90px_rgba(0,0,0,0.55)]">
             <div className="flex h-20 flex-none items-center border-b border-slate-200 px-6 dark:border-[#1f1f1f]">
               <label className="relative flex min-w-0 flex-1 items-center">
-                <SearchIcon className="pointer-events-none absolute left-0 h-5 w-5 text-slate-400 dark:text-[#b4b4b4]" />
+                <SearchIcon className="pointer-events-none absolute left-0 h-5 w-5 text-slate-600 dark:text-[#b4b4b4]" />
                 <input
                   type="search"
                   value={chatSearchQuery}
                   onChange={(event) => setChatSearchQuery(event.target.value)}
                   placeholder="Search chats..."
-                  className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#c7c7c7]"
+                  className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#c7c7c7]"
                   autoFocus
                 />
               </label>
               <button
                 type="button"
                 onClick={() => setSearchModalOpen(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                 aria-label="Close chat search"
               >
                 <CloseIcon className="h-5 w-5" />
@@ -4063,7 +4063,7 @@ export default function ChatClient() {
               </button>
 
               {chatSearchLoading ? (
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                   <span>Searching chats...</span>
                 </div>
@@ -4076,7 +4076,7 @@ export default function ChatClient() {
               ) : null}
 
               {!chatSearchLoading && !chatSearchError && chatSearchResults.length === 0 ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
                   {chatSearchQuery.trim()
                     ? "No chats matched that search."
                     : "No chats yet."}
@@ -4092,7 +4092,7 @@ export default function ChatClient() {
                       if (groupResults.length === 0) return null;
                       return (
                         <section key={groupLabel} className="mb-6">
-                          <p className="mb-2 text-sm text-slate-500 dark:text-[#b4b4b4]">
+                          <p className="mb-2 text-sm text-slate-600 dark:text-[#b4b4b4]">
                             {groupLabel}
                           </p>
                           <div className="space-y-1">
@@ -4113,7 +4113,7 @@ export default function ChatClient() {
                                     {result.thread.title || "Untitled chat"}
                                   </span>
                                   {result.snippet ? (
-                                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-slate-500 dark:text-[#c7c7c7]">
+                                    <span className="mt-1 line-clamp-2 block text-sm leading-5 text-slate-600 dark:text-[#c7c7c7]">
                                       {result.matchedIn === "message" ? "Message: " : ""}
                                       {result.snippet}
                                     </span>
@@ -4140,7 +4140,7 @@ export default function ChatClient() {
                 <h2 className="text-xl font-semibold text-slate-900 dark:text-[#ececec]">
                   Add papers from repositories
                 </h2>
-                <p className="mt-1 text-sm text-slate-500 dark:text-[#8e8e8e]">
+                <p className="mt-1 text-sm text-slate-600 dark:text-[#8e8e8e]">
                   Choose papers from any repository in this account when you want to narrow
                   this message to specific sources.
                 </p>
@@ -4148,7 +4148,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => setShowLibraryPicker(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                 aria-label="Close library picker"
               >
                 <CloseIcon className="h-4 w-4" />
@@ -4156,24 +4156,24 @@ export default function ChatClient() {
             </div>
 
             <label className="relative mt-5 block">
-              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#8e8e8e]" />
+              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-600 dark:text-[#8e8e8e]" />
               <input
                 type="search"
                 value={libraryQuery}
                 onChange={(event) => setLibraryQuery(event.target.value)}
                 placeholder="Search files"
-                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
+                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-600 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
               />
             </label>
 
             <div className="mt-4 max-h-[420px] space-y-2 overflow-y-auto pr-1">
               {libraryLoading ? (
-                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
                   <span>Loading repository files...</span>
                 </div>
               ) : filteredLibraryRuns.length === 0 ? (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">
                   No files matched this search.
                 </div>
               ) : (
@@ -4200,7 +4200,7 @@ export default function ChatClient() {
                         <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">
                           {runTitleOf(run)}
                         </span>
-                        <span className="mt-1 block text-xs text-slate-500 dark:text-[#8e8e8e]">
+                        <span className="mt-1 block text-xs text-slate-600 dark:text-[#8e8e8e]">
                           {runSourceLabel(run)} | {runExtOf(run).toUpperCase()}
                         </span>
                       </span>
@@ -4222,7 +4222,7 @@ export default function ChatClient() {
             </div>
 
             <div className="mt-5 flex items-center justify-between gap-3">
-              <p className="text-sm text-slate-500 dark:text-[#8e8e8e]">
+              <p className="text-sm text-slate-600 dark:text-[#8e8e8e]">
                 {selectedLibraryRuns.length} file
                 {selectedLibraryRuns.length === 1 ? "" : "s"} selected
               </p>
