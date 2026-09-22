@@ -89,12 +89,14 @@ body {
   color: #000000;
 }
 
-:where(button, a, input, select, textarea, summary):focus-visible {
+/* Includes tabindex elements: the citation marker and the fold are reached
+   that way, and were controls a keyboard user could not see. */
+:where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
   outline: 2px solid #171717;
   outline-offset: 2px;
 }
 
-.dark :where(button, a, input, select, textarea, summary):focus-visible {
+.dark :where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
   outline-color: #f2f2f2;
 }
 
@@ -316,3 +318,32 @@ body {
     animation: none;
   }
 }
+
+/*
+ * Reduced motion, everywhere rather than per component.
+ *
+ * The rules above name the components that existed when each was written, so
+ * anything added later - the chat page's colour transitions, its spinners, the
+ * fold opening - moved regardless of the setting. A reader who asks the system
+ * for less motion is not asking only about the pages that happened to be
+ * considered.
+ *
+ * Duration is collapsed rather than set to `none` so that transitionend and
+ * animationend still fire and nothing waiting on them hangs.
+ *
+ * A spinner stops spinning under this rule. That is deliberate and safe here
+ * because every waiting state on the chat page also carries a text label
+ * saying what is happening, so the feedback survives without the movement.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+
