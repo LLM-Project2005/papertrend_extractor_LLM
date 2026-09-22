@@ -10,6 +10,12 @@
  *   PT_BASE_URL=... PT_EMAIL=... PT_PASSWORD=... npx tsx scripts/measure-chat-cls.ts
  *
  * Exits non-zero if CLS reaches 0.1, so it can gate a release.
+ *
+ * Playwright is deliberately NOT a dependency of this project: it pulls a
+ * browser of a few hundred megabytes and these scripts run occasionally rather
+ * than in CI. Install it when you need them:
+ *
+ *   npm install --no-save playwright && npx playwright install chromium
  */
 import { chromium, type Page } from "playwright";
 
