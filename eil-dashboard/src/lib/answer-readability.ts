@@ -145,6 +145,12 @@ export function readabilityInstruction(issues: ReadabilityIssue[]): string {
  * apart and give the model contradictory instructions.
  */
 export const ANSWER_FORMAT_RULES = [
+  // Placed first because it overrides the rest. Asked to "summarise this
+  // whole repository in one paragraph", the model returned 4,378
+  // characters across many paragraphs and a judge marked it down for
+  // directness: the rules below push towards headings and bullets, and
+  // nothing told the model that an explicit request outranks them.
+  "If the request names a format or a length - one paragraph, a table, three bullets, under 100 words - follow it exactly. It overrides every rule below, including the ones about headings, bullets and tables.",
   "Open with the direct answer in one or two sentences, before any heading.",
   `Keep every paragraph under ${MAX_PARAGRAPH_CHARS} characters; split longer reasoning into separate paragraphs.`,
   "Use a bulleted list whenever you enumerate three or more things, rather than running them into a sentence.",
