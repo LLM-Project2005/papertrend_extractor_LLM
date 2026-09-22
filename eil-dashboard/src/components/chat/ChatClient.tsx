@@ -41,6 +41,17 @@ import {
   readChatStream,
   type ChatProgressUpdate,
 } from "@/lib/chat-http";
+import {
+  foldPoint,
+  markCitations,
+  type CitationSource,
+} from "@/lib/answer-citations";
+import {
+  ANSWER_BODY_CLASS,
+  ANSWER_CELL_CLASS,
+  ANSWER_META_CLASS,
+  ANSWER_META_SM_CLASS,
+} from "@/lib/answer-typography";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type {
   KnowledgeScope,
@@ -338,9 +349,58 @@ const localMessage = (
   metadata: metadata ?? null,
 });
 
-function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
+/**
+ * One numbered citation, with the source it points at on hover or focus.
+ *
+ * A 60-character paper title inside a sentence is an interruption, and a
+ * paragraph making three claims carried three of them. The marker keeps the
+ * sentence readable while the source stays one pointer away, and the same card
+ * opens on keyboard focus so it is not mouse-only.
+ */
+function CitationMarker({ numbers, sources }: { numbers: number[]; sources: CitationSource[] }) {
+  const referenced = numbers
+    .map((number) => sources.find((source) => source.number === number))
+    .filter((source): source is CitationSource => Boolean(source));
+  if (referenced.length === 0) return null;
+  const label = referenced
+    .map((source) => `${source.title}${source.year && source.year !== "Unknown" ? ` (${source.year})` : ""}`)
+    .join("; ");
+
+  return (
+    <span className="group relative inline-block align-baseline">
+      <button
+        type="button"
+        aria-label={`Source: ${label}`}
+        className="ml-0.5 cursor-help rounded align-super text-[0.68em] font-semibold text-sky-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-200"
+      >
+        {numbers.join(",")}
+      </button>
+      <span
+        role="tooltip"
+        className={`pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg group-focus-within:block group-hover:block dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4]`}
+      >
+        {referenced.map((source) => (
+          <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-slate-200 [&+&]:pt-2 dark:[&+&]:border-[#2a2a2a]">
+            <span className="block font-semibold text-slate-900 dark:text-white">{source.title}</span>
+            <span className="block text-slate-500 dark:text-[#8e8e8e]">
+              {source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
+            </span>
+          </span>
+        ))}
+      </span>
+    </span>
+  );
+}
+
+function renderInlineMarkdown(
+  text: string,
+  keyPrefix: string,
+  sources: CitationSource[] = []
+): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
+  // Ordered so the longer opener wins: ** before *, ~~ before ~.
+  const pattern =
+    /(\[\[cite:[\d,]+\]\]|\*\*[^*]+\*\*|~~[^~]+~~|(?<![*\w])\*[^*\n]+\*(?!\*)|(?<![_\w])_[^_\n]+_(?![_\w])|`[^`]+`|\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -350,7 +410,31 @@ function renderInlineMarkdown(text: string, keyPrefix: string): ReactNode[] {
     }
 
     const token = match[0];
-    if (token.startsWith("**") && token.endsWith("**")) {
+    if (token.startsWith("[[cite:")) {
+      const numbers = token
+        .slice(7, -2)
+        .split(",")
+        .map((part) => Number.parseInt(part, 10))
+        .filter((value) => Number.isFinite(value));
+      nodes.push(
+        <CitationMarker key={`${keyPrefix}-cite-${match.index}`} numbers={numbers} sources={sources} />
+      );
+    } else if (token.startsWith("~~") && token.endsWith("~~")) {
+      nodes.push(
+        <s key={`${keyPrefix}-strike-${match.index}`} className="opacity-70">
+          {token.slice(2, -2)}
+        </s>
+      );
+    } else if (
+      (token.startsWith("*") && !token.startsWith("**")) ||
+      (token.startsWith("_") && !token.startsWith("__"))
+    ) {
+      nodes.push(
+        <em key={`${keyPrefix}-em-${match.index}`} className="italic">
+          {token.slice(1, -1)}
+        </em>
+      );
+    } else if (token.startsWith("**") && token.endsWith("**")) {
       nodes.push(
         <strong key={`${keyPrefix}-strong-${match.index}`} className="font-semibold text-slate-900 dark:text-white">
           {token.slice(2, -2)}
@@ -498,7 +582,12 @@ function groupMarkdownLines(lines: string[]) {
   return groups;
 }
 
-function renderRichMessage(content: string, keyPrefix: string, tone: "assistant" | "user" = "assistant") {
+function renderRichMessage(
+  content: string,
+  keyPrefix: string,
+  tone: "assistant" | "user" = "assistant",
+  sources: CitationSource[] = []
+) {
   const normalized = content.replace(/\r\n/g, "\n");
   const blocks: string[] = [];
   const lines = normalized.split("\n");
@@ -544,8 +633,8 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
       : "text-base font-semibold text-slate-900 dark:text-[#f3f3f3]";
   const paragraphClass =
     tone === "assistant"
-      ? "text-[15px] leading-7 text-slate-700 dark:text-[#ececec]"
-      : "text-[15px] leading-7 text-slate-800 dark:text-[#f3f3f3]";
+      ? `${ANSWER_BODY_CLASS} text-slate-700 dark:text-[#ececec]`
+      : `${ANSWER_BODY_CLASS} text-slate-800 dark:text-[#f3f3f3]`;
 
   return (
     <div className="space-y-4">
@@ -594,9 +683,9 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                           {header.map((cell, cellIndex) => (
                             <th
                               key={`${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`}
-                              className="border-b border-slate-200 px-4 py-3 font-semibold dark:border-[#1f1f1f]"
+                              className={`border-b border-slate-200 px-4 py-3 font-semibold ${ANSWER_CELL_CLASS} dark:border-[#1f1f1f]`}
                             >
-                              {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`)}
+                              {renderInlineMarkdown(cell, `${keyPrefix}-th-${blockIndex}-${groupIndex}-${cellIndex}`, sources)}
                             </th>
                           ))}
                         </tr>
@@ -609,7 +698,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                                 key={`${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`}
                                 className="px-4 py-3 align-top text-slate-600 dark:text-[#d8d8d8]"
                               >
-                                {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`)}
+                                {renderInlineMarkdown(cell, `${keyPrefix}-td-${blockIndex}-${groupIndex}-${rowIndex}-${cellIndex}`, sources)}
                               </td>
                             ))}
                           </tr>
@@ -630,7 +719,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                     {bulletLines.map((line, lineIndex) => (
                       <li key={`${keyPrefix}-item-${blockIndex}-${groupIndex}-${lineIndex}`} className="flex gap-3">
                         <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-400 dark:bg-white/60" />
-                        <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
+                        <span>{renderInlineMarkdown(line.replace(/^[-*]\s+/, ""), `${keyPrefix}-${blockIndex}-${groupIndex}-${lineIndex}`, sources)}</span>
                       </li>
                     ))}
                   </ul>
@@ -649,7 +738,7 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                         <span className="min-w-[1.5rem] flex-none font-semibold text-slate-500 dark:text-white/75">
                           {line.match(/^(\d+)\./)?.[1]}.
                         </span>
-                        <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`)}</span>
+                        <span>{renderInlineMarkdown(line.replace(/^\d+\.\s+/, ""), `${keyPrefix}-ordered-${blockIndex}-${groupIndex}-${lineIndex}`, sources)}</span>
                       </li>
                     ))}
                   </ol>
@@ -661,12 +750,12 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 return (
                   <blockquote
                     key={`${keyPrefix}-quote-${blockIndex}-${groupIndex}`}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-[15px] leading-7 text-slate-800 dark:border-[#2a2a2a] dark:bg-[#0a0a0a] dark:text-[#d4d4d4]"
+                    className={`rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 ${ANSWER_BODY_CLASS} text-slate-800 dark:border-[#2a2a2a] dark:bg-[#0a0a0a] dark:text-[#d4d4d4]`}
                   >
                     <div className="space-y-2">
                       {quoteLines.map((line, lineIndex) => (
                         <p key={`${keyPrefix}-quote-line-${blockIndex}-${groupIndex}-${lineIndex}`}>
-                          {renderInlineMarkdown(line.replace(/^>\s?/, ""), `${keyPrefix}-quote-${blockIndex}-${groupIndex}-${lineIndex}`)}
+                          {renderInlineMarkdown(line.replace(/^>\s?/, ""), `${keyPrefix}-quote-${blockIndex}-${groupIndex}-${lineIndex}`, sources)}
                         </p>
                       ))}
                     </div>
@@ -680,7 +769,8 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
                 const headingText = headingMatch?.[2] ?? lines[0];
                 const headingContent = renderInlineMarkdown(
                   headingText,
-                  `${keyPrefix}-heading-${blockIndex}-${groupIndex}`
+                  `${keyPrefix}-heading-${blockIndex}-${groupIndex}`,
+                  sources
                 );
                 const headingKey = `${keyPrefix}-heading-${blockIndex}-${groupIndex}`;
                 if (headingLevel === 1) {
@@ -701,13 +791,72 @@ function renderRichMessage(content: string, keyPrefix: string, tone: "assistant"
 
               return (
                 <p key={`${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`} className={paragraphClass}>
-                  {renderInlineMarkdown(lines.join(" "), `${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`)}
+                  {renderInlineMarkdown(lines.join(" "), `${keyPrefix}-paragraph-${blockIndex}-${groupIndex}`, sources)}
                 </p>
               );
             })}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * One assistant answer: numbered citations, and a fold when it runs long.
+ *
+ * Measured on the live suite, answers range from 400 to 15,300 characters. The
+ * long ones are not padding - a five-paper methodology comparison genuinely has
+ * that much to say - but arriving at a wall of text hides the part the reader
+ * asked for. The opening stays visible and the rest is one click away, so the
+ * direct answer is never behind a fold.
+ */
+function AssistantAnswer({
+  content,
+  messageId,
+  citations,
+}: {
+  content: string;
+  messageId: string;
+  citations?: Citation[] | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const { text, sources } = useMemo(
+    () =>
+      markCitations(
+        content,
+        (citations ?? [])
+          .filter((citation) => citation.paperId)
+          .map((citation) => ({
+            paperId: String(citation.paperId),
+            title: String(citation.title ?? ""),
+            year: String(citation.year ?? ""),
+            href: String(citation.href ?? ""),
+          }))
+      ),
+    [content, citations]
+  );
+
+  const cut = useMemo(() => foldPoint(text), [text]);
+  const visible = cut !== null && !expanded ? text.slice(0, cut) : text;
+  const hiddenChars = cut !== null && !expanded ? text.length - cut : 0;
+
+  return (
+    <div className="space-y-3">
+      {renderRichMessage(visible, messageId, "assistant", sources)}
+      {cut !== null ? (
+        <button
+          type="button"
+          onClick={() => setExpanded((previous) => !previous)}
+          aria-expanded={expanded}
+          className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#b4b4b4] dark:hover:bg-[#121212] dark:hover:text-white"
+        >
+          {expanded
+            ? "Show less"
+            : `Show more (${hiddenChars.toLocaleString()} more characters)`}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -746,7 +895,7 @@ function CitationLink({ citation, compact = false }: { citation: Citation; compa
           {citation.sourceType === "web" ? "Web source" : citation.year || "Paper"}
         </span>
         {!compact && citation.reason ? (
-          <span className="mt-1.5 block text-xs leading-5 text-slate-500 dark:text-[#8e8e8e]">
+          <span className={`mt-1.5 block ${ANSWER_META_CLASS} text-slate-500 dark:text-[#8e8e8e]`}>
             {citation.reason}
           </span>
         ) : null}
@@ -3200,7 +3349,7 @@ export default function ChatClient() {
                           ) : null}
                         </div>
                         {deepSession.plan_summary ? (
-                          <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#b4b4b4]">
+                          <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-slate-500 dark:text-[#b4b4b4]`}>
                             {deepSession.plan_summary}
                           </p>
                         ) : null}
@@ -3317,7 +3466,7 @@ export default function ChatClient() {
                             </span>
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-[15px] leading-7 text-slate-900 dark:text-[#ececec]">
+                                <p className="text-[15px] leading-8 text-slate-900 dark:text-[#ececec]">
                                   {step.title}
                                 </p>
                                 {isAppended ? (
@@ -3352,7 +3501,7 @@ export default function ChatClient() {
                                 ) : null}
                               </div>
                               {stepBody ? (
-                                <p className="text-sm leading-6 text-slate-500 dark:text-[#b4b4b4]">
+                                <p className={`${ANSWER_META_SM_CLASS} text-slate-500 dark:text-[#b4b4b4]`}>
                                   {stepBody}
                                 </p>
                               ) : null}
@@ -3417,7 +3566,7 @@ export default function ChatClient() {
                                       <p className="mt-1 line-clamp-1 text-xs font-semibold text-slate-700 dark:text-[#d4d4d4]">
                                         {item.title}
                                       </p>
-                                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500 dark:text-[#a3a3a3]">
+                                      <p className={`mt-1 line-clamp-2 ${ANSWER_META_CLASS} text-slate-500 dark:text-[#a3a3a3]`}>
                                         {item.snippet}
                                       </p>
                                     </div>
@@ -3494,7 +3643,7 @@ export default function ChatClient() {
                                   value={editingDraft}
                                   onChange={(event) => setEditingDraft(event.target.value)}
                                   rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
-                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-8 text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8e8e8e]"
                                 />
                                 <div className="mt-4 flex justify-end gap-2">
                                   <button
@@ -3540,7 +3689,7 @@ export default function ChatClient() {
                                     <PencilSquareIcon className="h-4 w-4" />
                                   </button>
                                 </div>
-                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-7 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
+                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-8 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
                                   {renderRichMessage(message.content, message.id, "user")}
                                 </div>
                                 <MessageAttachmentList attachments={attachments} />
@@ -3566,7 +3715,7 @@ export default function ChatClient() {
                         </div>
                       ) : (
                         <div className="space-y-4">
-                          {renderRichMessage(message.content, message.id, "assistant")}
+                          <AssistantAnswer content={message.content} messageId={message.id} citations={message.citations} />
                           {groundingMode === "general" ? (
                             <div className="text-xs text-slate-400 dark:text-[#8e8e8e]">
                               Repository context not used
@@ -3781,7 +3930,7 @@ export default function ChatClient() {
                       : "Ask the repository"
                   }
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-7 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none placeholder:text-slate-400 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
