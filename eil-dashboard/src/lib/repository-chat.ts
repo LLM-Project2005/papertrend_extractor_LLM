@@ -13,6 +13,10 @@ import {
 } from "@/lib/repository-retrieval";
 import { citationLabel } from "@/lib/answer-citations";
 import {
+  readAnswerCache,
+  writeAnswerCache,
+} from "@/lib/answer-cache";
+import {
   detectUnavailableMetric,
   type UnavailableMetric,
 } from "@/lib/chat-guidance";
@@ -206,6 +210,8 @@ export interface RepositoryChatResult {
     sufficiencyChecked?: boolean;
     missingEvidenceNeeds?: string[];
     webAugmentation?: "succeeded" | "skipped";
+    /** True when this answer came from the cache rather than the models. */
+    cached?: boolean;
   };
 }
 
@@ -3611,8 +3617,69 @@ async function converseResult(
   };
 }
 
+/**
+ * Answers a question, or returns the identical answer already produced.
+ *
+ * The key includes the repository's version hash, so adding, removing or
+ * re-analysing a paper empties the cache for that repository. That is what makes
+ * this safe: a cached answer cannot describe a corpus that has since changed,
+ * because a changed corpus has a different key.
+ */
 export async function runRepositoryChat(input: RepositoryChatInput): Promise<RepositoryChatResult> {
   const context = await loadRepositoryContext(input);
+
+  // A follow-up means something different depending on what came before it, so
+  // only a question asked with no conversation behind it is cacheable. Charts
+  // are excluded too: the payload carries rendering state the cache does not.
+  const cacheable = (input.history?.length ?? 0) === 0 && !input.forceChart;
+  const keyParts = {
+    ownerUserId: input.ownerUserId,
+    versionHash: context.versionHash,
+    scopeKey: [context.projectId ?? "", context.folderId ?? "", [...context.selectedRunIds].sort().join(",")].join("|"),
+    question: input.prompt,
+  };
+
+  if (cacheable) {
+    const hit = readAnswerCache(keyParts);
+    if (hit) {
+      console.info("chat_cache_hit", JSON.stringify({ versionHash: context.versionHash, papers: context.papers.length }));
+      return {
+        handled: true,
+        answer: hit.answer,
+        citations: hit.citations as RepositoryCitation[],
+        charts: hit.charts as RepositoryChartPayload[],
+        plan: fallbackPromptPlan(input.prompt, false),
+        limitations: hit.limitations,
+        scopeSnapshot: context.scopeSnapshot,
+        diagnostics: {
+          projectId: context.projectId,
+          folderId: context.folderId,
+          selectedRunCount: context.selectedRunIds.length,
+          paperCount: context.papers.length,
+          versionHash: context.versionHash,
+          scopeLabel: context.scopeLabel,
+          cached: true,
+        },
+      };
+    }
+  }
+
+  const result = await runRepositoryChatWithContext(input, context);
+  if (cacheable && result.handled && !result.jobId && result.answer.trim()) {
+    writeAnswerCache(keyParts, {
+      answer: result.answer,
+      citations: result.citations,
+      charts: result.charts,
+      limitations: result.limitations ?? [],
+    });
+  }
+  return result;
+}
+
+async function runRepositoryChatWithContext(
+  input: RepositoryChatInput,
+  context: RepositoryContext
+): Promise<RepositoryChatResult> {
   reportChatProgress("planning");
   const chatV2Enabled = process.env.REPOSITORY_CHAT_V2_ENABLED !== "false";
   const execution = chatV2Enabled
