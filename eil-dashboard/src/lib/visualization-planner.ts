@@ -1,4 +1,7 @@
 import { TRACK_COLS, type TrackKey } from "@/lib/constants";
+import { isDatedYear } from "@/lib/dated-year";
+
+export { isDatedYear };
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { loadDashboardDataServer } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
@@ -10,6 +13,7 @@ import type {
   VisualizationChartKey,
   VisualizationPlannerRequest,
 } from "@/types/visualization";
+
 
 function toTrackField(track: string) {
   return track.toLowerCase() as keyof TrackRow;
@@ -133,9 +137,11 @@ export async function buildNormalizedAnalyticsPayload(
       ...(filteredDashboard.categoryAssignments ?? []).map((row) => row.year),
     ]),
   ].sort();
+  // Only dated years describe a timeline; "Unknown" is a count, not a period.
+  const datedYears = availableYears.filter(isDatedYear);
   const yearRange =
-    availableYears.length > 0
-      ? `${availableYears[0]} to ${availableYears[availableYears.length - 1]}`
+    datedYears.length > 0
+      ? `${datedYears[0]} to ${datedYears[datedYears.length - 1]}`
       : "No data";
 
   const yearlyPaperTrend = Object.entries(
@@ -147,7 +153,16 @@ export async function buildNormalizedAnalyticsPayload(
     }, {})
   )
     .map(([year, ids]) => ({ year, papers: ids.size }))
+    .filter((row) => isDatedYear(row.year))
     .sort((left, right) => left.year.localeCompare(right.year));
+
+  // Counted so the dashboard can say how many papers the timeline leaves out,
+  // rather than quietly dropping them or plotting them as a period.
+  const papersWithoutYear = new Set(
+    [...filteredDashboard.trends, ...filteredDashboard.tracksSingle, ...filteredDashboard.tracksMulti]
+      .filter((row) => !isDatedYear(row.year))
+      .map((row) => row.paper_id)
+  ).size;
 
   const buildTrackTotals = (rows: TrackRow[]) =>
     TRACK_COLS.map((track) => ({
@@ -261,9 +276,9 @@ export async function buildNormalizedAnalyticsPayload(
     })),
   };
 
-  const midpoint = Math.floor(availableYears.length / 2);
-  const earlyYears = new Set(availableYears.slice(0, midpoint));
-  const lateYears = new Set(availableYears.slice(midpoint));
+  const midpoint = Math.floor(datedYears.length / 2);
+  const earlyYears = new Set(datedYears.slice(0, midpoint));
+  const lateYears = new Set(datedYears.slice(midpoint));
   const topicShifts = Object.entries(topicCounts)
     .map(([topic]) => ({
       topic,
@@ -331,6 +346,7 @@ export async function buildNormalizedAnalyticsPayload(
       keyword_count: keywordCount,
       year_range: yearRange,
       available_years: availableYears,
+      papers_without_year: papersWithoutYear,
       folder_count: new Set(
         filteredDashboard.trends.map((row) => row.folder_id).filter(Boolean)
       ).size,
@@ -395,7 +411,15 @@ export function getViableAdaptiveCharts(
   if (analytics.keyword_heatmap.years.length >= 2 && hasHeatmapVariation) {
     viable.push("adaptive_keyword_family_heatmap");
   }
-  if (analytics.topic_by_track_totals.filter((row) => row.topics.length > 0).length >= 2) {
+  // A comparison needs something to compare along both axes. Requiring only
+  // two tracks with any topic at all produced a chart with one topic on the
+  // axis and two of its four series empty - a legend of four colours, two of
+  // which drew nothing.
+  const tracksWithTopics = analytics.topic_by_track_totals.filter((row) => row.topics.length > 0);
+  const topicsAcrossTracks = new Set(
+    tracksWithTopics.flatMap((row) => row.topics.map((topic) => topic.topic))
+  );
+  if (tracksWithTopics.length >= 2 && topicsAcrossTracks.size >= 2) {
     viable.push("adaptive_track_topic_comparison");
   }
   return viable;

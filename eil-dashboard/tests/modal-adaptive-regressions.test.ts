@@ -84,7 +84,7 @@ test("flat topic series are rejected while reliable filtered distributions remai
     mode: "live",
     approved_chart_types: [],
     filters: { selected_years: [], selected_tracks: ["EL", "LAE"], search_query: "", folder_ids: [], all_folders_selected: true },
-    overview: { paper_count: 27, topic_count: 3, keyword_count: 20, year_range: "2017-2022", available_years: ["2017", "2022"], folder_count: 2 },
+    overview: { paper_count: 27, topic_count: 3, keyword_count: 20, year_range: "2017-2022", available_years: ["2017", "2022"], papers_without_year: 0, folder_count: 2 },
     canonical_topic_families: [
       { canonical_topic: "Assessment", aliases: [], representative_keywords: [], paper_count: 12, total_keyword_frequency: 30 },
       { canonical_topic: "Teacher learning", aliases: [], representative_keywords: [], paper_count: 9, total_keyword_frequency: 22 },
