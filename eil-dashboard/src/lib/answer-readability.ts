@@ -60,13 +60,33 @@ export function countBold(answer: string): number {
   return (answer.match(/\*\*[^*\n]+\*\*/g) ?? []).length;
 }
 
+export interface ReadabilityOptions {
+  /**
+   * True when the reader named the shape of the answer themselves.
+   *
+   * These rules and an explicit request can contradict each other directly:
+   * asked for one paragraph, an answer is one long paragraph with no headings,
+   * which is exactly what the paragraph-length and structure rules exist to
+   * prevent. Left unresolved the audit rewrote the answer back into sections
+   * and the reader did not get what they asked for. The shape rules yield; the
+   * rules about substance - length overall, and claims without attribution -
+   * still apply, because those are not matters of taste.
+   */
+  formatConstrained?: boolean;
+}
+
 /** Lists everything about an answer's shape that would make it hard to read. */
-export function readabilityIssues(answer: string): ReadabilityIssue[] {
+export function readabilityIssues(
+  answer: string,
+  options: ReadabilityOptions = {}
+): ReadabilityIssue[] {
   const text = (answer ?? "").trim();
   if (!text) return [];
   const issues: ReadabilityIssue[] = [];
 
-  const overlong = paragraphsOf(text)
+  const overlong = options.formatConstrained
+    ? []
+    : paragraphsOf(text)
     .filter((paragraph) => !isStructural(paragraph) && paragraph.length > MAX_PARAGRAPH_CHARS)
     .sort((left, right) => right.length - left.length);
   if (overlong.length > 0) {
@@ -79,7 +99,7 @@ export function readabilityIssues(answer: string): ReadabilityIssue[] {
   }
 
   const structural = countHeadings(text) + countBullets(text) + countTableRows(text);
-  if (text.length > STRUCTURE_REQUIRED_CHARS && structural === 0) {
+  if (!options.formatConstrained && text.length > STRUCTURE_REQUIRED_CHARS && structural === 0) {
     issues.push({
       kind: "no_structure",
       detail:
@@ -125,8 +145,8 @@ export function readabilityIssues(answer: string): ReadabilityIssue[] {
 }
 
 /** True when the answer is shaped well enough to read without reformatting. */
-export function isReadable(answer: string): boolean {
-  return readabilityIssues(answer).length === 0;
+export function isReadable(answer: string, options: ReadabilityOptions = {}): boolean {
+  return readabilityIssues(answer, options).length === 0;
 }
 
 /** Instruction appended to a rewrite request when an answer reads poorly. */
@@ -164,3 +184,51 @@ export const ANSWER_FORMAT_RULES = [
   "Use only headings, bullets, numbered lists, tables, bold, italic, inline code and full https links. Images, horizontal rules, indented sub-bullets, checkboxes and HTML are not displayed and reach the reader as raw punctuation.",
   "Never put a heading directly under another heading; every heading needs content beneath it.",
 ].join(" ");
+
+/**
+ * The shape the reader asked for, stated as its own instruction.
+ *
+ * `ANSWER_FORMAT_RULES` already says an explicit request outranks the house
+ * style, but it says it as one clause among eleven, and measured on the pilot
+ * the model kept returning seven paragraphs to "summarise this whole repository
+ * in one paragraph". A constraint the reader stated is not a style preference
+ * to be balanced against the others, so it is detected here and passed as a
+ * separate line rather than left for the model to notice.
+ */
+const FORMAT_CONSTRAINTS: Array<[RegExp, string]> = [
+  [
+    /\bin (?:a |one |1 )?(?:single )?paragraph\b/i,
+    "The reader asked for ONE paragraph. Write exactly one paragraph: no headings, no bullet list, no table, no blank lines.",
+  ],
+  [
+    /\b(?:in|under|within|at most|no more than|max(?:imum)? of)\s+(\d{1,4})\s+words?\b/i,
+    "The reader set a word limit of $1 words. Stay under it, and prefer cutting detail to running over.",
+  ],
+  [
+    /\b(?:in|as)\s+(\d{1,2})\s+(?:bullets?|points?|items?)\b/i,
+    "The reader asked for exactly $1 bullet points. Give that many, and nothing else.",
+  ],
+  [
+    /\b(?:as|in)\s+a\s+table\b/i,
+    "The reader asked for a table. Answer with a Markdown table as the main content.",
+  ],
+  [
+    /\b(?:in|as)\s+(?:a\s+)?(?:bullet(?:ed)?\s+)?list\b/i,
+    "The reader asked for a list. Answer with a bulleted list as the main content.",
+  ],
+  [
+    /\b(?:one|1|a single)\s+sentence\b/i,
+    "The reader asked for ONE sentence. Write exactly one sentence and stop.",
+  ],
+];
+
+/** Detects a shape the reader named, or null when they named none. */
+export function formatConstraintInstruction(prompt: string): string | null {
+  const text = String(prompt ?? "");
+  for (const [pattern, instruction] of FORMAT_CONSTRAINTS) {
+    const match = text.match(pattern);
+    if (!match) continue;
+    return instruction.replace("$1", match[1] ?? "");
+  }
+  return null;
+}

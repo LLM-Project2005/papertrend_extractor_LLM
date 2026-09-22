@@ -13,6 +13,13 @@ import {
 } from "@/lib/repository-retrieval";
 import { citationLabel } from "@/lib/answer-citations";
 import {
+  detectUnavailableMetric,
+  type UnavailableMetric,
+} from "@/lib/chat-guidance";
+
+export { detectUnavailableMetric };
+export type { UnavailableMetric };
+import {
   renderingInstruction,
   renderingIssues,
 } from "@/lib/answer-rendering";
@@ -20,6 +27,7 @@ import { hybridRepositorySearch } from "@/lib/repository-memory";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
   ANSWER_FORMAT_RULES,
+  formatConstraintInstruction,
   readabilityInstruction,
   readabilityIssues,
 } from "@/lib/answer-readability";
@@ -1922,31 +1930,6 @@ export function buildRepositoryFactsAnswer(
   return [...targeted, overview, provenance].join("\n\n");
 }
 
-/** Facts a repository of paper text simply does not contain. */
-export type UnavailableMetric =
-  | "citation_counts"
-  | "author_metrics"
-  | "venue_metrics"
-  | "future_prediction"
-  | "usage_metrics";
-
-const UNAVAILABLE_METRIC_PATTERNS: Array<[UnavailableMetric, RegExp]> = [
-  // "how many citations", "times cited" - not "the citations in this paper",
-  // which means its reference list.
-  ["citation_counts", /\b(?:how many|number of|count of|total)\s+citations\b|\bcitation count\b|\btimes cited\b|\bcited by\b/i],
-  ["author_metrics", /\bh-?index\b|\bi10-?index\b|\bauthor (?:ranking|impact|metrics)\b/i],
-  ["venue_metrics", /\bimpact factor\b|\bjournal (?:rank|ranking|quartile)\b|\bscimago\b|\bq[1-4] journal\b/i],
-  ["future_prediction", /\b(?:will|going to|expect(?:ed)?|predict|forecast|projection)\b[^.?!]{0,60}\b(?:cite|citations|impact|popular|influence)\b/i],
-  ["usage_metrics", /\b(?:downloads?|altmetric|readership|views|reads)\b\s*(?:count|number|statistics|stats)?\b/i],
-];
-
-export function detectUnavailableMetric(prompt: string): UnavailableMetric | null {
-  for (const [metric, pattern] of UNAVAILABLE_METRIC_PATTERNS) {
-    if (pattern.test(prompt)) return metric;
-  }
-  return null;
-}
-
 const UNAVAILABLE_METRIC_REASONS: Record<UnavailableMetric, { en: string; th: string }> = {
   citation_counts: {
     en: "how often these papers have been cited",
@@ -2424,6 +2407,8 @@ async function checkFaithfulness(input: {
   evidenceNeeds: string[];
   scopeMode: "focused" | "comparative" | "exhaustive";
   model?: string;
+  /** The shape the reader named, if they named one. */
+  formatConstraint?: string | null;
 }): Promise<{
   answer: string;
   confidence: number;
@@ -2458,7 +2443,10 @@ async function checkFaithfulness(input: {
             `Required scope mode: ${input.scopeMode}`,
             `Evidence needs: ${input.evidenceNeeds.join("; ") || "Answer the request directly"}`,
             `Allowed paper IDs: ${input.allowedPaperIds.join(", ")}`,
-            readabilityInstruction(readabilityIssues(input.answer)),
+            input.formatConstraint ?? "",
+            readabilityInstruction(
+              readabilityIssues(input.answer, { formatConstrained: Boolean(input.formatConstraint) })
+            ),
             renderingInstruction(
               renderingIssues(input.answer, { beforeCitationFormatting: true })
             ),
@@ -2606,6 +2594,7 @@ async function repositoryQaResult(
           content: [
             `Original request: ${input.prompt}`,
             `Refined request: ${plan.refinedQuestion}`,
+            formatConstraintInstruction(input.prompt) ?? "",
             `Answer language: ${plan.answerLanguage}`,
             `Evidence needs: ${plan.evidenceNeeds.join("; ") || "Answer the request directly"}`,
             "",
@@ -2707,6 +2696,7 @@ async function repositoryQaResult(
     evidenceNeeds: plan.evidenceNeeds,
     scopeMode: plan.retrievalMode,
     model: input.model,
+    formatConstraint: formatConstraintInstruction(input.prompt),
   });
   const auditLimitations: string[] = [];
   if (checked.valid) {
@@ -2878,8 +2868,10 @@ export async function planRepositoryExecution(
         "Choose one to four ordered operations. Set operation to the primary operation and operations to every capability needed to satisfy a compound request. " +
         "Use converse for clearly unrelated conversation that does not require repository evidence. Even in converse mode, remember that you are Papertrend, a research-paper knowledge assistant. " +
         "Use inspect_scope for repository metadata/count/status/year questions, including asking what is in the selected repository or folder; " +
-        "list_documents for complete title or metadata listings; analyze_each_document when every document needs an explanation, summary, classification, or comparison; " +
-        "aggregate_corpus for repository-wide topics, methods, trends, gaps, or synthesis; search_evidence for a focused evidence question; " +
+        "list_documents for complete title or metadata listings; analyze_each_document when the reader wants something back about each document separately - one explanation, classification or summary per paper; " +
+        "aggregate_corpus for repository-wide topics, methods, trends, gaps or synthesis, including a request to summarise the repository as a whole. " +
+        "A request to summarise the collection is one summary of the corpus, not one summary per paper: it is aggregate_corpus. Per-paper summaries are only what is wanted when the reader asks about each, every or per paper. " +
+        "search_evidence for a focused evidence question; " +
         "analyze_text for exact word/phrase/entity frequencies; visualize for requested charts or tables. " +
         "Use aggregate_corpus only when the requested answer must characterize patterns across a corpus. A focused question asking what evidence supports, explains, links, or contradicts one issue uses search_evidence even when many papers may contribute. " +
         "When the user asks only to show or plot an already supported repository metric as a chart or table, use visualize by itself; add aggregate_corpus only when a separate narrative synthesis is also requested. " +
@@ -3519,7 +3511,7 @@ async function aggregateCorpusResult(
       },
       {
         role: "user",
-        content: [`Request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, `Eligible papers: ${context.papers.length}`, ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
+        content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
       },
     ], 0.15, input.model, "CHAT_CORPUS_REDUCE", { maxTokens: 3_000 });
     const answer = completion?.content?.trim();
@@ -3534,6 +3526,7 @@ async function aggregateCorpusResult(
         evidenceNeeds: execution.evidenceNeeds,
         scopeMode: "exhaustive",
         model: input.model,
+        formatConstraint: formatConstraintInstruction(input.prompt),
       });
       // The auditor may approve, approve with gaps, or judge the synthesis
       // ungrounded. Only the first two are safe to present without a warning.
