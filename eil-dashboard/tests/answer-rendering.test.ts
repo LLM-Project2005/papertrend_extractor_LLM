@@ -14,6 +14,7 @@ import {
   unsupportedMarkdown,
 } from "../src/lib/answer-rendering";
 import { formatPaperReferencesForReaders } from "../src/lib/repository-chat";
+import { formatConstraintInstruction } from "../src/lib/answer-readability";
 
 /** The chat page is two files since the answer renderer was extracted. */
 function client(): string {
@@ -501,4 +502,58 @@ test("a line that legitimately starts with a full stop is left alone", () => {
 test("a genuine paragraph break is not collapsed", () => {
   const answer = ["First paragraph.", "", "Second paragraph."].join("\n");
   assert.equal(formatPaperReferencesForReaders(answer, []), answer);
+});
+
+/* --------------------------------------------- a shape the reader asked for */
+
+test("a named shape becomes its own instruction, not a clause among eleven", () => {
+  // ANSWER_FORMAT_RULES already said an explicit request outranks the house
+  // style, and the model still returned seven paragraphs to "summarise this
+  // whole repository in one paragraph". A constraint the reader stated is not
+  // a style preference to be balanced against the others.
+  const one = formatConstraintInstruction("Summarise this whole repository in one paragraph.");
+  assert.ok(one);
+  assert.match(one!, /ONE paragraph/);
+  assert.match(one!, /no headings/);
+});
+
+test("each shape a reader can ask for is recognised", () => {
+  const cases: Array<[string, RegExp]> = [
+    ["Give me this in 100 words.", /100 words/],
+    ["Answer in under 50 words please.", /50 words/],
+    ["Summarise in 3 bullets.", /3 bullet/],
+    ["Show the years as a table.", /table/i],
+    ["List them as a bulleted list.", /list/i],
+    ["Answer in one sentence.", /ONE sentence/],
+  ];
+  for (const [prompt, expected] of cases) {
+    const instruction = formatConstraintInstruction(prompt);
+    assert.ok(instruction, `no constraint found in: ${prompt}`);
+    assert.match(instruction!, expected);
+  }
+});
+
+test("a question naming no shape gets no instruction", () => {
+  // An invented constraint would be worse than a missed one.
+  for (const prompt of [
+    "What are the main research topics across these papers?",
+    "How many papers are in this repository?",
+    "Compare the methodologies used across these papers.",
+  ]) {
+    assert.equal(formatConstraintInstruction(prompt), null, `false constraint on: ${prompt}`);
+  }
+});
+
+test("the word limit is read back, not hardcoded", () => {
+  assert.match(formatConstraintInstruction("in 250 words") ?? "", /250 words/);
+  assert.match(formatConstraintInstruction("in 40 words") ?? "", /40 words/);
+});
+
+test("both synthesis prompts receive the constraint", () => {
+  const server = readFileSync(
+    new URL("../src/lib/repository-chat.ts", import.meta.url),
+    "utf8"
+  );
+  const uses = server.match(/formatConstraintInstruction\(input\.prompt\)/g) ?? [];
+  assert.ok(uses.length >= 2, `only ${uses.length} synthesis prompt(s) carry the constraint`);
 });
