@@ -901,7 +901,9 @@ function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null
     | null;
   const hasCoverage =
     coverage && typeof coverage.eligiblePapers === "number" && coverage.eligiblePapers > 0;
-  if (!hasCoverage && limitations.length === 0) return null;
+  const diagnostics = metadata.repositoryDiagnostics as { cached?: unknown } | null;
+  const cached = diagnostics?.cached === true;
+  if (!hasCoverage && limitations.length === 0 && !cached) return null;
 
   return (
     <div className="max-w-[720px] space-y-1 border-l-2 border-slate-200 pl-3 text-xs leading-5 text-slate-600 dark:border-[#242424] dark:text-[#8e8e8e]">
@@ -915,6 +917,12 @@ function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null
       {limitations.map((limitation, index) => (
         <p key={`limitation-${index}`}>{limitation}</p>
       ))}
+      {cached ? (
+        <p>
+          Answered from an earlier identical question in this repository. Ask
+          again after adding or re-analysing a paper to get a fresh answer.
+        </p>
+      ) : null}
     </div>
   );
 }

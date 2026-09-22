@@ -5,6 +5,14 @@ export interface AiTokenUsageTotals {
   completionTokens: number;
   totalTokens: number;
   calls: number;
+  /**
+   * Per model, so a total can be turned into money.
+   *
+   * A token count is not a cost: the same 20,000 tokens is a fraction of a cent
+   * on the fast model and several cents on the reader-facing one, and this
+   * pipeline uses both in the same answer.
+   */
+  byModel: Array<{ model: string; promptTokens: number; completionTokens: number }>;
 }
 
 const usageStore = new AsyncLocalStorage<AiTokenUsageTotals>();
@@ -14,7 +22,7 @@ function finiteTokenCount(value: unknown): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
 }
 
-export function recordAiTokenUsage(usage: unknown): void {
+export function recordAiTokenUsage(usage: unknown, model?: string): void {
   const totals = usageStore.getStore();
   if (!totals || !usage || typeof usage !== "object") return;
   const value = usage as Record<string, unknown>;
@@ -25,6 +33,15 @@ export function recordAiTokenUsage(usage: unknown): void {
   totals.completionTokens += completionTokens;
   totals.totalTokens += reportedTotal || promptTokens + completionTokens;
   totals.calls += 1;
+
+  const name = model?.trim() || "unknown";
+  const row = totals.byModel.find((entry) => entry.model === name);
+  if (row) {
+    row.promptTokens += promptTokens;
+    row.completionTokens += completionTokens;
+  } else {
+    totals.byModel.push({ model: name, promptTokens, completionTokens });
+  }
 }
 
 export function withAiTokenUsageTracking<T>(
@@ -35,6 +52,7 @@ export function withAiTokenUsageTracking<T>(
     completionTokens: 0,
     totalTokens: 0,
     calls: 0,
+    byModel: [],
   };
   return usageStore.run(totals, () => callback(totals));
 }

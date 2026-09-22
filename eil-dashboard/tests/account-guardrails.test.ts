@@ -64,7 +64,10 @@ test("chat uses account token accounting and the approved model pair", () => {
   assert.match(route, /openai\/gpt-5\.6-luna-20260709/);
   assert.match(route, /google\/gemini-3\.7-flash/);
   assert.match(route, /withAiTokenUsageTracking/);
-  assert.match(openai, /recordAiTokenUsage\(payload\.usage\)/);
+  // The model is passed too, so a token count can become a cost: the same
+  // tokens are a fraction of a cent on the fast model and several cents on
+  // the reader-facing one.
+  assert.match(openai, /recordAiTokenUsage\(payload\.usage, String\(requestBody\.model\)\)/);
   assert.match(guards, /AI usage events|metadata->>'metric'='tokens'|metric: "tokens"/);
 });
 
@@ -86,13 +89,19 @@ test("trusted account roles bypass application quotas without disabling metering
 
 test("token accounting aggregates every model call in one request context", async () => {
   await withAiTokenUsageTracking(async (usage) => {
-    recordAiTokenUsage({ prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 });
-    recordAiTokenUsage({ input_tokens: 50, output_tokens: 20 });
+    recordAiTokenUsage({ prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 }, "model-a");
+    recordAiTokenUsage({ input_tokens: 50, output_tokens: 20 }, "model-b");
     assert.deepEqual(usage, {
       promptTokens: 170,
       completionTokens: 50,
       totalTokens: 220,
       calls: 2,
+      // Kept per model as well as in total, because a cost cannot be derived
+      // from a total that mixes a cheap model with an expensive one.
+      byModel: [
+        { model: "model-a", promptTokens: 120, completionTokens: 30 },
+        { model: "model-b", promptTokens: 50, completionTokens: 20 },
+      ],
     });
   });
 });

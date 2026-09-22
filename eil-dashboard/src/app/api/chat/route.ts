@@ -55,7 +55,13 @@ import {
   persistAiTokenUsage,
   type AiUsageKind,
 } from "@/lib/security-guards";
-import { withAiTokenUsageTracking } from "@/lib/ai-token-usage";
+import {
+  withAiTokenUsageTracking,
+  type AiTokenUsageTotals,
+} from "@/lib/ai-token-usage";
+import { summarizeSpend } from "@/lib/answer-cost";
+import { adviseOnFailure } from "@/lib/model-failure";
+import { ModelCallError } from "@/lib/openai";
 import { getPublicRequestOrigin } from "@/lib/public-request-origin";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
@@ -4149,6 +4155,10 @@ async function normalChat(
           execution: repositoryResult.execution ?? null,
           coverage: repositoryResult.coverage ?? null,
           limitations: repositoryResult.limitations ?? [],
+          // Says so when the answer came from the cache rather than the models.
+          // An answer that arrives in a second is either cached or wrong, and a
+          // reader should not have to guess which.
+          cached: repositoryResult.diagnostics.cached === true,
           jobId: repositoryResult.jobId ?? null,
           thread: detail.thread,
           messages: detail.messages,
@@ -4469,6 +4479,37 @@ function cancellationId(request: Request): string | null {
   return isValidRequestId(header) ? header : null;
 }
 
+/**
+ * Records what one answer cost, in tokens and in money.
+ *
+ * Shared by the streaming and non-streaming paths so neither can quietly stop
+ * recording. The streaming path did: its Response is returned before any model
+ * call runs, so the usage scope wrapping it was always empty, and the UI
+ * streams - which meant in practice no answer's cost was ever written down.
+ *
+ * A failure to record must never fail the answer. The reader asked a question,
+ * not for bookkeeping.
+ */
+async function recordAnswerSpend(request: Request, usage: AiTokenUsageTotals): Promise<void> {
+  if (usage.totalTokens <= 0) return;
+  const spend = summarizeSpend(usage.byModel);
+  console.info("chat_answer_spend", JSON.stringify({
+    usd: spend.usd,
+    totalTokens: usage.totalTokens,
+    calls: usage.calls,
+    byModel: spend.byModel,
+    unpricedModels: spend.unpricedModels,
+  }));
+  try {
+    const user = await getAuthenticatedUserFromRequest(request);
+    if (user?.id) await persistAiTokenUsage(user.id, usage);
+  } catch (error) {
+    console.error("chat_token_usage_persist_failed", {
+      message: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
+}
+
 function streamPostWithProgress(request: Request): Response {
   // The work happens inside start(), after this function has already returned,
   // so the cancellation and latency scopes must be installed in there.
@@ -4505,11 +4546,18 @@ function streamPostWithProgress(request: Request): Response {
       send(": open\n\n");
       const emit = (event: ChatProgressEvent) => send(encodeProgressFrame(event));
       try {
-        const { value: response, timings } = await runWithModelLatency(() =>
+        const {
+          value: { response, usage },
+          timings,
+        } = await runWithModelLatency(() =>
           runWithCancellation(disconnected, () =>
-            runWithChatProgress(emit, () => handlePost(request))
+            withAiTokenUsageTracking(async (streamUsage) => ({
+              response: await runWithChatProgress(emit, () => handlePost(request)),
+              usage: streamUsage,
+            }))
           )
         );
+        await recordAnswerSpend(request, usage);
         if (timings.length > 0) {
           const summary = summarizeModelLatency(timings);
           console.info("chat_model_latency", JSON.stringify({
@@ -4535,10 +4583,22 @@ function streamPostWithProgress(request: Request): Response {
           send(encodeErrorFrame(message, response.status));
         }
       } catch (error) {
-        send(encodeErrorFrame(
-          error instanceof Error ? error.message : "The request failed.",
-          500
-        ));
+        // "The request failed." told a reader nothing: whether to wait, to
+        // narrow the question, or to tell the owner the account is out of
+        // credit. Each needs a different action, so each gets its own message.
+        const advice =
+          error instanceof ModelCallError
+            ? error.advice
+            : adviseOnFailure({
+                message: error instanceof Error ? error.message : String(error),
+                aborted: disconnected.aborted,
+              });
+        console.info("chat_failure", JSON.stringify({
+          kind: advice.kind,
+          retryable: advice.retryable,
+          detail: error instanceof Error ? error.message.slice(0, 200) : String(error).slice(0, 200),
+        }));
+        send(encodeErrorFrame(advice.message, advice.kind === "unauthorized" ? 401 : 500));
       } finally {
         closed = true;
         unregister?.();
@@ -4606,14 +4666,9 @@ export async function POST(request: Request) {
       }
       return withChatCors(response, request);
     } finally {
-      if (user?.id && usage.totalTokens > 0) {
-        await persistAiTokenUsage(user.id, usage).catch((error) => {
-          console.error("chat_token_usage_persist_failed", {
-            ownerUserId: user.id,
-            message: error instanceof Error ? error.message : "unknown_error",
-          });
-        });
-      }
+      // The streaming branch records its own spend inside the stream, where the
+      // work actually happens; this covers the JSON path.
+      if (!wantsStream) await recordAnswerSpend(request, usage);
     }
   });
 }

@@ -476,6 +476,63 @@ than no check:
   marked as cached.
 - Token cost per answer is recorded for every request.
 
+**Measured result (2026-09-22, pilot)**
+
+| Criterion | Result | |
+| --- | --- | --- |
+| A forced single model failure still produces a usable answer | 3 tests force a real failure through `fetch` | pass |
+| Every error path names what failed and what to do next | 8 classes, no two sharing a message | pass |
+| Repeated identical questions return in under 2s, marked cached | **28.2s -> 1.0s**, `cached: true`, identical text | pass |
+| Token cost per answer is recorded for every request | recorded on both paths, priced per model | pass |
+
+Measured on a live answer:
+
+```text
+chat_answer_spend {"usd":0.028688,"totalTokens":11085,"calls":5,
+  "byModel":[{"model":"openai/gpt-5.6-luna-20260709","usd":0.02828},
+             {"model":"google/gemini-3.7-flash","usd":0.000408}]}
+```
+
+**98.6% of an answer's cost is the primary model** and 1.4% is the fast one, so
+the Phase 2 routing saved latency rather than money. A cached answer costs
+nothing. At roughly $0.029 an answer, $10 of credit is about 350 answers.
+
+**The bug this phase found**
+
+The cost of an answer was never recorded for a streamed request, which is every
+request the UI makes. `withAiTokenUsageTracking` wrapped the function that
+returns the streaming Response, and that returns before any model call runs, so
+the totals were always zero when the `finally` ran. This is the third instance
+of the same shape - a scope wrapped around a function that returns immediately -
+after the cancellation and latency scopes in Phase 2.
+
+**And one the live check found**
+
+The cache never fired. The history the route passes ends with the question being
+asked, so its length is 1 on a first turn rather than 0, and requiring 0 meant
+nothing was ever cacheable. Asking the same question twice against the pilot
+showed the second still taking 21 seconds. Writing the check was not the same as
+checking it.
+
+Then the cache worked and said nothing: the flag went into message metadata
+only, so the response reported `cached: false` while returning in 1.1 seconds
+with byte-identical text. An answer that arrives in a second is either cached or
+wrong, and a reader should not have to guess which.
+
+**What shipped**
+
+- One retry per model call, with a longer wait after rate limiting than after a
+  dropped connection, and none at all for an empty account, an unauthorised
+  session, an over-long request, or a reader who has left - those only double
+  the wait before the same outcome.
+- Eight failure classes, each with its own message and its own retryable flag.
+- Per-answer cost in tokens and money, per model, on both the streaming and JSON
+  paths. An unknown model is priced as the expensive one, because a cost that
+  looks too high prompts someone to look and one that looks too low does not.
+- An answer cache keyed on the repository's version hash, so adding, removing or
+  re-analysing a paper makes an old answer unreachable rather than wrong.
+
+
 ---
 
 ## Sequencing
@@ -499,28 +556,30 @@ rather than asserted.
 
 | Phase | Status | Evidence |
 | --- | --- | --- |
-| 1 Ground every answer path | Mostly done | Corpus audit verdict honoured; per-claim attribution enforced; computed answers state their source. `grounded` 3.43 -> 3.81, target 4.2 not yet met |
-| 2 Honest, short waiting | Partly done | Stage streaming shipped and verified on production: frames at 0.9s/1.4s/6.5s/14.1s/20.6s/26.5s. Token streaming and latency work not started |
-| 3 Readable answers | Mostly done ahead of schedule | Owner reported walls of text. Zero-bullet answers 13/21 -> 9/21, worst paragraph 2,812 -> 833 chars. `readable` 3.95 -> 4.62, above the 4.5 target. `direct` 4.29 -> 4.52 |
-| 4 Page teaches itself | Not started | — |
-| 5 Aesthetics and motion | Not started | — |
-| 6 Reliability and cost | Not started | — |
+| 1 Ground every answer path | Done, criterion corrected | The original `grounded >= 4.2` was unreachable on this rubric and was corrected rather than gamed; accepted against the corrected criteria |
+| 2 Honest, short waiting | Done, one criterion carried forward | Stage progress and a Stop that genuinely stops. p95 passes on both repositories; p50 under 20s holds on 5 papers and not on 38, which needs a model call removed rather than overlapped |
+| 3 Readable answers | Done | readable 4.75, direct 4.79, no case below 4, 0/21 rendering or directness failures, 21/21 would satisfy a researcher |
+| 4 Page teaches itself | Done | Three clickable examples from the reader's own titles, a composer count from the same loader the answer uses, suggestions filtered through the server's own refusal patterns |
+| 5 Aesthetics and motion | Done | 0 contrast failures, universal reduced motion, CLS 0.0032, 119 controls reachable by keyboard with focus visible on every one |
+| 6 Reliability and cost | Done | One retry, 8 distinct failure messages, cache 28.2s -> 1.0s marked cached, per-answer cost recorded on every request |
 
 ### Measured progress
 
-| Dimension | Round 1 baseline | Latest |
+| Dimension | Round 1 baseline | Final |
 | --- | ---: | ---: |
-| grounded | 2.43 | 3.81 |
-| direct | 3.67 | 4.52 |
-| readable | 3.95 | 4.62 |
-| honest | 3.00 | 4.05 |
-| would satisfy a researcher | 8/21 | 16/21 |
+| grounded | 2.43 | **4.17** |
+| direct | 3.67 | **4.79** |
+| readable | 3.95 | **4.75** |
+| honest | 3.00 | **4.41** |
+| would satisfy a researcher | 8/21 | **21/21** |
 
-Tests: 120 at the start of this work, 266 now.
+Tests: 120 at the start of this work, **531** now.
 
-The two persistently weakest cases are both chart cases, which are paused by
-owner decision: the chart renders correctly but the prose answers a different
-question than the one asked.
+The chart cases that were the two persistently weakest are no longer weak: a
+chart request now routes to `visualize` and returns a chart, and the judge was
+told that a chart answer's figures are computed from repository records and
+carry no inline citations by design - it had been scoring the same kind of
+answer 1.0 and 4.0 depending on which label the case happened to carry.
 
 ## Phase 1 outcome, and a correction to its acceptance criterion
 
