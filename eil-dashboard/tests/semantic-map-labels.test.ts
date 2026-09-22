@@ -93,6 +93,10 @@ test("the full title is never lost, only the label is shortened", () => {
 test("a neighborhood label is clamped rather than running down the panel", () => {
   const map = source("components/workspace/RepositorySemanticMap.tsx");
   assert.match(map, /line-clamp-2[^>]*title=\{cluster\.label\}/);
+  // `block` sets display and defeats line-clamp, which needs -webkit-box.
+  // With both present the label still ran to three lines on the live panel.
+  const labelTag = map.slice(map.indexOf("line-clamp-2") - 40, map.indexOf("line-clamp-2") + 20);
+  assert.equal(/block/.test(labelTag), false, "a display utility is overriding the clamp");
 });
 
 test("one neighborhood is explained rather than left looking broken", () => {
