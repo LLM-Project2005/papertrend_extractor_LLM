@@ -10,6 +10,7 @@ import {
   renderingIssues,
   rendersCleanly,
   unclosedCodeFence,
+  renderingInstruction,
   unsupportedMarkdown,
 } from "../src/lib/answer-rendering";
 
@@ -145,6 +146,35 @@ test("a heading with content under it passes", () => {
   );
 });
 
+test("a parent heading followed by its first child is ordinary structure", () => {
+  // Found against live output: "## Findings" then "### 1. Method" was flagged
+  // as an empty section when it is how a structured answer is meant to read.
+  const answer = ["## Findings", "", "### 1. Method", "", "The study used a survey."].join("\n");
+  assert.deepEqual(emptySections(answer), []);
+});
+
+test("a section whose whole body is a code block is not empty", () => {
+  // Also found against live output: stripping the block, as the other checks
+  // do, made the chart section's heading look as though it sat on the next one.
+  const answer = [
+    "## Bar chart",
+    "",
+    "```chart",
+    '{"type":"bar"}',
+    "```",
+    "",
+    "## Topics",
+    "",
+    "Five papers.",
+  ].join("\n");
+  assert.deepEqual(emptySections(answer), []);
+});
+
+test("a heading followed by a shallower heading is still empty", () => {
+  const answer = ["### Detail", "", "## Next", "", "Text."].join("\n");
+  assert.equal(emptySections(answer).length, 1);
+});
+
 test("a heading in a code block is not read as a heading", () => {
   assert.deepEqual(emptySections("```md\n## One\n## Two\n```"), []);
 });
@@ -260,4 +290,76 @@ test("an answer with several faults reports each of them", () => {
   assert.ok(kinds.has("empty-section"));
   assert.ok(kinds.has("unsupported-markdown"));
   assert.ok(kinds.has("broken-table"));
+});
+
+/* ------------------------------------------------ the checks sit in the pipeline */
+
+test("a draft's own Paper markers are not treated as a defect mid-pipeline", () => {
+  // Every draft carries these by design until citations are formatted, so
+  // checking for them without the option would flag every answer ever written.
+  const draft = "The study reported gains [Paper 12].";
+  assert.equal(renderingIssues(draft, { beforeCitationFormatting: true }).length, 0);
+  assert.equal(renderingIssues(draft).length, 1);
+});
+
+test("a finished answer still must not carry a Paper marker", () => {
+  const finished = "The study reported gains [Paper 12].";
+  assert.ok(
+    renderingIssues(finished).some((issue) => issue.detail === "unreplaced-paper-marker")
+  );
+});
+
+test("the option narrows only that one rule", () => {
+  // A real defect must still be caught while the draft is being built.
+  const draft = "## One\n## Two\n\n<b>x</b> [Paper 3]";
+  const kinds = renderingIssues(draft, { beforeCitationFormatting: true }).map((i) => i.detail);
+  assert.ok(kinds.includes("html-tag"));
+  assert.ok(kinds.includes("a heading is followed immediately by another heading"));
+  assert.equal(kinds.includes("unreplaced-paper-marker"), false);
+});
+
+test("the rewrite is told what to repair in the words of the defect", () => {
+  const instruction = renderingInstruction(unsupportedMarkdown("<b>bold</b>\n\n- top\n    - nested"));
+  assert.match(instruction, /remove the HTML/);
+  assert.match(instruction, /flatten the nested list/);
+  // A rewrite that changed a number while fixing markup would be worse than
+  // the markup, so the instruction says so.
+  assert.match(instruction, /without changing any claim, citation or number/);
+});
+
+test("a clean answer produces no rewrite instruction", () => {
+  assert.equal(renderingInstruction([]), "");
+});
+
+test("markup the reader cannot see blocks the audit skip", () => {
+  // The audit is the only step that can repair it, so an answer carrying it
+  // must never take the fast path.
+  const chat = readFileSync(
+    new URL("../src/lib/repository-chat.ts", import.meta.url),
+    "utf8"
+  );
+  const blocker = chat.slice(chat.indexOf("function auditSkipBlocker"));
+  assert.match(blocker.slice(0, 1400), /renderingIssues\(input\.answer, \{ beforeCitationFormatting: true \}\)/);
+});
+
+test("the house style names the subset that renders", () => {
+  const rules = readFileSync(
+    new URL("../src/lib/answer-readability.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(rules, /Images, horizontal rules, indented sub-bullets, checkboxes and HTML are not displayed/);
+  assert.match(rules, /Never put a heading directly under another heading/);
+});
+
+test("the section assembly does not stack a heading on a heading", () => {
+  const chat = readFileSync(
+    new URL("../src/lib/repository-chat.ts", import.meta.url),
+    "utf8"
+  );
+  assert.match(chat, /export function composeAnswerSection/);
+  assert.equal(
+    /sections\.push\(`## \$\{OPERATION_LABELS/.test(chat),
+    false,
+    "the unconditional heading must be gone"
+  );
 });
