@@ -155,4 +155,6 @@ export const ANSWER_FORMAT_RULES = [
   `Stay under ${MAX_ANSWER_CHARS} characters; depth means specifics, not length.`,
   "Attribute every substantive claim to the paper it came from.",
   "Cite a paper by its title exactly as stored, even when answering in another language; a translated title cannot be matched against the repository or checked by the reader.",
+  "Use only headings, bullets, numbered lists, tables, bold, italic, inline code and full https links. Images, horizontal rules, indented sub-bullets, checkboxes and HTML are not displayed and reach the reader as raw punctuation.",
+  "Never put a heading directly under another heading; every heading needs content beneath it.",
 ].join(" ");

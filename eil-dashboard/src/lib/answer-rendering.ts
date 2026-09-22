@@ -80,10 +80,26 @@ const UNSUPPORTED_PATTERNS: Array<{ kind: string; pattern: RegExp }> = [
   { kind: "unreplaced-paper-marker", pattern: /\[Paper\s+[^\]]{1,40}\]/gi },
 ];
 
-export function unsupportedMarkdown(answer: string): RenderingIssue[] {
+export interface RenderingScanOptions {
+  /**
+   * True while the answer is still being built, before `[Paper 12]` markers
+   * have been turned into readable citations.
+   *
+   * Every draft carries those markers by design, so checking for them mid
+   * pipeline would flag every answer ever written. They are only a defect once
+   * the answer is finished and about to be shown.
+   */
+  beforeCitationFormatting?: boolean;
+}
+
+export function unsupportedMarkdown(
+  answer: string,
+  options: RenderingScanOptions = {}
+): RenderingIssue[] {
   const scannable = withoutCodeBlocks(answer);
   const issues: RenderingIssue[] = [];
   for (const { kind, pattern } of UNSUPPORTED_PATTERNS) {
+    if (options.beforeCitationFormatting && kind === "unreplaced-paper-marker") continue;
     const matches = scannable.match(new RegExp(pattern.source, pattern.flags));
     if (matches && matches.length > 0) {
       issues.push({
@@ -202,19 +218,44 @@ export function unclosedCodeFence(answer: string): RenderingIssue[] {
 }
 
 /** Everything about an answer that would render wrongly for a reader. */
-export function renderingIssues(answer: string): RenderingIssue[] {
+export function renderingIssues(
+  answer: string,
+  options: RenderingScanOptions = {}
+): RenderingIssue[] {
   return [
     ...leakedJson(answer),
     ...unclosedCodeFence(answer),
-    ...unsupportedMarkdown(answer),
+    ...unsupportedMarkdown(answer, options),
     ...brokenTables(answer),
     ...emptySections(answer),
   ];
 }
 
 /** True when nothing in the answer would reach the reader as raw markup. */
-export function rendersCleanly(answer: string): boolean {
-  return renderingIssues(answer).length === 0;
+export function rendersCleanly(answer: string, options: RenderingScanOptions = {}): boolean {
+  return renderingIssues(answer, options).length === 0;
+}
+
+const NEWLINE = String.fromCharCode(10);
+
+/** Tells a rewrite what to repair, in the words of the defect it made. */
+export function renderingInstruction(issues: RenderingIssue[]): string {
+  if (issues.length === 0) return "";
+  const described: Record<string, string> = {
+    image: "remove the image; an answer cannot show a figure",
+    "horizontal-rule": "remove the horizontal rule; use a heading to separate parts",
+    "nested-list": "flatten the nested list; sub-items are not displayed",
+    "task-list": "use plain bullets rather than checkboxes",
+    "footnote-definition": "cite inline rather than with footnote definitions",
+    "html-tag": "remove the HTML; write Markdown only",
+    "non-http-link": "remove the link; only full https links are shown",
+    "heading-without-space": "put a space after the # of each heading",
+    "unreplaced-paper-marker": "leave the [Paper N] markers exactly as they are",
+  };
+  return [
+    "The draft contains markup the reader's view cannot display. Fix these without changing any claim, citation or number:",
+    ...issues.map((issue) => `- ${described[issue.detail] ?? `${issue.kind}: ${issue.detail}`}`),
+  ].join(NEWLINE);
 }
 
 /** How much of the opening a reader should not have to get past. */
