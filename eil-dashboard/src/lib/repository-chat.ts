@@ -304,6 +304,15 @@ export function formatPaperReferencesForReaders(
     // "reported gains ." Tidy the seam rather than leaving the reader to notice
     // it: a stray space before punctuation is exactly the kind of small wrong
     // thing that makes a generated answer look generated.
+    //
+    // The line break matters as much as the space. A model often puts the
+    // citation marker on its own line, so removing it leaves a line beginning
+    // ", and the newest is ...". The renderer joins the lines of a paragraph
+    // with a space, and the reader gets "(2016) , and" - which is how this was
+    // found, in a live production answer rather than in any test. Punctuation
+    // is only pulled back when a space follows it, so a code line starting
+    // ".class" is left alone.
+    .replace(/[ \t]*\r?\n[ \t]*([.,;:!?](?:\s|$))/g, "$1")
     .replace(/[ \t]+([.,;:!?])/g, "$1")
     .replace(/[ \t]{2,}/g, " ")
     .replace(/[ \t]+$/gm, "");
