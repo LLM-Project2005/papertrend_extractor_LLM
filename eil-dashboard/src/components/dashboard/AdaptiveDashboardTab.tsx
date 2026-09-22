@@ -108,6 +108,15 @@ export default function AdaptiveDashboardTab({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {analytics.overview.papers_without_year > 0 ? (
+            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#999]">
+              {analytics.overview.papers_without_year} paper
+              {analytics.overview.papers_without_year === 1 ? " is" : "s are"} not shown here because
+              no publication year could be read from{" "}
+              {analytics.overview.papers_without_year === 1 ? "it" : "them"}. A missing year is not a
+              period, so counting it would distort the trend.
+            </p>
+          ) : null}
         </ChartShell>
       );
     }

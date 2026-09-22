@@ -99,6 +99,13 @@ export interface NormalizedAnalyticsPayload {
     keyword_count: number;
     year_range: string;
     available_years: string[];
+    /**
+     * Papers whose publication year could not be read.
+     *
+     * Reported rather than plotted. "Unknown" is not a point in time, and
+     * placing it on a temporal axis makes it look like the most recent period.
+     */
+    papers_without_year: number;
     folder_count: number;
   };
   canonical_topic_families: Array<{
