@@ -200,6 +200,27 @@ async function main() {
   const satisfied = rows.filter((row) => row.verdict.wouldSatisfyResearcher).length;
   console.log(`would satisfy a researcher: ${satisfied}/${rows.length}`);
 
+  // The Phase 3 gate, reported rather than eyeballed from the rows. The
+  // "no case below 4" clause is the one that is easy to miss by scanning: an
+  // average of 4.78 can still hide a single answer at 3.0.
+  const minReadable = Math.min(...rows.map((row) => row.verdict.readable));
+  const worstReadable = rows.find((row) => row.verdict.readable === minReadable);
+  const readableAverage = average((v) => v.readable);
+  const directAverage = average((v) => v.direct);
+  const checks: Array<[string, boolean, string]> = [
+    ["readable average >= 4.5", readableAverage >= 4.5, readableAverage.toFixed(2)],
+    ["direct average >= 4.5", directAverage >= 4.5, directAverage.toFixed(2)],
+    [
+      "no readable case below 4",
+      minReadable >= 4,
+      `lowest ${minReadable.toFixed(1)} (${worstReadable?.record.id ?? "n/a"})`,
+    ],
+  ];
+  console.log("\n--- phase 3 criteria ---");
+  for (const [label, ok, detail] of checks) {
+    console.log(`${ok ? "PASS" : "FAIL"}  ${label.padEnd(26)} ${detail}`);
+  }
+
   const weakest = [...rows]
     .sort(
       (a, b) =>

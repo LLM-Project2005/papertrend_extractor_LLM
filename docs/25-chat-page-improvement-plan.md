@@ -219,6 +219,87 @@ seconds, and no streamed text ever replaced - therefore do not apply.
 - No answer renders raw JSON, unrendered Markdown or a broken table.
 - Thai and English answers both pass a line-height and wrapping check.
 
+**Measured result (2026-09-22, pilot, 21-case live suite, three judge passes)**
+
+| Criterion | Result | |
+| --- | --- | --- |
+| Judge `readable` average >= 4.5 | **4.87** | pass |
+| Judge `direct` average >= 4.5 | **4.90** | pass |
+| No `readable` case below 4 | lowest **4.0** (summarize-corpus) | pass |
+| First 200 characters carry the answer, checked over live output | **0** failures of 21 | pass |
+| No raw JSON, unrendered Markdown or broken table | **0** failures of 21 | pass |
+| Thai and English pass a line-height and wrapping check | ratio **2.13**, `break-words` everywhere | pass |
+
+Movement across the phase: grounded 3.87 -> 4.24, direct 4.71 -> 4.90, readable
+4.56 -> 4.87, honest 4.19 -> 4.56, and "would satisfy a researcher" **18/21 ->
+21/21**.
+
+What shipped:
+
+- **Citations became footnotes.** A sentence making three claims carried three
+  60-character parentheticals. They are now numbered markers with the source on
+  hover or keyboard focus. The swap happens in the renderer, so the text stored
+  in the thread, exported, or scored by the judge stays readable as plain prose.
+- **Long answers fold.** Live answers run from 400 to 15,300 characters. The
+  opening stays visible and the fold never cuts inside the first 200
+  characters, so the direct answer is never hidden behind it.
+- **Thai-safe type.** Thai stacks vowels and tone marks above and below the base
+  character, and writes without spaces between words. Everything that can carry
+  Thai now clears a line-height ratio of 2.0 and wraps rather than widening its
+  column. Fixed English chrome is exempt.
+- **Italic and strikethrough are drawn.** They were unimplemented, so `*word*`
+  reached the reader as asterisks.
+- **A readable failure message.** When synthesis fails the fallback pasted 260
+  characters of each paper's raw extracted abstract. A judge scored one such
+  reply 3.0 readable and 2.0 direct, the worst of the suite. It now says what
+  went wrong, what to do, and which papers were found.
+
+**What the checks caught, in both directions**
+
+A shared module declares what the renderer supports, and both the renderer and
+the checks read it. Run against live answers rather than invented cases, it
+found real defects and false alarms in equal measure:
+
+- Real: a step heading was prepended unconditionally, so a step whose answer
+  already opened with a heading produced "## Document analysis" followed
+  immediately by "## Direct answer".
+- Real: the model itself sometimes writes a heading directly under another
+  heading, which no fix to the assembly can prevent. The checks now sit in the
+  pipeline, so such an answer cannot skip the audit that repairs it.
+- False: a parent heading followed by its first child - "## Findings" then
+  "### 1. Method" - is ordinary structure, not an empty section.
+- False: a section whose whole body is a chart block looked empty because the
+  check removed fenced blocks the way the markup checks do.
+
+The directness check first counted words by splitting on whitespace, which
+counts a whole Thai sentence as four words - the same Latin-centric assumption
+that broke the tokenizer in earlier work. It uses the script-aware tokenizer
+now, so both languages are measured the same way.
+
+**A measurement fixed rather than a score chased**
+
+The judge scored an accurate, well-formed topic breakdown 1.0 for groundedness
+because it carried no inline citations. Its figures come from the same
+repository records the deterministic answers are computed from, and the judge is
+told that for those and scores them 4.0. The same kind of answer was being judged
+by two standards depending on which label the case carried. The chart category
+now carries the same guidance. The measurement changed; the answer did not.
+
+The judge also reports the criteria itself now. An average of 4.87 can hide a
+single answer at 3.0, and that clause is the one easiest to miss by scanning
+rows.
+
+**Testing**
+
+TypeScript 301 -> 434 passing. The answer renderer moved out of a 4,500-line
+component into its own module so the tests can render it: 18 of them assert what
+React actually produces - that a citation becomes a numbered button carrying its
+paper, that the internal marker never appears as text, that asterisks become
+emphasis elements and do not survive, that the fold appears only when something
+is folded. Matching patterns in source proves the code was written, not that a
+reader sees anything.
+
+
 ## Phase 4 — Make the page teach itself
 
 **Work**
