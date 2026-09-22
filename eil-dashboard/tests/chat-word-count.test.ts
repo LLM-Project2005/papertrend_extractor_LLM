@@ -398,11 +398,26 @@ test("a repeated citation is not listed twice", () => {
   assert.equal(answer, "Both say so. (Alpha Study, 2016)");
 });
 
-test("unknown paper markers are left untouched", () => {
+test("an unknown paper marker is removed rather than shown to the reader", () => {
+  // This test previously asserted the opposite, on the reasoning that leaving
+  // the marker was safer than silently dropping a citation. Live answers on the
+  // 38-paper repository settled it: the reader was shown
+  // "[Paper 1142409511210558589]" - an id the model invented - because the
+  // formatter left any run it could not fully resolve exactly as written.
+  //
+  // Nothing is lost silently. The answer audit records that a citation was
+  // removed, and an id with no paper behind it was never evidence of anything.
   const answer = formatPaperReferencesForReaders("See [Paper 99].", [
     { paperId: "1", title: "Alpha Study", year: "2016" },
   ]);
-  assert.equal(answer, "See [Paper 99].");
+  assert.equal(answer, "See.");
+});
+
+test("a real marker beside an unknown one survives", () => {
+  const answer = formatPaperReferencesForReaders("Both say so [Paper 1] [Paper 99].", [
+    { paperId: "1", title: "Alpha Study", year: "2016" },
+  ]);
+  assert.equal(answer, "Both say so (Alpha Study, 2016).");
 });
 
 test("an unknown year is omitted rather than printed as Unknown", () => {
