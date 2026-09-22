@@ -60,13 +60,33 @@ export function countBold(answer: string): number {
   return (answer.match(/\*\*[^*\n]+\*\*/g) ?? []).length;
 }
 
+export interface ReadabilityOptions {
+  /**
+   * True when the reader named the shape of the answer themselves.
+   *
+   * These rules and an explicit request can contradict each other directly:
+   * asked for one paragraph, an answer is one long paragraph with no headings,
+   * which is exactly what the paragraph-length and structure rules exist to
+   * prevent. Left unresolved the audit rewrote the answer back into sections
+   * and the reader did not get what they asked for. The shape rules yield; the
+   * rules about substance - length overall, and claims without attribution -
+   * still apply, because those are not matters of taste.
+   */
+  formatConstrained?: boolean;
+}
+
 /** Lists everything about an answer's shape that would make it hard to read. */
-export function readabilityIssues(answer: string): ReadabilityIssue[] {
+export function readabilityIssues(
+  answer: string,
+  options: ReadabilityOptions = {}
+): ReadabilityIssue[] {
   const text = (answer ?? "").trim();
   if (!text) return [];
   const issues: ReadabilityIssue[] = [];
 
-  const overlong = paragraphsOf(text)
+  const overlong = options.formatConstrained
+    ? []
+    : paragraphsOf(text)
     .filter((paragraph) => !isStructural(paragraph) && paragraph.length > MAX_PARAGRAPH_CHARS)
     .sort((left, right) => right.length - left.length);
   if (overlong.length > 0) {
@@ -79,7 +99,7 @@ export function readabilityIssues(answer: string): ReadabilityIssue[] {
   }
 
   const structural = countHeadings(text) + countBullets(text) + countTableRows(text);
-  if (text.length > STRUCTURE_REQUIRED_CHARS && structural === 0) {
+  if (!options.formatConstrained && text.length > STRUCTURE_REQUIRED_CHARS && structural === 0) {
     issues.push({
       kind: "no_structure",
       detail:
@@ -125,8 +145,8 @@ export function readabilityIssues(answer: string): ReadabilityIssue[] {
 }
 
 /** True when the answer is shaped well enough to read without reformatting. */
-export function isReadable(answer: string): boolean {
-  return readabilityIssues(answer).length === 0;
+export function isReadable(answer: string, options: ReadabilityOptions = {}): boolean {
+  return readabilityIssues(answer, options).length === 0;
 }
 
 /** Instruction appended to a rewrite request when an answer reads poorly. */

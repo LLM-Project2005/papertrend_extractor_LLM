@@ -2407,6 +2407,8 @@ async function checkFaithfulness(input: {
   evidenceNeeds: string[];
   scopeMode: "focused" | "comparative" | "exhaustive";
   model?: string;
+  /** The shape the reader named, if they named one. */
+  formatConstraint?: string | null;
 }): Promise<{
   answer: string;
   confidence: number;
@@ -2441,7 +2443,10 @@ async function checkFaithfulness(input: {
             `Required scope mode: ${input.scopeMode}`,
             `Evidence needs: ${input.evidenceNeeds.join("; ") || "Answer the request directly"}`,
             `Allowed paper IDs: ${input.allowedPaperIds.join(", ")}`,
-            readabilityInstruction(readabilityIssues(input.answer)),
+            input.formatConstraint ?? "",
+            readabilityInstruction(
+              readabilityIssues(input.answer, { formatConstrained: Boolean(input.formatConstraint) })
+            ),
             renderingInstruction(
               renderingIssues(input.answer, { beforeCitationFormatting: true })
             ),
@@ -2691,6 +2696,7 @@ async function repositoryQaResult(
     evidenceNeeds: plan.evidenceNeeds,
     scopeMode: plan.retrievalMode,
     model: input.model,
+    formatConstraint: formatConstraintInstruction(input.prompt),
   });
   const auditLimitations: string[] = [];
   if (checked.valid) {
@@ -3520,6 +3526,7 @@ async function aggregateCorpusResult(
         evidenceNeeds: execution.evidenceNeeds,
         scopeMode: "exhaustive",
         model: input.model,
+        formatConstraint: formatConstraintInstruction(input.prompt),
       });
       // The auditor may approve, approve with gaps, or judge the synthesis
       // ungrounded. Only the first two are safe to present without a warning.
