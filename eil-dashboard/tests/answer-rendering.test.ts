@@ -14,11 +14,12 @@ import {
   unsupportedMarkdown,
 } from "../src/lib/answer-rendering";
 
+/** The chat page is two files since the answer renderer was extracted. */
 function client(): string {
-  return readFileSync(
-    new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
-    "utf8"
-  );
+  return [
+    readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../src/components/chat/AnswerBody.tsx", import.meta.url), "utf8"),
+  ].join(String.fromCharCode(10));
 }
 
 /* ---------------------------------------------------------------- leaked JSON */

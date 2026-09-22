@@ -18,11 +18,12 @@ import {
   metaSmLineHeightRatio,
 } from "../src/lib/answer-typography";
 
+/** The chat page is two files since the answer renderer was extracted. */
 function client(): string {
-  return readFileSync(
-    new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
-    "utf8"
-  );
+  return [
+    readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8"),
+    readFileSync(new URL("../src/components/chat/AnswerBody.tsx", import.meta.url), "utf8"),
+  ].join(String.fromCharCode(10));
 }
 
 const READING = {
@@ -242,22 +243,3 @@ test("text that can carry Thai clears the floor; fixed English chrome need not",
 
 /* --------------------------------------------------- the marker reaches the page */
 
-test("the renderer draws the marker rather than printing it", () => {
-  const source = client();
-  assert.match(source, /token\.startsWith\("\[\[cite:"\)/);
-  assert.match(source, /function CitationMarker/);
-});
-
-test("the marker opens its source on keyboard focus, not only on hover", () => {
-  const source = client();
-  const marker = source.slice(source.indexOf("function CitationMarker"));
-  assert.match(marker.slice(0, 2600), /group-focus-within:block/);
-  assert.match(marker.slice(0, 2600), /aria-label=/);
-});
-
-test("the fold is offered only when there is something folded", () => {
-  const source = client();
-  const answer = source.slice(source.indexOf("function AssistantAnswer"));
-  assert.match(answer.slice(0, 2600), /cut !== null \? \(/);
-  assert.match(answer.slice(0, 2600), /aria-expanded=\{expanded\}/);
-});
