@@ -44,7 +44,7 @@ export default function LandingPage() {
               <MarketingCTA />
               <Link
                 href="/features/paper-analysis"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#2a2a2a] bg-[#050505] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:border-[#4d4d4d] hover:bg-[#0a0a0a]"
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-950 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]"
               >
                 Explore features
                 <ArrowRightIcon className="h-4 w-4" />
@@ -58,9 +58,19 @@ export default function LandingPage() {
 
       <section className="border-y border-[#1f1f1f] bg-[#030303]">
         <div className="mx-auto grid max-w-7xl gap-px bg-[#1f1f1f] sm:grid-cols-3">
+          {/* Display size is for quantities. "Async" set at 3xl reads as a
+              statistic the reader then cannot find. */}
           {proofMetrics.map((item) => (
             <div key={item.label} className="bg-[#030303] px-6 py-8 text-center">
-              <p className="text-3xl font-semibold text-white">{item.value}</p>
+              <p
+                className={
+                  /^[\d][\d.,]*\+?$/.test(item.value.trim())
+                    ? "text-3xl font-semibold text-white"
+                    : "text-lg font-semibold text-white"
+                }
+              >
+                {item.value}
+              </p>
               <p className="mt-2 text-sm text-[#8f8f8f]">{item.label}</p>
             </div>
           ))}
@@ -105,7 +115,7 @@ export default function LandingPage() {
                 const Icon = step.icon;
                 return (
                   <div key={step.title} className="bg-[#050505] p-6">
-                    <Icon className="h-5 w-5 text-[#00dfd8]" />
+                    <Icon className="h-5 w-5 text-[#d0d0d0]" />
                     <h3 className="mt-5 text-lg font-semibold text-white">{step.title}</h3>
                     <p className="mt-3 text-sm leading-6 text-[#a3a3a3]">{step.copy}</p>
                   </div>

@@ -1298,6 +1298,8 @@ export default function ChatClient() {
   const abortControllerRef = useRef<AbortController | null>(null);
   // Names the in-flight answer so Stop can tell the server which one to drop.
   const requestIdRef = useRef<string | null>(null);
+  /** Which conversation the transcript on screen belongs to. */
+  const loadedThreadIdRef = useRef<string | null>(null);
   const repositoryJobPollsRef = useRef(
     new Map<string, { controller: AbortController; threadId: string }>()
   );
@@ -1616,6 +1618,7 @@ export default function ChatClient() {
     (mode: ChatMode = deepResearchEnabled ? "deep_research" : "normal") => {
       setActiveThreadId(null);
       setActiveThread(null);
+      loadedThreadIdRef.current = null;
       setMessages([]);
       setDeepSession(null);
       setSelectedLibraryRuns([]);
@@ -1694,6 +1697,18 @@ export default function ChatClient() {
   const loadThreadDetail = useCallback(
     async (threadId: string) => {
       if (!canPersist || !session?.access_token) return;
+      // Clicking a conversation marks it active in the sidebar immediately, but
+      // the transcript was only replaced once the fetch returned - so for the
+      // length of the round trip the reader saw one conversation's messages
+      // sitting under another one's name, and on failure they stayed there
+      // under an error about a thread they were no longer looking at.
+      // Only on an actual switch: reloading the same thread after sending a
+      // message must not blank the transcript the reader is reading.
+      if (loadedThreadIdRef.current !== threadId) {
+        loadedThreadIdRef.current = threadId;
+        setMessages([]);
+        setDeepSession(null);
+      }
       setDetailLoading(true);
       try {
         const response = await fetch(`/api/chat/threads/${threadId}`, {
@@ -2662,7 +2677,7 @@ export default function ChatClient() {
                 return (
                   <div
                     key={thread.id}
-                    className={`group relative rounded-xl px-2 py-1 ${
+                    className={`group relative rounded-xl px-2 ${
                       active
                         ? "bg-slate-200 dark:bg-[#050505]"
                         : "hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
@@ -2674,7 +2689,11 @@ export default function ChatClient() {
                         setActiveThreadId(thread.id);
                         setThreadMenuId(null);
                       }}
-                      className="block w-full min-w-0 text-left"
+                      // The padding used to sit on the row wrapper, so the row
+                      // looked 28px tall while only the 20px of text was
+                      // clickable. Moving it onto the button makes the whole row
+                      // the target it already appeared to be.
+                      className="block w-full min-w-0 py-1.5 text-left"
                     >
                       <div className="flex items-center gap-2">
                         {pinned ? (
@@ -2749,6 +2768,8 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => resetChat("normal")}
+                aria-label="Start a new chat"
+                title="New chat"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
               >
                 <PencilSquareIcon className="h-4 w-4" />
@@ -3173,7 +3194,7 @@ export default function ChatClient() {
               </section>
             ) : null}
 
-            {!hasContent && !loading ? (
+            {!hasContent && !loading && !detailLoading ? (
               <ChatIntro
                 scopeLabel={scopeSummary?.scopeLabel || activeScopeSnapshot.label}
                 eligiblePaperCount={scopeSummary?.eligiblePaperCount ?? null}
@@ -3212,7 +3233,7 @@ export default function ChatClient() {
                                   <button
                                     type="button"
                                     onClick={cancelEditingUserMessage}
-                                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-4 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-black dark:text-white dark:hover:bg-[#0a0a0a]"
+                                    className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:bg-[#0a0a0a]"
                                   >
                                     Cancel
                                   </button>
@@ -3220,7 +3241,7 @@ export default function ChatClient() {
                                     type="button"
                                     onClick={() => void submitEditedUserMessage(message)}
                                     disabled={!editingDraft.trim() || loading}
-                                    className="inline-flex h-10 items-center rounded-full bg-white px-5 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f1f1f1]"
                                   >
                                     Send
                                   </button>
@@ -3371,7 +3392,7 @@ export default function ChatClient() {
             <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
               <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                 {error ? (
-                  <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-200">
+                  <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
                     {error}
                   </div>
                 ) : null}

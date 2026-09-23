@@ -17,6 +17,8 @@ import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE } from "@/lib/constants";
 import type { PaperId, TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { chartTheme, tickStyle } from "@/lib/chart-theme";
 
 interface Props {
   trends: TrendRow[];
@@ -25,6 +27,8 @@ interface Props {
 }
 
 export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props) {
+  const { theme, hydrated } = useTheme();
+  const ct = chartTheme(hydrated && theme === "dark");
   const [topN, setTopN] = useState(10);
   const [heatN, setHeatN] = useState(15);
   const orderedCharts =
@@ -160,8 +164,8 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={areaData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {topTopics.map((topic, index) => (
@@ -208,13 +212,13 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={emerging} layout="vertical" margin={{ left: 10, right: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                      <XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                      <XAxis type="number" tick={tickStyle(ct, 11)} stroke={ct.axisLine} />
                       <YAxis
                         type="category"
                         dataKey="topic"
                         width={180}
-                        tick={{ fontSize: 11 }}
-                        stroke="#94a3b8"
+                        tick={tickStyle(ct, 11)}
+                        stroke={ct.axisLine}
                       />
                       <Tooltip />
                       <Bar
@@ -243,13 +247,13 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={declining} layout="vertical" margin={{ left: 10, right: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                      <XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
+                      <XAxis type="number" tick={tickStyle(ct, 11)} stroke={ct.axisLine} />
                       <YAxis
                         type="category"
                         dataKey="topic"
                         width={180}
-                        tick={{ fontSize: 11 }}
-                        stroke="#94a3b8"
+                        tick={tickStyle(ct, 11)}
+                        stroke={ct.axisLine}
                       />
                       <Tooltip />
                       <Bar

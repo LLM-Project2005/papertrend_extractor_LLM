@@ -671,9 +671,24 @@ export default function DashboardClient({
   return (
     <div className="mx-auto max-w-[1500px] space-y-5">
       <div className="space-y-4">
+        {/*
+          This page had no h1 at all - it opened straight onto a search field.
+          Every other workspace page names itself, so this was the one place a
+          reader could arrive and have nothing tell them where they were, and the
+          one page a screen reader announced with no title.
+        */}
+        <div>
+          <h1 className="text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
+            Dashboard
+          </h1>
+          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+            Trends, topics, and coverage across the analyzed papers in this repository.
+          </p>
+        </div>
+
         {!isSemanticMapTab ? <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <label className="relative block w-full max-w-2xl">
-            <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#8e8e8e]" />
+            <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#8e8e8e]" />
             <input
               type="search"
               value={searchQuery}
@@ -696,7 +711,7 @@ export default function DashboardClient({
               {selectedTracks.length} categor{selectedTracks.length === 1 ? "y" : "ies"}
             </span>
             <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#bdbdbd]">
-              <span className="text-xs font-medium uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+              <span className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                 Data
               </span>
               <select
@@ -738,7 +753,7 @@ export default function DashboardClient({
           ) : null}
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                 Visualization planner
               </p>
               <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
@@ -834,6 +849,7 @@ export default function DashboardClient({
                 <button
                   type="button"
                   onClick={() => setFilterOpen(false)}
+                  aria-label="Close analytics filters"
                   className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />
@@ -868,7 +884,7 @@ export default function DashboardClient({
               <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-5 dark:border-[#1f1f1f] dark:bg-[#030303] sm:px-6">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                       Dashboard drilldown
                     </p>
                     <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
@@ -933,7 +949,7 @@ export default function DashboardClient({
                       {paper.topics.length > 0 || paper.keywords.length > 0 ? (
                         <div className="mt-3 grid gap-3 lg:grid-cols-2">
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                               Topics
                             </p>
                             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -954,7 +970,7 @@ export default function DashboardClient({
                             </div>
                           </div>
                           <div>
-                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                               Keywords
                             </p>
                             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -1010,6 +1026,7 @@ export default function DashboardClient({
                 <button
                   type="button"
                   onClick={() => setFilterOpen(false)}
+                  aria-label="Close analytics filters"
                   className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
                 >
                   <CloseIcon className="h-4 w-4" />

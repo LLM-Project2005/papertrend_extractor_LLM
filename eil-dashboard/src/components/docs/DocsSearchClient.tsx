@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   docsSearchItems,
   docsSuggestedQueries,
@@ -51,6 +51,16 @@ function scoreItem(item: DocsSearchItem, query: string) {
 export default function DocsSearchClient() {
   const [query, setQuery] = useState("");
 
+  // Accept ?q= so a search can be linked to and shared, and so the tag pills on
+  // a documentation page have somewhere to lead. Read from location rather than
+  // useSearchParams: this route is statically rendered, and useSearchParams
+  // would force it behind a Suspense boundary for no gain.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const initial = new URLSearchParams(window.location.search).get("q");
+    if (initial) setQuery(initial);
+  }, []);
+
   const results = useMemo(() => {
     const trimmed = query.trim();
 
@@ -83,13 +93,13 @@ export default function DocsSearchClient() {
 
       <div className="sticky top-16 z-10 -mx-4 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95 sm:-mx-6 sm:px-6">
         <label className="relative block">
-          <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400 dark:text-[#777777]" />
+          <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500 dark:text-[#777777]" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             autoFocus
             placeholder="Search upload, chart mode, queue stuck, unknown year..."
-            className="h-14 w-full rounded-lg border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-950 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-950/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a] dark:focus:ring-white/10"
+            className="h-14 w-full rounded-lg border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-950 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-950/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a] dark:focus:ring-white/10"
           />
         </label>
 
@@ -114,7 +124,7 @@ export default function DocsSearchClient() {
           </h2>
           <Link
             href="/docs"
-            className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
+            className="-my-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
           >
             Docs home
           </Link>
@@ -129,7 +139,7 @@ export default function DocsSearchClient() {
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
+                  <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                     {item.category}
                     {item.sectionId ? " / Section" : " / Guide"}
                   </p>
@@ -150,7 +160,7 @@ export default function DocsSearchClient() {
                     ))}
                   </div>
                 </div>
-                <ArrowRightIcon className="mt-2 h-4 w-4 flex-none text-slate-400 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-950 dark:text-[#666666] dark:group-hover:text-white" />
+                <ArrowRightIcon className="mt-2 h-4 w-4 flex-none text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-950 dark:text-[#8f8f8f] dark:group-hover:text-white" />
               </div>
             </Link>
           ))}

@@ -822,7 +822,7 @@ export default function AnalyzeFlowModal({
                                 className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
                               >
                                 <span className="flex h-4 w-4 items-center justify-center">
-                                  <FolderIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
+                                  <FolderIcon className="h-4 w-4 text-slate-500 dark:text-[#9c9c9c]" />
                                 </span>
                                 <div className="min-w-0 flex-1">
                                   <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -855,7 +855,7 @@ export default function AnalyzeFlowModal({
                                   />
                                   <div className="min-w-0 flex-1">
                                     <div className="flex items-start gap-3">
-                                      <FileIcon className="mt-0.5 h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
+                                      <FileIcon className="mt-0.5 h-4 w-4 text-slate-500 dark:text-[#9c9c9c]" />
                                       <div className="min-w-0 flex-1">
                                         <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                                           {file.name}
@@ -891,7 +891,7 @@ export default function AnalyzeFlowModal({
                   <button
                     type="button"
                     disabled
-                    className="mt-5 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-400 dark:border-[#1f1f1f] dark:text-[#707070]"
+                    className="mt-5 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-500 dark:border-[#1f1f1f] dark:text-[#707070]"
                   >
                     Coming soon
                   </button>
@@ -906,7 +906,7 @@ export default function AnalyzeFlowModal({
                 </p>
                 {!user && (
                   <div className="mt-3 rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                    <p className="text-xs font-medium uppercase tracking-normal text-slate-400 dark:text-[#8f8f8f]">
+                    <p className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Access
                     </p>
                     <input
@@ -932,7 +932,7 @@ export default function AnalyzeFlowModal({
                           className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex min-w-0 items-center gap-3">
-                            <FileIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
+                            <FileIcon className="h-4 w-4 text-slate-500 dark:text-[#9c9c9c]" />
                             <span className="truncate text-sm text-slate-900 dark:text-[#f2f2f2]">
                               {file.name}
                             </span>
@@ -944,7 +944,7 @@ export default function AnalyzeFlowModal({
                             <button
                               type="button"
                               onClick={() => setFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}
-                              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:bg-[#111] dark:hover:text-white"
+                              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 dark:hover:bg-[#111] dark:hover:text-white"
                               aria-label={`Remove ${file.name}`}
                               title="Remove file"
                             >
@@ -968,7 +968,7 @@ export default function AnalyzeFlowModal({
                           className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
                           <div className="flex items-center gap-3">
-                            <DriveIcon className="h-4 w-4 text-slate-400 dark:text-[#9c9c9c]" />
+                            <DriveIcon className="h-4 w-4 text-slate-500 dark:text-[#9c9c9c]" />
                             <span className="text-sm text-slate-900 dark:text-[#f2f2f2]">
                               {file.name}
                             </span>
@@ -993,7 +993,7 @@ export default function AnalyzeFlowModal({
                 <section className="border-t border-slate-200 pt-4 dark:border-[#242424]">
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase text-slate-400 dark:text-[#777]">Analysis profile</p>
+                    <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Analysis profile</p>
                     <p className="mt-1 truncate text-sm font-semibold text-slate-900 dark:text-white">{profileSummary(activeAnalysisProfile)}</p>
                     <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#999]">Applied to every file in this upload.</p>
                     {previousProfileCount > 0 ? (

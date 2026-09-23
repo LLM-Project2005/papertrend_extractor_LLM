@@ -24,6 +24,8 @@ import {
 } from "@/lib/category-options";
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { chartTheme, tickStyle } from "@/lib/chart-theme";
 
 interface Props {
   trends: TrendRow[];
@@ -56,6 +58,8 @@ export default function TrackAnalysis({
   planCharts,
   onDrilldown,
 }: Props) {
+  const { theme, hydrated } = useTheme();
+  const ct = chartTheme(hydrated && theme === "dark");
   const orderedCharts =
     planCharts?.map((chart) => chart.chart_key).filter(
       (
@@ -268,8 +272,8 @@ export default function TrackAnalysis({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stackedData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 {stackedChartCategories.map((category) => (
@@ -346,13 +350,13 @@ export default function TrackAnalysis({
                     <div className="h-[280px]">
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={data} layout="vertical" margin={{ left: 0, right: 8 }}>
-                          <XAxis type="number" tick={{ fontSize: 10 }} hide />
+                          <XAxis type="number" tick={tickStyle(ct, 10)} hide />
                           <YAxis
                             type="category"
                             dataKey="topic"
                             width={150}
-                            tick={{ fontSize: 10 }}
-                            stroke="#94a3b8"
+                            tick={tickStyle(ct, 10)}
+                            stroke={ct.axisLine}
                           />
                           <Tooltip />
                           <Bar

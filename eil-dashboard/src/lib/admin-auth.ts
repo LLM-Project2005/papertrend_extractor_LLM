@@ -40,9 +40,12 @@ export async function getAuthenticatedUserFromRequest(
 
 export async function isAuthorizedAdminRequest(request: Request): Promise<boolean> {
   const expectedSecret = getAdminImportSecret();
-  const url = new URL(request.url);
-  const providedSecret =
-    request.headers.get("x-admin-secret") ?? url.searchParams.get("admin_secret") ?? "";
+  // Header only. The secret used to be accepted from ?admin_secret= as well,
+  // and a query string is written to Cloud Run request logs, kept in browser
+  // history, and forwarded in the Referer header to anything the page links to.
+  // Nothing in this codebase ever sent it that way - every caller uses the
+  // header - so the query form was an exposure route with no consumer.
+  const providedSecret = request.headers.get("x-admin-secret") ?? "";
 
   if (expectedSecret && providedSecret && safeEqual(providedSecret, expectedSecret)) {
     return true;
@@ -82,13 +85,32 @@ export async function isAuthorizedAdminRequest(request: Request): Promise<boolea
 
 export async function isAuthorizedUserOrAdminRequest(request: Request): Promise<boolean> {
   const expectedSecret = getAdminImportSecret();
-  const url = new URL(request.url);
-  const providedSecret =
-    request.headers.get("x-admin-secret") ?? url.searchParams.get("admin_secret") ?? "";
+  // Header only. The secret used to be accepted from ?admin_secret= as well,
+  // and a query string is written to Cloud Run request logs, kept in browser
+  // history, and forwarded in the Referer header to anything the page links to.
+  // Nothing in this codebase ever sent it that way - every caller uses the
+  // header - so the query form was an exposure route with no consumer.
+  const providedSecret = request.headers.get("x-admin-secret") ?? "";
 
   if (expectedSecret && providedSecret && safeEqual(providedSecret, expectedSecret)) {
     return true;
   }
 
   return Boolean(await getAuthenticatedUserFromRequest(request));
+}
+
+/**
+ * Compares a bearer credential without leaking its length or content by timing.
+ *
+ * The cron routes compared with `authHeader !== \`Bearer ${secret}\``, which
+ * short-circuits on the first differing byte. Remote timing attacks across a
+ * network are impractical against a high-entropy secret, so this is hardening
+ * rather than a repair - but the codebase already compares every other secret
+ * in constant time, and one exception is how the next one gets written.
+ */
+export function isValidBearerSecret(authorizationHeader: string, expectedSecret: string): boolean {
+  if (!expectedSecret) return false;
+  const prefix = "Bearer ";
+  if (!authorizationHeader.startsWith(prefix)) return false;
+  return safeEqual(authorizationHeader.slice(prefix.length), expectedSecret);
 }

@@ -213,7 +213,7 @@ export default function WorkspaceSettingsClient() {
 
         <div className="space-y-6 px-4 py-5">
           <div>
-            <p className="px-2 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#7d7d7d]">
+            <p className="px-2 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#7d7d7d]">
               Configuration
             </p>
             <nav className="mt-3 space-y-1">
@@ -238,7 +238,7 @@ export default function WorkspaceSettingsClient() {
           </div>
 
           <div className="border-t border-slate-200 pt-5 dark:border-[#1f1f1f]">
-            <p className="px-2 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#7d7d7d]">
+            <p className="px-2 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#7d7d7d]">
               Account
             </p>
             <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
@@ -274,7 +274,7 @@ export default function WorkspaceSettingsClient() {
         {PROJECT_ANALYSIS_PROFILES_ENABLED && activeSection === "analysis" ? (
           <section className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-[#242424] dark:bg-[#050505]">
             <div className="border-b border-slate-200 px-6 py-5 dark:border-[#242424]">
-              <p className="text-xs font-semibold uppercase text-slate-400 dark:text-[#777]">{currentProject?.name ?? "Repository"}</p>
+              <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">{currentProject?.name ?? "Repository"}</p>
               <h2 className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">Analysis & classification</h2>
               <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#999]">
                 This profile is owned by this repository. Changing it affects new uploads; existing papers keep their previous result until you reclassify them.
@@ -446,7 +446,7 @@ export default function WorkspaceSettingsClient() {
                       }}
                       className={`rounded-xl border px-4 py-4 text-left transition-colors ${
                         isActive
-                          ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          ? "border-slate-400 bg-slate-50 dark:border-[#8f8f8f] dark:bg-[#0a0a0a]"
                           : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       }`}
                     >
@@ -484,7 +484,7 @@ export default function WorkspaceSettingsClient() {
                       }}
                       className={`rounded-xl border px-4 py-4 text-left transition-colors ${
                         isActive
-                          ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          ? "border-slate-400 bg-slate-50 dark:border-[#8f8f8f] dark:bg-[#0a0a0a]"
                           : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       }`}
                     >
@@ -524,7 +524,7 @@ export default function WorkspaceSettingsClient() {
                       onClick={() => toggleOutput(item.id)}
                       className={`rounded-xl border p-4 text-left transition-colors ${
                         isActive
-                          ? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"
+                          ? "border-slate-400 bg-slate-50 dark:border-[#8f8f8f] dark:bg-[#0a0a0a]"
                           : "border-slate-200 bg-white hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       }`}
                     >

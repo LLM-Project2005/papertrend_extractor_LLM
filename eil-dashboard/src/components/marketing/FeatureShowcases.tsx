@@ -42,10 +42,15 @@ function Frame({
       animate={reduceMotion ? undefined : { opacity: 1, y: 0 }}
       transition={{ duration: 0.65, ease: "easeOut" }}
     >
-      <div className="marketing-scanline pointer-events-none absolute inset-0 z-10" />
+      {/*
+        Every showcase below is a drawing of the product, not a capture of it.
+        The chrome used to carry a teal "connected" dot, which is the universal
+        sign for a live session - so eight illustrations each claimed to be a
+        running system. One honest word here covers all of them.
+      */}
       <div className="flex items-center justify-between border-b border-[#1f1f1f] bg-[#050505] px-4 py-3">
         <span className="font-mono text-xs text-[#8f8f8f]">{label}</span>
-        <span className="h-2 w-2 rounded-full bg-[#00dfd8]" />
+        <span className="font-mono text-xs text-[#8f8f8f]">illustration</span>
       </div>
       {children}
     </motion.div>
@@ -54,11 +59,15 @@ function Frame({
 
 export function PaperAnalysisShowcase() {
   const transition = useLoopTransition();
-  const stages = [
-    ["Extract text", "96%"],
-    ["Find metadata", "88%"],
-    ["Topic + keyword graph", "74%"],
-    ["Evidence snippets", "91%"],
+  // These read as accuracy figures - "Extract text 96%", "Find metadata 88%" -
+  // and nothing in the product measures or publishes such a number. They are the
+  // real stages of the ingestion graph (graphs.py:77-89) instead, showing where a
+  // paper is in the pipeline, which is something the product genuinely reports.
+  const stages: Array<[string, string, string]> = [
+    ["Extract and clean text", "done", "100%"],
+    ["Recover metadata and year", "done", "100%"],
+    ["Mine and group keywords", "running", "62%"],
+    ["Classify tracks and typology", "queued", "8%"],
   ];
 
   return (
@@ -67,7 +76,7 @@ export function PaperAnalysisShowcase() {
         <div className="bg-[#050505] p-5">
           <div className="rounded-lg border border-[#1f1f1f] bg-[#030303] p-4">
             <div className="flex items-center gap-3">
-              <PaperIcon className="h-5 w-5 text-[#00dfd8]" />
+              <PaperIcon className="h-5 w-5 text-[#d0d0d0]" />
               <div>
                 <p className="text-sm font-medium text-white">webquest-learning.pdf</p>
                 <p className="mt-1 font-mono text-xs text-[#8f8f8f]">24 pages / text + OCR fallback</p>
@@ -90,7 +99,7 @@ export function PaperAnalysisShowcase() {
             {["title", "year", "abstract", "methods"].map((item) => (
               <div key={item} className="rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
                 <p className="font-mono text-[11px] text-[#8f8f8f]">{item}</p>
-                <div className="mt-3 h-2 rounded-sm bg-gradient-to-r from-[#007cf0] to-[#00dfd8]" />
+                <div className="mt-3 h-2 rounded-sm bg-slate-800 dark:bg-[#d4d4d4]" />
               </div>
             ))}
           </div>
@@ -98,17 +107,17 @@ export function PaperAnalysisShowcase() {
 
         <div className="bg-black p-5">
           <div className="grid gap-3">
-            {stages.map(([name, percent], index) => (
+            {stages.map(([name, status, width], index) => (
               <div key={name} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-white">{name}</span>
-                  <span className="font-mono text-xs text-[#8f8f8f]">{percent}</span>
+                  <span className="font-mono text-xs text-[#8f8f8f]">{status}</span>
                 </div>
                 <div className="mt-3 h-1.5 rounded-sm bg-[#111111]">
                   <motion.div
-                    className="h-full rounded-sm bg-gradient-to-r from-[#007cf0] to-[#00dfd8]"
+                    className="h-full rounded-sm bg-slate-800 dark:bg-[#d4d4d4]"
                     initial={{ width: "28%" }}
-                    animate={transition ? { width: ["28%", percent] } : { width: percent }}
+                    animate={transition ? { width: ["28%", width] } : { width }}
                     transition={transition ? { ...transition, delay: index * 0.12 } : undefined}
                   />
                 </div>
@@ -152,7 +161,7 @@ export function AnalysisFullPipelineShowcase() {
             <motion.div
               key={title}
               className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"
-              animate={transition ? { borderColor: index % 4 === 1 ? ["#1f1f1f", "#00dfd8"] : "#1f1f1f" } : undefined}
+              animate={transition ? { borderColor: index % 4 === 1 ? ["#1f1f1f", "#8f8f8f"] : "#1f1f1f" } : undefined}
               transition={transition ? { ...transition, delay: (index % 4) * 0.1 } : undefined}
             >
               <p className="font-mono text-xs text-[#8f8f8f]">{String(index + 1).padStart(2, "0")}</p>
@@ -188,7 +197,11 @@ export function ResearchDashboardShowcase() {
             ["Papers", "128"],
             ["Topics", "46"],
             ["Keywords", "1.8k"],
-            ["Coverage", "91%"],
+            // The real dashboard renders Coverage as a year span
+            // (Overview.tsx: <MetricCard label="Coverage" value={yearSpan} />),
+            // not a percentage, so the mock was showing a metric the product
+            // does not compute.
+            ["Coverage", "2016-2026"],
           ].map(([label, value]) => (
             <div key={label} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
               <p className="font-mono text-xs text-[#8f8f8f]">{label}</p>
@@ -216,7 +229,7 @@ export function ResearchDashboardShowcase() {
               {bars.map((height, index) => (
                 <motion.div
                   key={height + index}
-                  className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#7928ca] via-[#ff0080] to-[#f9cb28]"
+                  className="min-w-0 flex-1 rounded-t-md bg-slate-800 dark:bg-[#d4d4d4]"
                   initial={{ height: `${height * 0.62}%` }}
                   animate={transition ? { height: [`${height * 0.62}%`, `${height}%`] } : undefined}
                   transition={transition ? { ...transition, delay: index * 0.05 } : undefined}
@@ -245,7 +258,7 @@ export function ResearchDashboardShowcase() {
               <p className="font-mono text-xs text-[#8f8f8f]">FILTER TRACE</p>
               <div className="mt-5 h-24 rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
                 <motion.div
-                  className="h-full rounded-md bg-gradient-to-r from-[#007cf0] via-[#7928ca] to-[#ff0080]"
+                  className="h-full rounded-md bg-slate-800 dark:bg-[#d4d4d4]"
                   initial={{ width: "54%" }}
                   animate={transition ? { width: ["54%", "86%"] } : undefined}
                   transition={transition}
@@ -275,7 +288,7 @@ export function AdaptiveDashboardShowcase() {
         <div className="bg-[#050505] p-5">
           <div className="rounded-lg border border-[#1f1f1f] bg-[#030303] p-4">
             <div className="flex items-center gap-2">
-              <SparkIcon className="h-4 w-4 text-[#f9cb28]" />
+              <SparkIcon className="h-4 w-4 text-[#d0d0d0]" />
               <p className="font-mono text-xs text-[#8f8f8f]">ADAPTIVE PLAN</p>
             </div>
             <p className="mt-4 text-sm leading-6 text-[#d0d0d0]">
@@ -286,7 +299,7 @@ export function AdaptiveDashboardShowcase() {
                 <motion.div
                   key={rubric}
                   className="rounded-md border border-[#1f1f1f] bg-[#050505] px-3 py-2"
-                  animate={transition ? { borderColor: index === 1 ? ["#1f1f1f", "#ff0080"] : "#1f1f1f" } : undefined}
+                  animate={transition ? { borderColor: index === 1 ? ["#1f1f1f", "#8f8f8f"] : "#1f1f1f" } : undefined}
                   transition={transition}
                 >
                   <p className="font-mono text-xs text-[#8f8f8f]">{rubric}</p>
@@ -313,7 +326,7 @@ export function AdaptiveDashboardShowcase() {
                   {[46, 72, 58, 86, 64].map((height, barIndex) => (
                     <motion.div
                       key={`${title}-${height}`}
-                      className="min-w-0 flex-1 rounded-t-sm bg-gradient-to-t from-[#7928ca] via-[#ff0080] to-[#f9cb28]"
+                      className="min-w-0 flex-1 rounded-t-sm bg-slate-800 dark:bg-[#d4d4d4]"
                       initial={{ height: `${height * 0.55}%` }}
                       animate={transition ? { height: [`${height * 0.55}%`, `${height}%`] } : undefined}
                       transition={transition ? { ...transition, delay: barIndex * 0.05 } : undefined}
@@ -344,7 +357,7 @@ export function AIResearchChatShowcase() {
           </div>
           <div className="mt-5 space-y-1">
             {["Webquest topic chart", "Compare two papers", "Research gaps"].map((item) => (
-              <div key={item} className="truncate rounded-xl px-3 py-2.5 text-xs text-[#a3a3a3] first:bg-[#0a0a0a] first:text-white">
+              <div key={item} className="truncate rounded-xl px-3 py-2.5 text-xs text-slate-600 first:bg-slate-900 first:text-white dark:text-[#a3a3a3] dark:first:bg-[#0a0a0a] dark:first:text-white">
                 {item}
               </div>
             ))}
@@ -382,7 +395,7 @@ export function AIResearchChatShowcase() {
 
             <div className="max-w-[88%]">
               <div className="flex items-center gap-2">
-                <SparkIcon className="h-4 w-4 text-[#f9cb28]" />
+                <SparkIcon className="h-4 w-4 text-[#d0d0d0]" />
                 <span className="font-mono text-xs text-[#8f8f8f]">AI response with chart tool</span>
               </div>
               <p className="mt-3 text-[15px] leading-7 text-[#f3f3f3]">
@@ -392,7 +405,7 @@ export function AIResearchChatShowcase() {
                 {[82, 64, 48, 35].map((height, index) => (
                   <motion.div
                     key={height}
-                    className="flex-1 rounded-t-md bg-gradient-to-t from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]"
+                    className="flex-1 rounded-t-md bg-slate-800 dark:bg-[#d4d4d4]"
                     initial={{ height: `${height * 0.5}%` }}
                     animate={transition ? { height: [`${height * 0.5}%`, `${height}%`] } : undefined}
                     transition={transition ? { ...transition, delay: index * 0.08 } : undefined}
@@ -434,8 +447,8 @@ export function DeepResearchGraphShowcase() {
           {nodes.map(([title, detail], index) => (
             <motion.div
               key={title}
-              className={index === 1 ? "rounded-lg border border-[#f9cb28]/40 bg-[#120f05] p-4 shadow-[0_0_34px_rgba(249,203,40,0.12)]" : "rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"}
-              animate={transition ? { borderColor: index === 1 ? ["rgba(249,203,40,0.22)", "rgba(249,203,40,0.72)"] : "#1f1f1f" } : undefined}
+              className={index === 1 ? "rounded-lg border border-[#3a3a3a] bg-[#0a0a0a] p-4" : "rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"}
+              animate={transition ? { borderColor: index === 1 ? ["#2a2a2a", "#8f8f8f"] : "#1f1f1f" } : undefined}
               transition={transition}
             >
               <p className="font-mono text-xs text-[#8f8f8f]">node {index + 1}</p>
@@ -447,7 +460,7 @@ export function DeepResearchGraphShowcase() {
         <div className="mt-4 grid gap-4 lg:grid-cols-[0.72fr_1.28fr]">
           <div className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
             <div className="flex items-center gap-2">
-              <ChatIcon className="h-4 w-4 text-[#00dfd8]" />
+              <ChatIcon className="h-4 w-4 text-[#d0d0d0]" />
               <p className="font-mono text-xs text-[#8f8f8f]">PLAN</p>
             </div>
             <div className="mt-4 space-y-2">
@@ -464,7 +477,7 @@ export function DeepResearchGraphShowcase() {
               {[78, 63, 86].map((width, index) => (
                 <motion.div
                   key={width}
-                  className="h-2 rounded-sm bg-gradient-to-r from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]"
+                  className="h-2 rounded-sm bg-slate-800 dark:bg-[#d4d4d4]"
                   initial={{ width: `${width - 22}%` }}
                   animate={transition ? { width: [`${width - 22}%`, `${width}%`] } : undefined}
                   transition={transition ? { ...transition, delay: index * 0.1 } : undefined}
@@ -497,11 +510,11 @@ export function CloudWebsiteFlowShowcase() {
             <motion.div
               key={title}
               className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-4"
-              animate={transition ? { y: index === 3 ? [0, -5] : 0, borderColor: index === 3 ? ["#1f1f1f", "#007cf0"] : "#1f1f1f" } : undefined}
+              animate={transition ? { y: index === 3 ? [0, -5] : 0, borderColor: index === 3 ? ["#1f1f1f", "#8f8f8f"] : "#1f1f1f" } : undefined}
               transition={transition}
             >
               <div className="flex items-center gap-2">
-                {index < 2 ? <UploadIcon className="h-4 w-4 text-[#00dfd8]" /> : index < 4 ? <CloudIcon className="h-4 w-4 text-[#007cf0]" /> : <SparkIcon className="h-4 w-4 text-[#ff4d4d]" />}
+                {index < 2 ? <UploadIcon className="h-4 w-4 text-[#d0d0d0]" /> : index < 4 ? <CloudIcon className="h-4 w-4 text-[#d0d0d0]" /> : <SparkIcon className="h-4 w-4 text-[#d0d0d0]" />}
                 <p className="font-mono text-xs text-[#8f8f8f]">{String(index + 1).padStart(2, "0")}</p>
               </div>
               <h3 className="mt-4 text-sm font-semibold text-white">{title}</h3>
@@ -511,7 +524,7 @@ export function CloudWebsiteFlowShowcase() {
         </div>
         <div className="mt-4 rounded-lg border border-[#1f1f1f] bg-[#050505] p-4">
           <div className="flex items-center gap-3">
-            <EqualizerIcon className="h-4 w-4 text-[#f9cb28]" />
+            <EqualizerIcon className="h-4 w-4 text-[#d0d0d0]" />
             <p className="text-sm font-medium text-white">Only one worker claims the queue lock at a time.</p>
           </div>
           <p className="mt-3 text-xs leading-5 text-[#a3a3a3]">
@@ -538,7 +551,7 @@ export function CloudQueueShowcase() {
         <div className="relative rounded-lg border border-[#1f1f1f] bg-[#050505] p-5">
           <div className="absolute left-10 right-10 top-[58px] hidden h-px bg-[#2a2a2a] md:block" />
           <motion.div
-            className="absolute left-10 top-[55px] hidden h-1 w-16 rounded-sm bg-gradient-to-r from-[#007cf0] to-[#00dfd8] md:block"
+            className="absolute left-10 top-[55px] hidden h-1 w-16 rounded-sm bg-slate-800 dark:bg-[#d4d4d4] md:block"
             initial={{ x: 0 }}
             animate={transition ? { x: [0, 560] } : undefined}
             transition={transition ? { duration: 3.5, repeat: Infinity, ease: "easeInOut" } : undefined}
@@ -546,7 +559,7 @@ export function CloudQueueShowcase() {
           <div className="relative grid gap-4 md:grid-cols-4">
             {nodes.map(([label, Icon], index) => (
               <div key={label} className="rounded-lg border border-[#1f1f1f] bg-[#030303] p-4">
-                <Icon className="h-5 w-5 text-[#00dfd8]" />
+                <Icon className="h-5 w-5 text-[#d0d0d0]" />
                 <p className="mt-4 text-sm font-medium text-white">{label}</p>
                 <p className="mt-1 font-mono text-xs text-[#8f8f8f]">{index === 0 ? "batch" : `step ${index}`}</p>
               </div>
@@ -568,7 +581,7 @@ export function CloudQueueShowcase() {
                   <span className="truncate text-sm text-white">{name}</span>
                   <motion.span
                     className="font-mono text-xs text-[#8f8f8f]"
-                    animate={transition && index === 1 ? { color: ["#8f8f8f", "#00dfd8"] } : undefined}
+                    animate={transition && index === 1 ? { opacity: [0.55, 1] } : undefined}
                     transition={transition}
                   >
                     {status}
@@ -586,7 +599,7 @@ export function CloudQueueShowcase() {
                   <span className="text-xs text-[#8f8f8f]">{item}</span>
                   <div className="h-2 rounded-sm bg-[#111111]">
                     <motion.div
-                      className="h-full rounded-sm bg-gradient-to-r from-[#007cf0] via-[#7928ca] to-[#ff4d4d]"
+                      className="h-full rounded-sm bg-slate-800 dark:bg-[#d4d4d4]"
                       initial={{ width: `${36 + index * 8}%` }}
                       animate={transition ? { width: [`${36 + index * 8}%`, `${82 - index * 6}%`] } : undefined}
                       transition={transition ? { ...transition, delay: index * 0.1 } : undefined}

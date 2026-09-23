@@ -60,10 +60,12 @@ export default function DocsOnThisPage({
 
   return (
     <DocsFixedRail side="right">
-      <p className="text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
+      <p className="text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
         On this page
       </p>
-      <nav className="mt-3 space-y-2">
+      {/* py-1 on each link rather than a gap between them: the gap was dead space
+          a pointer could not use, so every entry was a 20px-tall target. */}
+      <nav className="mt-3 space-y-1">
         {sections.map((section) => {
           const active = section.id === activeId;
 
@@ -72,7 +74,7 @@ export default function DocsOnThisPage({
               key={section.id}
               href={`#${section.id}`}
               onClick={() => setActiveId(section.id)}
-              className={`block text-sm leading-5 transition-colors ${
+              className={`block py-1 text-sm leading-5 transition-colors ${
                 active
                   ? "font-semibold text-slate-950 dark:text-white"
                   : "font-normal text-slate-500 hover:text-slate-950 dark:text-[#8f8f8f] dark:hover:text-white"

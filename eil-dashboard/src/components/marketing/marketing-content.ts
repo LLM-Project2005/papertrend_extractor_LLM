@@ -48,12 +48,18 @@ export const marketingFeatures: MarketingFeature[] = [
       "Upload research papers and let Papertrend extract metadata, sections, keywords, topics, typologies, and confidence-backed year evidence in one guided flow.",
     homeSummary:
       "Extract sections, metadata, keywords, topics, categories, and evidence from messy research PDFs.",
-    gradient: "from-[#007cf0] via-[#00dfd8] to-[#50e3c2]",
+    gradient: "from-[#1f1f1f] to-[#050505]",
     icon: PaperIcon,
     heroPoints: ["PDF extraction", "keyword intelligence", "year evidence"],
     proof: [
       { metric: "1", label: "upload flow" },
-      { metric: "9", label: "analysis passes" },
+      // Was "9", which matched nothing in the code. The ingestion graph in
+      // graphs.py:77-89 registers 13 nodes; 12 of them analyse (extract, clean,
+      // translate, segment, metadata, author keywords, mined keywords, topic
+      // grouping, trend labelling, track classification, typology, facets) and
+      // the thirteenth assembles the dataset. A number on a public page should
+      // be traceable to the thing it counts.
+      { metric: "12", label: "analysis stages per paper" },
       { metric: "20+", label: "paper signals" },
     ],
     sections: [
@@ -80,13 +86,17 @@ export const marketingFeatures: MarketingFeature[] = [
       "Turn analyzed papers into searchable, filterable views of yearly movement, topics, keywords, research categories, and workspace-wide coverage.",
     homeSummary:
       "Explore trends, topics, categories, and coverage across all analyzed papers in the workspace.",
-    gradient: "from-[#7928ca] via-[#ff0080] to-[#eb367f]",
+    gradient: "from-[#1f1f1f] to-[#050505]",
     icon: ChartIcon,
     heroPoints: ["workspace-wide views", "trend charts", "filterable corpus"],
     proof: [
       { metric: "All", label: "workspace scope" },
-      { metric: "4", label: "category views" },
-      { metric: "Live", label: "library updates" },
+      // Was "4 category views" and "Live library updates". There are six views
+      // (DashboardClient TAB_DEFINITIONS), and nothing about the dashboard is
+      // live: it passes no pollIntervalMs and sets refetchOnWindowFocus: false,
+      // so the only refresh is the one the reader asks for.
+      { metric: "6", label: "dashboard views" },
+      { metric: "Filters", label: "year, category, folder" },
     ],
     sections: [
       {
@@ -112,7 +122,7 @@ export const marketingFeatures: MarketingFeature[] = [
       "Ask questions about attached papers, search the web when needed, and create charts from analyzed files or workspace data without leaving the conversation.",
     homeSummary:
       "Chat with attached papers, trigger web search, and build charts from research data in one place.",
-    gradient: "from-[#ff4d4d] via-[#f9cb28] to-[#ff0080]",
+    gradient: "from-[#1f1f1f] to-[#050505]",
     icon: ChatIcon,
     heroPoints: ["attached-paper context", "chart mode", "web citations"],
     proof: [
@@ -144,7 +154,7 @@ export const marketingFeatures: MarketingFeature[] = [
       "Batch uploads become background work with Cloud Tasks, retry-safe worker runs, and status feedback that keeps users out of long-running request timeouts.",
     homeSummary:
       "Analyze multiple papers in sequence with background workers, retries, and visible run status.",
-    gradient: "from-[#007cf0] via-[#7928ca] to-[#ff4d4d]",
+    gradient: "from-[#1f1f1f] to-[#050505]",
     icon: UploadIcon,
     heroPoints: ["Cloud Tasks trigger", "retry-aware worker", "queue visibility"],
     proof: [
@@ -192,10 +202,20 @@ export const workflowSteps = [
   },
 ];
 
+/**
+ * The strip under the hero.
+ *
+ * It used to read "4 core research workflows", "1 workspace for papers, charts
+ * and chat", "Async multi-paper analysis" - set at display size, where the eye
+ * goes looking for evidence and found a 4 and a 1 that prove nothing. Each
+ * figure here can be checked against the code: twelve analysing nodes in the
+ * ingestion graph (graphs.py:77-89), six entries in the dashboard's
+ * TAB_DEFINITIONS. The third is not a quantity and is no longer set like one.
+ */
 export const proofMetrics = [
-  { value: "4", label: "core research workflows" },
-  { value: "1", label: "workspace for papers, charts, and chat" },
-  { value: "Async", label: "multi-paper analysis" },
+  { value: "12", label: "analysis stages per paper" },
+  { value: "6", label: "dashboard views over one corpus" },
+  { value: "Async", label: "multi-paper queue with retries" },
 ];
 
 export const footerLinks = [
@@ -211,7 +231,11 @@ export const valuePillars = [
   "Workspace-wide research intelligence",
   "Chat, charts, and dashboard from the same corpus",
   "Cloud-ready multi-paper analysis",
-  "Static marketing pages with client-only auth CTA",
+  // The fourth pillar used to read "Static marketing pages with client-only auth
+  // CTA" - a build note, shipped to visitors as a reason to choose the product.
+  // Replaced with something a researcher can actually check: per-file run status
+  // is on /workspace/logs and retries go through /api/folder-analysis/retry.
+  "Per-file queue status, retries, and run history",
 ];
 
 export const checkIcon = CheckCircleIcon;
