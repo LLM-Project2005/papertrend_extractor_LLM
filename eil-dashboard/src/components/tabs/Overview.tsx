@@ -18,6 +18,7 @@ import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
 import { normalizeCategoryKey, type CategoryOption } from "@/lib/category-options";
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationChartKey } from "@/types/visualization";
+import { isDatedYear } from "@/lib/dated-year";
 
 interface Props {
   trends: TrendRow[];
@@ -66,7 +67,9 @@ export default function Overview({
       ...tracksMulti.map((row) => row.year),
       ...categoryAssignments.map((row) => row.year),
     ]),
-  ].sort();
+  ]
+    .filter(isDatedYear)
+    .sort();
   const yearSpan =
     years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data";
 

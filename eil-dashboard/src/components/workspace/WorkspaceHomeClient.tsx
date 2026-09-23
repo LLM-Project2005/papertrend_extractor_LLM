@@ -21,6 +21,7 @@ import {
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
+import { isDatedYear } from "@/lib/dated-year";
 
 type RankedItem = {
   label: string;
@@ -340,7 +341,7 @@ export default function WorkspaceHomeClient() {
         ...data.tracksMulti.map((row) => row.year),
       ]),
     ]
-      .filter(Boolean)
+      .filter(isDatedYear)
       .sort();
     const topicCount =
       data.topicFamilies && data.topicFamilies.length > 0
