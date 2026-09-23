@@ -1,6 +1,6 @@
 # 27 — Site-wide UI quality audit and remediation
 
-Status: **in progress** (opened 2026-09-23)
+Status: **implementation complete, awaiting deployment verification** (2026-09-23)
 
 ## Why this exists
 
@@ -232,12 +232,12 @@ before against the deployed site and after against a local production build:
 
 | Measure | Before | After |
 | --- | --- | --- |
-| Contrast failures (occurrences) | 75 | 7 → 0 after the final pass |
-| Contrast failures (distinct colour/size pairs) | 15 | 5 → 0 |
-| Interactive targets under 24 px (occurrences) | 100 | 6 → 0 |
-| Interactive targets under 24 px (distinct) | 61 | 1 → 0 |
+| Contrast failures (occurrences) | 75 | **0** |
+| Contrast failures (distinct colour/size pairs) | 15 | **0** |
+| Interactive targets under 24 px (occurrences) | 100 | **0** |
+| Interactive targets under 24 px (distinct) | 61 | **0** |
 | Pages with horizontal overflow at 390 px | 0 | 0 |
-| Console errors | 0 (bar the deliberate 404 probe) | 0 |
+| Console errors | 3 | 3 — all three are the deliberate probe of a nonexistent URL |
 
 Theme flash, measured with the system set to dark, sampling every animation
 frame from navigation:
@@ -265,7 +265,7 @@ Recorded because the point of measuring after is that it finds your own mistakes
 
 | # | Criterion | Status |
 | --- | --- | --- |
-| A1 | No text below WCAG AA | **Met** on every public page, measured. 75 failing occurrences → 0 |
+| A1 | No text below WCAG AA | **Met** on every public page, measured across 90 page/viewport/theme combinations: 75 → 0 |
 | A2 | No interactive target under 24 px | **Met**, measured. 100 → 0 |
 | A3 | No horizontal overflow at 390 px | **Met** — was already clean |
 | A4 | No console error | **Met** — only the deliberate 404 probe |
