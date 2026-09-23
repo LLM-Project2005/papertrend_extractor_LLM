@@ -26,6 +26,7 @@ import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { isDatedYear } from "@/lib/dated-year";
 
 interface Props {
   trends: TrendRow[];
@@ -108,7 +109,9 @@ export default function TrackAnalysis({
             .filter((row) => row.assignment_type === "single")
             .map((row) => row.year)
         ),
-      ].sort();
+      ]
+        .filter(isDatedYear)
+        .sort();
       return years.map((year) => {
         const entry: Record<string, string | number> = { year };
         activeCategories.forEach((category) => {
@@ -128,7 +131,7 @@ export default function TrackAnalysis({
       });
     }
 
-    const years = [...new Set(tracksSingle.map((row) => row.year))].sort();
+    const years = [...new Set(tracksSingle.map((row) => row.year))].filter(isDatedYear).sort();
     return years.map((year) => {
       const entry: Record<string, string | number> = { year };
       const yearRows = tracksSingle.filter((row) => row.year === year);
