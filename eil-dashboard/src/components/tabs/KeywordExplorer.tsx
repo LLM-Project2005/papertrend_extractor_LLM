@@ -23,6 +23,7 @@ import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { isDatedYear } from "@/lib/dated-year";
 
 interface Props {
   trends: TrendRow[];
@@ -266,7 +267,7 @@ export default function KeywordExplorer({
   }, [query, topicFamilies, trends]);
 
   const heatmapData = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
     const topKeywords = keywordAggregate
       .slice(0, plannerHeatN)
       .map((row) => row.keyword);
@@ -305,7 +306,7 @@ export default function KeywordExplorer({
       : keywordAggregate.slice(0, 5).map((row) => row.keyword);
 
   const timelineData = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
     return years.map((year) => {
         const entry: Record<string, string | number> = { year };
         comparisonKeywords.forEach((keyword) => {

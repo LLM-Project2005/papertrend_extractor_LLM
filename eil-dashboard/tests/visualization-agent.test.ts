@@ -252,17 +252,40 @@ test("the coverage metric is a span between two dates, not a date and a word", (
   }
 });
 
-test("every year list in the app runs through one predicate", () => {
-  // Four independent implementations of "which years are real" is how this bug
-  // survived two fixes. There is one predicate; this fails if a fifth appears.
-  const owners = [
+test("every component that draws a year axis runs through one predicate", () => {
+  // Eight independent implementations of "which years are real" is how this bug
+  // survived three separate fixes: the planner, then the adaptive tab, then the
+  // coverage metric - and it was still drawing an "Unknown" bar on the default
+  // dashboard tab. This list is every surface that puts a year on an axis or a
+  // heatmap column.
+  for (const relative of [
     "../src/lib/visualization-planner.ts",
     "../src/components/dashboard/AdaptiveDashboardTab.tsx",
     "../src/components/workspace/WorkspaceHomeClient.tsx",
     "../src/components/tabs/Overview.tsx",
-  ];
-  for (const relative of owners) {
+    "../src/components/tabs/TrendAnalysis.tsx",
+    "../src/components/tabs/TrackAnalysis.tsx",
+    "../src/components/tabs/KeywordExplorer.tsx",
+  ]) {
     const source = readFileSync(new URL(relative, import.meta.url), "utf8");
-    assert.match(source, /isDatedYear/, `${relative} decides what counts as a year and must use the predicate`);
+    assert.match(source, /isDatedYear/, `${relative} puts years on an axis and must use the predicate`);
+  }
+});
+
+test("an undated paper is still visible where a year is a fact about one paper", () => {
+  // The predicate belongs on temporal axes, not everywhere a year appears. A
+  // paper whose year could not be read should still say so in the paper list,
+  // and a reader filtering for "Unknown" to find those papers is doing
+  // something useful - so neither of these may quietly start hiding them.
+  for (const relative of [
+    "../src/components/tabs/PaperExplorer.tsx",
+    "../src/components/DashboardClient.tsx",
+  ]) {
+    const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+    assert.equal(
+      /isDatedYear/.test(source),
+      false,
+      `${relative} shows a year as a fact, not as a position in time`
+    );
   }
 });

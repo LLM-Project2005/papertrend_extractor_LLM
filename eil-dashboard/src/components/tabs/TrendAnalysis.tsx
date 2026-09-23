@@ -19,6 +19,7 @@ import type { PaperId, TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { isDatedYear } from "@/lib/dated-year";
 
 interface Props {
   trends: TrendRow[];
@@ -59,7 +60,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
   }, [effectiveTopN, trends]);
 
   const areaData = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
     return years.map((year) => {
       const entry: Record<string, string | number> = { year };
       topTopics.forEach((topic) => {
@@ -75,7 +76,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
   }, [topTopics, trends]);
 
   const { emerging, declining } = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
     if (years.length < 2) {
       return { emerging: [], declining: [] };
     }
