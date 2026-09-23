@@ -261,6 +261,67 @@ Recorded because the point of measuring after is that it finds your own mistakes
   hover bug: the override matches `.bg-[#0a0a0a]`, and `first:bg-[#0a0a0a]` is a
   different class name. Written with explicit light and dark variants instead.
 
+## Status against the acceptance criteria
+
+| # | Criterion | Status |
+| --- | --- | --- |
+| A1 | No text below WCAG AA | **Met** on every public page, measured. 75 failing occurrences → 0 |
+| A2 | No interactive target under 24 px | **Met**, measured. 100 → 0 |
+| A3 | No horizontal overflow at 390 px | **Met** — was already clean |
+| A4 | No console error | **Met** — only the deliberate 404 probe |
+| A5 | Every unprefixed colour utility has a light-mode translation or is a deliberate accent | **Met** for what renders. The `first:`/`hover:` variant gap is closed on every affected control |
+| A6 | Images have `alt`; icon-only controls have a name | **Met** for the controls the sweep found. Recharts `<g>` elements carry a tabindex and no name; they are chart internals, not controls |
+| A7 | One `h1` per page | **Met** — the dashboard had none and now names itself |
+| B1 | No fabricated statistic | **Met** — invented percentages replaced with real pipeline stages; "Coverage 91%" now matches the year span the product renders; every published figure is counted from the code by a test |
+| B2 | No implementation detail in user-facing copy | **Met** — the build-note pillar, "No technical details were exposed", "check the status logs" |
+| B3 | Illustrations are unmistakably illustrations | **Met** — "EXAMPLE WORKSPACE / illustration", fake hostname and liveness signals removed |
+| B4 | Consistent naming | **Met** for the collision found — the command palette no longer gives two destinations the same name |
+| C1 | Nothing shipped that renders nothing | **Met** — 864 lines of orphaned components, and `.app-muted` |
+| C2 | Decoration earns its place | **Met** — the scanline is gone; the marketing grid is kept deliberately (see below) |
+| C3 | No control that looks interactive and is not | **Met** — docs tag pills now search; the footer no longer dresses links as form controls |
+| C4 | Perpetual animation removed or bounded | **Partly met** — the scanline is gone; `marketing-grid` still drifts (see below) |
+| D1 | Near-identical greys consolidated | **Partly met** — `#666666`, `#6f6f6f`, `#888888` and 98 `text-slate-400` folded in. The full inventory is larger |
+| D2 | Stock template palette removed | **Met** — zero occurrences remain anywhere in `src/` |
+| D3 | One theming strategy per surface | **Not met** — see below |
+| D4 | Controls of one role share an implementation | **Not met** — see below |
+| E1 | Tests green at or above baseline | **Met** — 561 → 623 |
+| E2 | `next build` succeeds | **Met** |
+| E3 | Verified on a deployed site | **Outstanding** — verified against a local production build; PR #124 awaits review |
+| E4 | No weakening of authorization | **Met** — the security pass strengthened it; nothing in the handoff's "never" list was touched |
+
+### Deliberately not done, and why
+
+- **C4, the marketing grid.** It drifts 48 px over 18 s behind a mask that fades
+  it out, and it is covered by the reduced-motion rule. Removing it would cost
+  the hero its only texture to satisfy a criterion it does not really offend.
+  The scanline was different: it swept the full height of every product frame
+  every 4.8 s in colours that belong to no one.
+- **D3, the two theming strategies.** The evidence decided this, as Decision 2
+  said it would. 330 unprefixed declarations rely on the override layer, and the
+  measured result is that the layer *works* for base colours — the light pages
+  come back clean. It fails only for variant classes (`hover:`, `first:`), and
+  every affected control has been rewritten with explicit variants. Rewriting
+  330 working declarations would be churn with real regression risk. What is
+  left is a documented trap: **a new `hover:`/`first:`/`focus:` colour utility
+  written without a `dark:` prefix on a marketing surface will silently do
+  nothing in light mode.** A test now fails if one appears.
+- **D4, control primitives.** 90 distinct button class strings for 115 buttons,
+  6 corner radii, 9 heights. Decision 3 chose to normalise values rather than
+  migrate 552 call sites, and that work is not done — it is a large mechanical
+  change that deserves its own round with its own verification, not a tail-end
+  addition to this one.
+- **Two repository pickers.** `/workspaces` and `/workspace/library` both list
+  the same repositories, and clicking a card in the library silently changes the
+  app's global project — so opening a repository "just to look" redirects the
+  Dashboard and Chat you visit next. It is a genuine trap, but whether the
+  library's picker should be scoped-local or should warn is a product decision
+  about what "opening a repository" means, and not a reviewer's to make.
+- **The settings preferences are write-only.** `goal`, `primarySource` and
+  `desiredOutputs` are persisted and rehydrated and never read to change
+  behaviour. Wiring them up is a feature; removing them discards intent. The
+  planned connectors *are* labelled `PLANNED` in the UI, so the earlier report
+  that they deceive the reader does not hold.
+
 ## Security review
 
 Scope: 46 API routes, the authorization helpers, the SQL layer, CORS, uploads,

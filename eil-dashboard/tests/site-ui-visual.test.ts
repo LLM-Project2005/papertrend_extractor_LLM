@@ -181,12 +181,17 @@ test("a perpetual rainbow sweep no longer runs over every product frame", () => 
   }
 });
 
-test("hover feedback survives the light-mode retrofit", () => {
-  // The retrofit rewrites base utility classes by name, and a hover utility is a
-  // different class name - but the base rule out-specifies it, so hovering these
-  // controls in light mode changed nothing at all. Measured on the deployed
-  // landing page: rest rgb(255,255,255), hover rgb(255,255,255).
-  const banned = /(?<!dark:)\bhover:(?:bg|border|text)-\[#[0-9a-fA-F]{6}\]/;
+test("variant colours survive the light-mode retrofit", () => {
+  // The retrofit rewrites base utility classes *by name*. `hover:bg-[#0a0a0a]`
+  // and `first:bg-[#0a0a0a]` are different class names from `bg-[#0a0a0a]`, so
+  // no rule converts them - and because the base rule out-specifies the variant,
+  // the light page either ignores the variant entirely or keeps a dark value.
+  // Both were measured: hover rest and hover both rgb(255,255,255), and a
+  // first:-styled chip at 2.61:1.
+  //
+  // This is the standing trap left by keeping the override layer, so the guard
+  // covers every interactive variant, not just the one that was found first.
+  const banned = /(?<!dark:)\b(?:hover|focus|focus-visible|active|first|last|odd|even|group-hover):(?:bg|border|text)-\[#[0-9a-fA-F]{6}\]/;
   for (const file of [
     "src/app/page.tsx",
     "src/app/features/[slug]/page.tsx",
