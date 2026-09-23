@@ -1,6 +1,6 @@
 # 27 — Site-wide UI quality audit and remediation
 
-Status: **implementation complete, awaiting deployment verification** (2026-09-23)
+Status: **complete and verified on the deployed pilot** (2026-09-24)
 
 ## Why this exists
 
@@ -230,6 +230,10 @@ attention.
 `scripts/capture-ui.ts` over 90 comparable page / viewport / theme combinations,
 before against the deployed site and after against a local production build:
 
+Verified on the **deployed pilot**, across 129 page / viewport / theme
+combinations — including 39 authenticated pages, which could not be measured at
+all until the work was deployed, because a local build has no session.
+
 | Measure | Before | After |
 | --- | --- | --- |
 | Contrast failures (occurrences) | 75 | **0** |
@@ -238,6 +242,12 @@ before against the deployed site and after against a local production build:
 | Interactive targets under 24 px (distinct) | 61 | **0** |
 | Pages with horizontal overflow at 390 px | 0 | 0 |
 | Console errors | 3 | 3 — all three are the deliberate probe of a nonexistent URL |
+
+The authenticated half was worth the wait: it held the last small targets, the
+two components that had escaped every dark-mode pass, and — only visible by
+*looking* rather than measuring — a year span reading "2016 to Unknown" on the
+first screen after signing in, and a raw transport exception as the most
+prominent line under "Analysis failed".
 
 Theme flash, measured with the system set to dark, sampling every animation
 frame from navigation:
@@ -284,9 +294,9 @@ Recorded because the point of measuring after is that it finds your own mistakes
 | D2 | Stock template palette removed | **Met** — zero occurrences remain anywhere in `src/` |
 | D3 | One theming strategy per surface | **Not met** — see below |
 | D4 | Controls of one role share an implementation | **Not met** — see below |
-| E1 | Tests green at or above baseline | **Met** — 561 → 623 |
+| E1 | Tests green at or above baseline | **Met** — 561 → 640 |
 | E2 | `next build` succeeds | **Met** |
-| E3 | Verified on a deployed site | **Outstanding** — verified against a local production build; PR #124 awaits review |
+| E3 | Verified on a deployed site | **Met** — measured on the pilot after deployment, authenticated pages included |
 | E4 | No weakening of authorization | **Met** — the security pass strengthened it; nothing in the handoff's "never" list was touched |
 
 ### Deliberately not done, and why

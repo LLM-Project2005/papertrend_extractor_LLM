@@ -100,9 +100,43 @@ export function getRunStageMessage(run: RunLike): string {
   }
 }
 
+/**
+ * Signatures of a message written for a stack trace rather than for a person.
+ *
+ * Most worker failures already read as sentences - "No extractable text was
+ * found in the PDF." - and those are shown unchanged, because they say exactly
+ * what happened. What a reader should never meet is the transport exception
+ * underneath them, which arrives raw from the storage client:
+ *
+ *   Timeout of 90.0s exceeded, last exception: HTTPSConnectionPool(
+ *   host='storage.googleapis.com', port=443): Max retries exceeded...
+ *
+ * That was the most prominent line under "Analysis failed" on the first screen
+ * after signing in.
+ */
+const WRITTEN_FOR_A_STACK_TRACE =
+  /HTTPSConnectionPool|Max retries|urllib3|Traceback|port=\d+|object at 0x|[A-Za-z]{3,}Error\(|SSLError/;
+
+/**
+ * What to show a reader when a run failed.
+ *
+ * The raw text is not discarded - `AnalysisStatusCard` and the History page
+ * still print it underneath, because someone diagnosing a run wants the
+ * original. This is only the sentence that leads.
+ */
+export function describeRunFailure(raw: string | null | undefined): string {
+  const message = String(raw ?? "").trim();
+  if (!message) return "The worker stopped before this file could finish.";
+  if (!WRITTEN_FOR_A_STACK_TRACE.test(message)) return message;
+  if (/timeout|timed out|max retries/i.test(message)) {
+    return "This file took too long to download, so the run timed out. Trying it again usually works.";
+  }
+  return "The analysis stopped on a network or storage error. Trying it again usually works.";
+}
+
 export function getRunStageCaption(run: RunLike): string {
   if (run.status === "failed") {
-    return run.error_message?.trim() || "The worker stopped before this file could finish.";
+    return describeRunFailure(run.error_message);
   }
 
   const detail = readInputPayloadString(run, "progress_detail");

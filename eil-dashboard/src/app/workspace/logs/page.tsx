@@ -11,6 +11,7 @@ import {
   SearchIcon,
 } from "@/components/ui/Icons";
 import type { IngestionRunRow } from "@/types/database";
+import { describeRunFailure } from "@/lib/ingestion-status";
 
 type HistoryGroup = {
   id: string;
@@ -154,7 +155,10 @@ function titleOf(run: IngestionRunRow) {
 }
 
 function subtitleOf(run: IngestionRunRow) {
-  if (run.error_message?.trim()) return run.error_message;
+  // The raw message leads with transport noise the reader cannot act on. The
+  // original is still shown, on the line below, because this is the page
+  // someone opens to work out what went wrong.
+  if (run.error_message?.trim()) return describeRunFailure(run.error_message);
   if (run.source_path?.trim()) return run.source_path;
   if (run.status === "succeeded") return "Analysis completed successfully.";
   if (run.status === "failed") return "Analysis failed.";
@@ -395,6 +399,12 @@ export default function WorkspaceLogsPage() {
                             <p className="line-clamp-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
                               {subtitleOf(run)}
                             </p>
+                            {run.error_message?.trim() &&
+                            describeRunFailure(run.error_message) !== run.error_message.trim() ? (
+                              <p className="line-clamp-2 font-mono text-[11px] leading-5 text-slate-500 dark:text-[#8f8f8f]">
+                                {run.error_message.trim()}
+                              </p>
+                            ) : null}
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
                               <span>{formatDateTime(getRunTimestamp(run))}</span>
                               {run.source_filename ? <span>{run.source_filename}</span> : null}

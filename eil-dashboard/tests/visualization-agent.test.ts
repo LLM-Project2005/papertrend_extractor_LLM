@@ -228,3 +228,41 @@ test("a chart the agent planned but the data could not support is named", () => 
   assert.match(tab, /const droppedCharts = planned\.filter\(\(entry\) => !entry\.node\)/);
   assert.match(tab, /planned and not drawn, because this data does not support/);
 });
+
+/* ------------------------------ the same bug had two more homes than we knew */
+
+test("the coverage metric is a span between two dates, not a date and a word", () => {
+  // Found on the deployed pilot, on the first screen after signing in:
+  //
+  //   COVERAGE
+  //   2016 to Unknown
+  //   Publication year span
+  //
+  // The third and fourth place this bug lived. "Unknown" sorts after "2026" as
+  // a string, so it became the end of every year span. Both of these build
+  // their own year list, which is exactly how the planner fix failed to reach
+  // the dashboard tab, and how both of those failed to reach here.
+  for (const relative of [
+    "../src/components/workspace/WorkspaceHomeClient.tsx",
+    "../src/components/tabs/Overview.tsx",
+  ]) {
+    const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+    assert.match(source, /import \{ isDatedYear \} from "@\/lib\/dated-year"/, `${relative} must use the predicate`);
+    assert.match(source, /\.filter\(isDatedYear\)/, `${relative} must filter its year list`);
+  }
+});
+
+test("every year list in the app runs through one predicate", () => {
+  // Four independent implementations of "which years are real" is how this bug
+  // survived two fixes. There is one predicate; this fails if a fifth appears.
+  const owners = [
+    "../src/lib/visualization-planner.ts",
+    "../src/components/dashboard/AdaptiveDashboardTab.tsx",
+    "../src/components/workspace/WorkspaceHomeClient.tsx",
+    "../src/components/tabs/Overview.tsx",
+  ];
+  for (const relative of owners) {
+    const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+    assert.match(source, /isDatedYear/, `${relative} decides what counts as a year and must use the predicate`);
+  }
+});
