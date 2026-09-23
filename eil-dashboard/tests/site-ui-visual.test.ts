@@ -105,7 +105,11 @@ test("the borrowed template palette appears nowhere in the app", () => {
 test("nothing claims to be live that is a drawing", () => {
   const motion = readCode("src/components/marketing/MarketingMotion.tsx");
   assert.equal(/LIVE REPOSITORY/.test(motion), false);
-  assert.equal(/research-trend-analysis\.web\.app/.test(motion), false, "and not a stale hostname either");
+  assert.equal(
+    /research-trend-analysis\.web\.app/.test(motion),
+    false,
+    "a real address beside a connected-dot is what made the drawing read as a live session"
+  );
   assert.match(motion, /EXAMPLE WORKSPACE/);
   assert.match(readCode("src/components/marketing/FeatureShowcases.tsx"), /illustration/);
 });

@@ -162,7 +162,7 @@ not the right one.
 | D. Delete it | Unambiguous | Removes the page's only visual; a researcher deciding whether to sign up gets less, not more |
 
 **Chosen: C, sharpened.** The illustration stays, but stops lying: the fake hostname
-`research-trend-analysis.web.app` goes, the invented percentages go, and the stage names
+the live hostname goes, the invented percentages go, and the stage names
 become the *real* pipeline stages from `graphs.py` — extract, clean, translate, segment,
 metadata, keywords, topics, tracks, typology, facets. That converts a fabrication into a
 true and more specific statement about the product, with no new assets and no privacy
@@ -208,7 +208,7 @@ attention.
 
 | # | Finding | Evidence | Severity |
 | --- | --- | --- | --- |
-| F1 | The landing page presents an entirely fabricated product mock — fake window chrome `analysis.run/webquest.pdf`, six bars representing nothing, invented percentages (96/88/74/91%), and a fake hostname `research-trend-analysis.web.app`. None of it corresponds to a real Papertrend screen. | `src/components/marketing/FeatureShowcases.tsx:56-125`, `MarketingMotion.tsx:36-90` | High |
+| F1 | The landing page presents an entirely fabricated product mock — fake window chrome `analysis.run/webquest.pdf`, six bars representing nothing, invented percentages (96/88/74/91%), and the live hostname `research-trend-analysis.web.app` printed beside a teal connected-dot. None of it corresponds to a real Papertrend screen. (Correction: that hostname is **not** fake - it is the real Firebase site, with `papertrend.web.app` as its short alias. The defect is a static drawing presenting a real address as a live session, not an invented address.) | `src/components/marketing/FeatureShowcases.tsx:56-125`, `MarketingMotion.tsx:36-90` | High |
 | F2 | `"Static marketing pages with client-only auth CTA"` ships on the public landing page as the fourth reason to choose Papertrend. It is a build note. | `src/components/marketing/marketing-content.ts` `valuePillars[3]` | High |
 | F3 | 330 of 369 colour utilities on marketing surfaces are written as dark values with no `dark:` prefix, relying on a CSS layer that translates specific hex classes for light mode. 53 occurrences have no translation rule at all. `MarketingLayout.tsx` uses the correct `dark:` strategy — two incompatible approaches on one surface. | `src/app/globals.css:176-231`, marketing components | High |
 | F4 | On `/login`, "Create password account" (136×16 px) and "Reset password" (84×16 px) are 16 px tall — the two recovery paths on the most important page on the site. | measured, deployed site | High |
