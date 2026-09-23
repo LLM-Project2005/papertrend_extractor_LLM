@@ -384,6 +384,29 @@ test("switching conversations does not show the previous one's messages", () => 
   assert.match(chat, /setActiveThread\(null\);\s*\n\s*loadedThreadIdRef\.current = null;/);
 });
 
+test("looking inside a repository does not silently change which one the app is about", () => {
+  // Browsing any repository's files from the library is a requested feature.
+  // The problem was the side effect: the card click also set the app's active
+  // repository, so opening one just to see what was in it redirected the
+  // Dashboard and Chat opened next, with nothing on screen saying so.
+  const library = readCode("src/components/admin/AdminImportClient.tsx");
+  const cardClick = library.slice(
+    library.indexOf("setLibraryProjectId(project.id);"),
+    library.indexOf("setLibraryProjectId(project.id);") + 220
+  );
+  assert.equal(
+    /setSelectedProjectId\(project\.id\)/.test(cardClick),
+    false,
+    "browsing must not change the active repository"
+  );
+  // Switching is still possible - deliberately, from a labelled control.
+  assert.match(library, /Switch to this repository/);
+  assert.match(library, /onClick=\{\(\) => setSelectedProjectId\(libraryProject\.id\)\}/);
+  // And the difference is stated while it exists.
+  assert.match(library, /libraryProject\.id !== currentProject\.id/);
+  assert.match(library, /Dashboard\s*\n?\s*and Chat still use/);
+});
+
 test("a loading indicator still means something without motion", () => {
   // The site-wide reduced-motion rule collapses every animation duration, so
   // animate-pulse on a half-width bar stopped at its last keyframe and sat

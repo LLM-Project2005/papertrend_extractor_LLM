@@ -1643,6 +1643,30 @@ export default function AdminImportClient() {
       />
 
       <div className="space-y-5">
+        {/*
+          Browsing and switching are now different acts, so the one place they
+          could be confused says which is which. Without this a reader could be
+          looking at one repository's papers while the Dashboard and Chat in the
+          sidebar were about another, with nothing on screen to say so.
+        */}
+        {!showTrash && libraryProject && currentProject && libraryProject.id !== currentProject.id ? (
+          <div className="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <p className="leading-6 text-slate-600 dark:text-[#a3a3a3]">
+              You are browsing{" "}
+              <span className="font-medium text-slate-900 dark:text-white">{libraryProject.name}</span>. Dashboard
+              and Chat still use{" "}
+              <span className="font-medium text-slate-900 dark:text-white">{currentProject.name}</span>.
+            </p>
+            <button
+              type="button"
+              onClick={() => setSelectedProjectId(libraryProject.id)}
+              className="inline-flex flex-none items-center justify-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
+            >
+              Switch to this repository
+            </button>
+          </div>
+        ) : null}
+
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
@@ -2214,9 +2238,15 @@ export default function AdminImportClient() {
                     <button
                       key={project.id}
                       type="button"
+                      // Opening a repository here used to also set the app's
+                      // active repository, so looking inside one to see what was
+                      // in it silently redirected the Dashboard and Chat you
+                      // opened next. Browsing any repository's files is the point
+                      // of this screen; changing what the rest of the app is
+                      // about is a separate decision, and it now has its own
+                      // button in the notice below.
                       onClick={() => {
                         setLibraryProjectId(project.id);
-                        setSelectedProjectId(project.id);
                         setSelectedFolderId("all");
                         setQuery("");
                       }}

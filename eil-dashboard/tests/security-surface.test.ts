@@ -237,8 +237,19 @@ test("uploads are checked by content, not only by name", () => {
 });
 
 test("rate-limit subjects are stored hashed", () => {
+  // An address and an email address are both personal data, and this table is
+  // written on every failed sign-in.
   const guards = read("src/lib/security-guards.ts");
   assert.match(guards, /createHash\("sha256"\)/);
   assert.match(guards, /const ipHash = hashSubject\(getClientIp\(request\)\)/);
-  assert.match(guards, /const subjectHash = hashSubject\(`\$\{email\}:\$\{ipHash\}`\)/);
+  // Every bucket key goes through hashSubject; none is a raw email or address.
+  const fn = guards.slice(
+    guards.indexOf("export async function assertLoginRateLimit"),
+    guards.indexOf("async function countPersistedAttempts")
+  );
+  const keys = [...fn.matchAll(/\{ hash: ([^,]+), limit:/g)].map((m) => m[1].trim());
+  assert.ok(keys.length >= 2, "both buckets must be present");
+  for (const key of keys) {
+    assert.match(key, /^hashSubject\(/, `bucket key ${key} is not hashed`);
+  }
 });

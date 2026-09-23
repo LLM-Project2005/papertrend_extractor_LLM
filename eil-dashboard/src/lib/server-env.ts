@@ -219,6 +219,24 @@ export function getLoginRateLimitWindowSeconds(): number {
   return parseBoundedIntEnv("LOGIN_RATE_LIMIT_WINDOW_SECONDS", 900, 60, 86_400);
 }
 
+/**
+ * Failed attempts allowed against one email address, from any address at all.
+ *
+ * The per-IP bucket is keyed on the caller's `X-Forwarded-For`, which the caller
+ * can write. Rotating it earns a fresh bucket every time, so on its own that
+ * limit does not bound an attack on a single account. This one does, because an
+ * attacker cannot rotate the address they are trying to break into.
+ *
+ * Set well above the per-IP limit: a person failing their own password hits the
+ * tighter bucket first, so this only bites on an attack from many addresses.
+ * The cost is that someone can burn a victim's budget and make them wait out the
+ * window - bounded, recoverable, and far cheaper than unlimited guessing. Google
+ * and Facebook sign-in are unaffected either way.
+ */
+export function getLoginEmailRateLimitAttempts(): number {
+  return parseBoundedIntEnv("LOGIN_EMAIL_RATE_LIMIT_ATTEMPTS", 20, 1, 200);
+}
+
 export function getAiDailyMessageLimit(): number {
   return parseBoundedIntEnv("AI_DAILY_MESSAGE_LIMIT", 100, 1, 10_000);
 }
