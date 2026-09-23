@@ -57,9 +57,6 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
       { href: "/workspace/library", label: "Repositories", icon: FolderIcon },
-      // /workspace/logs is a finished 441-line page that nothing linked to. It
-      // was reachable only by typing the URL.
-      { href: "/workspace/logs", label: "History", icon: FileIcon },
     ],
   },
   {
@@ -117,14 +114,6 @@ const SEARCH_PAGE_ITEMS = [
     icon: FolderIcon,
     keywords: ["papers", "files", "imports", "documents", "upload", "analyze paper", "search library", "paper detail"],
     featured: true,
-  },
-  {
-    id: "history",
-    label: "History",
-    description: "Revisit previous analysis runs",
-    href: "/workspace/logs",
-    icon: FileIcon,
-    keywords: ["logs", "runs", "analysis history", "previous", "past runs", "activity"],
   },
   {
     id: "settings",

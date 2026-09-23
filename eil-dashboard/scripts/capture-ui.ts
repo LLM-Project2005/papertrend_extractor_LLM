@@ -59,7 +59,6 @@ const ROUTES: Route[] = [
   { id: "workspace-dashboard", path: "/workspace/dashboard", auth: true, bothThemes: true },
   { id: "workspace-chat", path: "/workspace/chat", auth: true, bothThemes: true },
   { id: "workspace-library", path: "/workspace/library", auth: true, bothThemes: true },
-  { id: "workspace-logs", path: "/workspace/logs", auth: true },
   { id: "workspace-profile", path: "/workspace/profile", auth: true },
   { id: "workspace-settings", path: "/workspace/settings", auth: true },
   { id: "not-found", path: "/this-route-does-not-exist", auth: false },
