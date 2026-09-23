@@ -483,10 +483,15 @@ export default function PaperAnalysisExplorerModal({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-none rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                // The border lives in the base class, not on one branch. It used
+                // to sit only on the inactive pills, and under border-box sizing
+                // with auto width that made every inactive pill 2px wider and
+                // taller than the active one - so clicking a tab reflowed the
+                // whole nowrap row sideways under the pointer.
+                className={`flex-none rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                   activeTab === tab.id
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
-                    : "border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+                    ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-[#171717]"
+                    : "border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
                 }`}
               >
                 {tab.label}

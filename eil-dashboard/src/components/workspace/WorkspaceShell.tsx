@@ -547,9 +547,21 @@ export default function WorkspaceShell({
             <WorkspaceProfileMenu />
           </div>
         </div>
+        {/*
+          The site-wide reduced-motion rule collapses every animation duration,
+          so `animate-pulse` on a half-width bar stopped at its last keyframe and
+          sat there - a solid bar frozen at 50%, which reads as stalled rather
+          than as working. It also had no accessible name at all. Under reduced
+          motion it now fills the track, which is a static statement instead of
+          an animation that never arrives.
+        */}
         {navigating ? (
-          <div className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-slate-950/10 dark:bg-white/10">
-            <div className="h-full w-1/2 animate-pulse bg-slate-950 dark:bg-white" />
+          <div
+            role="status"
+            aria-label="Loading page"
+            className="absolute inset-x-0 bottom-0 h-0.5 overflow-hidden bg-slate-950/10 dark:bg-white/10"
+          >
+            <div className="h-full w-full bg-slate-950 motion-safe:w-1/2 motion-safe:animate-pulse dark:bg-white" />
           </div>
         ) : null}
       </header>

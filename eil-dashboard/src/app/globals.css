@@ -152,10 +152,6 @@ body {
   @apply rounded-lg border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505];
 }
 
-.app-muted {
-  @apply text-slate-500 dark:text-[#a3a3a3];
-}
-
 .marketing-grid {
   background-image:
     linear-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px),
@@ -227,7 +223,9 @@ body {
 
 :root:not(.dark) .marketing-shell :where(.text-\[\#8f8f8f\]),
 :root:not(.dark) .marketing-shell :where(.text-\[\#6f6f6f\]) {
-  color: #64748b;
+  /* slate-500 measured 4.34:1 against the slate-100 panels these labels sit on.
+     slate-600 clears AA on both that and plain white. */
+  color: #475569;
 }
 
 :root:not(.dark) .marketing-shell :where(.bg-gradient-to-br.text-white),

@@ -124,7 +124,7 @@ export default function DocsSearchClient() {
           </h2>
           <Link
             href="/docs"
-            className="text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
+            className="-my-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
           >
             Docs home
           </Link>

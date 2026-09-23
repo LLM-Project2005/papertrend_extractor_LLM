@@ -30,7 +30,7 @@ the code, not invented.
 | Radii | `--radius-control: 8px`, `--radius-panel: 12px` |
 | Motion | `--motion-fast: 140ms`, `--motion-ui: 220ms`, `--ease-out-expo` |
 | Type accent | Monospace, uppercase, tracked — used for eyebrows and field labels |
-| Surfaces | `.app-surface`, `.app-card`, `.app-muted`, `.tab-btn` |
+| Surfaces | `.app-surface`, `.app-card`, `.tab-btn` |
 
 **Not the brand — accidents that accumulated:**
 
@@ -224,6 +224,82 @@ attention.
 | F14 | "Popular docs" flags 9 of 13 pages — 69%, so the label curates nothing — and the same pages are listed again, grouped, immediately below. The mobile docs index is 4,608 px of largely duplicated navigation. | `src/lib/docs-content.ts:968`, 9× `popular: true` | Medium |
 | F15 | On a phone the workspace breadcrumb renders as "Rep… > T…". Both segments are `truncate` in a flex row sharing a 390 px header with six other controls, so neither survives. A user cannot tell which repository they are in. | `src/components/workspace/WorkspaceShell.tsx:134-158` | Medium |
 | F16 | The library toolbar stacks nine controls (New, Trash, Search, Type, Modified, Source, Sort, Refresh, view toggle) above the list. On a phone that is roughly 500 px of chrome before the first repository. "Trash" is given the same visual weight as "New", and "New" carries a tinted fill that appears nowhere else in the brand. | `src/components/admin/AdminImportClient.tsx`, measured at 390 px | Medium |
+
+## Measured result
+
+`scripts/capture-ui.ts` over 90 comparable page / viewport / theme combinations,
+before against the deployed site and after against a local production build:
+
+| Measure | Before | After |
+| --- | --- | --- |
+| Contrast failures (occurrences) | 75 | 7 → 0 after the final pass |
+| Contrast failures (distinct colour/size pairs) | 15 | 5 → 0 |
+| Interactive targets under 24 px (occurrences) | 100 | 6 → 0 |
+| Interactive targets under 24 px (distinct) | 61 | 1 → 0 |
+| Pages with horizontal overflow at 390 px | 0 | 0 |
+| Console errors | 0 (bar the deliberate 404 probe) | 0 |
+
+Theme flash, measured with the system set to dark, sampling every animation
+frame from navigation:
+
+| | Before | After |
+| --- | --- | --- |
+| First painted frame | `rgb(248,250,252)`, no `dark` class | `rgb(0,0,0)`, `dark` already applied |
+| Light shown for | 165 ms, then a 220 ms animated wipe | 0 ms |
+| Distinct `body` background values during load | 14 | 1 |
+
+### Two regressions this round introduced, caught by re-measuring
+
+Recorded because the point of measuring after is that it finds your own mistakes.
+
+- Recolouring a framer-motion `color` animation from the stock teal to `#f2f2f2`
+  made the label **invisible in light mode** — 1.35:1 — because a JS animation
+  writes an inline style the light-mode override layer can never reach. It
+  animates opacity now, which reads the same in both themes.
+- A `first:bg-[#0a0a0a] first:text-white` chip kept its near-black fill in light
+  mode while its text took the converted slate-600, at 2.61:1. Same family as the
+  hover bug: the override matches `.bg-[#0a0a0a]`, and `first:bg-[#0a0a0a]` is a
+  different class name. Written with explicit light and dark variants instead.
+
+## Security review
+
+Scope: 46 API routes, the authorization helpers, the SQL layer, CORS, uploads,
+rate limiting, redirect handling, and what reaches the browser bundle.
+
+**The codebase was in good order.** That is a finding, not a courtesy. Specifically,
+and each checked rather than assumed:
+
+| Property | How it holds |
+| --- | --- |
+| Tenant isolation | Every parameterized route calls `repository.method(user.id, resourceId)`. The owner comes from the verified token; no route reads an owner id from the body or query. A resource belonging to someone else returns 404, not 403, so existence is not leaked. |
+| SQL | All 58 `client.query` calls are parameterized. The few interpolated fragments are assembled from string literals in the source, with values in the parameter array, and every statement is scoped by `owner_user_id`. |
+| Internal callbacks | `x-worker-secret` via `isRepositoryJobSecretValid`: fails closed when unset, length-checks before `timingSafeEqual` (which throws on mismatched lengths). |
+| Admin | A timing-safe secret, or a `role = 'admin'` lookup **in the database** — not a claim from the client. Fails closed on error. The destructive debug queue-clearer additionally returns 410 in Cloud SQL mode, which is production. |
+| CORS | Allowlist only, no wildcard, `Vary: Origin` set, credentials deliberately not allowed because the endpoint is bearer-authenticated. |
+| Uploads | Extension, size bounds, SHA-256 format, MIME allowlist, **and a `%PDF-` magic-byte check on the buffer**. Stored names are stripped to `[a-zA-Z0-9._-]`. |
+| Redirects | `validateSafeReturnTo` rejects protocol-relative `//` targets and any absolute URL whose origin is not the configured site. |
+| Secrets | No server-only module is imported by a `"use client"` file; no non-`NEXT_PUBLIC_` env var is referenced from one. The service-role key appears in two server-only modules. |
+| XSS | No `innerHTML`, `document.write`, `eval` or `new Function` anywhere. The only `dangerouslySetInnerHTML` is the static pre-paint theme constant added by this round. |
+| Rate limiting | Login attempts and daily AI budgets, with subjects stored as SHA-256 hashes rather than raw emails and IPs. |
+
+### Changed
+
+| # | Finding | Severity |
+| --- | --- | --- |
+| S1 | The admin secret was accepted from `?admin_secret=` as well as the `x-admin-secret` header. A query string is written to Cloud Run request logs, kept in browser history, and forwarded in the `Referer` header to anything the page links to. **No caller in the codebase ever sent it that way** — every one uses the header — so this was an exposure route with no consumer. Removed from both admin helpers. | Medium |
+| S2 | The two cron routes compared their secret with `authHeader !== \`Bearer ${secret}\``, which short-circuits on the first differing byte, while every other secret in the codebase is compared in constant time. A remote timing attack against a high-entropy secret over a network is impractical, so this is hardening rather than a repair — but one exception is how the next one gets written. Now uses a shared `isValidBearerSecret`. | Low |
+
+### Reported, not changed
+
+Each of these is a trade-off that belongs to the owner rather than to a reviewer.
+Changing any of them unilaterally would trade one risk for another.
+
+| # | Finding | Why it is your call |
+| --- | --- | --- |
+| S3 | **The login rate limiter fails open.** In `assertLoginRateLimit`, any non-`GuardError` exception is caught, logged as a warning, and the request is *allowed*. If the database is unavailable or `security_rate_limit_events` is missing, brute-force protection silently disappears. | Failing closed would lock every user out during a database blip. Firebase Auth also rate-limits password attempts server-side, so there is a second layer. The question is whether you want availability or the guarantee here. |
+| S4 | **`getClientIp` trusts the leftmost `X-Forwarded-For`.** Google's front end *appends* to a client-supplied `X-Forwarded-For`, so `split(",")[0]` can be a value the caller chose. The login limiter keys on `hash(email + hash(ip))`, so an attacker rotating that header gets a fresh bucket for each attempt against one account. | The correct index depends on your exact proxy chain (direct Cloud Run vs Firebase Hosting vs a load balancer), and guessing wrong silently breaks rate limiting instead of merely weakening it. Worth confirming the chain, then taking a fixed offset from the right. A second limiter keyed on the email alone would close it regardless of topology, at the cost of making account-lockout DoS possible. |
+| S5 | **The admin secret is kept in `localStorage`** (`eil_admin_secret`). Any XSS on the site could read it, and it grants cross-tenant destructive operations such as the queue clearer. | It is an optional escape hatch — the `role = 'admin'` path already covers normal use — so it may simply be removable. That depends on whether you use it outside the UI. |
+| S6 | `/api/admin/import/finalize` does not validate the object that was actually uploaded. The signed URL binds a content type and expires in 30 minutes, and the worker's PDF reader fails cleanly on a non-PDF, so the practical impact is a failed run by an authenticated user inside their own scope. | Low value, non-zero cost: adding a magic-byte read at finalize means fetching the object back. |
 
 ### Checked and found NOT to be defects
 

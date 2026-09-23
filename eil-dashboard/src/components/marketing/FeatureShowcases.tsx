@@ -357,7 +357,7 @@ export function AIResearchChatShowcase() {
           </div>
           <div className="mt-5 space-y-1">
             {["Webquest topic chart", "Compare two papers", "Research gaps"].map((item) => (
-              <div key={item} className="truncate rounded-xl px-3 py-2.5 text-xs text-[#a3a3a3] first:bg-[#0a0a0a] first:text-white">
+              <div key={item} className="truncate rounded-xl px-3 py-2.5 text-xs text-slate-600 first:bg-slate-900 first:text-white dark:text-[#a3a3a3] dark:first:bg-[#0a0a0a] dark:first:text-white">
                 {item}
               </div>
             ))}
@@ -581,7 +581,7 @@ export function CloudQueueShowcase() {
                   <span className="truncate text-sm text-white">{name}</span>
                   <motion.span
                     className="font-mono text-xs text-[#8f8f8f]"
-                    animate={transition && index === 1 ? { color: ["#8f8f8f", "#f2f2f2"] } : undefined}
+                    animate={transition && index === 1 ? { opacity: [0.55, 1] } : undefined}
                     transition={transition}
                   >
                     {status}

@@ -323,6 +323,58 @@ test("muted light-mode text is not slate-400", () => {
   assert.deepEqual(offenders, []);
 });
 
+/* ------------------------------------------------------ state and feedback */
+
+test("switching conversations does not show the previous one's messages", () => {
+  // Clicking a thread marks it active in the sidebar at once, but the transcript
+  // was only replaced when the fetch returned - so for the length of the round
+  // trip one conversation sat under another's name, and on failure it stayed
+  // there under an error about a thread the reader was no longer looking at.
+  const chat = readCode("src/components/chat/ChatClient.tsx");
+  assert.match(chat, /const loadedThreadIdRef = useRef<string \| null>\(null\)/);
+  assert.match(chat, /if \(loadedThreadIdRef\.current !== threadId\) \{[\s\S]{0,200}setMessages\(\[\]\)/);
+  // ...but reloading the SAME thread after sending a message must not blank it.
+  assert.match(chat, /loadedThreadIdRef\.current = threadId;/);
+  // and the empty transcript must not flash the "ask me anything" intro, which
+  // would say "this conversation is empty" about one that is still arriving.
+  assert.match(chat, /!hasContent && !loading && !detailLoading \?/);
+  assert.match(chat, /setActiveThread\(null\);\s*\n\s*loadedThreadIdRef\.current = null;/);
+});
+
+test("a loading indicator still means something without motion", () => {
+  // The site-wide reduced-motion rule collapses every animation duration, so
+  // animate-pulse on a half-width bar stopped at its last keyframe and sat
+  // there - a bar frozen at 50%, which reads as stalled rather than working.
+  const shell = readCode("src/components/workspace/WorkspaceShell.tsx");
+  assert.match(shell, /role="status"\s*\n\s*aria-label="Loading page"/);
+  assert.match(shell, /w-full bg-slate-950 motion-safe:w-1\/2 motion-safe:animate-pulse/);
+});
+
+test("a tab row does not resize when you click a tab", () => {
+  // The border sat only on the inactive pills. Under border-box sizing with auto
+  // width that made every inactive pill 2px wider and taller than the active
+  // one, so clicking reflowed the whole nowrap row sideways under the pointer.
+  const modal = readCode("src/components/workspace/PaperAnalysisExplorerModal.tsx");
+  assert.match(modal, /flex-none rounded-full border px-4 py-2/);
+  assert.match(modal, /border-slate-900 bg-slate-900 text-white/);
+  assert.equal(
+    /\? "bg-slate-900 text-white dark:bg-white dark:text-\[#171717\]"/.test(modal),
+    false,
+    "the active branch must carry a border too"
+  );
+});
+
+test("no stylesheet rule ships with nothing to style", () => {
+  // .app-muted was in the bundle every visitor downloads and had zero call
+  // sites.
+  const css = read("src/app/globals.css");
+  assert.equal(css.includes(".app-muted {"), false, ".app-muted had zero call sites");
+  // The ones that remain are defined because something uses them.
+  for (const rule of ["app-surface", "app-card", "tab-btn"]) {
+    assert.match(css, new RegExp(`\\.${rule}[ -]`), `.${rule} should still be defined`);
+  }
+});
+
 /* ------------------------------------------------- data the reader is shown */
 
 test("a seeded fabrication is only ever shown when preview mode was chosen", () => {

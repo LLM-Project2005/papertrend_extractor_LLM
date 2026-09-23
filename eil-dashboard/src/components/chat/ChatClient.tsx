@@ -1298,6 +1298,8 @@ export default function ChatClient() {
   const abortControllerRef = useRef<AbortController | null>(null);
   // Names the in-flight answer so Stop can tell the server which one to drop.
   const requestIdRef = useRef<string | null>(null);
+  /** Which conversation the transcript on screen belongs to. */
+  const loadedThreadIdRef = useRef<string | null>(null);
   const repositoryJobPollsRef = useRef(
     new Map<string, { controller: AbortController; threadId: string }>()
   );
@@ -1616,6 +1618,7 @@ export default function ChatClient() {
     (mode: ChatMode = deepResearchEnabled ? "deep_research" : "normal") => {
       setActiveThreadId(null);
       setActiveThread(null);
+      loadedThreadIdRef.current = null;
       setMessages([]);
       setDeepSession(null);
       setSelectedLibraryRuns([]);
@@ -1694,6 +1697,18 @@ export default function ChatClient() {
   const loadThreadDetail = useCallback(
     async (threadId: string) => {
       if (!canPersist || !session?.access_token) return;
+      // Clicking a conversation marks it active in the sidebar immediately, but
+      // the transcript was only replaced once the fetch returned - so for the
+      // length of the round trip the reader saw one conversation's messages
+      // sitting under another one's name, and on failure they stayed there
+      // under an error about a thread they were no longer looking at.
+      // Only on an actual switch: reloading the same thread after sending a
+      // message must not blank the transcript the reader is reading.
+      if (loadedThreadIdRef.current !== threadId) {
+        loadedThreadIdRef.current = threadId;
+        setMessages([]);
+        setDeepSession(null);
+      }
       setDetailLoading(true);
       try {
         const response = await fetch(`/api/chat/threads/${threadId}`, {
@@ -3179,7 +3194,7 @@ export default function ChatClient() {
               </section>
             ) : null}
 
-            {!hasContent && !loading ? (
+            {!hasContent && !loading && !detailLoading ? (
               <ChatIntro
                 scopeLabel={scopeSummary?.scopeLabel || activeScopeSnapshot.label}
                 eligiblePaperCount={scopeSummary?.eligiblePaperCount ?? null}
