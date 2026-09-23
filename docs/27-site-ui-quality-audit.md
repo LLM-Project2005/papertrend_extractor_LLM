@@ -266,6 +266,19 @@ all until the work was deployed, because a local build has no session.
 | Pages with horizontal overflow at 390 px | 0 | 0 |
 | Console errors | 3 | 3 — all three are the deliberate probe of a nonexistent URL |
 
+Re-run once more after the harness was taught to read SVG text, so the closing number
+includes every chart label on the site:
+
+| | Final gate, live pilot |
+| --- | --- |
+| Pages captured | 129, of which 39 authenticated |
+| Contrast failures | **0** — including **0** in chart text |
+| Interactive targets under 24 px | **0** |
+| Horizontal overflow at 390 px | **0** |
+| Pages without exactly one `h1` | **0** |
+| Images without `alt` | 0 of 0 — the site uses inline SVG, not `<img>` |
+| Console errors | 3, all the deliberate probe of a nonexistent URL |
+
 The authenticated half was worth the wait: it held the last small targets, the
 two components that had escaped every dark-mode pass, and — only visible by
 *looking* rather than measuring — a year span reading "2016 to Unknown" on the
