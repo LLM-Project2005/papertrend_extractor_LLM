@@ -536,3 +536,31 @@ test("the faintest dark-mode greys are gone", () => {
     assert.equal(/text-\[#6f6f6f\]/.test(src), false, `${file} still uses #6f6f6f`);
   }
 });
+
+/* ------------------------------------------------- the instrument itself */
+
+test("the in-page diagnostics block cannot be truncated by its own comments", () => {
+  // DIAGNOSTICS is a template literal holding the code that runs inside the
+  // page. A backtick anywhere in it - including inside a comment written to
+  // explain the code - ends the literal early. That happened: the file stopped
+  // parsing, and the probe still ran, because the truncated string was
+  // coincidentally valid JavaScript. A checker that silently measures less than
+  // it claims is worse than no checker.
+  const script = read("scripts/capture-ui.ts");
+  const start = script.indexOf("const DIAGNOSTICS = ");
+  assert.ok(start > 0, "the diagnostics block must exist");
+  const body = script.slice(script.indexOf("(() => {", start), script.lastIndexOf("})()"));
+  assert.equal(body.includes("`"), false, "a backtick would end the literal early");
+  assert.equal(body.includes("${"), false, "a template hole would interpolate at build time");
+});
+
+test("the harness measures text drawn inside SVG", () => {
+  // Every chart label on the site is SVG text, painted with `fill`. Reading the
+  // `color` property reports a clean page while the axis labels sit at 3.5:1 -
+  // which is how four chart components were fixed off a separate one-off
+  // script, and a fifth stayed broken because the sweep could not see it.
+  const script = read("scripts/capture-ui.ts");
+  assert.match(script, /querySelectorAll\('svg text, svg tspan'\)/);
+  assert.match(script, /const fill = parse\(s\.fill\)/);
+  assert.match(script, /tag: 'svg:'/);
+});
