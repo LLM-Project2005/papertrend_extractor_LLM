@@ -63,7 +63,7 @@ the palette colourful would not. That is the line.
 3. **Plan before edit.** Findings are triaged and the architectural choices are argued
    out in this document before any file is changed.
 
-### Three harness bugs worth recording
+### Five harness bugs worth recording
 
 The measuring instrument was wrong three times before it was right. Each would have
 produced confident, wrong findings, so each is recorded.
@@ -90,9 +90,32 @@ reported exactly one contrast failure that vanished when re-measured in a settle
 Fix: await `document.getAnimations()` before measuring, capped at 2.5 s because the
 marketing grid and scanline loop forever and would never resolve.
 
-The pattern across all three: the instrument reported a clean, plausible number while
-measuring the wrong thing. Any contrast finding below is re-checked in a settled state
-before it is acted on.
+**4. A wrapping `<label>` makes the control's own box the wrong thing to measure.**
+A label that wraps its input forwards clicks to it, so the target a person aims at is the
+label's box. Three inputs and selects sitting inside padded, bordered labels were reported
+as 20 px targets when the thing you click is 37 px tall. Fix: measure the label for a
+wrapped input, select or textarea. Without this the remaining count looked like real
+defects, and chasing them would have added padding to controls that already had it.
+
+**5. The sweep could not see the text it was most needed for.** Every chart label on the
+site is SVG text, painted with `fill`. The checker read the `color` property, so it
+reported a clean page while the axis labels sat at 3.5:1. That is not a small blind spot:
+it is why four chart components were fixed off the back of a separate one-off script, and
+why a fifth stayed broken long enough to be caught by eye instead. It measures SVG text
+now, against the background of whatever HTML element encloses the chart, since an `<svg>`
+paints none of its own.
+
+While fixing that, a sixth: the in-page code lives in a template literal, and a comment
+explaining it contained backticks around a property name. That ended the literal early.
+The file stopped parsing — and the probe still ran, because the truncated string was
+coincidentally valid JavaScript. A test now asserts no backtick or template hole appears
+inside that block.
+
+The pattern across all of them: the instrument reported a clean, plausible number while
+measuring the wrong thing. Two reported problems the site did not have; three hid problems
+it did. Any finding below was re-checked before it was acted on, and the two corrections
+that removed false positives matter as much as the three that found real ones — a checker
+mixing real and imaginary findings costs the same to chase either way.
 
 ## Acceptance criteria
 
@@ -258,6 +281,27 @@ frame from navigation:
 | Light shown for | 165 ms, then a 220 ms animated wipe | 0 ms |
 | Distinct `body` background values during load | 14 | 1 |
 
+### What only showed up by looking
+
+Three defects survived every measurement and were found by opening the page and reading it.
+They are recorded because they mark the limit of the method above.
+
+- **"COVERAGE — 2016 to Unknown"** on the first screen after signing in, and an **"Unknown"
+  bar to the right of 2026** on the default dashboard chart. This is the same bug fixed in
+  the planner months ago and again in the adaptive tab: `"Unknown"` sorts after `"2026"` as
+  a string. It turned out to have **eight** independent implementations of "which years are
+  real". A test now pins every surface that puts a year on an axis, and pins the two where
+  "Unknown" must *stay* — a paper's own year is a true fact about that paper, and filtering
+  for undated papers is a useful thing to do.
+- **A raw transport exception** as the most prominent line under "Analysis failed":
+  `HTTPSConnectionPool(host='storage.googleapis.com', port=443): Max retries exceeded`.
+  Most worker failures already read as sentences and are shown unchanged; only messages
+  carrying library and stack signatures are translated, and the original still appears
+  below, because that is where someone works out what happened.
+
+No contrast checker or tap-target sweep would ever have flagged any of these. They are all
+perfectly legible, correctly sized, and wrong.
+
 ### Two regressions this round introduced, caught by re-measuring
 
 Recorded because the point of measuring after is that it finds your own mistakes.
@@ -294,7 +338,7 @@ Recorded because the point of measuring after is that it finds your own mistakes
 | D2 | Stock template palette removed | **Met** — zero occurrences remain anywhere in `src/` |
 | D3 | One theming strategy per surface | **Not met** — see below |
 | D4 | Controls of one role share an implementation | **Not met** — see below |
-| E1 | Tests green at or above baseline | **Met** — 561 → 640 |
+| E1 | Tests green at or above baseline | **Met** — 561 → 643 |
 | E2 | `next build` succeeds | **Met** |
 | E3 | Verified on a deployed site | **Met** — measured on the pilot after deployment, authenticated pages included |
 | E4 | No weakening of authorization | **Met** — the security pass strengthened it; nothing in the handoff's "never" list was touched |

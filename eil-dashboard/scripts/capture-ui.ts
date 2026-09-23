@@ -164,6 +164,45 @@ const DIAGNOSTICS = `(() => {
     }
   }
 
+  /* ------- text drawn inside SVG, which is painted with fill, not color -------
+     Every chart label on the site lives here. A checker that reads the color
+     property reports a clean page while the axis labels sit at 3.5:1, which is
+     exactly what happened: four chart components were fixed off the back of a
+     separate one-off script, and a fifth stayed broken because this sweep could
+     not see it.
+     (No backticks in here: this whole block is inside a template literal, and
+     one would end it early - which it did, and the file still ran.) */
+  for (const node of Array.from(document.querySelectorAll('svg text, svg tspan'))) {
+    if (!visible(node)) continue;
+    if (node.closest('[aria-hidden="true"]')) continue;
+    const label = (node.textContent || '').trim();
+    if (!label) continue;
+    const s = getComputedStyle(node);
+    const fill = parse(s.fill);
+    if (!fill || fill.a === 0) continue;
+    // An <svg> has no painted background of its own, so the effective backdrop
+    // is whatever HTML element encloses it.
+    const host = node.closest('svg');
+    const bg = effectiveBg(host ? host.parentElement || host : node);
+    const fg = fill.a < 1 ? over(fill, bg) : fill;
+    const size = parseFloat(s.fontSize) || 12;
+    const need = size >= 24 ? 3 : 4.5;
+    const r = ratio(fg, bg);
+    if (r < need) {
+      const key = 'svg|' + s.fill + '|' + Math.round(bg.r) + ',' + Math.round(bg.g) + ',' + Math.round(bg.b) + '|' + Math.round(size);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.contrast.push({
+        text: label.slice(0, 70),
+        tag: 'svg:' + node.tagName.toLowerCase(),
+        cls: String((node.getAttribute && node.getAttribute('class')) || '').slice(0, 110),
+        color: s.fill, bg: 'rgb(' + Math.round(bg.r) + ',' + Math.round(bg.g) + ',' + Math.round(bg.b) + ')',
+        fontSize: size, weight: parseInt(s.fontWeight, 10) || 400,
+        ratio: Math.round(r * 100) / 100, need,
+      });
+    }
+  }
+
   /* ------- tap targets ------- */
   const interactive = all.filter((el) =>
     visible(el) && (
