@@ -202,10 +202,20 @@ export const workflowSteps = [
   },
 ];
 
+/**
+ * The strip under the hero.
+ *
+ * It used to read "4 core research workflows", "1 workspace for papers, charts
+ * and chat", "Async multi-paper analysis" - set at display size, where the eye
+ * goes looking for evidence and found a 4 and a 1 that prove nothing. Each
+ * figure here can be checked against the code: twelve analysing nodes in the
+ * ingestion graph (graphs.py:77-89), six entries in the dashboard's
+ * TAB_DEFINITIONS. The third is not a quantity and is no longer set like one.
+ */
 export const proofMetrics = [
-  { value: "4", label: "core research workflows" },
-  { value: "1", label: "workspace for papers, charts, and chat" },
-  { value: "Async", label: "multi-paper analysis" },
+  { value: "12", label: "analysis stages per paper" },
+  { value: "6", label: "dashboard views over one corpus" },
+  { value: "Async", label: "multi-paper queue with retries" },
 ];
 
 export const footerLinks = [

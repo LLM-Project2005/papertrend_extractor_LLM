@@ -106,17 +106,24 @@ export function MarketingFooter() {
           </p>
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        {/*
+          These are six navigation links. They were drawn as bordered, filled
+          boxes in a two-column grid, which is the treatment this site gives to
+          buttons and text inputs - so the footer read as a row of disabled form
+          controls. A list of links looks like a list of links; the padding keeps
+          the hit area the boxes used to provide.
+        */}
+        <nav aria-label="Footer" className="grid gap-x-10 gap-y-0.5 self-start sm:grid-cols-2">
           {footerLinks.map((link) => (
             <Link
               key={link.href}
               href={link.href}
-              className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="-mx-2 rounded px-2 py-2 text-sm text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
             >
               {link.label}
             </Link>
           ))}
-        </div>
+        </nav>
       </div>
     </footer>
   );

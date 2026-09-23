@@ -133,6 +133,44 @@ test("a published number can be traced to the thing it counts", () => {
   assert.match(content, /metric: "12", label: "analysis stages per paper"/);
 });
 
+test("the figures under the hero are figures, and each one is checkable", () => {
+  // "4 core research workflows" and "1 workspace for papers, charts and chat"
+  // were set at display size, where the eye goes looking for evidence - and
+  // proved nothing. Both numbers here can be counted in the code.
+  const content = readCode("src/components/marketing/marketing-content.ts");
+  const strip = content.slice(
+    content.indexOf("export const proofMetrics"),
+    content.indexOf("];", content.indexOf("export const proofMetrics"))
+  );
+  assert.equal(/value: "4", label: "core research workflows"/.test(strip), false);
+  assert.match(strip, /value: "12", label: "analysis stages per paper"/);
+  assert.match(strip, /value: "6", label: "dashboard views/);
+
+  // The published counts must match what they count.
+  const graphs = readFileSync(new URL("../../graphs.py", import.meta.url), "utf8");
+  const ingestion = graphs.slice(graphs.indexOf("def build_ingestion_graph"));
+  const nodes = (ingestion.slice(0, ingestion.indexOf("return")).match(/workflow\.add_node\(/g) ?? []).length;
+  assert.equal(nodes, 13, "12 analysing nodes plus build_dataset");
+
+  const dash = readCode("src/components/DashboardClient.tsx");
+  assert.equal((dash.match(/\{ key: "[a-z_]+", label: "[^"]+" \}/g) ?? []).length, 6);
+});
+
+test("footer navigation looks like navigation", () => {
+  // Six links were drawn as bordered, filled boxes in a two-column grid - the
+  // treatment this site gives buttons and text inputs - so the footer read as a
+  // row of disabled form controls.
+  const layout = readCode("src/components/marketing/MarketingLayout.tsx");
+  const footer = layout.slice(layout.indexOf("data-site-footer"));
+  assert.match(footer, /<nav aria-label="Footer"/);
+  assert.equal(
+    /footerLinks\.map[\s\S]{0,400}rounded-lg border border-slate-200 bg-white/.test(footer),
+    false,
+    "a link should not wear the control treatment"
+  );
+  assert.match(footer, /-mx-2 rounded px-2 py-2 text-sm/, "padding keeps the hit area the boxes gave");
+});
+
 test("a perpetual rainbow sweep no longer runs over every product frame", () => {
   assert.equal(read("src/app/globals.css").includes("marketing-scanline"), false);
   for (const file of [
