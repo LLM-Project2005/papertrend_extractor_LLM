@@ -167,7 +167,16 @@ const DIAGNOSTICS = `(() => {
     ));
   out.counts.interactive = interactive.length;
   for (const el of interactive) {
-    const r = el.getBoundingClientRect();
+    // A <label> that wraps its control forwards clicks to it, so the target a
+    // person actually aims at is the label's box, not the control's. Several
+    // inputs and selects here sit inside a padded, bordered label and were being
+    // reported as 20px targets when the thing you click is 37px tall.
+    let box = el;
+    const label = el.closest('label');
+    if (label && label !== el && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) {
+      box = label;
+    }
+    const r = box.getBoundingClientRect();
     const s = getComputedStyle(el);
     if (s.position === 'fixed' && r.height < 2) continue;
     if (r.height < 24 || r.width < 24) {

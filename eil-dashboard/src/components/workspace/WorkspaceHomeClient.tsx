@@ -739,7 +739,7 @@ export default function WorkspaceHomeClient() {
           </div>
           <Link
             href="/workspace/chat"
-            className="inline-flex items-center gap-2 text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
+            className="-my-2 inline-flex items-center gap-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
           >
             Open full chat
             <ArrowRightIcon className="h-4 w-4" />
@@ -798,7 +798,7 @@ export default function WorkspaceHomeClient() {
             </div>
             <Link
               href="/workspace/library"
-              className="text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
+              className="-my-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
             >
               Repositories
             </Link>
