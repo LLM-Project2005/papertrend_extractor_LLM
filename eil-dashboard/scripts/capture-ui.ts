@@ -129,6 +129,12 @@ const DIAGNOSTICS = `(() => {
   const seen = new Set();
   for (const el of all) {
     if (!visible(el)) continue;
+    // Content marked decorative is exempt from the text-contrast rule, because a
+    // screen reader never reads it and it carries no meaning to lose. The
+    // breadcrumb's ">" separator is the case here: it failed at 1.48:1 and the
+    // correct fix was to mark it decorative, not to darken a glyph that exists
+    // only to sit between two names.
+    if (el.closest('[aria-hidden="true"]')) continue;
     const direct = Array.from(el.childNodes)
       .filter((n) => n.nodeType === 3 && n.textContent.trim())
       .map((n) => n.textContent.trim()).join(' ').trim();
@@ -167,7 +173,16 @@ const DIAGNOSTICS = `(() => {
     ));
   out.counts.interactive = interactive.length;
   for (const el of interactive) {
-    const r = el.getBoundingClientRect();
+    // A <label> that wraps its control forwards clicks to it, so the target a
+    // person actually aims at is the label's box, not the control's. Several
+    // inputs and selects here sit inside a padded, bordered label and were being
+    // reported as 20px targets when the thing you click is 37px tall.
+    let box = el;
+    const label = el.closest('label');
+    if (label && label !== el && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName)) {
+      box = label;
+    }
+    const r = box.getBoundingClientRect();
     const s = getComputedStyle(el);
     if (s.position === 'fixed' && r.height < 2) continue;
     if (r.height < 24 || r.width < 24) {

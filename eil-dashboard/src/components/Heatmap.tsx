@@ -45,7 +45,7 @@ export default function Heatmap({
   return (
     <div>
       {title && (
-        <h4 className="text-sm font-semibold text-gray-700 mb-3">{title}</h4>
+        <h4 className="mb-3 text-sm font-semibold text-slate-700 dark:text-[#ececec]">{title}</h4>
       )}
       <div className="overflow-x-auto">
         <table className="border-collapse text-xs">
@@ -55,7 +55,7 @@ export default function Heatmap({
               {cols.map((c) => (
                 <th
                   key={c}
-                  className="p-1 font-medium text-gray-500 text-center whitespace-nowrap"
+                  className="whitespace-nowrap p-1 text-center font-medium text-slate-500 dark:text-[#a3a3a3]"
                 >
                   {c}
                 </th>
@@ -65,7 +65,7 @@ export default function Heatmap({
           <tbody>
             {rows.map((r, ri) => (
               <tr key={r}>
-                <td className="pr-2 font-medium text-gray-600 whitespace-nowrap text-right">
+                <td className="whitespace-nowrap pr-2 text-right font-medium text-slate-600 dark:text-[#d0d0d0]">
                   {r}
                 </td>
                 {cols.map((c, ci) => {

@@ -167,7 +167,7 @@ function WorkspaceBreadcrumb({
           onClick={() => onNavigate?.("/workspaces")}
           prefetch={false}
           aria-label="All repositories"
-          className="flex flex-none items-center font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
+          className="-my-2 flex flex-none items-center rounded px-2 py-2 font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
           <ArrowRightIcon className="h-4 w-4 rotate-180 sm:hidden" />
           <span className="hidden sm:inline">Repositories</span>

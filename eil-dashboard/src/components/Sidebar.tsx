@@ -173,7 +173,7 @@ export default function Sidebar({
             </h3>
             <button
               type="button"
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
+              className="-my-2 rounded px-1 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
               onClick={() => onYearsChange([])}
             >
               Show all
@@ -208,7 +208,7 @@ export default function Sidebar({
             </h3>
             <button
               type="button"
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
+              className="-my-2 rounded px-1 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
               onClick={() => onTracksChange([])}
             >
               Show all

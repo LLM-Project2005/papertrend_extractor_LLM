@@ -105,7 +105,11 @@ test("the borrowed template palette appears nowhere in the app", () => {
 test("nothing claims to be live that is a drawing", () => {
   const motion = readCode("src/components/marketing/MarketingMotion.tsx");
   assert.equal(/LIVE REPOSITORY/.test(motion), false);
-  assert.equal(/research-trend-analysis\.web\.app/.test(motion), false, "and not a stale hostname either");
+  assert.equal(
+    /research-trend-analysis\.web\.app/.test(motion),
+    false,
+    "a real address beside a connected-dot is what made the drawing read as a live session"
+  );
   assert.match(motion, /EXAMPLE WORKSPACE/);
   assert.match(readCode("src/components/marketing/FeatureShowcases.tsx"), /illustration/);
 });
@@ -428,6 +432,32 @@ test("a tab row does not resize when you click a tab", () => {
     false,
     "the active branch must carry a border too"
   );
+});
+
+test("nothing on a dark page is painted in a light-only palette", () => {
+  // Two places had escaped every dark-mode pass. The dashboard route's Suspense
+  // fallback used a beige #dfd5c6 border, a blue-500 spinner, `gray` where the
+  // palette is `slate`, and no dark variant - so opening the dashboard in dark
+  // mode flashed a white card. Heatmap, which four dashboard tabs render, had
+  // zero dark variants, leaving its title, column headers and row labels dark
+  // grey on a near-black page.
+  const grayScale = /\b(?:text|bg|border)-gray-[0-9]/;
+  for (const file of [
+    "src/components/Heatmap.tsx",
+    "src/app/workspace/dashboard/page.tsx",
+    "src/components/DashboardClient.tsx",
+    "src/components/tabs/Overview.tsx",
+  ]) {
+    assert.equal(grayScale.test(readCode(file)), false, `${file} uses the gray scale, not slate`);
+  }
+
+  const heatmap = readCode("src/components/Heatmap.tsx");
+  assert.ok((heatmap.match(/dark:/g) ?? []).length >= 3, "the heatmap chrome needs dark variants");
+
+  const dashboardRoute = readCode("src/app/workspace/dashboard/page.tsx");
+  assert.equal(/border-blue-500/.test(dashboardRoute), false);
+  assert.equal(/#dfd5c6/.test(dashboardRoute), false);
+  assert.match(dashboardRoute, /fallback=\{<WorkspaceLoadingState \/>\}/, "one loading treatment, not two");
 });
 
 test("no stylesheet rule ships with nothing to style", () => {

@@ -42,10 +42,11 @@ export function AnimatedProductFrame() {
       <div className="border-b border-[#1f1f1f] bg-[#050505] px-4 py-3">
         {/*
           This frame is a drawing. It used to be labelled "LIVE REPOSITORY" beside
-          a teal connected-dot and the hostname research-trend-analysis.web.app -
-          three separate signals telling a visitor they were watching a real
-          system at a real address, none of which was true, and the hostname was
-          not even the one the product runs on. It now says what it is.
+          a teal connected-dot and the site's own hostname - three signals
+          telling a visitor they were watching a live system, when every number
+          below is written into the source. The address was real, which is what
+          made it convincing; the session it implied was not. It says what it is
+          now.
         */}
         <div className="flex items-center justify-between gap-3">
           <span className="font-mono text-xs text-[#8f8f8f]">EXAMPLE WORKSPACE</span>
