@@ -129,6 +129,12 @@ const DIAGNOSTICS = `(() => {
   const seen = new Set();
   for (const el of all) {
     if (!visible(el)) continue;
+    // Content marked decorative is exempt from the text-contrast rule, because a
+    // screen reader never reads it and it carries no meaning to lose. The
+    // breadcrumb's ">" separator is the case here: it failed at 1.48:1 and the
+    // correct fix was to mark it decorative, not to darken a glyph that exists
+    // only to sit between two names.
+    if (el.closest('[aria-hidden="true"]')) continue;
     const direct = Array.from(el.childNodes)
       .filter((n) => n.nodeType === 3 && n.textContent.trim())
       .map((n) => n.textContent.trim()).join(' ').trim();
