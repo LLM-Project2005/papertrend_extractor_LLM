@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
+  ArrowRightIcon,
   ChartIcon,
   ChatIcon,
   CloseIcon,
@@ -56,6 +57,9 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
       { href: "/workspace/library", label: "Repositories", icon: FolderIcon },
+      // /workspace/logs is a finished 441-line page that nothing linked to. It
+      // was reachable only by typing the URL.
+      { href: "/workspace/logs", label: "History", icon: FileIcon },
     ],
   },
   {
@@ -68,7 +72,10 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
 const SEARCH_PAGE_ITEMS = [
   {
     id: "projects",
-    label: "Repositories",
+    // This and the "library" entry below were both labelled "Repositories",
+    // pointing at different pages, in the same command palette - a reader saw the
+    // same word twice and had to read the descriptions to guess which was which.
+    label: "Switch repository",
     description: "Switch between research repositories",
     href: "/workspaces",
     icon: HomeIcon,
@@ -112,6 +119,14 @@ const SEARCH_PAGE_ITEMS = [
     featured: true,
   },
   {
+    id: "history",
+    label: "History",
+    description: "Revisit previous analysis runs",
+    href: "/workspace/logs",
+    icon: FileIcon,
+    keywords: ["logs", "runs", "analysis history", "previous", "past runs", "activity"],
+  },
+  {
     id: "settings",
     label: "Settings",
     description: "Adjust repository preferences and identity",
@@ -140,17 +155,31 @@ function WorkspaceBreadcrumb({
 }) {
   return (
     <div className="min-w-0">
-      <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
+      {/* Both halves used to truncate, and on a 390px header sharing space with six
+          other controls neither survived - the breadcrumb read "Rep... > T...",
+          which tells a reader nothing at all.
+          Below sm the parent collapses to a back arrow rather than disappearing:
+          this link is the only route back to the repository picker, since the
+          drawer's "Repositories" entry points at /workspace/library instead. */}
+      <div className="flex min-w-0 items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
           href="/workspaces"
           onClick={() => onNavigate?.("/workspaces")}
           prefetch={false}
-          className="truncate font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
+          aria-label="All repositories"
+          className="flex flex-none items-center font-medium text-slate-700 transition-colors hover:text-slate-900 dark:text-[#d9d9d9] dark:hover:text-white"
         >
-          Repositories
+          <ArrowRightIcon className="h-4 w-4 rotate-180 sm:hidden" />
+          <span className="hidden sm:inline">Repositories</span>
         </Link>
-        <span className="text-slate-300 dark:text-[#4f4f4f]">&gt;</span>
-        <span className="truncate text-slate-500 dark:text-[#9b9b9b]">
+        {/* A separator glyph, not content: a screen reader should step over it
+            rather than announce "greater than" between the two names. Marking it
+            decorative is also what exempts it from the text-contrast rule it
+            would otherwise fail at 1.48:1. */}
+        <span aria-hidden="true" className="hidden flex-none text-slate-300 dark:text-[#4f4f4f] sm:inline">
+          &gt;
+        </span>
+        <span className="min-w-0 truncate text-slate-500 dark:text-[#9b9b9b]">
           {projectName || "Select repository"}
         </span>
       </div>
@@ -174,7 +203,7 @@ function DesktopSidebar({
               key={section.id}
               className={sectionIndex === 0 ? "" : "mt-3 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]"}
             >
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
+              <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
@@ -190,7 +219,10 @@ function DesktopSidebar({
                       onClick={() => onNavigate(item.href)}
                       className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
                         isActive
-                          ? "bg-slate-900 text-white dark:bg-[#111111]"
+                          // #111111 on the rail's #050505 surface is 1.08:1 - the
+                          // chip was there in the markup and absent to the eye.
+                          // #1f1f1f is the brand's own raised tone and reads.
+                          ? "bg-slate-900 text-white dark:bg-[#1f1f1f]"
                           : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                       }`}
                     >
@@ -247,7 +279,7 @@ function MobileSidebar({
       <nav className="space-y-4 px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.id}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#5f5f5f]">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#5f5f5f]">
               {section.label}
             </p>
             <div className="mt-2 space-y-1">
@@ -266,7 +298,10 @@ function MobileSidebar({
                     }}
                     className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
                       isActive
-                        ? "bg-slate-900 text-white dark:bg-[#030303]"
+                        // #030303 is darker than the drawer's own #050505 surface,
+                        // so the "you are here" chip was not merely invisible, it
+                        // was inverted. Matches the rail's active tone.
+                        ? "bg-slate-900 text-white dark:bg-[#1f1f1f]"
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                     }`}
                   >

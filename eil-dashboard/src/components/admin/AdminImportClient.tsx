@@ -1377,7 +1377,7 @@ export default function AdminImportClient() {
         }}
       >
         <div className="space-y-1">
-          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#808080]">
+          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#808080]">
             Sort by
           </p>
           {SORT_KEY_OPTIONS.map((option) => (
@@ -1397,7 +1397,7 @@ export default function AdminImportClient() {
         </div>
 
         <div className="space-y-1 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]">
-          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#808080]">
+          <p className="px-3 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#808080]">
             Sort direction
           </p>
           {currentSortDirectionOptions.map((option) => (
@@ -1713,13 +1713,13 @@ export default function AdminImportClient() {
             </button>
 
             <label className="relative block min-w-0 flex-1">
-              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#808080]" />
+              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#808080]" />
               <input
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={libraryProject ? `Search in ${libraryProject.name}` : "Search repositories"}
-                className="h-14 w-full rounded-[20px] border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-slate-900/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a] dark:focus:ring-[#242424]"
+                className="h-14 w-full rounded-[20px] border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-slate-900/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a] dark:focus:ring-[#242424]"
               />
             </label>
           </div>
@@ -2230,9 +2230,9 @@ export default function AdminImportClient() {
                         <span className="mt-2 block text-sm text-slate-500 dark:text-[#9c9c9c]">
                           {stats.papers} paper{stats.papers === 1 ? "" : "s"}
                         </span>
-                        <span className="mt-3 block text-xs text-slate-400 dark:text-[#777777]">Updated {formatShortDate(stats.latest)}</span>
+                        <span className="mt-3 block text-xs text-slate-500 dark:text-[#777777]">Updated {formatShortDate(stats.latest)}</span>
                       </span>
-                      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-400 transition-transform group-hover:translate-x-0.5" />
+                      <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-500 transition-transform group-hover:translate-x-0.5" />
                     </button>
                   );
                 })}
@@ -2362,7 +2362,7 @@ export default function AdminImportClient() {
           <div className="max-h-[90vh] w-[min(980px,92vw)] overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                   Pipeline analysis
                 </p>
                 <h2 className="mt-2 truncate text-xl font-semibold text-slate-900 dark:text-white">
@@ -2505,7 +2505,7 @@ export default function AdminImportClient() {
                     analysisDetail!.topics.length > 0) ? (
                     <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
                       <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                           Primary track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2527,7 +2527,7 @@ export default function AdminImportClient() {
                       </article>
 
                       <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                           Cross-track classification
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2549,7 +2549,7 @@ export default function AdminImportClient() {
                       </article>
 
                       <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                           Concept clusters
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2571,7 +2571,7 @@ export default function AdminImportClient() {
                       </article>
 
                       <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                           Analytical facets
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2593,7 +2593,7 @@ export default function AdminImportClient() {
                       </article>
 
                       <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                           Pipeline topics
                         </p>
                         <div className="mt-3 flex flex-wrap gap-2">
@@ -2620,7 +2620,7 @@ export default function AdminImportClient() {
                     <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                             Canonical concepts
                           </p>
                           <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
@@ -2648,7 +2648,7 @@ export default function AdminImportClient() {
                               </span>
                             </div>
                             {concept.matchedTerms.length > 0 ? (
-                              <p className="mt-2 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                              <p className="mt-2 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                                 {concept.matchedTerms.slice(0, 5).join(" • ")}
                               </p>
                             ) : null}
@@ -2667,7 +2667,7 @@ export default function AdminImportClient() {
                     <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                             Analytical facets
                           </p>
                           <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
@@ -2682,7 +2682,7 @@ export default function AdminImportClient() {
                             key={`${facet.facetType}-${facet.label}-${index}`}
                             className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                           >
-                            <p className="text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                            <p className="text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                               {facet.facetType.replace(/_/g, " ")}
                             </p>
                             <p className="mt-2 text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -2708,7 +2708,7 @@ export default function AdminImportClient() {
                         key={label}
                         className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                       >
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                           {label}
                         </p>
                         <p className="mt-3 text-sm leading-7 text-slate-700 dark:text-[#d0d0d0]">
@@ -2721,7 +2721,7 @@ export default function AdminImportClient() {
                   <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                           Grounded keywords
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-[#a3a3a3]">
@@ -2749,7 +2749,7 @@ export default function AdminImportClient() {
                                 {keyword.frequency}
                               </span>
                             </div>
-                            <p className="mt-2 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                            <p className="mt-2 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                               {keyword.topic || "Unclassified topic"}
                             </p>
                             <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">

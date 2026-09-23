@@ -154,12 +154,12 @@ export default function ProjectIndexClient() {
 
           <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
             <label className="flex flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
-              <SearchIcon className="h-4 w-4 text-slate-400 dark:text-[#7a7a7a]" />
+              <SearchIcon className="h-4 w-4 text-slate-500 dark:text-[#7a7a7a]" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search repositories"
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#6f6f6f]"
+                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8f8f8f]"
               />
             </label>
             <button
@@ -237,7 +237,7 @@ export default function ProjectIndexClient() {
                 <button
                   type="button"
                   onClick={() => void handleRenameProject(project.id, project.name)}
-                  className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#666666] dark:hover:bg-[#111111] dark:hover:text-white"
+                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#111111] dark:hover:text-white"
                   aria-label={`Rename ${project.name}`}
                   title="Rename repository"
                 >

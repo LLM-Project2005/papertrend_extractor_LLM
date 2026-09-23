@@ -27,6 +27,32 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+/**
+ * Chooses the theme before the first paint.
+ *
+ * ThemeProvider cannot do this. It starts at "light" and corrects inside an
+ * effect, which runs after the browser has already painted - so a reader who
+ * asked for dark got 165ms of white, and then, because `body` transitions its
+ * background colour, a further 220ms of animated wipe from white to black. On
+ * every navigation.
+ *
+ * This runs synchronously in <head>, so the first frame is already right and
+ * the transition has nothing to animate. It reads the same key the provider
+ * writes, and falls back to the system preference exactly as the provider does.
+ * Wrapped in try/catch because localStorage throws outright in some privacy
+ * modes, and a theme preference is never worth a blank page.
+ */
+const themeScript = `
+(function () {
+  try {
+    var saved = window.localStorage.getItem("papertrend_theme");
+    var dark = saved === "dark" || (saved !== "light" &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.classList.toggle("dark", dark);
+  } catch (e) {}
+})();
+`;
+
 export default function RootLayout({
   children,
 }: {
@@ -34,6 +60,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+      </head>
       <body>
         <ThemeProvider>
           <AuthProvider>

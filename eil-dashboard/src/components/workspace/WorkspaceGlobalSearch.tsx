@@ -452,7 +452,7 @@ export default function WorkspaceGlobalSearch({
       >
         <SearchIcon className="h-4 w-4 flex-none" />
         <span className="hidden min-w-0 truncate text-sm sm:block">Search</span>
-        <span className="ml-auto hidden rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-400 dark:border-[#2a2a2a] dark:text-[#6f6f6f] xl:block">
+        <span className="ml-auto hidden rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 dark:border-[#2a2a2a] dark:text-[#8f8f8f] xl:block">
           /
         </span>
       </button>
@@ -469,7 +469,7 @@ export default function WorkspaceGlobalSearch({
             className="border-b border-slate-200 p-2 dark:border-[#1f1f1f]"
           >
             <label className="relative block">
-              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#8e8e8e]" />
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#8e8e8e]" />
               <input
                 ref={inputRef}
                 type="search"
@@ -477,7 +477,7 @@ export default function WorkspaceGlobalSearch({
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search actions, papers, repositories, docs..."
                 aria-label="Search actions, papers, repositories, and documentation"
-                className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+                className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
               />
             </label>
           </form>
@@ -486,7 +486,7 @@ export default function WorkspaceGlobalSearch({
             <div className="max-h-[460px] overflow-y-auto p-2">
               {groupedResults.map((group) => (
                 <div key={group.category} className="py-1">
-                  <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+                  <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                     {group.category}
                   </p>
                   <div className="space-y-1">

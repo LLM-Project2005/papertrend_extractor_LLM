@@ -317,7 +317,7 @@ export default function WorkspaceLogsPage() {
       <section className="rounded-xl border border-slate-200/80 bg-white/85 p-4 shadow-[0_18px_45px_-30px_rgba(15,23,42,0.32)] backdrop-blur dark:border-[#1f1f1f] dark:bg-[#050505]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <label className="relative block flex-1">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-[#7a7a7a]">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 dark:text-[#7a7a7a]">
               <SearchIcon className="h-4 w-4" />
             </span>
             <input
@@ -404,7 +404,7 @@ export default function WorkspaceLogsPage() {
 
                         <div className="flex items-center justify-end gap-2 md:self-stretch">
                           {removedFromLibrary ? (
-                            <span className="inline-flex items-center rounded-full px-3 py-2 text-sm text-slate-400 dark:text-[#767676]">
+                            <span className="inline-flex items-center rounded-full px-3 py-2 text-sm text-slate-500 dark:text-[#767676]">
                               Repository file unavailable
                             </span>
                           ) : (
@@ -420,7 +420,7 @@ export default function WorkspaceLogsPage() {
                           <button
                             type="button"
                             onClick={() => dismissRun(run.id)}
-                            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-slate-400 transition hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700 dark:text-[#8a8a8a] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a] dark:hover:text-[#f2f2f2]"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-transparent text-slate-500 transition hover:border-slate-200 hover:bg-slate-100 hover:text-slate-700 dark:text-[#8a8a8a] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a] dark:hover:text-[#f2f2f2]"
                             title="Remove from history only"
                             aria-label={`Remove ${titleOf(run)} from history`}
                           >

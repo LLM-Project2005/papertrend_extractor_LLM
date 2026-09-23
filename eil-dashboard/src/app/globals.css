@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 :root {
+  /* Tells the browser which palette to paint its own furniture in - scrollbars,
+     form controls, the flash of background before CSS arrives. Without it the
+     native parts stay light while the page is dark. */
+  color-scheme: light;
   --bg-plot: #fafbfd;
   --radius-control: 8px;
   --radius-panel: 12px;
@@ -72,6 +76,10 @@ body {
   transition:
     background-color var(--motion-ui) ease,
     color var(--motion-ui) ease;
+}
+
+.dark {
+  color-scheme: dark;
 }
 
 .dark body {
@@ -231,19 +239,6 @@ body {
   color: #ffffff;
 }
 
-.marketing-scanline {
-  background: linear-gradient(
-    180deg,
-    transparent 0%,
-    rgba(0, 124, 240, 0.04) 38%,
-    rgba(0, 223, 216, 0.16) 50%,
-    rgba(255, 0, 128, 0.06) 62%,
-    transparent 100%
-  );
-  transform: translateY(-100%);
-  animation: marketing-scanline 4.8s ease-in-out infinite;
-}
-
 .modal-backdrop {
   animation: modal-backdrop-in var(--motion-ui) ease both;
 }
@@ -292,26 +287,8 @@ body {
   }
 }
 
-@keyframes marketing-scanline {
-  0% {
-    opacity: 0;
-    transform: translateY(-100%);
-  }
-  28% {
-    opacity: 1;
-  }
-  68% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .marketing-grid,
-  .marketing-scanline,
   .modal-backdrop,
   .modal-panel,
   .workspace-content-enter {

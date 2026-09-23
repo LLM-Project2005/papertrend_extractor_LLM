@@ -59,7 +59,7 @@ function BackLink() {
   return (
     <Link
       href="/"
-      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-[#2a2a2a] bg-[#050505] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:border-[#4d4d4d] hover:bg-[#0a0a0a]"
+      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-950 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]"
     >
       Back to overview
       <ArrowRightIcon className="h-4 w-4" />
@@ -67,12 +67,31 @@ function BackLink() {
   );
 }
 
+/** A value the reader should read as a measurement, e.g. "9", "20+", "1,200". */
+function isQuantity(value: string): boolean {
+  return /^[\d][\d.,]*\+?$/.test(value.trim());
+}
+
 function ProofStrip({ feature, className = "" }: { feature: MarketingFeature; className?: string }) {
   return (
     <div className={`grid gap-px overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#1f1f1f] sm:grid-cols-3 ${className}`}>
+      {/*
+        Only some of these values are quantities. "9" wants the display size; a
+        phrase like "Tools search + charts" set at 3xl reads as a headline that
+        ran out of room, and invites the eye to expect a statistic that is not
+        there. The type is fitted to the content instead.
+      */}
       {feature.proof.map((item) => (
         <div key={item.label} className="bg-[#030303] px-6 py-7">
-          <p className="text-3xl font-semibold text-white">{item.metric}</p>
+          <p
+            className={
+              isQuantity(item.metric)
+                ? "text-3xl font-semibold text-white"
+                : "text-lg font-semibold text-white"
+            }
+          >
+            {item.metric}
+          </p>
           <p className="mt-2 text-sm text-[#8f8f8f]">{item.label}</p>
         </div>
       ))}
@@ -145,7 +164,7 @@ function DeepResearchSpotlight() {
       <div className="marketing-grid pointer-events-none absolute inset-0 opacity-20" />
       <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.78fr_1.22fr] lg:items-center">
         <MotionReveal>
-          <p className="font-mono text-xs text-[#f9cb28]">DEEP RESEARCH AGENT</p>
+          <p className="font-mono text-xs text-[#8f8f8f]">DEEP RESEARCH AGENT</p>
           <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-5xl">
             The agent plans first, researches second, and writes last.
           </h2>

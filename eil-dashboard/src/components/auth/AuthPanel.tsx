@@ -193,7 +193,7 @@ export default function AuthPanel({
               className="inline-flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-800 transition-colors hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
             >
               <span className="inline-flex items-center gap-3">
-                <Icon className="h-4 w-4" />
+                <Icon className="h-5 w-5" />
                 <span>{option.label}</span>
               </span>
             </button>
@@ -201,7 +201,7 @@ export default function AuthPanel({
         })}
       </div>
 
-      <div className="my-5 flex items-center gap-3 text-xs text-slate-400 dark:text-[#6f6f6f]">
+      <div className="my-5 flex items-center gap-3 text-xs text-slate-500 dark:text-[#8f8f8f]">
         <span className="h-px flex-1 bg-slate-200 dark:bg-[#1f1f1f]" />
         <span>Password</span>
         <span className="h-px flex-1 bg-slate-200 dark:bg-[#1f1f1f]" />
@@ -217,7 +217,7 @@ export default function AuthPanel({
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
               maxLength={120}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
               placeholder="Your name"
             />
           </label>
@@ -233,7 +233,7 @@ export default function AuthPanel({
             onChange={(event) => setEmail(event.target.value)}
             autoComplete="email"
             required
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
             placeholder="you@example.com"
           />
         </label>
@@ -250,7 +250,7 @@ export default function AuthPanel({
             minLength={8}
             maxLength={256}
             required
-            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#6f6f6f] dark:focus:border-[#3a3a3a]"
+            className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
             placeholder="At least 8 characters"
           />
         </label>
@@ -271,7 +271,7 @@ export default function AuthPanel({
               setError(null);
               setNotice(null);
             }}
-            className="font-medium text-slate-600 hover:text-slate-950 dark:text-[#cfcfcf] dark:hover:text-white"
+            className="-my-2 rounded px-1 py-2 font-medium text-slate-600 hover:text-slate-950 dark:text-[#cfcfcf] dark:hover:text-white"
           >
             {passwordMode === "signup" ? "Already have an account?" : "Create password account"}
           </button>
@@ -279,7 +279,7 @@ export default function AuthPanel({
             type="button"
             onClick={handlePasswordReset}
             disabled={busy}
-            className="font-medium text-slate-500 hover:text-slate-950 disabled:opacity-60 dark:text-[#9b9b9b] dark:hover:text-white"
+            className="-my-2 rounded px-1 py-2 font-medium text-slate-500 hover:text-slate-950 disabled:opacity-60 dark:text-[#9b9b9b] dark:hover:text-white"
           >
             Reset password
           </button>
