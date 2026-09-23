@@ -46,6 +46,7 @@ import type {
   RunAnalysisDetail,
 } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
+import { describeRunFailure } from "@/lib/ingestion-status";
 
 type ViewMode = "list" | "grid";
 type TypeFilter = "all" | "pdf" | "image" | "document" | "other";
@@ -1161,7 +1162,14 @@ export default function AdminImportClient() {
       })
       .map((run) => {
         const sourceLabel = sourceOf(run);
-        const subtitle = `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
+        // A failed paper says why, on the paper itself. The grid view shows no
+        // status pill at all, so before this a failed file there looked exactly
+        // like a ready one; and with the History page gone this is the only place
+        // an older failure can still explain itself.
+        const subtitle =
+          run.status === "failed"
+            ? describeRunFailure(run.error_message)
+            : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
         return {
           id: `file:${run.id}`,
           kind: "file",
@@ -1978,12 +1986,25 @@ export default function AdminImportClient() {
                               </span>
                             ) : null}
                             {item.statusLabel ? (
-                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold capitalize text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]">
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold capitalize ${
+                                  item.run.status === "failed"
+                                    ? "bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-200"
+                                    : "bg-slate-100 text-slate-600 dark:bg-[#030303] dark:text-[#bbbbbb]"
+                                }`}
+                              >
                                 {item.statusLabel}
                               </span>
                             ) : null}
                           </div>
-                          <p className="mt-1 truncate text-sm text-slate-500 dark:text-[#9c9c9c]">
+                          <p
+                            title={item.subtitle}
+                            className={`mt-1 truncate text-sm ${
+                              item.run.status === "failed"
+                                ? "text-red-700 dark:text-red-200"
+                                : "text-slate-500 dark:text-[#9c9c9c]"
+                            }`}
+                          >
                             {item.subtitle}
                           </p>
                         </div>
@@ -2127,7 +2148,14 @@ export default function AdminImportClient() {
                               <p className="truncate text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
                                 {item.name}
                               </p>
-                              <p className="mt-1 text-xs text-slate-500 dark:text-[#9c9c9c]">
+                              <p
+                                title={item.subtitle}
+                                className={`mt-1 line-clamp-2 text-xs ${
+                                  item.run.status === "failed"
+                                    ? "text-red-700 dark:text-red-200"
+                                    : "text-slate-500 dark:text-[#9c9c9c]"
+                                }`}
+                              >
                                 {item.subtitle}
                               </p>
                             </div>

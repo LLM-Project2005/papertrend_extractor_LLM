@@ -282,11 +282,27 @@ test("an old bookmark keeps its parameters", () => {
   assert.match(page, /\/workspace\/library\?\$\{suffix\}/);
 });
 
-test("every built page is reachable from the interface", () => {
-  // /workspace/logs is a finished 441-line History page that nothing linked to.
-  const shell = read("src/components/workspace/WorkspaceShell.tsx");
-  assert.match(shell, /href: "\/workspace\/logs", label: "History"/);
-  assert.match(shell, /href: "\/workspace\/logs",\n\s*icon: FileIcon/);
+test("the History page is gone, and its one irreplaceable job moved to the paper", () => {
+  // It was taken out at the owner's request: it pulled attention away from the
+  // papers, and a separate log of runs is a confusing second place to look.
+  const shell = readCode("src/components/workspace/WorkspaceShell.tsx");
+  assert.equal(/\/workspace\/logs/.test(shell), false, "no nav entry or palette item may point at it");
+  assert.equal(/label: "History"/.test(shell), false);
+
+  // The URL stays as a redirect, like every other retired route, so an old link
+  // lands somewhere useful instead of a 404.
+  const route = readCode("src/app/workspace/logs/page.tsx");
+  assert.match(route, /redirect\("\/workspace\/library"\)/);
+
+  // What History did that nothing else did was say why an *older* run failed.
+  // That now lives on the paper in the library - in both the list and grid
+  // views, since the grid view shows no status pill at all.
+  const library = readCode("src/components/admin/AdminImportClient.tsx");
+  assert.match(library, /run\.status === "failed"\s*\n?\s*\? describeRunFailure\(run\.error_message\)/);
+  assert.ok(
+    (library.match(/item\.run\.status === "failed"/g) ?? []).length >= 3,
+    "the pill and both subtitle renders must mark a failure"
+  );
 });
 
 test("one label does not name two destinations", () => {

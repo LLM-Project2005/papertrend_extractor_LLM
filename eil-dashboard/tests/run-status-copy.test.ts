@@ -48,11 +48,17 @@ test("other library noise gets a plain sentence too", () => {
 
 test("the original is still shown to whoever is diagnosing", () => {
   // Translating the leading line is right; discarding the text would leave
-  // nobody able to work out what actually happened.
-  const logs = read("src/app/workspace/logs/page.tsx");
-  assert.match(logs, /describeRunFailure\(run\.error_message\)/);
-  assert.match(logs, /\{run\.error_message\.trim\(\)\}/, "the raw text stays on the line below");
-
+  // nobody able to work out what actually happened. The status card prints the
+  // original under the plain sentence.
   const card = read("src/components/workspace/AnalysisStatusCard.tsx");
   assert.match(card, /\{run\.error_message\}/, "the status card still prints the original");
+});
+
+test("a failed paper explains itself where the papers are", () => {
+  // The History page used to be the only place an older failure said why. With
+  // it gone, the paper in the library carries the reason - the full sentence on
+  // hover in the list view, where the line truncates.
+  const library = read("src/components/admin/AdminImportClient.tsx");
+  assert.match(library, /describeRunFailure\(run\.error_message\)/);
+  assert.match(library, /title=\{item\.subtitle\}/);
 });

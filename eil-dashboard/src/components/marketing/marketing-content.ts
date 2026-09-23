@@ -173,7 +173,7 @@ export const marketingFeatures: MarketingFeature[] = [
         title: "Progress users can understand",
         copy:
           "Run status, failed files, and worker activity are surfaced in the workspace so users know whether the system is analyzing, retrying, or waiting.",
-        bullets: ["Library status indicators", "Worker logs and retry actions", "Needs-attention surfaces"],
+        bullets: ["Library status indicators", "Stalled-queue recovery", "Needs-attention surfaces"],
       },
     ],
   },
@@ -233,9 +233,11 @@ export const valuePillars = [
   "Cloud-ready multi-paper analysis",
   // The fourth pillar used to read "Static marketing pages with client-only auth
   // CTA" - a build note, shipped to visitors as a reason to choose the product.
-  // Replaced with something a researcher can actually check: per-file run status
-  // is on /workspace/logs and retries go through /api/folder-analysis/retry.
-  "Per-file queue status, retries, and run history",
+  // Replaced with something a researcher can actually check: each file's status
+  // is shown on the file in the library, and a stalled queue can be restarted
+  // from the analysis status panel. (Not "one-click retries": the retry that
+  // exists restarts the queue, it does not rerun a chosen file.)
+  "Per-file queue status and stalled-queue recovery",
 ];
 
 export const checkIcon = CheckCircleIcon;

@@ -62,7 +62,7 @@ test("no build note ships as a reason to choose the product", () => {
     false,
     "an implementation detail must not be sold to visitors"
   );
-  assert.match(content, /Per-file queue status, retries, and run history/);
+  assert.match(content, /Per-file queue status and stalled-queue recovery/);
 });
 
 test("every value pillar is something a reader could verify", () => {
