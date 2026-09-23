@@ -228,3 +228,64 @@ test("a chart the agent planned but the data could not support is named", () => 
   assert.match(tab, /const droppedCharts = planned\.filter\(\(entry\) => !entry\.node\)/);
   assert.match(tab, /planned and not drawn, because this data does not support/);
 });
+
+/* ------------------------------ the same bug had two more homes than we knew */
+
+test("the coverage metric is a span between two dates, not a date and a word", () => {
+  // Found on the deployed pilot, on the first screen after signing in:
+  //
+  //   COVERAGE
+  //   2016 to Unknown
+  //   Publication year span
+  //
+  // The third and fourth place this bug lived. "Unknown" sorts after "2026" as
+  // a string, so it became the end of every year span. Both of these build
+  // their own year list, which is exactly how the planner fix failed to reach
+  // the dashboard tab, and how both of those failed to reach here.
+  for (const relative of [
+    "../src/components/workspace/WorkspaceHomeClient.tsx",
+    "../src/components/tabs/Overview.tsx",
+  ]) {
+    const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+    assert.match(source, /import \{ isDatedYear \} from "@\/lib\/dated-year"/, `${relative} must use the predicate`);
+    assert.match(source, /\.filter\(isDatedYear\)/, `${relative} must filter its year list`);
+  }
+});
+
+test("every component that draws a year axis runs through one predicate", () => {
+  // Eight independent implementations of "which years are real" is how this bug
+  // survived three separate fixes: the planner, then the adaptive tab, then the
+  // coverage metric - and it was still drawing an "Unknown" bar on the default
+  // dashboard tab. This list is every surface that puts a year on an axis or a
+  // heatmap column.
+  for (const relative of [
+    "../src/lib/visualization-planner.ts",
+    "../src/components/dashboard/AdaptiveDashboardTab.tsx",
+    "../src/components/workspace/WorkspaceHomeClient.tsx",
+    "../src/components/tabs/Overview.tsx",
+    "../src/components/tabs/TrendAnalysis.tsx",
+    "../src/components/tabs/TrackAnalysis.tsx",
+    "../src/components/tabs/KeywordExplorer.tsx",
+  ]) {
+    const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+    assert.match(source, /isDatedYear/, `${relative} puts years on an axis and must use the predicate`);
+  }
+});
+
+test("an undated paper is still visible where a year is a fact about one paper", () => {
+  // The predicate belongs on temporal axes, not everywhere a year appears. A
+  // paper whose year could not be read should still say so in the paper list,
+  // and a reader filtering for "Unknown" to find those papers is doing
+  // something useful - so neither of these may quietly start hiding them.
+  for (const relative of [
+    "../src/components/tabs/PaperExplorer.tsx",
+    "../src/components/DashboardClient.tsx",
+  ]) {
+    const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+    assert.equal(
+      /isDatedYear/.test(source),
+      false,
+      `${relative} shows a year as a fact, not as a position in time`
+    );
+  }
+});

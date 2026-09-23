@@ -21,6 +21,7 @@ import {
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
+import { isDatedYear } from "@/lib/dated-year";
 
 type RankedItem = {
   label: string;
@@ -68,7 +69,7 @@ const surfaceClass =
 const softSurfaceClass =
   "rounded-lg border border-[#ebebeb] bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#030303]";
 const eyebrowClass =
-  "font-mono text-[11px] font-medium uppercase tracking-normal text-[#888888] dark:text-[#8f8f8f]";
+  "font-mono text-[11px] font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]";
 const primaryButtonClass =
   "inline-flex min-h-11 items-center gap-2 rounded-full bg-[#171717] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]";
 const secondaryButtonClass =
@@ -89,7 +90,7 @@ function MetricCard({
     <article className={`${surfaceClass} px-5 py-5`}>
       <div className="flex items-center justify-between gap-3">
         <p className={eyebrowClass}>{label}</p>
-        <span className="text-[#888888] dark:text-[#8f8f8f]">{icon}</span>
+        <span className="text-slate-500 dark:text-[#8f8f8f]">{icon}</span>
       </div>
       <p className="mt-5 text-3xl font-semibold tracking-normal text-[#171717] dark:text-white">
         {value}
@@ -148,7 +149,7 @@ function InsightList({
     <div>
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-sm font-semibold text-[#171717] dark:text-white">{title}</h3>
-        <span className="font-mono text-xs text-[#888888] dark:text-[#8f8f8f]">Top 5</span>
+        <span className="font-mono text-xs text-slate-500 dark:text-[#8f8f8f]">Top 5</span>
       </div>
       <div className="mt-3 space-y-2">
         {items.length > 0 ? (
@@ -162,7 +163,7 @@ function InsightList({
                   {index + 1}. {item.label}
                 </p>
                 {item.detail ? (
-                  <p className="mt-0.5 truncate text-xs text-[#888888] dark:text-[#8f8f8f]">
+                  <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-[#8f8f8f]">
                     {item.detail}
                   </p>
                 ) : null}
@@ -272,7 +273,7 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
         <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#4d4d4d] dark:text-[#8f8f8f]">
           {getRunStageCaption(run)}
         </p>
-        <p className="mt-2 font-mono text-[11px] text-[#888888] dark:text-[#6f6f6f]">
+        <p className="mt-2 font-mono text-[11px] text-slate-500 dark:text-[#8f8f8f]">
           {formatTimestamp(timestamp)}
         </p>
       </div>
@@ -340,7 +341,7 @@ export default function WorkspaceHomeClient() {
         ...data.tracksMulti.map((row) => row.year),
       ]),
     ]
-      .filter(Boolean)
+      .filter(isDatedYear)
       .sort();
     const topicCount =
       data.topicFamilies && data.topicFamilies.length > 0
@@ -739,7 +740,7 @@ export default function WorkspaceHomeClient() {
           </div>
           <Link
             href="/workspace/chat"
-            className="inline-flex items-center gap-2 text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
+            className="-my-2 inline-flex items-center gap-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
           >
             Open full chat
             <ArrowRightIcon className="h-4 w-4" />
@@ -798,7 +799,7 @@ export default function WorkspaceHomeClient() {
             </div>
             <Link
               href="/workspace/library"
-              className="text-sm font-medium text-[#0070f3] hover:text-[#0761d1] dark:text-[#58a6ff] dark:hover:text-[#8bbcff]"
+              className="-my-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
             >
               Repositories
             </Link>
@@ -846,7 +847,7 @@ export default function WorkspaceHomeClient() {
               Trends, categories, keywords
             </span>
           </span>
-          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
+          <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8e8e8e]" />
         </Link>
         <Link
           href="/workspace/library"
@@ -860,7 +861,7 @@ export default function WorkspaceHomeClient() {
               Files and analysis
             </span>
           </span>
-          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
+          <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8e8e8e]" />
         </Link>
         <Link
           href="/workspace/chat"
@@ -874,7 +875,7 @@ export default function WorkspaceHomeClient() {
               Chat, charts, web search
             </span>
           </span>
-          <ArrowRightIcon className="h-4 w-4 text-[#888888] dark:text-[#8e8e8e]" />
+          <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8e8e8e]" />
         </Link>
       </section>
 

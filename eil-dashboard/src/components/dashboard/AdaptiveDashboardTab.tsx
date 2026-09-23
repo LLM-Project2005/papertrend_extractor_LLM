@@ -18,6 +18,8 @@ import Heatmap from "@/components/Heatmap";
 import { TOPIC_PALETTE, TRACK_COLORS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import type { DashboardData, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { NormalizedAnalyticsPayload, VisualizationPlanSection } from "@/types/visualization";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { chartTheme, tickStyle } from "@/lib/chart-theme";
 
 const STRICT_MIN_TOPIC_PAPER_SUPPORT = 2;
 const STRICT_MIN_TOPIC_TRACK_SUPPORT = 2;
@@ -62,6 +64,8 @@ export default function AdaptiveDashboardTab({
   analytics: NormalizedAnalyticsPayload;
   adaptiveSection: VisualizationPlanSection;
 }) {
+  const { theme, hydrated } = useTheme();
+  const ct = chartTheme(hydrated && theme === "dark");
   // Dated years only. Every use of this list is a temporal axis - the
   // heatmap columns, the momentum series, and the early/late split that
   // decides what counts as emerging - and "Unknown" sorts after "2026",
@@ -109,11 +113,11 @@ export default function AdaptiveDashboardTab({
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
-                <CartesianGrid vertical={false} stroke="#334155" strokeDasharray="3 3" />
-                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <CartesianGrid vertical={false} stroke={ct.grid} strokeDasharray="3 3" />
+                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill="#00dfd8" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -142,11 +146,11 @@ export default function AdaptiveDashboardTab({
           <div className="h-[380px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData} layout="vertical" margin={{ left: 18, right: 20 }}>
-                <CartesianGrid horizontal={false} stroke="#334155" strokeDasharray="3 3" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis type="category" dataKey="topic" width={210} tick={{ fontSize: 11 }} tickFormatter={(value) => truncateLabel(String(value), 30)} stroke="#94a3b8" />
+                <CartesianGrid horizontal={false} stroke={ct.grid} strokeDasharray="3 3" />
+                <XAxis type="number" allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <YAxis type="category" dataKey="topic" width={210} tick={tickStyle(ct, 11)} tickFormatter={(value) => truncateLabel(String(value), 30)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill="#7928ca" radius={[0, 6, 6, 0]} />
+                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -168,11 +172,11 @@ export default function AdaptiveDashboardTab({
           <div className="h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
-                <CartesianGrid vertical={false} stroke="#334155" strokeDasharray="3 3" />
-                <XAxis dataKey="track" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <CartesianGrid vertical={false} stroke={ct.grid} strokeDasharray="3 3" />
+                <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill="#ff0080" radius={[6, 6, 0, 0]} />
+                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -234,9 +238,9 @@ export default function AdaptiveDashboardTab({
           <div className="h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={nonFlatChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {topTopics.map((topic, index) => (
@@ -301,19 +305,19 @@ export default function AdaptiveDashboardTab({
           <div className="h-[360px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topicShiftData} layout="vertical" margin={{ left: 16, right: 16 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis type="number" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                <XAxis type="number" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis
                   type="category"
                   dataKey="topic"
                   width={190}
-                  tick={{ fontSize: 11 }}
-                  stroke="#94a3b8"
+                  tick={tickStyle(ct, 11)}
+                  stroke={ct.axisLine}
                 />
                 <Tooltip />
                 <Bar
                   dataKey="change"
-                  fill="#2563eb"
+                  fill={ct.barFill}
                   radius={[0, 8, 8, 0]}
                 />
               </BarChart>
@@ -420,14 +424,14 @@ export default function AdaptiveDashboardTab({
           <div className="h-[360px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={filteredChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                 <XAxis
                   dataKey="topic"
-                  tick={{ fontSize: 11 }}
+                  tick={tickStyle(ct, 11)}
                   tickFormatter={(value) => truncateLabel(String(value))}
-                  stroke="#94a3b8"
+                  stroke={ct.axisLine}
                 />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {drawnTracks.map((track) => (
@@ -467,7 +471,7 @@ export default function AdaptiveDashboardTab({
   return (
     <div className="space-y-5">
       <section className="app-surface px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+        <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
           Adaptive section
         </p>
         <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
@@ -494,7 +498,7 @@ export default function AdaptiveDashboardTab({
           { label: "Years represented", value: totalYears, tone: "text-slate-900 dark:text-white" },
         ].map((card) => (
           <section key={card.label} className="app-surface px-5 py-4">
-            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               {card.label}
             </p>
             <p className={`mt-3 text-3xl font-semibold ${card.tone}`}>{card.value}</p>

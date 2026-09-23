@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isValidBearerSecret } from "@/lib/admin-auth";
 import {
   getCronSecret,
   getWorkerServiceUrl,
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
     );
   }
 
-  if (authHeader !== `Bearer ${expectedCronSecret}`) {
+  if (!isValidBearerSecret(authHeader, expectedCronSecret)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

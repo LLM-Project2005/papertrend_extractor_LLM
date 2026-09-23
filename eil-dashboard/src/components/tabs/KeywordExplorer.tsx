@@ -21,6 +21,9 @@ import { TOPIC_PALETTE } from "@/lib/constants";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { isDatedYear } from "@/lib/dated-year";
 
 interface Props {
   trends: TrendRow[];
@@ -97,6 +100,8 @@ export default function KeywordExplorer({
   planCharts,
   onDrilldown,
 }: Props) {
+  const { theme, hydrated } = useTheme();
+  const ct = chartTheme(hydrated && theme === "dark");
   const { session } = useAuth();
   const [query, setQuery] = useState("");
   const [treeN, setTreeN] = useState(30);
@@ -262,7 +267,7 @@ export default function KeywordExplorer({
   }, [query, topicFamilies, trends]);
 
   const heatmapData = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
     const topKeywords = keywordAggregate
       .slice(0, plannerHeatN)
       .map((row) => row.keyword);
@@ -301,7 +306,7 @@ export default function KeywordExplorer({
       : keywordAggregate.slice(0, 5).map((row) => row.keyword);
 
   const timelineData = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].sort();
+    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
     return years.map((year) => {
         const entry: Record<string, string | number> = { year };
         comparisonKeywords.forEach((keyword) => {
@@ -366,14 +371,14 @@ export default function KeywordExplorer({
               <section className="app-surface px-5 py-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Canonical concept
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
                       {conceptResult.canonicalConcept || query}
                     </h3>
                   </div>
-                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-500 dark:bg-[#030303] dark:text-slate-300">
+                  <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#030303] dark:text-slate-300">
                     {conceptResult.source === "fallback" ? "Fallback analysis" : "Node analysis"}
                   </span>
                 </div>
@@ -397,7 +402,7 @@ export default function KeywordExplorer({
 
                 {conceptResult.notFound && conceptResult.suggestedConcepts.length > 0 ? (
                   <div className="mt-4">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Nearby grounded concepts
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -419,7 +424,7 @@ export default function KeywordExplorer({
               {conceptResult.firstAppearance ? (
                 <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       First appearance
                     </p>
                     <h4 className="mt-3 text-lg font-semibold text-slate-900 dark:text-white">
@@ -442,7 +447,7 @@ export default function KeywordExplorer({
                       ))}
                     </div>
                     <Link
-                      href={`/workspace/papers?paperId=${conceptResult.firstAppearance.paperId}`}
+                      href={`/workspace/library?paperId=${conceptResult.firstAppearance.paperId}`}
                       className="mt-4 inline-flex text-sm font-medium text-slate-900 underline dark:text-white"
                     >
                       Open paper
@@ -450,7 +455,7 @@ export default function KeywordExplorer({
                   </article>
 
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Objective verbs
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -472,7 +477,7 @@ export default function KeywordExplorer({
                   </article>
 
                   <article className="app-surface px-5 py-5">
-                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+                    <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Contribution groups
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
@@ -504,8 +509,8 @@ export default function KeywordExplorer({
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={conceptResult.timeline}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                        <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                        <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                        <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                        <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
                         <Legend wrapperStyle={{ fontSize: 11 }} />
                         <Line
@@ -539,8 +544,8 @@ export default function KeywordExplorer({
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={conceptResult.trackSpread}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                        <XAxis dataKey="track" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-                        <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                        <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                        <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
                         <Bar dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
                       </BarChart>
@@ -588,7 +593,7 @@ export default function KeywordExplorer({
                           key={`${item.paperId}-${index}`}
                           className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-slate-500">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-slate-500">
                             {item.year} • {item.section}
                           </p>
                           <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
@@ -629,7 +634,7 @@ export default function KeywordExplorer({
                             </p>
                           </div>
                           <Link
-                            href={`/workspace/papers?paperId=${paper.paperId}`}
+                            href={`/workspace/library?paperId=${paper.paperId}`}
                             className="text-sm font-medium text-slate-900 underline dark:text-white"
                           >
                             Open
@@ -856,8 +861,8 @@ export default function KeywordExplorer({
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={timelineData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-              <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke="#94a3b8" />
-              <YAxis tick={{ fontSize: 12 }} stroke="#94a3b8" />
+              <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+              <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
               <Tooltip />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {comparisonKeywords.map((keyword, index) => (

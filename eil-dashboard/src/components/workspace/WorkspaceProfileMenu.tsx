@@ -122,7 +122,7 @@ export default function WorkspaceProfileMenu({
             <p className="mt-1 truncate text-xs text-slate-500 dark:text-[#9b9b9b]">
               {identity.email}
             </p>
-            <p className="mt-2 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+            <p className="mt-2 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               {identity.roleLabel}
             </p>
           </div>

@@ -262,22 +262,48 @@ export function MicrosoftIcon({ className }: IconProps) {
   );
 }
 
+/*
+ * The two provider marks below are drawn as filled logos, deliberately outside
+ * BaseIcon.
+ *
+ * BaseIcon renders `fill="none" stroke="currentColor"`, which is right for the
+ * line-icon set but cannot draw a logo: the previous Google mark was four
+ * disconnected stroke fragments and read as a scribble, on the one page where a
+ * reader is deciding whether to trust the site with an account.
+ *
+ * They keep the providers' own colours rather than the monochrome palette.
+ * These are third-party marks, not Papertrend's - a person scanning for the
+ * Google "G" is looking for that specific object, and Google's sign-in branding
+ * guidance asks for the official mark.
+ */
 export function GoogleIcon({ className }: IconProps) {
   return (
-    <BaseIcon className={className}>
-      <path d="M19.2 12.2c0-.6-.1-1.1-.2-1.6H12v3.1h4.1a4.2 4.2 0 0 1-1.8 2.8" />
-      <path d="M14.3 16.5a7 7 0 0 1-2.3.4A6.9 6.9 0 0 1 5.5 12a6.9 6.9 0 0 1 6.5-4.9 6.7 6.7 0 0 1 4.6 1.8" />
-      <path d="M4.8 8.8a7.3 7.3 0 0 0 0 6.4" />
-      <path d="M14.3 16.5 18 19" />
-    </BaseIcon>
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        fill="#4285F4"
+        d="M23.52 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47a5.54 5.54 0 0 1-2.4 3.63v3h3.88c2.27-2.09 3.57-5.17 3.57-8.87z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.94-2.91l-3.88-3.01c-1.08.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.94H1.28v3.1A12 12 0 0 0 12 24z"
+      />
+      <path fill="#FBBC05" d="M5.29 14.29a7.2 7.2 0 0 1 0-4.58v-3.1H1.28a12 12 0 0 0 0 10.78l4.01-3.1z" />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.76 0 3.34.61 4.59 1.8l3.44-3.44C17.95 1.19 15.24 0 12 0A12 12 0 0 0 1.28 6.61l4.01 3.1C6.23 6.86 8.88 4.75 12 4.75z"
+      />
+    </svg>
   );
 }
 
 export function FacebookIcon({ className }: IconProps) {
   return (
-    <BaseIcon className={className}>
-      <path d="M13.5 20v-6.5H16l.5-3h-3V8.8c0-.9.3-1.5 1.6-1.5h1.6V4.7c-.3 0-1.1-.2-2.1-.2-2.1 0-3.6 1.3-3.6 3.8v2.2H8.5v3h2.5V20" />
-    </BaseIcon>
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path
+        fill="#1877F2"
+        d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c0-3.02 1.79-4.69 4.53-4.69 1.31 0 2.68.24 2.68.24v2.96h-1.5c-1.48 0-1.94.92-1.94 1.87v2.24h3.3l-.53 3.49h-2.77V24C19.61 23.1 24 18.1 24 12.07z"
+      />
+    </svg>
   );
 }
 

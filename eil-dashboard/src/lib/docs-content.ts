@@ -215,7 +215,6 @@ const rawDocsCategories: DocsCategoryBase[] = [
         description:
           "Use the account repository browser to upload papers, inspect analysis status, retry failed files, and open paper details.",
         tags: ["library", "upload", "file", "analysis status", "retry", "failed", "paper detail"],
-        popular: true,
         sections: [
           {
             id: "library-purpose",
@@ -532,7 +531,6 @@ const rawDocsCategories: DocsCategoryBase[] = [
         description:
           "Use workspace-wide analytics, filters, top topics, top keywords, categories, and year views to understand a corpus.",
         tags: ["dashboard", "adaptive dashboard", "filters", "topics", "keywords", "categories", "year", "charts"],
-        popular: true,
         sections: [
           {
             id: "dashboard-purpose",
@@ -598,7 +596,6 @@ const rawDocsCategories: DocsCategoryBase[] = [
         description:
           "Use attached-paper context, web search, chart mode, and flexible research conversation in one chat surface.",
         tags: ["chat", "ai", "attachments", "web search", "chart mode", "citations", "conversation"],
-        popular: true,
         sections: [
           {
             id: "chat-purpose",
@@ -663,7 +660,6 @@ const rawDocsCategories: DocsCategoryBase[] = [
         description:
           "Use the multi-step research mode for planning, corpus inspection, synthesis, and longer reports.",
         tags: ["deep research", "agent", "plan", "report", "langgraph", "research synthesis"],
-        popular: true,
         sections: [
           {
             id: "agent-purpose",
@@ -806,7 +802,6 @@ const rawDocsCategories: DocsCategoryBase[] = [
         description:
           "Evaluate year detection, keyword quality, topic grouping, chart trust, chat answers, and when to reanalyze.",
         tags: ["evaluation", "quality", "confidence", "year confidence", "keyword quality", "chart trust", "reanalyze"],
-        popular: true,
         sections: [
           {
             id: "evaluation-mindset",

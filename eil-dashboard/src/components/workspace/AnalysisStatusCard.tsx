@@ -200,7 +200,7 @@ function RunTimeline({ run }: { run: IngestionRunRow }) {
                   : "border-slate-200 bg-white text-slate-300 dark:border-[#242424] dark:bg-[#050505] dark:text-[#555555]";
           const labelTone =
             status === "waiting"
-              ? "text-slate-400 dark:text-[#666666]"
+              ? "text-slate-500 dark:text-[#8f8f8f]"
               : "text-slate-700 dark:text-[#d4d4d4]";
           const stateLabel =
             status === "done" ? "Done" : status === "active" ? "Now" : status;
@@ -249,7 +249,7 @@ function RunTimeline({ run }: { run: IngestionRunRow }) {
               >
                 {stage.label}
               </span>
-              <span className="mt-0.5 text-[10px] capitalize text-slate-400 dark:text-[#777777]">
+              <span className="mt-0.5 text-[10px] capitalize text-slate-500 dark:text-[#777777]">
                 {stateLabel}
               </span>
             </div>
@@ -414,7 +414,7 @@ export default function AnalysisStatusCard({
             className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
           >
             <div>
-              <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                 {folderJob ? "Batch analysis" : "Analysis active"}
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
@@ -428,7 +428,7 @@ export default function AnalysisStatusCard({
                 </p>
               ) : null}
             </div>
-            <ArrowRightIcon className="h-4 w-4 text-slate-400 dark:text-[#8f8f8f]" />
+            <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8f8f8f]" />
           </button>
           {allTerminal && onClear ? (
             <button
@@ -560,11 +560,14 @@ export default function AnalysisStatusCard({
           >
             Minimize
           </button>
+          {/* Was "Open imports" pointing at /workspace/imports, which redirects to
+              /workspace/library - a page titled "Repositories". The label promised
+              a view that does not exist, and the hop was invisible but pointless. */}
           <Link
-            href="/workspace/imports"
+            href="/workspace/library"
             className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
           >
-            Open imports
+            Open repositories
           </Link>
           {allTerminal && onClear ? (
             <button
@@ -688,7 +691,7 @@ export default function AnalysisStatusCard({
                   {run.status === "succeeded" ? (
                     <CheckCircleIcon className="h-4 w-4 text-blue-600 dark:text-blue-300" />
                   ) : (
-                    <CircleIcon className="h-4 w-4 text-slate-400 dark:text-[#666666]" />
+                    <CircleIcon className="h-4 w-4 text-slate-500 dark:text-[#8f8f8f]" />
                   )}
                   <span className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                     {run.status}

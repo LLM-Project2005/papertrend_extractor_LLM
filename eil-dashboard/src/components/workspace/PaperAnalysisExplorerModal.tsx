@@ -245,7 +245,7 @@ function SectionSummaryCard({
 
   return (
     <article className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-5 dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
         {label}
       </p>
       {bullets.length > 0 ? (
@@ -265,7 +265,7 @@ function SectionSummaryCard({
 
       {fullText ? (
         <details className="mt-4 border-t border-slate-200 pt-4 dark:border-[#242424]">
-          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+          <summary className="cursor-pointer text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
             View full extracted text
           </summary>
           <p className="mt-3 text-sm leading-7 text-slate-600 dark:text-[#cfcfcf]">
@@ -378,7 +378,7 @@ export default function PaperAnalysisExplorerModal({
         <div className="flex-none border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                 Paper Explorer
               </p>
               <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
@@ -483,10 +483,15 @@ export default function PaperAnalysisExplorerModal({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex-none rounded-full px-4 py-2 text-sm font-medium transition-colors ${
+                // The border lives in the base class, not on one branch. It used
+                // to sit only on the inactive pills, and under border-box sizing
+                // with auto width that made every inactive pill 2px wider and
+                // taller than the active one - so clicking a tab reflowed the
+                // whole nowrap row sideways under the pointer.
+                className={`flex-none rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
                   activeTab === tab.id
-                    ? "bg-slate-900 text-white dark:bg-white dark:text-[#171717]"
-                    : "border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+                    ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-[#171717]"
+                    : "border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
                 }`}
               >
                 {tab.label}
@@ -545,7 +550,7 @@ export default function PaperAnalysisExplorerModal({
                     <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#050505]">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase text-slate-400 dark:text-[#777]">{detail.classification.taxonomyName}</p>
+                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">{detail.classification.taxonomyName}</p>
                           <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{detail.classification.primaryCategory}</p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${detail.classification.status === "current" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}>
@@ -554,12 +559,12 @@ export default function PaperAnalysisExplorerModal({
                       </div>
                       {detail.classification.additionalCategories.length ? <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">Also: {detail.classification.additionalCategories.join(", ")}</p> : null}
                       <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#bbb]">{detail.classification.rationale}</p>
-                      <p className="mt-3 text-xs text-slate-400 dark:text-[#777]">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
+                      <p className="mt-3 text-xs text-slate-500 dark:text-[#777]">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
                     </section>
                   ) : null}
                   <section className="grid gap-4 lg:grid-cols-3">
                     <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                         Topical coverage
                       </p>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -581,7 +586,7 @@ export default function PaperAnalysisExplorerModal({
                     </article>
 
                     <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                         Grounded keywords
                       </p>
                       <div className="mt-3 space-y-2">
@@ -595,7 +600,7 @@ export default function PaperAnalysisExplorerModal({
                                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                                   {keyword.keyword}
                                 </p>
-                                <p className="mt-1 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                                <p className="mt-1 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                                   {keyword.topic || "Unclassified topic"}
                                 </p>
                               </div>
@@ -613,14 +618,14 @@ export default function PaperAnalysisExplorerModal({
                     </article>
 
                     <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                      <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                         Facet highlights
                       </p>
                       <div className="mt-3 space-y-3">
                         {facetGroups.length > 0 ? (
                           facetGroups.map((group) => (
                             <div key={group.label}>
-                              <p className="text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                              <p className="text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                                 {group.label}
                               </p>
                               <div className="mt-2 flex flex-wrap gap-2">
@@ -657,7 +662,7 @@ export default function PaperAnalysisExplorerModal({
                                 {concept.label}
                               </p>
                               {concept.matchedTerms.length > 0 ? (
-                                <p className="mt-2 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                                <p className="mt-2 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                                   {concept.matchedTerms.slice(0, 5).join(" | ")}
                                 </p>
                               ) : null}
@@ -701,7 +706,7 @@ export default function PaperAnalysisExplorerModal({
                             <p className="text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">
                               {keyword.keyword}
                             </p>
-                            <p className="mt-1 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                            <p className="mt-1 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                               {keyword.topic || "Unclassified topic"}
                             </p>
                           </div>
@@ -921,7 +926,7 @@ export default function PaperAnalysisExplorerModal({
                           key={`${facet.facetType}-${facet.label}-${index}`}
                           className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
                         >
-                          <p className="text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                          <p className="text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                             {facet.facetType.replace(/_/g, " ")}
                           </p>
                           <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-[#f2f2f2]">

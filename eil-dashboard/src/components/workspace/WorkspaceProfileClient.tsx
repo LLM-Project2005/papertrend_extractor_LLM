@@ -140,7 +140,7 @@ export default function WorkspaceProfileClient() {
             </h2>
             <dl className="mt-5 space-y-4 text-sm">
               <div className="flex items-start gap-3">
-                <EmailIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-[#7d7d7d]" />
+                <EmailIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#7d7d7d]" />
                 <div>
                   <dt className="text-slate-500 dark:text-[#a3a3a3]">Email</dt>
                   <dd className="mt-1 font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -149,7 +149,7 @@ export default function WorkspaceProfileClient() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <UserIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-[#7d7d7d]" />
+                <UserIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#7d7d7d]" />
                 <div>
                   <dt className="text-slate-500 dark:text-[#a3a3a3]">Role</dt>
                   <dd className="mt-1 font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -158,7 +158,7 @@ export default function WorkspaceProfileClient() {
                 </div>
               </div>
               <div className="flex items-start gap-3">
-                <SettingsIcon className="mt-0.5 h-4 w-4 flex-none text-slate-400 dark:text-[#7d7d7d]" />
+                <SettingsIcon className="mt-0.5 h-4 w-4 flex-none text-slate-500 dark:text-[#7d7d7d]" />
                 <div>
                   <dt className="text-slate-500 dark:text-[#a3a3a3]">Auth provider</dt>
                   <dd className="mt-1 font-medium capitalize text-slate-900 dark:text-[#f2f2f2]">

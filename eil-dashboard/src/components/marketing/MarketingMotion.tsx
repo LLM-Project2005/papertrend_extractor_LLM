@@ -39,13 +39,19 @@ export function AnimatedProductFrame() {
       transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
       whileHover={reduceMotion ? undefined : { y: -3 }}
     >
-      <div className="marketing-scanline pointer-events-none absolute inset-0 z-10" />
       <div className="border-b border-[#1f1f1f] bg-[#050505] px-4 py-3">
+        {/*
+          This frame is a drawing. It used to be labelled "LIVE REPOSITORY" beside
+          a teal connected-dot and the site's own hostname - three signals
+          telling a visitor they were watching a live system, when every number
+          below is written into the source. The address was real, which is what
+          made it convincing; the session it implied was not. It says what it is
+          now.
+        */}
         <div className="flex items-center justify-between gap-3">
-          <span className="font-mono text-xs text-[#8f8f8f]">LIVE REPOSITORY</span>
-          <span className="hidden items-center gap-2 font-mono text-xs text-[#8f8f8f] sm:flex">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#00dfd8]" />
-            research-trend-analysis.web.app
+          <span className="font-mono text-xs text-[#8f8f8f]">EXAMPLE WORKSPACE</span>
+          <span className="hidden font-mono text-xs text-[#8f8f8f] sm:block">
+            illustration
           </span>
         </div>
       </div>
@@ -58,7 +64,7 @@ export function AnimatedProductFrame() {
               <h3 className="mt-1 text-lg font-semibold text-white">Analyzing papers</h3>
             </div>
             <span className="rounded-md border border-[#2a2a2a] px-3 py-1 font-mono text-xs text-[#d0d0d0]">
-              live
+              example
             </span>
           </div>
 
@@ -80,7 +86,7 @@ export function AnimatedProductFrame() {
                 </div>
                 <div className="mt-3 h-1.5 overflow-hidden rounded-sm bg-[#111111]">
                   <motion.div
-                    className="h-full rounded-sm bg-gradient-to-r from-[#007cf0] to-[#00dfd8]"
+                    className="h-full rounded-sm bg-slate-900 dark:bg-[#d4d4d4]"
                     initial={{ width: index === 0 ? "42%" : percent }}
                     animate={reduceMotion ? undefined : { width: index === 0 ? "78%" : percent }}
                     transition={{ ...transition, delay: 0.25 + index * 0.08 }}
@@ -105,7 +111,7 @@ export function AnimatedProductFrame() {
                 {[44, 62, 38, 70, 54, 86, 76].map((height, index) => (
                   <motion.div
                     key={height + index}
-                    className="min-w-0 flex-1 rounded-t-md bg-gradient-to-t from-[#7928ca] to-[#ff0080]"
+                    className="min-w-0 flex-1 rounded-t-md bg-slate-800 dark:bg-[#d4d4d4]"
                     initial={{ height: `${height * 0.65}%` }}
                     animate={reduceMotion ? undefined : { height: `${height}%` }}
                     transition={{ ...transition, delay: index * 0.06 }}
@@ -121,8 +127,8 @@ export function AnimatedProductFrame() {
                   Create a top topic chart for these papers and explain the strongest pattern.
                 </p>
                 <div className="mt-4 rounded-lg border border-[#1f1f1f] bg-[#030303] p-3">
-                  <div className="h-2 w-2/3 rounded-sm bg-[#00dfd8]" />
-                  <div className="mt-2 h-2 w-1/2 rounded-sm bg-[#7928ca]" />
+                  <div className="h-2 w-2/3 rounded-sm bg-slate-300 dark:bg-[#3a3a3a]" />
+                  <div className="mt-2 h-2 w-1/2 rounded-sm bg-slate-200 dark:bg-[#2a2a2a]" />
                 </div>
               </div>
 
@@ -158,7 +164,6 @@ export function AnimatedFeaturePanel({ label }: { label: string }) {
       viewport={{ once: true }}
       transition={{ duration: 0.6, ease: "easeOut" }}
     >
-      <div className="marketing-scanline pointer-events-none absolute inset-0" />
       <div className="flex items-center justify-between border-b border-[#1f1f1f] pb-4">
         <p className="font-mono text-xs text-[#8f8f8f]">{label}</p>
         <span className="rounded-md border border-[#2a2a2a] px-3 py-1 font-mono text-xs text-[#d0d0d0]">

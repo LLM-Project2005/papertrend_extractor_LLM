@@ -1476,7 +1476,7 @@ function citationForPaper(paper: RepositoryPaper, reason: string): RepositoryCit
     paperId: paper.paperId,
     title: paper.title,
     year: paper.year,
-    href: `/workspace/papers?paperId=${encodeURIComponent(paper.paperId)}`,
+    href: `/workspace/library?paperId=${encodeURIComponent(paper.paperId)}`,
     reason,
     sourceType: "paper",
   };

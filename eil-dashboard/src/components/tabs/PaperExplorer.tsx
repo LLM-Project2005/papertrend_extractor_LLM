@@ -193,7 +193,7 @@ export default function PaperExplorer({
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                  <span className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                     {paper.year}
                   </span>
                   {paper.trackLabels.map((track) => (
@@ -222,7 +222,7 @@ export default function PaperExplorer({
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
             <div className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                   Selected paper
                 </p>
                 <h3 className="mt-2 text-xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
@@ -265,11 +265,11 @@ export default function PaperExplorer({
                       <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
                         {keyword.keyword}
                       </p>
-                      <span className="text-xs font-medium text-slate-400 dark:text-[#8e8e8e]">
+                      <span className="text-xs font-medium text-slate-500 dark:text-[#8e8e8e]">
                         {keyword.frequency}
                       </span>
                     </div>
-                    <p className="mt-2 text-xs uppercase tracking-normal text-slate-400 dark:text-[#8e8e8e]">
+                    <p className="mt-2 text-xs uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                       {keyword.topic}
                     </p>
                     <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">

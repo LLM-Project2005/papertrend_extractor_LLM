@@ -18,6 +18,8 @@ import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
 import { normalizeCategoryKey, type CategoryOption } from "@/lib/category-options";
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationChartKey } from "@/types/visualization";
+import { isDatedYear } from "@/lib/dated-year";
+import { chartTheme, tickStyle } from "@/lib/chart-theme";
 
 interface Props {
   trends: TrendRow[];
@@ -66,7 +68,9 @@ export default function Overview({
       ...tracksMulti.map((row) => row.year),
       ...categoryAssignments.map((row) => row.year),
     ]),
-  ].sort();
+  ]
+    .filter(isDatedYear)
+    .sort();
   const yearSpan =
     years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data";
 
@@ -79,6 +83,7 @@ export default function Overview({
       {}
     )
   )
+    .filter(([year]) => isDatedYear(year))
     .map(([year, ids]) => ({ year, papers: ids.size }))
     .sort((left, right) => left.year.localeCompare(right.year));
 
@@ -127,9 +132,7 @@ export default function Overview({
   const hasDynamicCategories = categoryAssignments.length > 0;
   const donutSingle = hasDynamicCategories ? buildDynamicDonut("single") : buildLegacyDonut(tracksSingle);
   const donutMulti = hasDynamicCategories ? buildDynamicDonut("multi") : buildLegacyDonut(tracksMulti);
-  const chartGrid = isDark ? "#3f3f46" : "#d7dee8";
-  const chartAxis = isDark ? "#a3a3a3" : "#7c8aa0";
-  const barFill = isDark ? "#d4a574" : "#334155";
+  const ct = chartTheme(isDark);
   const orderedCharts =
     visibleCharts?.filter((chart): chart is VisualizationChartKey =>
       [
@@ -277,13 +280,13 @@ export default function Overview({
           <div className="mt-4 h-[320px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={papersByYear}>
-                <CartesianGrid strokeDasharray="3 3" stroke={chartGrid} />
-                <XAxis dataKey="year" tick={{ fontSize: 12 }} stroke={chartAxis} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke={chartAxis} />
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip {...tooltipTheme} />
                 <Bar
                   dataKey="papers"
-                  fill={barFill}
+                  fill={ct.barFill}
                   radius={[8, 8, 0, 0]}
                   onClick={(entry) => {
                     if (entry && "year" in entry) {

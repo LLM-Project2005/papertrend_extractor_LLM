@@ -120,7 +120,7 @@ export default function Sidebar({
 
         {showFolders && onFolderChange ? (
           <section>
-            <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               Folders
             </h3>
             <div className="space-y-3">
@@ -155,7 +155,7 @@ export default function Sidebar({
                   );
                 })}
               </div>
-              <p className="text-xs leading-6 text-slate-400 dark:text-[#7d7d7d]">
+              <p className="text-xs leading-6 text-slate-500 dark:text-[#7d7d7d]">
                 {allFoldersSelected
                   ? "Showing every folder in this project."
                   : `Showing ${normalizedSelectedFolderIds.length} selected folder${
@@ -168,12 +168,12 @@ export default function Sidebar({
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               Years
             </h3>
             <button
               type="button"
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
+              className="-my-2 rounded px-1 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
               onClick={() => onYearsChange([])}
             >
               Show all
@@ -203,12 +203,12 @@ export default function Sidebar({
 
         <section>
           <div className="mb-3 flex items-center justify-between gap-3">
-            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#6f6f6f]">
+            <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               Categories
             </h3>
             <button
               type="button"
-              className="text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
+              className="-my-2 rounded px-1 py-2 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-[#ececec]"
               onClick={() => onTracksChange([])}
             >
               Show all
@@ -254,7 +254,7 @@ export default function Sidebar({
           </div>
         </section>
 
-        <p className="text-xs leading-6 text-slate-400 dark:text-[#7d7d7d]">
+        <p className="text-xs leading-6 text-slate-500 dark:text-[#7d7d7d]">
           Data source: analyzed research outputs in this repository.
         </p>
       </div>

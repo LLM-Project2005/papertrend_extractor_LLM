@@ -57,7 +57,7 @@ function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
       <div className="mt-5 space-y-5">
         {docsCategories.map((category) => (
           <nav key={category.id} aria-label={category.label}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
+            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               {category.label}
             </p>
             <div className="mt-2 space-y-1">
@@ -162,7 +162,7 @@ export function DocsArticle({ page }: { page: DocsPage }) {
 
       <article className="min-w-0 lg:ml-[292px] xl:mr-[252px]">
         <div className="mb-8 rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505] lg:hidden">
-          <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
+          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
             Documentation
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -193,13 +193,17 @@ export function DocsArticle({ page }: { page: DocsPage }) {
             {page.description}
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
+            {/* These were spans styled exactly like filter chips - rounded, bordered,
+                tinted - so they invited a click and did nothing. They now search the
+                documentation for the tag, which is what a reader was reaching for. */}
             {page.tags.slice(0, 6).map((tag) => (
-              <span
+              <Link
                 key={tag}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f]"
+                href={`/docs/search?q=${encodeURIComponent(tag)}`}
+                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f] dark:hover:border-[#3a3a3a] dark:hover:text-white"
               >
                 {tag}
-              </span>
+              </Link>
             ))}
           </div>
         </div>
@@ -332,7 +336,7 @@ export function DocsHome() {
             key={category.id}
             className="rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505]"
           >
-            <p className="text-xs font-semibold uppercase tracking-normal text-slate-400 dark:text-[#666666]">
+            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               {category.label}
             </p>
             <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
