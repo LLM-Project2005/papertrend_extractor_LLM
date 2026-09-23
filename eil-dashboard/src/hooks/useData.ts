@@ -159,7 +159,13 @@ export function useDashboardData(
 
       if (!user || !session?.access_token) {
         if (!cancelled) {
-          setData(generateMockData());
+          // Without a session there is nothing to show, so show nothing rather
+          // than a seeded fabrication. This branch also runs in the moment after
+          // mount before the session hydrates, and it used to hand back eleven
+          // years of invented topics, which a signed-in reader saw flash past as
+          // though it were their own library. The failure path below already
+          // draws this distinction; this one did not.
+          setData(buildEmptyLiveData(projectId));
           setLoading(false);
           setRefreshing(false);
           hasLoadedRef.current = true;
@@ -198,11 +204,7 @@ export function useDashboardData(
         }
       } catch {
         if (!cancelled) {
-          setData(
-            mode === "live" || Boolean(user && session?.access_token)
-              ? buildEmptyLiveData(projectId)
-              : generateMockData()
-          );
+          setData(buildEmptyLiveData(projectId));
           setLoading(false);
           setRefreshing(false);
           hasLoadedRef.current = true;
@@ -289,7 +291,7 @@ export function useDashboardData(
     }
 
     if (!user || !session?.access_token) {
-      setData(generateMockData());
+      setData(buildEmptyLiveData(projectId));
       setLoading(false);
       setRefreshing(false);
       hasLoadedRef.current = true;
@@ -309,12 +311,7 @@ export function useDashboardData(
       setData(nextData);
       hasLoadedRef.current = true;
     } catch {
-      setData((current) =>
-        current ??
-        (mode === "live" || Boolean(user && session?.access_token)
-          ? buildEmptyLiveData(projectId)
-          : generateMockData())
-      );
+      setData((current) => current ?? buildEmptyLiveData(projectId));
     } finally {
       setLoading(false);
       setRefreshing(false);

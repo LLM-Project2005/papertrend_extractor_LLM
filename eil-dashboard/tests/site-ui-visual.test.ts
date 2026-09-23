@@ -323,6 +323,56 @@ test("muted light-mode text is not slate-400", () => {
   assert.deepEqual(offenders, []);
 });
 
+/* ------------------------------------------------- data the reader is shown */
+
+test("a seeded fabrication is only ever shown when preview mode was chosen", () => {
+  // Two paths handed back generateMockData() - eleven years of invented topics -
+  // when there was no session, which is also the moment after mount before the
+  // session hydrates. A signed-in reader saw it flash past as their own library.
+  const hook = read("src/hooks/useData.ts");
+  const calls = [...hook.matchAll(/generateMockData\(\)/g)];
+  assert.ok(calls.length >= 1, "explicit preview mode still needs it");
+  for (const call of calls) {
+    const before = hook.slice(Math.max(0, call.index! - 400), call.index!);
+    assert.match(
+      before,
+      /mode === "mock"/,
+      "every fabrication must sit inside an explicit preview-mode guard"
+    );
+  }
+});
+
+test("the first screen after signing in is not an empty box", () => {
+  // /workspaces is where login lands and where every workspace breadcrumb
+  // points. It rendered a bare coloured <main> for the whole projects
+  // round-trip: no logo, no heading, no spinner, nothing.
+  const index = read("src/components/workspace/workspaces/ProjectIndexClient.tsx");
+  assert.equal(
+    /return <main className="min-h-screen bg-slate-50 dark:bg-black" \/>;/.test(index),
+    false
+  );
+  const loading = index.slice(index.indexOf("if (!hydrated || workspaceLoading)"), index.indexOf("return (\n    <main className=\"min-h-screen bg-slate-50 text-slate-900"));
+  assert.match(index, /aria-busy="true"/);
+  assert.match(index, /Loading your repositories/);
+  assert.match(index, /animate-pulse/, "the cards are blocked out so the page does not jump");
+  assert.ok(loading.length > 0);
+});
+
+test("the dashboard feature page does not claim what the code refuses to do", () => {
+  // "Live library updates" - the dashboard passes no pollIntervalMs and sets
+  // refetchOnWindowFocus: false, so the only refresh is the manual one. And
+  // there are six views, not four.
+  const content = read("src/components/marketing/marketing-content.ts");
+  assert.equal(/metric: "Live", label: "library updates"/.test(content), false);
+  assert.equal(/metric: "4", label: "category views"/.test(content), false);
+  assert.match(content, /metric: "6", label: "dashboard views"/);
+
+  const dash = read("src/components/DashboardClient.tsx");
+  const tabs = (dash.match(/\{ key: "[a-z_]+", label: "[^"]+" \}/g) ?? []).length;
+  assert.equal(tabs, 6, "the published count must match TAB_DEFINITIONS");
+  assert.equal(/pollIntervalMs/.test(dash), false, "still not polling, so still not live");
+});
+
 test("the faintest dark-mode greys are gone", () => {
   // #666666 measured 3.55:1 and #6f6f6f 4.06:1 on the #050505 panel; #8f8f8f
   // reads 6.31:1 and was already the brand's label grey, so this raises

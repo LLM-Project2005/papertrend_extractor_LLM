@@ -91,8 +91,12 @@ export const marketingFeatures: MarketingFeature[] = [
     heroPoints: ["workspace-wide views", "trend charts", "filterable corpus"],
     proof: [
       { metric: "All", label: "workspace scope" },
-      { metric: "4", label: "category views" },
-      { metric: "Live", label: "library updates" },
+      // Was "4 category views" and "Live library updates". There are six views
+      // (DashboardClient TAB_DEFINITIONS), and nothing about the dashboard is
+      // live: it passes no pollIntervalMs and sets refetchOnWindowFocus: false,
+      // so the only refresh is the one the reader asks for.
+      { metric: "6", label: "dashboard views" },
+      { metric: "Filters", label: "year, category, folder" },
     ],
     sections: [
       {
