@@ -26,6 +26,13 @@ export interface ChatCompletionParameters {
   toolChoice?: unknown;
   parallelToolCalls?: boolean;
   timeoutMs?: number;
+  /**
+   * Caps a thinking model's hidden reasoning, which is billed as output and is
+   * most of its latency. OpenRouter only; other providers ignore it.
+   */
+  reasoningEffort?: "low" | "medium" | "high";
+  /** Asks for a JSON object back, for steps whose reply is parsed by code. */
+  jsonObject?: boolean;
 }
 
 export interface ChatCompletionAnnotation {
@@ -145,6 +152,12 @@ export async function createChatCompletionResult(
   }
   if (typeof parameters.parallelToolCalls === "boolean") {
     requestBody.parallel_tool_calls = parameters.parallelToolCalls;
+  }
+  if (usesOpenRouter && parameters.reasoningEffort) {
+    requestBody.reasoning = { effort: parameters.reasoningEffort };
+  }
+  if (parameters.jsonObject) {
+    requestBody.response_format = { type: "json_object" };
   }
 
   // Latency per call was never recorded, so a slow answer could not be

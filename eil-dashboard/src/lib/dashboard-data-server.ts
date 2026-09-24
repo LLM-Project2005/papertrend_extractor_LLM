@@ -8,6 +8,7 @@ import {
   loadOrBuildProjectCorpusTopicCache,
 } from "@/lib/corpus-topic-cache";
 import { materializeDashboardSummaryCache } from "@/lib/dashboard-summary-cache";
+import { applyStoredThemes } from "@/lib/topic-theme-service";
 import type {
   CategoryAssignmentRow,
   DashboardData,
@@ -999,6 +1000,16 @@ async function loadProjectScopedDashboardFallbackData(
   return loadScopedDashboardData(ownerUserId, scopedRunIds);
 }
 
+/**
+ * Every topic row in a repository, whatever folders a dashboard has in view.
+ *
+ * Topic grouping reads this rather than the dashboard's own load, so a topic is
+ * filed under the same theme however the dashboard happens to be filtered.
+ */
+export async function loadProjectTrends(ownerUserId: string, projectId: string): Promise<TrendRow[]> {
+  return (await loadProjectScopedDashboardFallbackData(ownerUserId, projectId, null)).trends;
+}
+
 async function loadDashboardDataServerUncached(
   ownerUserId?: string | null,
   folderSelection?: string[] | string | null,
@@ -1029,10 +1040,17 @@ async function loadDashboardDataServerUncached(
       projectId && projectId !== "all"
         ? await (async () => {
             if (getDatabaseProvider() === "cloud-sql") {
-              return loadProjectScopedDashboardFallbackData(
+              // Topics are grouped into themes here, once, so every tab and the
+              // adaptive planner read the same themes rather than each paper's
+              // own label. The corpus topic cache below is Supabase-only.
+              return applyStoredThemes(
                 ownerUserId,
                 projectId,
-                requestedFolderIds
+                await loadProjectScopedDashboardFallbackData(
+                  ownerUserId,
+                  projectId,
+                  requestedFolderIds
+                )
               );
             }
             try {
@@ -1129,10 +1147,14 @@ export async function loadDashboardDataServer(
     mode
   )
     .then((data) => {
-      dashboardServerCache.set(cacheKey, {
-        timestamp: Date.now(),
-        data,
-      });
+      // A read whose topics are still being grouped is not kept: the dashboard
+      // asks again once grouping finishes, and must not be handed this one back.
+      if (data.topicThemes?.status !== "pending") {
+        dashboardServerCache.set(cacheKey, {
+          timestamp: Date.now(),
+          data,
+        });
+      }
       void materializeDashboardSummaryCache(data, {
         ownerUserId: ownerUserId ?? "",
         projectId,

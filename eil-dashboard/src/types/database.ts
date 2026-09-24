@@ -28,6 +28,8 @@ export interface CorpusTopicFamily {
   folderIds: string[];
   years: string[];
   totalKeywordFrequency: number;
+  /** "method" when the theme is about how studies were done; absent means a topic. */
+  kind?: "topic" | "method";
 }
 
 export interface TrackRow {
@@ -65,6 +67,8 @@ export interface DashboardData {
   tracksMulti: TrackRow[];
   categoryAssignments?: CategoryAssignmentRow[];
   topicFamilies?: CorpusTopicFamily[];
+  /** Whether the topics in view are grouped into themes yet (Cloud SQL only). */
+  topicThemes?: TopicThemeStatus;
   useMock: boolean;
   diagnostics?: {
     dataSource?: "scoped" | "legacy_fallback" | "mock" | "empty";
@@ -72,6 +76,18 @@ export interface DashboardData {
     scopeDescription?: string;
     errorMessage?: string;
   } | null;
+}
+
+/**
+ * ready       - every topic in view is in a theme
+ * pending     - some are not yet; the dashboard should ask for them to be grouped
+ * unavailable - grouping cannot run now (no model, or backing off after a failure),
+ *               so those topics show under their papers' own labels
+ */
+export interface TopicThemeStatus {
+  status: "ready" | "pending" | "unavailable";
+  ungroupedTopics: number;
+  groupedAt: string | null;
 }
 
 export type DashboardDataMode = "auto" | "live" | "mock";
