@@ -130,6 +130,27 @@ test("a merge survives only when most groupings make it", () => {
   assert.equal(groups.find((g) => g.members.includes(da[0]))!.name, "Dynamic Assessment");
 });
 
+test("a theme the groupings agree on is not split for being large", () => {
+  // Seven papers under one label and two under another, merged by every run: a
+  // share cap made them two bars with nearly one name.
+  const trends = [
+    ...Array.from({ length: 7 }, (_, i) => row(`big${i}`, "Structured Peer Feedback Interventions")),
+    row("s1", "structured peer feedback"),
+    row("s2", "structured peer feedback"),
+    ...Array.from({ length: 12 }, (_, i) => row(`o${i}`, `Other topic ${i}`)),
+  ];
+  const items = collectTopicItems(trends);
+  const big = items.findIndex((item) => item.key === "structured peer feedback interventions");
+  const small = items.findIndex((item) => item.key === "structured peer feedback");
+  const rest = items.map((_, i) => i).filter((i) => i !== big && i !== small);
+  const run: ThemeGroup[] = [
+    { name: "Structured Peer Feedback", kind: "topic", members: [big, small] },
+    ...rest.map((i) => ({ name: items[i].label, kind: "topic" as const, members: [i] })),
+  ];
+  const groups = consensusGroups([run, run, run], items, { totalPapers: 21 });
+  assert.ok(groups.some((g) => g.members.includes(big) && g.members.includes(small)));
+});
+
 test("no two consensus themes share a name", () => {
   // One run lumps four topics under one name; the consensus splits them in two,
   // and both halves match that run's theme best.
