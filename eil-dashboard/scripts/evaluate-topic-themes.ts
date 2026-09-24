@@ -300,7 +300,7 @@ function report(label: string, trends: TrendRow[], families: CorpusTopicFamily[]
   const d = duplicateAgreement(trends, families);
   const subjects = measureThemes(families.filter((family) => family.kind !== "method"), papers);
   console.log(
-    `${label}: ${m.themes} themes, singletons ${(m.singletonRate * 100).toFixed(0)}%, ` +
+    `${label}: ${m.themes} themes, single-paper themes ${(m.singletonRate * 100).toFixed(0)}% (topics in them ${(m.topicSingletonRate * 100).toFixed(0)}%), ` +
       `largest ${(m.largestThemeShare * 100).toFixed(0)}%, papers in shared themes ${(m.papersInSharedThemes * 100).toFixed(0)}%, ` +
       `duplicate copies sharing a theme ${d.sharing}/${d.pairs} (mean overlap ${d.meanJaccard.toFixed(2)})\n` +
       `   of which ${m.themes - subjects.themes} method themes; topic themes alone: ${subjects.themes}, ` +

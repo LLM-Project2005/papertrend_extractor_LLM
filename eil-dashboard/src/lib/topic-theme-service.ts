@@ -216,8 +216,15 @@ async function ask(messages: GroupingMessage[], count: number): Promise<string[]
 
 /** Consensus of independent groupings; null when too few came back usable. */
 async function groupWhole(items: TopicItem[], totalPapers: number): Promise<ThemeGroup[] | null> {
-  const replies = await ask(groupingMessages(items), CONSENSUS_RUNS);
-  const runs = replies.map((text) => parseGrouping(text, items)).filter((run): run is ThemeGroup[] => Boolean(run));
+  const usable = async (count: number) =>
+    (await ask(groupingMessages(items), count))
+      .map((text) => parseGrouping(text, items))
+      .filter((run): run is ThemeGroup[] => Boolean(run));
+  const runs = await usable(CONSENSUS_RUNS);
+  // Measured: one reply in six came back unreadable. With two runs left, a merge
+  // needs both to agree, which fragmented the repository into 75% single-paper
+  // themes - so the missing runs are asked for once more.
+  if (runs.length < CONSENSUS_RUNS) runs.push(...(await usable(CONSENSUS_RUNS - runs.length)));
   // One usable grouping is not a consensus; three of six single calls broke a
   // pair that is not a matter of taste.
   if (runs.length < 2) return null;

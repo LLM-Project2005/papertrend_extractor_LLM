@@ -74,8 +74,11 @@ export const INCREMENTAL_LIMIT_FLOOR = 8;
  */
 export const REGROUP_GROWTH = 1.25;
 
-/** Bumped when the stored shape or the method changes, so old stores are rebuilt. */
-export const THEME_STORE_VERSION = 1;
+/**
+ * Bumped when the stored shape or the method changes, so old stores are rebuilt.
+ * 2: topics are grouped with their papers' titles.
+ */
+export const THEME_STORE_VERSION = 2;
 
 /* -------------------------------------------------------------- the items */
 
@@ -86,6 +89,14 @@ export interface TopicItem {
   label: string;
   /** The keywords its papers use under it, most used first. */
   keywords: string[];
+  /**
+   * The titles of the papers it comes from (at most two). Measured on the live
+   * pilot: without them "L2 Phonological Acquisition Processes" read as generic
+   * and was grouped by its shared lens with morphosyntax, while the title - "L2
+   * Production of English Word Stress by L1 Thai Learners" - says it is about
+   * pronunciation.
+   */
+  titles: string[];
   paperIds: Set<PaperId>;
 }
 
@@ -102,7 +113,7 @@ export function normalizeTopicKey(label: string): string {
 export function collectTopicItems(trends: TrendRow[]): TopicItem[] {
   const byKey = new Map<
     string,
-    { spellings: Map<string, number>; paperIds: Set<PaperId>; keywords: Map<string, number> }
+    { spellings: Map<string, number>; paperIds: Set<PaperId>; keywords: Map<string, number>; titles: Set<string> }
   >();
   for (const row of trends) {
     const original = String(row.raw_topic ?? row.topic ?? "").trim();
@@ -112,9 +123,12 @@ export function collectTopicItems(trends: TrendRow[]): TopicItem[] {
       spellings: new Map<string, number>(),
       paperIds: new Set<PaperId>(),
       keywords: new Map<string, number>(),
+      titles: new Set<string>(),
     };
     entry.spellings.set(original, (entry.spellings.get(original) ?? 0) + 1);
     entry.paperIds.add(row.paper_id);
+    const title = String(row.title ?? "").replace(/\s+/g, " ").trim();
+    if (title) entry.titles.add(title.length > 110 ? `${title.slice(0, 109)}…` : title);
     const keyword = String(row.keyword ?? "").trim();
     if (keyword) {
       entry.keywords.set(keyword, (entry.keywords.get(keyword) ?? 0) + Math.max(1, row.keyword_frequency || 1));
@@ -137,6 +151,7 @@ export function collectTopicItems(trends: TrendRow[]): TopicItem[] {
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 8)
         .map(([keyword]) => keyword),
+      titles: [...entry.titles].sort().slice(0, 2),
       paperIds: entry.paperIds,
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
@@ -188,7 +203,9 @@ const GROUPING_RULES = [
 ];
 
 function topicText(item: TopicItem): string {
-  return item.keywords.length > 0 ? `${item.label} - keywords: ${item.keywords.join(", ")}` : item.label;
+  const keywords = item.keywords.length > 0 ? ` - keywords: ${item.keywords.join(", ")}` : "";
+  const titles = item.titles.length > 0 ? ` - from: ${item.titles.map((title) => `"${title}"`).join("; ")}` : "";
+  return `${item.label}${keywords}${titles}`;
 }
 
 /**
@@ -212,7 +229,7 @@ export function groupingMessages(items: TopicItem[], previousNames: string[] = [
       content:
         `Rules:\n${GROUPING_RULES.map((rule, i) => `${i + 1}. ${rule}`).join("\n")}\n` +
         continuity +
-        `\nTopics (number. label - the keywords its papers use):\n${items
+        `\nTopics (number. label - the keywords its papers use - the paper it comes from):\n${items
           .map((item, index) => `${index + 1}. ${topicText(item)}`)
           .join("\n")}\n\n` +
         `Reply with JSON only: {"themes":[{"name":"...","kind":"topic","topics":[1,2]}]}`,
@@ -791,6 +808,13 @@ export interface ThemeMetrics {
   themes: number;
   /** Share of themes that belong to exactly one paper. */
   singletonRate: number;
+  /**
+   * Share of the papers' own topics whose theme belongs to one paper. This is
+   * the measure the 99% baseline was: before grouping every topic is its own
+   * theme, so 119 of 120 topics belonged to one paper. After grouping the two
+   * differ, and this is the one that compares like with like.
+   */
+  topicSingletonRate: number;
   /** Share of papers held by the largest theme. */
   largestThemeShare: number;
   /** Share of papers that sit in at least one theme shared with another paper. */
@@ -808,6 +832,11 @@ export function measureThemes(families: CorpusTopicFamily[], totalPapers: number
     topics: families.reduce((sum, family) => sum + family.aliases.length, 0),
     themes: families.length,
     singletonRate: families.length === 0 ? 0 : singles / families.length,
+    topicSingletonRate: (() => {
+      const topics = families.reduce((sum, family) => sum + family.aliases.length, 0);
+      const alone = families.filter((family) => family.paperIds.length <= 1).reduce((sum, family) => sum + family.aliases.length, 0);
+      return topics === 0 ? 0 : alone / topics;
+    })(),
     largestThemeShare: totalPapers === 0 ? 0 : largest / totalPapers,
     papersInSharedThemes: totalPapers === 0 ? 0 : shared.size / totalPapers,
   };
