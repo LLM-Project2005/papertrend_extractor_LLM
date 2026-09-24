@@ -9,6 +9,7 @@ import {
   consensusAssignment,
   consensusGroups,
   extendGroups,
+  groupingMessages,
   groupsFromStore,
   parseAssignment,
   parseGrouping,
@@ -311,6 +312,10 @@ test("grouping runs with the settings it was evaluated with", () => {
   const service = read("src/lib/topic-theme-service.ts");
   assert.match(service, /reasoningEffort: "low"/);
   assert.match(service, /if \(runs\.length < 2\) return null;/, "one grouping is not a consensus");
+  // Paper titles were measured and taken out: they pulled one paper's topics
+  // together. Putting them back needs the evaluation re-run, not a quiet edit.
+  const prompt = groupingMessages(collectTopicItems([row("1", "A Topic", "kw", { title: "A Paper Title" })]))[1].content;
+  assert.equal(prompt.includes("A Paper Title"), false);
 });
 
 test("the dashboard asks for grouping once per repository and stops asking", () => {

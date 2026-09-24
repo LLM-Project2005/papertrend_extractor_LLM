@@ -12,12 +12,14 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import Link from "next/link";
 import MetricCard from "@/components/MetricCard";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
 import { normalizeCategoryKey, type CategoryOption } from "@/lib/category-options";
 import {
+  likelyDuplicatePapers,
   listOf,
   methodRows,
   plural,
@@ -97,6 +99,7 @@ export default function Overview({
   );
 
   const shared = themes.filter((entry) => entry.papers >= 2);
+  const duplicates = likelyDuplicatePapers(trends);
   const topThemes = themes.slice(0, TOP_THEMES);
 
   const buildDynamicDonut = (assignmentType: "single" | "multi") => {
@@ -437,6 +440,36 @@ export default function Overview({
           </Takeaway>
         )}
       </section>
+
+      {duplicates.length > 0 ? (
+        <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+            {plural(duplicates.length, "paper")} {duplicates.length === 1 ? "looks" : "look"} like a second copy of another paper here
+          </h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-[#bdbdbd]">
+            Their titles nearly match, so each of these studies is counted twice in every chart. If they are the same study, removing one copy from the Library corrects the counts.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {duplicates.slice(0, 8).map((duplicate) => (
+              <li key={duplicate.paperId} className="flex flex-col gap-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-[#1f1f1f] sm:flex-row sm:items-center sm:justify-between">
+                <span className="min-w-0 text-slate-800 dark:text-[#e5e5e5]">
+                  <span className="font-medium">{duplicate.title}</span>
+                  {duplicate.title === duplicate.originalTitle ? " (same title as another upload)" : ` — matches "${duplicate.originalTitle}"`}
+                </span>
+                <Link
+                  href={`/workspace/library?paperId=${duplicate.paperId}`}
+                  className="inline-flex min-h-9 flex-none items-center text-sm font-medium text-slate-900 underline underline-offset-4 dark:text-white"
+                >
+                  Open in Library
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {duplicates.length > 8 ? (
+            <p className="mt-2 text-xs text-slate-600 dark:text-[#a3a3a3]">And {plural(duplicates.length - 8, "more")}.</p>
+          ) : null}
+        </section>
+      ) : null}
 
       {orderedCharts.includes("overview_metrics") ? renderChart("overview_metrics") : null}
       {renderTopThemes()}

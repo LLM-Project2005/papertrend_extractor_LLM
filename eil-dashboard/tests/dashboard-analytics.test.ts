@@ -3,6 +3,7 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import {
   keywordPaperCounts,
+  likelyDuplicatePapers,
   methodRows,
   subjectRows,
   themePaperCounts,
@@ -188,4 +189,17 @@ test("the planner does not re-file rows the server already grouped (C5)", () => 
   const planner = read("src/lib/visualization-planner.ts");
   const canonicalize = planner.slice(planner.indexOf("function canonicalizeTrendTopics"), planner.indexOf("export async function buildNormalizedAnalyticsPayload"));
   assert.match(canonicalize, /if \(data\.trends\.some\(\(row\) => row\.raw_topic !== undefined\)\) \{\s*return data\.trends;/);
+});
+
+test("a study uploaded twice is reported, not silently counted twice", () => {
+  const titled = (paper: string, title: string) => row(paper, "2020", "T", "k", { title });
+  const found = likelyDuplicatePapers([
+    titled("1", "Portfolio Assessment Among Thai EFL First-Year University Students"),
+    titled("2", "Portfolio Assessment Among Thai EFL First-Year University Students: Perceptions and Progress"),
+    titled("3", "Effects of a Combination of Genre Analysis and Genre-Based Writing Teaching"),
+    titled("4", "The Effects of a Combination of Genre Analysis and Genre-Based Writing Teaching"),
+    titled("5", "Effects of Dynamic Assessment on Improvement of Academic Vocabulary Knowledge"),
+    titled("6", "Computerized Dynamic Reading Assessment Program to Measure English Reading Comprehension"),
+  ]);
+  assert.deepEqual(found.map((d) => [d.paperId, d.originalId]), [["2", "1"], ["4", "3"]]);
 });
