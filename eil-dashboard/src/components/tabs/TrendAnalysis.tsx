@@ -29,6 +29,7 @@ import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 
 interface Props {
@@ -44,6 +45,7 @@ function truncate(value: string, max: number): string {
 export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
+  const shiftLabels = labelColumn(useIsNarrow(), { width: 260, chars: 42 });
   const [topN, setTopN] = useState(8);
   const orderedCharts =
     planCharts?.map((chart) => chart.chart_key).filter(
@@ -80,14 +82,18 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
   const periods = shifts.periods;
   const gaining = shifts.emerging.map((shift) => shift.topic);
   const losing = shifts.declining.map((shift) => shift.topic);
+  // Three by name and a count of the rest: the sentence named three while the
+  // chart below it drew four.
+  const named = (topics: string[]) =>
+    topics.length <= 3 ? listOf(topics) : `${topics.slice(0, 3).join(", ")} and ${plural(topics.length - 3, "other")}`;
   const takeaway = !periods
     ? "Too few dated years to compare periods: at least two are needed."
     : gaining.length + losing.length === 0
       ? `Comparing ${periods.earlyLabel} (${plural(periods.earlyPapers, "paper")}) with ${periods.lateLabel} (${periods.latePapers}), no theme has shifted by a paper or more beyond what the period sizes predict${shifts.judged === 0 ? ` - none yet has the ${SHIFT_MIN_PAPERS} papers a shift needs` : ""}.`
       : `Comparing ${periods.earlyLabel} (${plural(periods.earlyPapers, "paper")}) with ${periods.lateLabel} (${periods.latePapers}): ${
-          gaining.length > 0 ? `${listOf(gaining.slice(0, 3))} ${gaining.length === 1 ? "is" : "are"} gaining ground` : ""
+          gaining.length > 0 ? `${named(gaining)} ${gaining.length === 1 ? "is" : "are"} gaining ground` : ""
         }${gaining.length > 0 && losing.length > 0 ? "; " : ""}${
-          losing.length > 0 ? `${listOf(losing.slice(0, 3))} ${losing.length === 1 ? "is" : "are"} losing it` : ""
+          losing.length > 0 ? `${named(losing)} ${losing.length === 1 ? "is" : "are"} losing it` : ""
         }.`;
 
   const shiftRows = (items: ThemeShift[]) =>
@@ -114,9 +120,9 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
               <YAxis
                 type="category"
                 dataKey="topic"
-                width={190}
+                width={shiftLabels.width}
                 tick={tickStyle(ct, 11)}
-                tickFormatter={(value) => truncate(String(value), 28)}
+                tickFormatter={(value) => truncate(String(value), shiftLabels.chars)}
                 stroke={ct.axisLine}
               />
               <Tooltip
@@ -235,7 +241,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
               : "Needs papers from at least two different years."}
           </p>
           {shifts.emerging.length + shifts.declining.length > 0 ? (
-            <div className="mt-5 grid gap-6 xl:grid-cols-2">
+            <div className={`mt-5 grid gap-6 ${shifts.emerging.length > 0 && shifts.declining.length > 0 ? "xl:grid-cols-2" : ""}`}>
               {orderedCharts.includes("emerging_topics") ? renderShiftChart("Gaining ground", shifts.emerging) : null}
               {orderedCharts.includes("declining_topics") ? renderShiftChart("Losing ground", shifts.declining) : null}
             </div>
