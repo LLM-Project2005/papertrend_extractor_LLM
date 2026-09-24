@@ -541,10 +541,28 @@ const rawDocsCategories: DocsCategoryBase[] = [
             ],
             bullets: [
               "Paper counts and coverage.",
-              "Top topics and keywords.",
-              "Year distribution and trend movement.",
-              "Single-track and multi-track classifications.",
+              "Themes: topics from different papers that share a research focus, counted together.",
+              "Keywords, ranked by how many papers use them.",
+              "Papers per year on a time axis where every year has a slot.",
+              "Categories, when the repository sorts papers into categories.",
               "Adaptive views that reorganize the same corpus signals.",
+            ],
+          },
+          {
+            id: "themes",
+            title: "How topics become themes",
+            body: [
+              "Each paper's analysis names that paper's topics on its own, so two papers on the same subject rarely use the same words. The dashboard groups topics from different papers that share a research focus into one theme, so those papers are counted together. Your papers' own topic labels are kept: the table in Keyword Explorer lists them under each theme.",
+              "Themes are grouped after new papers finish analysis. While that runs, the dashboard says how many new topics are being grouped and shows them under their own labels until it finishes, usually within a minute. A new paper is filed under the themes the repository already has, so themes do not reshuffle every time you upload.",
+              "Research methods, such as mixed-methods designs or questionnaires, are grouped separately and shown under \"How these studies were done\" on the Overview, so they do not crowd out what was studied.",
+            ],
+          },
+          {
+            id: "shifts",
+            title: "Gaining and losing ground",
+            body: [
+              "Trend Analysis splits the collection where its dated papers divide in half, and compares each theme's share of papers in the earlier and later periods. A theme is shown as gaining or losing ground only when it has at least three papers, differs by at least one paper from what the period sizes alone would predict, and would still lean the same way if any one of its papers were removed.",
+              "When no theme meets that bar, the tab says so. With a few dozen papers, a steady picture is the common and honest result.",
             ],
           },
           {
@@ -578,7 +596,8 @@ const rawDocsCategories: DocsCategoryBase[] = [
             id: "interpreting-results",
             title: "Interpreting dashboard results",
             body: [
-              "Dashboard charts are only as complete as the analyzed data. Failed, queued, or processing files do not contribute complete topic and keyword rows. Unknown year values can reduce timeline usefulness.",
+              "Dashboard charts are only as complete as the analyzed data. Failed, queued, or processing files do not contribute complete topic and keyword rows. Papers without a readable year are counted in a note rather than plotted as a year.",
+              "A study uploaded twice is counted twice. The Overview lists papers whose titles nearly match another paper's, with a link to each in the Library, so you can decide whether to remove a copy.",
             ],
             callout: {
               tone: "info",
