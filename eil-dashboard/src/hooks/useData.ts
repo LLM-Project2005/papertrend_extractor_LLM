@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { generateMockData } from "@/lib/mockData";
 import type { DashboardData, DashboardDataMode } from "@/types/database";
 
 interface UseDashboardDataOptions {
@@ -28,6 +27,32 @@ type DashboardCacheEntry = {
 
 const dashboardDataCache = new Map<string, DashboardCacheEntry>();
 const dashboardInFlightRequests = new Map<string, Promise<DashboardData>>();
+
+/**
+ * One grouping request per repository, however many tabs or re-renders ask.
+ *
+ * Deliberately not aborted when the dashboard unmounts: a grouping that has
+ * started is worth finishing, and the next reader gets it for free.
+ */
+const themeGroupingRequests = new Map<string, Promise<string>>();
+/** Re-reads while another viewer's grouping runs: every 8s, about two minutes. */
+const THEME_GROUPING_MAX_ATTEMPTS = 15;
+const THEME_GROUPING_BUSY_WAIT_MS = 8_000;
+
+function requestThemeGrouping(projectId: string, accessToken: string): Promise<string> {
+  const existing = themeGroupingRequests.get(projectId);
+  if (existing) return existing;
+  const request = fetch("/api/workspace/topic-themes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ projectId }),
+  })
+    .then(async (response) => ((await response.json().catch(() => ({}))) as { status?: string }).status ?? "failed")
+    .catch(() => "failed")
+    .finally(() => themeGroupingRequests.delete(projectId));
+  themeGroupingRequests.set(projectId, request);
+  return request;
+}
 
 function buildEmptyLiveData(projectId: string | null): DashboardData {
   return {
@@ -106,6 +131,7 @@ export function useDashboardData(
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const hasLoadedRef = useRef(false);
+  const groupingAttemptsRef = useRef(0);
 
   const mode = options.mode ?? "auto";
   const pollIntervalMs = options.pollIntervalMs ?? 0;
@@ -143,16 +169,6 @@ export function useDashboardData(
           setData(null);
           setLoading(true);
           setRefreshing(false);
-        }
-        return;
-      }
-
-      if (mode === "mock") {
-        if (!cancelled) {
-          setData(generateMockData());
-          setLoading(false);
-          setRefreshing(false);
-          hasLoadedRef.current = true;
         }
         return;
       }
@@ -214,7 +230,7 @@ export function useDashboardData(
 
     void load();
 
-    if (mode === "mock" || !hydrated || !user || !session?.access_token) {
+    if (!hydrated || !user || !session?.access_token) {
       return () => {
         cancelled = true;
       };
@@ -264,6 +280,33 @@ export function useDashboardData(
     normalizedFolderIds,
   ]);
 
+  // New topics are grouped into themes by a request of the dashboard's own, so
+  // the read that found them stays fast; when it finishes, read again.
+  const refreshRef = useRef<() => Promise<void>>(async () => undefined);
+  useEffect(() => {
+    groupingAttemptsRef.current = 0;
+  }, [requestKey]);
+  useEffect(() => {
+    const accessToken = session?.access_token;
+    if (data?.topicThemes?.status !== "pending" || !projectId || !accessToken || !enabled) return;
+    if (groupingAttemptsRef.current >= THEME_GROUPING_MAX_ATTEMPTS) return;
+    groupingAttemptsRef.current += 1;
+    let cancelled = false;
+    let timer: number | null = null;
+    void requestThemeGrouping(projectId, accessToken).then((outcome) => {
+      if (cancelled) return;
+      // "busy" means another viewer's grouping is running: give it time.
+      timer = window.setTimeout(
+        () => void refreshRef.current(),
+        outcome === "busy" ? THEME_GROUPING_BUSY_WAIT_MS : 0
+      );
+    });
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [data, enabled, projectId, session?.access_token]);
+
   const allYears = useMemo(() => {
     if (!data) return [];
     const years = new Set<string>();
@@ -279,14 +322,6 @@ export function useDashboardData(
     }
 
     if (!enabled) {
-      return;
-    }
-
-    if (mode === "mock") {
-      setData(generateMockData());
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedRef.current = true;
       return;
     }
 
@@ -317,6 +352,8 @@ export function useDashboardData(
       setRefreshing(false);
     }
   };
+
+  refreshRef.current = refresh;
 
   return { data, loading, refreshing, allYears, refresh };
 }

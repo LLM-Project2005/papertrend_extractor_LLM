@@ -27,6 +27,11 @@ export interface ChartTheme {
   grid: string;
   /** Fill for a single-series bar, where hue would imply a distinction. */
   barFill: string;
+  /**
+   * The quieter of two series drawn side by side - an earlier period next to a
+   * later one. Clears 3:1 against the page, as a chart shape must (4.2-4.8:1).
+   */
+  barFillMuted: string;
   /** Stroke separating adjacent segments of a donut or stacked bar. */
   segmentEdge: string;
 }
@@ -38,6 +43,7 @@ export function chartTheme(isDark: boolean): ChartTheme {
         axisLine: "#3f3f46",
         grid: "#242424",
         barFill: "#d4d4d4",
+        barFillMuted: "#6b7280",
         segmentEdge: "#1f1f1f",
       }
     : {
@@ -45,6 +51,7 @@ export function chartTheme(isDark: boolean): ChartTheme {
         axisLine: "#cbd5e1",
         grid: "#e2e8f0",
         barFill: "#334155",
+        barFillMuted: "#64748b",
         segmentEdge: "#ffffff",
       };
 }

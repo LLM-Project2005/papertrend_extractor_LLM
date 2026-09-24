@@ -79,6 +79,17 @@ export interface VisualizationPlannerRequest {
   };
 }
 
+export interface TopicShiftEntry {
+  topic: string;
+  /** Later papers minus earlier papers. */
+  change: number;
+  early?: number;
+  late?: number;
+  /** Share of each period's papers, 0-1; the periods are rarely the same size. */
+  early_share?: number;
+  late_share?: number;
+}
+
 export interface NormalizedAnalyticsPayload {
   mode: "mock" | "live";
   approved_chart_types: VisualizationChartKey[];
@@ -145,9 +156,18 @@ export interface NormalizedAnalyticsPayload {
     }>;
   };
   topic_shifts: {
-    emerging: Array<{ topic: string; change: number }>;
-    declining: Array<{ topic: string; change: number }>;
+    emerging: Array<TopicShiftEntry>;
+    declining: Array<TopicShiftEntry>;
+    /** The two halves of the collection being compared; null with under two dated years. */
+    periods?: {
+      early_label: string;
+      late_label: string;
+      early_papers: number;
+      late_papers: number;
+    } | null;
   };
+  /** False when the repository does not classify papers: no category chart is viable. */
+  classification_enabled?: boolean;
   track_topic_sections: Array<{
     track: TrackKey;
     top_topics: Array<{ topic: string; papers: number }>;
