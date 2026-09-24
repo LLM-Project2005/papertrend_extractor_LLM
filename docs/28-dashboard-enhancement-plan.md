@@ -1,6 +1,6 @@
 # 28 — Dashboard enhancement plan
 
-Status: **plan written; phase 1 grouping evaluated and built** (opened 2026-09-24)
+Status: **implemented and verified on the pilot; every criterion met except part of D4** — see *Results* (opened and closed 2026-09-24)
 
 ## The question this answers
 
@@ -94,6 +94,15 @@ Keywords are paper-specific terminology and *should* mostly differ. What is wron
 they are ranked: "Top keywords" orders by total occurrences, so one paper repeating
 "tone groups" fifteen times outranks a term five different papers use once each. For a
 view of a field, the number of papers using a term is the measure that means something.
+
+### 6. Six papers are the same study uploaded twice
+
+Found while evaluating the grouping. Six of testtest's 39 papers have a near-identical
+title to another paper in the repository — a thesis chapter and its article, or one file
+uploaded twice. The pipeline gave each copy its own topics (with **no topic in common**),
+and every chart counted both, so "Genre-Based Writing: 5 papers" was three studies. Test 2
+has 14 such copies of two synthetic studies. Deleting a copy is the reader's decision, so
+the dashboard now lists likely duplicates on the Overview rather than removing anything.
 
 ## Chart and interface defects
 
@@ -309,6 +318,32 @@ were missed, both because the 34-paper grouping — made without those papers �
 focus, so filed topics inherit what the earlier grouping could see. That is why the whole
 repository is regrouped once it has grown by a quarter. Filing costs **$0.0022 per paper**.
 
+### What the live pilot showed
+
+Each deploy was verified by grouping both repositories through the real endpoint, then
+reading the dashboard back. Four changes came out of it:
+
+| Draw | What changed | Result | Consequence |
+| --- | --- | --- | --- |
+| 1 | As evaluated | 14/14 merged, **5/6** apart (phonology with morphosyntax under "transfer") | Tried giving each topic its paper's title |
+| 2 | + paper titles | 14/14, 6/6 on testtest — but Test 2 drew **two bars for one theme** ("Structured Peer Feedback Interventions" 7, "Structured Peer Feedback" 2) | The 30% share cap blocked a merge every run agreed on; cap removed from the consensus step |
+| 3 | + no cap | 12/14, 6/6, and the judge found **2 unrelated** themes, one a paper's subject topic merged with the *same paper's* method topic | Titles pull a paper's own topics together. A decision rule was set before the next draws: keep titles only with 0 unrelated in two judged draws |
+| — | offline, titles + a rule against same-paper merges | draw R1: 1 unrelated; R2: 0, but 56–59% single-paper themes | Rule not met: **titles taken out again** |
+| 4 | Final: no titles, no cap, retry unreadable replies | **13/14 merged, 5/6 apart; judge: 0 unrelated, 0 misleading names, 62% same** — the best judged draw | Shipped |
+
+The one look-alike pair still merged in draw 4 — "L2 Phonological Acquisition Processes" with
+"L2 Morphosyntactic Acquisition Processes", under "L2 Cross-Linguistic Influence and
+Transfer" together with "Second Language Transfer Mechanisms" — is the one pair in the set
+that proved a judgment call rather than a fact: all three topics are about L1 transfer,
+and the independent judge rated the theme coherent. The pair was fixed before any draw and
+has not been edited; it is reported as failing.
+
+Two other things only showed on the deployed pages (Playwright, every tab, three
+viewports, both themes): chart **legend text was drawn in each series' colour** — 2.0–3.9:1
+on white — and the two range sliders were 16 px tall. Both fixed. The harness also measured
+SVG text against the page even when drawn on a filled shape, so a white treemap label on a
+dark cell read as 1:1; it now measures against the shape.
+
 ### Criteria revised, with reasons
 
 | # | Was | Now | Why |
@@ -321,7 +356,8 @@ repository is regrouped once it has grown by a quarter. Filing costs **$0.0022 p
 ## How it runs
 
 - A dashboard read **never calls a model**. It applies the stored grouping
-  (`workspace_analytics_cache`, scope `custom`, key `topic-themes:v1:<repository>`) and
+  (`workspace_analytics_cache`, scope `custom`, key `topic-themes:v4:<repository>`; the
+  version moves whenever the method does, so an old grouping is rebuilt, not reused) and
   reports how many topics in view are not grouped yet.
 - The open dashboard then asks `POST /api/workspace/topic-themes` to group them, inside
   that request, and re-reads when it finishes. **Not the task queue**: both queues
@@ -332,8 +368,51 @@ repository is regrouped once it has grown by a quarter. Filing costs **$0.0022 p
 - Every tab, the adaptive planner and keyword search read the same themed rows, because
   `trends[].topic` is rewritten once on the server and `raw_topic` keeps the paper's label.
 
+## Results against the acceptance criteria
+
+Measured on the deployed pilot (testtest unless stated), 2026-09-24.
+
+| # | Result | Status |
+| --- | --- | --- |
+| D1 | 46 themes served on Cloud SQL (was 0) | Met |
+| D2 | 26% of topics sit in a one-paper theme, measured like the 99% baseline; 43% of themes have one paper | Met |
+| D3 | Largest theme 13% of papers. Test 2: 43%, because 9 of its 21 papers are copies of one synthetic study | Met |
+| D4 | 0 themes judged unrelated, 0 names misleading, 62% judged "same"; duplicate copies share a theme 6/6; fixed pairs **13/14 merged, 5/6 apart** | **Not fully met** — see below |
+| D5 | Three reads return identical themes; stored per repository and versioned | Met |
+| D6 | Unchanged repository: 0 model calls (0.6 s). Whole grouping ≈ $0.03 for 120 topics. Filing a new paper $0.0022 — measured offline with the shipped functions; not yet exercised on the pilot, which had no new upload | Met (filing offline only) |
+| D7 | 0 names misleading; a one-topic theme keeps its paper's label; `raw_topic` on every row | Met |
+| D8 | Classification off → 0 category rows served; Category tab and Overview show the notice with a link to Settings | Met |
+| D9 | Keywords ranked by papers ("summative assessment", 4 papers) | Met |
+| C1 | No "Unknown" on any axis; undated papers counted in a note | Met |
+| C2 | Every year from first to last has a slot; empty years named | Met |
+| C3 | Shifts need 3 papers, a lean beyond the period sizes, and must survive removing any one paper | Met |
+| C4 | Themes with no dated paper are dropped from every heatmap and counted | Met |
+| C5 | Themes applied once on the server; the planner no longer re-files themed rows | Met |
+| U1 | No DATA dropdown; `?data=mock` / `?mode=mock` return real data | Met |
+| U2 | No "Live data" pill; planner panel on the Adaptive tab only | Met |
+| U3 | "Categories off" chip; Category tab explains itself | Met |
+| U4 | Every fixed tab opens with a takeaway computed from its own numbers | Met |
+| U5 | Every dashboard tab, 3 viewports × 2 themes × 2 repositories: 0 contrast failures (chart text included), 0 targets under 24 px, no horizontal overflow | Met |
+| S1 | 687 tests passing (≥ 644) | Met |
+| S2 | `next build` clean | Met |
+| S3 | Verified on the pilot, as above | Met |
+| S4 | No paper re-analysed; stored topics untouched; the paper's own label kept on every row | Met |
+
+**On D4.** The one look-alike pair still merged, "L2 Phonological Acquisition Processes"
+with "L2 Morphosyntactic Acquisition Processes", sits under "L2 Cross-Linguistic Influence
+and Transfer" with a third topic on L1 transfer. The independent judge rates that theme
+coherent, and a researcher could file it either way. It is the one pair in the set that
+proved to be a judgment call. It is left in the set, unedited, and counted as a failure.
+The missed must-merge pair is split between two related themes, not misfiled. Across
+every judged draw of the shipped method, no theme has been judged unrelated. Getting every
+fixed pair right on every draw would need a stronger model, at several times the cost per
+grouping. That is a trade for the owner of the budget to make, not one to make by default.
+
 ## Progress log
 
-- **Phase 1, grouping** — evaluated and built (`src/lib/topic-themes.ts`,
-  `src/lib/topic-theme-service.ts`, `POST /api/workspace/topic-themes`); 23 tests; suite
-  667 passing. Pilot verification pending.
+- **Phase 1, grouping** — evaluated, built, verified on the pilot (`src/lib/topic-themes.ts`,
+  `src/lib/topic-theme-service.ts`, `POST /api/workspace/topic-themes`).
+- **Phase 2, charts** — shared analytics (`src/lib/dashboard-analytics.ts`) used by every
+  tab and the planner; verified on the pilot.
+- **Phase 3, interface** — debugging controls removed, category honesty, takeaways,
+  duplicate-upload notice, readable legends, phone-width charts; verified on the pilot.
