@@ -26,6 +26,7 @@ import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { plural, subjectRows, yearAxis } from "@/lib/dashboard-analytics";
@@ -312,7 +313,7 @@ export default function TrackAnalysis({
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendLabel(ct)} />
                 {stackedChartCategories.map((category) => (
                   <Bar
                     key={category.key}

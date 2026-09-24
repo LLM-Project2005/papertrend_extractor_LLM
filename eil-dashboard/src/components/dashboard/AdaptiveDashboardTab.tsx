@@ -21,6 +21,7 @@ import type { DashboardData, PaperId, TrendRow, TrackRow } from "@/types/databas
 import type { NormalizedAnalyticsPayload, VisualizationPlanSection } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { legendLabel } from "@/lib/chart-legend";
 
 const STRICT_MIN_TOPIC_PAPER_SUPPORT = 2;
 const STRICT_MIN_TOPIC_TRACK_SUPPORT = 2;
@@ -249,7 +250,7 @@ export default function AdaptiveDashboardTab({
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {topTopics.map((topic, index) => (
                   <Line
                     key={topic}
@@ -306,11 +307,11 @@ export default function AdaptiveDashboardTab({
                 <Tooltip formatter={(value, name) => [`${value}%`, name === "earlier" ? shifts.periods?.earlyLabel ?? "Earlier" : shifts.periods?.lateLabel ?? "Later"]} />
                 <Legend
                   wrapperStyle={{ fontSize: 11 }}
-                  formatter={(value) =>
+                  formatter={legendLabel(ct, 60, (value) =>
                     value === "earlier"
                       ? `${shifts.periods?.earlyLabel ?? "Earlier"} (share of papers)`
                       : `${shifts.periods?.lateLabel ?? "Later"} (share of papers)`
-                  }
+                  )}
                 />
                 <Bar dataKey="earlier" fill={ct.barFillMuted} radius={[0, 4, 4, 0]} />
                 <Bar dataKey="later" fill={ct.barFill} radius={[0, 4, 4, 0]} />
@@ -428,7 +429,7 @@ export default function AdaptiveDashboardTab({
                 />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
+                <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {drawnTracks.map((track) => (
                   <Bar
                     key={track}
