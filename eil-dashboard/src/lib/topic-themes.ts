@@ -77,8 +77,9 @@ export const REGROUP_GROWTH = 1.25;
 /**
  * Bumped when the stored shape or the method changes, so old stores are rebuilt.
  * 2: topics are grouped with their papers' titles.
+ * 3: no share cap on consensus themes.
  */
-export const THEME_STORE_VERSION = 2;
+export const THEME_STORE_VERSION = 3;
 
 /* -------------------------------------------------------------- the items */
 
@@ -432,7 +433,13 @@ export function consensusGroups(
 
   const clusters = clusterBySimilarity(items, together, {
     threshold: options.agreement ?? CONSENSUS_AGREEMENT,
-    maxThemeShare: options.maxThemeShare,
+    // No share cap by default. The cap guards embedding clustering against
+    // chaining unlike topics together; here a merge already needs most of
+    // several groupings under single-focus rules, so the cap could only split a
+    // theme they agreed on. Measured on the pilot: with 7 of 21 papers as copies
+    // of one study, "Structured Peer Feedback Interventions" (7) and "Structured
+    // Peer Feedback" (2) came out as two bars for one theme.
+    maxThemeShare: options.maxThemeShare ?? 1,
     totalPapers: options.totalPapers,
   });
 
