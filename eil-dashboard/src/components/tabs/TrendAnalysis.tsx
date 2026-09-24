@@ -29,6 +29,7 @@ import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { legendLabel } from "@/lib/chart-legend";
 
 interface Props {
   trends: TrendRow[];
@@ -127,7 +128,9 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
               />
               <Legend
                 wrapperStyle={{ fontSize: 11 }}
-                formatter={(value) => (value === "earlier" ? `${periods.earlyLabel} (${periods.earlyPapers} papers)` : `${periods.lateLabel} (${periods.latePapers} papers)`)}
+                formatter={legendLabel(ct, 60, (value) =>
+                  value === "earlier" ? `${periods.earlyLabel} (${periods.earlyPapers} papers)` : `${periods.lateLabel} (${periods.latePapers} papers)`
+                )}
               />
               <Bar
                 dataKey="earlier"
@@ -176,7 +179,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                   max={15}
                   value={topN}
                   onChange={(event) => setTopN(+event.target.value)}
-                  className="w-32"
+                  className="h-6 w-32"
                 />
               </label>
             ) : null}
@@ -196,7 +199,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                   <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
                   <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                   <Tooltip />
-                  <Legend wrapperStyle={{ fontSize: 11 }} formatter={(value) => truncate(String(value), 40)} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                   {topThemes.map((topic, index) => (
                     <Bar
                       key={topic}

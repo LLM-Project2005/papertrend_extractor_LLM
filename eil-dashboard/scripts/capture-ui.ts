@@ -190,9 +190,23 @@ const DIAGNOSTICS = `(() => {
     const fill = parse(s.fill);
     if (!fill || fill.a === 0) continue;
     // An <svg> has no painted background of its own, so the effective backdrop
-    // is whatever HTML element encloses it.
+    // is whatever HTML element encloses it - unless the text is drawn on a
+    // filled shape in its own group, as a treemap label is on its cell. Measured
+    // against the page, a white label on a dark cell read as 1:1.
     const host = node.closest('svg');
-    const bg = effectiveBg(host ? host.parentElement || host : node);
+    let bg = effectiveBg(host ? host.parentElement || host : node);
+    const box = node.getBoundingClientRect();
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height / 2;
+    const group = node.closest('g');
+    if (group) {
+      for (const shape of Array.from(group.querySelectorAll('rect, path'))) {
+        const shapeBox = shape.getBoundingClientRect();
+        if (cx < shapeBox.left || cx > shapeBox.right || cy < shapeBox.top || cy > shapeBox.bottom) continue;
+        const shapeFill = parse(getComputedStyle(shape).fill);
+        if (shapeFill && shapeFill.a >= 0.99) bg = shapeFill;
+      }
+    }
     const fg = fill.a < 1 ? over(fill, bg) : fill;
     const size = parseFloat(s.fontSize) || 12;
     const need = size >= 24 ? 3 : 4.5;

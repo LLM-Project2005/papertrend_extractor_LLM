@@ -37,6 +37,7 @@ import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
 
 interface Props {
@@ -62,12 +63,17 @@ const TreemapCell = (props: {
   height: number;
   name: string;
   value: number;
+  /** 0 for the root, which Recharts also hands to this renderer. */
+  depth?: number;
   fill?: string;
   textFill?: string;
   edge?: string;
   onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
 }) => {
-  const { x, y, width, height, name, value, fill = "#334155", textFill = "#ffffff", edge = "#ffffff", onDrilldown } = props;
+  const { x, y, width, height, name, value, depth, fill = "#334155", textFill = "#ffffff", edge = "#ffffff", onDrilldown } = props;
+  // The root spans the whole chart under the cells, labelled with the sum of
+  // every theme - "63 papers" in a 39-paper repository, hidden but in the page.
+  if (depth === 0) return null;
   if (width < 4 || height < 4) return null;
   const maxChars = Math.floor((width - 12) / 6.5);
   const label = name && name.length > maxChars ? `${name.slice(0, Math.max(1, maxChars - 1))}\u2026` : name;
@@ -450,7 +456,7 @@ export default function KeywordExplorer({
                         <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
-                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                         <Line
                           type="monotone"
                           dataKey="frequency"
@@ -703,7 +709,7 @@ export default function KeywordExplorer({
               max={Math.max(5, Math.min(60, themes.length))}
               value={Math.min(treeN, Math.max(5, themes.length))}
               onChange={(event) => setTreeN(+event.target.value)}
-              className="w-32"
+              className="h-6 w-32"
             />
           </label>
         </div>
@@ -848,7 +854,7 @@ export default function KeywordExplorer({
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} formatter={(value) => truncate(String(value), 40)} />
+                <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {comparisonThemes.map((topic, index) => (
                   <Line
                     key={topic}

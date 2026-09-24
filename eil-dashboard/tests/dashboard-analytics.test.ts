@@ -203,3 +203,27 @@ test("a study uploaded twice is reported, not silently counted twice", () => {
   ]);
   assert.deepEqual(found.map((d) => [d.paperId, d.originalId]), [["2", "1"], ["4", "3"]]);
 });
+
+test("legend text is drawn in the readable label colour, not the series colour (U5)", () => {
+  // Measured on the pilot: palette colours on white put legend labels at
+  // 2.0-3.9:1, under the 4.5:1 that 11px text needs.
+  for (const file of [
+    "src/components/tabs/TrendAnalysis.tsx",
+    "src/components/tabs/KeywordExplorer.tsx",
+    "src/components/tabs/TrackAnalysis.tsx",
+    "src/components/dashboard/AdaptiveDashboardTab.tsx",
+  ]) {
+    const source = read(file);
+    const legends = source.match(/<Legend[\s\S]*?\/>/g) ?? [];
+    assert.ok(legends.length > 0, `${file} has no legend to check`);
+    for (const legend of legends) assert.match(legend, /formatter=\{legendLabel\(ct/, `${file}: ${legend.slice(0, 60)}`);
+  }
+});
+
+test("chart controls are at least 24px tall, and the treemap root draws nothing (U5)", () => {
+  for (const file of ["src/components/tabs/TrendAnalysis.tsx", "src/components/tabs/KeywordExplorer.tsx"]) {
+    const source = read(file);
+    for (const input of source.match(/<input\s+type="range"[\s\S]*?\/>/g) ?? []) assert.match(input, /className="h-6 /, `${file} slider`);
+  }
+  assert.match(read("src/components/tabs/KeywordExplorer.tsx"), /if \(depth === 0\) return null;/);
+});
