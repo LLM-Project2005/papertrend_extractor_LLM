@@ -250,6 +250,58 @@ export function themeShifts(trends: TrendRow[]): ThemeShifts {
   return { periods, emerging, declining, judged };
 }
 
+/* ------------------------------------------------------------ duplicates */
+
+export interface LikelyDuplicate {
+  /** The copy that looks like a second upload. */
+  paperId: PaperId;
+  title: string;
+  /** The paper it seems to repeat. */
+  originalId: PaperId;
+  originalTitle: string;
+}
+
+const TITLE_STOP_WORDS = new Set(["a", "an", "the", "of", "on", "in", "to", "and", "for", "by", "with", "among", "its", "their"]);
+
+/**
+ * Papers whose titles say they are the same study uploaded twice.
+ *
+ * Six of the 39 papers in the test repository were: the same thesis chapter
+ * and article, or one file uploaded twice. The analysis gave each copy its own
+ * topics, and every chart counted both - "5 papers" in a theme was three
+ * studies. Found by title: the shorter title's content words nearly all appear
+ * in the longer one, which allows a subtitle or a leading "The" and on that
+ * repository found exactly the six pairs and nothing else. Deleting a copy is
+ * the reader's decision, so this only reports them.
+ */
+export function likelyDuplicatePapers(trends: TrendRow[]): LikelyDuplicate[] {
+  const titles = new Map<PaperId, string>();
+  for (const row of trends) if (!titles.has(row.paper_id) && row.title) titles.set(row.paper_id, row.title);
+  const words = new Map(
+    [...titles.entries()].map(([id, title]) => [
+      id,
+      new Set(title.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/).filter((word) => word && !TITLE_STOP_WORDS.has(word))),
+    ])
+  );
+  const ids = [...titles.keys()].sort();
+  const found: LikelyDuplicate[] = [];
+  const copies = new Set<PaperId>();
+  for (let i = 0; i < ids.length; i += 1) {
+    for (let j = i + 1; j < ids.length; j += 1) {
+      if (copies.has(ids[j])) continue;
+      const a = words.get(ids[i])!;
+      const b = words.get(ids[j])!;
+      const shorter = Math.min(a.size, b.size);
+      if (shorter < 4) continue;
+      const shared = [...a].filter((word) => b.has(word)).length;
+      if (shared / shorter < 0.8) continue;
+      copies.add(ids[j]);
+      found.push({ paperId: ids[j], title: titles.get(ids[j])!, originalId: ids[i], originalTitle: titles.get(ids[i])! });
+    }
+  }
+  return found;
+}
+
 /* -------------------------------------------------------------- summaries */
 
 export function plural(count: number, one: string, many = `${one}s`): string {

@@ -76,10 +76,10 @@ export const REGROUP_GROWTH = 1.25;
 
 /**
  * Bumped when the stored shape or the method changes, so old stores are rebuilt.
- * 2: topics are grouped with their papers' titles.
- * 3: no share cap on consensus themes.
+ * 2: topics grouped with their papers' titles. 3: no share cap on consensus
+ * themes. 4: titles taken out again; the cap stays off.
  */
-export const THEME_STORE_VERSION = 3;
+export const THEME_STORE_VERSION = 4;
 
 /* -------------------------------------------------------------- the items */
 
@@ -90,14 +90,6 @@ export interface TopicItem {
   label: string;
   /** The keywords its papers use under it, most used first. */
   keywords: string[];
-  /**
-   * The titles of the papers it comes from (at most two). Measured on the live
-   * pilot: without them "L2 Phonological Acquisition Processes" read as generic
-   * and was grouped by its shared lens with morphosyntax, while the title - "L2
-   * Production of English Word Stress by L1 Thai Learners" - says it is about
-   * pronunciation.
-   */
-  titles: string[];
   paperIds: Set<PaperId>;
 }
 
@@ -114,7 +106,7 @@ export function normalizeTopicKey(label: string): string {
 export function collectTopicItems(trends: TrendRow[]): TopicItem[] {
   const byKey = new Map<
     string,
-    { spellings: Map<string, number>; paperIds: Set<PaperId>; keywords: Map<string, number>; titles: Set<string> }
+    { spellings: Map<string, number>; paperIds: Set<PaperId>; keywords: Map<string, number> }
   >();
   for (const row of trends) {
     const original = String(row.raw_topic ?? row.topic ?? "").trim();
@@ -124,12 +116,9 @@ export function collectTopicItems(trends: TrendRow[]): TopicItem[] {
       spellings: new Map<string, number>(),
       paperIds: new Set<PaperId>(),
       keywords: new Map<string, number>(),
-      titles: new Set<string>(),
     };
     entry.spellings.set(original, (entry.spellings.get(original) ?? 0) + 1);
     entry.paperIds.add(row.paper_id);
-    const title = String(row.title ?? "").replace(/\s+/g, " ").trim();
-    if (title) entry.titles.add(title.length > 110 ? `${title.slice(0, 109)}…` : title);
     const keyword = String(row.keyword ?? "").trim();
     if (keyword) {
       entry.keywords.set(keyword, (entry.keywords.get(keyword) ?? 0) + Math.max(1, row.keyword_frequency || 1));
@@ -152,7 +141,6 @@ export function collectTopicItems(trends: TrendRow[]): TopicItem[] {
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .slice(0, 8)
         .map(([keyword]) => keyword),
-      titles: [...entry.titles].sort().slice(0, 2),
       paperIds: entry.paperIds,
     }))
     .sort((a, b) => a.key.localeCompare(b.key));
@@ -203,10 +191,17 @@ const GROUPING_RULES = [
   "Every topic number appears in exactly one theme.",
 ];
 
+/**
+ * A topic as the model sees it: its label and its keywords.
+ *
+ * Paper titles were tried and taken out again (docs/28). They did stop the
+ * lens merge they were added for - phonology with morphosyntax - but they
+ * pulled a paper's own topics together instead, a subject topic with the same
+ * paper's method topic, and two of three judged draws had an unrelated merge,
+ * against none in the judged draw without them.
+ */
 function topicText(item: TopicItem): string {
-  const keywords = item.keywords.length > 0 ? ` - keywords: ${item.keywords.join(", ")}` : "";
-  const titles = item.titles.length > 0 ? ` - from: ${item.titles.map((title) => `"${title}"`).join("; ")}` : "";
-  return `${item.label}${keywords}${titles}`;
+  return item.keywords.length > 0 ? `${item.label} - keywords: ${item.keywords.join(", ")}` : item.label;
 }
 
 /**
@@ -230,7 +225,7 @@ export function groupingMessages(items: TopicItem[], previousNames: string[] = [
       content:
         `Rules:\n${GROUPING_RULES.map((rule, i) => `${i + 1}. ${rule}`).join("\n")}\n` +
         continuity +
-        `\nTopics (number. label - the keywords its papers use - the paper it comes from):\n${items
+        `\nTopics (number. label - the keywords its papers use):\n${items
           .map((item, index) => `${index + 1}. ${topicText(item)}`)
           .join("\n")}\n\n` +
         `Reply with JSON only: {"themes":[{"name":"...","kind":"topic","topics":[1,2]}]}`,
