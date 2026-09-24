@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { isDatedYear } from "@/lib/dated-year";
+import { subjectRows, themePaperCounts, themeShifts, yearAxis } from "@/lib/dashboard-analytics";
 import {
   Bar,
   BarChart,
@@ -72,9 +73,12 @@ export default function AdaptiveDashboardTab({
   // so an undated paper was being plotted as the most recent period and
   // counted as recent growth. The planner had the same bug; fixing it
   // there did not reach this component, which does its own split.
-  const years = [...new Set(data.trends.map((row) => row.year))]
-    .filter(isDatedYear)
-    .sort();
+  //
+  // And every year from the first to the last, not only the years with papers:
+  // drawn that way, 2017 and 2025 sat side by side as neighbours.
+  const years = yearAxis(data.trends.map((row) => row.year).filter(isDatedYear)).years;
+  // Topic charts describe what was studied; method themes are not topics.
+  const subjects = subjectRows(data.trends);
   const singleTrackByPaper = new Map(data.tracksSingle.map((row) => [row.paper_id, row]));
   const totalPapers = analytics.overview.paper_count;
   const totalTopics = analytics.overview.topic_count;
@@ -86,7 +90,7 @@ export default function AdaptiveDashboardTab({
   const minTopicYearSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_YEAR_SUPPORT;
 
   const topicPaperSupport = new Map<string, Set<PaperId>>();
-  for (const row of data.trends) {
+  for (const row of subjects) {
     const topic = String(row.topic || "").trim();
     if (!topic) {
       continue;
@@ -106,8 +110,8 @@ export default function AdaptiveDashboardTab({
     chart: VisualizationPlanSection["charts"][number]
   ): ReactNode | null {
     if (chart.chart_key === "adaptive_year_volume") {
-      const chartData = analytics.yearly_paper_trend.filter((row) => row.papers > 0);
-      if (chartData.length < 2) return null;
+      const chartData = analytics.yearly_paper_trend;
+      if (chartData.filter((row) => row.papers > 0).length < 2) return null;
       return (
         <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
           <div className="h-[320px]">
@@ -187,7 +191,7 @@ export default function AdaptiveDashboardTab({
     if (chart.chart_key === "adaptive_topic_momentum") {
       const topicLimit = chart.config?.top_n ?? 6;
       const topTopics = Object.entries(
-        data.trends.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+        subjects.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
           if (!eligibleTopics.has(row.topic)) {
             return accumulator;
           }
@@ -201,7 +205,7 @@ export default function AdaptiveDashboardTab({
           const values = years.map(
             (year) =>
               new Set(
-                data.trends
+                subjects
                   .filter((row) => row.year === year && row.topic === topic)
                   .map((row) => row.paper_id)
               ).size
@@ -218,7 +222,7 @@ export default function AdaptiveDashboardTab({
         const entry: Record<string, string | number> = { year };
         topTopics.forEach((topic) => {
           entry[topic] = new Set(
-            data.trends
+            subjects
               .filter((row) => row.year === year && row.topic === topic)
               .map((row) => row.paper_id)
           ).size;
@@ -226,10 +230,13 @@ export default function AdaptiveDashboardTab({
         return entry;
       });
 
-      const nonFlatChartData = chartData.filter((entry) =>
+      // Years with none of these themes stay on the axis as zeros. Dropping
+      // them made the line skip from one busy year to the next as if the years
+      // between did not exist.
+      const yearsWithPapers = chartData.filter((entry) =>
         topTopics.some((topic) => Number(entry[topic] ?? 0) > 0)
-      );
-      if (nonFlatChartData.length < minTopicYearSupport) {
+      ).length;
+      if (yearsWithPapers < minTopicYearSupport) {
         return null;
       }
 
@@ -237,7 +244,7 @@ export default function AdaptiveDashboardTab({
         <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
           <div className="h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={nonFlatChartData}>
+              <LineChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
@@ -246,7 +253,7 @@ export default function AdaptiveDashboardTab({
                 {topTopics.map((topic, index) => (
                   <Line
                     key={topic}
-                    type="monotone"
+                    type="linear"
                     dataKey={topic}
                     stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
                     strokeWidth={3}
@@ -266,34 +273,16 @@ export default function AdaptiveDashboardTab({
         return null;
       }
 
-      const midpoint = Math.floor(years.length / 2);
-      const earlyYears = new Set(years.slice(0, midpoint));
-      const lateYears = new Set(years.slice(midpoint));
-      const topicShiftData = Object.entries(
-        data.trends.reduce<Record<string, { early: Set<PaperId>; late: Set<PaperId> }>>(
-          (accumulator, row) => {
-            const entry = (accumulator[row.topic] ??= {
-              early: new Set<PaperId>(),
-              late: new Set<PaperId>(),
-            });
-            if (earlyYears.has(row.year)) {
-              entry.early.add(row.paper_id);
-            }
-            if (lateYears.has(row.year)) {
-              entry.late.add(row.paper_id);
-            }
-            return accumulator;
-          },
-          {}
-        )
-      )
-        .map(([topic, value]) => ({
-          topic,
-          change: value.late.size - value.early.size,
-          support: value.late.size + value.early.size,
+      // The same rule as the Trend tab and the planner: papers halved, not
+      // years; three papers at least; and a lean that survives removing any one.
+      const shifts = themeShifts(subjects);
+      const topicShiftData = [...shifts.emerging, ...shifts.declining]
+        .map((shift) => ({
+          topic: shift.topic,
+          change: shift.late - shift.early,
+          earlier: Math.round(shift.earlyShare * 1000) / 10,
+          later: Math.round(shift.lateShare * 1000) / 10,
         }))
-        .filter((row) => row.change !== 0 && row.support >= minTopicPaperSupport)
-        .sort((left, right) => Math.abs(right.change) - Math.abs(left.change))
         .slice(0, topicLimit);
 
       if (topicShiftData.length === 0) {
@@ -306,7 +295,7 @@ export default function AdaptiveDashboardTab({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={topicShiftData} layout="vertical" margin={{ left: 16, right: 16 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                <XAxis type="number" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <XAxis type="number" unit="%" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis
                   type="category"
                   dataKey="topic"
@@ -314,12 +303,17 @@ export default function AdaptiveDashboardTab({
                   tick={tickStyle(ct, 11)}
                   stroke={ct.axisLine}
                 />
-                <Tooltip />
-                <Bar
-                  dataKey="change"
-                  fill={ct.barFill}
-                  radius={[0, 8, 8, 0]}
+                <Tooltip formatter={(value, name) => [`${value}%`, name === "earlier" ? shifts.periods?.earlyLabel ?? "Earlier" : shifts.periods?.lateLabel ?? "Later"]} />
+                <Legend
+                  wrapperStyle={{ fontSize: 11 }}
+                  formatter={(value) =>
+                    value === "earlier"
+                      ? `${shifts.periods?.earlyLabel ?? "Earlier"} (share of papers)`
+                      : `${shifts.periods?.lateLabel ?? "Later"} (share of papers)`
+                  }
                 />
+                <Bar dataKey="earlier" fill={ct.barFillMuted} radius={[0, 4, 4, 0]} />
+                <Bar dataKey="later" fill={ct.barFill} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -329,22 +323,23 @@ export default function AdaptiveDashboardTab({
 
     if (chart.chart_key === "adaptive_keyword_family_heatmap") {
       const heatN = chart.config?.heat_n ?? 12;
-      const topFamilies = (data.topicFamilies ?? [])
-        .slice()
-        .sort((left, right) => right.totalKeywordFrequency - left.totalKeywordFrequency)
-        .slice(0, heatN);
-      if (topFamilies.length === 0) {
+      // Themes by papers, cells by papers: keyword occurrences let one paper
+      // repeating a term outweigh five using it once. A theme with no dated
+      // paper would be a row of zeros, so it is left out.
+      const candidates = themePaperCounts(subjects).slice(0, heatN);
+      const heatRows = candidates
+        .map((entry) => ({
+          topic: entry.topic,
+          values: years.map(
+            (year) => new Set(subjects.filter((row) => row.year === year && row.topic === entry.topic).map((row) => row.paper_id)).size
+          ),
+        }))
+        .filter((row) => row.values.some((value) => value > 0));
+      if (heatRows.length === 0) {
         return null;
       }
-
-      const rows = topFamilies.map((family) => family.canonicalTopic);
-      const values = rows.map((topic) =>
-        years.map((year) =>
-          data.trends
-            .filter((row) => row.year === year && row.topic === topic)
-            .reduce((sum, row) => sum + row.keyword_frequency, 0)
-        )
-      );
+      const rows = heatRows.map((row) => row.topic);
+      const values = heatRows.map((row) => row.values);
 
       return (
         <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
@@ -352,7 +347,7 @@ export default function AdaptiveDashboardTab({
             rows={rows}
             cols={years}
             values={values}
-            colorScale={["#fff7ed", "#c2410c"]}
+            colorScale={["#f1f5f9", "#1e293b"]}
           />
         </ChartShell>
       );

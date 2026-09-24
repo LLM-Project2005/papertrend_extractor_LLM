@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { generateMockData } from "@/lib/mockData";
 import type { DashboardData, DashboardDataMode } from "@/types/database";
 
 interface UseDashboardDataOptions {
@@ -174,16 +173,6 @@ export function useDashboardData(
         return;
       }
 
-      if (mode === "mock") {
-        if (!cancelled) {
-          setData(generateMockData());
-          setLoading(false);
-          setRefreshing(false);
-          hasLoadedRef.current = true;
-        }
-        return;
-      }
-
       if (!user || !session?.access_token) {
         if (!cancelled) {
           // Without a session there is nothing to show, so show nothing rather
@@ -241,7 +230,7 @@ export function useDashboardData(
 
     void load();
 
-    if (mode === "mock" || !hydrated || !user || !session?.access_token) {
+    if (!hydrated || !user || !session?.access_token) {
       return () => {
         cancelled = true;
       };
@@ -333,14 +322,6 @@ export function useDashboardData(
     }
 
     if (!enabled) {
-      return;
-    }
-
-    if (mode === "mock") {
-      setData(generateMockData());
-      setLoading(false);
-      setRefreshing(false);
-      hasLoadedRef.current = true;
       return;
     }
 

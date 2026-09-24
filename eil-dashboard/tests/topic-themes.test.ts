@@ -258,7 +258,7 @@ test("without a store, every paper's own topic is shown", () => {
 
 test("the dashboard applies stored themes on Cloud SQL and never caches a pending read", () => {
   const server = read("src/lib/dashboard-data-server.ts");
-  assert.match(server, /return applyStoredThemes\(\s*ownerUserId,\s*projectId,/);
+  assert.match(server, /const themed = await applyStoredThemes\(\s*ownerUserId,\s*projectId,/);
   assert.match(server, /if \(data\.topicThemes\?\.status !== "pending"\) \{\s*dashboardServerCache\.set/);
 });
 

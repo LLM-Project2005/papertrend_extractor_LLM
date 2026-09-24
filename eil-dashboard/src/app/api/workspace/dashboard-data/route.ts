@@ -35,11 +35,13 @@ async function withRouteTimeout<T>(work: Promise<T>, timeoutMs: number): Promise
   }
 }
 
+/**
+ * "mock" is not accepted. It was a first-version debugging switch that served
+ * eleven years of invented topics to a signed-in reader who happened to pick
+ * "Preview" from a dropdown - numbers indistinguishable from their own.
+ */
 function normalizeMode(value: string | null): DashboardDataMode {
-  if (value === "mock" || value === "live") {
-    return value;
-  }
-  return "auto";
+  return value === "live" ? "live" : "auto";
 }
 
 function parseFolderIds(searchParams: URLSearchParams): string[] | null {

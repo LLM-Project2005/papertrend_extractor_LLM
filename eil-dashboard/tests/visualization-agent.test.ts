@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { themeShifts } from "../src/lib/dashboard-analytics";
 import { readFileSync } from "node:fs";
 import { getViableAdaptiveCharts } from "../src/lib/visualization-planner";
 import { isDatedYear } from "../src/lib/dated-year";
@@ -60,8 +61,11 @@ test("the timeline excludes undated papers instead of plotting them last", () =>
   // "Publication Volume Trends from 2016 to Unknown" and drew it as the most
   // recent period.
   const source = planner();
-  assert.match(source, /\.filter\(\(row\) => isDatedYear\(row\.year\)\)/);
   assert.match(source, /const datedYears = availableYears\.filter\(isDatedYear\)/);
+  // The timeline is every year from the first dated one to the last, so an
+  // undated paper has no slot to be plotted in.
+  assert.match(source, /const axisYears = yearAxis\(datedYears\)\.years;/);
+  assert.match(source, /const yearlyPaperTrend = axisYears\.map\(/);
 });
 
 test("the year range is read from dated years only", () => {
@@ -75,14 +79,18 @@ test("an undated paper is not counted as recent when deciding what is emerging",
   // This is the damaging one. availableYears ends with "Unknown", the split
   // takes the back half as "late", so every paper with no recorded year counted
   // as evidence of recent growth in every emerging-topic ranking.
-  const source = planner();
-  const split = source.slice(source.indexOf("const midpoint ="), source.indexOf("const topicShifts"));
-  assert.match(split, /datedYears/);
-  assert.equal(
-    /availableYears/.test(split),
-    false,
-    "the early/late split must not use undated years"
-  );
+  // The split now lives in one shared function, used by the planner, the Trend
+  // tab and the adaptive tab; it only ever reads dated papers.
+  assert.match(planner(), /const shifts = themeShifts\(subject\);/);
+  const rows = [
+    ...["1", "2", "3"].map((id) => ({ paper_id: id, year: "2018", topic: "Old", keyword: "k", keyword_frequency: 1, evidence: "", title: id })),
+    ...["4", "5", "6"].map((id) => ({ paper_id: id, year: "2024", topic: "Other", keyword: "k", keyword_frequency: 1, evidence: "", title: id })),
+    ...["7", "8", "9", "10"].map((id) => ({ paper_id: id, year: "Unknown", topic: "Old", keyword: "k", keyword_frequency: 1, evidence: "", title: id })),
+  ];
+  const result = themeShifts(rows);
+  assert.equal(result.emerging.some((shift) => shift.topic === "Old"), false, "undated papers are not recent growth");
+  assert.equal(result.periods?.earlyPapers, 3);
+  assert.equal(result.periods?.latePapers, 3, "the four undated papers are in neither period");
 });
 
 test("undated papers are counted and reported rather than silently dropped", () => {
@@ -268,8 +276,15 @@ test("every component that draws a year axis runs through one predicate", () => 
     "../src/components/tabs/KeywordExplorer.tsx",
   ]) {
     const source = readFileSync(new URL(relative, import.meta.url), "utf8");
-    assert.match(source, /isDatedYear/, `${relative} puts years on an axis and must use the predicate`);
+    assert.match(
+      source,
+      /isDatedYear|yearAxis\(/,
+      `${relative} puts years on an axis and must use the predicate, directly or through yearAxis`
+    );
   }
+  const shared = readFileSync(new URL("../src/lib/dashboard-analytics.ts", import.meta.url), "utf8");
+  const axis = shared.slice(shared.indexOf("export function yearAxis"), shared.indexOf("export function undatedPaperCount"));
+  assert.match(axis, /filter\(isDatedYear\)/, "yearAxis itself runs through the predicate");
 });
 
 test("an undated paper is still visible where a year is a fact about one paper", () => {

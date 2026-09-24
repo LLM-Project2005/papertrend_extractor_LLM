@@ -1006,6 +1006,26 @@ async function loadProjectScopedDashboardFallbackData(
  * Topic grouping reads this rather than the dashboard's own load, so a topic is
  * filed under the same theme however the dashboard happens to be filtered.
  */
+/**
+ * Whether the repository classifies papers into categories at all.
+ *
+ * Measured on both test repositories: classification off, yet thirty
+ * "Other / Unclassified" assignments with no rationale existed - defaults written
+ * when there was nothing to classify against - and the Category tab drew them,
+ * dropping every real paper that had none. A profile with no flag predates
+ * profiles and keeps its categories.
+ */
+async function projectClassificationEnabled(ownerUserId: string, projectId: string): Promise<boolean> {
+  return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+    const result = await client.query<{ enabled: boolean | null }>(
+      `SELECT COALESCE((analysis_profile->>'classificationEnabled')::boolean, true) AS enabled
+       FROM public.workspace_projects WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
+      [projectId, ownerUserId]
+    );
+    return result.rows[0]?.enabled !== false;
+  });
+}
+
 export async function loadProjectTrends(ownerUserId: string, projectId: string): Promise<TrendRow[]> {
   return (await loadProjectScopedDashboardFallbackData(ownerUserId, projectId, null)).trends;
 }
@@ -1018,14 +1038,6 @@ async function loadDashboardDataServerUncached(
 ): Promise<DashboardData> {
   const requestedFolderIds = normalizeRequestedFolderIds(folderSelection);
   const scopeDescription = describeScope(requestedFolderIds, projectId);
-
-  if (mode === "mock") {
-    return withDiagnostics(generateMockData(), {
-      dataSource: "mock",
-      recoveredFromLegacyScope: false,
-      scopeDescription: "preview data",
-    });
-  }
 
   try {
     if (!ownerUserId) {
@@ -1043,15 +1055,16 @@ async function loadDashboardDataServerUncached(
               // Topics are grouped into themes here, once, so every tab and the
               // adaptive planner read the same themes rather than each paper's
               // own label. The corpus topic cache below is Supabase-only.
-              return applyStoredThemes(
+              const [loaded, classificationEnabled] = await Promise.all([
+                loadProjectScopedDashboardFallbackData(ownerUserId, projectId, requestedFolderIds),
+                projectClassificationEnabled(ownerUserId, projectId).catch(() => true),
+              ]);
+              const themed = await applyStoredThemes(
                 ownerUserId,
                 projectId,
-                await loadProjectScopedDashboardFallbackData(
-                  ownerUserId,
-                  projectId,
-                  requestedFolderIds
-                )
+                classificationEnabled ? loaded : { ...loaded, categoryAssignments: [] }
               );
+              return { ...themed, classificationEnabled };
             }
             try {
               return await loadProjectScopedDashboardData(

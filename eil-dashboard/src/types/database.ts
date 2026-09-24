@@ -11,6 +11,8 @@ export interface TrendRow {
   title: string;
   topic: string;
   raw_topic?: string;
+  /** "method" when the row's theme is about how studies were done. */
+  topic_kind?: "topic" | "method";
   keyword: string;
   keyword_frequency: number;
   evidence: string;
@@ -69,6 +71,13 @@ export interface DashboardData {
   topicFamilies?: CorpusTopicFamily[];
   /** Whether the topics in view are grouped into themes yet (Cloud SQL only). */
   topicThemes?: TopicThemeStatus;
+  /**
+   * False when the repository's analysis profile has classification switched
+   * off. Category data is then not served and no category chart is drawn: the
+   * rows that exist are defaults written when there was nothing to classify
+   * against. Undefined means unknown - treated as on, as before.
+   */
+  classificationEnabled?: boolean;
   useMock: boolean;
   diagnostics?: {
     dataSource?: "scoped" | "legacy_fallback" | "mock" | "empty";

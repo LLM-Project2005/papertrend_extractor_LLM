@@ -20,6 +20,8 @@ interface Props {
   description?: string;
   showHeader?: boolean;
   showFolders?: boolean;
+  /** False when the repository does not classify papers: there is nothing to filter by. */
+  showCategories?: boolean;
 }
 
 export default function Sidebar({
@@ -38,6 +40,7 @@ export default function Sidebar({
   description = "Narrow the dataset before exploring the analytics.",
   showHeader = true,
   showFolders = true,
+  showCategories = true,
 }: Props) {
   const normalizedSelectedFolderIds = [...new Set(selectedFolderIds.filter(Boolean))];
   const allYearsSelected =
@@ -201,7 +204,7 @@ export default function Sidebar({
           </div>
         </section>
 
-        <section>
+        {showCategories ? <section>
           <div className="mb-3 flex items-center justify-between gap-3">
             <h3 className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
               Categories
@@ -252,7 +255,7 @@ export default function Sidebar({
               );
             })}
           </div>
-        </section>
+        </section> : null}
 
         <p className="text-xs leading-6 text-slate-500 dark:text-[#7d7d7d]">
           Data source: analyzed research outputs in this repository.

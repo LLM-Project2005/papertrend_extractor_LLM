@@ -18,7 +18,7 @@ import { readCategoryLabelMap } from "@/lib/analysis-profile";
 import { buildCategoryOptions, normalizeCategoryKey } from "@/lib/category-options";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import type { DashboardData, DashboardDataMode, PaperId, TrackRow, TrendRow } from "@/types/database";
+import type { DashboardData, PaperId, TrackRow, TrendRow } from "@/types/database";
 import type { NormalizedAnalyticsPayload, VisualizationPlan } from "@/types/visualization";
 
 const TAB_DEFINITIONS = [
@@ -145,6 +145,7 @@ function FilterPanel({
   categoryOptions,
   useMock,
   showHeader = true,
+  showCategories = true,
 }: {
   allYears: string[];
   selectedYears: string[];
@@ -154,6 +155,7 @@ function FilterPanel({
   categoryOptions: ReturnType<typeof buildCategoryOptions>;
   useMock: boolean;
   showHeader?: boolean;
+  showCategories?: boolean;
 }) {
   return (
     <Sidebar
@@ -168,6 +170,7 @@ function FilterPanel({
       description="Choose years and categories before reading the dashboard."
       showHeader={showHeader}
       showFolders={false}
+      showCategories={showCategories}
     />
   );
 }
@@ -196,26 +199,32 @@ export default function DashboardClient({
 
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
   const selectedFolderIds = EMPTY_FOLDER_FILTER;
-  const dashboardDataMode: DashboardDataMode =
-    searchParams.get("data") === "mock"
-      ? "mock"
-      : searchParams.get("data") === "live"
-        ? "live"
-        : "auto";
+  // No data mode is read from the URL. "?data=mock" used to serve invented
+  // topics to a signed-in reader through a v1 debugging dropdown.
   const { data, loading, refreshing, allYears, refresh } = useDashboardData(
     "all",
     scopedFolderIds,
     {
-      mode: dashboardDataMode,
+      mode: "auto",
       projectId: selectedProjectId,
       enabled: Boolean(selectedProjectId),
       refetchOnWindowFocus: false,
     }
   );
+  // The server says whether this repository classifies papers; before data
+  // arrives, the repository's own profile does.
+  const classificationEnabled =
+    data?.classificationEnabled ?? currentProject?.analysis_profile?.classificationEnabled ?? true;
   const categoryOptions = useMemo(
-    () => buildCategoryOptions(data, profile, categoryLabels),
-    [categoryLabels, data, profile]
+    () => (classificationEnabled ? buildCategoryOptions(data, profile, categoryLabels) : []),
+    [categoryLabels, classificationEnabled, data, profile]
   );
+  const activeCategoryCount = useMemo(() => {
+    const keys = new Set(categoryOptions.map((category) => category.key));
+    const chosen = selectedTracks.map((track) => normalizeCategoryKey(track)).filter((key) => keys.has(key));
+    return chosen.length > 0 ? chosen.length : keys.size;
+  }, [categoryOptions, selectedTracks]);
+  const themeStatus = data?.topicThemes ?? null;
   const [filterOpen, setFilterOpen] = useState(false);
   const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
   const [planState, setPlanState] = useState<{
@@ -324,16 +333,6 @@ export default function DashboardClient({
     setOptimisticTabKey(tabKey);
     updateRoute((params) => {
       params.set("tab", tabKey);
-    });
-  };
-
-  const updateDataMode = (mode: DashboardDataMode) => {
-    updateRoute((params) => {
-      if (mode === "auto") {
-        params.delete("data");
-      } else {
-        params.set("data", mode);
-      }
     });
   };
 
@@ -700,31 +699,20 @@ export default function DashboardClient({
 
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
-              Repository-wide
-            </span>
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
-              {selectedYears.length === 0
+              {selectedYears.length === 0 || selectedYears.length === allYears.length
                 ? "All years"
                 : `${selectedYears.length} year${selectedYears.length === 1 ? "" : "s"}`}
             </span>
+            {/*
+              This chip said "4 categories" on a repository with classification
+              switched off - a count of filter checkboxes, not of anything in the
+              data.
+            */}
             <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
-              {selectedTracks.length} categor{selectedTracks.length === 1 ? "y" : "ies"}
+              {classificationEnabled
+                ? `${activeCategoryCount} categor${activeCategoryCount === 1 ? "y" : "ies"}`
+                : "Categories off"}
             </span>
-            <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#bdbdbd]">
-              <span className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                Data
-              </span>
-              <select
-                value={dashboardDataMode}
-                onChange={(event) => updateDataMode(event.target.value as DashboardDataMode)}
-                className="bg-transparent text-sm font-medium text-slate-700 outline-none dark:text-[#f2f2f2]"
-                  title="Choose whether the dashboard should recover gracefully, use project data, or use preview data."
-              >
-                <option value="auto">Smart</option>
-                <option value="live">Project</option>
-                <option value="mock">Preview</option>
-              </select>
-            </label>
             <button
               type="button"
               onClick={() => {
@@ -745,20 +733,42 @@ export default function DashboardClient({
           </div>
         </div> : null}
 
-        {!isSemanticMapTab ? <section className="app-surface px-4 py-4 sm:px-5">
-          {liveDataError ? (
-            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-              Live dashboard data could not be loaded for this scope. {liveDataError}
-            </div>
-          ) : null}
+        {!isSemanticMapTab && liveDataError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            Dashboard data could not be loaded for this repository. {liveDataError}
+          </div>
+        ) : null}
+
+        {/*
+          Topics are grouped into themes after a paper is analysed, by a request
+          the dashboard makes itself. While that runs, the new papers' topics are
+          shown under their own labels - say so, rather than let a reader wonder
+          why a theme they expect is missing.
+        */}
+        {!isSemanticMapTab && themeStatus && themeStatus.ungroupedTopics > 0 && themeStatus.status !== "ready" ? (
+          <div
+            role="status"
+            className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#cfcfcf]"
+          >
+            {themeStatus.status === "pending"
+              ? `Grouping ${themeStatus.ungroupedTopics} new topic${themeStatus.ungroupedTopics === 1 ? "" : "s"} into themes. The charts update when it finishes - usually within a minute.`
+              : `${themeStatus.ungroupedTopics} topic${themeStatus.ungroupedTopics === 1 ? " is" : "s are"} shown under ${themeStatus.ungroupedTopics === 1 ? "its paper's" : "their papers'"} own label${themeStatus.ungroupedTopics === 1 ? "" : "s"}, because grouping could not run just now. It will be tried again later.`}
+          </div>
+        ) : null}
+
+        {/*
+          The planner belongs to the Adaptive tab. It used to sit above every
+          fixed tab as well, with a "Live data" pill that told a reader nothing -
+          all data here is the repository's own.
+        */}
+        {isAdaptiveTab ? <section className="app-surface px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                 Visualization planner
               </p>
               <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                {planState?.plan.dashboard_title ??
-                  (data?.useMock ? "Preview chart workspace" : "Generate adaptive charts")}
+                {planState?.plan.dashboard_title ?? "Generate adaptive charts"}
               </h2>
               <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
                 {planState?.plan.summary ??
@@ -774,9 +784,6 @@ export default function DashboardClient({
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
-                {data?.useMock ? "Preview data" : "Live data"}
-              </span>
               {refreshing ? (
                 <span className="rounded-full bg-sky-100 px-3 py-1.5 text-xs text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
                   Refreshing in background
@@ -792,23 +799,21 @@ export default function DashboardClient({
                   {planState.source === "agent" ? "Agent plan" : "Safe fallback"}
                 </span>
               ) : null}
-              {isAdaptiveTab ? (
-                <button
-                  type="button"
-                  onClick={() => void generateAdaptiveCharts()}
-                  disabled={adaptiveGenerating || !data}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
-                >
-                  <ChartIcon className="h-4 w-4" />
-                  {adaptiveGenerating
-                    ? "Building charts..."
-                    : planState
-                      ? adaptiveFiltersChanged
-                        ? "Update charts"
-                        : "Regenerate"
-                      : "Generate charts"}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                onClick={() => void generateAdaptiveCharts()}
+                disabled={adaptiveGenerating || !data}
+                className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
+              >
+                <ChartIcon className="h-4 w-4" />
+                {adaptiveGenerating
+                  ? "Building charts..."
+                  : planState
+                    ? adaptiveFiltersChanged
+                      ? "Update charts"
+                      : "Regenerate"
+                    : "Generate charts"}
+              </button>
             </div>
           </div>
         </section> : null}
@@ -863,8 +868,9 @@ export default function DashboardClient({
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
                   categoryOptions={categoryOptions}
-                  useMock={data?.useMock ?? true}
+                  useMock={false}
                   showHeader={false}
+                  showCategories={classificationEnabled}
                 />
               </div>
             </div>
@@ -1040,8 +1046,9 @@ export default function DashboardClient({
                   selectedTracks={selectedTracks}
                   onTracksChange={setSelectedTracks}
                   categoryOptions={categoryOptions}
-                  useMock={data?.useMock ?? true}
+                  useMock={false}
                   showHeader={false}
+                  showCategories={classificationEnabled}
                 />
               </div>
             </div>
@@ -1058,7 +1065,7 @@ export default function DashboardClient({
               categoryOptions={categoryOptions}
               selectedTracks={selectedTracks}
               categoryLabels={categoryLabels}
-              useMock={data?.useMock ?? true}
+              classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
             />
           ) : null}
@@ -1077,6 +1084,7 @@ export default function DashboardClient({
               categoryOptions={categoryOptions}
               selectedTracks={selectedTracks}
               categoryLabels={categoryLabels}
+              classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
             />
           ) : null}

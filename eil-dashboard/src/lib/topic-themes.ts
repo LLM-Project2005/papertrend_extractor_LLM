@@ -684,11 +684,19 @@ export interface ThemeResult {
   families: CorpusTopicFamily[];
   /** Normalised raw topic -> theme name. */
   themeByTopicKey: Map<string, string>;
+  /** Normalised raw topic -> the kind of its theme. */
+  kindByTopicKey: Map<string, ThemeKind>;
 }
 
 export function buildNamedThemes(trends: TrendRow[], items: TopicItem[], groups: ThemeGroup[]): ThemeResult {
   const themeByTopicKey = new Map<string, string>();
-  for (const group of groups) for (const index of group.members) themeByTopicKey.set(items[index].key, group.name);
+  const kindByTopicKey = new Map<string, ThemeKind>();
+  for (const group of groups) {
+    for (const index of group.members) {
+      themeByTopicKey.set(items[index].key, group.name);
+      kindByTopicKey.set(items[index].key, group.kind);
+    }
+  }
 
   const rowsByKey = new Map<string, TrendRow[]>();
   for (const row of trends) {
@@ -733,7 +741,7 @@ export function buildNamedThemes(trends: TrendRow[], items: TopicItem[], groups:
   families.forEach((family, index) => {
     family.id = `theme-${index + 1}`;
   });
-  return { families, themeByTopicKey };
+  return { families, themeByTopicKey, kindByTopicKey };
 }
 
 /**
@@ -744,11 +752,17 @@ export function buildNamedThemes(trends: TrendRow[], items: TopicItem[], groups:
  * each implementing grouping of its own. Nothing stored is changed: the paper's
  * own label is always recoverable from `raw_topic`.
  */
-export function applyThemes(trends: TrendRow[], themeByTopicKey: Map<string, string>): TrendRow[] {
+export function applyThemes(
+  trends: TrendRow[],
+  themeByTopicKey: Map<string, string>,
+  kindByTopicKey: Map<string, ThemeKind> = new Map()
+): TrendRow[] {
   return trends.map((row) => {
     const raw = String(row.raw_topic ?? row.topic ?? "");
-    const theme = themeByTopicKey.get(normalizeTopicKey(raw));
-    return theme ? { ...row, topic: theme, raw_topic: raw } : { ...row, raw_topic: raw };
+    const key = normalizeTopicKey(raw);
+    const theme = themeByTopicKey.get(key);
+    const topic_kind = kindByTopicKey.get(key) ?? "topic";
+    return theme ? { ...row, topic: theme, raw_topic: raw, topic_kind } : { ...row, raw_topic: raw, topic_kind };
   });
 }
 
@@ -765,8 +779,8 @@ export function applyThemeStore(
   const items = collectTopicItems(trends);
   const { groups, unknown } = groupsFromStore(items, store);
   const all = extendGroups(items, groups, unknown, unknown.map(() => null));
-  const { families, themeByTopicKey } = buildNamedThemes(trends, items, all);
-  return { trends: applyThemes(trends, themeByTopicKey), families, unknownTopics: unknown.length };
+  const { families, themeByTopicKey, kindByTopicKey } = buildNamedThemes(trends, items, all);
+  return { trends: applyThemes(trends, themeByTopicKey, kindByTopicKey), families, unknownTopics: unknown.length };
 }
 
 /* ------------------------------------------------- measuring a grouping */
