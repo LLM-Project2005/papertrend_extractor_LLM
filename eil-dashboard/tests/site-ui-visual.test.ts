@@ -489,21 +489,21 @@ test("no stylesheet rule ships with nothing to style", () => {
 
 /* ------------------------------------------------- data the reader is shown */
 
-test("a seeded fabrication is only ever shown when preview mode was chosen", () => {
-  // Two paths handed back generateMockData() - eleven years of invented topics -
-  // when there was no session, which is also the moment after mount before the
-  // session hydrates. A signed-in reader saw it flash past as their own library.
+test("no signed-in reader can be shown fabricated data", () => {
+  // Two paths handed back generateMockData() - eleven years of invented topics.
+  // One was the moment after mount before the session hydrates; the other was
+  // the dashboard's DATA dropdown, whose "Preview" option - a first-version
+  // debugging switch - served the invention to a signed-in reader as though it
+  // were their library. Both are gone, at every layer.
   const hook = read("src/hooks/useData.ts");
-  const calls = [...hook.matchAll(/generateMockData\(\)/g)];
-  assert.ok(calls.length >= 1, "explicit preview mode still needs it");
-  for (const call of calls) {
-    const before = hook.slice(Math.max(0, call.index! - 400), call.index!);
-    assert.match(
-      before,
-      /mode === "mock"/,
-      "every fabrication must sit inside an explicit preview-mode guard"
-    );
-  }
+  assert.equal(/generateMockData/.test(hook), false, "the hook never fabricates");
+  const client = read("src/components/DashboardClient.tsx");
+  assert.equal(/searchParams\.get\("data"\)/.test(client), false, "no data mode is read from the URL");
+  assert.equal(/<option value="mock">/.test(client), false, "no Preview option");
+  const route = read("src/app/api/workspace/dashboard-data/route.ts");
+  assert.match(route, /return value === "live" \? "live" : "auto";/, "?mode=mock is not accepted");
+  const server = read("src/lib/dashboard-data-server.ts");
+  assert.equal(/if \(mode === "mock"\)/.test(server), false);
 });
 
 test("the first screen after signing in is not an empty box", () => {

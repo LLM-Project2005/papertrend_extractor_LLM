@@ -20,6 +20,10 @@ const BASE = process.env.UI_BASE_URL ?? "https://papertrend.web.app";
 const OUT = process.env.UI_OUT_DIR ?? "./ui-audit";
 const EMAIL = process.env.UI_TEST_EMAIL ?? "";
 const PASSWORD = process.env.UI_TEST_PASSWORD ?? "";
+/** Which repository the workspace opens (optional). */
+const PROJECT_ID = process.env.UI_PROJECT_ID ?? "";
+/** Comma-separated route id prefixes to capture; everything when unset. */
+const ONLY = (process.env.UI_ONLY ?? "").split(",").map((value) => value.trim()).filter(Boolean);
 
 const VIEWPORTS = [
   { name: "mobile", width: 390, height: 844 },
@@ -57,6 +61,12 @@ const ROUTES: Route[] = [
   { id: "workspaces", path: "/workspaces", auth: true, bothThemes: true },
   { id: "workspace-home", path: "/workspace/home", auth: true, bothThemes: true },
   { id: "workspace-dashboard", path: "/workspace/dashboard", auth: true, bothThemes: true },
+  // Every fixed tab, not only the default: the charts each tab draws are what
+  // docs/28 changed, and a harness that only saw Overview could not see them.
+  { id: "workspace-dashboard-trend", path: "/workspace/dashboard?tab=trend_analysis", auth: true, bothThemes: true },
+  { id: "workspace-dashboard-categories", path: "/workspace/dashboard?tab=track_analysis", auth: true, bothThemes: true },
+  { id: "workspace-dashboard-keywords", path: "/workspace/dashboard?tab=keyword_explorer", auth: true, bothThemes: true },
+  { id: "workspace-dashboard-adaptive", path: "/workspace/dashboard?tab=adaptive", auth: true, bothThemes: true },
   { id: "workspace-chat", path: "/workspace/chat", auth: true, bothThemes: true },
   { id: "workspace-library", path: "/workspace/library", auth: true, bothThemes: true },
   { id: "workspace-profile", path: "/workspace/profile", auth: true },
@@ -180,9 +190,23 @@ const DIAGNOSTICS = `(() => {
     const fill = parse(s.fill);
     if (!fill || fill.a === 0) continue;
     // An <svg> has no painted background of its own, so the effective backdrop
-    // is whatever HTML element encloses it.
+    // is whatever HTML element encloses it - unless the text is drawn on a
+    // filled shape in its own group, as a treemap label is on its cell. Measured
+    // against the page, a white label on a dark cell read as 1:1.
     const host = node.closest('svg');
-    const bg = effectiveBg(host ? host.parentElement || host : node);
+    let bg = effectiveBg(host ? host.parentElement || host : node);
+    const box = node.getBoundingClientRect();
+    const cx = box.left + box.width / 2;
+    const cy = box.top + box.height / 2;
+    const group = node.closest('g');
+    if (group) {
+      for (const shape of Array.from(group.querySelectorAll('rect, path'))) {
+        const shapeBox = shape.getBoundingClientRect();
+        if (cx < shapeBox.left || cx > shapeBox.right || cy < shapeBox.top || cy > shapeBox.bottom) continue;
+        const shapeFill = parse(getComputedStyle(shape).fill);
+        if (shapeFill && shapeFill.a >= 0.99) bg = shapeFill;
+      }
+    }
     const fg = fill.a < 1 ? over(fill, bg) : fill;
     const size = parseFloat(s.fontSize) || 12;
     const need = size >= 24 ? 3 : 4.5;
@@ -342,7 +366,14 @@ async function login(page: Page): Promise<boolean> {
   await page.locator('button[type="submit"]').first().click();
   for (let i = 0; i < 40; i += 1) {
     await page.waitForTimeout(1000);
-    if (!page.url().includes("/login")) return true;
+    if (!page.url().includes("/login")) {
+      // UI_PROJECT_ID chooses the repository the workspace opens, the same
+      // localStorage key the app writes when a reader picks one.
+      if (PROJECT_ID) {
+        await page.evaluate(`window.localStorage.setItem("papertrend_workspace_project_v1", ${JSON.stringify(PROJECT_ID)})`);
+      }
+      return true;
+    }
   }
   return false;
 }
@@ -415,7 +446,9 @@ async function main() {
   // page - the entire product surface, silently missing from the audit.
   for (const vp of VIEWPORTS) {
     for (const theme of ["light", "dark"]) {
-      const routes = ROUTES.filter((r) => (theme === "dark" ? r.bothThemes : true));
+      const routes = ROUTES.filter((r) => (theme === "dark" ? r.bothThemes : true)).filter(
+        (r) => ONLY.length === 0 || ONLY.some((prefix) => r.id.startsWith(prefix))
+      );
       if (routes.length === 0) continue;
 
       const context = await browser.newContext({

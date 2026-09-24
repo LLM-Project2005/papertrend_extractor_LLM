@@ -26,7 +26,10 @@ import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
+import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
+import { plural, subjectRows, yearAxis } from "@/lib/dashboard-analytics";
 
 interface Props {
   trends: TrendRow[];
@@ -36,6 +39,8 @@ interface Props {
   categoryOptions?: CategoryOption[];
   selectedTracks: string[];
   categoryLabels?: Record<TrackKey, string>;
+  /** False when the repository does not classify papers. */
+  classificationEnabled?: boolean;
   planCharts?: VisualizationPlanChart[];
   onDrilldown?: (target: {
     track?: string;
@@ -56,6 +61,7 @@ export default function TrackAnalysis({
   categoryOptions = [],
   selectedTracks,
   categoryLabels,
+  classificationEnabled = true,
   planCharts,
   onDrilldown,
 }: Props) {
@@ -112,7 +118,7 @@ export default function TrackAnalysis({
       ]
         .filter(isDatedYear)
         .sort();
-      return years.map((year) => {
+      return yearAxis(years).years.map((year) => {
         const entry: Record<string, string | number> = { year };
         activeCategories.forEach((category) => {
           const papers = new Set(
@@ -132,7 +138,7 @@ export default function TrackAnalysis({
     }
 
     const years = [...new Set(tracksSingle.map((row) => row.year))].filter(isDatedYear).sort();
-    return years.map((year) => {
+    return yearAxis(years).years.map((year) => {
       const entry: Record<string, string | number> = { year };
       const yearRows = tracksSingle.filter((row) => row.year === year);
       TRACK_COLS.filter((track) => stackedTracks.includes(track)).forEach((track) => {
@@ -194,7 +200,7 @@ export default function TrackAnalysis({
 
       activeTopicCategories.forEach((category) => {
         const counts: Record<string, Set<PaperId>> = {};
-        trends.forEach((row) => {
+        subjectRows(trends).forEach((row) => {
           const paperCategories = categorySetsByPaper[row.paper_id];
           if (paperCategories?.has(category.key)) {
             (counts[row.topic] ??= new Set()).add(row.paper_id);
@@ -214,7 +220,7 @@ export default function TrackAnalysis({
 
     TRACK_COLS.filter((track) => topicTracks.includes(track)).forEach((track) => {
       const counts: Record<string, Set<PaperId>> = {};
-      trends.forEach((row) => {
+      subjectRows(trends).forEach((row) => {
         const trackRow = trackMap.get(row.paper_id);
         if (trackRow && trackRow[trackField(track)] === 1) {
           (counts[row.topic] ??= new Set()).add(row.paper_id);
@@ -255,15 +261,44 @@ export default function TrackAnalysis({
     [...stackedChartCategories, ...topicChartCategories].map((category) => [category.key, category])
   );
 
+  if (!classificationEnabled) {
+    return (
+      <div className="space-y-6">
+        <section className="app-surface px-5 py-5">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Category analysis</h2>
+          <Takeaway>Nothing to show: this repository does not sort papers into categories.</Takeaway>
+        </section>
+        <CategoriesOffNotice />
+      </div>
+    );
+  }
+
+  // Per-category paper totals across the years drawn, for the one-line summary.
+  const categoryTotals = stackedChartCategories
+    .map((category) => ({
+      label: category.label,
+      papers: stackedData.reduce((sum, entry) => sum + Number(entry[category.key] ?? 0), 0),
+    }))
+    .sort((left, right) => right.papers - left.papers);
+  const classifiedPapers = categoryTotals.reduce((sum, entry) => sum + entry.papers, 0);
+  const lead = categoryTotals[0];
+
   return (
     <div className="space-y-6">
       <section className="app-surface px-5 py-5">
         <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
           Category analysis
         </h2>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Review category balance, overlap, and the topic clusters most tied to each category.
-        </p>
+        {lead && classifiedPapers > 0 ? (
+          <Takeaway>
+            {`${lead.label} holds the most papers: ${plural(lead.papers, "paper")}, ${Math.round((lead.papers / classifiedPapers) * 100)}% of the ${classifiedPapers} with a dated category.`}
+            {categoryTotals.length > 1 && categoryTotals[1].papers > 0
+              ? ` Next is ${categoryTotals[1].label} with ${categoryTotals[1].papers}.`
+              : ""}
+          </Takeaway>
+        ) : (
+          <Takeaway>No paper in the current filters has a category yet.</Takeaway>
+        )}
       </section>
 
       {orderedCharts.includes("track_year_stacked") && stackedData.length > 0 && (
@@ -278,7 +313,7 @@ export default function TrackAnalysis({
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendLabel(ct)} />
                 {stackedChartCategories.map((category) => (
                   <Bar
                     key={category.key}

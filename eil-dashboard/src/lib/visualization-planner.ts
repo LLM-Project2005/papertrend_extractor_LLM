@@ -3,6 +3,7 @@ import { isDatedYear } from "@/lib/dated-year";
 
 export { isDatedYear };
 import { filterDashboardData } from "@/lib/dashboard-filters";
+import { subjectRows, themePaperCounts, themeShifts, yearAxis } from "@/lib/dashboard-analytics";
 import { loadDashboardDataServer } from "@/lib/dashboard-data-server";
 import { createChatCompletionResult } from "@/lib/openai";
 import { sanitizeVisualizationPlan } from "@/lib/visualization-plan";
@@ -54,6 +55,14 @@ function normalizeTopicText(value: string) {
 }
 
 function canonicalizeTrendTopics(data: DashboardData): DashboardData["trends"] {
+  // Rows the server has already grouped into themes carry the paper's own label
+  // in raw_topic. Re-mapping them here would be worse than useless: this map is
+  // built from every theme's keywords as well as its names, later themes
+  // overwrite earlier ones, and a row of "Dynamic Assessment" would be re-filed
+  // under whichever theme happened to list "dynamic assessment" as a keyword.
+  if (data.trends.some((row) => row.raw_topic !== undefined)) {
+    return data.trends;
+  }
   const aliasToCanonical = new Map<string, string>();
   for (const family of data.topicFamilies ?? []) {
     const canonical = family.canonicalTopic;
@@ -127,7 +136,10 @@ export async function buildNormalizedAnalyticsPayload(
     ...filteredDashboard.tracksMulti.map((row) => row.paper_id),
     ...(filteredDashboard.categoryAssignments ?? []).map((row) => row.paper_id),
   ]).size;
-  const topicCount = new Set(filteredDashboard.trends.map((row) => row.topic)).size;
+  // Topic numbers describe what was studied; method themes are not topics.
+  const subject = subjectRows(filteredDashboard.trends);
+  const classificationEnabled = data.classificationEnabled !== false;
+  const topicCount = new Set(subject.map((row) => row.topic)).size;
   const keywordCount = new Set(filteredDashboard.trends.map((row) => row.keyword)).size;
   const availableYears = [
     ...new Set([
@@ -144,17 +156,16 @@ export async function buildNormalizedAnalyticsPayload(
       ? `${datedYears[0]} to ${datedYears[datedYears.length - 1]}`
       : "No data";
 
-  const yearlyPaperTrend = Object.entries(
-    [...filteredDashboard.trends, ...filteredDashboard.tracksSingle, ...filteredDashboard.tracksMulti].reduce<
-      Record<string, Set<PaperId>>
-    >((accumulator, row) => {
-      (accumulator[row.year] ??= new Set()).add(row.paper_id);
-      return accumulator;
-    }, {})
-  )
-    .map(([year, ids]) => ({ year, papers: ids.size }))
-    .filter((row) => isDatedYear(row.year))
-    .sort((left, right) => left.year.localeCompare(right.year));
+  // One slot per year from the first to the last, empty years as zeros: drawn
+  // only where papers exist, 2017 and 2025 sat side by side as neighbours.
+  const axisYears = yearAxis(datedYears).years;
+  const papersByYear = [...filteredDashboard.trends, ...filteredDashboard.tracksSingle, ...filteredDashboard.tracksMulti].reduce<
+    Record<string, Set<PaperId>>
+  >((accumulator, row) => {
+    (accumulator[row.year] ??= new Set()).add(row.paper_id);
+    return accumulator;
+  }, {});
+  const yearlyPaperTrend = axisYears.map((year) => ({ year, papers: papersByYear[year]?.size ?? 0 }));
 
   // Counted so the dashboard can say how many papers the timeline leaves out,
   // rather than quietly dropping them or plotting them as a period.
@@ -164,25 +175,28 @@ export async function buildNormalizedAnalyticsPayload(
       .map((row) => row.paper_id)
   ).size;
 
+  // With classification off the track flags are left over from an earlier
+  // profile, not a classification of this repository, so nothing is totalled.
   const buildTrackTotals = (rows: TrackRow[]) =>
     TRACK_COLS.map((track) => ({
       track,
-      value: rows.reduce((sum, row) => sum + Number(row[toTrackField(track)] ?? 0), 0),
+      value: classificationEnabled
+        ? rows.reduce((sum, row) => sum + Number(row[toTrackField(track)] ?? 0), 0)
+        : 0,
     }));
 
-  const topicCounts = countTopicPapers(filteredDashboard.trends);
-  const topTopics = Object.entries(topicCounts)
-    .sort((left, right) => right[1].size - left[1].size)
+  const topicCounts = countTopicPapers(subject);
+  const topTopics = themePaperCounts(subject)
     .slice(0, 8)
-    .map(([topic]) => topic);
+    .map((entry) => entry.topic);
 
-  const topTopicsOverTime = availableYears.map((year) => ({
+  const topTopicsOverTime = axisYears.map((year) => ({
     year,
     topics: topTopics
       .map((topic) => ({
         topic,
         papers: new Set(
-          filteredDashboard.trends
+          subject
             .filter((row) => row.year === year && row.topic === topic)
             .map((row) => row.paper_id)
         ).size,
@@ -190,7 +204,7 @@ export async function buildNormalizedAnalyticsPayload(
       .filter((entry) => entry.papers > 0),
   }));
 
-  const canonicalTopicFamilies = (filteredDashboard.topicFamilies ?? []).map((family) => ({
+  const canonicalTopicFamilies = (filteredDashboard.topicFamilies ?? []).filter((family) => family.kind !== "method").map((family) => ({
     canonical_topic: family.canonicalTopic,
     aliases: family.aliases,
     representative_keywords: family.representativeKeywords,
@@ -199,7 +213,7 @@ export async function buildNormalizedAnalyticsPayload(
   }));
 
   const folderTopicTotals = Object.entries(
-    filteredDashboard.trends.reduce<
+    subject.reduce<
       Record<
         string,
         {
@@ -232,8 +246,8 @@ export async function buildNormalizedAnalyticsPayload(
       .slice(0, 8),
   }));
 
-  const yearlyTopicTotals = availableYears.map((year) => {
-    const grouped = filteredDashboard.trends
+  const yearlyTopicTotals = axisYears.map((year) => {
+    const grouped = subject
       .filter((row) => row.year === year)
       .reduce<Record<string, { paperIds: Set<PaperId>; frequency: number }>>(
         (accumulator, row) => {
@@ -261,47 +275,43 @@ export async function buildNormalizedAnalyticsPayload(
     };
   });
 
+  // Papers per theme per year, over the full axis. Keyword occurrences let one
+  // paper repeating a term outweigh five papers using it once, and a theme
+  // whose papers are all undated drew a row of zeros.
   const keywordHeatmap = {
-    years: availableYears,
-    rows: topTopics.map((topic) => ({
-      keyword: topic,
-      totals_by_year: availableYears.map((year) =>
-        filteredDashboard.trends
-          .filter((row) => row.year === year && row.topic === topic)
-          .reduce((sum, row) => sum + row.keyword_frequency, 0)
-      ),
-      total_frequency: filteredDashboard.trends
-        .filter((row) => row.topic === topic)
-        .reduce((sum, row) => sum + row.keyword_frequency, 0),
-    })),
+    years: axisYears,
+    rows: topTopics
+      .map((topic) => ({
+        keyword: topic,
+        totals_by_year: axisYears.map(
+          (year) =>
+            new Set(subject.filter((row) => row.year === year && row.topic === topic).map((row) => row.paper_id)).size
+        ),
+        total_frequency: subject
+          .filter((row) => row.topic === topic)
+          .reduce((sum, row) => sum + row.keyword_frequency, 0),
+      }))
+      .filter((row) => row.totals_by_year.some((value) => value > 0)),
   };
 
-  const midpoint = Math.floor(datedYears.length / 2);
-  const earlyYears = new Set(datedYears.slice(0, midpoint));
-  const lateYears = new Set(datedYears.slice(midpoint));
-  const topicShifts = Object.entries(topicCounts)
-    .map(([topic]) => ({
-      topic,
-      change:
-        new Set(
-          filteredDashboard.trends
-            .filter((row) => lateYears.has(row.year) && row.topic === topic)
-            .map((row) => row.paper_id)
-        ).size -
-        new Set(
-          filteredDashboard.trends
-            .filter((row) => earlyYears.has(row.year) && row.topic === topic)
-            .map((row) => row.paper_id)
-        ).size,
-    }))
-    .sort((left, right) => right.change - left.change);
+  // The same rule the Trend tab uses: the papers are halved, not the years, and
+  // no shift is claimed for a theme with fewer than three papers.
+  const shifts = themeShifts(subject);
+  const toShift = (shift: (typeof shifts.emerging)[number]) => ({
+    topic: shift.topic,
+    change: shift.late - shift.early,
+    early: shift.early,
+    late: shift.late,
+    early_share: shift.earlyShare,
+    late_share: shift.lateShare,
+  });
 
   const singleTrackByPaper = new Map(
     filteredDashboard.tracksSingle.map((row) => [row.paper_id, row])
   );
-  const trackTopicSections = TRACK_COLS.map((track) => {
+  const trackTopicSections = (classificationEnabled ? TRACK_COLS : []).map((track) => {
     const counts: Record<string, Set<PaperId>> = {};
-    filteredDashboard.trends.forEach((row) => {
+    subject.forEach((row) => {
       const trackRow = singleTrackByPaper.get(row.paper_id);
       if (!trackRow || Number(trackRow[toTrackField(track)] ?? 0) !== 1) {
         return;
@@ -362,12 +372,18 @@ export async function buildNormalizedAnalyticsPayload(
     yearly_topic_totals: yearlyTopicTotals,
     keyword_heatmap: keywordHeatmap,
     topic_shifts: {
-      emerging: topicShifts.filter((item) => item.change > 0).slice(0, 8),
-      declining: topicShifts
-        .filter((item) => item.change < 0)
-        .slice(-8)
-        .reverse(),
+      emerging: shifts.emerging.slice(0, 8).map(toShift),
+      declining: shifts.declining.slice(0, 8).map(toShift),
+      periods: shifts.periods
+        ? {
+            early_label: shifts.periods.earlyLabel,
+            late_label: shifts.periods.lateLabel,
+            early_papers: shifts.periods.earlyPapers,
+            late_papers: shifts.periods.latePapers,
+          }
+        : null,
     },
+    classification_enabled: classificationEnabled,
     track_topic_sections: trackTopicSections,
     topic_by_track_totals: trackTopicSections.map((section) => ({
       track: section.track,

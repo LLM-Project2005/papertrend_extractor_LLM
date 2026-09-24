@@ -51,7 +51,7 @@ export default function Heatmap({
         <table className="border-collapse text-xs">
           <thead>
             <tr>
-              <th className="p-1" />
+              <th className="sticky left-0 z-10 bg-white p-1 dark:bg-[#050505]" />
               {cols.map((c) => (
                 <th
                   key={c}
@@ -65,7 +65,12 @@ export default function Heatmap({
           <tbody>
             {rows.map((r, ri) => (
               <tr key={r}>
-                <td className="whitespace-nowrap pr-2 text-right font-medium text-slate-600 dark:text-[#d0d0d0]">
+                {/* Sticky and truncated on a phone, so the year columns scroll
+                    under the names instead of being pushed off the card. */}
+                <td
+                  title={r}
+                  className="sticky left-0 z-10 max-w-[9rem] truncate whitespace-nowrap bg-white pr-2 text-right font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0] sm:max-w-none"
+                >
                   {r}
                 </td>
                 {cols.map((c, ci) => {

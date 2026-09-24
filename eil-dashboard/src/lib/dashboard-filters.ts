@@ -37,7 +37,11 @@ export function filterDashboardData(
   searchQuery = "",
   availableCategoryKeys: string[] = []
 ): Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "categoryAssignments" | "topicFamilies"> {
-  const categoryRows = data.categoryAssignments ?? [];
+  // With classification off there is nothing to filter by: the category rows
+  // that exist are defaults, and narrowing by them dropped every paper without
+  // one - which on the test repository was every real paper.
+  const categoriesOff = data.classificationEnabled === false;
+  const categoryRows = categoriesOff ? [] : data.categoryAssignments ?? [];
   const dynamicCategoryKeys = [
     ...new Set([
       ...availableCategoryKeys.map(normalizeCategoryKey).filter(Boolean),
@@ -168,9 +172,9 @@ export function filterDashboardData(
       ...singleCategoryRows.map((row) => row.paper_id),
       ...multiCategoryRows.map((row) => row.paper_id),
     ]);
-  } else if (!useDynamicCategories && singleTrackRows.length > 0) {
+  } else if (!categoriesOff && !useDynamicCategories && singleTrackRows.length > 0) {
     allowedPaperIds = new Set(singleTrackRows.map((row) => row.paper_id));
-  } else if (!useDynamicCategories && multiTrackRows.length > 0) {
+  } else if (!categoriesOff && !useDynamicCategories && multiTrackRows.length > 0) {
     allowedPaperIds = new Set(multiTrackRows.map((row) => row.paper_id));
   }
 

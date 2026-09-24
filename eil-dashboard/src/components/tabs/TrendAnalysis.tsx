@@ -2,8 +2,6 @@
 
 import { useMemo, useState } from "react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -13,112 +11,156 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import Heatmap from "@/components/Heatmap";
+import { Takeaway } from "@/components/dashboard/DashboardNotes";
 import { TOPIC_PALETTE } from "@/lib/constants";
-import type { PaperId, TrendRow } from "@/types/database";
+import {
+  SHIFT_MIN_PAPERS,
+  listOf,
+  plural,
+  subjectRows,
+  themePaperCounts,
+  themePapersByYear,
+  themeShifts,
+  undatedPaperCount,
+  yearAxis,
+  type ThemeShift,
+} from "@/lib/dashboard-analytics";
+import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
-import { isDatedYear } from "@/lib/dated-year";
+import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
+import { legendLabel } from "@/lib/chart-legend";
 
 interface Props {
   trends: TrendRow[];
   planCharts?: VisualizationPlanChart[];
-  onDrilldown?: (target: { topic?: string; year?: string }) => void;
+  onDrilldown?: (target: { topic?: string; year?: string; paperIds?: string[] }) => void;
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
 export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
-  const [topN, setTopN] = useState(10);
-  const [heatN, setHeatN] = useState(15);
+  const shiftLabels = labelColumn(useIsNarrow(), { width: 260, chars: 42 });
+  const [topN, setTopN] = useState(8);
   const orderedCharts =
     planCharts?.map((chart) => chart.chart_key).filter(
       (chart): chart is "topic_area" | "emerging_topics" | "declining_topics" =>
         ["topic_area", "emerging_topics", "declining_topics"].includes(chart)
     ) ?? ["topic_area", "emerging_topics", "declining_topics"];
   const topicAreaConfig = planCharts?.find((chart) => chart.chart_key === "topic_area")?.config;
-  const emergingConfig = planCharts?.find(
-    (chart) => chart.chart_key === "emerging_topics"
-  )?.config;
-  const decliningConfig = planCharts?.find(
-    (chart) => chart.chart_key === "declining_topics"
-  )?.config;
   const effectiveTopN = topicAreaConfig?.top_n ?? topN;
-  const effectiveShiftN =
-    Math.max(emergingConfig?.top_n ?? 8, decliningConfig?.top_n ?? 8) || 8;
 
-  const topTopics = useMemo(() => {
-    const counts: Record<string, Set<PaperId>> = {};
-    trends.forEach((row) => {
-      (counts[row.topic] ??= new Set()).add(row.paper_id);
-    });
-    return Object.entries(counts)
-      .sort((left, right) => right[1].size - left[1].size)
-      .slice(0, effectiveTopN)
-      .map(([topic]) => topic);
-  }, [effectiveTopN, trends]);
+  // What was studied; method themes are shown on the Overview.
+  const subjects = useMemo(() => subjectRows(trends), [trends]);
+  const axis = useMemo(() => yearAxis(subjects.map((row) => row.year)), [subjects]);
+  const undated = useMemo(() => undatedPaperCount(subjects), [subjects]);
 
-  const areaData = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
-    return years.map((year) => {
-      const entry: Record<string, string | number> = { year };
-      topTopics.forEach((topic) => {
-        const ids = new Set(
-          trends
-            .filter((row) => row.year === year && row.topic === topic)
-            .map((row) => row.paper_id)
-        );
-        entry[topic] = ids.size;
-      });
-      return entry;
-    });
-  }, [topTopics, trends]);
-
-  const { emerging, declining } = useMemo(() => {
-    const years = [...new Set(trends.map((row) => row.year))].filter(isDatedYear).sort();
-    if (years.length < 2) {
-      return { emerging: [], declining: [] };
-    }
-
-    const midpoint = Math.floor(years.length / 2);
-    const early = new Set(years.slice(0, midpoint));
-    const late = new Set(years.slice(midpoint));
-
-    const countIn = (yearSet: Set<string>) => {
-      const counts: Record<string, Set<PaperId>> = {};
-      trends
-        .filter((row) => yearSet.has(row.year))
-        .forEach((row) => (counts[row.topic] ??= new Set()).add(row.paper_id));
-      return counts;
-    };
-
-    const earlyCounts = countIn(early);
-    const lateCounts = countIn(late);
-    const topics = new Set([...Object.keys(earlyCounts), ...Object.keys(lateCounts)]);
-
-    const shifts = [...topics]
-      .map((topic) => ({
-        topic,
-        change: (lateCounts[topic]?.size ?? 0) - (earlyCounts[topic]?.size ?? 0),
-      }))
-      .sort((left, right) => right.change - left.change);
-
-    return {
-      emerging: shifts.filter((shift) => shift.change > 0).slice(0, effectiveShiftN),
-      declining: shifts
-        .filter((shift) => shift.change < 0)
-        .slice(-effectiveShiftN)
-        .reverse(),
-    };
-  }, [effectiveShiftN, trends]);
+  const topThemes = useMemo(
+    () =>
+      themePaperCounts(subjects)
+        .filter((entry) => entry.papers >= 2)
+        .slice(0, effectiveTopN)
+        .map((entry) => entry.topic),
+    [effectiveTopN, subjects]
+  );
+  const byYear = useMemo(() => themePapersByYear(subjects, topThemes, axis.years), [axis.years, subjects, topThemes]);
+  const shifts = useMemo(() => themeShifts(subjects), [subjects]);
 
   if (trends.length === 0) {
     return (
       <div className="app-surface px-5 py-5">
-        <p className="text-sm text-slate-500 dark:text-slate-400">
-          No data for the selected filters.
-        </p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">No data for the selected filters.</p>
+      </div>
+    );
+  }
+
+  const periods = shifts.periods;
+  const gaining = shifts.emerging.map((shift) => shift.topic);
+  const losing = shifts.declining.map((shift) => shift.topic);
+  // Three by name and a count of the rest: the sentence named three while the
+  // chart below it drew four.
+  const named = (topics: string[]) =>
+    topics.length <= 3 ? listOf(topics) : `${topics.slice(0, 3).join(", ")} and ${plural(topics.length - 3, "other")}`;
+  const takeaway = !periods
+    ? "Too few dated years to compare periods: at least two are needed."
+    : gaining.length + losing.length === 0
+      ? `Comparing ${periods.earlyLabel} (${plural(periods.earlyPapers, "paper")}) with ${periods.lateLabel} (${periods.latePapers}), no theme has shifted by a paper or more beyond what the period sizes predict${shifts.judged === 0 ? ` - none yet has the ${SHIFT_MIN_PAPERS} papers a shift needs` : ""}.`
+      : `Comparing ${periods.earlyLabel} (${plural(periods.earlyPapers, "paper")}) with ${periods.lateLabel} (${periods.latePapers}): ${
+          gaining.length > 0 ? `${named(gaining)} ${gaining.length === 1 ? "is" : "are"} gaining ground` : ""
+        }${gaining.length > 0 && losing.length > 0 ? "; " : ""}${
+          losing.length > 0 ? `${named(losing)} ${losing.length === 1 ? "is" : "are"} losing it` : ""
+        }.`;
+
+  const shiftRows = (items: ThemeShift[]) =>
+    items.slice(0, 8).map((shift) => ({
+      topic: shift.topic,
+      earlier: Math.round(shift.earlyShare * 1000) / 10,
+      later: Math.round(shift.lateShare * 1000) / 10,
+      early: shift.early,
+      late: shift.late,
+      paperIds: shift.paperIds,
+    }));
+
+  function renderShiftChart(title: string, items: ThemeShift[]) {
+    const rows = shiftRows(items);
+    if (rows.length === 0 || !periods) return null;
+    return (
+      <div>
+        <p className="mb-3 text-sm font-medium text-slate-800 dark:text-[#e5e5e5]">{title}</p>
+        <div style={{ height: Math.max(150, rows.length * 56 + 60) }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={rows} layout="vertical" margin={{ left: 8, right: 24 }}>
+              <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke={ct.grid} />
+              <XAxis type="number" unit="%" tick={tickStyle(ct, 11)} stroke={ct.axisLine} />
+              <YAxis
+                type="category"
+                dataKey="topic"
+                width={shiftLabels.width}
+                tick={tickStyle(ct, 11)}
+                tickFormatter={(value) => truncate(String(value), shiftLabels.chars)}
+                stroke={ct.axisLine}
+              />
+              <Tooltip
+                formatter={(value, name, item) => {
+                  const payload = (item as { payload?: { early: number; late: number } })?.payload;
+                  const count = name === "earlier" ? payload?.early : payload?.late;
+                  return [`${value}% (${plural(Number(count ?? 0), "paper")})`, name === "earlier" ? periods.earlyLabel : periods.lateLabel];
+                }}
+              />
+              <Legend
+                wrapperStyle={{ fontSize: 11 }}
+                formatter={legendLabel(ct, 60, (value) =>
+                  value === "earlier" ? `${periods.earlyLabel} (${periods.earlyPapers} papers)` : `${periods.lateLabel} (${periods.latePapers} papers)`
+                )}
+              />
+              <Bar
+                dataKey="earlier"
+                fill={ct.barFillMuted}
+                radius={[0, 4, 4, 0]}
+                onClick={(entry) => {
+                  const row = entry as { topic?: string; paperIds?: string[] };
+                  if (row?.topic) onDrilldown?.({ topic: row.topic, paperIds: row.paperIds });
+                }}
+                className={onDrilldown ? "cursor-pointer" : undefined}
+              />
+              <Bar
+                dataKey="later"
+                fill={ct.barFill}
+                radius={[0, 4, 4, 0]}
+                onClick={(entry) => {
+                  const row = entry as { topic?: string; paperIds?: string[] };
+                  if (row?.topic) onDrilldown?.({ topic: row.topic, paperIds: row.paperIds });
+                }}
+                className={onDrilldown ? "cursor-pointer" : undefined}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     );
   }
@@ -126,154 +168,92 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
   return (
     <div className="space-y-6">
       <section className="app-surface px-5 py-5">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-          Trend analysis
-        </h2>
-        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-          Follow topic movement and keyword intensity across the selected year range.
-        </p>
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Trend analysis</h2>
+        <Takeaway>{takeaway}</Takeaway>
       </section>
 
       {orderedCharts.includes("topic_area") ? (
         <section className="app-surface px-5 py-5">
           <div className="flex flex-wrap items-center gap-3">
-            <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-              Topic trends over time
-            </h3>
+            <h3 className="text-base font-semibold text-slate-900 dark:text-white">Themes by year</h3>
             {!topicAreaConfig?.top_n ? (
-              <>
-                <label className="text-xs text-slate-500 dark:text-slate-400">
-                  Top topics: {topN}
-                </label>
+              <label className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-400">
+                Themes shown: {topN}
                 <input
                   type="range"
                   min={3}
-                  max={25}
+                  max={15}
                   value={topN}
                   onChange={(event) => setTopN(+event.target.value)}
-                  className="w-40"
+                  className="h-6 w-32"
                 />
-              </>
-            ) : (
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Top topics: {effectiveTopN}
-              </span>
-            )}
+              </label>
+            ) : null}
           </div>
-
-          <div className="mt-4 h-[360px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={areaData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <Tooltip />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                {topTopics.map((topic, index) => (
-                  <Area
-                    key={topic}
-                    type="monotone"
-                    dataKey={topic}
-                    stackId="1"
-                    stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    fillOpacity={0.55}
-                    onClick={(entry) => {
-                      const year =
-                        entry && "year" in entry ? String(entry.year) : undefined;
-                      onDrilldown?.({ topic, year });
-                    }}
-                    className={onDrilldown ? "cursor-pointer" : undefined}
-                  />
-                ))}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Papers per year in the themes shared by two or more papers. Every year in the range has a slot, so a year with no papers shows as a gap.
+          </p>
+          {topThemes.length === 0 ? (
+            <p className="mt-4 text-sm text-slate-600 dark:text-[#bdbdbd]">
+              No theme is shared by two or more papers in the current filters, so there is no trend to draw.
+            </p>
+          ) : (
+            <div className="mt-4 h-[360px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={byYear}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                  <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
+                  <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                  <Tooltip />
+                  <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
+                  {topThemes.map((topic, index) => (
+                    <Bar
+                      key={topic}
+                      dataKey={topic}
+                      stackId="themes"
+                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
+                      onClick={(entry) => {
+                        const year = entry && "year" in entry ? String(entry.year) : undefined;
+                        onDrilldown?.({ topic, year });
+                      }}
+                      className={onDrilldown ? "cursor-pointer" : undefined}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+          {axis.empty.length > 0 || undated > 0 ? (
+            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">
+              {axis.empty.length > 0 ? `No papers from ${listOf(axis.empty)}. ` : ""}
+              {undated > 0 ? `${plural(undated, "paper")} without a readable year ${undated === 1 ? "is" : "are"} not drawn.` : ""}
+            </p>
+          ) : null}
         </section>
       ) : null}
 
-      {(orderedCharts.includes("emerging_topics") ||
-        orderedCharts.includes("declining_topics")) &&
-      (emerging.length > 0 || declining.length > 0) ? (
+      {orderedCharts.includes("emerging_topics") || orderedCharts.includes("declining_topics") ? (
         <section className="app-surface px-5 py-5">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Emerging and declining topics
-          </h3>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            Compares the first half and second half of the current selection.
+          <h3 className="text-base font-semibold text-slate-900 dark:text-white">Gaining and losing ground</h3>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500 dark:text-slate-400">
+            {periods
+              ? `The collection split where its dated papers halve: ${periods.earlyLabel} (${periods.earlyPapers} papers) and ${periods.lateLabel} (${periods.latePapers}). A theme is shown when it has at least ${SHIFT_MIN_PAPERS} papers, has at least one paper more (or fewer) in the later period than the two period sizes alone predict, and would still lean the same way if any one of its papers were removed. Bars show each theme's share of each period's papers.`
+              : "Needs papers from at least two different years."}
           </p>
-
-          <div className="mt-5 grid gap-6 xl:grid-cols-2">
-            {orderedCharts.includes("emerging_topics") && emerging.length > 0 ? (
-              <div>
-                <p className="mb-3 text-sm font-medium text-blue-700 dark:text-blue-300">
-                  Emerging
-                </p>
-                <div className="h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={emerging} layout="vertical" margin={{ left: 10, right: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                      <XAxis type="number" tick={tickStyle(ct, 11)} stroke={ct.axisLine} />
-                      <YAxis
-                        type="category"
-                        dataKey="topic"
-                        width={180}
-                        tick={tickStyle(ct, 11)}
-                        stroke={ct.axisLine}
-                      />
-                      <Tooltip />
-                      <Bar
-                        dataKey="change"
-                        fill="#10b981"
-                        radius={[0, 6, 6, 0]}
-                        onClick={(entry) => {
-                          if (entry && "topic" in entry) {
-                            onDrilldown?.({ topic: String(entry.topic) });
-                          }
-                        }}
-                        className={onDrilldown ? "cursor-pointer" : undefined}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-
-            {orderedCharts.includes("declining_topics") && declining.length > 0 ? (
-              <div>
-                <p className="mb-3 text-sm font-medium text-rose-700 dark:text-rose-400">
-                  Declining
-                </p>
-                <div className="h-[320px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={declining} layout="vertical" margin={{ left: 10, right: 20 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
-                      <XAxis type="number" tick={tickStyle(ct, 11)} stroke={ct.axisLine} />
-                      <YAxis
-                        type="category"
-                        dataKey="topic"
-                        width={180}
-                        tick={tickStyle(ct, 11)}
-                        stroke={ct.axisLine}
-                      />
-                      <Tooltip />
-                      <Bar
-                        dataKey="change"
-                        fill="#f43f5e"
-                        radius={[0, 6, 6, 0]}
-                        onClick={(entry) => {
-                          if (entry && "topic" in entry) {
-                            onDrilldown?.({ topic: String(entry.topic) });
-                          }
-                        }}
-                        className={onDrilldown ? "cursor-pointer" : undefined}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            ) : null}
-          </div>
+          {shifts.emerging.length + shifts.declining.length > 0 ? (
+            <div className={`mt-5 grid gap-6 ${shifts.emerging.length > 0 && shifts.declining.length > 0 ? "xl:grid-cols-2" : ""}`}>
+              {orderedCharts.includes("emerging_topics") ? renderShiftChart("Gaining ground", shifts.emerging) : null}
+              {orderedCharts.includes("declining_topics") ? renderShiftChart("Losing ground", shifts.declining) : null}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-slate-600 dark:text-[#bdbdbd]">
+              {periods
+                ? shifts.judged === 0
+                  ? `No theme has the ${SHIFT_MIN_PAPERS} or more papers needed to judge a shift.`
+                  : `Of ${plural(shifts.judged, "theme")} with ${SHIFT_MIN_PAPERS} or more papers, none has shifted by a paper or more beyond what the period sizes predict. That is itself a finding: the themes here are holding steady.`
+                : "There is only one dated year in the current filters."}
+            </p>
+          )}
         </section>
       ) : null}
     </div>

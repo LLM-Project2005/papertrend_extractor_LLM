@@ -12,14 +12,28 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import Link from "next/link";
 import MetricCard from "@/components/MetricCard";
+import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
 import { normalizeCategoryKey, type CategoryOption } from "@/lib/category-options";
+import {
+  keywordPaperCounts,
+  likelyDuplicatePapers,
+  listOf,
+  methodRows,
+  plural,
+  subjectRows,
+  themePaperCounts,
+  undatedPaperCount,
+  yearAxis,
+} from "@/lib/dashboard-analytics";
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationChartKey } from "@/types/visualization";
 import { isDatedYear } from "@/lib/dated-year";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 
 interface Props {
   trends: TrendRow[];
@@ -29,14 +43,22 @@ interface Props {
   categoryOptions?: CategoryOption[];
   selectedTracks: string[];
   categoryLabels?: Record<TrackKey, string>;
-  useMock: boolean;
+  /** False when the repository does not classify papers. */
+  classificationEnabled?: boolean;
   visibleCharts?: VisualizationChartKey[];
   onDrilldown?: (target: {
     track?: string;
     year?: string;
     topic?: string;
     keyword?: string;
+    paperIds?: string[];
   }) => void;
+}
+
+const TOP_THEMES = 10;
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
 }
 
 export default function Overview({
@@ -47,45 +69,43 @@ export default function Overview({
   categoryOptions = [],
   selectedTracks,
   categoryLabels,
-  useMock,
+  classificationEnabled = true,
   visibleCharts,
   onDrilldown,
 }: Props) {
   const { theme, hydrated } = useTheme();
   const isDark = hydrated && theme === "dark";
-  const nPapers = new Set([
-    ...trends.map((row) => row.paper_id),
-    ...tracksSingle.map((row) => row.paper_id),
-    ...tracksMulti.map((row) => row.paper_id),
-    ...categoryAssignments.map((row) => row.paper_id),
-  ]).size;
-  const nTopics = new Set(trends.map((row) => row.topic)).size;
-  const nKeywords = new Set(trends.map((row) => row.keyword)).size;
-  const years = [
-    ...new Set([
-      ...trends.map((row) => row.year),
-      ...tracksSingle.map((row) => row.year),
-      ...tracksMulti.map((row) => row.year),
-      ...categoryAssignments.map((row) => row.year),
-    ]),
-  ]
-    .filter(isDatedYear)
-    .sort();
-  const yearSpan =
-    years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data";
+  const ct = chartTheme(isDark);
+  const themeLabels = labelColumn(useIsNarrow(), { width: 300, chars: 46 });
 
-  const papersByYear = Object.entries(
-    [...trends, ...tracksSingle, ...tracksMulti, ...categoryAssignments].reduce<Record<string, Set<PaperId>>>(
-      (accumulator, row) => {
-        (accumulator[row.year] ??= new Set()).add(row.paper_id);
-        return accumulator;
-      },
-      {}
-    )
-  )
-    .filter(([year]) => isDatedYear(year))
-    .map(([year, ids]) => ({ year, papers: ids.size }))
-    .sort((left, right) => left.year.localeCompare(right.year));
+  const allRows = [...trends, ...tracksSingle, ...tracksMulti, ...categoryAssignments];
+  const nPapers = new Set(allRows.map((row) => row.paper_id)).size;
+  const subjects = subjectRows(trends);
+  const themes = themePaperCounts(subjects);
+  const methods = themePaperCounts(methodRows(trends));
+  // Counted exactly as the Keyword Explorer counts them - subject rows, spacing
+  // and case folded - so the two tabs never disagree (they said 623 and 523).
+  const nKeywords = keywordPaperCounts(subjects).length;
+  const dated = [...new Set(allRows.map((row) => row.year))].filter(isDatedYear).sort();
+  const yearSpan = dated.length > 0 ? (dated[0] === dated[dated.length - 1] ? dated[0] : `${dated[0]}–${dated[dated.length - 1]}`) : "No dated papers";
+  const undated = undatedPaperCount(allRows as TrendRow[]);
+
+  const papersByYearMap = allRows.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+    (accumulator[row.year] ??= new Set()).add(row.paper_id);
+    return accumulator;
+  }, {});
+  // Every year in the range gets a slot, so a gap in publishing is visible as a
+  // gap rather than two distant years drawn as neighbours.
+  const axis = yearAxis(dated);
+  const papersByYear = axis.years.map((year) => ({ year, papers: papersByYearMap[year]?.size ?? 0 }));
+  const peak = papersByYear.reduce<{ year: string; papers: number } | null>(
+    (best, entry) => (!best || entry.papers > best.papers ? entry : best),
+    null
+  );
+
+  const shared = themes.filter((entry) => entry.papers >= 2);
+  const duplicates = likelyDuplicatePapers(trends);
+  const topThemes = themes.slice(0, TOP_THEMES);
 
   const buildDynamicDonut = (assignmentType: "single" | "multi") => {
     const optionKeys = new Set(categoryOptions.map((category) => category.key));
@@ -130,9 +150,8 @@ export default function Overview({
     }));
 
   const hasDynamicCategories = categoryAssignments.length > 0;
-  const donutSingle = hasDynamicCategories ? buildDynamicDonut("single") : buildLegacyDonut(tracksSingle);
-  const donutMulti = hasDynamicCategories ? buildDynamicDonut("multi") : buildLegacyDonut(tracksMulti);
-  const ct = chartTheme(isDark);
+  const donutSingle = !classificationEnabled ? [] : hasDynamicCategories ? buildDynamicDonut("single") : buildLegacyDonut(tracksSingle);
+  const donutMulti = !classificationEnabled ? [] : hasDynamicCategories ? buildDynamicDonut("multi") : buildLegacyDonut(tracksMulti);
   const orderedCharts =
     visibleCharts?.filter((chart): chart is VisualizationChartKey =>
       [
@@ -259,14 +278,81 @@ export default function Overview({
     );
   }
 
+  function renderTopThemes() {
+    if (topThemes.length === 0) return null;
+    return (
+      <section key="top_themes" className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+        <h3 className="text-base font-semibold text-slate-900 dark:text-white">What this repository studies</h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Themes by number of papers. Each theme gathers topics from different papers that share a research focus.
+        </p>
+        <div className="mt-4" style={{ height: Math.max(160, topThemes.length * 34 + 40) }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={topThemes} layout="vertical" margin={{ left: 8, right: 24 }}>
+              <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke={ct.grid} />
+              <XAxis type="number" allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+              <YAxis
+                type="category"
+                dataKey="topic"
+                width={themeLabels.width}
+                tick={tickStyle(ct, 12)}
+                tickFormatter={(value) => truncate(String(value), themeLabels.chars)}
+                stroke={ct.axisLine}
+              />
+              <Tooltip {...tooltipTheme} />
+              <Bar
+                dataKey="papers"
+                name="Papers"
+                fill={ct.barFill}
+                radius={[0, 6, 6, 0]}
+                onClick={(entry) => {
+                  if (entry && "topic" in entry) onDrilldown?.({ topic: String(entry.topic) });
+                }}
+                className={onDrilldown ? "cursor-pointer" : undefined}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </section>
+    );
+  }
+
+  function renderMethods() {
+    if (methods.length === 0) return null;
+    return (
+      <section key="methods" className="app-surface px-4 py-4 sm:px-5 sm:py-5">
+        <h3 className="text-base font-semibold text-slate-900 dark:text-white">How these studies were done</h3>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          Research designs and instruments, kept apart from the themes above so they do not crowd out what was studied.
+        </p>
+        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+          {methods.slice(0, 8).map((entry) => (
+            <li key={entry.topic}>
+              <button
+                type="button"
+                onClick={() => onDrilldown?.({ topic: entry.topic })}
+                className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+              >
+                <span className="font-medium text-slate-900 dark:text-[#ececec]">{entry.topic}</span>
+                <span className="flex-none text-xs text-slate-600 dark:text-[#a3a3a3]">{plural(entry.papers, "paper")}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
+
   function renderChart(chartKey: VisualizationChartKey) {
     if (chartKey === "overview_metrics") {
       return (
         <div key={chartKey} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard label="Total papers" value={nPapers} />
-          <MetricCard label="Unique topics" value={nTopics} />
-          <MetricCard label="Unique keywords" value={nKeywords} />
-          <MetricCard label="Coverage" value={yearSpan} />
+          <MetricCard label="Papers" value={nPapers} />
+          {/* "Themes 39" next to "Papers 39" read like a bug; how many themes
+              connect papers is the number the grouping exists to produce. */}
+          <MetricCard label="Shared themes" value={shared.length} />
+          <MetricCard label="Keywords" value={nKeywords} />
+          <MetricCard label="Years covered" value={yearSpan} />
         </div>
       );
     }
@@ -277,17 +363,18 @@ export default function Overview({
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
             Papers published per year
           </h3>
-          <div className="mt-4 h-[320px]">
+          <div className="mt-4 h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={papersByYear}>
-                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
-                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
+                <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip {...tooltipTheme} />
                 <Bar
                   dataKey="papers"
+                  name="Papers"
                   fill={ct.barFill}
-                  radius={[8, 8, 0, 0]}
+                  radius={[6, 6, 0, 0]}
                   onClick={(entry) => {
                     if (entry && "year" in entry) {
                       onDrilldown?.({ year: String(entry.year) });
@@ -298,11 +385,21 @@ export default function Overview({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          {axis.empty.length > 0 || undated > 0 ? (
+            <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">
+              {axis.empty.length > 0 ? `No papers from ${listOf(axis.empty)}. ` : ""}
+              {undated > 0
+                ? `${plural(undated, "paper")} ${undated === 1 ? "has" : "have"} no readable publication year and ${undated === 1 ? "is" : "are"} not drawn here.`
+                : ""}
+            </p>
+          ) : null}
         </section>
       );
     }
 
-    if (chartKey === "track_single_breakdown" && donutSingle.some((item) => item.value > 0)) {
+    if (chartKey === "track_single_breakdown") {
+      if (!classificationEnabled) return <div key={chartKey}><CategoriesOffNotice compact /></div>;
+      if (!donutSingle.some((item) => item.value > 0)) return null;
       return (
         <div key={chartKey}>
           {renderTrackBreakdown(
@@ -314,7 +411,7 @@ export default function Overview({
       );
     }
 
-    if (chartKey === "track_multi_breakdown" && donutMulti.some((item) => item.value > 0)) {
+    if (chartKey === "track_multi_breakdown" && classificationEnabled && donutMulti.some((item) => item.value > 0)) {
       return (
         <div key={chartKey}>
           {renderTrackBreakdown(
@@ -329,23 +426,74 @@ export default function Overview({
     return null;
   }
 
+  const leaders = shared.slice(0, 3).map((entry) => `${entry.topic} (${entry.papers})`);
+
   return (
     <div className="space-y-5">
       <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
         <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
           Overview
         </h2>
-        <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-          A quick read on corpus coverage, publication volume, and category balance.
-        </p>
-        {useMock && (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-            Preview data is active. Real results will replace this after Supabase is populated.
-          </div>
+        {nPapers === 0 ? (
+          <Takeaway>No papers match the current filters.</Takeaway>
+        ) : (
+          <Takeaway>
+            {plural(nPapers, "paper")}
+            {dated.length > 0 ? `, published ${yearSpan}` : ""}
+            {peak && peak.papers > 1 && papersByYear.length > 2 ? `, most in ${peak.year} (${peak.papers})` : ""}.{" "}
+            {leaders.length > 0
+              ? `The largest themes are ${listOf(leaders)}; ${plural(shared.length, "theme")} ${shared.length === 1 ? "is" : "are"} shared by two or more papers.`
+              : "No theme is shared by more than one paper yet."}
+          </Takeaway>
         )}
       </section>
 
-      {orderedCharts.map((chartKey) => renderChart(chartKey))}
+      {duplicates.length > 0 ? (
+        <details className="app-surface group px-4 py-3 sm:px-5">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm text-slate-800 dark:text-[#e5e5e5]">
+            <span>
+              <span className="font-semibold">
+                {plural(duplicates.length, "paper")} {duplicates.length === 1 ? "looks" : "look"} like a second copy of another paper here.
+              </span>{" "}
+              Each is counted twice in every chart.
+            </span>
+            <span className="flex-none text-sm font-medium text-slate-900 underline underline-offset-4 dark:text-white">
+              <span className="group-open:hidden">Show which</span>
+              <span className="hidden group-open:inline">Hide</span>
+            </span>
+          </summary>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-[#bdbdbd]">
+            Their titles nearly match another paper&apos;s. If they are the same study, removing one copy from the Library corrects the counts.
+          </p>
+          <ul className="mt-3 space-y-2 pb-2">
+            {duplicates.slice(0, 12).map((duplicate) => (
+              <li
+                key={duplicate.paperId}
+                className="flex flex-col gap-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-[#1f1f1f] sm:flex-row sm:items-center sm:justify-between"
+              >
+                <span className="min-w-0 text-slate-800 dark:text-[#e5e5e5]">
+                  <span className="font-medium">{duplicate.title}</span>
+                  {duplicate.title === duplicate.originalTitle ? " (same title as another upload)" : ` \u2014 matches "${duplicate.originalTitle}"`}
+                </span>
+                <Link
+                  href={`/workspace/library?paperId=${duplicate.paperId}`}
+                  className="inline-flex min-h-9 flex-none items-center text-sm font-medium text-slate-900 underline underline-offset-4 dark:text-white"
+                >
+                  Open in Library
+                </Link>
+              </li>
+            ))}
+          </ul>
+          {duplicates.length > 12 ? (
+            <p className="pb-2 text-xs text-slate-600 dark:text-[#a3a3a3]">And {plural(duplicates.length - 12, "more")}.</p>
+          ) : null}
+        </details>
+      ) : null}
+
+      {orderedCharts.includes("overview_metrics") ? renderChart("overview_metrics") : null}
+      {renderTopThemes()}
+      {orderedCharts.filter((chart) => chart !== "overview_metrics").map((chartKey) => renderChart(chartKey))}
+      {renderMethods()}
     </div>
   );
 }
