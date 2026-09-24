@@ -19,6 +19,7 @@ import { useTheme } from "@/components/theme/ThemeProvider";
 import { TRACK_COLS, TRACK_COLORS, type TrackKey } from "@/lib/constants";
 import { normalizeCategoryKey, type CategoryOption } from "@/lib/category-options";
 import {
+  keywordPaperCounts,
   likelyDuplicatePapers,
   listOf,
   methodRows,
@@ -32,6 +33,7 @@ import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types
 import type { VisualizationChartKey } from "@/types/visualization";
 import { isDatedYear } from "@/lib/dated-year";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 
 interface Props {
   trends: TrendRow[];
@@ -74,13 +76,16 @@ export default function Overview({
   const { theme, hydrated } = useTheme();
   const isDark = hydrated && theme === "dark";
   const ct = chartTheme(isDark);
+  const themeLabels = labelColumn(useIsNarrow(), { width: 300, chars: 46 });
 
   const allRows = [...trends, ...tracksSingle, ...tracksMulti, ...categoryAssignments];
   const nPapers = new Set(allRows.map((row) => row.paper_id)).size;
   const subjects = subjectRows(trends);
   const themes = themePaperCounts(subjects);
   const methods = themePaperCounts(methodRows(trends));
-  const nKeywords = new Set(trends.map((row) => row.keyword.trim().toLowerCase()).filter(Boolean)).size;
+  // Counted exactly as the Keyword Explorer counts them - subject rows, spacing
+  // and case folded - so the two tabs never disagree (they said 623 and 523).
+  const nKeywords = keywordPaperCounts(subjects).length;
   const dated = [...new Set(allRows.map((row) => row.year))].filter(isDatedYear).sort();
   const yearSpan = dated.length > 0 ? (dated[0] === dated[dated.length - 1] ? dated[0] : `${dated[0]}–${dated[dated.length - 1]}`) : "No dated papers";
   const undated = undatedPaperCount(allRows as TrendRow[]);
@@ -289,9 +294,9 @@ export default function Overview({
               <YAxis
                 type="category"
                 dataKey="topic"
-                width={230}
+                width={themeLabels.width}
                 tick={tickStyle(ct, 12)}
-                tickFormatter={(value) => truncate(String(value), 34)}
+                tickFormatter={(value) => truncate(String(value), themeLabels.chars)}
                 stroke={ct.axisLine}
               />
               <Tooltip {...tooltipTheme} />
@@ -343,7 +348,9 @@ export default function Overview({
       return (
         <div key={chartKey} className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Papers" value={nPapers} />
-          <MetricCard label="Themes" value={themes.length} />
+          {/* "Themes 39" next to "Papers 39" read like a bug; how many themes
+              connect papers is the number the grouping exists to produce. */}
+          <MetricCard label="Shared themes" value={shared.length} />
           <MetricCard label="Keywords" value={nKeywords} />
           <MetricCard label="Years covered" value={yearSpan} />
         </div>
@@ -442,19 +449,31 @@ export default function Overview({
       </section>
 
       {duplicates.length > 0 ? (
-        <section className="app-surface px-4 py-4 sm:px-5 sm:py-5">
-          <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            {plural(duplicates.length, "paper")} {duplicates.length === 1 ? "looks" : "look"} like a second copy of another paper here
-          </h3>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600 dark:text-[#bdbdbd]">
-            Their titles nearly match, so each of these studies is counted twice in every chart. If they are the same study, removing one copy from the Library corrects the counts.
+        <details className="app-surface group px-4 py-3 sm:px-5">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm text-slate-800 dark:text-[#e5e5e5]">
+            <span>
+              <span className="font-semibold">
+                {plural(duplicates.length, "paper")} {duplicates.length === 1 ? "looks" : "look"} like a second copy of another paper here.
+              </span>{" "}
+              Each is counted twice in every chart.
+            </span>
+            <span className="flex-none text-sm font-medium text-slate-900 underline underline-offset-4 dark:text-white">
+              <span className="group-open:hidden">Show which</span>
+              <span className="hidden group-open:inline">Hide</span>
+            </span>
+          </summary>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600 dark:text-[#bdbdbd]">
+            Their titles nearly match another paper&apos;s. If they are the same study, removing one copy from the Library corrects the counts.
           </p>
-          <ul className="mt-3 space-y-2">
-            {duplicates.slice(0, 8).map((duplicate) => (
-              <li key={duplicate.paperId} className="flex flex-col gap-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-[#1f1f1f] sm:flex-row sm:items-center sm:justify-between">
+          <ul className="mt-3 space-y-2 pb-2">
+            {duplicates.slice(0, 12).map((duplicate) => (
+              <li
+                key={duplicate.paperId}
+                className="flex flex-col gap-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm dark:border-[#1f1f1f] sm:flex-row sm:items-center sm:justify-between"
+              >
                 <span className="min-w-0 text-slate-800 dark:text-[#e5e5e5]">
                   <span className="font-medium">{duplicate.title}</span>
-                  {duplicate.title === duplicate.originalTitle ? " (same title as another upload)" : ` — matches "${duplicate.originalTitle}"`}
+                  {duplicate.title === duplicate.originalTitle ? " (same title as another upload)" : ` \u2014 matches "${duplicate.originalTitle}"`}
                 </span>
                 <Link
                   href={`/workspace/library?paperId=${duplicate.paperId}`}
@@ -465,10 +484,10 @@ export default function Overview({
               </li>
             ))}
           </ul>
-          {duplicates.length > 8 ? (
-            <p className="mt-2 text-xs text-slate-600 dark:text-[#a3a3a3]">And {plural(duplicates.length - 8, "more")}.</p>
+          {duplicates.length > 12 ? (
+            <p className="pb-2 text-xs text-slate-600 dark:text-[#a3a3a3]">And {plural(duplicates.length - 12, "more")}.</p>
           ) : null}
-        </section>
+        </details>
       ) : null}
 
       {orderedCharts.includes("overview_metrics") ? renderChart("overview_metrics") : null}

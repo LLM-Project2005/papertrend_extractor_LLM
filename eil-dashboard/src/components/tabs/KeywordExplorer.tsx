@@ -37,6 +37,7 @@ import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
 
@@ -107,6 +108,7 @@ export default function KeywordExplorer({
 }: Props) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
+  const keywordLabels = labelColumn(useIsNarrow(), { width: 210, chars: 32 });
   const { session } = useAuth();
   const [query, setQuery] = useState("");
   const [treeN, setTreeN] = useState(30);
@@ -640,9 +642,9 @@ export default function KeywordExplorer({
                 <YAxis
                   type="category"
                   dataKey="keyword"
-                  width={210}
+                  width={keywordLabels.width}
                   tick={tickStyle(ct, 12)}
-                  tickFormatter={(value) => truncate(String(value), 32)}
+                  tickFormatter={(value) => truncate(String(value), keywordLabels.chars)}
                   stroke={ct.axisLine}
                 />
                 <Tooltip

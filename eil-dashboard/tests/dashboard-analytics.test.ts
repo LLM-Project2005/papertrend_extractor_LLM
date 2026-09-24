@@ -227,3 +227,17 @@ test("chart controls are at least 24px tall, and the treemap root draws nothing 
   }
   assert.match(read("src/components/tabs/KeywordExplorer.tsx"), /if \(depth === 0\) return null;/);
 });
+
+test("horizontal bar charts give their bars room on a phone (U5)", () => {
+  // At 390px a 210-300px name column left the bars about sixty pixels.
+  for (const file of [
+    "src/components/tabs/Overview.tsx",
+    "src/components/tabs/TrendAnalysis.tsx",
+    "src/components/tabs/KeywordExplorer.tsx",
+    "src/components/dashboard/AdaptiveDashboardTab.tsx",
+  ]) {
+    assert.match(read(file), /labelColumn\(useIsNarrow\(\), \{ width: \d+, chars: \d+ \}\)/, file);
+  }
+  const heatmap = read("src/components/Heatmap.tsx");
+  assert.match(heatmap, /sticky left-0 z-10 max-w-\[9rem\] truncate/, "heatmap names stay put while years scroll");
+});

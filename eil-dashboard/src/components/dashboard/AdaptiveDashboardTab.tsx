@@ -21,6 +21,7 @@ import type { DashboardData, PaperId, TrendRow, TrackRow } from "@/types/databas
 import type { NormalizedAnalyticsPayload, VisualizationPlanSection } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 
 const STRICT_MIN_TOPIC_PAPER_SUPPORT = 2;
@@ -68,6 +69,7 @@ export default function AdaptiveDashboardTab({
 }) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
+  const categoryLabels = labelColumn(useIsNarrow(), { width: 210, chars: 30 });
   // Dated years only. Every use of this list is a temporal axis - the
   // heatmap columns, the momentum series, and the early/late split that
   // decides what counts as emerging - and "Unknown" sorts after "2026",
@@ -153,7 +155,7 @@ export default function AdaptiveDashboardTab({
               <BarChart data={chartData} layout="vertical" margin={{ left: 18, right: 20 }}>
                 <CartesianGrid horizontal={false} stroke={ct.grid} strokeDasharray="3 3" />
                 <XAxis type="number" allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <YAxis type="category" dataKey="topic" width={210} tick={tickStyle(ct, 11)} tickFormatter={(value) => truncateLabel(String(value), 30)} stroke={ct.axisLine} />
+                <YAxis type="category" dataKey="topic" width={categoryLabels.width} tick={tickStyle(ct, 11)} tickFormatter={(value) => truncateLabel(String(value), categoryLabels.chars)} stroke={ct.axisLine} />
                 <Tooltip />
                 <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[0, 6, 6, 0]} />
               </BarChart>
@@ -300,8 +302,9 @@ export default function AdaptiveDashboardTab({
                 <YAxis
                   type="category"
                   dataKey="topic"
-                  width={190}
+                  width={categoryLabels.width}
                   tick={tickStyle(ct, 11)}
+                  tickFormatter={(value) => truncateLabel(String(value), categoryLabels.chars)}
                   stroke={ct.axisLine}
                 />
                 <Tooltip formatter={(value, name) => [`${value}%`, name === "earlier" ? shifts.periods?.earlyLabel ?? "Earlier" : shifts.periods?.lateLabel ?? "Later"]} />
