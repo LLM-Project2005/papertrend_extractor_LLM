@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
+import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
   ChartIcon,
   CloseIcon,
@@ -579,18 +580,17 @@ export default function PaperAnalysisExplorerModal({
                   </button>
                 ) : null}
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                  {run.status === "succeeded" ? "Pipeline analysis ready" : run.status}
+                  {run.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(run)}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                  <ChartIcon className="h-3.5 w-3.5" />
-                  <span>
-                    {detail?.diagnostics?.dataSource === "canonical"
-                      ? "Canonical node output"
-                      : detail?.available
-                        ? "Recovered node output"
-                        : "Preview only"}
+                {/* Where the rows came from matters only when it is not the
+                    paper's own finished analysis; the old chip named pipeline
+                    internals, which told a reader nothing. */}
+                {detail?.diagnostics?.dataSource !== "canonical" ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                    <ChartIcon className="h-3.5 w-3.5" />
+                    <span>{detail?.available ? "Recovered from an earlier analysis" : "Not analyzed yet"}</span>
                   </span>
-                </span>
+                ) : null}
               </div>
               {trackBadges.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -616,7 +616,9 @@ export default function PaperAnalysisExplorerModal({
             </button>
           </div>
 
-          <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1">
+          {/* Wraps rather than scrolling: on a phone a sideways-scrolling row
+              looked like two buttons with a third cut off. */}
+          <div className="mt-5 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onDownloadReport}
