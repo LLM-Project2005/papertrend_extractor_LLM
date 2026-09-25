@@ -35,6 +35,7 @@ from analysis_pipeline import (
     process_pdf_run,
 )
 from analysis_pipeline.duplicates import find_duplicate, text_fingerprint
+from analysis_pipeline.reanalysis import earlier_results_kept, failed_reanalysis_payload
 from supabase_http import build_retrying_session
 from database_client import create_worker_database_client
 
@@ -1705,6 +1706,38 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
                     extra={"run_id": run_id, "status": latest_run.get("status")},
                 )
                 return True
+
+            kept = earlier_results_kept(claimed)
+            if kept is not None:
+                try:
+                    failed_at = now_iso()
+                    client.update_run(
+                        run_id,
+                        {
+                            "status": "succeeded",
+                            "completed_at": kept.get("completed_at") or failed_at,
+                            "error_message": None,
+                            "input_payload": merge_input_payload(
+                                claimed,
+                                {
+                                    **failed_reanalysis_payload(message, failed_at),
+                                    **build_lifecycle_payload("completed"),
+                                },
+                            ),
+                        },
+                    )
+                    sync_folder_analysis_job(client, claimed)
+                    resume_waiting_research_sessions_for_folder(client, claimed)
+                    logger.warning(
+                        "re-analysis failed; earlier results kept",
+                        extra={"run_id": run_id, "error_message": message},
+                    )
+                    return True
+                except Exception as keep_error:
+                    logger.error(
+                        "failed to keep earlier results after a failed re-analysis",
+                        extra={"run_id": run_id, "update_error_message": str(keep_error)},
+                    )
 
             try:
                 client.update_run(
