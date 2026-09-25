@@ -26,8 +26,22 @@ test("re-analysis is scoped to the verified owner's finished papers", async () =
   assert.match(route, /getAuthenticatedUserFromRequest\(request\)/);
   assert.match(route, /queueReanalysis\(\s*user\.id,/);
   assert.doesNotMatch(route, /ownerUserId:\s*body/);
-  assert.match(repository, /ir\.owner_user_id = \$1 AND ir\.status = 'succeeded' AND ir\.trashed_at IS NULL/);
+  assert.match(repository, /ir\.owner_user_id = \$1 AND ir\.trashed_at IS NULL/);
   assert.match(repository, /rf\.owner_user_id = \$1 AND rf\.project_id/);
+  // A failed paper can be tried again when picked on its own; a whole
+  // repository is re-analysed from its finished papers only.
+  assert.match(repository, /scope = `ir\.id = ANY\(\$\$\{values\.length\}::uuid\[\]\) AND ir\.status IN \('succeeded', 'failed'\)`/);
+  assert.match(repository, /scope = `ir\.status = 'succeeded' AND ir\.folder_id IN/);
+});
+
+test("a failed re-analysis keeps the paper's earlier results", async () => {
+  const worker = await readFile(new URL("../worker/process_ingestion_queue.py", import.meta.url), "utf8");
+  const failure = worker.slice(worker.indexOf("kept = earlier_results_kept(claimed)"));
+  assert.match(failure, /"status": "succeeded",[\s\S]{0,200}"error_message": None/);
+  assert.ok(failure.indexOf('"status": "succeeded"') < failure.indexOf('"status": "failed"'));
+  const library = await readFile(new URL("../src/components/admin/AdminImportClient.tsx", import.meta.url), "utf8");
+  assert.match(library, /Try again/);
+  assert.match(library, /reanalysis_failed_at/);
 });
 
 test("a correction is saved on the run so re-analysis keeps it", async () => {

@@ -960,6 +960,11 @@ export default function AdminImportClient() {
         // The worker compares each paper's text with the repository's other
         // papers and notes an earlier copy; the reader decides what to keep.
         const duplicateOf = run.input_payload?.duplicate_of as { title?: string } | null | undefined;
+        // A re-analysis that did not finish leaves the earlier results in
+        // place; the note lasts until the paper is queued again.
+        const failedAgainAt = String(run.input_payload?.reanalysis_failed_at ?? "");
+        const reanalysisFailed =
+          Boolean(failedAgainAt) && failedAgainAt >= String(run.input_payload?.reanalysis_requested_at ?? "");
         // A paper is listed by its title once analysed; the file it came in
         // stays underneath, so a search by file name still finds it.
         const shownName = titleOf(run);
@@ -977,9 +982,11 @@ export default function AdminImportClient() {
               ? `Possible copy of "${duplicateOf.title}"`
               : run.status !== "succeeded"
                 ? getRunStageMessage(run)
-                : secondaryName
-                  ? secondaryName
-                  : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
+                : reanalysisFailed
+                  ? "Analyzing again did not finish; the earlier results are shown. Try Analyze again later."
+                  : secondaryName
+                    ? secondaryName
+                    : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
         return {
           id: `file:${run.id}`,
           kind: "file",
@@ -1416,6 +1423,23 @@ export default function AdminImportClient() {
             className={itemClass}
           >
             Analyze again
+          </button>
+        ) : null}
+        {activeMenuRun.status === "failed" && !activeMenuRun.trashed_at && activeMenuRun.source_path ? (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await handleReanalyze({ runIds: [activeMenuRun.id] }, 1);
+              } catch (retryError) {
+                setError(retryError instanceof Error ? retryError.message : "The paper could not be queued.");
+              } finally {
+                setItemMenuState(null);
+              }
+            }}
+            className={itemClass}
+          >
+            Try again
           </button>
         ) : null}
         <button

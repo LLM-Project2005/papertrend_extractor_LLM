@@ -66,12 +66,14 @@ export class CloudSqlAnalysisJobRepository {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const values: unknown[] = [ownerUserId];
       let scope: string;
+      // A paper picked on its own may also be one that failed, so "Try again"
+      // works; a whole repository is re-analysed from its finished papers only.
       if (runIds.length) {
         values.push(runIds);
-        scope = `ir.id = ANY($${values.length}::uuid[])`;
+        scope = `ir.id = ANY($${values.length}::uuid[]) AND ir.status IN ('succeeded', 'failed')`;
       } else {
         values.push(selection.projectId);
-        scope = `ir.folder_id IN (SELECT rf.id FROM public.research_folders rf
+        scope = `ir.status = 'succeeded' AND ir.folder_id IN (SELECT rf.id FROM public.research_folders rf
                  WHERE rf.owner_user_id = $1 AND rf.project_id = $${values.length})`;
       }
       values.push(limit);
@@ -89,7 +91,7 @@ export class CloudSqlAnalysisJobRepository {
                   'progress_updated_at', $${values.length + 1}::text)
          WHERE ir.id IN (
            SELECT ir.id FROM public.ingestion_runs ir
-           WHERE ir.owner_user_id = $1 AND ir.status = 'succeeded' AND ir.trashed_at IS NULL
+           WHERE ir.owner_user_id = $1 AND ir.trashed_at IS NULL
              AND COALESCE(ir.source_path, '') <> '' AND ${scope}
            ORDER BY ir.created_at ASC LIMIT $${values.length})
          RETURNING ir.id`,

@@ -41,7 +41,7 @@ export async function POST(request: Request) {
     );
     if (!queued.length) {
       return NextResponse.json(
-        { error: "None of these papers can be analysed again: only finished papers with a stored file qualify." },
+        { error: "None of these papers can be analyzed again: only papers with a stored PDF that are finished (or, picked one by one, failed) qualify." },
         { status: 409 }
       );
     }
