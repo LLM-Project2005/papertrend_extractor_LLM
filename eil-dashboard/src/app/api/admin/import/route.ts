@@ -6,6 +6,7 @@ import {
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   MAX_FILES_PER_BATCH,
   hasPdfMagic,
@@ -73,8 +74,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = getSupabaseAdmin();
     const user = await getAuthenticatedUserFromRequest(request);
+    if (getDatabaseProvider() === "cloud-sql") {
+      // The owner comes from the verified session only; an admin-secret
+      // request without a user has no runs of its own to list.
+      const rows = user ? await cloudSqlIngestionRepository.listRecentRuns(user.id, 25) : [];
+      const runs = rows.map((run) => ({
+        ...run,
+        input_payload: trimStatusInputPayload(run.input_payload),
+      }));
+      return NextResponse.json({ runs });
+    }
+
+    const supabase = getSupabaseAdmin();
     let query = supabase
       .from("ingestion_runs")
       .select(

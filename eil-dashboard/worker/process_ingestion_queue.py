@@ -1548,6 +1548,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "paper_id": result.dataset["paper_id"],
                     "year": result.dataset.get("year"),
                     "year_resolution": result.dataset.get("year_resolution"),
+                    "analysis_quality": result.dataset.get("analysis_quality"),
                     "raw_text_length": len(result.raw_text),
                     "keyword_count": len(result.dataset["keywords"]),
                     "analysis_metrics": merge_analysis_metrics(

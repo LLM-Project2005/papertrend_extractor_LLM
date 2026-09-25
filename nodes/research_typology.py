@@ -234,6 +234,7 @@ def classify_research_typology_node(state: IngestionState) -> Dict[str, Any]:
                 verdict=f"Group {primary} - {GROUP_NAMES[primary]}. {rationale}",
                 classifier_source="heuristic_fallback",
             ),
-            "errors": [f"Research typology classification used a fallback: {error}"],
+            "warnings": [f"typology: the model failed, so a keyword rule chose the group ({str(error)[:160]})"],
+            "errors": [],
             "status": "typology_ready",
         }

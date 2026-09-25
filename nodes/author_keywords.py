@@ -173,6 +173,9 @@ def extract_author_keywords_node(state: IngestionState) -> Dict[str, Any]:
     except Exception as error:
         return {
             "author_keywords": fallback_rows,
-            "errors": [f"Author keyword extraction used a fallback: {error}"] if fallback_rows else [],
+            "warnings": [
+                f"author keywords: the model was unavailable, so the labelled list was split by rule ({str(error)[:160]})"
+            ],
+            "errors": [],
             "status": "author_keywords_ready",
         }

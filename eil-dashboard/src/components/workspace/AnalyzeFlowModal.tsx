@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/Icons";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
+import { putFileWithRetry } from "@/lib/upload-retry";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 
 type ImportSource =
@@ -429,22 +430,10 @@ export default function AnalyzeFlowModal({
           }
 
           try {
-            const uploadResponse = await fetch(uploadTarget.signedUrl, {
-              method: "PUT",
-              headers: {
-                "Content-Type": file.type || "application/pdf",
-                ...(uploadTarget.uploadHeaders ?? { "x-upsert": "false" }),
-              },
-              body: file,
+            await putFileWithRetry(uploadTarget.signedUrl, file, {
+              "Content-Type": file.type || "application/pdf",
+              ...(uploadTarget.uploadHeaders ?? { "x-upsert": "false" }),
             });
-
-            if (!uploadResponse.ok) {
-              const body = await uploadResponse.text();
-              throw new Error(
-                body ||
-                  `Storage upload failed with status ${uploadResponse.status} ${uploadResponse.statusText}.`
-              );
-            }
 
             uploaded.push({
               runId: uploadTarget.runId,

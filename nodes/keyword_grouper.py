@@ -181,7 +181,22 @@ def semantic_keyword_grouper_node(state: IngestionState) -> Dict[str, Any]:
             "status": "topics_grouped",
         }
     except Exception as error:
+        # Keep every keyword, each as its own topic, and say so; the dashboard's
+        # cross-paper grouping still gathers them into themes.
         return {
-            "errors": [f"Keyword grouping failed: {error}"],
-            "status": "failed",
+            "semantic_topics": [
+                {
+                    "label": str(candidate.get("keyword") or "").strip(),
+                    "keywords": [str(candidate.get("keyword") or "").strip()],
+                    "matched_terms": safe_json_list(candidate.get("matched_terms") or [], limit=20),
+                    "total_count": max(int(candidate.get("count") or 1), 1),
+                    "rationale": "Ungrouped: topic grouping was unavailable.",
+                    "evidence": safe_json_list([candidate.get("evidence") or ""], limit=6),
+                }
+                for candidate in candidates
+                if str(candidate.get("keyword") or "").strip()
+            ],
+            "warnings": [f"topic grouping: failed, so each keyword is its own topic ({str(error)[:160]})"],
+            "errors": [],
+            "status": "topics_grouped",
         }

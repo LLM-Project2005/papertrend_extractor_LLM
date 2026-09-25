@@ -15,6 +15,7 @@ def topic_labeler_node(state: IngestionState) -> Dict[str, Any]:
     structured_llm = topic_labeling_llm.with_structured_output(TopicLabelerSchema, method="json_schema")
     template = load_prompt("topic_labeler.txt")
     final_results: List[Dict[str, Any]] = []
+    warnings: List[str] = []
 
     for cluster in semantic_topics:
         input_data = (
@@ -37,7 +38,8 @@ def topic_labeler_node(state: IngestionState) -> Dict[str, Any]:
                     "status": "success",
                 }
             )
-        except Exception:
+        except Exception as error:
+            warnings.append(str(error)[:120])
             final_results.append(
                 {
                     "label": cluster.get("label", "Unlabeled concept"),
@@ -54,5 +56,13 @@ def topic_labeler_node(state: IngestionState) -> Dict[str, Any]:
         "final_labeled_topics": final_results,
         "status": "topics_labeled",
         "total_clusters_processed": len(final_results),
+        "warnings": (
+            [
+                f"topic labels: {len(warnings)} of {len(final_results)} topics kept their grouped phrase "
+                f"because labelling failed ({warnings[-1]})"
+            ]
+            if warnings
+            else []
+        ),
         "errors": [],
     }

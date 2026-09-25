@@ -19,7 +19,7 @@ GraphCheckpointCallback = Callable[[], None]
 
 def _merge_graph_update(merged_state: Dict[str, Any], node_update: Dict[str, Any]) -> None:
     for key, value in node_update.items():
-        if key in {"errors", "messages"}:
+        if key in {"errors", "messages", "warnings"}:
             merged_state[key] = [
                 *(merged_state.get(key) or []),
                 *(value or []),
@@ -51,6 +51,7 @@ def process_pdf_run(
         "folder_id": str(run.get("folder_id") or ""),
         "input_payload": run.get("input_payload") if isinstance(run.get("input_payload"), dict) else {},
         "errors": [],
+        "warnings": [],
         "messages": [],
         "status": "starting",
     }

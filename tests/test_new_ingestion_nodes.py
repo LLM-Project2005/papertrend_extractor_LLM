@@ -148,7 +148,8 @@ class NewIngestionNodeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "keywords_ready")
         self.assertTrue(result["keyword_candidates"])
-        self.assertIn("grounded fallback", result["errors"][0])
+        self.assertEqual(result["errors"], [])
+        self.assertIn("frequent phrases were taken from the text", result["warnings"][0])
         self.assertTrue(
             any("peer feedback" in row["keyword"].casefold() for row in result["keyword_candidates"])
         )

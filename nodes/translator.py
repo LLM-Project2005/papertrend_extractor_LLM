@@ -65,6 +65,7 @@ def smart_translate_node(state: IngestionState) -> Dict[str, Any]:
             "cleaned_english_text": text_to_translate,
             "translation_strategy": "multilingual_passthrough",
             "translation_warning": "Long multilingual document preserved without whole-document translation.",
+            "warnings": ["translation: the document was too long to translate, so it was analysed untranslated"],
             "errors": [],
             "status": "translated",
         }
@@ -83,6 +84,7 @@ def smart_translate_node(state: IngestionState) -> Dict[str, Any]:
             "cleaned_english_text": text_to_translate,
             "translation_strategy": "multilingual_fallback",
             "translation_warning": f"Translation was unavailable; preserved the source text: {error}",
+            "warnings": [f"translation: failed, so the document was analysed untranslated ({str(error)[:160]})"],
             "errors": [],
             "status": "translated",
         }

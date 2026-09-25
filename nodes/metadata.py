@@ -64,7 +64,7 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
             "errors": [],
             "status": "metadata_ready",
         }
-    except Exception:
+    except Exception as error:
         year_resolution = _resolve_year_with_web_fallback(
             state=state,
             sections=sections,
@@ -81,6 +81,7 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
                 "year_evidence": year_resolution["year_evidence"],
             },
             "year_resolution": year_resolution,
+            "warnings": [f"metadata: the model was unavailable, so the title came from the text layout ({str(error)[:160]})"],
             "errors": [],
             "status": "metadata_ready",
         }
