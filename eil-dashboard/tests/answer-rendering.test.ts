@@ -594,3 +594,25 @@ test("the audit is told the shape, or it puts the headings back", () => {
   assert.equal(passes.length, 2, `only ${passes.length} audit call site(s) know the shape`);
   assert.match(server, /formatConstrained: Boolean\(input\.formatConstraint\)/);
 });
+
+test("two papers cited in one bracket are both rendered", () => {
+  // Models write "[Paper 12, Paper 34]" despite being told not to; read as one
+  // id it matched nothing and both citations vanished.
+  const papers = [
+    { paperId: "12", title: "Rater Training", year: "2019" },
+    { paperId: "34", title: "Peer Feedback", year: "2021" },
+  ];
+  assert.equal(
+    formatPaperReferencesForReaders("Both found gains [Paper 12, Paper 34].", papers),
+    "Both found gains (Rater Training, 2019; Peer Feedback, 2021)."
+  );
+});
+
+test("a deep research report is drawn like an answer, with numbered sources", () => {
+  const chat = readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8");
+  // It was printed as plain text: "# Research Report" and "**bold**" showed as typed.
+  assert.doesNotMatch(chat, /whitespace-pre-wrap text-\[17px\] leading-9/);
+  assert.match(chat, /renderRichMessage\(researchMarked\.text, "fullscreen-report", "assistant", researchMarked\.sources\)/);
+  assert.match(chat, /<ResearchSources sources=\{researchMarked\.sources\} \/>/);
+  assert.match(chat, /message\.kind === "deep_research_report"\);\s*return markCitations\(/);
+});

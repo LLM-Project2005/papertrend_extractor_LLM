@@ -15,7 +15,7 @@ import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
+import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import Modal from "@/components/ui/Modal";
 import {
   ArrowRightIcon,
@@ -135,8 +135,7 @@ function fileNameOf(run: IngestionRunRow) {
 }
 
 function paperIdOfRun(run: IngestionRunRow): string {
-  const payloadPaperId = normalizePaperId(run.input_payload?.paper_id);
-  return payloadPaperId || paperIdFromRunId(run.id);
+  return paperIdForRun(run);
 }
 
 function extOf(run: IngestionRunRow) {
@@ -1551,7 +1550,7 @@ export default function AdminImportClient() {
             </p>
           </div>
 
-          <div className="flex w-full max-w-2xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <div className="grid w-full max-w-2xl grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-end">
             <button
               type="button"
               onClick={(event) => {
@@ -1591,7 +1590,7 @@ export default function AdminImportClient() {
               <span>{showTrash ? "Back to repositories" : "Trash"}</span>
             </button>
 
-            <label className="relative block min-w-0 flex-1">
+            <label className="relative col-span-2 block min-w-0 flex-1">
               <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#808080]" />
               <input
                 type="search"

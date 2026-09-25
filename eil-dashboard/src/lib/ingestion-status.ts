@@ -21,14 +21,15 @@ export function getRunPaperTitle(run: NamedRun): string {
 /**
  * What a reader calls the paper: a name they gave the file wins, then the
  * paper's title, then the file it came from.
+ *
+ * An upload starts with display_name set to the file's own name, so only a
+ * display name that differs from it is one the reader chose.
  */
 export function getRunDisplayTitle(run: NamedRun, fallback = "Untitled paper"): string {
-  return (
-    run.display_name?.trim() ||
-    getRunPaperTitle(run) ||
-    run.source_filename?.trim() ||
-    fallback
-  );
+  const displayName = run.display_name?.trim() ?? "";
+  const fileName = run.source_filename?.trim() ?? "";
+  const chosenName = displayName && displayName !== fileName ? displayName : "";
+  return chosenName || getRunPaperTitle(run) || fileName || displayName || fallback;
 }
 
 /** A status word for a person, not the queue's own state name. */

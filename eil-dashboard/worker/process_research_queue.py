@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from analysis_pipeline import configure_logging, load_config, now_iso  # noqa: E402
 from graphs import run_deep_research_graph  # noqa: E402
 from nodes import consume_usage_summary, start_usage_session  # noqa: E402
+from nodes.report_citations import paper_index, readable_message_citations, readable_report  # noqa: E402
 from supabase_http import build_retrying_session  # noqa: E402
 from workspace_data import (  # noqa: E402
     filter_dashboard_data,
@@ -484,6 +485,7 @@ def _save_final_report(
     completion_kind: str = "full",
     citations: Optional[List[Dict[str, Any]]] = None,
     diagnostics: Optional[Dict[str, Any]] = None,
+    papers: Optional[Dict[str, Any]] = None,
 ) -> None:
     thread_id = str(session.get("thread_id") or "")
     owner_user_id = str(session.get("owner_user_id") or "")
@@ -498,7 +500,7 @@ def _save_final_report(
             "role": "assistant",
             "message_kind": "deep_research_report",
             "content": final_report,
-            "citations": _message_citations_from_research(citations or []),
+            "citations": list(readable_message_citations(_message_citations_from_research(citations or []), papers or {})),
             "metadata": {
                 "sessionId": session.get("id"),
                 "completion_kind": completion_kind if completion_kind == "partial" else "full",
@@ -543,6 +545,10 @@ def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict
     final_report = str(final_state.get("final_report") or "").strip()
     if not final_report:
         raise RuntimeError("Deep research execution completed without a final report.")
+    final_citations = list(final_state.get("final_citations") or final_state.get("citation_ledger") or [])
+    # The report cites [Paper <id>]; a reader gets titles.
+    papers = paper_index(final_state.get("papers_full") or [], final_citations)
+    final_report = readable_report(final_report, papers)
 
     completion_kind = (
         str(final_state.get("completion_kind") or "full").strip().lower() == "partial"
@@ -564,8 +570,9 @@ def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict
         session,
         final_report,
         completion_kind=completion_kind,
-        citations=list(final_state.get("final_citations") or final_state.get("citation_ledger") or []),
+        citations=final_citations,
         diagnostics=dict(final_state.get("research_diagnostics") or {}),
+        papers=papers,
     )
     return {"status": "completed", "completion_kind": completion_kind, "usage_summary": usage_summary}
 

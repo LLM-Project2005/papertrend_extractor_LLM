@@ -1,11 +1,16 @@
 /**
  * Walks the upload journey the way a reader does and photographs each step:
- * Home, the upload dialog (empty and with a file chosen), the library, a
- * paper's analysis view, and the progress card while a paper is analysed.
+ * Home, the upload dialog, the progress that follows an upload, the library,
+ * a repository, the Library's own "Add papers", and a paper's analysis view.
+ *
+ * Each photograph is checked for sideways scrolling, dialog content spilling
+ * out of its dialog, a dialog button pushed out of view, and words a reader
+ * should never meet ("Debug", "undefined", "Supabase", ...).
  *
  * Credentials come from UI_TEST_EMAIL / UI_TEST_PASSWORD and are never
  * written anywhere. Nothing is uploaded unless UI_UPLOAD_FILE is set, and then
- * only that one file (about one cent of model use).
+ * only that one file (about one cent of model use). UI_DUPLICATE_FILE, a PDF
+ * the account already has, is refused before upload and costs nothing.
  *
  *   UI_BASE_URL=https://...pilot... UI_PROJECT_ID=... npx tsx scripts/capture-upload-journey.ts
  */
@@ -19,15 +24,17 @@ const EMAIL = process.env.UI_TEST_EMAIL ?? "";
 const PASSWORD = process.env.UI_TEST_PASSWORD ?? "";
 const PROJECT_ID = process.env.UI_PROJECT_ID ?? "";
 const UPLOAD_FILE = process.env.UI_UPLOAD_FILE ?? "";
+const DUPLICATE_FILE = process.env.UI_DUPLICATE_FILE ?? "";
 const PAPER_TITLE = process.env.UI_PAPER_TITLE ?? "";
 const PROJECT_NAME = process.env.UI_PROJECT_NAME ?? "";
+const ANALYSIS_WAIT_MS = Number(process.env.UI_ANALYSIS_WAIT_MS ?? 420000);
 const VIEWPORTS = (process.env.UI_VIEWPORTS ?? "desktop,mobile").split(",");
 const SIZES: Record<string, { width: number; height: number }> = {
   desktop: { width: 1440, height: 900 },
   mobile: { width: 390, height: 844 },
 };
 
-type Note = { step: string; viewport: string; problems: string[] };
+type Note = { step: string; viewport: string; problems: string[]; facts?: string[] };
 const notes: Note[] = [];
 
 async function login(page: Page) {
@@ -43,17 +50,58 @@ async function login(page: Page) {
 }
 
 async function shot(page: Page, viewport: string, step: string) {
-  const problems = await page.evaluate(() => {
+  const { problems, facts } = await page.evaluate(() => {
     const found: string[] = [];
+    const seen: string[] = [];
     const doc = document.documentElement;
     if (doc.scrollWidth > window.innerWidth + 1) found.push(`page scrolls sideways (${doc.scrollWidth}px > ${window.innerWidth}px)`);
+    // Page scroll width misses content clipped by a hidden overflow, so look for
+    // anything that ends past the window, outside containers meant to scroll.
+    const clipsSideways = (element: Element | null): boolean => {
+      for (let node = element; node && node !== document.body; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowX;
+        if (overflow === "auto" || overflow === "scroll") return true;
+      }
+      return false;
+    };
+    const offenders: string[] = [];
+    for (const element of Array.from(document.querySelectorAll("main *"))) {
+      const rect = element.getBoundingClientRect();
+      if (rect.width > 0 && rect.right > window.innerWidth + 1 && !clipsSideways(element.parentElement)) {
+        const label = (element as HTMLElement).innerText?.trim().slice(0, 30) || element.tagName.toLowerCase();
+        offenders.push(`${label} (+${Math.round(rect.right - window.innerWidth)}px)`);
+        if (offenders.length >= 3) break;
+      }
+    }
+    if (offenders.length) found.push(`content past the right edge: ${offenders.join(", ")}`);
     const text = document.body.innerText;
-    for (const word of ["Debug", "debug", "undefined", "NaN", "[object Object]", "Supabase", "connector is planned"]) {
+    for (const word of ["Debug", "debug", "undefined", "NaN", "[object Object]", "Supabase", "connector is planned", "Coming soon"]) {
       if (text.includes(word)) found.push(`visible text contains "${word}"`);
     }
-    return found;
+    const dialog = document.querySelector('[role="dialog"]');
+    if (dialog) {
+      const box = dialog.getBoundingClientRect();
+      if (box.right > window.innerWidth + 1 || box.left < -1) found.push("dialog is wider than the window");
+      for (const element of Array.from(dialog.querySelectorAll("*"))) {
+        const rect = element.getBoundingClientRect();
+        if (rect.width > 0 && rect.right > box.right + 1) {
+          found.push(`dialog content spills out on the right (${element.tagName.toLowerCase()}, ${Math.round(rect.right - box.right)}px)`);
+          break;
+        }
+      }
+      const buttons = Array.from(dialog.querySelectorAll("button")).filter((button) => /^(analyze|follow progress|uploading)/i.test(button.innerText.trim()));
+      for (const button of buttons) {
+        const rect = button.getBoundingClientRect();
+        if (rect.bottom > window.innerHeight + 1 || rect.top < 0) found.push(`"${button.innerText.trim()}" is outside the window`);
+      }
+      const heading = dialog.querySelector("h2");
+      if (heading) seen.push(`dialog: ${heading.textContent?.trim()}`);
+      const alert = dialog.querySelector('[role="alert"]');
+      if (alert) seen.push(`alert: ${alert.textContent?.trim().slice(0, 200)}`);
+    }
+    return { problems: found, facts: seen };
   });
-  notes.push({ step, viewport, problems });
+  notes.push({ step, viewport, problems, facts });
   await page.screenshot({ path: join(OUT, `${viewport}-${step}.png`), fullPage: true });
 }
 
@@ -71,10 +119,19 @@ async function clickByText(page: Page, pattern: RegExp): Promise<boolean> {
   return false;
 }
 
+async function waitForText(page: Page, pattern: RegExp, timeoutMs: number): Promise<boolean> {
+  for (let waited = 0; waited < timeoutMs; waited += 2000) {
+    if (await page.getByText(pattern).count()) return true;
+    await page.waitForTimeout(2000);
+  }
+  return false;
+}
+
 async function main() {
   mkdirSync(OUT, { recursive: true });
   const browser = await chromium.launch();
   for (const viewport of VIEWPORTS) {
+    const uploadHere = Boolean(UPLOAD_FILE) && viewport === VIEWPORTS[0];
     const context = await browser.newContext({ viewport: SIZES[viewport], colorScheme: "light" });
     const page = await context.newPage();
     const consoleErrors: string[] = [];
@@ -87,19 +144,32 @@ async function main() {
     await page.waitForTimeout(7000);
     await shot(page, viewport, "01-home");
 
-    const opened = await clickByText(page, /add papers|upload|analy[sz]e/i);
+    const opened = await clickByText(page, /^add papers$/i);
     await page.waitForTimeout(1500);
     await shot(page, viewport, opened ? "02-upload-dialog" : "02-no-upload-button");
 
-    if (UPLOAD_FILE && viewport === VIEWPORTS[0]) {
+    if (opened && DUPLICATE_FILE && viewport === VIEWPORTS[0]) {
+      await page.locator('input[type="file"]').first().setInputFiles(DUPLICATE_FILE);
+      await page.waitForTimeout(800);
+      await clickByText(page, /^analyze \d+ paper/i);
+      for (let i = 0; i < 30 && !(await page.locator('[role="dialog"] [role="alert"]').count()); i += 1) await page.waitForTimeout(1000);
+      await page.waitForTimeout(500);
+      await shot(page, viewport, "03a-duplicate-refused");
+      await clickByText(page, /^clear all$/i);
+      await page.waitForTimeout(500);
+    }
+
+    if (opened && uploadHere) {
       await page.locator('input[type="file"]').first().setInputFiles(UPLOAD_FILE);
       await page.waitForTimeout(800);
       await shot(page, viewport, "03-file-chosen");
       await clickByText(page, /^analyze \d+ paper/i);
-      for (let i = 0; i < 60 && !(await page.getByText(/being analyzed/i).count()); i += 1) await page.waitForTimeout(1000);
+      await page.waitForTimeout(1500);
+      await shot(page, viewport, "03b-uploading");
+      await waitForText(page, /being analyzed/i, 90000);
       await shot(page, viewport, "04-after-upload");
-      await clickByText(page, /follow progress/i);
-      await page.waitForTimeout(6000);
+      await clickByText(page, /^follow progress$/i);
+      await page.waitForTimeout(8000);
       await shot(page, viewport, "05-progress");
     } else if (opened) {
       await page.keyboard.press("Escape");
@@ -114,7 +184,7 @@ async function main() {
       if (await card.count()) {
         await card.click();
         await page.waitForTimeout(5000);
-        await shot(page, viewport, "06b-repository");
+        await shot(page, viewport, uploadHere ? "06b-repository-while-analyzing" : "06b-repository");
         if (await clickByText(page, /^new$/i)) {
           await page.waitForTimeout(600);
           await clickByText(page, /^add papers$/i);
@@ -126,15 +196,30 @@ async function main() {
       }
     }
 
+    if (uploadHere) {
+      await page.goto(`${BASE}/workspace/home`, { waitUntil: "domcontentloaded" });
+      const finished = await waitForText(page, /is ready|are ready|papers? analyzed|analysis finished/i, ANALYSIS_WAIT_MS);
+      await page.waitForTimeout(1500);
+      await shot(page, viewport, finished ? "08-home-after-analysis" : "08-home-still-analyzing");
+      await page.goto(`${BASE}/workspace/library`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(6000);
+      if (PROJECT_NAME) {
+        const card = page.locator("main button", { hasText: PROJECT_NAME }).first();
+        if (await card.count()) {
+          await card.click();
+          await page.waitForTimeout(5000);
+        }
+      }
+      await shot(page, viewport, "09-library-after-analysis");
+    }
+
     if (PAPER_TITLE) {
-      const paper = page.locator("main", { hasText: PAPER_TITLE }).getByText(PAPER_TITLE, { exact: false }).first();
+      const paper = page.locator("main button", { hasText: PAPER_TITLE }).first();
       if (await paper.count()) {
         await paper.click();
-        await page.waitForTimeout(1500);
-        await shot(page, viewport, "06c-paper-selected");
-        await paper.dblclick().catch(() => undefined);
         await page.waitForTimeout(6000);
         await shot(page, viewport, "07-paper-view");
+        await page.keyboard.press("Escape");
       }
     }
     notes.push({ step: "console", viewport, problems: consoleErrors.slice(0, 10) });
@@ -143,7 +228,8 @@ async function main() {
   await browser.close();
   writeFileSync(join(OUT, "notes.json"), JSON.stringify(notes, null, 2));
   for (const note of notes) {
-    console.log(`${note.viewport} ${note.step}: ${note.problems.length ? note.problems.join(" | ") : "ok"}`);
+    const facts = note.facts?.length ? `  [${note.facts.join(" / ")}]` : "";
+    console.log(`${note.viewport} ${note.step}: ${note.problems.length ? note.problems.join(" | ") : "ok"}${facts}`);
   }
 }
 

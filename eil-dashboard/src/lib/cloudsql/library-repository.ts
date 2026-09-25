@@ -116,7 +116,15 @@ export class CloudSqlLibraryRepository {
             copied_from_run_id,
             input_payload
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, $13, $14)
+          -- The payload is copied inside the database: read into JavaScript
+          -- and written back, its 60-bit paper_id came out rounded.
+          VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, false, $13,
+            COALESCE(
+              (SELECT source.input_payload FROM public.ingestion_runs source WHERE source.id = $13 AND source.owner_user_id = $1),
+              '{}'::jsonb
+            )
+          )
           RETURNING *
         `,
         [
@@ -133,7 +141,6 @@ export class CloudSqlLibraryRepository {
           original.provider ?? null,
           original.model ?? null,
           runId,
-          original.input_payload ?? {},
         ]
       );
 
@@ -181,18 +188,21 @@ export class CloudSqlLibraryRepository {
 
       values.push(options.limit, options.offset);
       // The paper's title is joined in so the Library can name a paper by its
-      // title rather than by the file it arrived in. The CASE keeps a run whose
-      // paper_id is missing or not a number from failing the cast.
+      // title rather than by the file it arrived in. It is found through the
+      // run's own content row, as the paper view finds it: input_payload's
+      // paper_id is a 60-bit number, and any JavaScript that read the payload
+      // and wrote it back rounded it to a different id.
       const result = await client.query<IngestionRunRow>(
         `
-          SELECT r.*, p.title AS paper_title
+          SELECT r.*, paper.title AS paper_title
           FROM public.ingestion_runs r
-          LEFT JOIN public.papers p
-            ON p.id = CASE
-                 WHEN r.input_payload->>'paper_id' ~ '^[0-9]{1,18}$'
-                 THEN (r.input_payload->>'paper_id')::bigint
-               END
-           AND p.owner_user_id = r.owner_user_id
+          LEFT JOIN LATERAL (
+            SELECT p.title
+            FROM public.paper_content c
+            JOIN public.papers p ON p.id = c.paper_id AND p.owner_user_id = c.owner_user_id
+            WHERE c.owner_user_id = r.owner_user_id AND c.ingestion_run_id = r.id
+            LIMIT 1
+          ) paper ON true
           WHERE ${conditions.join(" AND ")}
           ORDER BY r.updated_at DESC NULLS LAST
           LIMIT $${values.length - 1}
