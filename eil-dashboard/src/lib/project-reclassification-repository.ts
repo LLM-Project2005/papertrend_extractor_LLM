@@ -96,7 +96,7 @@ export async function createReclassificationJob(
        JOIN public.paper_content c ON c.paper_id=p.id AND c.owner_user_id=$1
        JOIN public.ingestion_runs r ON r.id=c.ingestion_run_id AND r.owner_user_id=$1
        WHERE p.owner_user_id=$1 AND r.status='succeeded' AND r.trashed_at IS NULL
-       ORDER BY p.id`,
+       ORDER BY paper_id`,
       [ownerUserId, projectId]
     );
     const created = await client.query<ProjectReclassificationJobRow>(

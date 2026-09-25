@@ -61,3 +61,30 @@ test("re-analysis applies the repository's current profile, taken on the server"
   assert.match(repository, /jsonb_build_object\('analysis_profile', \$\$\{values\.length \+ 2\}::jsonb\)/);
   assert.match(repository, /async projectsOfRuns\(ownerUserId: string, runIds: string\[\]\)/);
 });
+
+test("re-analysis also gives old runs their repository id, so category rows are counted", async () => {
+  // Older runs had no project_id in their payload, so their category rows were
+  // saved with no repository: coverage read 0 classified of 38.
+  const repository = await readFile(new URL("../src/lib/cloudsql/analysis-job-repository.ts", import.meta.url), "utf8");
+  const route = await readFile(new URL("../src/app/api/workspace/library/reanalyze/route.ts", import.meta.url), "utf8");
+  assert.match(repository, /jsonb_build_object\('project_id', \$\$\{values\.length \+ 3\}::text\)/);
+  assert.match(route, /projectId: groupProjectId \|\| null/);
+});
+
+test("the reclassification job can be created on Cloud SQL", async () => {
+  // "for SELECT DISTINCT, ORDER BY expressions must appear in select list":
+  // the job's paper list selected p.id::text and sorted by p.id.
+  const source = await readFile(new URL("../src/lib/project-reclassification-repository.ts", import.meta.url), "utf8");
+  for (const match of source.matchAll(/SELECT DISTINCT([\s\S]*?)(?:`|\)\s*,)/g)) {
+    const statement = match[1];
+    const order = statement.match(/ORDER BY\s+([^\n`]+)/);
+    if (!order) continue;
+    for (const key of order[1].split(",").map((part) => part.trim().split(/\s+/)[0])) {
+      // A sort key must be a selected alias (or a column position).
+      assert.ok(
+        statement.includes(`AS ${key}`) || /^\d+$/.test(key),
+        `ORDER BY ${key} is not in the DISTINCT select list`
+      );
+    }
+  }
+});
