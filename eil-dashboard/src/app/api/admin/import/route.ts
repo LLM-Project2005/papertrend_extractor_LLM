@@ -50,6 +50,12 @@ const STATUS_INPUT_PAYLOAD_KEYS = [
   "keyword_count",
   "pipeline",
   "last_error_stage",
+  // The progress card names the paper, dates its last update (the stall
+  // warning) and marks finished steps from these; trimmed away, it showed the
+  // file name and never saw a step finish early.
+  "paper_title",
+  "progress_updated_at",
+  "analysis_metrics",
 ] as const;
 
 function trimStatusInputPayload(inputPayload: unknown): Record<string, unknown> | null {

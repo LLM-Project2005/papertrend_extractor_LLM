@@ -215,3 +215,13 @@ test("progress under a paper describes the paper, not the queue machinery", () =
   assert.doesNotMatch(paperView, /Canonical node output|Pipeline analysis ready/);
   assert.match(paperView, /<div className="mt-5 flex flex-wrap items-center gap-2">/);
 });
+
+test("the progress card is sent what it reads from the payload", () => {
+  for (const relative of ["src/app/api/folder-analysis/route.ts", "src/app/api/admin/import/route.ts"]) {
+    const source = read(relative);
+    const keys = source.slice(source.indexOf("const STATUS_INPUT_PAYLOAD_KEYS"), source.indexOf("] as const;"));
+    for (const key of ["paper_title", "progress_updated_at", "analysis_metrics", "progress_detail"]) {
+      assert.match(keys, new RegExp(`"${key}"`), `${relative} keeps ${key}`);
+    }
+  }
+});
