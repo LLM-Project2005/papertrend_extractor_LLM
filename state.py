@@ -322,6 +322,20 @@ class WorkspaceQueryState(TypedDict, total=False):
 
 
 class DeepResearchState(TypedDict, total=False):
+    """Every key the worker passes in or a node reads must be declared here.
+
+    LangGraph drops undeclared keys: without papers_full and filtered_data the
+    research steps saw an empty library and every report said no papers
+    matched (tests/test_deep_research_state_contract.py enforces this).
+    """
+
+    dashboard_data: Dict[str, Any]
+    filtered_data: Dict[str, Any]
+    papers_full: List[Dict[str, Any]]
+    concept_rows: List[Dict[str, Any]]
+    facet_rows: List[Dict[str, Any]]
+    author_keyword_rows: List[Dict[str, Any]]
+    typology_rows: List[Dict[str, Any]]
     owner_user_id: str
     folder_id: str
     project_id: str

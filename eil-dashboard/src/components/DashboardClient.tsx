@@ -46,7 +46,8 @@ type DashboardDrilldownPaper = {
   paperId: PaperId;
   title: string;
   year: string;
-  topics: string[];
+  /** The paper's own topic label, and the theme it was grouped under. */
+  topics: Array<{ label: string; theme: string }>;
   keywords: string[];
   tracks: string[];
   evidence: string;
@@ -461,10 +462,21 @@ export default function DashboardClient({
             paperId,
             title: representative.title || "Untitled paper",
             year: representative.year || "Unknown year",
-            topics: [...new Set(trendRows.map((row) => row.topic).filter(Boolean))].slice(0, 6),
+            topics: [
+              ...new Map(
+                trendRows
+                  .filter((row) => row.topic)
+                  .map((row) => {
+                    const label = row.raw_topic || row.topic;
+                    return [label, { label, theme: row.topic }] as const;
+                  })
+              ).values(),
+            ].slice(0, 6),
             keywords: [...new Set(trendRows.map((row) => row.keyword).filter(Boolean))].slice(0, 8),
-            tracks:
-              categoryRows.length > 0
+            // With classification off the legacy slots only say "Other".
+            tracks: !classificationEnabled
+              ? []
+              : categoryRows.length > 0
                 ? [
                     ...new Set(
                       categoryRows.map(
@@ -492,6 +504,7 @@ export default function DashboardClient({
   }, [
     categoryLabels,
     categoryOptions,
+    classificationEnabled,
     drilldownTarget,
     filteredData,
   ]);
@@ -979,10 +992,14 @@ export default function DashboardClient({
                               {paper.topics.length > 0 ? (
                                 paper.topics.map((topic) => (
                                   <span
-                                    key={`${paper.paperId}-${topic}`}
+                                    key={`${paper.paperId}-${topic.label}`}
+                                    title={topic.theme !== topic.label ? `Grouped under the theme "${topic.theme}"` : undefined}
                                     className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#cfcfcf]"
                                   >
-                                    {topic}
+                                    {topic.label}
+                                    {topic.theme !== topic.label ? (
+                                      <span className="text-slate-500 dark:text-[#8e8e8e]"> · {topic.theme}</span>
+                                    ) : null}
                                   </span>
                                 ))
                               ) : (

@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Sequence
 
 from nodes import ModelTask, get_task_llm
 from nodes.common import load_prompt, locate_text_span, normalize_analysis_profile, normalize_whitespace, safe_json_list
-from nodes.text_matching import count_any, fold_text, phrase_in, sentence_with
+from nodes.text_matching import acronym_letters, count_any, fold_text, phrase_in, sentence_with, spells_acronym
 from state import IngestionState, KeywordGrouperSchema
 
 keyword_grouping_llm = get_task_llm(ModelTask.KEYWORD_GROUPING)
@@ -37,29 +37,6 @@ def _surface_forms(terms: Sequence[Any]) -> set:
     return forms
 
 
-def _acronym_letters(acronym: str) -> str:
-    letters = re.sub(r"[^A-Za-z]", "", acronym)
-    if len(letters) > 2 and letters.endswith("s") and letters[:-1].isupper():
-        letters = letters[:-1]
-    return letters.lower()
-
-
-def _matches_acronym(words: Sequence[str], letters: str) -> bool:
-    """Whether ``words`` spell ``letters``, allowing skipped function words."""
-
-    parts = [piece for word in words for piece in re.split(r"[-\u2010-\u2014]", word) if piece]
-    initials = [piece[0].lower() for piece in parts]
-    if not parts or not letters or initials[0] != letters[0]:
-        return False
-    index = 0
-    for part, initial in zip(parts, initials):
-        if index < len(letters) and initial == letters[index]:
-            index += 1
-        elif part.lower() not in NORMALIZATION_STOPWORDS:
-            return False
-    return index == len(letters)
-
-
 def defined_acronyms(text: str) -> Dict[str, str]:
     """Acronyms the paper defines, e.g. "English-medium instruction (EMI)"."""
 
@@ -67,12 +44,12 @@ def defined_acronyms(text: str) -> Dict[str, str]:
     for match in _ACRONYM_DEFINITION.finditer(text or ""):
         words = match.group(1).split()
         acronym = match.group(2)
-        letters = _acronym_letters(acronym)
+        letters = acronym_letters(acronym)
         if len(letters) < 2:
             continue
         for size in range(1, min(len(words), len(letters) + 4) + 1):
             candidate = words[-size:]
-            if _matches_acronym(candidate, letters):
+            if spells_acronym(candidate, letters):
                 definitions.setdefault(fold_text(acronym), fold_text(" ".join(candidate)))
                 break
     return definitions

@@ -20,10 +20,37 @@ FLAT_STOP_PATTERN = re.compile(
 )
 
 
+_BRACKET_PAIRS = {")": "(", "]": "[", "}": "{"}
+
+
+def _strip_unbalanced_brackets(value: str) -> str:
+    """Trim a stray bracket at either end, but keep a pair: "Voice Onset Time
+    (VOT)" used to lose its closing bracket."""
+
+    text = value
+    changed = True
+    while text and changed:
+        changed = False
+        if text[-1] in _BRACKET_PAIRS and text.count(_BRACKET_PAIRS[text[-1]]) < text.count(text[-1]):
+            text, changed = text[:-1].rstrip(" :-;,."), True
+        if text and text[0] in _BRACKET_PAIRS.values():
+            closing = next(key for key, opening in _BRACKET_PAIRS.items() if opening == text[0])
+            if text.count(closing) < text.count(text[0]):
+                text, changed = text[1:].lstrip(" :-;,."), True
+        if (
+            len(text) > 2
+            and text[-1] in _BRACKET_PAIRS
+            and text[0] == _BRACKET_PAIRS[text[-1]]
+            and not any(char in text[1:-1] for char in "()[]{}")
+        ):
+            text, changed = text[1:-1].strip(" :-;,."), True
+    return text
+
+
 def _clean_keyword(value: str) -> str:
     cleaned = normalize_whitespace(value)
     cleaned = LABEL_PATTERN.sub("", cleaned)
-    cleaned = cleaned.strip(" :-;,.[](){}")
+    cleaned = _strip_unbalanced_brackets(cleaned.strip(" :-;,."))
     cleaned = re.sub(r"^\d+[\).:-]\s*", "", cleaned)
     return normalize_whitespace(cleaned)[:200]
 
