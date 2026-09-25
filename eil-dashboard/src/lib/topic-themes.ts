@@ -77,9 +77,11 @@ export const REGROUP_GROWTH = 1.25;
 /**
  * Bumped when the stored shape or the method changes, so old stores are rebuilt.
  * 2: topics grouped with their papers' titles. 3: no share cap on consensus
- * themes. 4: titles taken out again; the cap stays off.
+ * themes. 4: titles taken out again; the cap stays off. 5: participant groups
+ * left out of topics (participant-terms.ts) - an incremental update kept the
+ * old "EFL Learner Characteristics and Demographics" name on what remained.
  */
-export const THEME_STORE_VERSION = 4;
+export const THEME_STORE_VERSION = 5;
 
 /* -------------------------------------------------------------- the items */
 
