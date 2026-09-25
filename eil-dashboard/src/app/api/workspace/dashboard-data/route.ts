@@ -79,7 +79,8 @@ export async function GET(request: Request) {
         user?.id ?? null,
         folderIds,
         projectId && projectId !== "all" ? projectId : null,
-        mode
+        mode,
+        { fresh: searchParams.get("fresh") === "1" }
       ),
       20000
     );
@@ -90,7 +91,7 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Supabase authentication timed out while validating the current session for dashboard data.",
+            "Authentication timed out while checking your session. Try again.",
         },
         { status: 504 }
       );

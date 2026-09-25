@@ -1133,7 +1133,8 @@ export async function loadDashboardDataServer(
   ownerUserId?: string | null,
   folderSelection?: string[] | string | null,
   projectId?: string | null,
-  mode: DashboardDataMode = "auto"
+  mode: DashboardDataMode = "auto",
+  options: { fresh?: boolean } = {}
 ): Promise<DashboardData> {
   const normalizedFolderIds = normalizeRequestedFolderIds(folderSelection) ?? [];
   const cacheKey = JSON.stringify({
@@ -1143,7 +1144,8 @@ export async function loadDashboardDataServer(
     folderIds: normalizedFolderIds,
   });
 
-  const cached = dashboardServerCache.get(cacheKey);
+  // Refresh asks for a fresh read; it used to get this cached copy back.
+  const cached = options.fresh ? undefined : dashboardServerCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < DASHBOARD_SERVER_CACHE_TTL_MS) {
     return cached.data;
   }

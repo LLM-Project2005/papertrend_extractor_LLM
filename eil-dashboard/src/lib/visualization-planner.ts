@@ -629,6 +629,27 @@ ${JSON.stringify(analytics, null, 2)}
 `.trim();
 }
 
+export function planHasViableChart(rawPlan: unknown, viableChartKeys: VisualizationChartKey[]): boolean {
+  if (!rawPlan || typeof rawPlan !== "object") return false;
+  const plan = rawPlan as Record<string, unknown>;
+  const sections = Array.isArray(plan.sections) ? plan.sections : [];
+  const charts = [
+    ...(Array.isArray(plan.charts) ? plan.charts : []),
+    ...sections.flatMap((section) =>
+      section && typeof section === "object" && Array.isArray((section as Record<string, unknown>).charts)
+        ? ((section as Record<string, unknown>).charts as unknown[])
+        : []
+    ),
+  ];
+  const viable = new Set<string>(viableChartKeys);
+  return charts.some(
+    (chart) =>
+      chart !== null &&
+      typeof chart === "object" &&
+      viable.has(String((chart as Record<string, unknown>).chart_key ?? ""))
+  );
+}
+
 export async function planVisualization(
   request: VisualizationPlannerRequest = {},
   ownerUserId?: string | null
@@ -677,6 +698,13 @@ export async function planVisualization(
       (call) => call.function?.name === "build_adaptive_dashboard"
     );
     const rawPlan = toolPlanPayload(toolCall?.function?.arguments, analytics.mode);
+    // A plan with no chart this data supports would be replaced by a fixed
+    // default of advanced charts (none of which a small repository may
+    // support) while still reading "Agent plan". Use the data-aware plan and
+    // say it is the fallback instead.
+    if (!planHasViableChart(rawPlan, viableChartKeys)) {
+      return { plan: dataAwareFallback, analytics, source: "fallback" };
+    }
     return {
       plan: sanitizeVisualizationPlan(
         rawPlan,

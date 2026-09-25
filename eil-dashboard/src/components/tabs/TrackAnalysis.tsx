@@ -348,7 +348,7 @@ export default function TrackAnalysis({
               rows={topicChartCategories.map((category) => category.label)}
               cols={topicChartCategories.map((category) => category.label)}
               values={coMatrix}
-              colorScale={["#eff6ff", "#1e40af"]}
+              colorScale={ct.heatScaleAccent}
             />
           </div>
         </section>

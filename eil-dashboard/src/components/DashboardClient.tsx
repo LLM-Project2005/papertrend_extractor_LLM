@@ -184,6 +184,7 @@ export default function DashboardClient({
   const searchParams = useSearchParams();
   const {
     selectedProjectId,
+    workspaceLoading,
     currentProject,
     profile,
     folders,
@@ -654,6 +655,22 @@ export default function DashboardClient({
     }
   }
 
+  // With no repository chosen the data hook never starts, so its loading flag
+  // stayed true and the page spun forever.
+  if (!selectedProjectId && !workspaceLoading) {
+    return (
+      <div className="app-surface flex min-h-[60vh] items-center justify-center px-6 text-center">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Choose a repository</h1>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            The dashboard shows one repository at a time. Pick one from the repository menu, or create one and add papers in the
+            library.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading && !data) {
     return (
       <div className="app-surface flex min-h-[60vh] items-center justify-center">
@@ -1112,6 +1129,7 @@ export default function DashboardClient({
                 data={adaptiveSnapshot}
                 analytics={adaptiveAnalytics}
                 adaptiveSection={adaptiveSection}
+                trackLabels={categoryLabels}
               />
             ) : (
               <section className="app-surface flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
