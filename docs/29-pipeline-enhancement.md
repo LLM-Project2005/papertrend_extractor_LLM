@@ -1,7 +1,6 @@
 # 29 — Analysis pipeline enhancement
 
-Status: **phases 0–6 implemented; phases 1–4 deployed to the pilot; phase 7 (re-analysis of the
-test repositories) and promotion to production waiting on a live check** (2026-09-25)
+Status: **phases 0–7 done on the pilot; promotion to production waiting** (2026-09-26)
 
 ## The question this answers
 
@@ -102,10 +101,52 @@ Every new per-run fact (analysis quality, topic kinds, fingerprint, duplicate, u
 is stored in `ingestion_runs.input_payload`. The typology table's 1–4 group check is kept by using
 the same four-group shape in general repositories.
 
+## Phase 7 — the test repositories analysed again
+
+An on-demand Cloud SQL backup was taken first (`1790363731023`, 2026-09-25 19:15 UTC). Test 2 (5
+runs) and testtest (38 runs) were then analysed again on the pilot, and the dashboard was read
+before and after.
+
+| testtest | Before | After |
+| --- | --- | --- |
+| Papers with a category (EIL profile) | 0 of 38 | 38 of 38 (27 ELI, 7 EL, 4 LAE) |
+| Undated papers | 2 | 0 |
+| Runs with an analysis-quality record | 0 | 38 (7 note a degraded step) |
+| Themes / method themes | 46 / 7 | 77 / 14 |
+| Themes with a single paper | 44% | 44% |
+| Largest theme, share of papers | 13% | 18% |
+
+The degraded steps say what happened: scanned PDFs read by OCR (24 of 25 and 24 of 27 pages), a
+246-page thesis past the 80-page limit, and topic labels that fell back to a member phrase.
+
+Model cost as recorded on the runs: $0.65 for the 43 re-analyses ($0.015 per paper — these are
+longer than the evaluation set), $0.04 for one paper tried again, $0.01 for the live upload check.
+Reclassification and theme regrouping add a few cents; they are not recorded per call.
+
+**What it found, and fixed:**
+- *Old runs had no analysis profile.* Papers uploaded before profiles existed carried
+  `analysis_profile: null`, so the classifier had no categories and re-analysis left 37 of 39 "Other".
+  Re-analysis now takes each repository's current profile on the server, as an upload does, and
+  its repository id (without which category rows were saved with no repository and not counted).
+- *Reclassification had never run on Cloud SQL.* Its paper list sorted a `SELECT DISTINCT` by a
+  column it did not select, and its publish step collided with category rows saved without a
+  repository. Both fixed; testtest was reclassified with its EIL profile for a few cents instead of
+  analysing it a third time.
+- *A failed re-analysis marked a good paper failed.* One momentary database disconnect did this; the
+  paper's rows were intact (one transaction per paper). The paper now keeps its earlier results and
+  the attempt is noted; a failed paper can be tried again from the Library.
+- *Participant groups became topics.* The keyword prompt listed populations as subjects, so nearly
+  every paper got a "Thai EFL undergraduate students" topic and the dashboard merged them into
+  "EFL Learner Characteristics and Demographics" — 29 of 39 papers (74%). A phrase whose head noun
+  names people ("Thai EFL learners", "learners of English", Thai head-first forms) is now not a
+  concept, in the pipeline and when the dashboard builds topics, so stored papers read correctly
+  without being analysed again. "Learner autonomy" and "EFL learners' writing" are still subjects.
+- *Rounded paper ids.* `input_payload.paper_id` is a 60-bit number; any JavaScript round trip rounded
+  it (14 of 44 runs on the pilot), breaking the Library's title join and dashboard links to a paper.
+  Paper ids are now resolved from the run, and a Library copy keeps its payload in SQL.
+
 ## Still to do
 
-1. Live check on the pilot: upload one paper to an EIL-profile repository (category and rationale
-   stored, year and title right, analysis notes empty) and run one deep-research session.
-2. Promote to production.
-3. Take an on-demand Cloud SQL backup, then analyse the test repositories again (about $0.75) and
-   repeat the docs/28 dashboard checks.
+1. Promote to production.
+2. Evaluation set re-run for the keyword prompt change (participant rule) if the numbers above are
+   to be restated; the rule itself is deterministic and tested.
