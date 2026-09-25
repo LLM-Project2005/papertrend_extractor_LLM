@@ -936,7 +936,7 @@ def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConf
                     run,
                     counter_key="recovery_count",
                     stage_message="Recovered stalled analysis run",
-                    detail="A previous worker stopped updating this run, so it was returned to the queue automatically.",
+                    detail="The analysis stopped updating, so the paper was put back in line to start again.",
                 ),
             },
         )
@@ -1426,7 +1426,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="preparing",
                 message="Preparing file for analysis",
-                detail="The worker has claimed this run and is getting the source ready.",
+                detail="Getting the PDF ready to read.",
                 metrics_patch={
                     "queue_wait_seconds": queue_wait_seconds,
                     "worker_started_at": now_iso(),
@@ -1445,7 +1445,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     run_id,
                     stage="downloading",
                     message="Downloading source file",
-                    detail="Pulling the selected PDF from Google Drive before extraction begins.",
+                    detail="Fetching the PDF from Google Drive.",
                 )
                 logger.info(
                     "downloading google drive file",
@@ -1459,7 +1459,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     run_id,
                     stage="downloading",
                     message="Downloading source file",
-                    detail="Fetching the uploaded PDF from Cloud Storage before extraction begins.",
+                    detail="Fetching the uploaded PDF.",
                 )
                 logger.info(
                     "downloading gcs object",
@@ -1473,7 +1473,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     run_id,
                     stage="downloading",
                     message="Downloading source file",
-                    detail="Fetching the uploaded PDF from Supabase Storage before extraction begins.",
+                    detail="Fetching the uploaded PDF.",
                 )
                 logger.info(
                     "downloading supabase storage object",
@@ -1489,7 +1489,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="starting_analysis",
                 message="Starting the analysis pipeline",
-                detail="The worker is entering the paper analysis graph and will update progress as each stage completes.",
+                detail="Reading the paper. This updates as each step finishes.",
                 metrics_patch={
                     "download_seconds": download_seconds,
                     "analysis_started_at": now_iso(),
@@ -1536,7 +1536,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="saving",
                 message="Saving results to the workspace",
-                detail="Writing the extracted paper, keywords, tracks, and related analysis to the workspace database.",
+                detail="Saving the paper's title, year, keywords, topics and category.",
                 metrics_patch={
                     "graph_seconds": graph_seconds,
                     "model_usage": {

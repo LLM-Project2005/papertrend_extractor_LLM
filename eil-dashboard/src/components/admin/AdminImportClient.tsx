@@ -2290,12 +2290,14 @@ export default function AdminImportClient() {
                     {analysisDetail?.year || "Year unavailable"}
                   </span>
                   <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                    {analysisRun!.status === "succeeded" ? "Analysis ready" : analysisRun!.status}
+                    {analysisRun!.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(analysisRun!)}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                    <ChartIcon className="h-3.5 w-3.5" />
-                    <span>{analysisDetail?.available ? "Node output" : "Preview only"}</span>
-                  </span>
+                  {analysisDetail?.available === false ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                      <ChartIcon className="h-3.5 w-3.5" />
+                      <span>Not analyzed yet</span>
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <button

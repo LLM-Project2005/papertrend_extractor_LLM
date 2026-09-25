@@ -57,17 +57,20 @@ async function shot(page: Page, viewport: string, step: string) {
     if (doc.scrollWidth > window.innerWidth + 1) found.push(`page scrolls sideways (${doc.scrollWidth}px > ${window.innerWidth}px)`);
     // Page scroll width misses content clipped by a hidden overflow, so look for
     // anything that ends past the window, outside containers meant to scroll.
-    const clipsSideways = (element: Element | null): boolean => {
-      for (let node = element; node && node !== document.body; node = node.parentElement) {
-        const overflow = getComputedStyle(node).overflowX;
-        if (overflow === "auto" || overflow === "scroll") return true;
-      }
-      return false;
-    };
+    // No named helper here: tsx wraps one in __name(), which the browser lacks.
     const offenders: string[] = [];
     for (const element of Array.from(document.querySelectorAll("main *"))) {
       const rect = element.getBoundingClientRect();
-      if (rect.width > 0 && rect.right > window.innerWidth + 1 && !clipsSideways(element.parentElement)) {
+      if (rect.width <= 0 || rect.right <= window.innerWidth + 1) continue;
+      let scrolls = false;
+      for (let node = element.parentElement; node && node !== document.body; node = node.parentElement) {
+        const overflow = getComputedStyle(node).overflowX;
+        if (overflow === "auto" || overflow === "scroll") {
+          scrolls = true;
+          break;
+        }
+      }
+      if (!scrolls) {
         const label = (element as HTMLElement).innerText?.trim().slice(0, 30) || element.tagName.toLowerCase();
         offenders.push(`${label} (+${Math.round(rect.right - window.innerWidth)}px)`);
         if (offenders.length >= 3) break;
@@ -84,7 +87,16 @@ async function shot(page: Page, viewport: string, step: string) {
       if (box.right > window.innerWidth + 1 || box.left < -1) found.push("dialog is wider than the window");
       for (const element of Array.from(dialog.querySelectorAll("*"))) {
         const rect = element.getBoundingClientRect();
-        if (rect.width > 0 && rect.right > box.right + 1) {
+        if (rect.width <= 0 || rect.right <= box.right + 1) continue;
+        let scrolls = false;
+        for (let node = element.parentElement; node && node !== dialog; node = node.parentElement) {
+          const overflow = getComputedStyle(node).overflowX;
+          if (overflow === "auto" || overflow === "scroll") {
+            scrolls = true;
+            break;
+          }
+        }
+        if (!scrolls) {
           found.push(`dialog content spills out on the right (${element.tagName.toLowerCase()}, ${Math.round(rect.right - box.right)}px)`);
           break;
         }

@@ -737,7 +737,7 @@ export default function WorkspaceHomeClient() {
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
+      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
         <article className={`${surfaceClass} min-w-0 p-5 sm:p-6`}>
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -757,7 +757,7 @@ export default function WorkspaceHomeClient() {
             </Link>
           </div>
 
-          <div className="mt-5 grid gap-6 lg:grid-cols-2">
+          <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
             <InsightList
               title="Top topics"
               items={summary.topTopics}

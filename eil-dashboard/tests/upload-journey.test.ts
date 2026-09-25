@@ -201,3 +201,17 @@ test("Refresh is not announced as a filter change", () => {
   // A plan made for one repository is dropped when another is opened.
   assert.match(dashboard, /adaptiveProjectRef\.current = selectedProjectId;\s*setPlanState\(null\);/);
 });
+
+test("progress under a paper describes the paper, not the queue machinery", () => {
+  // Seen under a fresh upload on the pilot: "1 Cloud Task queued the analysis
+  // worker..." and "The worker is entering the paper analysis graph...".
+  const start = read("src/lib/worker-queue-start.ts");
+  assert.doesNotMatch(start, /Cloud Task\$\{|queued the analysis worker|Worker service configuration/);
+  assert.match(start, /In line for analysis\. It should start within a minute\./);
+  const worker = read("worker/process_ingestion_queue.py");
+  assert.doesNotMatch(worker, /entering the paper analysis graph|claimed this run|from Supabase Storage before/);
+  // The paper view no longer reports where its rows came from in pipeline terms.
+  const paperView = read("src/components/workspace/PaperAnalysisExplorerModal.tsx");
+  assert.doesNotMatch(paperView, /Canonical node output|Pipeline analysis ready/);
+  assert.match(paperView, /<div className="mt-5 flex flex-wrap items-center gap-2">/);
+});
