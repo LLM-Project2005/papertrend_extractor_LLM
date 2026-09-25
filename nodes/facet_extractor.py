@@ -46,18 +46,11 @@ def extract_facets_node(state: IngestionState) -> Dict[str, Any]:
             "status": "facets_ready",
         }
     except Exception as error:
-        fallback_facets: List[Dict[str, Any]] = []
-        abstract_text = sections.get("abstract_claims", "")
-        if abstract_text:
-            fallback_facets.append(
-                {
-                    "facet_type": "objective_verb",
-                    "label": "investigate",
-                    "evidence": abstract_text[:400],
-                }
-            )
+        # No facet is better than an invented one: an "investigate" facet
+        # quoting the abstract used to be saved here for every failure.
         return {
-            "analysis_facets": fallback_facets,
-            "errors": [f"Facet extraction used a fallback: {error}"],
+            "analysis_facets": [],
+            "warnings": [f"facets: extraction failed, so none were saved ({str(error)[:160]})"],
+            "errors": [],
             "status": "facets_ready",
         }

@@ -191,6 +191,7 @@ def _fallback_result(text: str, warning: str | None = None) -> Dict[str, Any]:
     }
     if warning:
         output["segmentation_warning"] = warning
+        output["warnings"] = [f"segmentation: {warning[:240]}"]
     return output
 
 

@@ -12,6 +12,18 @@ def keep_latest(_current: Any, update: Any) -> Any:
     return update if update is not None else _current
 
 
+def keep_failure(current: Any, update: Any) -> Any:
+    """Latest status wins, except that a failed required stage stays failed.
+
+    Parallel branches finish in any order, so a later "facets_ready" must not
+    overwrite an earlier "failed" from the keyword branch.
+    """
+
+    if current == "failed":
+        return current
+    return update if update is not None else current
+
+
 class SectionIndices(BaseModel):
     start: int = Field(description="Starting character index in the source section.")
     end: int = Field(description="Ending character index in the source section.")
@@ -232,6 +244,13 @@ class DeepResearchStepDiagnosticsSchema(BaseModel):
 
 
 class IngestionState(TypedDict, total=False):
+    """Every key a node returns must be declared here.
+
+    LangGraph drops undeclared keys silently, so a node's output that is not
+    listed never reaches the next node (tests/test_ingestion_state_contract.py
+    enforces this).
+    """
+
     messages: Annotated[List[BaseMessage], operator.add]
     pdf_path: str
     source_path: str
@@ -247,8 +266,12 @@ class IngestionState(TypedDict, total=False):
     cleaned_text: str
     cleaned_english_text: str
     needs_translation: bool
+    translation_strategy: str
+    translation_warning: str
     semantic_map: Optional[Dict[str, Any]]
     final_json: Optional[Dict[str, Any]]
+    segmentation_strategy: str
+    segmentation_warning: str
     paper_metadata: Optional[Dict[str, Any]]
     year_resolution: Optional[Dict[str, Any]]
     keyword_candidates: List[Dict[str, Any]]
@@ -256,13 +279,19 @@ class IngestionState(TypedDict, total=False):
     final_labeled_topics: List[Dict[str, Any]]
     track_single: Dict[str, Any]
     track_multi: Dict[str, Any]
+    category_classification: Dict[str, Any]
+    category_definitions: List[Dict[str, Any]]
+    category_assignments: List[Dict[str, Any]]
     analysis_facets: List[Dict[str, Any]]
     author_keywords: List[Dict[str, Any]]
     research_typology: Dict[str, Any]
     concept_rows: List[Dict[str, Any]]
     dataset: Dict[str, Any]
+    # A stage that fell back to a weaker result says so here; the reasons are
+    # stored with the run as analysis_quality instead of disappearing.
+    warnings: Annotated[List[str], operator.add]
     errors: Annotated[List[str], operator.add]
-    status: Annotated[str, keep_latest]
+    status: Annotated[str, keep_failure]
     total_clusters_processed: int
 
 

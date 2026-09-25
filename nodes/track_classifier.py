@@ -207,6 +207,7 @@ def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
                 "multi_categories": [OTHER_CATEGORY_LABEL],
                 "rationale": f"Category classification fell back to Other: {error}",
             },
-            "errors": [f"Track classification fell back to Other: {error}"],
+            "warnings": [f"classification: failed, so the paper was placed in Other ({str(error)[:160]})"],
+            "errors": [],
             "status": "tracks_ready",
         }

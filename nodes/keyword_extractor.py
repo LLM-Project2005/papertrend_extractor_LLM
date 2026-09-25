@@ -215,6 +215,11 @@ def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
                 raise ValueError("structured output returned no candidates")
             return {
                 "keyword_candidates": _enrich_candidates(result, paper_json),
+                "warnings": (
+                    [f"keywords: the full prompt failed, so a shorter retry prompt was used ({errors[-1][:160]})"]
+                    if errors
+                    else []
+                ),
                 "errors": [],
                 "status": "keywords_ready",
             }
@@ -225,10 +230,12 @@ def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
     if fallback_candidates:
         return {
             "keyword_candidates": _fallback_with_spans(fallback_candidates, paper_json),
-            "errors": [
-                "Keyword extraction used a grounded fallback after structured output failed: "
-                + (errors[-1] if errors else "unknown model error")
+            "warnings": [
+                "keywords: the model failed, so frequent phrases were taken from the text instead ("
+                + (errors[-1][:160] if errors else "unknown model error")
+                + ")"
             ],
+            "errors": [],
             "status": "keywords_ready",
         }
 

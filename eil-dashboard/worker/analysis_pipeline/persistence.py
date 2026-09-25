@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, List, Tuple
 
 
 logger = logging.getLogger("papertrend.persistence")
@@ -124,6 +124,33 @@ def _persist_step(
     return True
 
 
+# (dataset key, table) for rows that replace the paper's previous rows.
+_REPLACED_TABLES = (
+    ("keywords", "paper_keywords"),
+    ("keyword_concepts", "paper_keyword_concepts"),
+    ("paper_facets", "paper_analysis_facets"),
+    ("author_keywords", "paper_author_keywords"),
+    ("research_typologies", "paper_research_typologies"),
+    ("category_definitions", "paper_category_definitions"),
+    ("category_assignments", "paper_category_assignments"),
+)
+
+
+def paper_write_steps(dataset: Dict[str, Any]) -> List[Tuple[str, str, List[Dict[str, Any]]]]:
+    """The ordered writes that replace one paper's analysis."""
+
+    steps: List[Tuple[str, str, List[Dict[str, Any]]]] = [
+        ("upsert", "papers", list(dataset.get("papers") or [])),
+        ("upsert", "paper_tracks_single", list(dataset.get("tracks_single") or [])),
+        ("upsert", "paper_tracks_multi", list(dataset.get("tracks_multi") or [])),
+        ("upsert", "paper_content", list(dataset.get("paper_content") or [])),
+    ]
+    for key, table in _REPLACED_TABLES:
+        steps.append(("delete", table, []))
+        steps.append(("upsert", table, list(dataset.get(key) or [])))
+    return steps
+
+
 def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     paper_id = int(dataset["paper_id"])
     paper_rows = list(dataset.get("papers") or [])
@@ -132,6 +159,31 @@ def persist_dataset(client: Any, dataset: Dict[str, Any]) -> None:
     ).strip()
     if not owner_user_id:
         raise ValueError("The analysis dataset is missing its owner_user_id.")
+
+    apply_paper_writes = getattr(client, "apply_paper_writes", None)
+    if callable(apply_paper_writes):
+        steps = paper_write_steps(dataset)
+        dropped: Dict[str, List[str]] = {}
+
+        def write_all() -> None:
+            dropped.update(apply_paper_writes(paper_id, owner_user_id, steps) or {})
+
+        _persist_step(
+            "paper.transaction",
+            sum(len(rows) for action, _table, rows in steps if action == "upsert"),
+            write_all,
+        )
+        if dropped:
+            logger.warning(
+                "persist dropped columns the database does not have paper_id=%s dropped=%s",
+                paper_id,
+                dropped,
+                extra={"paper_id": paper_id, "dropped_columns": dropped},
+            )
+        return
+
+    # The Supabase REST client cannot group writes into one transaction; it
+    # remains only for rollback during the cutover.
 
     def delete_owned_rows(table: str) -> None:
         client.delete_rows_for_paper(

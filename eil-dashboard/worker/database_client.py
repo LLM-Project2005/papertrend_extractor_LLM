@@ -11,7 +11,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import date, datetime
 from decimal import Decimal
-from typing import Any, Dict, Iterable, Iterator, List, Optional
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from cloudsql_authorization import normalize_owner_id, set_transaction_owner
 
@@ -380,9 +380,6 @@ class CloudSqlWorkerClient:
             raise ValueError(f"Unsupported analysis table: {table}")
         owner_user_id = _single_payload_owner(table, payload)
 
-        from psycopg import sql
-
-        keys = PRIMARY_KEYS[table]
         with self._connection() as connection, connection.cursor() as cursor:
             set_transaction_owner(cursor, owner_user_id)
             cursor.execute(
@@ -391,41 +388,113 @@ class CloudSqlWorkerClient:
                 (table,),
             )
             available = {str(row["column_name"]) for row in cursor.fetchall()}
-            columns = sorted({key for row in payload for key in row if key in available})
-            generated_id = table in GENERATED_ID_TABLES and "id" not in columns
-            if not columns or (not generated_id and not all(key in columns for key in keys)):
-                raise RuntimeError(f"Cloud SQL schema cannot accept {table} rows.")
+            self._execute_upsert(cursor, table, payload, available)
 
-            identifiers = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
-            placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in columns)
-            if generated_id:
-                conflict = sql.SQL("DO NOTHING")
-                conflict_keys = sql.SQL(", ").join(sql.Identifier(key) for key in keys)
-            else:
-                conflict_keys = sql.SQL(", ").join(sql.Identifier(key) for key in keys)
-                updates = [column for column in columns if column not in keys]
-                conflict = sql.SQL("DO UPDATE SET {updates}").format(
-                    updates=sql.SQL(", ").join(
-                        sql.SQL("{column} = EXCLUDED.{column}").format(
-                            column=sql.Identifier(column)
+    def apply_paper_writes(
+        self,
+        paper_id: int,
+        owner_user_id: str,
+        steps: Sequence[Tuple[str, str, List[Dict[str, Any]]]],
+    ) -> Dict[str, List[str]]:
+        """Replace one paper's analysis rows in a single transaction.
+
+        ``steps`` is an ordered list of ("delete", table, []) and
+        ("upsert", table, rows). Either every step lands or none does, so a
+        failure part-way can no longer leave a paper with its keywords deleted
+        and nothing written in their place. Returns the columns each table
+        could not accept, which are dropped rather than failing the save.
+        """
+
+        owner = normalize_owner_id(owner_user_id)
+        tables = sorted({table for _action, table, _rows in steps})
+        for table in tables:
+            if table not in ALLOWED_WRITE_TABLES:
+                raise ValueError(f"Unsupported analysis table: {table}")
+
+        from psycopg import sql
+
+        dropped: Dict[str, List[str]] = {}
+        with self._connection() as connection:
+            with connection.transaction(), connection.cursor() as cursor:
+                set_transaction_owner(cursor, owner)
+                cursor.execute(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_schema = 'public' AND table_name = ANY(%s)",
+                    (tables,),
+                )
+                available: Dict[str, set] = {}
+                for row in cursor.fetchall():
+                    available.setdefault(str(row["table_name"]), set()).add(str(row["column_name"]))
+
+                for action, table, rows in steps:
+                    if table not in available:
+                        dropped[table] = ["(table missing)"]
+                        continue
+                    if action == "delete":
+                        cursor.execute(
+                            sql.SQL("DELETE FROM public.{table} WHERE paper_id = %s").format(
+                                table=sql.Identifier(table)
+                            ),
+                            (paper_id,),
                         )
-                        for column in updates
+                        continue
+                    payload = [dict(row) for row in rows or []]
+                    if not payload:
+                        continue
+                    if _single_payload_owner(table, payload) != owner:
+                        raise PermissionError(f"Cloud SQL {table} rows belong to a different owner.")
+                    unknown = sorted({key for row in payload for key in row if key not in available[table]})
+                    if unknown:
+                        dropped[table] = unknown
+                    self._execute_upsert(cursor, table, payload, available[table])
+        return dropped
+
+    @staticmethod
+    def _execute_upsert(
+        cursor: Any,
+        table: str,
+        payload: List[Dict[str, Any]],
+        available: Iterable[str],
+    ) -> None:
+        from psycopg import sql
+
+        available_columns = set(available)
+        keys = PRIMARY_KEYS[table]
+        columns = sorted({key for row in payload for key in row if key in available_columns})
+        generated_id = table in GENERATED_ID_TABLES and "id" not in columns
+        if not columns or (not generated_id and not all(key in columns for key in keys)):
+            raise RuntimeError(f"Cloud SQL schema cannot accept {table} rows.")
+
+        identifiers = sql.SQL(", ").join(sql.Identifier(column) for column in columns)
+        placeholders = sql.SQL(", ").join(sql.Placeholder() for _ in columns)
+        if generated_id:
+            conflict = sql.SQL("DO NOTHING")
+            conflict_keys = sql.SQL(", ").join(sql.Identifier(key) for key in keys)
+        else:
+            conflict_keys = sql.SQL(", ").join(sql.Identifier(key) for key in keys)
+            updates = [column for column in columns if column not in keys]
+            conflict = sql.SQL("DO UPDATE SET {updates}").format(
+                updates=sql.SQL(", ").join(
+                    sql.SQL("{column} = EXCLUDED.{column}").format(
+                        column=sql.Identifier(column)
                     )
-                ) if updates else sql.SQL("DO NOTHING")
-            statement = sql.SQL(
-                "INSERT INTO public.{table} ({columns}) VALUES ({values}) "
-                "ON CONFLICT ({keys}) {conflict}"
-            ).format(
-                table=sql.Identifier(table),
-                columns=identifiers,
-                values=placeholders,
-                keys=conflict_keys,
-                conflict=conflict,
-            )
-            cursor.executemany(
-                statement,
-                [tuple(_json_value(row.get(column)) for column in columns) for row in payload],
-            )
+                    for column in updates
+                )
+            ) if updates else sql.SQL("DO NOTHING")
+        statement = sql.SQL(
+            "INSERT INTO public.{table} ({columns}) VALUES ({values}) "
+            "ON CONFLICT ({keys}) {conflict}"
+        ).format(
+            table=sql.Identifier(table),
+            columns=identifiers,
+            values=placeholders,
+            keys=conflict_keys,
+            conflict=conflict,
+        )
+        cursor.executemany(
+            statement,
+            [tuple(_json_value(row.get(column)) for column in columns) for row in payload],
+        )
 
     def _update_owned_record(self, table: str, row_id: str, patch: Dict[str, Any]) -> None:
         self._update_record(table, row_id, patch, require_owner=True)

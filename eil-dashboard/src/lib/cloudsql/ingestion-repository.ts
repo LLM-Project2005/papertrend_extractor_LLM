@@ -217,6 +217,22 @@ export class CloudSqlIngestionRepository {
     });
   }
 
+  async listRecentRuns(ownerUserId: string, limit = 25): Promise<IngestionRunRow[]> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<IngestionRunRow>(
+        `SELECT id, owner_user_id, folder_id, folder_analysis_job_id, source_type, status,
+                source_filename, display_name, source_extension, mime_type, file_size_bytes,
+                provider, model, input_payload, error_message, created_at, updated_at, completed_at
+         FROM public.ingestion_runs
+         WHERE owner_user_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
+        [ownerUserId, Math.max(1, Math.min(limit, 100))]
+      );
+      return result.rows;
+    });
+  }
+
   async loadOwnedBatch(ownerUserId: string, folderJobId: string, runIds: string[]) {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const result = await client.query<IngestionRunRow>(

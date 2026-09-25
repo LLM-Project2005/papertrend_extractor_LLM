@@ -1,0 +1,327 @@
+{
+  "description": "Pipeline evaluation set. Gold facts were read from each PDF's front matter (page images for scanned files). PDFs are not committed; scripts/evaluate_pipeline_quality.py downloads them read-only from the uploads bucket into a local cache.",
+  "bucket": "research-trend-analysis-papertrend-uploads-production",
+  "input_payload": {
+    "analysis_profile": {
+      "version": 2,
+      "profileVersion": 2,
+      "mode": "eil",
+      "displayName": "EIL Tracks",
+      "domain": "English as an International Language",
+      "domainDefinition": "Research on English in global, multilingual, educational, cultural, assessment, and policy contexts.",
+      "taxonomyName": "EIL Tracks",
+      "taxonomyDefinition": "Classify by the paper's primary contribution. Instructional interventions belong to ELI even when tests measure outcomes. Linguistic analysis belongs to EL unless it primarily builds or validates an assessment, which belongs to LAE. Add secondary categories only for genuine contributions.",
+      "additionalContext": "Use the official EIL track boundaries and preserve uncertainty.",
+      "classificationEnabled": true,
+      "categories": [
+        {
+          "key": "el",
+          "label": "English Linguistics",
+          "description": "Research primarily explaining English language structure, meaning, variation, discourse, translation, or language use in global and local contexts."
+        },
+        {
+          "key": "eli",
+          "label": "English Language Instruction",
+          "description": "Research primarily concerning English teaching, learning, pedagogy, curriculum, teacher development, classroom practice, or instructional interventions."
+        },
+        {
+          "key": "lae",
+          "label": "Language Assessment & Evaluation",
+          "description": "Research primarily concerning language-test design, validation, scoring, measurement, interpretation, washback, or assessment practice."
+        }
+      ],
+      "profileHash": "eval-eil-v2"
+    },
+    "project_id": "eval"
+  },
+  "papers": [
+    {
+      "id": "discourse-markers",
+      "object": "pending/Inbox/55822313-a221-4e92-9add-5d4b5a385db6/A-corpus-based-study-on-the-use-of-spoken-discourse-markers-by-Thai-EFL-learners.pdf",
+      "kind": [
+        "scanned",
+        "truncated-title",
+        "duplicate"
+      ],
+      "runs": 2,
+      "gold": {
+        "title": "A Corpus-Based Study on the Use of Spoken Discourse Markers by Thai EFL Learners",
+        "year": "2022",
+        "author_keywords": [
+          "spoken discourse markers",
+          "pragmatic functions",
+          "Thai EFL learners",
+          "learner corpus"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "eil-pbl",
+      "object": "pending/Inbox/43e93ebe-c37a-4817-8125-41089081db7f/English-as-an-International-Language-project-based-learning--A-focus-on-young-Chinese-Learners-Beliefs.pdf",
+      "kind": [
+        "short-article",
+        "truncated-title",
+        "duplicate"
+      ],
+      "runs": 2,
+      "gold": {
+        "title": "English as an International Language Project-Based Learning: A Focus on Young Chinese Learners' Beliefs",
+        "year": "2022",
+        "author_keywords": [
+          "English as an international language",
+          "project-based language learning",
+          "beliefs",
+          "young learners"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "portfolio",
+      "object": "pending/Inbox/2b62274e-a488-44a6-b0ab-3ec76c26f050/Portfolio-Assessment-among-Thai-EFL-first-year-university-students--Perceptions-and-progress.pdf",
+      "kind": [
+        "scanned",
+        "truncated-title",
+        "duplicate"
+      ],
+      "runs": 2,
+      "gold": {
+        "title": "Portfolio Assessment Among Thai EFL First-Year University Students: Perceptions and Progress",
+        "year": "2022",
+        "author_keywords": [
+          "writing assessment",
+          "writing ability",
+          "portfolio assessment",
+          "alternative assessment",
+          "Thai EFL undergraduate students"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "debate-flipped",
+      "object": "pending/Inbox/7d75da4c-2d47-4938-8f32-bbf0ad7e9bca/The-effects-of-debate-instruction-through-a-flipped-learning-environment-on-critical-thinking-skills-of-Thai-high-school-students.pdf",
+      "kind": [
+        "undated-front-matter"
+      ],
+      "runs": 2,
+      "gold": {
+        "title": "The Effects of Debate Instruction through a Flipped Learning Environment on Critical Thinking Skills of Thai High School Students",
+        "year": "2019",
+        "year_note": "Ambiguous: the only printed year is a ProQuest '(c) 2019' notice on the last page; the front matter has none.",
+        "author_keywords": [
+          "debate instruction",
+          "flipped learning environment",
+          "critical thinking skills"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "agency",
+      "object": "pending/Inbox/fdaa765c-fbba-47d7-bdc4-146590937592/Manifestation-of-Agency-by-English-language-teachers-in-relation-to-Thailand-s-language-assessment-policy.pdf",
+      "kind": [
+        "truncated-title",
+        "multi-line-title"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "Manifestation of Agency by English Language Teachers in Relation to Thailand's Language Assessment Policy",
+        "year": "2021",
+        "author_keywords": [
+          "agency",
+          "teacher agency",
+          "English language education policy",
+          "English language assessment policy",
+          "Thailand's higher education"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "beliefs-psu",
+      "object": "pending/Repository/f787839d-a4bd-4a30-99ad-88a56f5eade6/Beliefs-about-English-language-learning-attitudes-and-motivation-of-undergraduate-students-of-Prince-of-Songkla-University-Surat-Thani-Campus.pdf",
+      "kind": [
+        "scanned",
+        "year-stored-unknown"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "Beliefs about English Language Learning, Attitudes and Motivation of Undergraduate Students of Prince of Songkla University, Surat Thani Campus",
+        "year": "2018",
+        "author_keywords": [
+          "beliefs about language learning",
+          "attitudes and motivation",
+          "undergraduate students"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "computerized-dra",
+      "object": "pending/2023/9b713add-5c29-41b3-a54f-beac6a5c608f/Development-of-a-Computerized-Dynamic-Reading-Assessment-Program-to-Measure-English-Reading-Comprehension-of-Thai-EFL-Undergraduate-Students.pdf",
+      "kind": [
+        "long",
+        "truncated-title"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "Development of a Computerized Dynamic Reading Assessment Program to Measure English Reading Comprehension of Thai EFL Undergraduate Students",
+        "year": "2024",
+        "author_keywords": [
+          "computerized-dynamic assessment",
+          "computerized-dynamic reading assessment",
+          "reading comprehension",
+          "EFL undergraduate students",
+          "low English proficiency"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "global-englishes",
+      "object": "pending/Inbox/2b7b55dd-9c58-414f-ad27-a09dbccd8ea1/Global-Englishes-Language-Teaching-for-Vietnamese-preservice-English-teachers-perceptions-and-practices.pdf",
+      "kind": [
+        "long",
+        "truncated-title"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "Global Englishes Language Teaching for Vietnamese Preservice English Teachers' Perceptions and Practices",
+        "year": "2025",
+        "author_keywords": [
+          "Global Englishes Language Teaching",
+          "perceptions",
+          "practices",
+          "Vietnamese preservice English teachers"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "native-present-tense",
+      "object": "pending/2023/da2086f9-78b8-4379-870a-7b3412fe72d5/A-Study-of-Native-English-Speakers-Usage-of-the-English-Present-Tense-and-Their-Metalinguistic-Knowledge-on-Locations-in-Time-and-Aspects.pdf",
+      "kind": [
+        "long",
+        "garbled-title",
+        "thai-front-matter"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "A Study of Native English Speakers' Usage of the English Present Tense and Their Metalinguistic Knowledge on Locations in Time and Aspects",
+        "year": "2023",
+        "author_keywords": [
+          "native English speakers",
+          "English present tense",
+          "metalinguistic knowledge"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "icao",
+      "object": "pending/Inbox/1f461779-302f-4305-b848-5bbe45a27430/Relationship-between-the-ICAO-language-proficiency-requirements-IPRs-and-test-of-English-for-international-communication-TOEIC-score-of-flight-attendants-in-Thailand.pdf",
+      "kind": [
+        "scanned",
+        "methods-heavy"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "Relationship between The ICAO Language Proficiency Requirements (LPRs) and Test of English for International Communication (TOEIC) Scores of Flight Attendants in Thailand",
+        "year": "2018",
+        "author_keywords": [
+          "ICAO Language Proficiency Requirement",
+          "TOEIC",
+          "flight attendants"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "plosive",
+      "object": "pending/Inbox/8a7aae56-8c7d-4cc6-8060-3748ec5d3a90/English-plosive-consonants-produced-by-Thai-speakers--An-analysis-of-voice-onset-time.pdf",
+      "kind": [
+        "short-article",
+        "year-trap"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "English Plosive Consonants Produced by Thai Speakers: An Analysis of Voice Onset Time",
+        "year": "2025",
+        "year_note": "The front matter also prints a typo 'revised 22/11/2029'.",
+        "author_keywords": [
+          "Voice Onset Time (VOT)",
+          "Thai-accented English",
+          "pronunciation",
+          "second language acquisition"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "rasch-validation",
+      "object": "pending/2013/8d2d0aca-464a-49ee-b848-cacc7a8d543a/APPLYING-A-RASCH-BASED-ARGUMENT-APPROACH-TO-THE-VALIDATION-OF-THE-ACADEMIC-COLLOCATIONAL-COMPETENCE-TEST-FOR-EFL-GRADUATE-STUDENTS.pdf",
+      "kind": [
+        "methods-heavy",
+        "acronym",
+        "thai-front-matter"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "Applying a Rasch-Based Argument Approach to the Validation of the Academic Collocational Competence Test for EFL Graduate Students",
+        "year": "2014",
+        "author_keywords": [
+          "argument-based approach",
+          "Rasch measurement approach",
+          "academic collocational competence test"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "thai-a",
+      "object": "pending/2016/3604e619-641c-413d-ba25-31b5e0dd83f9/-.pdf",
+      "kind": [
+        "mixed-thai-english"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "Accommodation and Adaptation in Inclusive English Classrooms with Undergraduate Students with and without Hearing Impairment",
+        "title_alternatives": [
+          "สิ่งอำนวยความสะดวกและการดัดแปลงห้องเรียนภาษาอังกฤษแบบการจัดการเรียนรวม สำหรับนักศึกษาที่มีการได้ยินปกติและนักศึกษาที่มีความบกพร่องในการได้ยิน"
+        ],
+        "year": "2019",
+        "author_keywords": [
+          "accommodation",
+          "adaptation",
+          "inclusive English classrooms",
+          "students with hearing impairment"
+        ],
+        "has_introduction": true
+      }
+    },
+    {
+      "id": "thai-d",
+      "object": "pending/Paper/434ae075-b520-4464-a8f5-981a1ecaa610/-.pdf",
+      "kind": [
+        "thai",
+        "translated"
+      ],
+      "runs": 1,
+      "gold": {
+        "title": "A Study of Language Learning Strategies use of Students in an English Program in Assumption Samutprakarn School",
+        "year": "2011",
+        "year_in_text": false,
+        "year_note": "Printed only in the page footer (B.E. 2554), which the PDF text layer does not contain; Unknown is the correct result from text.",
+        "author_keywords": [
+          "language learning strategies",
+          "learning activities",
+          "learning styles",
+          "English Program"
+        ],
+        "has_introduction": true
+      }
+    }
+  ]
+}
