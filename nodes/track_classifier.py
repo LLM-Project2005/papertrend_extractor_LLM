@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List
 from nodes import ModelTask, get_task_llm
 from nodes.common import (
     LEGACY_CATEGORY_STORAGE_SLOTS,
+    TRACK_FIELD_MAP,
     build_track_row,
     format_category_definitions,
     load_prompt,
@@ -53,17 +54,30 @@ def _normalize_selected_category_key(value: Any, categories: List[Dict[str, Any]
     return OTHER_CATEGORY_KEY
 
 
+MAX_SECONDARY_CATEGORIES = 2
+
+
+def _is_allowed_category_key(value: Any, categories: List[Dict[str, Any]]) -> bool:
+    return _clean_model_category_key(value) in _category_lookup(categories)
+
+
 def _normalize_multi_category_keys(
     values: Iterable[Any], single_key: str, categories: List[Dict[str, Any]]
 ) -> List[str]:
-    normalized: List[str] = []
+    """The primary key first, then at most two genuine secondary keys (the
+    reclassification job's rule). Unknown keys are dropped, not turned into
+    Other."""
+
+    normalized: List[str] = [single_key]
     for value in values:
+        if not _is_allowed_category_key(value, categories):
+            continue
         key = _normalize_selected_category_key(value, categories)
-        if key not in normalized:
+        if key not in normalized and key != OTHER_CATEGORY_KEY:
             normalized.append(key)
-    if single_key not in normalized:
-        normalized.insert(0, single_key)
-    return normalized or [OTHER_CATEGORY_KEY]
+    if single_key == OTHER_CATEGORY_KEY:
+        return [OTHER_CATEGORY_KEY]
+    return normalized[: 1 + MAX_SECONDARY_CATEGORIES]
 
 
 def _category_label_map(categories: List[Dict[str, Any]]) -> Dict[str, str]:
@@ -77,21 +91,23 @@ def _category_label_map(categories: List[Dict[str, Any]]) -> Dict[str, str]:
     }
 
 
-def _legacy_tracks_for_category_keys(
-    category_keys: Iterable[str], categories: List[Dict[str, Any]]
-) -> List[str]:
-    key_to_slot = {
-        str(category.get("key")): LEGACY_CATEGORY_STORAGE_SLOTS[index]
+def _legacy_track_row(category_keys: Iterable[str], categories: List[Dict[str, Any]]) -> Dict[str, int]:
+    """The old el/eli/lae/other columns, filled the way the reclassification
+    job fills them: the first three categories map to el/eli/lae, and a fourth
+    or later category has no legacy column (it is not "other")."""
+
+    key_to_field = {
+        str(category.get("key")): TRACK_FIELD_MAP[LEGACY_CATEGORY_STORAGE_SLOTS[index]]
         for index, category in enumerate(categories[: len(LEGACY_CATEGORY_STORAGE_SLOTS)])
         if category.get("key")
     }
-    tracks: List[str] = []
+    row = {field: 0 for field in TRACK_FIELD_MAP.values()}
     for key in category_keys:
         if key == OTHER_CATEGORY_KEY:
-            tracks.append("Other")
-            continue
-        tracks.append(key_to_slot.get(key, "Other"))
-    return tracks or ["Other"]
+            row["other"] = 1
+        elif key in key_to_field:
+            row[key_to_field[key]] = 1
+    return row
 
 
 def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
@@ -134,36 +150,40 @@ def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
         additional_context=analysis_profile.get("additional_context") or "No additional project context supplied.",
         category_definitions=format_category_definitions(analysis_profile),
         title=sections.get("title", ""),
-        abstract_claims=sections.get("abstract_claims", "")[:4000],
-        methods=sections.get("methods", "")[:3000],
-        results=sections.get("results", "")[:3000],
-        conclusion=sections.get("conclusion", "")[:3000],
-        concepts="\n".join(
-            [
-                f"- {topic.get('label')}: {', '.join(topic.get('matched_terms') or topic.get('original_keywords') or [])}"
-                for topic in topics
-            ]
-        ),
+        abstract_claims=sections.get("abstract_claims", "")[:7000],
+        methods=sections.get("methods", "")[:7000],
+        results=sections.get("results", "")[:7000],
+        conclusion=(sections.get("conclusion") or sections.get("discussion") or "")[:7000],
+        concepts=", ".join(str(topic.get("label") or "") for topic in topics if topic.get("label")),
     )
 
     structured_llm = track_classification_llm.with_structured_output(TrackClassificationSchema, method="json_schema")
+    categories = analysis_profile.get("categories", [])
 
     try:
         result = structured_llm.invoke(prompt)
-        categories = analysis_profile.get("categories", [])
         raw_single = getattr(result, "single_category_key", None) or getattr(result, "single_track", None)
+        if not _is_allowed_category_key(raw_single, categories):
+            # Like the reclassification job: an unknown key is corrected once,
+            # not silently turned into Other.
+            allowed = ", ".join([*(str(category.get("key")) for category in categories), OTHER_CATEGORY_KEY])
+            result = structured_llm.invoke(
+                f"{prompt}\n\nYour previous answer used the key '{raw_single}', which is not allowed. "
+                f"Use exactly one of: {allowed}."
+            )
+            raw_single = getattr(result, "single_category_key", None)
+            if not _is_allowed_category_key(raw_single, categories):
+                raise ValueError(f"the classifier returned an unknown category key '{raw_single}'")
         raw_multi = getattr(result, "multi_category_keys", None) or getattr(result, "multi_tracks", None) or []
         single_key = _normalize_selected_category_key(raw_single, categories)
         multi_keys = _normalize_multi_category_keys(raw_multi, single_key, categories)
         label_by_key = _category_label_map(categories)
         single_label = label_by_key.get(single_key) or OTHER_CATEGORY_LABEL
         multi_labels = [label_by_key.get(key) or OTHER_CATEGORY_LABEL for key in multi_keys]
-        legacy_single_tracks = _legacy_tracks_for_category_keys([single_key], categories)
-        legacy_multi_tracks = _legacy_tracks_for_category_keys(multi_keys, categories)
 
         return {
-            "track_single": build_track_row(legacy_single_tracks, ensure_single=True),
-            "track_multi": build_track_row(legacy_multi_tracks, ensure_single=False),
+            "track_single": _legacy_track_row([single_key], categories),
+            "track_multi": _legacy_track_row(multi_keys, categories),
             "category_classification": {
                 "taxonomy_name": analysis_profile.get("taxonomy_name"),
                 "profile_mode": analysis_profile.get("mode"),
@@ -207,6 +227,7 @@ def classify_tracks_node(state: IngestionState) -> Dict[str, Any]:
                 "multi_categories": [OTHER_CATEGORY_LABEL],
                 "rationale": f"Category classification fell back to Other: {error}",
             },
-            "errors": [f"Track classification fell back to Other: {error}"],
+            "warnings": [f"classification: failed, so the paper was placed in Other ({str(error)[:160]})"],
+            "errors": [],
             "status": "tracks_ready",
         }

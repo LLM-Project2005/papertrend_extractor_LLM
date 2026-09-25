@@ -99,15 +99,18 @@ def build_ingestion_graph():
     workflow.add_edge("segment", "metadata")
     workflow.add_edge("segment", "extract_author_keywords")
     workflow.add_edge("segment", "mine_keywords")
-    workflow.add_edge("segment", "classify_typology")
     workflow.add_edge("segment", "extract_facets")
-    workflow.add_edge("mine_keywords", "group_topics")
+    # The paper's own keyword list joins the extracted concepts before grouping
+    # (a small, fast call that finishes before keyword mining).
+    workflow.add_edge(["mine_keywords", "extract_author_keywords"], "group_topics")
     workflow.add_edge("group_topics", "label_trends")
+    # Typology reads the labelled topics; it runs beside classification so the
+    # longest path does not grow.
     workflow.add_edge("label_trends", "classify_tracks")
+    workflow.add_edge("label_trends", "classify_typology")
     workflow.add_edge(
         [
             "metadata",
-            "extract_author_keywords",
             "classify_tracks",
             "classify_typology",
             "extract_facets",

@@ -98,7 +98,7 @@ class NewIngestionNodeTests(unittest.TestCase):
             candidates=[
                 KeywordCandidate(
                     keyword="peer feedback",
-                    count=3,
+                    kind="subject",
                     evidence="Peer feedback improved the students' writing.",
                     matched_terms=["peer feedback"],
                     section="abstract_claims",
@@ -148,22 +148,22 @@ class NewIngestionNodeTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "keywords_ready")
         self.assertTrue(result["keyword_candidates"])
-        self.assertIn("grounded fallback", result["errors"][0])
+        self.assertEqual(result["errors"], [])
+        self.assertIn("frequent phrases were taken from the text", result["warnings"][0])
         self.assertTrue(
             any("peer feedback" in row["keyword"].casefold() for row in result["keyword_candidates"])
         )
 
-    def test_research_typology_uses_boundary_fallback_for_intervention_measurement_overlap(self) -> None:
+    def test_research_typology_saves_nothing_when_the_model_fails(self) -> None:
+        # The keyword rule that used to guess a group matched "test" or
+        # "measure" in almost any paper; a failure now saves no typology.
         with patch("nodes.research_typology.research_typology_llm") as llm:
-            llm.invoke.side_effect = RuntimeError("offline")
+            llm.with_structured_output.return_value.invoke.side_effect = RuntimeError("offline")
             result = classify_research_typology_node(
                 {
                     "final_json": {
                         "title": "Blended learning module",
-                        "abstract_claims": (
-                            "This study evaluates a blended instructional module and uses a writing test "
-                            "to measure whether the intervention improved student outcomes."
-                        ),
+                        "abstract_claims": "This study evaluates a blended instructional module.",
                         "methods": "A classroom treatment was implemented.",
                         "results": "Post-test scores improved.",
                         "conclusion": "The intervention was effective.",
@@ -172,44 +172,41 @@ class NewIngestionNodeTests(unittest.TestCase):
                 }
             )
 
-        typology = result["research_typology"]
-        self.assertEqual(typology["primary_group_number"], 2)
-        self.assertEqual(typology["secondary_group_number"], 3)
+        self.assertEqual(result["research_typology"], {})
+        self.assertIn("typology", result["warnings"][0])
 
-    def test_research_typology_parses_json_llm_response(self) -> None:
-        response = Mock()
-        response.content = """
-        {
-          "primary_group_number": 3,
-          "primary_group_name": "Assessment & Measurement",
-          "secondary_group_number": null,
-          "secondary_group_name": null,
-          "stated_purpose": "The paper validates a test.",
-          "primary_contribution": "A validated assessment instrument.",
-          "group_match": "The instrument is the primary contribution.",
-          "boundary_rule": "Not needed.",
-          "verdict": "Group 3 - Assessment & Measurement."
+    def test_research_typology_uses_structured_output_and_profile_names(self) -> None:
+        from state import ResearchTypologySchema
+
+        answer = ResearchTypologySchema(
+            primary_group_number=3,
+            secondary_group_number=0,
+            stated_purpose="The paper validates a test.",
+            primary_contribution="A validated assessment instrument.",
+            group_match="The instrument is the primary contribution.",
+            boundary_rule="Not needed.",
+            verdict="Group 3.",
+        )
+        state = {
+            "final_json": {
+                "title": "Validation paper",
+                "abstract_claims": "The paper validates a test.",
+                "methods": "Rasch analysis was used.",
+                "results": "The test was valid.",
+                "conclusion": "The assessment can be used.",
+            },
+            "final_labeled_topics": [{"label": "Rasch Measurement", "kind": "method", "original_keywords": ["Rasch analysis"]}],
         }
-        """
-
         with patch("nodes.research_typology.research_typology_llm") as llm:
-            llm.invoke.return_value = response
-            result = classify_research_typology_node(
-                {
-                    "final_json": {
-                        "title": "Validation paper",
-                        "abstract_claims": "The paper validates a test.",
-                        "methods": "Rasch analysis was used.",
-                        "results": "The test was valid.",
-                        "conclusion": "The assessment can be used.",
-                    },
-                    "final_labeled_topics": [],
-                }
-            )
+            llm.with_structured_output.return_value.invoke.return_value = answer
+            eil = classify_research_typology_node({**state, "input_payload": {"analysis_profile": {"mode": "eil"}}})
+            general = classify_research_typology_node({**state, "input_payload": {"analysis_profile": {"mode": "general"}}})
+            prompt = llm.with_structured_output.return_value.invoke.call_args_list[0][0][0]
 
-        typology = result["research_typology"]
-        self.assertEqual(typology["primary_group_number"], 3)
-        self.assertEqual(typology["classifier_source"], "llm")
+        self.assertEqual(eil["research_typology"]["primary_group_name"], "Assessment & Measurement")
+        self.assertEqual(general["research_typology"]["primary_group_name"], "Measurement & Method")
+        self.assertEqual(eil["research_typology"]["classifier_source"], "llm")
+        self.assertIn("Rasch Measurement", prompt)
 
     def test_category_classifier_uses_other_when_no_project_categories_exist(self) -> None:
         result = classify_tracks_node(
@@ -468,3 +465,24 @@ class NewIngestionNodeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuthorKeywordCleaningTests(unittest.TestCase):
+    def test_a_bracketed_abbreviation_keeps_its_pair(self) -> None:
+        from nodes.author_keywords import _clean_keyword
+
+        self.assertEqual(_clean_keyword("Voice Onset Time (VOT)"), "Voice Onset Time (VOT)")
+        self.assertEqual(_clean_keyword("EMI)"), "EMI")
+        self.assertEqual(_clean_keyword("[pronunciation]"), "pronunciation")
+        self.assertEqual(_clean_keyword("Keywords: dynamic assessment;"), "dynamic assessment")
+
+
+class SurfaceFormTests(unittest.TestCase):
+    def test_related_concepts_are_not_counted_as_forms_of_a_keyword(self) -> None:
+        from nodes.keyword_extractor import is_surface_form
+
+        self.assertFalse(is_surface_form("inferential statistics", "paired-samples t-test"))
+        self.assertFalse(is_surface_form("teacher agency", "room for manoeuvre"))
+        self.assertTrue(is_surface_form("English-medium instruction", "EMI"))
+        self.assertTrue(is_surface_form("Language Proficiency Requirements", "LPRs"))
+        self.assertTrue(is_surface_form("English reading comprehension", "reading comprehension"))

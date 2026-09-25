@@ -111,6 +111,33 @@ BUDGET_STRUCTURED_PRESET.update(
         ModelTask.RESEARCH_SUMMARIZATION: TaskProfile(primary="google/gemini-2.5-flash-lite"),
     }
 )
+# Paper analysis runs unattended, so a failed call falls back to the other
+# Flash-Lite model instead of degrading the paper. The fallback is used only
+# after a failure, so a healthy run costs the same. Interactive tasks keep no
+# fallback: a second full timeout would be worse than a quick error.
+_INGESTION_TASKS = (
+    ModelTask.VISION_OCR,
+    ModelTask.SEGMENTATION,
+    ModelTask.TRANSLATION,
+    ModelTask.METADATA,
+    ModelTask.AUTHOR_KEYWORD_EXTRACTION,
+    ModelTask.KEYWORD_EXTRACTION,
+    ModelTask.KEYWORD_GROUPING,
+    ModelTask.TOPIC_LABELING,
+    ModelTask.TRACK_CLASSIFICATION,
+    ModelTask.RESEARCH_TYPOLOGY,
+    ModelTask.FACET_EXTRACTION,
+)
+for _task in _INGESTION_TASKS:
+    _primary = BUDGET_STRUCTURED_PRESET[_task].primary
+    BUDGET_STRUCTURED_PRESET[_task] = TaskProfile(
+        primary=_primary,
+        fallback=(
+            "google/gemini-2.5-flash-lite"
+            if _primary == "google/gemini-3.1-flash-lite"
+            else "google/gemini-3.1-flash-lite"
+        ),
+    )
 
 QUALITY_FIRST_PRESET: Dict[ModelTask, TaskProfile] = {
     **CONSERVATIVE_PRESET,
@@ -344,6 +371,49 @@ def consume_usage_summary() -> Dict[str, Any]:
     }
 
 
+class StructuredOutputError(ValueError):
+    """The model answered, but not with output matching the requested schema."""
+
+
+def _structured_output_problem(result: Any) -> Optional[str]:
+    if isinstance(result, Mapping) and "parsed" in result:
+        if result.get("parsing_error") is not None:
+            return str(result.get("parsing_error"))
+        if result.get("parsed") is None:
+            return "the reply contained no parseable output"
+    return None
+
+
+def _is_output_validation_error(error: Exception) -> bool:
+    names = {cls.__name__ for cls in type(error).__mro__}
+    if names & {"ValidationError", "OutputParserException", "JSONDecodeError"}:
+        return True
+    message = str(error).lower()
+    return "validation error" in message or "invalid json" in message
+
+
+def _with_repair_instruction(args: Tuple[Any, ...], problem: str) -> Tuple[Any, ...]:
+    """Ask again, telling the model what was wrong with its last reply."""
+
+    if not args:
+        return args
+    shorter = any(marker in problem.lower() for marker in ("eof", "truncat", "length", "unterminated"))
+    instruction = (
+        "\n\nYour previous reply could not be used: "
+        + problem.replace("\n", " ")[:300]
+        + ". Reply again with only a complete JSON object that matches the requested schema."
+        + (" Keep it shorter: fewer items and shorter text fields." if shorter else "")
+    )
+    first, rest = args[0], args[1:]
+    if isinstance(first, str):
+        return (first + instruction, *rest)
+    if isinstance(first, list):
+        from langchain_core.messages import HumanMessage
+
+        return ([*first, HumanMessage(content=instruction.strip())], *rest)
+    return args
+
+
 class RoutedRunnable:
     def __init__(
         self,
@@ -351,14 +421,22 @@ class RoutedRunnable:
         builder: Callable[[ChatOpenAI], Any],
         operation: str,
         postprocess: Optional[Callable[[Any], Any]] = None,
+        validate: Optional[Callable[[Any], Optional[str]]] = None,
     ) -> None:
         self._parent = parent
         self._builder = builder
         self._operation = operation
         self._postprocess = postprocess
+        self._validate = validate
 
     def invoke(self, *args: Any, **kwargs: Any) -> Any:
-        result = self._parent._invoke_with_builder(self._builder, self._operation, *args, **kwargs)
+        result = self._parent._invoke_with_builder(
+            self._builder,
+            self._operation,
+            *args,
+            validate=self._validate,
+            **kwargs,
+        )
         if self._postprocess is not None:
             return self._postprocess(result)
         return result
@@ -395,7 +473,13 @@ class RoutedChatModel:
                 return result["parsed"]
             return result
 
-        return RoutedRunnable(self, builder, "structured_output", postprocess=postprocess)
+        return RoutedRunnable(
+            self,
+            builder,
+            "structured_output",
+            postprocess=postprocess,
+            validate=_structured_output_problem,
+        )
 
     def bind_tools(self, *args: Any, **kwargs: Any) -> RoutedRunnable:
         return RoutedRunnable(self, lambda client: client.bind_tools(*args, **kwargs), "bind_tools")
@@ -405,39 +489,64 @@ class RoutedChatModel:
         builder: Callable[[ChatOpenAI], Any],
         operation: str,
         *args: Any,
+        validate: Optional[Callable[[Any], Optional[str]]] = None,
         **kwargs: Any,
     ) -> Any:
-        attempts = [self.config.primary_model]
-        if self.config.fallback_model and self.config.fallback_model not in attempts:
-            attempts.append(self.config.fallback_model)
+        models = [self.config.primary_model]
+        if self.config.fallback_model and self.config.fallback_model not in models:
+            models.append(self.config.fallback_model)
+
+        # An answer that does not match the schema is retried once on the same
+        # model with the problem spelled out, then handed to the fallback.
+        attempts: List[Tuple[str, bool]] = []
+        for model_name in models:
+            attempts.append((model_name, False))
+            if validate is not None and model_name == models[0]:
+                attempts.append((model_name, True))
 
         last_error: Optional[Exception] = None
-        for index, model_name in enumerate(attempts):
+        problem: Optional[str] = None
+        for model_name, repair in attempts:
+            if repair and problem is None:
+                continue
             started = time.perf_counter()
-            fallback_used = index > 0
+            fallback_used = model_name != models[0]
+            call_args = _with_repair_instruction(args, problem) if repair and problem else args
             try:
                 client = _create_chat_openai(model_name, self.config, **self._overrides)
                 runnable = builder(client)
-                result = runnable.invoke(*args, **kwargs)
+                result = runnable.invoke(*call_args, **kwargs)
                 prompt_tokens, completion_tokens = _response_usage_payload(result)
                 estimated_cost = _estimate_cost_usd(model_name, prompt_tokens, completion_tokens)
                 latency_ms = round((time.perf_counter() - started) * 1000, 2)
+                problem = validate(result) if validate is not None else None
                 event = {
                     "task_name": self.config.task_name,
                     "operation": operation,
                     "model_name": model_name,
                     "provider_order": list(self.config.provider_order),
                     "fallback_used": fallback_used,
+                    "repair_attempt": repair,
                     "latency_ms": latency_ms,
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "estimated_cost_usd": estimated_cost,
+                    "output_problem": problem[:300] if problem else None,
                 }
                 _append_usage_event(event)
                 logger.info("model_call %s", event)
-                return result
+                if problem is None:
+                    return result
+                last_error = StructuredOutputError(problem)
             except Exception as error:
                 last_error = error
+                # A reply that fails schema validation can surface as an
+                # exception instead of a parsing_error; repair it the same way.
+                problem = (
+                    str(error)[:600]
+                    if validate is not None and _is_output_validation_error(error)
+                    else None
+                )
                 logger.warning(
                     "model_call_failed task=%s model=%s fallback_used=%s error=%s",
                     self.config.task_name,

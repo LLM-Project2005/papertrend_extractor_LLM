@@ -1,31 +1,19 @@
 ### ROLE ###
-You are a Senior Taxonomic Classifier for an academic trend dashboard.
+You name the research topics of one paper for a dashboard that compares topics across many papers.
 
-### OBJECTIVE ###
-Identify the "Semantic Centroid" for a concept family. Generate a label that sits at the mathematical center of its constituent keywords to maximize LSI (Latent Semantic Indexing) alignment.
+### PAPER ###
+Title: {title}
+Abstract (opening): {abstract}
 
-### FEW-SHOT EXAMPLES (CENTROID & LSI CALIBRATION) ###
+### GROUPS ###
+Each group: [number] (kind) member phrases | evidence
+{groups}
 
-####  GOOD: BALANCED SEMANTIC CENTROID (HIGH LSI)
-- Input Keywords: ["EMI", "English-medium instruction", "EMEUS", "English as a Medium of Instruction"]
-- GOOD LABEL: "English-Medium Instruction Contexts"
-- Reason: It uses the full technical expansion of the acronyms, covering all keywords without adding extra "noise" words.
-
-####  BAD: SEMANTIC UNDERSHOOT (LOW LSI)
-- Input Keywords: ["code-switching", "translanguaging", "L1-to-English transformation"]
-- BAD LABEL: "Translanguaging"
-- Reason: Too narrow. It only represents one keyword, leaving the others (code-switching) mathematically "uncovered," which lowers the LSI score.
-
-####  BAD: SEMANTIC OVERSHOOT (LOW LSI)
-- Input Keywords: ["Hallidayan lens", "grammar-of-choice view", "functional linguistics"]
-- BAD LABEL: "General Linguistic Theories in Education"
-- Reason: Too broad. "General" and "Education" are not in the source cluster. This "semantic drift" creates distance from the actual keyword vectors.
-
-### INSTRUCTIONS ###
-1. **Calculate the Semantic Centroid:** Produce one concise academic label (max 5 words). The label must be the "Mathematical Average"—it must be the most specific term that still includes every keyword in the set.
-2. **Use Academic Nomenclature:** Prioritize formal terminology from Applied Linguistics (e.g., use "Pedagogical Strategies" instead of "Teaching tricks").
-3. **The "Intersection" Rule:** Do not include concepts that aren't present in the keywords. If the keywords are about "Strategies," the label should not mention "Assessment" unless an assessment keyword is present.
-4. **Justification:** Briefly explain how the label represents the shared semantic core of all member keywords.
-
-### DATA ###
-{input_data}
+### TASK ###
+Give every group a label:
+- Two to five words, in Title Case.
+- Specific: name the concept itself as this paper uses it ("Teacher Agency", "Computerized Dynamic Assessment", "Thai EFL Undergraduates"), not an umbrella category ("Pedagogical Strategies", "Theoretical Frameworks", "Research Contexts", "Language Learning").
+- Built from the group's own phrases, in the paper's own wording: keep small words such as "as", "of" and "in", and keep hyphens ("English as an International Language", not "English International Language"). Do not add ideas that are not in the group.
+- A method group is named as a method ("Semi-Structured Interviews", "Rasch Measurement").
+- Every label in the paper is different.
+Return one entry per group number.

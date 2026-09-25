@@ -5,17 +5,17 @@ import {
   useMemo,
   useRef,
   useState,
-  type ChangeEvent,
   type FormEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
+import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
+import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import Modal from "@/components/ui/Modal";
 import {
   ArrowRightIcon,
@@ -40,13 +40,15 @@ import {
   TrashIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
-import type {
-  FolderAnalysisJobRow,
-  IngestionRunRow,
-  RunAnalysisDetail,
-} from "@/types/database";
-import { fingerprintFiles } from "@/lib/client-file-hash";
-import { describeRunFailure } from "@/lib/ingestion-status";
+import type { IngestionRunRow, RunAnalysisDetail } from "@/types/database";
+import {
+  describeRunFailure,
+  getRunDisplayTitle,
+  getRunPaperTitle,
+  getRunStageMessage,
+  getRunStatusLabel,
+} from "@/lib/ingestion-status";
+import { formatReanalysisEstimate } from "@/lib/reanalysis";
 
 type ViewMode = "list" | "grid";
 type TypeFilter = "all" | "pdf" | "image" | "document" | "other";
@@ -122,19 +124,24 @@ const SORT_KEY_OPTIONS: Array<{ id: SortKey; label: string }> = [
   { id: "size", label: "File size" },
 ];
 
+/** What the paper is called in the list: a name given to the file, else its title. */
 function titleOf(run: IngestionRunRow) {
+  return getRunDisplayTitle(run, run.id);
+}
+
+/** The file itself: what a download is saved as and what a rename edits. */
+function fileNameOf(run: IngestionRunRow) {
   return run.display_name || run.source_filename || run.id;
 }
 
 function paperIdOfRun(run: IngestionRunRow): string {
-  const payloadPaperId = normalizePaperId(run.input_payload?.paper_id);
-  return payloadPaperId || paperIdFromRunId(run.id);
+  return paperIdForRun(run);
 }
 
 function extOf(run: IngestionRunRow) {
   return (
     run.source_extension ||
-    titleOf(run).split(".").pop()?.toLowerCase() ||
+    fileNameOf(run).split(".").pop()?.toLowerCase() ||
     "file"
   );
 }
@@ -223,26 +230,6 @@ function getPopoverPosition(rect: DOMRect, width: number, estimatedHeight: numbe
     Math.max(margin, rect.left)
   );
   return { top, left };
-}
-
-const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_UPLOAD_FILES = 50;
-
-async function readJsonPayload<T>(response: Response): Promise<T | null> {
-  const text = await response.text();
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
-  }
-}
-
-function buildUploadErrorMessage(fallback: string, payload: { error?: string } | null) {
-  if (payload?.error?.trim()) {
-    return payload.error;
-  }
-  return fallback;
 }
 
 function glyphForEntry(item: LibraryEntry) {
@@ -452,12 +439,7 @@ export default function AdminImportClient() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [queuedNotice, setQueuedNotice] = useState<{
-    count: number;
-    fileName: string;
-    warning?: string | null;
-  } | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const autoOpenedUploadActionRef = useRef(false);
   const requestedRunId = searchParams.get("runId");
@@ -499,9 +481,11 @@ export default function AdminImportClient() {
 
   const ownerInitial = (session?.user?.email?.charAt(0) ?? "M").toUpperCase();
   const projectStats = useMemo(() => {
-    const stats = new Map<string, { papers: number; latest: string | null }>();
+    // "Papers" counts what was analysed; a failed upload is not a paper in the
+    // repository, and was being counted as one.
+    const stats = new Map<string, { papers: number; inProgress: number; failed: number; latest: string | null }>();
     for (const project of allProjects) {
-      stats.set(project.id, { papers: 0, latest: project.updated_at ?? project.created_at ?? null });
+      stats.set(project.id, { papers: 0, inProgress: 0, failed: 0, latest: project.updated_at ?? project.created_at ?? null });
     }
     for (const run of runs) {
       if (run.trashed_at) continue;
@@ -511,7 +495,9 @@ export default function AdminImportClient() {
       const projectId = run.folder_id ? folderById.get(run.folder_id)?.project_id ?? payloadProjectId : payloadProjectId;
       const current = projectId ? stats.get(projectId) : null;
       if (!current) continue;
-      current.papers += 1;
+      if (run.status === "succeeded") current.papers += 1;
+      else if (run.status === "failed") current.failed += 1;
+      else current.inProgress += 1;
       const updated = run.updated_at ?? run.created_at ?? null;
       if (timeToMs(updated) > timeToMs(current.latest)) current.latest = updated;
     }
@@ -576,8 +562,11 @@ export default function AdminImportClient() {
       return;
     }
 
+    // "Upload PDFs" in the search palette lands here: open the repository it
+    // uploads into, then the same dialog as everywhere else.
     autoOpenedUploadActionRef.current = true;
-    window.requestAnimationFrame(() => fileInputRef.current?.click());
+    setLibraryProjectId(currentProject.id);
+    setShowUploadModal(true);
   }, [currentProject?.id, searchParams, session?.access_token]);
 
   useEffect(() => {
@@ -636,10 +625,14 @@ export default function AdminImportClient() {
     if (!response.ok || !payload.run) {
       throw new Error(payload.error ?? "Action failed.");
     }
+    // An action returns the bare run; keep the paper title the list joined in.
+    const updated = payload.run;
     setRuns((current) =>
-      current.map((run) => (run.id === payload.run!.id ? payload.run! : run))
+      current.map((run) =>
+        run.id === updated.id ? { ...updated, paper_title: updated.paper_title ?? run.paper_title } : run
+      )
     );
-    return payload.run;
+    return { ...updated, paper_title: updated.paper_title ?? runs.find((run) => run.id === updated.id)?.paper_title };
   }
 
   async function postRun(runId: string, action: "copy" | "open") {
@@ -766,7 +759,7 @@ export default function AdminImportClient() {
     if (!url) return;
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = titleOf(run);
+    anchor.download = fileNameOf(run);
     anchor.rel = "noopener noreferrer";
     anchor.target = "_blank";
     document.body.appendChild(anchor);
@@ -798,7 +791,7 @@ export default function AdminImportClient() {
   async function handleRenameRun(run: IngestionRunRow) {
     setItemMenuState(null);
     setRenameTarget({ kind: "file", run });
-    setRenameDraft(titleOf(run));
+    setRenameDraft(fileNameOf(run));
     setRenameError(null);
   }
 
@@ -822,6 +815,37 @@ export default function AdminImportClient() {
     }
   }
 
+  function projectIdOfRun(run: IngestionRunRow): string | null {
+    const payloadProjectId = typeof run.input_payload?.project_id === "string" ? run.input_payload.project_id : null;
+    return run.folder_id ? folderById.get(run.folder_id)?.project_id ?? payloadProjectId : payloadProjectId;
+  }
+
+  async function handleReanalyze(selection: { runIds: string[] } | { projectId: string }, paperCount: number) {
+    if (paperCount === 0) {
+      setError("There are no finished papers to analyze again.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Analyze again with the current pipeline?\n\n${formatReanalysisEstimate(paperCount)}. ` +
+        "Titles and years you corrected are kept."
+    );
+    if (!confirmed) return;
+    const response = await fetch("/api/workspace/library/reanalyze", {
+      method: "POST",
+      headers: jsonRequestHeaders,
+      body: JSON.stringify(selection),
+    });
+    const payload = (await response.json().catch(() => ({}))) as { queuedCount?: number; error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? "The papers could not be queued.");
+    }
+    setMessage(
+      `${payload.queuedCount ?? 0} paper${payload.queuedCount === 1 ? "" : "s"} queued to be analyzed again. ` +
+        "Progress shows on Home."
+    );
+    await loadRuns();
+  }
+
   async function handleTrashRun(run: IngestionRunRow) {
     await patchRun(run.id, { action: "trash" });
     setMessage(`Moved "${titleOf(run)}" to Trash.`);
@@ -832,245 +856,12 @@ export default function AdminImportClient() {
     setMessage(`Restored "${titleOf(run)}" to its repository.`);
   }
 
-  async function queueUploads(selectedFiles: File[]) {
-    setToolbarPopover(null);
-    if (!session?.access_token) {
-      setError("Sign in before uploading files.");
-      return;
-    }
-    if (!currentProject?.id) {
-      setError("Choose a project before uploading files.");
-      return;
-    }
-
-    const pdfFiles = selectedFiles.filter((file) =>
-      file.name.toLowerCase().endsWith(".pdf")
-    );
-    const ignoredCount = selectedFiles.length - pdfFiles.length;
-    const oversizedFiles = pdfFiles.filter((file) => file.size > MAX_UPLOAD_FILE_BYTES);
-
-    if (pdfFiles.length === 0) {
-      setError("Only PDF uploads are supported right now.");
-      return;
-    }
-
-    if (pdfFiles.length > MAX_UPLOAD_FILES) {
-      setError(`Upload no more than ${MAX_UPLOAD_FILES} PDFs at once.`);
-      return;
-    }
-
-    if (oversizedFiles.length > 0) {
-      const names = oversizedFiles
-        .slice(0, 3)
-        .map((file) => `${file.name} (${formatBytes(file.size)})`)
-        .join(", ");
-      const extra = oversizedFiles.length > 3 ? ` and ${oversizedFiles.length - 3} more` : "";
-      setError(
-        `Each PDF must be 10 MB or smaller. Oversized file(s): ${names}${extra}.`
-      );
-      return;
-    }
-
-    const targetFolderName = "Repository";
-
-    setLoading(true);
-    try {
-      setMessage(`Checking ${pdfFiles.length} file${pdfFiles.length === 1 ? "" : "s"} for duplicates...`);
-      const fingerprints = await fingerprintFiles(pdfFiles, (completed, total) => {
-        setMessage(`Checking files for duplicates (${completed}/${total})...`);
-      });
-      const prepared = await fetch("/api/admin/import/prepare", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          folder: targetFolderName,
-          source_kind: "pdf-upload",
-          project_id: currentProject.id,
-          files: pdfFiles.map((file, fileIndex) => ({
-            fileIndex,
-            name: file.name,
-              size: file.size,
-              type: file.type || "application/pdf",
-              sha256: fingerprints[fileIndex],
-            })),
-        }),
-      });
-
-      const preparePayload = await readJsonPayload<{
-        runs?: IngestionRunRow[];
-        folderJob?: FolderAnalysisJobRow | null;
-        folderId?: string | null;
-        uploads?: Array<{
-          fileIndex: number;
-          runId: string;
-          storagePath: string;
-          token: string;
-          signedUrl: string;
-          uploadHeaders?: Record<string, string>;
-          fileName: string;
-        }>;
-        error?: string;
-      }>(prepared);
-
-      if (!prepared.ok || !preparePayload?.folderJob || !preparePayload.uploads) {
-        throw new Error(
-          buildUploadErrorMessage(
-            `Upload preparation failed with status ${prepared.status}.`,
-            preparePayload
-          )
-        );
-      }
-
-      const uploaded: Array<{
-        runId: string;
-        storagePath: string;
-        fileName: string;
-      }> = [];
-      const failed: Array<{
-        runId: string;
-        storagePath: string;
-        fileName: string;
-        errorMessage: string;
-      }> = [];
-
-      for (const uploadTarget of preparePayload.uploads) {
-        const file = pdfFiles[uploadTarget.fileIndex];
-        if (!file) {
-          failed.push({
-            runId: uploadTarget.runId,
-            storagePath: uploadTarget.storagePath,
-            fileName: uploadTarget.fileName,
-            errorMessage: "Local file mapping failed during upload.",
-          });
-          continue;
-        }
-
-        try {
-          const response = await fetch(uploadTarget.signedUrl, {
-            method: "PUT",
-            headers: {
-              "Content-Type": file.type || "application/pdf",
-              ...(uploadTarget.uploadHeaders ?? { "x-upsert": "false" }),
-            },
-            body: file,
-          });
-
-          if (!response.ok) {
-            const body = await response.text();
-            throw new Error(body || `Storage upload failed with status ${response.status}.`);
-          }
-
-          uploaded.push({
-            runId: uploadTarget.runId,
-            storagePath: uploadTarget.storagePath,
-            fileName: uploadTarget.fileName,
-          });
-        } catch (uploadError) {
-          failed.push({
-            runId: uploadTarget.runId,
-            storagePath: uploadTarget.storagePath,
-            fileName: uploadTarget.fileName,
-            errorMessage:
-              uploadError instanceof Error
-                ? uploadError.message
-                : "Failed to upload file to storage.",
-          });
-        }
-      }
-
-      const finalizeResponse = await fetch("/api/admin/import/finalize", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          folderJobId: preparePayload.folderJob.id,
-          uploaded,
-          failed,
-        }),
-      });
-
-      const finalizePayload = await readJsonPayload<{
-        runs?: IngestionRunRow[];
-        folderJob?: FolderAnalysisJobRow | null;
-        warning?: string | null;
-        error?: string;
-      }>(finalizeResponse);
-
-      if (!finalizeResponse.ok) {
-        throw new Error(
-          buildUploadErrorMessage(
-            `Upload finalize failed with status ${finalizeResponse.status}.`,
-            finalizePayload
-          )
-        );
-      }
-
-      const createdRuns = finalizePayload?.runs ?? [];
-      const successfulRuns = createdRuns.filter((run) => run.status !== "failed");
-      const nextFolderId = finalizePayload?.folderJob?.folder_id ?? preparePayload.folderId ?? null;
-      const nextFolderJob = finalizePayload?.folderJob ?? preparePayload.folderJob;
-      const queueWarning = finalizePayload?.warning ?? null;
-
-      setRuns((current) => {
-        const createdIds = new Set(createdRuns.map((run) => run.id));
-        return [...createdRuns, ...current.filter((run) => !createdIds.has(run.id))];
-      });
-      await refreshFolders();
-      if (successfulRuns.length > 0) {
-        startAnalysisSession(successfulRuns, {
-          sourceKind: "pdf-upload",
-          folder: targetFolderName,
-          folderId: nextFolderId,
-          folderJob: nextFolderJob,
-        });
-        setQueuedNotice({
-          count: successfulRuns.length,
-          fileName:
-            successfulRuns[0]?.display_name ||
-            successfulRuns[0]?.source_filename ||
-            pdfFiles[0]?.name ||
-            "Selected PDF",
-          warning: queueWarning,
-        });
-      }
-      const failedUploadCount = failed.length;
-      setMessage(
-        ignoredCount > 0
-          ? `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"}.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""} Ignored ${ignoredCount} non-PDF file${ignoredCount === 1 ? "" : "s"}.`
-          : `Queued ${successfulRuns.length} PDF file${successfulRuns.length === 1 ? "" : "s"} for analysis. You can track live progress on Home.${failedUploadCount > 0 ? ` ${failedUploadCount} failed to upload.` : ""}`
-      );
-      if (failedUploadCount > 0 && !queueWarning) {
-        setError(`${failedUploadCount} file${failedUploadCount === 1 ? "" : "s"} failed to upload. Check internet connection and retry.`);
-      } else {
-        setError(queueWarning);
-      }
-    } catch (uploadError) {
-      setError(
-        uploadError instanceof Error ? uploadError.message : "Failed to queue uploads."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function handleFilePickerChange(event: ChangeEvent<HTMLInputElement>) {
-    const selectedFiles = Array.from(event.target.files ?? []).filter(Boolean);
-    event.target.value = "";
-    if (selectedFiles.length === 0) return;
-    void queueUploads(selectedFiles.slice(0, MAX_UPLOAD_FILES));
-  }
-
   async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!renameTarget) return;
 
     const nextName = renameDraft.trim();
-    const currentName = titleOf(renameTarget.run);
+    const currentName = fileNameOf(renameTarget.run);
     if (!nextName) {
       setRenameError("A name is required.");
       return;
@@ -1166,14 +957,40 @@ export default function AdminImportClient() {
         // status pill at all, so before this a failed file there looked exactly
         // like a ready one; and with the History page gone this is the only place
         // an older failure can still explain itself.
+        // The worker compares each paper's text with the repository's other
+        // papers and notes an earlier copy; the reader decides what to keep.
+        const duplicateOf = run.input_payload?.duplicate_of as { title?: string } | null | undefined;
+        // A re-analysis that did not finish leaves the earlier results in
+        // place; the note lasts until the paper is queued again.
+        const failedAgainAt = String(run.input_payload?.reanalysis_failed_at ?? "");
+        const reanalysisFailed =
+          Boolean(failedAgainAt) && failedAgainAt >= String(run.input_payload?.reanalysis_requested_at ?? "");
+        // A paper is listed by its title once analysed; the file it came in
+        // stays underneath, so a search by file name still finds it.
+        const shownName = titleOf(run);
+        const paperTitle = getRunPaperTitle(run);
+        const secondaryName =
+          shownName !== fileNameOf(run)
+            ? fileNameOf(run)
+            : paperTitle && paperTitle !== shownName
+              ? paperTitle
+              : "";
         const subtitle =
           run.status === "failed"
             ? describeRunFailure(run.error_message)
-            : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
+            : duplicateOf?.title
+              ? `Possible copy of "${duplicateOf.title}"`
+              : run.status !== "succeeded"
+                ? getRunStageMessage(run)
+                : reanalysisFailed
+                  ? "Analyzing again did not finish; the earlier results are shown. Try Analyze again later."
+                  : secondaryName
+                    ? secondaryName
+                    : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
         return {
           id: `file:${run.id}`,
           kind: "file",
-          name: titleOf(run),
+          name: shownName,
           ownerLabel: "me",
           modifiedAt: run.updated_at ?? run.created_at ?? null,
           modifiedMs: timeToMs(run.updated_at ?? run.created_at ?? null),
@@ -1183,7 +1000,7 @@ export default function AdminImportClient() {
           sourceFilter: sourceLabel === "Google Drive" ? "google-drive" : "upload",
           sourceLabel,
           subtitle,
-          statusLabel: run.status === "succeeded" ? "analysis ready" : run.status,
+          statusLabel: getRunStatusLabel(run),
           favorite: Boolean(run.is_favorite),
           run,
         };
@@ -1278,15 +1095,34 @@ export default function AdminImportClient() {
             type="button"
             onClick={() => {
               setToolbarPopover(null);
-              fileInputRef.current?.click();
+              setShowUploadModal(true);
             }}
             className={itemClass}
           >
             <span className="flex items-center gap-3">
               <UploadIcon className="h-4 w-4" />
-              <span>Upload PDFs</span>
+              <span>Add papers</span>
             </span>
           </button>
+          {libraryProject ? (
+            <button
+              type="button"
+              onClick={async () => {
+                setToolbarPopover(null);
+                const count = runs.filter(
+                  (run) => run.status === "succeeded" && !run.trashed_at && projectIdOfRun(run) === libraryProject.id
+                ).length;
+                try {
+                  await handleReanalyze({ projectId: libraryProject.id }, count);
+                } catch (reanalyzeError) {
+                  setError(reanalyzeError instanceof Error ? reanalyzeError.message : "The papers could not be queued.");
+                }
+              }}
+              className={itemClass}
+            >
+              <span>Analyze repository again</span>
+            </button>
+          ) : null}
         </div>
       );
     }
@@ -1457,7 +1293,7 @@ export default function AdminImportClient() {
             }}
             className={itemClass}
           >
-            View pipeline analysis
+            View analysis
           </button>
         ) : null}
         {activeMenuRun.status === "succeeded" ? (
@@ -1498,7 +1334,7 @@ export default function AdminImportClient() {
           }}
           className={itemClass}
         >
-          Preview
+          Preview PDF
         </button>
         <button
           type="button"
@@ -1532,7 +1368,7 @@ export default function AdminImportClient() {
           }}
           className={itemClass}
         >
-          Edit name
+          Rename file
         </button>
         <button
           type="button"
@@ -1570,6 +1406,42 @@ export default function AdminImportClient() {
         >
           {activeMenuRun.is_favorite ? "Remove favorite" : "Add to favorite"}
         </button>
+        {activeMenuRun.status === "succeeded" && !activeMenuRun.trashed_at ? (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await handleReanalyze({ runIds: [activeMenuRun.id] }, 1);
+              } catch (reanalyzeError) {
+                setError(
+                  reanalyzeError instanceof Error ? reanalyzeError.message : "The paper could not be queued."
+                );
+              } finally {
+                setItemMenuState(null);
+              }
+            }}
+            className={itemClass}
+          >
+            Analyze again
+          </button>
+        ) : null}
+        {activeMenuRun.status === "failed" && !activeMenuRun.trashed_at && activeMenuRun.source_path ? (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await handleReanalyze({ runIds: [activeMenuRun.id] }, 1);
+              } catch (retryError) {
+                setError(retryError instanceof Error ? retryError.message : "The paper could not be queued.");
+              } finally {
+                setItemMenuState(null);
+              }
+            }}
+            className={itemClass}
+          >
+            Try again
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -1641,15 +1513,6 @@ export default function AdminImportClient() {
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6">
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".pdf,application/pdf"
-        multiple
-        className="hidden"
-        onChange={handleFilePickerChange}
-      />
-
       <div className="space-y-5">
         {/*
           Browsing and switching are now different acts, so the one place they
@@ -1711,12 +1574,19 @@ export default function AdminImportClient() {
             </p>
           </div>
 
-          <div className="flex w-full max-w-2xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+          <div className="grid w-full max-w-2xl grid-cols-2 gap-3 sm:flex sm:items-center sm:justify-end">
             <button
               type="button"
               onClick={(event) => {
                 if (!libraryProject) {
-                  setMessage("Open a repository before adding papers.");
+                  // From the list of repositories, "New" adds papers to the one
+                  // the workspace is on, and opens it so they are seen arriving.
+                  if (currentProject?.id) {
+                    setLibraryProjectId(currentProject.id);
+                    setShowUploadModal(true);
+                  } else {
+                    setMessage("Open a repository before adding papers.");
+                  }
                   return;
                 }
                 openToolbarMenu(event, "new", 240);
@@ -1744,7 +1614,7 @@ export default function AdminImportClient() {
               <span>{showTrash ? "Back to repositories" : "Trash"}</span>
             </button>
 
-            <label className="relative block min-w-0 flex-1">
+            <label className="relative col-span-2 block min-w-0 flex-1">
               <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#808080]" />
               <input
                 type="search"
@@ -1827,58 +1697,6 @@ export default function AdminImportClient() {
         </div>
       ) : null}
 
-      {queuedNotice ? (
-        <Modal onClose={() => setQueuedNotice(null)}>
-          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <div className="flex items-start justify-between gap-4">
-              <span className="flex h-12 w-12 flex-none items-center justify-center rounded-xl bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200">
-                <CheckIcon className="h-6 w-6" />
-              </span>
-              <button
-                type="button"
-                onClick={() => setQueuedNotice(null)}
-                className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
-                aria-label="Close upload confirmation"
-              >
-                <CloseIcon className="h-4 w-4" />
-              </button>
-            </div>
-            <h2 className="mt-5 text-2xl font-semibold text-slate-900 dark:text-[#f2f2f2]">
-              File queued for analysis
-            </h2>
-            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
-              {queuedNotice.fileName} was uploaded and added to the worker queue.
-              The Home page shows the live analysis timeline.
-            </p>
-            {queuedNotice.warning ? (
-              <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
-                {queuedNotice.warning}
-              </p>
-            ) : null}
-            <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <button
-                type="button"
-                onClick={() => setQueuedNotice(null)}
-                className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#b8b8b8]"
-              >
-                Stay in repositories
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setQueuedNotice(null);
-                  router.push("/workspace/home");
-                }}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white dark:bg-[#f3f3f3] dark:text-[#171717]"
-              >
-                <span>View progress on Home</span>
-                <ArrowRightIcon className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </Modal>
-      ) : null}
-
       {libraryProject || showTrash ? (
       <section className="app-surface overflow-visible">
         <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-5 dark:border-[#1f1f1f] sm:px-6">
@@ -1890,7 +1708,7 @@ export default function AdminImportClient() {
               <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
                 {showTrash
                   ? "Showing files currently in Trash."
-                  : "Showing every file in this repository."}
+                  : "Every paper in this repository. Open one to see what the analysis found."}
               </p>
             </div>
           </div>
@@ -1902,12 +1720,35 @@ export default function AdminImportClient() {
               <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
                 <FolderIcon className="h-7 w-7" />
               </span>
-              <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
-                Nothing matches these filters yet
-              </p>
-              <p className="mt-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
-                Try another filter combination or use the New button to add files.
-              </p>
+              {fileEntries.length === 0 && !showTrash ? (
+                <>
+                  <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
+                    No papers in this repository yet
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
+                    Add PDFs and each one is analyzed for its topics, methods and category.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowUploadModal(true)}
+                    className="mt-5 inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
+                  >
+                    <UploadIcon className="h-4 w-4" />
+                    <span>Add papers</span>
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
+                    {showTrash ? "Trash is empty" : "Nothing matches these filters"}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-[#9c9c9c]">
+                    {showTrash
+                      ? "Papers you move to Trash wait here until you restore them."
+                      : "Clear the search or pick another filter to see more papers."}
+                  </p>
+                </>
+              )}
             </div>
           </div>
         ) : viewMode === "list" ? (
@@ -1973,7 +1814,8 @@ export default function AdminImportClient() {
                             <button
                               type="button"
                               onClick={() => void handleOpenPrimaryFileAction(item.run)}
-                              className="truncate text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
+                              title={item.name}
+                              className="line-clamp-2 min-w-0 text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
                             >
                               {item.name}
                             </button>
@@ -2261,7 +2103,7 @@ export default function AdminImportClient() {
               {allProjects
                 .filter((project) => !query.trim() || project.name.toLowerCase().includes(query.trim().toLowerCase()))
                 .map((project) => {
-                  const stats = projectStats.get(project.id) ?? { papers: 0, latest: null };
+                  const stats = projectStats.get(project.id) ?? { papers: 0, inProgress: 0, failed: 0, latest: null };
                   return (
                     <button
                       key={project.id}
@@ -2287,7 +2129,13 @@ export default function AdminImportClient() {
                         <span className="block truncate text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">{project.name}</span>
                         <span className="mt-2 block text-sm text-slate-500 dark:text-[#9c9c9c]">
                           {stats.papers} paper{stats.papers === 1 ? "" : "s"}
+                          {stats.inProgress > 0 ? `, ${stats.inProgress} being analyzed` : ""}
                         </span>
+                        {stats.failed > 0 ? (
+                          <span className="mt-1 block text-xs text-red-700 dark:text-red-300">
+                            {stats.failed} failed to analyze
+                          </span>
+                        ) : null}
                         <span className="mt-3 block text-xs text-slate-500 dark:text-[#777777]">Updated {formatShortDate(stats.latest)}</span>
                       </span>
                       <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-500 transition-transform group-hover:translate-x-0.5" />
@@ -2302,6 +2150,23 @@ export default function AdminImportClient() {
           )}
         </section>
       )}
+
+      <AnalyzeFlowModal
+        open={showUploadModal}
+        onClose={() => setShowUploadModal(false)}
+        projectId={libraryProject?.id ?? currentProject?.id ?? null}
+        onCreated={(createdRuns, context) => {
+          setRuns((current) => {
+            const createdIds = new Set(createdRuns.map((run) => run.id));
+            return [...createdRuns, ...current.filter((run) => !createdIds.has(run.id))];
+          });
+          const queued = createdRuns.filter((run) => run.status !== "failed");
+          if (queued.length > 0) {
+            startAnalysisSession(queued, context);
+          }
+          void refreshFolders();
+        }}
+      />
 
       <CreateEntityModal
         open={Boolean(renameTarget)}
@@ -2401,6 +2266,24 @@ export default function AdminImportClient() {
           }}
           onToggleFavorite={() => handleToggleFavorite(analysisRun)}
           onRename={() => handleRenameRun(analysisRun)}
+          onCorrect={async (correction) => {
+            const response = await fetch(`/api/workspace/library/${analysisRun.id}`, {
+              method: "PATCH",
+              headers: jsonRequestHeaders,
+              body: JSON.stringify({ action: "correct", ...correction }),
+            });
+            const payload = (await response.json().catch(() => ({}))) as {
+              paper?: { title: string; year: string };
+              error?: string;
+            };
+            if (!response.ok || !payload.paper) {
+              throw new Error(payload.error ?? "The correction could not be saved.");
+            }
+            setAnalysisDetail((current) =>
+              current ? { ...current, title: payload.paper!.title, year: payload.paper!.year } : current
+            );
+            setMessage(`Saved the correction for "${payload.paper.title}".`);
+          }}
           onOpenDashboard={() => {
             if (typeof window !== "undefined") {
               window.location.assign("/workspace/dashboard");
@@ -2431,12 +2314,14 @@ export default function AdminImportClient() {
                     {analysisDetail?.year || "Year unavailable"}
                   </span>
                   <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                    {analysisRun!.status === "succeeded" ? "Analysis ready" : analysisRun!.status}
+                    {analysisRun!.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(analysisRun!)}
                   </span>
-                  <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                    <ChartIcon className="h-3.5 w-3.5" />
-                    <span>{analysisDetail?.available ? "Node output" : "Preview only"}</span>
-                  </span>
+                  {analysisDetail?.available === false ? (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                      <ChartIcon className="h-3.5 w-3.5" />
+                      <span>Not analyzed yet</span>
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <button

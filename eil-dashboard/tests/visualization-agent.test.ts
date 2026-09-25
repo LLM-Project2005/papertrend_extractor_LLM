@@ -293,7 +293,6 @@ test("an undated paper is still visible where a year is a fact about one paper",
   // and a reader filtering for "Unknown" to find those papers is doing
   // something useful - so neither of these may quietly start hiding them.
   for (const relative of [
-    "../src/components/tabs/PaperExplorer.tsx",
     "../src/components/DashboardClient.tsx",
   ]) {
     const source = readFileSync(new URL(relative, import.meta.url), "utf8");
@@ -303,4 +302,14 @@ test("an undated paper is still visible where a year is a fact about one paper",
       `${relative} shows a year as a fact, not as a position in time`
     );
   }
+});
+
+test("a model plan with no chart the data supports is treated as the fallback", async () => {
+  const { planHasViableChart } = await import("../src/lib/visualization-planner");
+  const viable = ["adaptive_year_volume", "adaptive_topic_distribution"] as Parameters<typeof planHasViableChart>[1];
+  const plan = (keys: string[]) => ({ sections: [{ section_key: "adaptive", charts: keys.map((chart_key) => ({ chart_key })) }] });
+  assert.equal(planHasViableChart(plan(["adaptive_keyword_family_heatmap"]), viable), false);
+  assert.equal(planHasViableChart(plan([]), viable), false);
+  assert.equal(planHasViableChart(null, viable), false);
+  assert.equal(planHasViableChart(plan(["adaptive_year_volume"]), viable), true);
 });

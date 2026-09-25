@@ -237,11 +237,11 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Papertrend uses a queue-based upload flow so large PDF analysis does not block the browser request. The browser uploads the file, the app creates an analysis run, and a background worker analyzes the file later.",
             ],
             steps: [
-              "Choose a project or folder context.",
-              "Open Repositories, choose a repository, and select upload.",
-              "Select up to 50 PDF files; every file must be 10 MB or smaller.",
-              "Confirm the queue action.",
-              "Watch the status indicators or continue working while Cloud Tasks triggers processing.",
+              "Choose Add papers on Home, or New then Add papers inside a repository in the Library. The dialog names the repository the papers go to.",
+              "Drop PDFs on the dialog or click to choose them: up to 50 at a time, each 10 MB or smaller. A PDF already analyzed in this account is flagged before anything uploads.",
+              "Choose Analyze and keep the tab open until the upload finishes; the dialog shows how many files are done.",
+              "Follow progress on Home, or in the corner of any other page. Each paper usually takes a few minutes.",
+              "A finished paper appears in the Library under its own title, and on the Dashboard and in Chat.",
             ],
           },
           {
@@ -251,10 +251,10 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Status values explain where the file is in the analysis lifecycle. They are also the first thing to check when dashboard or chart results seem missing.",
             ],
             bullets: [
-              "queued: the file is waiting for the queue worker.",
-              "processing: extraction or LLM analysis is currently running.",
-              "succeeded: data was saved and can be used by dashboard, chat, and chart mode.",
-              "failed: analysis stopped before producing a complete persisted result.",
+              "Queued: the paper is waiting its turn to be analyzed.",
+              "Analyzing: its text is being read and analyzed now.",
+              "Ready: the results were saved and the Dashboard, Chat and chart mode can use them.",
+              "Failed: the analysis stopped before it finished; the Library says why.",
             ],
             callout: {
               tone: "warning",
@@ -470,12 +470,13 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "The exact model used may change by deployment configuration, but the product contract is stable: a succeeded paper should have enough structured output to be useful in search, dashboard views, and chat.",
             ],
             bullets: [
-              "Text extraction and cleanup.",
-              "Semantic section detection.",
-              "Metadata and year evidence extraction.",
-              "Keyword, topic, and concept extraction.",
-              "Category, typology, and facet classification.",
-              "Persistence into workspace-scoped tables.",
+              "Text extraction, with OCR for scanned pages.",
+              "Section detection: abstract, introduction, literature review, methods, results, discussion, conclusion and references.",
+              "Title and year, each with the evidence it came from.",
+              "Keywords read from the paper's own sections (never its reference list), checked against the text and counted; the paper's own keyword list is added.",
+              "Topics grouped from those keywords, with research methods kept apart from what was studied.",
+              "Category, research type and facet classification.",
+              "One save per paper, so a failure never leaves a paper half-updated.",
             ],
           },
           {
@@ -499,6 +500,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             body: [
               "Year detection is evidence-based. Papertrend should prefer strong year evidence from title pages, metadata, citation context, or publication-like fields. If the year cannot be found reliably, it should be marked unknown rather than invented.",
               "A low confidence year should be treated as a review signal. Users should inspect year evidence before using the paper in timeline claims.",
+              "The paper's page in the library shows where the year came from (for example the journal issue line on the first page) and the line it was read from. If it is wrong, choose \"Correct title or year\" there; the correction is kept when the paper is analysed again.",
             ],
             callout: {
               tone: "warning",
@@ -520,6 +522,15 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Topic labels are broad enough to group related terms.",
               "Track labels match the paper's actual research focus.",
               "Charts built from the paper reflect available analyzed rows.",
+              "Analysis notes on the paper's page say if any step fell back to a simpler method.",
+            ],
+          },
+          {
+            id: "analyse-again",
+            title: "Analyzing papers again",
+            body: [
+              "When the analysis improves, papers analyzed earlier can be analyzed again from the library: \"Analyze again\" on a paper's menu, or \"Analyze repository again\" under New. The confirmation shows how many papers will be analyzed and the approximate model cost. Titles and years you corrected are kept.",
+              "The library also notes when a paper's text closely matches another paper in the same repository, which usually means the same study was uploaded twice. Nothing is removed; you decide which copy to keep.",
             ],
           },
         ],

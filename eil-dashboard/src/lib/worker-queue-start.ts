@@ -37,12 +37,15 @@ function buildWorkerQueueStartResult(args: {
       trigger: args.trigger,
       progressStage: "queued",
       progressMessage: "Queued",
+      // Shown to the reader under the paper, so it describes the paper's
+      // position, not the queueing machinery ("1 Cloud Task queued the
+      // analysis worker..." was the old line).
       progressDetail:
-        cloudTaskCount
-          ? `${cloudTaskCount} Cloud Task${cloudTaskCount === 1 ? "" : "s"} queued the analysis worker and processing should begin shortly.`
+        cloudTaskCount && cloudTaskCount > 1
+          ? "In line for analysis. Papers are analyzed one after another, and the first should start within a minute."
           : args.attempts > 1
-          ? "The analysis worker was started after a retry and should begin claiming queued files shortly."
-          : "The files were queued successfully and the analysis worker was asked to start immediately.",
+          ? "In line for analysis. It took a second try to start, and should begin within a minute."
+          : "In line for analysis. It should start within a minute.",
     };
   }
 
@@ -53,9 +56,9 @@ function buildWorkerQueueStartResult(args: {
       attempts: args.attempts,
       trigger: args.trigger,
       progressStage: "queued_waiting_for_worker",
-      progressMessage: "Waiting for active worker",
+      progressMessage: "Waiting for another analysis to finish",
       progressDetail:
-        "Another analysis batch is already running. Your files are queued and should start once that worker finishes or frees capacity.",
+        "Another upload is being analyzed. These papers are in line and start as soon as it finishes.",
     };
   }
 
@@ -65,8 +68,8 @@ function buildWorkerQueueStartResult(args: {
       : "unknown_reason";
   const suffix =
     reason === "missing_worker_config"
-      ? "Worker service configuration is missing in the app runtime."
-      : "The worker trigger did not report a successful queue start.";
+      ? "The analysis service is not set up in this environment."
+      : "The analysis service did not confirm that it started.";
 
   return {
     started: false,
@@ -74,8 +77,8 @@ function buildWorkerQueueStartResult(args: {
     attempts: args.attempts,
     trigger: args.trigger,
     progressStage: "queued_but_unstarted",
-    progressMessage: "Upload succeeded, but processing did not start",
-    progressDetail: `${suffix} Use “Start processing now” to retry the worker start from the analysis status card.`,
+    progressMessage: "Uploaded, but analysis has not started",
+    progressDetail: `${suffix} Use “Start processing now” on the progress card to try again.`,
   };
 }
 

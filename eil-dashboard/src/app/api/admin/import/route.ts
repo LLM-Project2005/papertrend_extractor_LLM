@@ -6,6 +6,7 @@ import {
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getDatabaseProvider } from "@/lib/server-env";
+import { cloudSqlIngestionRepository } from "@/lib/cloudsql/ingestion-repository";
 import {
   MAX_FILES_PER_BATCH,
   hasPdfMagic,
@@ -49,6 +50,12 @@ const STATUS_INPUT_PAYLOAD_KEYS = [
   "keyword_count",
   "pipeline",
   "last_error_stage",
+  // The progress card names the paper, dates its last update (the stall
+  // warning) and marks finished steps from these; trimmed away, it showed the
+  // file name and never saw a step finish early.
+  "paper_title",
+  "progress_updated_at",
+  "analysis_metrics",
 ] as const;
 
 function trimStatusInputPayload(inputPayload: unknown): Record<string, unknown> | null {
@@ -73,8 +80,19 @@ export async function GET(request: Request) {
   }
 
   try {
-    const supabase = getSupabaseAdmin();
     const user = await getAuthenticatedUserFromRequest(request);
+    if (getDatabaseProvider() === "cloud-sql") {
+      // The owner comes from the verified session only; an admin-secret
+      // request without a user has no runs of its own to list.
+      const rows = user ? await cloudSqlIngestionRepository.listRecentRuns(user.id, 25) : [];
+      const runs = rows.map((run) => ({
+        ...run,
+        input_payload: trimStatusInputPayload(run.input_payload),
+      }));
+      return NextResponse.json({ runs });
+    }
+
+    const supabase = getSupabaseAdmin();
     let query = supabase
       .from("ingestion_runs")
       .select(

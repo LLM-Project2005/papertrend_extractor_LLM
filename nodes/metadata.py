@@ -32,13 +32,8 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
         title_hint=sections.get("title") or fallback_title,
         fallback_year=fallback_year,
         year_candidates=format_year_candidates_for_prompt(year_candidates),
-        content_preview="\n\n".join(
-            [
-                f"TITLE:\n{sections.get('title', '')}",
-                f"ABSTRACT:\n{sections.get('abstract_claims', '')[:3000]}",
-                raw_text[:6000],
-            ]
-        ).strip(),
+        first_page=raw_text[:3500],
+        abstract=str(sections.get("abstract_claims") or "")[:2500],
     )
 
     structured_llm = metadata_llm.with_structured_output(PaperMetadataSchema, method="json_schema")
@@ -49,7 +44,7 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
             state=state,
             sections=sections,
             raw_text=raw_text,
-            title=sections.get("title") or metadata.title.strip() or fallback_title,
+            title=metadata.title.strip() or sections.get("title") or fallback_title,
             llm_year=metadata.year or fallback_year,
         )
         return {
@@ -64,7 +59,7 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
             "errors": [],
             "status": "metadata_ready",
         }
-    except Exception:
+    except Exception as error:
         year_resolution = _resolve_year_with_web_fallback(
             state=state,
             sections=sections,
@@ -81,6 +76,7 @@ def infer_metadata_node(state: IngestionState) -> Dict[str, Any]:
                 "year_evidence": year_resolution["year_evidence"],
             },
             "year_resolution": year_resolution,
+            "warnings": [f"metadata: the model was unavailable, so the title came from the text layout ({str(error)[:160]})"],
             "errors": [],
             "status": "metadata_ready",
         }
@@ -111,7 +107,7 @@ def _resolve_year_with_web_fallback(
     # Strong local evidence remains the authority. Web lookup is only useful
     # for missing or review-worthy years, such as repository PDFs without a
     # DOI or a clearly labelled publication date.
-    if local["year"] != "Unknown" and not local.get("needs_review"):
+    if local.get("year_source") == "user" or (local["year"] != "Unknown" and not local.get("needs_review")):
         return local
 
     web = resolve_year_from_web(title=title, raw_text=raw_text, source_path=source_path)

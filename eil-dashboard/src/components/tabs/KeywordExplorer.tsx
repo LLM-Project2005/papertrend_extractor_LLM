@@ -325,7 +325,7 @@ export default function KeywordExplorer({
                     </h3>
                   </div>
                   <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#030303] dark:text-slate-300">
-                    {conceptResult.source === "fallback" ? "Fallback analysis" : "Node analysis"}
+                    {conceptResult.source === "repository" ? "From this repository" : "Node analysis"}
                   </span>
                 </div>
 
@@ -685,7 +685,7 @@ export default function KeywordExplorer({
               rows={heatmapData.rows.map((row) => row.theme)}
               cols={axis.years}
               values={heatmapData.rows.map((row) => row.values)}
-              colorScale={["#f1f5f9", "#1e293b"]}
+              colorScale={ct.heatScale}
             />
           </div>
         ) : (

@@ -5,6 +5,47 @@ type RunLike = Pick<
   "status" | "model" | "input_payload" | "error_message"
 >;
 
+type NamedRun = Pick<IngestionRunRow, "display_name" | "source_filename" | "input_payload" | "paper_title">;
+
+/**
+ * The paper's own title once it has been analysed: the Library joins it from
+ * the paper row, and the worker also stores it on the run.
+ */
+export function getRunPaperTitle(run: NamedRun): string {
+  const joined = typeof run.paper_title === "string" ? run.paper_title.trim() : "";
+  if (joined) return joined;
+  const stored = run.input_payload?.paper_title;
+  return typeof stored === "string" ? stored.trim() : "";
+}
+
+/**
+ * What a reader calls the paper: a name they gave the file wins, then the
+ * paper's title, then the file it came from.
+ *
+ * An upload starts with display_name set to the file's own name, so only a
+ * display name that differs from it is one the reader chose.
+ */
+export function getRunDisplayTitle(run: NamedRun, fallback = "Untitled paper"): string {
+  const displayName = run.display_name?.trim() ?? "";
+  const fileName = run.source_filename?.trim() ?? "";
+  const chosenName = displayName && displayName !== fileName ? displayName : "";
+  return chosenName || getRunPaperTitle(run) || fileName || displayName || fallback;
+}
+
+/** A status word for a person, not the queue's own state name. */
+export function getRunStatusLabel(run: Pick<IngestionRunRow, "status">): string {
+  switch (run.status) {
+    case "succeeded":
+      return "Ready";
+    case "failed":
+      return "Failed";
+    case "processing":
+      return "Analyzing";
+    default:
+      return "Queued";
+  }
+}
+
 const AUTO_MODEL_VALUES = new Set([
   "",
   "auto",
@@ -53,9 +94,9 @@ export function getRunStageMessage(run: RunLike): string {
     case "queued":
       return "Queued for analysis";
     case "queued_waiting_for_worker":
-      return "Waiting for an active worker";
+      return "Waiting for the analysis service to start";
     case "queued_but_unstarted":
-      return "Queued, but processing did not start";
+      return "Queued, but analysis has not started";
     case "preparing":
       return "Preparing file for analysis";
     case "downloading":
@@ -148,5 +189,5 @@ export function getRunStageCaption(run: RunLike): string {
     return "The workspace can now use this paper in dashboard views, papers, and chat.";
   }
 
-  return "The worker updates this step automatically while the file moves through the pipeline.";
+  return "This updates by itself as the paper moves through each step.";
 }

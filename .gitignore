@@ -66,3 +66,6 @@ data/cache/professor_export/
 data/output/eil_professor*
 data/output/*professor*
 papers-*.zip
+
+# Pipeline evaluation cache (downloaded PDFs, extracted text)
+.eval-cache/

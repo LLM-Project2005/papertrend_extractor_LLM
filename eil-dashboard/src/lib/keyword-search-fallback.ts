@@ -1,7 +1,8 @@
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { filterDashboardData } from "@/lib/dashboard-filters";
+import { isDatedYear } from "@/lib/dated-year";
 import { loadDashboardDataServer } from "@/lib/dashboard-data-server";
-import type { PaperId, TrackRow } from "@/types/database";
+import type { CategoryAssignmentRow, PaperId, TrackRow } from "@/types/database";
 import type { KeywordSearchRequest, KeywordSearchResponse } from "@/types/keyword-search";
 
 function toTrackField(track: TrackKey) {
@@ -16,6 +17,27 @@ function extractTracks(row: TrackRow | undefined): string[] {
   return TRACK_COLS.filter((track) => Number(row[toTrackField(track)]) === 1).map(
     (track) => `${track} - ${TRACK_NAMES[track]}`
   );
+}
+
+/**
+ * A paper's categories in the repository's own taxonomy. The legacy
+ * el/eli/lae/other slots carry EIL names even for a custom taxonomy, so they
+ * are used only for workspaces that have no category assignments at all.
+ */
+function paperCategoryLabels(
+  assignments: CategoryAssignmentRow[] | undefined,
+  paperId: PaperId,
+  type: "single" | "multi",
+  legacy: TrackRow | undefined
+): string[] {
+  if (!assignments?.length) return extractTracks(legacy);
+  return [
+    ...new Set(
+      assignments
+        .filter((row) => row.paper_id === paperId && row.assignment_type === type && row.category_key !== "other")
+        .map((row) => String(row.category_label || row.category_key))
+    ),
+  ];
 }
 
 export async function runKeywordSearchFallback(
@@ -81,10 +103,10 @@ export async function runKeywordSearchFallback(
       contributionTypes: [],
       papers: [],
       evidence: [],
-      summary: `No grounded concept family was found for "${request.query}" in the current fallback dataset.`,
+      summary: `No grounded concept family was found for "${request.query}" in this repository.`,
       notFound: true,
       suggestedConcepts: suggestions,
-      source: "fallback",
+      source: "repository",
     };
   }
 
@@ -95,8 +117,10 @@ export async function runKeywordSearchFallback(
     [...new Set(matchedRows.map((row) => row.keyword))].slice(0, 12);
   const canonicalConcept = matchedFamily?.canonicalTopic ?? matchedTerms[0] ?? request.query;
 
+  // Undated papers have no place on a timeline ("Unknown" sorted after the
+  // latest year and was drawn as the most recent period).
   const timelineMap = new Map<string, { frequency: number; paperIds: Set<PaperId> }>();
-  matchedRows.forEach((row) => {
+  matchedRows.filter((row) => isDatedYear(row.year)).forEach((row) => {
     const entry = timelineMap.get(row.year) ?? { frequency: 0, paperIds: new Set<PaperId>() };
     entry.frequency += row.keyword_frequency;
     entry.paperIds.add(row.paper_id);
@@ -110,15 +134,18 @@ export async function runKeywordSearchFallback(
       papers: value.paperIds.size,
     }));
 
-  const firstRow = [...matchedRows].sort((left, right) => left.year.localeCompare(right.year))[0];
+  const firstRow = [...matchedRows].sort(
+    (left, right) =>
+      Number(!isDatedYear(left.year)) - Number(!isDatedYear(right.year)) || left.year.localeCompare(right.year)
+  )[0];
   const firstAppearance = firstRow
     ? {
         paperId: firstRow.paper_id,
         title: firstRow.title,
         year: firstRow.year,
-        tracksSingle: extractTracks(tracksByPaper.get(firstRow.paper_id)),
-        tracksMulti: extractTracks(tracksMultiByPaper.get(firstRow.paper_id)),
-        section: "fallback",
+        tracksSingle: paperCategoryLabels(filtered.categoryAssignments, firstRow.paper_id, "single", tracksByPaper.get(firstRow.paper_id)),
+        tracksMulti: paperCategoryLabels(filtered.categoryAssignments, firstRow.paper_id, "multi", tracksMultiByPaper.get(firstRow.paper_id)),
+        section: "evidence",
         snippet: firstRow.evidence,
       }
     : null;
@@ -155,8 +182,8 @@ export async function runKeywordSearchFallback(
       paperId,
       title: first.title,
       year: first.year,
-      tracksSingle: extractTracks(tracksByPaper.get(paperId)),
-      tracksMulti: extractTracks(tracksMultiByPaper.get(paperId)),
+      tracksSingle: paperCategoryLabels(filtered.categoryAssignments, paperId, "single", tracksByPaper.get(paperId)),
+      tracksMulti: paperCategoryLabels(filtered.categoryAssignments, paperId, "multi", tracksMultiByPaper.get(paperId)),
       matchedTerms: [...new Set(paperRows.map((row) => row.keyword))],
       evidence: paperRows.map((row) => row.evidence).filter(Boolean).slice(0, 3),
     };
@@ -176,12 +203,12 @@ export async function runKeywordSearchFallback(
       paperId: row.paper_id,
       year: row.year,
       title: row.title,
-      section: "fallback",
+      section: "evidence",
       snippet: row.evidence,
     })),
-    summary: `${canonicalConcept} appears in ${paperIds.length} paper${paperIds.length === 1 ? "" : "s"} in the current fallback dataset.`,
+    summary: `${canonicalConcept} appears in ${paperIds.length} paper${paperIds.length === 1 ? "" : "s"} in this repository.`,
     notFound: false,
     suggestedConcepts: [],
-    source: "fallback",
+    source: "repository",
   };
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Modal from "@/components/ui/Modal";
+import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
   ChartIcon,
   CloseIcon,
@@ -9,7 +10,7 @@ import {
   PencilSquareIcon,
   StarIcon,
 } from "@/components/ui/Icons";
-import type { IngestionRunRow, RunAnalysisDetail } from "@/types/database";
+import type { IngestionRunRow, RunAnalysisDetail, RunAnalysisExtracted } from "@/types/database";
 
 type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
 
@@ -26,6 +27,8 @@ type Props = {
   onToggleFavorite: () => Promise<void>;
   onRename: () => Promise<void>;
   onOpenDashboard: () => void;
+  /** Save a corrected title or year; kept when the paper is analysed again. */
+  onCorrect?: (correction: { title?: string; year?: string }) => Promise<void>;
 };
 
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
@@ -178,12 +181,13 @@ function HighlightedText({
 }
 
 function buildTrackBadges(detail: RunAnalysisDetail | null): string[] {
-  return [
-    ...new Set([
-      ...(detail?.tracksSingle ?? []),
-      ...(detail?.tracksMulti ?? []),
-    ]),
-  ];
+  // The repository's own categories (with rationale) are shown when the paper
+  // was classified. The old el/eli/lae/other slots only carry the EIL names,
+  // which are wrong for a custom taxonomy, and "Other" alone just means
+  // classification was off.
+  if (detail?.classification) return [];
+  const badges = [...new Set([...(detail?.tracksSingle ?? []), ...(detail?.tracksMulti ?? [])])];
+  return badges.every((badge) => badge.startsWith("Other")) ? [] : badges;
 }
 
 function summarizeFacetGroups(detail: RunAnalysisDetail | null) {
@@ -277,6 +281,95 @@ function SectionSummaryCard({
   );
 }
 
+function describeYearSource(source: string): string {
+  if (source === "user") return "corrected by you";
+  if (source.includes("explicit_publication:issue")) return "the journal issue line";
+  if (source.includes("explicit_publication:thesis_year")) return "the thesis cover";
+  if (source.includes("explicit_publication:copyright")) return "the copyright notice";
+  if (source.includes("explicit_publication:online")) return "the online publication date";
+  if (source.includes("explicit_publication")) return "the publication date";
+  if (source.startsWith("web:")) return "scholarly metadata online";
+  if (source.includes("import_metadata")) return "the upload details";
+  if (source.includes("front_matter") || source.includes("title_abstract")) return "the first page";
+  return "";
+}
+
+/** What the analysis found beyond topics, so a reader can check it. */
+function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted; year?: string | null }) {
+  const yearSource = extracted.year ? describeYearSource(extracted.year.source) : "";
+  const hasYear = Boolean(year && year !== "Unknown");
+  return (
+    <section className="grid gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#050505] lg:grid-cols-2">
+      <div>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Publication year</p>
+        <p className="mt-2 text-sm text-slate-800 dark:text-[#e5e5e5]">
+          {hasYear ? (
+            <>
+              <span className="font-semibold">{year}</span>
+              {yearSource ? `, from ${yearSource}` : ""}
+            </>
+          ) : (
+            "Not printed clearly in the paper, so it was left unknown. You can correct it above."
+          )}
+        </p>
+        {hasYear && extracted.year?.evidence ? (
+          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#999]">&ldquo;{extracted.year.evidence}&rdquo;</p>
+        ) : null}
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Research type</p>
+        {extracted.typology ? (
+          <>
+            <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-[#e5e5e5]">
+              {extracted.typology.primary}
+              {extracted.typology.secondary ? <span className="font-normal"> (also {extracted.typology.secondary})</span> : null}
+            </p>
+            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-[#999]">{extracted.typology.verdict}</p>
+          </>
+        ) : (
+          <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">Not classified.</p>
+        )}
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">The paper&rsquo;s own keywords</p>
+        {extracted.authorKeywords.length ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {extracted.authorKeywords.map((keyword) => (
+              <span key={keyword} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-700 dark:bg-[#111] dark:text-[#d0d0d0]">
+                {keyword}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">The paper prints no keyword list.</p>
+        )}
+      </div>
+      <div>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Methods found</p>
+        <p className="mt-2 text-sm text-slate-800 dark:text-[#e5e5e5]">
+          {extracted.methodTopics.length ? extracted.methodTopics.join(", ") : "None identified as separate topics."}
+        </p>
+      </div>
+      {extracted.duplicateOf ? (
+        <p className="text-sm text-amber-700 dark:text-amber-300 lg:col-span-2">
+          This paper&rsquo;s text closely matches &ldquo;{extracted.duplicateOf.title}&rdquo; in the same repository, so it may be the
+          same study uploaded twice.
+        </p>
+      ) : null}
+      {extracted.analysisNotes.length ? (
+        <div className="lg:col-span-2">
+          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Analysis notes</p>
+          <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-5 text-slate-600 dark:text-[#bbb]">
+            {extracted.analysisNotes.map((note) => (
+              <li key={note}>{note}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export default function PaperAnalysisExplorerModal({
   run,
   detail,
@@ -290,8 +383,44 @@ export default function PaperAnalysisExplorerModal({
   onToggleFavorite,
   onRename,
   onOpenDashboard,
+  onCorrect,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaperExplorerTab>("overview");
+  const [correcting, setCorrecting] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [yearDraft, setYearDraft] = useState("");
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
+  const [correctionSaving, setCorrectionSaving] = useState(false);
+
+  function startCorrection() {
+    setTitleDraft(detail?.title || titleOf(run));
+    setYearDraft(detail?.year && detail.year !== "Unknown" ? detail.year : "");
+    setCorrectionError(null);
+    setCorrecting(true);
+  }
+
+  async function saveCorrection() {
+    if (!onCorrect) return;
+    const title = titleDraft.replace(/\s+/g, " ").trim();
+    const year = yearDraft.trim() || "Unknown";
+    const correction: { title?: string; year?: string } = {};
+    if (title && title !== (detail?.title || titleOf(run))) correction.title = title;
+    if (year !== (detail?.year || "Unknown")) correction.year = year;
+    if (!correction.title && !correction.year) {
+      setCorrecting(false);
+      return;
+    }
+    setCorrectionSaving(true);
+    setCorrectionError(null);
+    try {
+      await onCorrect(correction);
+      setCorrecting(false);
+    } catch (saveError) {
+      setCorrectionError(saveError instanceof Error ? saveError.message : "The correction could not be saved.");
+    } finally {
+      setCorrectionSaving(false);
+    }
+  }
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -381,26 +510,87 @@ export default function PaperAnalysisExplorerModal({
               <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                 Paper Explorer
               </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                {detail?.title || titleOf(run)}
-              </h2>
+              {correcting ? (
+                <form
+                  className="mt-2 grid gap-2 sm:grid-cols-[1fr_7rem_auto]"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveCorrection();
+                  }}
+                >
+                  <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
+                    Title
+                    <input
+                      value={titleDraft}
+                      onChange={(event) => setTitleDraft(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                    />
+                  </label>
+                  <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
+                    Year
+                    <input
+                      value={yearDraft}
+                      onChange={(event) => setYearDraft(event.target.value)}
+                      placeholder="Unknown"
+                      inputMode="numeric"
+                      maxLength={4}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                    />
+                  </label>
+                  <div className="flex items-end gap-2">
+                    <button
+                      type="submit"
+                      disabled={correctionSaving}
+                      className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+                    >
+                      {correctionSaving ? "Saving" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCorrecting(false)}
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-[#8e8e8e] sm:col-span-3">
+                    Your correction is kept when the paper is analysed again. Leave the year empty if the paper has none.
+                  </p>
+                  {correctionError ? (
+                    <p className="text-xs text-red-600 dark:text-red-300 sm:col-span-3">{correctionError}</p>
+                  ) : null}
+                </form>
+              ) : (
+                <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                  {detail?.title || titleOf(run)}
+                </h2>
+              )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                   {detail?.year || "Year unavailable"}
                 </span>
+                {onCorrect && !correcting && run.status === "succeeded" ? (
+                  <button
+                    type="button"
+                    onClick={startCorrection}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+                  >
+                    <PencilSquareIcon className="h-3.5 w-3.5" />
+                    <span>Correct title or year</span>
+                  </button>
+                ) : null}
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                  {run.status === "succeeded" ? "Pipeline analysis ready" : run.status}
+                  {run.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(run)}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
-                  <ChartIcon className="h-3.5 w-3.5" />
-                  <span>
-                    {detail?.diagnostics?.dataSource === "canonical"
-                      ? "Canonical node output"
-                      : detail?.available
-                        ? "Recovered node output"
-                        : "Preview only"}
+                {/* Where the rows came from matters only when it is not the
+                    paper's own finished analysis; the old chip named pipeline
+                    internals, which told a reader nothing. */}
+                {detail?.diagnostics?.dataSource !== "canonical" ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                    <ChartIcon className="h-3.5 w-3.5" />
+                    <span>{detail?.available ? "Recovered from an earlier analysis" : "Not analyzed yet"}</span>
                   </span>
-                </span>
+                ) : null}
               </div>
               {trackBadges.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -426,7 +616,9 @@ export default function PaperAnalysisExplorerModal({
             </button>
           </div>
 
-          <div className="mt-5 flex items-center gap-2 overflow-x-auto pb-1">
+          {/* Wraps rather than scrolling: on a phone a sideways-scrolling row
+              looked like two buttons with a third cut off. */}
+          <div className="mt-5 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onDownloadReport}
@@ -562,6 +754,7 @@ export default function PaperAnalysisExplorerModal({
                       <p className="mt-3 text-xs text-slate-500 dark:text-[#777]">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
                     </section>
                   ) : null}
+                  {detail.extracted ? <ExtractedDetails extracted={detail.extracted} year={detail.year} /> : null}
                   <section className="grid gap-4 lg:grid-cols-3">
                     <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
                       <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">

@@ -89,6 +89,7 @@ class CloudSqlQueryClient:
     def select_rows(self, resource: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         if resource not in self._resources:
             raise ValueError(f"Unsupported Cloud SQL research resource: {resource}")
+        import psycopg
         from psycopg import sql
         from psycopg.rows import dict_row
 

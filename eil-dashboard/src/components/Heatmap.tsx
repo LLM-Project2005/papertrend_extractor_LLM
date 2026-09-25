@@ -30,6 +30,14 @@ function interpolate(low: string, high: string, t: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
+/** Dark or light text, whichever reads on this cell; the scale can run either
+ * way (light to dark on a light page, dark to light on a dark one). */
+function textOn(rgb: string): string {
+  const [r, g, b] = (rgb.match(/\d+/g) ?? ["0", "0", "0"]).map(Number);
+  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return luminance > 0.55 ? "#1f2937" : "#f8fafc";
+}
+
 export default function Heatmap({
   rows,
   cols,
@@ -83,14 +91,10 @@ export default function Heatmap({
                       title={`${r} × ${c}: ${v}`}
                     >
                       <div
-                        className="w-10 h-8 flex items-center justify-center text-[10px] font-medium border border-white/50"
+                        className="w-10 h-8 flex items-center justify-center text-[10px] font-medium border border-white/50 dark:border-black/50"
                         style={{
-                          backgroundColor: interpolate(
-                            colorScale[0],
-                            colorScale[1],
-                            t
-                          ),
-                          color: t > 0.6 ? "#fff" : "#333",
+                          backgroundColor: interpolate(colorScale[0], colorScale[1], t),
+                          color: textOn(interpolate(colorScale[0], colorScale[1], t)),
                         }}
                       >
                         {v}

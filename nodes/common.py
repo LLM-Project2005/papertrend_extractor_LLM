@@ -7,11 +7,16 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 SECTION_ORDER = {
     "title": 0,
-    "abstract_claims": 1,
-    "methods": 2,
-    "results": 3,
-    "conclusion": 4,
-    "bibliography": 5,
+    "keywords": 1,
+    "abstract_claims": 2,
+    "introduction": 3,
+    "literature_review": 4,
+    "methods": 5,
+    "results": 6,
+    "discussion": 7,
+    "conclusion": 8,
+    "body": 9,
+    "bibliography": 10,
 }
 
 TRACK_FIELD_MAP = {
@@ -33,15 +38,114 @@ def normalize_whitespace(value: str) -> str:
     return re.sub(r"\s+", " ", value or "").strip()
 
 
+_RUNNING_HEADER_RE = re.compile(
+    r"(?i)(?:\bvol(?:ume)?\.?\s*:?\s*\d|\bno\.?\s*:?\s*\d|\bissue\s*:?\s*\d|\bissn\b|\bdoi\b|https?://|www\.|"
+    r"\bjournal\b|\bproceedings\b|\bpp\.\s*\d|\bpage\s+\d|\breceived\b|\baccepted\b|\bcopyright\b|©|"
+    r"\bcitation\b|\bpublished by\b|\bcorrespond|\bemail\b|\be-mail\b|\bcommons\b|additional works|"
+    r"ปีที่|ฉบับที่|วารสาร)"
+)
+_INSTITUTION_RE = re.compile(
+    r"(?i)\b(?:university|institute|faculty|graduate school|graduate program|department|college|school of)\b"
+)
+_TITLE_CONNECTORS = ("of", "in", "a", "an", "the", "for", "and", "on", "to", "with", "by", "from", "at", "as", "or")
+
+
+def _is_thai_line(line: str) -> bool:
+    letters = re.findall(r"[^\W\d_]", line)
+    return bool(letters) and sum(1 for char in letters if "\u0e00" <= char <= "\u0e7f") > len(letters) / 2
+
+
+def _looks_like_author_line(line: str, next_line: str, title_upper: bool) -> bool:
+    if "@" in line or _INSTITUTION_RE.search(line):
+        return True
+    if re.search(r"[A-Za-z][\d*\u2020\u2021]+(?:,|$)|\*", line):
+        return True
+    if not title_upper and line.upper() == line and re.search(r"[A-Z]{3}", line):
+        return True
+    words = line.split()
+    affiliation_follows = (
+        "@" in next_line
+        or bool(_INSTITUTION_RE.search(next_line))
+        or bool(re.search(r"[A-Za-z][\d*\u2020\u2021]+(?:,|$)", next_line))
+    )
+    # "Anshakan Eiamtong-in and Sudaporn Luksaneeyanawin" is names; "English
+    # Teachers' Perceptions and Practices" is the rest of a title. Only the
+    # line after tells them apart.
+    if re.search(r"[A-Z][a-z]+\s*(?:&|,| and )\s*[A-Z][a-z]+", line) and len(words) <= 8 and ":" not in line:
+        return affiliation_follows
+    return len(words) <= 5 and affiliation_follows and bool(next_line) and all(word[:1].isupper() for word in words)
+
+
+def _clean_title_line(line: str) -> str:
+    return line.strip().strip("#").strip().strip("*_").strip()
+
+
 def pick_title(text: str, fallback_name: str) -> str:
-    for line in (text or "").splitlines():
-        stripped = line.strip().strip("#").strip()
-        if len(stripped) < 12:
+    """The title printed at the top of the paper, joined across wrapped lines.
+
+    Journal headers, volume lines and identifiers are skipped; the title ends
+    at the author line, a blank line or a change of script.
+    """
+
+    raw_lines = (text or "").splitlines()[:160]
+    lines = [_clean_title_line(line) for line in raw_lines]
+    first = _find_title(lines, raw_lines, 0)
+    if first is None:
+        return Path(fallback_name).stem[:500]
+    title, index = first
+    if _is_thai_line(title):
+        # Bilingual papers often print the Thai title first; the analysis runs
+        # in English, so prefer the English title printed after it.
+        english = _find_title(lines, raw_lines, index + 1, latin_only=True, limit=90)
+        if english is not None:
+            return english[0]
+    return title
+
+
+def _find_title(
+    lines: List[str],
+    raw_lines: List[str],
+    start: int,
+    *,
+    latin_only: bool = False,
+    limit: int = 120,
+) -> Optional[Tuple[str, int]]:
+    for index in range(start, min(len(lines), start + limit)):
+        line = lines[index]
+        if len(line) < 12 or re.fullmatch(r"[\d .\-/]+", line):
             continue
-        if re.fullmatch(r"[\d .-]+", stripped):
+        if _RUNNING_HEADER_RE.search(line) or "@" in line or line[:1].islower():
             continue
-        return stripped[:500]
-    return Path(fallback_name).stem[:500]
+        tokens = line.split()
+        if tokens and sum(1 for token in tokens if len(token) == 1) > len(tokens) / 2:
+            continue  # letter-spaced page furniture
+        if re.match(r"(?i)^(?:abstract|keywords?|\[page|บทคัดย่อ|คำสำคัญ|คําสําคัญ)", line):
+            continue
+        if _INSTITUTION_RE.search(line) and len(tokens) <= 6:
+            continue  # an affiliation printed above the title
+        thai = _is_thai_line(line)
+        if latin_only and (thai or re.search(r"[\u0e00-\u0e7f]", line)):
+            continue
+
+        parts = [line]
+        title_upper = line.upper() == line
+        if not raw_lines[index].strip().startswith("#"):
+            for offset in range(index + 1, min(len(lines), index + 5)):
+                following = lines[offset]
+                next_line = lines[offset + 1] if offset + 1 < len(lines) else ""
+                if not following or following in parts or _RUNNING_HEADER_RE.search(following):
+                    break
+                if _is_thai_line(following) != thai or parts[-1].endswith((".", "?", "!")):
+                    break
+                if _looks_like_author_line(following, next_line, title_upper):
+                    break
+                if len(" ".join([*parts, following])) > 320:
+                    break
+                parts.append(following)
+                if parts[-1].split()[-1].lower() not in _TITLE_CONNECTORS and len(" ".join(parts)) > 180:
+                    break
+        return re.sub(r"\s+", " ", " ".join(parts)).strip()[:500], index
+    return None
 
 
 def infer_paper_id(source_path: str, ingestion_run_id: str = "") -> int:
@@ -148,13 +252,14 @@ def format_category_definitions(profile: Dict[str, Any]) -> str:
             "has provided a compatible category snapshot."
         )
 
+    # Same contract as the reclassification job (project-reclassification-service.ts).
     lines = []
     for category in categories:
         description = category.get("description") or "No additional description supplied."
         lines.append(
-            f"- {category['key']}: {category['label']} - {description}"
+            f"- {category['key']}: {category['label']} -- {description}"
         )
-    lines.append("- other: Other / Unclassified - outside the configured categories, unclear, or insufficient evidence.")
+    lines.append("- other: Other / Unclassified -- use when evidence is weak, ambiguous, or outside the taxonomy.")
     return "\n".join(lines)
 
 

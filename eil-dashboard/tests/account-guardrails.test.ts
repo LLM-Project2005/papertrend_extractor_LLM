@@ -19,13 +19,17 @@ test("upload entry points support batches and send SHA-256 fingerprints", () => 
     join(root, "src/components/admin/AdminImportClient.tsx"),
     "utf8"
   );
-  for (const source of [modal, library]) {
-    assert.match(source, /fingerprintFiles/);
-    assert.match(source, /sha256: fingerprints\[fileIndex\]/);
-    assert.match(source, /multiple/);
-    assert.match(source, /10 \* 1024 \* 1024/);
-    assert.doesNotMatch(source, /For beta stability, upload one PDF at a time/);
-  }
+  assert.match(modal, /fingerprintFiles/);
+  assert.match(modal, /sha256: fingerprints\[fileIndex\]/);
+  assert.match(modal, /multiple/);
+  assert.match(modal, /10 \* 1024 \* 1024/);
+  assert.doesNotMatch(modal, /For beta stability, upload one PDF at a time/);
+  // The Library had its own copy of the upload, which sent papers to the
+  // workspace's repository rather than the one being browsed, skipped the
+  // analysis profile and never retried a dropped upload. There is one path now.
+  assert.match(library, /<AnalyzeFlowModal/);
+  assert.match(library, /projectId=\{libraryProject\?\.id \?\? currentProject\?\.id \?\? null\}/);
+  assert.doesNotMatch(library, /\/api\/admin\/import\/prepare/);
 });
 
 test("Cloud SQL upload preparation serializes quota and duplicate checks", () => {

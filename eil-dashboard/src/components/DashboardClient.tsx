@@ -46,7 +46,8 @@ type DashboardDrilldownPaper = {
   paperId: PaperId;
   title: string;
   year: string;
-  topics: string[];
+  /** The paper's own topic label, and the theme it was grouped under. */
+  topics: Array<{ label: string; theme: string }>;
   keywords: string[];
   tracks: string[];
   evidence: string;
@@ -184,6 +185,7 @@ export default function DashboardClient({
   const searchParams = useSearchParams();
   const {
     selectedProjectId,
+    workspaceLoading,
     currentProject,
     profile,
     folders,
@@ -234,6 +236,7 @@ export default function DashboardClient({
   const [adaptiveSnapshot, setAdaptiveSnapshot] = useState<AdaptiveDashboardSnapshot | null>(null);
   const [adaptiveAnalytics, setAdaptiveAnalytics] = useState<NormalizedAnalyticsPayload | null>(null);
   const [generatedAdaptiveSignature, setGeneratedAdaptiveSignature] = useState<string | null>(null);
+  const [generatedAdaptiveFilterSignature, setGeneratedAdaptiveFilterSignature] = useState<string | null>(null);
   const [adaptiveGenerating, setAdaptiveGenerating] = useState(false);
   const [adaptiveError, setAdaptiveError] = useState<string | null>(null);
   const previousAllYearsRef = useRef<string[]>([]);
@@ -460,10 +463,21 @@ export default function DashboardClient({
             paperId,
             title: representative.title || "Untitled paper",
             year: representative.year || "Unknown year",
-            topics: [...new Set(trendRows.map((row) => row.topic).filter(Boolean))].slice(0, 6),
+            topics: [
+              ...new Map(
+                trendRows
+                  .filter((row) => row.topic)
+                  .map((row) => {
+                    const label = row.raw_topic || row.topic;
+                    return [label, { label, theme: row.topic }] as const;
+                  })
+              ).values(),
+            ].slice(0, 6),
             keywords: [...new Set(trendRows.map((row) => row.keyword).filter(Boolean))].slice(0, 8),
-            tracks:
-              categoryRows.length > 0
+            // With classification off the legacy slots only say "Other".
+            tracks: !classificationEnabled
+              ? []
+              : categoryRows.length > 0
                 ? [
                     ...new Set(
                       categoryRows.map(
@@ -491,6 +505,7 @@ export default function DashboardClient({
   }, [
     categoryLabels,
     categoryOptions,
+    classificationEnabled,
     drilldownTarget,
     filteredData,
   ]);
@@ -582,12 +597,46 @@ export default function DashboardClient({
       filteredData.trends,
     ]
   );
+  // The filters alone. The full signature above also moves when the data does -
+  // after Refresh, or when new topics are grouped into themes - and that used to
+  // be announced as "Filters changed" although no filter had been touched.
+  const adaptiveFilterSignature = useMemo(
+    () =>
+      stableSerialize({
+        projectId: selectedProjectId ?? "all",
+        folders: [...selectedFolderIds].sort(),
+        selectedYears: [...selectedYears].sort(),
+        selectedTracks: [...selectedTracks].sort(),
+        searchQuery: searchQuery.trim(),
+      }),
+    [searchQuery, selectedFolderIds, selectedProjectId, selectedTracks, selectedYears]
+  );
+
+  // Charts planned for one repository are not about the next one.
+  const adaptiveProjectRef = useRef(selectedProjectId);
+  useEffect(() => {
+    if (adaptiveProjectRef.current === selectedProjectId) return;
+    adaptiveProjectRef.current = selectedProjectId;
+    setPlanState(null);
+    setAdaptiveSnapshot(null);
+    setAdaptiveAnalytics(null);
+    setGeneratedAdaptiveSignature(null);
+    setGeneratedAdaptiveFilterSignature(null);
+    setAdaptiveError(null);
+  }, [selectedProjectId]);
+
   const adaptiveSection =
     planState?.plan.sections.find(
       (section) => section.section_key === "adaptive"
     ) ?? null;
   const adaptiveFiltersChanged = Boolean(
-    generatedAdaptiveSignature && adaptivePlanSignature !== generatedAdaptiveSignature
+    generatedAdaptiveFilterSignature && adaptiveFilterSignature !== generatedAdaptiveFilterSignature
+  );
+  const adaptiveDataChanged = Boolean(
+    !adaptiveFiltersChanged &&
+      generatedAdaptiveSignature &&
+      adaptivePlanSignature &&
+      adaptivePlanSignature !== generatedAdaptiveSignature
   );
 
   async function generateAdaptiveCharts() {
@@ -640,6 +689,7 @@ export default function DashboardClient({
         })),
       });
       setGeneratedAdaptiveSignature(adaptivePlanSignature);
+      setGeneratedAdaptiveFilterSignature(adaptiveFilterSignature);
     } catch (error) {
       setAdaptiveError(
         error instanceof DOMException && error.name === "AbortError"
@@ -652,6 +702,22 @@ export default function DashboardClient({
       window.clearTimeout(timeout);
       setAdaptiveGenerating(false);
     }
+  }
+
+  // With no repository chosen the data hook never starts, so its loading flag
+  // stayed true and the page spun forever.
+  if (!selectedProjectId && !workspaceLoading) {
+    return (
+      <div className="app-surface flex min-h-[60vh] items-center justify-center px-6 text-center">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Choose a repository</h1>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            The dashboard shows one repository at a time. Pick one from the repository menu, or create one and add papers in the
+            library.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   if (loading && !data) {
@@ -778,6 +844,10 @@ export default function DashboardClient({
                 <p className="mt-2 text-sm font-medium text-amber-700 dark:text-amber-300">
                   Filters changed. Existing charts still show the previous snapshot until you update them.
                 </p>
+              ) : adaptiveDataChanged ? (
+                <p className="mt-2 text-sm text-slate-600 dark:text-[#b8b8b8]">
+                  The repository&apos;s data has changed since these charts were made. Update them to include it.
+                </p>
               ) : null}
               {adaptiveError ? (
                 <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300">{adaptiveError}</p>
@@ -809,7 +879,7 @@ export default function DashboardClient({
                 {adaptiveGenerating
                   ? "Building charts..."
                   : planState
-                    ? adaptiveFiltersChanged
+                    ? adaptiveFiltersChanged || adaptiveDataChanged
                       ? "Update charts"
                       : "Regenerate"
                     : "Generate charts"}
@@ -962,10 +1032,14 @@ export default function DashboardClient({
                               {paper.topics.length > 0 ? (
                                 paper.topics.map((topic) => (
                                   <span
-                                    key={`${paper.paperId}-${topic}`}
+                                    key={`${paper.paperId}-${topic.label}`}
+                                    title={topic.theme !== topic.label ? `Grouped under the theme "${topic.theme}"` : undefined}
                                     className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#cfcfcf]"
                                   >
-                                    {topic}
+                                    {topic.label}
+                                    {topic.theme !== topic.label ? (
+                                      <span className="text-slate-500 dark:text-[#8e8e8e]"> · {topic.theme}</span>
+                                    ) : null}
                                   </span>
                                 ))
                               ) : (
@@ -1112,6 +1186,7 @@ export default function DashboardClient({
                 data={adaptiveSnapshot}
                 analytics={adaptiveAnalytics}
                 adaptiveSection={adaptiveSection}
+                trackLabels={categoryLabels}
               />
             ) : (
               <section className="app-surface flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">

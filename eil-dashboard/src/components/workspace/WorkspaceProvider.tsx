@@ -14,11 +14,16 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { TRACK_COLS } from "@/lib/constants";
 import {
   ANALYSIS_SESSION_STORAGE_KEY,
-  WORKSPACE_FILTERS_STORAGE_KEY,
   WORKSPACE_FOLDER_STORAGE_KEY,
   WORKSPACE_ORGANIZATION_STORAGE_KEY,
   WORKSPACE_PROJECT_STORAGE_KEY,
 } from "@/lib/workspace-session";
+import {
+  WORKSPACE_FILTERS_BY_PROJECT_KEY,
+  filtersForProject,
+  parseFiltersByProject,
+  withProjectFilters,
+} from "@/lib/workspace-filters";
 import {
   DEFAULT_WORKSPACE_PROFILE,
   loadWorkspaceProfile,
@@ -146,6 +151,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [selectedYears, setSelectedYearsState] = useState<string[]>([]);
   const [selectedTracks, setSelectedTracksState] = useState<string[]>([...TRACK_COLS]);
   const [searchQuery, setSearchQueryState] = useState("");
+  // The repository the filters above belong to; undefined until restored.
+  const [filtersProjectId, setFiltersProjectId] = useState<string | null | undefined>(undefined);
   const loadedKeyRef = useRef<string | null>(null);
   const profileDirtyRef = useRef(false);
   const cachedWorkspaceRef = useRef<{
@@ -285,28 +292,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setSelectedProjectIdState(savedProjectId);
 
     try {
-      const rawFilters = window.localStorage.getItem(WORKSPACE_FILTERS_STORAGE_KEY);
-      if (rawFilters) {
-        const parsed = JSON.parse(rawFilters) as {
-          selectedYears?: string[];
-          selectedTracks?: string[];
-          searchQuery?: string;
-        };
-        if (Array.isArray(parsed.selectedYears)) {
-          setSelectedYearsState(parsed.selectedYears.filter(Boolean));
-        }
-        if (Array.isArray(parsed.selectedTracks) && parsed.selectedTracks.length > 0) {
-          setSelectedTracksState(parsed.selectedTracks.filter(Boolean));
-        }
-        if (typeof parsed.searchQuery === "string") {
-          setSearchQueryState(parsed.searchQuery);
-        }
-      }
-    } catch {
-      // Ignore invalid cached filter state.
-    }
-
-    try {
       const raw = window.localStorage.getItem(ANALYSIS_SESSION_STORAGE_KEY);
       if (!raw) {
         return;
@@ -361,20 +346,41 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     window.localStorage.setItem(WORKSPACE_FOLDER_STORAGE_KEY, selectedFolderId);
   }, [selectedFolderId]);
 
+  // Filters belong to a repository. When the repository changes, its own
+  // filters come back (or none), set in the same render as the repository
+  // they belong to, so the save below never files one repository's filters
+  // under another.
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (filtersProjectId !== undefined && filtersProjectId === selectedProjectIdState) {
       return;
     }
+    let store: ReturnType<typeof parseFiltersByProject> = {};
+    try {
+      store = parseFiltersByProject(window.localStorage.getItem(WORKSPACE_FILTERS_BY_PROJECT_KEY));
+    } catch {
+      // Storage can be unavailable; the defaults apply.
+    }
+    const filters = filtersForProject(store, selectedProjectIdState);
+    setSelectedYearsState(filters.selectedYears);
+    setSelectedTracksState(filters.selectedTracks);
+    setSearchQueryState(filters.searchQuery);
+    setFiltersProjectId(selectedProjectIdState);
+  }, [filtersProjectId, selectedProjectIdState]);
 
-    window.localStorage.setItem(
-      WORKSPACE_FILTERS_STORAGE_KEY,
-      JSON.stringify({
-        selectedYears,
-        selectedTracks,
-        searchQuery,
-      })
-    );
-  }, [searchQuery, selectedTracks, selectedYears]);
+  useEffect(() => {
+    if (filtersProjectId === undefined) {
+      return;
+    }
+    try {
+      const store = parseFiltersByProject(window.localStorage.getItem(WORKSPACE_FILTERS_BY_PROJECT_KEY));
+      window.localStorage.setItem(
+        WORKSPACE_FILTERS_BY_PROJECT_KEY,
+        JSON.stringify(withProjectFilters(store, filtersProjectId, { selectedYears, selectedTracks, searchQuery }))
+      );
+    } catch {
+      // Remembering filters is a convenience; nothing depends on it.
+    }
+  }, [filtersProjectId, searchQuery, selectedTracks, selectedYears]);
 
   const refreshOrganizations = useCallback(async () => {
     if (!user || !session?.access_token) {

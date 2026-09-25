@@ -47,6 +47,7 @@ import {
   ANSWER_META_SM_CLASS,
 } from "@/lib/answer-typography";
 import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody";
+import { markCitations, type CitationSource } from "@/lib/answer-citations";
 import { ChatIntro, FollowUpSuggestions } from "@/components/chat/ChatIntro";
 import {
   exampleQuestions,
@@ -951,6 +952,40 @@ function buildResearchTitle(
   return source.split("\n")[0]?.trim() || "Deep research";
 }
 
+const REPORT_BLOCK_SEPARATOR = String.fromCharCode(10, 10);
+
+/**
+ * The sources a deep research report cites, numbered as its footnotes are.
+ * Each opens the paper in the Library.
+ */
+function ResearchSources({ sources }: { sources: CitationSource[] }) {
+  if (sources.length === 0) return null;
+  return (
+    <section className="mt-10 border-t border-slate-200 pt-6 dark:border-[#1f1f1f]">
+      <h2 className="text-base font-semibold text-slate-900 dark:text-[#ececec]">Sources</h2>
+      <ol className="mt-3 space-y-2 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]">
+        {sources.map((source) => (
+          <li key={source.paperId} className="flex gap-3">
+            <span className="min-w-[1.5rem] flex-none font-semibold text-slate-600 dark:text-[#8e8e8e]">{source.number}.</span>
+            <span className="min-w-0">
+              {source.href ? (
+                <Link href={source.href} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950 dark:decoration-[#444] dark:hover:text-white">
+                  {source.title}
+                </Link>
+              ) : (
+                source.title
+              )}
+              {source.year && source.year !== "Unknown" ? (
+                <span className="text-slate-600 dark:text-[#8e8e8e]"> ({source.year})</span>
+              ) : null}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 function splitReportBlocks(report?: string | null) {
   return String(report || "")
     .split(/\n{2,}/)
@@ -1417,9 +1452,26 @@ export default function ChatClient() {
     },
     [deepSession, messages]
   );
+  // The report is markdown with "(Title, year)" citations, drawn the way chat
+  // answers are: headings and lists as such, citations as numbered footnotes.
+  // It used to be printed as plain text, "#" and "**" included.
+  const researchMarked = useMemo(() => {
+    const reportMessage = [...messages].reverse().find((message) => message.kind === "deep_research_report");
+    return markCitations(
+      researchReport,
+      (reportMessage?.citations ?? [])
+        .filter((citation) => citation.paperId && citation.sourceType !== "web")
+        .map((citation) => ({
+          paperId: String(citation.paperId),
+          title: String(citation.title ?? ""),
+          year: String(citation.year ?? ""),
+          href: String(citation.href ?? ""),
+        }))
+    );
+  }, [messages, researchReport]);
   const researchBlocks = useMemo(
-    () => splitReportBlocks(researchReport),
-    [researchReport]
+    () => splitReportBlocks(researchMarked.text),
+    [researchMarked.text]
   );
   const visibleMessages = useMemo(
     () =>
@@ -2889,19 +2941,12 @@ export default function ChatClient() {
                         <h2 className="text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.6rem]">
                           {researchTitle}
                         </h2>
-                        <div className="space-y-5">
-                          {(researchBlocks.length > 0
-                            ? researchBlocks.slice(0, 6)
-                            : [researchReport]
-                          ).map((block, index) => (
-                            <p
-                              key={`${deepSession.id}-report-${index}`}
-                              className="whitespace-pre-wrap text-[15px] leading-8 text-slate-700 dark:text-[#ececec]"
-                            >
-                              {block}
-                            </p>
-                          ))}
-                        </div>
+                        {renderRichMessage(
+                          researchBlocks.slice(0, 6).join(REPORT_BLOCK_SEPARATOR),
+                          `${deepSession.id}-report`,
+                          "assistant",
+                          researchMarked.sources
+                        )}
                         {researchBlocks.length > 6 ? (
                           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                             Continue in full view to read the rest of the report.
@@ -4039,18 +4084,8 @@ export default function ChatClient() {
                   </h1>
                 </div>
 
-                <div className="space-y-6">
-                  {(researchBlocks.length > 0 ? researchBlocks : [researchReport]).map(
-                    (block, index) => (
-                      <p
-                        key={`fullscreen-report-${index}`}
-                        className="whitespace-pre-wrap text-[17px] leading-9 text-slate-700 dark:text-[#ececec]"
-                      >
-                        {block}
-                      </p>
-                    )
-                  )}
-                </div>
+                {renderRichMessage(researchMarked.text, "fullscreen-report", "assistant", researchMarked.sources)}
+                <ResearchSources sources={researchMarked.sources} />
               </article>
             </div>
           </div>
@@ -4273,14 +4308,9 @@ export default function ChatClient() {
         </Modal>
       ) : null}
 
-          <AnalyzeFlowModal
-            open={showAnalyzeModal}
-            onClose={() => setShowAnalyzeModal(false)}
-            defaultFolder={
-              activeKnowledgeScope.kind === "folder" ? activeFolderLabel : "Repository"
-            }
-        title="Add files"
-        eyebrow="Upload"
+      <AnalyzeFlowModal
+        open={showAnalyzeModal}
+        onClose={() => setShowAnalyzeModal(false)}
         onCreated={handleCreatedRuns}
       />
     </>

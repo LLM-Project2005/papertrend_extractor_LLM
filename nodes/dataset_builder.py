@@ -9,6 +9,7 @@ from nodes.common import (
     pick_title,
     safe_json_list,
 )
+from nodes.text_matching import fold_text
 from nodes.year_resolver import normalize_publication_year
 from state import IngestionState
 
@@ -26,7 +27,9 @@ def _build_category_rows(
     folder_id: str | None,
     classification: Dict[str, Any],
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    if classification.get("classification_enabled") is False:
+    # No classifier result means nothing was classified; writing "Other" rows
+    # would count the paper as classified.
+    if not classification.get("classifier_model") or classification.get("classification_enabled") is False:
         return [], []
     taxonomy_name = str(classification.get("taxonomy_name") or "Project categories")[:120]
     taxonomy_definition = str(classification.get("taxonomy_definition") or "")[:1200]
@@ -134,9 +137,9 @@ def _build_category_rows(
 def _match_topic_label(
     semantic_topic: Dict[str, Any], labeled_topics: Sequence[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    semantic_keywords = set(semantic_topic.get("keywords") or [])
+    semantic_keywords = {fold_text(keyword) for keyword in semantic_topic.get("keywords") or []}
     for labeled in labeled_topics:
-        if semantic_keywords == set(labeled.get("original_keywords") or []):
+        if semantic_keywords == {fold_text(keyword) for keyword in labeled.get("original_keywords") or []}:
             return labeled
     return {}
 
@@ -153,6 +156,10 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
     folder_id = str(state.get("folder_id") or "").strip() or None
     paper_id = int(state.get("paper_id") or infer_paper_id(source_path, ingestion_run_id))
     title = (metadata.get("title") or final_json.get("title") or pick_title(raw_text, source_filename)).strip()[:500]
+    # A title corrected in the paper library survives re-analysis.
+    overrides = (state.get("input_payload") or {}).get("user_overrides")
+    if isinstance(overrides, dict) and str(overrides.get("title") or "").strip():
+        title = str(overrides["title"]).strip()[:500]
     year = normalize_publication_year(metadata.get("year") or "Unknown")
     year_resolution = state.get("year_resolution") or {}
     year_confidence = float(year_resolution.get("year_confidence") or 0.0)
@@ -165,16 +172,28 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
 
     keyword_rows: List[Dict[str, Any]] = []
     concept_rows: List[Dict[str, Any]] = []
+    topic_kinds: Dict[str, str] = {}
+
+    # Match a topic's members to candidates by folded text, and write each
+    # candidate once: exact-string matching used to drop keywords whose case or
+    # punctuation differed and to write a keyword twice when two topics named it.
+    candidate_by_form: Dict[str, Dict[str, Any]] = {}
+    for candidate in keyword_candidates:
+        for form in [candidate.get("keyword"), *(candidate.get("matched_terms") or [])]:
+            candidate_by_form.setdefault(fold_text(form), candidate)
+    written: set = set()
 
     if semantic_topics:
         for semantic_topic in semantic_topics:
             labeled = _match_topic_label(semantic_topic, labeled_topics)
             label = (labeled.get("label") or semantic_topic.get("label") or "Unclassified concept").strip()[:200]
-            concept_candidates = [
-                candidate
-                for candidate in keyword_candidates
-                if candidate.get("keyword") in set(semantic_topic.get("keywords") or [])
-            ]
+            topic_kinds[label] = str(labeled.get("kind") or semantic_topic.get("kind") or "subject")
+            concept_candidates = []
+            for member in semantic_topic.get("keywords") or []:
+                candidate = candidate_by_form.get(fold_text(member))
+                if candidate is not None and id(candidate) not in written:
+                    written.add(id(candidate))
+                    concept_candidates.append(candidate)
 
             first_span = choose_first_span([candidate.get("first_span") or {} for candidate in concept_candidates])
             matched_terms = safe_json_list(
@@ -327,10 +346,24 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
             }
         )
 
+    warnings = [str(warning) for warning in (state.get("warnings") or []) if str(warning).strip()]
+    analysis_quality = {
+        "degraded": bool(warnings),
+        "warnings": warnings[:20],
+        "extraction_method": state.get("extraction_method") or "unknown",
+        "segmentation_strategy": state.get("segmentation_strategy") or "unknown",
+        "translation_strategy": (
+            state.get("translation_strategy")
+            or ("translated" if state.get("needs_translation") else "not_needed")
+        ),
+    }
+
     dataset = {
         "paper_id": paper_id,
         "year": year,
         "year_resolution": year_resolution,
+        "analysis_quality": analysis_quality,
+        "topic_kinds": topic_kinds,
         "papers": [
             {
                 "id": paper_id,

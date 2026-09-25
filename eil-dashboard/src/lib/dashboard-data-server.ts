@@ -6,6 +6,7 @@ import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import {
   filterTopicFamiliesByPaperIds,
   loadOrBuildProjectCorpusTopicCache,
+  withoutParticipantTopics,
 } from "@/lib/corpus-topic-cache";
 import { materializeDashboardSummaryCache } from "@/lib/dashboard-summary-cache";
 import { applyStoredThemes } from "@/lib/topic-theme-service";
@@ -568,7 +569,7 @@ async function loadTableData(
     ]);
     return shapeTableDashboardData(
       metadata,
-      loaded.keywords,
+      withoutParticipantTopics(loaded.keywords),
       loaded.single,
       loaded.multi,
       categoryAssignments
@@ -609,7 +610,7 @@ async function loadTableData(
   }
 
   const keywordsByPaperId = new Map<PaperId, Record<string, unknown>[]>();
-  ((keywordsResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+  withoutParticipantTopics((keywordsResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
     const paperId = normalizePaperId(row.paper_id);
     if (!paperId) {
       return;
@@ -1133,7 +1134,8 @@ export async function loadDashboardDataServer(
   ownerUserId?: string | null,
   folderSelection?: string[] | string | null,
   projectId?: string | null,
-  mode: DashboardDataMode = "auto"
+  mode: DashboardDataMode = "auto",
+  options: { fresh?: boolean } = {}
 ): Promise<DashboardData> {
   const normalizedFolderIds = normalizeRequestedFolderIds(folderSelection) ?? [];
   const cacheKey = JSON.stringify({
@@ -1143,7 +1145,8 @@ export async function loadDashboardDataServer(
     folderIds: normalizedFolderIds,
   });
 
-  const cached = dashboardServerCache.get(cacheKey);
+  // Refresh asks for a fresh read; it used to get this cached copy back.
+  const cached = options.fresh ? undefined : dashboardServerCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < DASHBOARD_SERVER_CACHE_TTL_MS) {
     return cached.data;
   }

@@ -34,6 +34,8 @@ from analysis_pipeline import (
     persist_dataset,
     process_pdf_run,
 )
+from analysis_pipeline.duplicates import find_duplicate, text_fingerprint
+from analysis_pipeline.reanalysis import earlier_results_kept, failed_reanalysis_payload
 from supabase_http import build_retrying_session
 from database_client import create_worker_database_client
 
@@ -935,7 +937,7 @@ def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConf
                     run,
                     counter_key="recovery_count",
                     stage_message="Recovered stalled analysis run",
-                    detail="A previous worker stopped updating this run, so it was returned to the queue automatically.",
+                    detail="The analysis stopped updating, so the paper was put back in line to start again.",
                 ),
             },
         )
@@ -1381,6 +1383,28 @@ def resume_waiting_research_sessions_for_folder(
         )
 
 
+def duplicate_payload(client: Any, run: Dict[str, Any], raw_text: str, title: str) -> Dict[str, Any]:
+    """Fingerprint the paper's text and note an earlier copy in the same
+    repository. A failed lookup never fails the paper."""
+
+    fingerprint = text_fingerprint(raw_text)
+    if not fingerprint:
+        return {}
+    duplicate = None
+    lister = getattr(client, "list_run_fingerprints", None)
+    if callable(lister):
+        try:
+            others = lister(
+                str(run.get("owner_user_id") or ""),
+                str(run.get("folder_id") or "") or None,
+                str(run.get("id") or ""),
+            )
+            duplicate = find_duplicate(fingerprint, title, others)
+        except Exception as error:
+            logger.warning("duplicate check skipped", extra={"run_id": run.get("id"), "error": str(error)[:200]})
+    return {"text_fingerprint": fingerprint, "duplicate_of": duplicate}
+
+
 def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str, Any]) -> None:
     run_started = time.perf_counter()
     run_id = str(run["id"])
@@ -1403,7 +1427,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="preparing",
                 message="Preparing file for analysis",
-                detail="The worker has claimed this run and is getting the source ready.",
+                detail="Getting the PDF ready to read.",
                 metrics_patch={
                     "queue_wait_seconds": queue_wait_seconds,
                     "worker_started_at": now_iso(),
@@ -1422,7 +1446,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     run_id,
                     stage="downloading",
                     message="Downloading source file",
-                    detail="Pulling the selected PDF from Google Drive before extraction begins.",
+                    detail="Fetching the PDF from Google Drive.",
                 )
                 logger.info(
                     "downloading google drive file",
@@ -1436,7 +1460,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     run_id,
                     stage="downloading",
                     message="Downloading source file",
-                    detail="Fetching the uploaded PDF from Cloud Storage before extraction begins.",
+                    detail="Fetching the uploaded PDF.",
                 )
                 logger.info(
                     "downloading gcs object",
@@ -1450,7 +1474,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     run_id,
                     stage="downloading",
                     message="Downloading source file",
-                    detail="Fetching the uploaded PDF from Supabase Storage before extraction begins.",
+                    detail="Fetching the uploaded PDF.",
                 )
                 logger.info(
                     "downloading supabase storage object",
@@ -1466,7 +1490,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="starting_analysis",
                 message="Starting the analysis pipeline",
-                detail="The worker is entering the paper analysis graph and will update progress as each stage completes.",
+                detail="Reading the paper. This updates as each step finishes.",
                 metrics_patch={
                     "download_seconds": download_seconds,
                     "analysis_started_at": now_iso(),
@@ -1513,7 +1537,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 run_id,
                 stage="saving",
                 message="Saving results to the workspace",
-                detail="Writing the extracted paper, keywords, tracks, and related analysis to the workspace database.",
+                detail="Saving the paper's title, year, keywords, topics and category.",
                 metrics_patch={
                     "graph_seconds": graph_seconds,
                     "model_usage": {
@@ -1538,16 +1562,24 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             )
 
             ensure_run_active(client, run_id)
+            paper_rows = result.dataset.get("papers") or [{}]
+            paper_title = str((paper_rows[0] or {}).get("title") or "").strip()
+            duplicate_patch = duplicate_payload(client, run, result.raw_text, paper_title)
             final_input_payload = merge_input_payload(
                 run,
                 {
+                    **duplicate_patch,
                     "analysis_mode": "automatic",
                     "analysis_label": AUTO_ANALYSIS_LABEL,
                     "pipeline": PIPELINE_NAME,
                     "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                     "paper_id": result.dataset["paper_id"],
+                    # The progress card and Library name the paper by its title.
+                    "paper_title": paper_title[:500] or None,
                     "year": result.dataset.get("year"),
                     "year_resolution": result.dataset.get("year_resolution"),
+                    "analysis_quality": result.dataset.get("analysis_quality"),
+                    "topic_kinds": result.dataset.get("topic_kinds"),
                     "raw_text_length": len(result.raw_text),
                     "keyword_count": len(result.dataset["keywords"]),
                     "analysis_metrics": merge_analysis_metrics(
@@ -1674,6 +1706,38 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
                     extra={"run_id": run_id, "status": latest_run.get("status")},
                 )
                 return True
+
+            kept = earlier_results_kept(claimed)
+            if kept is not None:
+                try:
+                    failed_at = now_iso()
+                    client.update_run(
+                        run_id,
+                        {
+                            "status": "succeeded",
+                            "completed_at": kept.get("completed_at") or failed_at,
+                            "error_message": None,
+                            "input_payload": merge_input_payload(
+                                claimed,
+                                {
+                                    **failed_reanalysis_payload(message, failed_at),
+                                    **build_lifecycle_payload("completed"),
+                                },
+                            ),
+                        },
+                    )
+                    sync_folder_analysis_job(client, claimed)
+                    resume_waiting_research_sessions_for_folder(client, claimed)
+                    logger.warning(
+                        "re-analysis failed; earlier results kept",
+                        extra={"run_id": run_id, "error_message": message},
+                    )
+                    return True
+                except Exception as keep_error:
+                    logger.error(
+                        "failed to keep earlier results after a failed re-analysis",
+                        extra={"run_id": run_id, "update_error_message": str(keep_error)},
+                    )
 
             try:
                 client.update_run(

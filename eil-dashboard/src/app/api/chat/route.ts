@@ -274,7 +274,7 @@ const ChatRequestBodySchema = z
       })
       .optional(),
     selectedYears: z.array(z.string().max(20)).max(80).optional(),
-    selectedTracks: z.array(z.string().max(20)).max(20).optional(),
+    selectedTracks: z.array(z.string().max(80)).max(20).optional(),
     searchQuery: z.string().max(1_000).optional(),
     queryLanguage: z.string().max(20).optional(),
     selectedRunIds: z.array(z.string().max(80)).max(50).optional(),

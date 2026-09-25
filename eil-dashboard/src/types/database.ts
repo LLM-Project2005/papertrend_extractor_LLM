@@ -247,6 +247,8 @@ export interface IngestionRunRow {
   created_at?: string;
   updated_at?: string;
   completed_at?: string | null;
+  /** The analysed paper's title, joined in by the Library list (not a column). */
+  paper_title?: string | null;
 }
 
 export interface PaperFullRow {
@@ -292,8 +294,22 @@ export interface RunAnalysisFacet {
   evidence: string;
 }
 
+/** What the analysis extracted beyond topics (Cloud SQL workspaces). */
+export interface RunAnalysisExtracted {
+  year: { source: string; confidence: number; evidence: string } | null;
+  typology: { primary: string; secondary: string | null; statedPurpose: string; verdict: string } | null;
+  /** The keyword list printed in the paper itself. */
+  authorKeywords: string[];
+  /** Topic labels the analysis marked as research methods. */
+  methodTopics: string[];
+  /** Stages that fell back to a weaker result, in plain words. */
+  analysisNotes: string[];
+  duplicateOf: { title: string; score: number } | null;
+}
+
 export interface RunAnalysisDetail {
   available: boolean;
+  extracted?: RunAnalysisExtracted | null;
   paper_id?: PaperId | null;
   title?: string | null;
   year?: string | null;

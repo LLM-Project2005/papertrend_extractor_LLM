@@ -49,6 +49,135 @@ export class CloudSqlAnalysisJobRepository {
     });
   }
 
+  /**
+   * Queue finished papers to be analysed again under the same run id, so the
+   * paper id (derived from the run id) and everything that points at it stay
+   * the same. Only the owner's own succeeded, untrashed runs with a stored
+   * file qualify. A user's title/year corrections live in input_payload and
+   * are kept.
+   *
+   * `context` carries what an upload is given today and older runs lack: the
+   * repository's current profile and its id. Without a profile the
+   * classifier has no categories (re-analysing testtest left 37 of 39 papers
+   * "Other" in an EIL repository); without the id, category rows are saved
+   * with no repository and neither the dashboard nor coverage counts them.
+   */
+  async queueReanalysis(
+    ownerUserId: string,
+    selection: { runIds?: string[]; projectId?: string },
+    limit = 200,
+    context: { analysisProfile?: unknown; projectId?: string | null } = {}
+  ): Promise<string[]> {
+    const runIds = (selection.runIds ?? []).filter(Boolean);
+    if (!runIds.length && !selection.projectId) return [];
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const values: unknown[] = [ownerUserId];
+      let scope: string;
+      // A paper picked on its own may also be one that failed, so "Try again"
+      // works; a whole repository is re-analysed from its finished papers only.
+      if (runIds.length) {
+        values.push(runIds);
+        scope = `ir.id = ANY($${values.length}::uuid[]) AND ir.status IN ('succeeded', 'failed')`;
+      } else {
+        values.push(selection.projectId);
+        scope = `ir.status = 'succeeded' AND ir.folder_id IN (SELECT rf.id FROM public.research_folders rf
+                 WHERE rf.owner_user_id = $1 AND rf.project_id = $${values.length})`;
+      }
+      values.push(limit);
+      const timestamp = new Date().toISOString();
+      const profileJson = context.analysisProfile ? JSON.stringify(context.analysisProfile) : null;
+      const payloadProjectId = context.projectId || null;
+      const result = await client.query<{ id: string }>(
+        `UPDATE public.ingestion_runs ir SET status = 'queued', completed_at = NULL, error_message = NULL,
+           updated_at = now(),
+           input_payload = COALESCE(ir.input_payload, '{}'::jsonb)
+             || jsonb_build_object(
+                  'reanalysis_count', COALESCE((ir.input_payload->>'reanalysis_count')::int, 0) + 1,
+                  'reanalysis_requested_at', $${values.length + 1}::text,
+                  'progress_stage', 'queued',
+                  'progress_message', 'Queued to be analysed again',
+                  'progress_detail', 'This paper will be analysed again with the current pipeline.',
+                  'progress_updated_at', $${values.length + 1}::text)
+             || CASE WHEN $${values.length + 2}::jsonb IS NULL THEN '{}'::jsonb
+                     ELSE jsonb_build_object('analysis_profile', $${values.length + 2}::jsonb) END
+             || CASE WHEN $${values.length + 3}::text IS NULL THEN '{}'::jsonb
+                     ELSE jsonb_build_object('project_id', $${values.length + 3}::text) END
+         WHERE ir.id IN (
+           SELECT ir.id FROM public.ingestion_runs ir
+           WHERE ir.owner_user_id = $1 AND ir.trashed_at IS NULL
+             AND COALESCE(ir.source_path, '') <> '' AND ${scope}
+           ORDER BY ir.created_at ASC LIMIT $${values.length})
+         RETURNING ir.id`,
+        [...values, timestamp, profileJson, payloadProjectId]
+      );
+      return result.rows.map((row) => String(row.id));
+    });
+  }
+
+  /** The repository each of the owner's runs belongs to, through its folder. */
+  async projectsOfRuns(ownerUserId: string, runIds: string[]): Promise<Map<string, string[]>> {
+    const byProject = new Map<string, string[]>();
+    if (runIds.length === 0) return byProject;
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ id: string; project_id: string | null }>(
+        `SELECT ir.id, rf.project_id
+         FROM public.ingestion_runs ir
+         LEFT JOIN public.research_folders rf ON rf.id = ir.folder_id AND rf.owner_user_id = ir.owner_user_id
+         WHERE ir.owner_user_id = $1 AND ir.id = ANY($2::uuid[])`,
+        [ownerUserId, runIds]
+      );
+      for (const row of result.rows) {
+        const key = row.project_id ? String(row.project_id) : "";
+        byProject.set(key, [...(byProject.get(key) ?? []), String(row.id)]);
+      }
+      return byProject;
+    });
+  }
+
+  /**
+   * Record a user's title/year correction on the run (so re-analysis keeps
+   * it) and apply it to the stored paper at once.
+   */
+  async correctPaper(
+    ownerUserId: string,
+    runId: string,
+    correction: { title?: string; year?: string },
+    paperId: string
+  ): Promise<{ title: string; year: string } | null> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const run = await client.query<{ input_payload: Row | null }>(
+        `SELECT input_payload FROM public.ingestion_runs WHERE id = $1 AND owner_user_id = $2 FOR UPDATE`,
+        [runId, ownerUserId]
+      );
+      if (!run.rows[0]) return null;
+      const payload = (run.rows[0].input_payload ?? {}) as Row;
+      const previous = (payload.user_overrides && typeof payload.user_overrides === "object"
+        ? payload.user_overrides
+        : {}) as Row;
+      const overrides: Row = { ...previous, corrected_at: new Date().toISOString() };
+      if (correction.title !== undefined) overrides.title = correction.title;
+      if (correction.year !== undefined) overrides.year = correction.year;
+      await client.query(
+        `UPDATE public.ingestion_runs SET updated_at = now(),
+           input_payload = COALESCE(input_payload, '{}'::jsonb) || jsonb_build_object('user_overrides', $3::jsonb)
+         WHERE id = $1 AND owner_user_id = $2`,
+        [runId, ownerUserId, JSON.stringify(overrides)]
+      );
+      const paper = await client.query<{ title: string; year: string }>(
+        `UPDATE public.papers SET
+           title = COALESCE($3, title),
+           year = COALESCE($4, year),
+           year_source = CASE WHEN $4::text IS NULL THEN year_source ELSE 'user' END,
+           year_confidence = CASE WHEN $4::text IS NULL THEN year_confidence ELSE 1 END,
+           year_evidence = CASE WHEN $4::text IS NULL THEN year_evidence ELSE 'Corrected by a user in the paper library.' END
+         WHERE id = $1 AND owner_user_id = $2
+         RETURNING title, year`,
+        [paperId, ownerUserId, correction.title ?? null, correction.year ?? null]
+      );
+      return paper.rows[0] ?? { title: String(correction.title ?? ""), year: String(correction.year ?? "") };
+    });
+  }
+
   async requeueRuns(ownerUserId: string, runIds: string[], reason: string) {
     if (runIds.length === 0) return 0;
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {

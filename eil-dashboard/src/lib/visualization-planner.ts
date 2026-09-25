@@ -580,7 +580,6 @@ The charts must come only from the approved chart catalog below.
 Do not invent new chart types, layouts, or code.
 Prefer a compact set of charts that together tell the strongest story in the current filtered corpus.
 Use normalized canonical topics, not raw per-paper topic labels.
-If multiple folders are active, prefer at least one comparison chart.
 Prefer plan stability. If the corpus signature is broadly similar, keep the chart mix conservative instead of changing it just to be novel.
 Assume KPI cards are already shown separately, so your chart picks should complement those KPI cards rather than repeat them.
 Every chart reason must explain the decision value of the chart, not just restate what the axes show.
@@ -627,6 +626,27 @@ ${JSON.stringify(context ?? {}, null, 2)}
 Normalized analytics payload:
 ${JSON.stringify(analytics, null, 2)}
 `.trim();
+}
+
+export function planHasViableChart(rawPlan: unknown, viableChartKeys: VisualizationChartKey[]): boolean {
+  if (!rawPlan || typeof rawPlan !== "object") return false;
+  const plan = rawPlan as Record<string, unknown>;
+  const sections = Array.isArray(plan.sections) ? plan.sections : [];
+  const charts = [
+    ...(Array.isArray(plan.charts) ? plan.charts : []),
+    ...sections.flatMap((section) =>
+      section && typeof section === "object" && Array.isArray((section as Record<string, unknown>).charts)
+        ? ((section as Record<string, unknown>).charts as unknown[])
+        : []
+    ),
+  ];
+  const viable = new Set<string>(viableChartKeys);
+  return charts.some(
+    (chart) =>
+      chart !== null &&
+      typeof chart === "object" &&
+      viable.has(String((chart as Record<string, unknown>).chart_key ?? ""))
+  );
 }
 
 export async function planVisualization(
@@ -677,6 +697,13 @@ export async function planVisualization(
       (call) => call.function?.name === "build_adaptive_dashboard"
     );
     const rawPlan = toolPlanPayload(toolCall?.function?.arguments, analytics.mode);
+    // A plan with no chart this data supports would be replaced by a fixed
+    // default of advanced charts (none of which a small repository may
+    // support) while still reading "Agent plan". Use the data-aware plan and
+    // say it is the fallback instead.
+    if (!planHasViableChart(rawPlan, viableChartKeys)) {
+      return { plan: dataAwareFallback, analytics, source: "fallback" };
+    }
     return {
       plan: sanitizeVisualizationPlan(
         rawPlan,

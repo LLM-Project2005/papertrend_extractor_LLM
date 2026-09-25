@@ -34,6 +34,10 @@ export interface ChartTheme {
   barFillMuted: string;
   /** Stroke separating adjacent segments of a donut or stacked bar. */
   segmentEdge: string;
+  /** Heatmap [empty, full]: dark cells on a dark page instead of bright squares. */
+  heatScale: [string, string];
+  /** The same, in the accent hue used for category comparisons. */
+  heatScaleAccent: [string, string];
 }
 
 export function chartTheme(isDark: boolean): ChartTheme {
@@ -45,6 +49,8 @@ export function chartTheme(isDark: boolean): ChartTheme {
         barFill: "#d4d4d4",
         barFillMuted: "#6b7280",
         segmentEdge: "#1f1f1f",
+        heatScale: ["#141414", "#e5e5e5"],
+        heatScaleAccent: ["#0f172a", "#60a5fa"],
       }
     : {
         label: "#64748b",
@@ -53,6 +59,8 @@ export function chartTheme(isDark: boolean): ChartTheme {
         barFill: "#334155",
         barFillMuted: "#64748b",
         segmentEdge: "#ffffff",
+        heatScale: ["#f1f5f9", "#1e293b"],
+        heatScaleAccent: ["#eff6ff", "#1e40af"],
       };
 }
 
