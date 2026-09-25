@@ -80,8 +80,9 @@ export const REGROUP_GROWTH = 1.25;
  * themes. 4: titles taken out again; the cap stays off. 5: participant groups
  * left out of topics (participant-terms.ts) - an incremental update kept the
  * old "EFL Learner Characteristics and Demographics" name on what remained.
+ * 6: the rule also reads "learners of English" and Thai head-first groups.
  */
-export const THEME_STORE_VERSION = 5;
+export const THEME_STORE_VERSION = 6;
 
 /* -------------------------------------------------------------- the items */
 

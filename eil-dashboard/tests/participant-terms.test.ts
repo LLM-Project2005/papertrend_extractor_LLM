@@ -9,10 +9,26 @@ function read(relative: string): string {
 }
 
 test("a group of people is not a topic; what was studied about them is", () => {
-  for (const phrase of ["Thai EFL undergraduate students", "L1 Thai learners", "native English speakers", "Thai freshmen"]) {
+  for (const phrase of [
+    "Thai EFL undergraduate students",
+    "L1 Thai learners",
+    "native English speakers",
+    "Thai freshmen",
+    // Seen in testtest's leftover theme after the first filter.
+    "low English proficiency young Thai learners of English",
+    "ผู้เรียนภาษาอังกฤษในฐานะภาษาต่างประเทศ",
+  ]) {
     assert.equal(isParticipantDescriptor(phrase), true, phrase);
   }
-  for (const phrase of ["learner autonomy", "teacher agency", "EFL learners’ writing", "Years of English Study", "speaking anxiety"]) {
+  for (const phrase of [
+    "learner autonomy",
+    "teacher agency",
+    "EFL learners’ writing",
+    "Years of English Study",
+    "speaking anxiety",
+    "perceptions of teachers",
+    "ผู้เรียนเป็นศูนย์กลาง",
+  ]) {
     assert.equal(isParticipantDescriptor(phrase), false, phrase);
   }
   assert.equal(isParticipantDescriptor(""), false);

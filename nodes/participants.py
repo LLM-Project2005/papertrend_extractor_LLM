@@ -49,11 +49,22 @@ def _singular(token: str) -> str:
     return token
 
 
+# Thai names the head first: "ผู้เรียน..." (learners ...), "นักศึกษา..." (students ...).
+THAI_PERSON_PREFIXES = ("ผู้เรียน", "นักเรียน", "นักศึกษา", "ครู", "ผู้สอน", "ผู้เข้าร่วม")
+# ... except where the group qualifies a construct: "ผู้เรียนเป็นศูนย์กลาง" (learner-centred).
+THAI_CONSTRUCT_MARKERS = ("เป็นศูนย์กลาง",)
+
+
 def is_participant_descriptor(phrase: str) -> bool:
     """Whether ``phrase`` only names a group of people."""
 
-    text = re.sub(r"['’]s?\b", "", str(phrase or "").casefold())
+    raw = str(phrase or "").strip()
+    if raw.startswith(THAI_PERSON_PREFIXES):
+        return not any(marker in raw for marker in THAI_CONSTRUCT_MARKERS)
+    text = re.sub(r"['’]s?\b", "", raw.casefold())
     tokens = _TOKEN.findall(text)
-    if not tokens or str(phrase or "").rstrip().endswith(("'", "’")):
+    if not tokens or raw.endswith(("'", "’")):
         return False
-    return _singular(tokens[-1]) in PERSON_NOUNS
+    # "learners of English": the head comes before "of".
+    head = tokens[tokens.index("of", 1) - 1] if "of" in tokens[1:] else tokens[-1]
+    return _singular(head) in PERSON_NOUNS
