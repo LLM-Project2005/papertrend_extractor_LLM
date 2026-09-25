@@ -56,7 +56,10 @@ export async function POST(request: Request) {
       for (const [groupProjectId, ids] of byProject) {
         const profile = groupProjectId ? await profileFor(groupProjectId) : null;
         queued.push(
-          ...(await cloudSqlAnalysisJobRepository.queueReanalysis(user.id, { runIds: ids }, MAX_RUNS_PER_REQUEST, profile ?? undefined))
+          ...(await cloudSqlAnalysisJobRepository.queueReanalysis(user.id, { runIds: ids }, MAX_RUNS_PER_REQUEST, {
+            analysisProfile: profile ?? undefined,
+            projectId: groupProjectId || null,
+          }))
         );
       }
     } else {
@@ -64,7 +67,12 @@ export async function POST(request: Request) {
       if (!profile) {
         return NextResponse.json({ error: "Repository not found." }, { status: 404 });
       }
-      queued.push(...(await cloudSqlAnalysisJobRepository.queueReanalysis(user.id, { projectId }, MAX_RUNS_PER_REQUEST, profile)));
+      queued.push(
+        ...(await cloudSqlAnalysisJobRepository.queueReanalysis(user.id, { projectId }, MAX_RUNS_PER_REQUEST, {
+          analysisProfile: profile,
+          projectId,
+        }))
+      );
     }
     if (!queued.length) {
       return NextResponse.json(
