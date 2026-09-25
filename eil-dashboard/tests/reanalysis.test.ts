@@ -49,3 +49,15 @@ test("a correction is saved on the run so re-analysis keeps it", async () => {
   assert.match(repository, /jsonb_build_object\('user_overrides', \$3::jsonb\)/);
   assert.match(repository, /UPDATE public\.papers SET[\s\S]*WHERE id = \$1 AND owner_user_id = \$2/);
 });
+
+test("re-analysis applies the repository's current profile, taken on the server", async () => {
+  // testtest's papers predate profiles and carried none, so re-analysing them
+  // in an EIL repository left 37 of 39 "Other".
+  const route = await readFile(new URL("../src/app/api/workspace/library/reanalyze/route.ts", import.meta.url), "utf8");
+  const repository = await readFile(new URL("../src/lib/cloudsql/analysis-job-repository.ts", import.meta.url), "utf8");
+  assert.match(route, /workspace\.getProject\(user\.id, id\)/);
+  assert.match(route, /toIngestionAnalysisProfile\(/);
+  assert.doesNotMatch(route, /body\.analysisProfile|body\.analysis_profile/);
+  assert.match(repository, /jsonb_build_object\('analysis_profile', \$\$\{values\.length \+ 2\}::jsonb\)/);
+  assert.match(repository, /async projectsOfRuns\(ownerUserId: string, runIds: string\[\]\)/);
+});
