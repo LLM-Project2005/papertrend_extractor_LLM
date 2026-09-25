@@ -267,8 +267,19 @@ export async function publishReclassificationJob(ownerUserId: string, jobId: str
       `SELECT * FROM public.project_reclassification_items WHERE job_id=$1 AND owner_user_id=$2 ORDER BY paper_id`,
       [jobId, ownerUserId]
     );
-    await client.query(`DELETE FROM public.paper_category_assignments WHERE owner_user_id=$1 AND project_id=$2`, [ownerUserId, job.project_id]);
-    await client.query(`DELETE FROM public.paper_category_definitions WHERE owner_user_id=$1 AND project_id=$2`, [ownerUserId, job.project_id]);
+    // The job replaces its own papers' categories. Rows are unique per owner,
+    // paper and category, with no repository in the key, so clearing by
+    // repository alone left rows an older run saved without one - and the
+    // first insert for that paper failed on the unique key.
+    const paperIds = items.rows.map((item) => String(item.paper_id));
+    await client.query(
+      `DELETE FROM public.paper_category_assignments WHERE owner_user_id=$1 AND (project_id=$2 OR paper_id=ANY($3::bigint[]))`,
+      [ownerUserId, job.project_id, paperIds]
+    );
+    await client.query(
+      `DELETE FROM public.paper_category_definitions WHERE owner_user_id=$1 AND (project_id=$2 OR paper_id=ANY($3::bigint[]))`,
+      [ownerUserId, job.project_id, paperIds]
+    );
     for (const item of items.rows) {
       const result = (item.result_payload ?? {}) as Record<string, unknown>;
       const primary = String(result.primaryCategoryKey ?? "other");
