@@ -287,7 +287,14 @@ export function formatPaperReferencesForReaders(
   return answer.replace(
     /\[Paper\s+[^\]]+\](?:[\s,;]*\[Paper\s+[^\]]+\])*/gi,
     (run: string, offset: number, whole: string) => {
-      const ids = [...run.matchAll(/\[Paper\s+([^\]]+)\]/gi)].map((match) => String(match[1]).trim());
+      // "[Paper 12, Paper 34]" is two citations in one bracket; read whole, it
+      // matched no paper and both were dropped.
+      const ids = [...run.matchAll(/\[Paper\s+([^\]]+)\]/gi)].flatMap((match) =>
+        String(match[1])
+          .split(/\s*[,;]\s*(?:Paper\s+)?/i)
+          .map((id) => id.trim())
+          .filter(Boolean)
+      );
       const labels: string[] = [];
       for (const id of ids) {
         const paper = paperById.get(id);

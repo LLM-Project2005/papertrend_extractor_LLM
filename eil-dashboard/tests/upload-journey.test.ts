@@ -13,6 +13,7 @@ import {
   parseFiltersByProject,
   withProjectFilters,
 } from "../src/lib/workspace-filters";
+import { paperIdForRun, paperIdFromRunId } from "../src/lib/paper-id";
 import type { IngestionRunRow } from "../src/types/database";
 
 function read(relative: string): string {
@@ -33,8 +34,17 @@ test("a paper is called by its title once analysed, not by its file", () => {
     getRunPaperTitle(run({ source_filename: "a.pdf", input_payload: { paper_title: "  Stored Title " } })),
     "Stored Title"
   );
-  // A name the reader gave the file wins; a paper not yet analysed keeps its file name.
-  assert.equal(getRunDisplayTitle(run({ display_name: "My name", paper_title: "Title" })), "My name");
+  // An upload's display name starts as its file name (as on the pilot), which
+  // must not hide the title; a name the reader gave the file does win.
+  assert.equal(
+    getRunDisplayTitle(run({ source_filename: "plosive.pdf", display_name: "plosive.pdf", paper_title: "English Plosive Consonants" })),
+    "English Plosive Consonants"
+  );
+  assert.equal(
+    getRunDisplayTitle(run({ source_filename: "plosive.pdf", display_name: "My name", paper_title: "Title" })),
+    "My name"
+  );
+  // A paper not yet analysed keeps its file name.
   assert.equal(getRunDisplayTitle(run({ status: "queued", source_filename: "b.pdf" })), "b.pdf");
   assert.equal(getRunDisplayTitle(run({})), "Untitled paper");
 });
@@ -46,16 +56,46 @@ test("statuses are words for a person", () => {
   assert.equal(getRunStatusLabel({ status: "failed" }), "Failed");
 });
 
-test("the Library list joins each paper's title without breaking on odd ids", () => {
+test("the Library list finds each paper's title through the run, not the rounded payload id", () => {
   const repository = read("src/lib/cloudsql/library-repository.ts");
-  assert.match(repository, /SELECT r\.\*, p\.title AS paper_title/);
-  assert.match(repository, /WHEN r\.input_payload->>'paper_id' ~ '\^\[0-9\]\{1,18\}\$'/);
-  // papers also has owner_user_id and folder_id: every filter names its table.
+  // On the pilot, 14 of 44 analysed runs had a payload paper_id rounded by a
+  // JavaScript round trip (1093441516503213200), so a join on it missed them.
+  assert.match(repository, /SELECT r\.\*, paper\.title AS paper_title/);
+  assert.match(repository, /c\.owner_user_id = r\.owner_user_id AND c\.ingestion_run_id = r\.id/);
+  assert.doesNotMatch(repository, /input_payload->>'paper_id'/);
+  // The run table's filters name their table.
   assert.match(repository, /"r\.owner_user_id = \$1"/);
   assert.match(repository, /r\.folder_id = ANY/);
   assert.match(repository, /"r\.trashed_at IS NULL"/);
   const worker = read("worker/process_ingestion_queue.py");
   assert.match(worker, /"paper_title": paper_title\[:500\] or None/);
+});
+
+test("a copy keeps its payload exactly, because it never passes through JavaScript", () => {
+  const repository = read("src/lib/cloudsql/library-repository.ts");
+  const copy = repository.slice(repository.indexOf("async copyRun"), repository.indexOf("async listRuns"));
+  assert.match(copy, /SELECT source\.input_payload FROM public\.ingestion_runs source WHERE source\.id = \$13/);
+  assert.doesNotMatch(copy, /original\.input_payload/);
+});
+
+test("a run's paper id is never taken from a rounded number", () => {
+  const runId = "0f2c1a7e-9b3d-4c55-8e21-7a6b5c4d3e2f";
+  const exact = paperIdFromRunId(runId);
+  assert.ok(BigInt(exact) > BigInt(Number.MAX_SAFE_INTEGER), "the worker's ids are wider than a double");
+  // What JSON.parse makes of the stored number.
+  const rounded = Number(exact);
+  assert.notEqual(String(rounded), exact);
+  assert.equal(paperIdForRun({ id: runId, input_payload: { paper_id: rounded } }), exact);
+  // Exact forms are still used as they are.
+  assert.equal(paperIdForRun({ id: runId, input_payload: { paper_id: "123" } }), "123");
+  assert.equal(paperIdForRun({ id: runId, input_payload: { paper_id: 42 } }), "42");
+  // A Library copy points at the paper of the run it copied.
+  assert.equal(
+    paperIdForRun({ id: "ffffffff-0000-0000-0000-000000000000", copied_from_run_id: runId, input_payload: { paper_id: rounded } }),
+    exact
+  );
+  const library = read("src/components/admin/AdminImportClient.tsx");
+  assert.match(library, /return paperIdForRun\(run\);/);
 });
 
 /* ----------------------------------------------------------- debug tools */

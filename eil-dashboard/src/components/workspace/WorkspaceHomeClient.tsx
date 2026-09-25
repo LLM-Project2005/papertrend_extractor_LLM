@@ -738,7 +738,7 @@ export default function WorkspaceHomeClient() {
       </section>
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-        <article className={`${surfaceClass} p-6`}>
+        <article className={`${surfaceClass} min-w-0 p-5 sm:p-6`}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className={eyebrowClass}>
@@ -771,7 +771,7 @@ export default function WorkspaceHomeClient() {
           </div>
         </article>
 
-        <article className={`${surfaceClass} p-6`}>
+        <article className={`${surfaceClass} min-w-0 p-5 sm:p-6`}>
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className={eyebrowClass}>
