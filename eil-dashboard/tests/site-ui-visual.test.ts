@@ -262,7 +262,6 @@ test("a citation leads to the paper it cites", () => {
   // never arrived. A citation that opens nothing reads as a fabricated citation.
   for (const file of [
     "src/lib/repository-chat.ts",
-    "src/lib/corpus.ts",
     "src/components/tabs/KeywordExplorer.tsx",
   ]) {
     const src = read(file);

@@ -685,7 +685,7 @@ export default function KeywordExplorer({
               rows={heatmapData.rows.map((row) => row.theme)}
               cols={axis.years}
               values={heatmapData.rows.map((row) => row.values)}
-              colorScale={["#f1f5f9", "#1e293b"]}
+              colorScale={ct.heatScale}
             />
           </div>
         ) : (

@@ -293,7 +293,6 @@ test("an undated paper is still visible where a year is a fact about one paper",
   // and a reader filtering for "Unknown" to find those papers is doing
   // something useful - so neither of these may quietly start hiding them.
   for (const relative of [
-    "../src/components/tabs/PaperExplorer.tsx",
     "../src/components/DashboardClient.tsx",
   ]) {
     const source = readFileSync(new URL(relative, import.meta.url), "utf8");

@@ -358,7 +358,7 @@ export default function AdaptiveDashboardTab({
             rows={rows}
             cols={years}
             values={values}
-            colorScale={["#f1f5f9", "#1e293b"]}
+            colorScale={ct.heatScale}
           />
         </ChartShell>
       );

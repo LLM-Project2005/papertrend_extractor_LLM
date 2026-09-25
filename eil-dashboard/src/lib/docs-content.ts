@@ -470,12 +470,13 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "The exact model used may change by deployment configuration, but the product contract is stable: a succeeded paper should have enough structured output to be useful in search, dashboard views, and chat.",
             ],
             bullets: [
-              "Text extraction and cleanup.",
-              "Semantic section detection.",
-              "Metadata and year evidence extraction.",
-              "Keyword, topic, and concept extraction.",
-              "Category, typology, and facet classification.",
-              "Persistence into workspace-scoped tables.",
+              "Text extraction, with OCR for scanned pages.",
+              "Section detection: abstract, introduction, literature review, methods, results, discussion, conclusion and references.",
+              "Title and year, each with the evidence it came from.",
+              "Keywords read from the paper's own sections (never its reference list), checked against the text and counted; the paper's own keyword list is added.",
+              "Topics grouped from those keywords, with research methods kept apart from what was studied.",
+              "Category, research type and facet classification.",
+              "One save per paper, so a failure never leaves a paper half-updated.",
             ],
           },
           {
@@ -499,6 +500,7 @@ const rawDocsCategories: DocsCategoryBase[] = [
             body: [
               "Year detection is evidence-based. Papertrend should prefer strong year evidence from title pages, metadata, citation context, or publication-like fields. If the year cannot be found reliably, it should be marked unknown rather than invented.",
               "A low confidence year should be treated as a review signal. Users should inspect year evidence before using the paper in timeline claims.",
+              "The paper's page in the library shows where the year came from (for example the journal issue line on the first page) and the line it was read from. If it is wrong, choose \"Correct title or year\" there; the correction is kept when the paper is analysed again.",
             ],
             callout: {
               tone: "warning",
@@ -520,6 +522,15 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Topic labels are broad enough to group related terms.",
               "Track labels match the paper's actual research focus.",
               "Charts built from the paper reflect available analyzed rows.",
+              "Analysis notes on the paper's page say if any step fell back to a simpler method.",
+            ],
+          },
+          {
+            id: "analyse-again",
+            title: "Analysing papers again",
+            body: [
+              "When the analysis improves, papers analysed earlier can be analysed again from the library: \"Analyse again\" on a paper's menu, or \"Analyse repository again\" under New. The confirmation shows how many papers will be analysed and the approximate model cost. Titles and years you corrected are kept.",
+              "The library also notes when a paper's text closely matches another paper in the same repository, which usually means the same study was uploaded twice. Nothing is removed; you decide which copy to keep.",
             ],
           },
         ],

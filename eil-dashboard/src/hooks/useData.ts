@@ -341,6 +341,7 @@ export function useDashboardData(
       if (projectId) {
         params.set("projectId", projectId);
       }
+      params.set("fresh", "1");
       dashboardDataCache.delete(requestKey);
       const nextData = await fetchDashboardData(requestKey, params, session.access_token);
       setData(nextData);
