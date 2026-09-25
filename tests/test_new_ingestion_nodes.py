@@ -98,7 +98,7 @@ class NewIngestionNodeTests(unittest.TestCase):
             candidates=[
                 KeywordCandidate(
                     keyword="peer feedback",
-                    count=3,
+                    kind="subject",
                     evidence="Peer feedback improved the students' writing.",
                     matched_terms=["peer feedback"],
                     section="abstract_claims",
@@ -154,17 +154,16 @@ class NewIngestionNodeTests(unittest.TestCase):
             any("peer feedback" in row["keyword"].casefold() for row in result["keyword_candidates"])
         )
 
-    def test_research_typology_uses_boundary_fallback_for_intervention_measurement_overlap(self) -> None:
+    def test_research_typology_saves_nothing_when_the_model_fails(self) -> None:
+        # The keyword rule that used to guess a group matched "test" or
+        # "measure" in almost any paper; a failure now saves no typology.
         with patch("nodes.research_typology.research_typology_llm") as llm:
-            llm.invoke.side_effect = RuntimeError("offline")
+            llm.with_structured_output.return_value.invoke.side_effect = RuntimeError("offline")
             result = classify_research_typology_node(
                 {
                     "final_json": {
                         "title": "Blended learning module",
-                        "abstract_claims": (
-                            "This study evaluates a blended instructional module and uses a writing test "
-                            "to measure whether the intervention improved student outcomes."
-                        ),
+                        "abstract_claims": "This study evaluates a blended instructional module.",
                         "methods": "A classroom treatment was implemented.",
                         "results": "Post-test scores improved.",
                         "conclusion": "The intervention was effective.",
@@ -173,44 +172,41 @@ class NewIngestionNodeTests(unittest.TestCase):
                 }
             )
 
-        typology = result["research_typology"]
-        self.assertEqual(typology["primary_group_number"], 2)
-        self.assertEqual(typology["secondary_group_number"], 3)
+        self.assertEqual(result["research_typology"], {})
+        self.assertIn("typology", result["warnings"][0])
 
-    def test_research_typology_parses_json_llm_response(self) -> None:
-        response = Mock()
-        response.content = """
-        {
-          "primary_group_number": 3,
-          "primary_group_name": "Assessment & Measurement",
-          "secondary_group_number": null,
-          "secondary_group_name": null,
-          "stated_purpose": "The paper validates a test.",
-          "primary_contribution": "A validated assessment instrument.",
-          "group_match": "The instrument is the primary contribution.",
-          "boundary_rule": "Not needed.",
-          "verdict": "Group 3 - Assessment & Measurement."
+    def test_research_typology_uses_structured_output_and_profile_names(self) -> None:
+        from state import ResearchTypologySchema
+
+        answer = ResearchTypologySchema(
+            primary_group_number=3,
+            secondary_group_number=0,
+            stated_purpose="The paper validates a test.",
+            primary_contribution="A validated assessment instrument.",
+            group_match="The instrument is the primary contribution.",
+            boundary_rule="Not needed.",
+            verdict="Group 3.",
+        )
+        state = {
+            "final_json": {
+                "title": "Validation paper",
+                "abstract_claims": "The paper validates a test.",
+                "methods": "Rasch analysis was used.",
+                "results": "The test was valid.",
+                "conclusion": "The assessment can be used.",
+            },
+            "final_labeled_topics": [{"label": "Rasch Measurement", "kind": "method", "original_keywords": ["Rasch analysis"]}],
         }
-        """
-
         with patch("nodes.research_typology.research_typology_llm") as llm:
-            llm.invoke.return_value = response
-            result = classify_research_typology_node(
-                {
-                    "final_json": {
-                        "title": "Validation paper",
-                        "abstract_claims": "The paper validates a test.",
-                        "methods": "Rasch analysis was used.",
-                        "results": "The test was valid.",
-                        "conclusion": "The assessment can be used.",
-                    },
-                    "final_labeled_topics": [],
-                }
-            )
+            llm.with_structured_output.return_value.invoke.return_value = answer
+            eil = classify_research_typology_node({**state, "input_payload": {"analysis_profile": {"mode": "eil"}}})
+            general = classify_research_typology_node({**state, "input_payload": {"analysis_profile": {"mode": "general"}}})
+            prompt = llm.with_structured_output.return_value.invoke.call_args_list[0][0][0]
 
-        typology = result["research_typology"]
-        self.assertEqual(typology["primary_group_number"], 3)
-        self.assertEqual(typology["classifier_source"], "llm")
+        self.assertEqual(eil["research_typology"]["primary_group_name"], "Assessment & Measurement")
+        self.assertEqual(general["research_typology"]["primary_group_name"], "Measurement & Method")
+        self.assertEqual(eil["research_typology"]["classifier_source"], "llm")
+        self.assertIn("Rasch Measurement", prompt)
 
     def test_category_classifier_uses_other_when_no_project_categories_exist(self) -> None:
         result = classify_tracks_node(

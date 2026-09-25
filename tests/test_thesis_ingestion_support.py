@@ -47,13 +47,43 @@ def test_thai_thesis_headings_are_segmented_without_article_layout():
     assert "รายการเอกสาร" in sections["bibliography"]
 
 
-def test_long_thesis_uses_heading_fallback_instead_of_oversized_llm_call(monkeypatch):
-    monkeypatch.setenv("SEGMENTATION_LLM_MAX_CHARS", "12000")
-    text = "บทคัดย่อ\n" + ("ข้อมูล " * 3000) + "\nวิธีดำเนินการวิจัย\n" + ("วิธีวิจัย " * 1000)
+def test_long_thesis_sends_only_the_heading_outline_to_the_model(monkeypatch):
+    # Any length works: the model sees numbered heading lines, not the text.
+    from unittest.mock import MagicMock
+
+    from nodes import segmentation
+    from state import SectionOutlineSchema
+
+    text = "บทคัดย่อ\n" + ("ข้อมูล " * 30000) + "\nบทที่ 3 วิธีดำเนินการวิจัย\n" + ("วิธีวิจัย " * 1000)
+    llm = MagicMock()
+    llm.with_structured_output.return_value.invoke.return_value = SectionOutlineSchema(
+        abstract=1, introduction=0, literature_review=0, methods=2, results=0,
+        discussion=0, conclusion=0, references=0, back_matter=0,
+    )
+    monkeypatch.setattr(segmentation, "segmentation_llm", llm)
+    result = segment_to_json_node({"cleaned_english_text": text})
+    prompt = llm.with_structured_output.return_value.invoke.call_args[0][0]
+
+    assert result["segmentation_strategy"] == "model_outline"
+    assert "L1: บทคัดย่อ" in prompt and "L2: บทที่ 3 วิธีดำเนินการวิจัย" in prompt
+    assert len(prompt) < 6000
+    assert "วิธีวิจัย" in result["final_json"]["methods"]
+
+
+def test_heading_rules_are_used_when_the_model_fails(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from nodes import segmentation
+
+    text = "บทคัดย่อ\n" + ("ข้อมูล " * 300) + "\nวิธีดำเนินการวิจัย\n" + ("วิธีวิจัย " * 100)
+    llm = MagicMock()
+    llm.with_structured_output.return_value.invoke.side_effect = RuntimeError("offline")
+    monkeypatch.setattr(segmentation, "segmentation_llm", llm)
     result = segment_to_json_node({"cleaned_english_text": text})
     assert result["status"] == "segmented"
     assert result["segmentation_strategy"] == "multilingual_headings"
-    assert result["errors"] == []
+    assert "segmentation" in result["warnings"][0]
+    assert "วิธีวิจัย" in result["final_json"]["methods"]
 
 
 def test_translation_chunks_preserve_all_paragraphs():

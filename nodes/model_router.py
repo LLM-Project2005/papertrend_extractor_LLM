@@ -384,6 +384,14 @@ def _structured_output_problem(result: Any) -> Optional[str]:
     return None
 
 
+def _is_output_validation_error(error: Exception) -> bool:
+    names = {cls.__name__ for cls in type(error).__mro__}
+    if names & {"ValidationError", "OutputParserException", "JSONDecodeError"}:
+        return True
+    message = str(error).lower()
+    return "validation error" in message or "invalid json" in message
+
+
 def _with_repair_instruction(args: Tuple[Any, ...], problem: str) -> Tuple[Any, ...]:
     """Ask again, telling the model what was wrong with its last reply."""
 
@@ -532,7 +540,13 @@ class RoutedChatModel:
                 last_error = StructuredOutputError(problem)
             except Exception as error:
                 last_error = error
-                problem = None
+                # A reply that fails schema validation can surface as an
+                # exception instead of a parsing_error; repair it the same way.
+                problem = (
+                    str(error)[:600]
+                    if validate is not None and _is_output_validation_error(error)
+                    else None
+                )
                 logger.warning(
                     "model_call_failed task=%s model=%s fallback_used=%s error=%s",
                     self.config.task_name,

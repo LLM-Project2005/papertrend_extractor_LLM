@@ -9,6 +9,7 @@ from nodes.common import (
     pick_title,
     safe_json_list,
 )
+from nodes.text_matching import fold_text
 from nodes.year_resolver import normalize_publication_year
 from state import IngestionState
 
@@ -136,9 +137,9 @@ def _build_category_rows(
 def _match_topic_label(
     semantic_topic: Dict[str, Any], labeled_topics: Sequence[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    semantic_keywords = set(semantic_topic.get("keywords") or [])
+    semantic_keywords = {fold_text(keyword) for keyword in semantic_topic.get("keywords") or []}
     for labeled in labeled_topics:
-        if semantic_keywords == set(labeled.get("original_keywords") or []):
+        if semantic_keywords == {fold_text(keyword) for keyword in labeled.get("original_keywords") or []}:
             return labeled
     return {}
 
@@ -171,16 +172,28 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
 
     keyword_rows: List[Dict[str, Any]] = []
     concept_rows: List[Dict[str, Any]] = []
+    topic_kinds: Dict[str, str] = {}
+
+    # Match a topic's members to candidates by folded text, and write each
+    # candidate once: exact-string matching used to drop keywords whose case or
+    # punctuation differed and to write a keyword twice when two topics named it.
+    candidate_by_form: Dict[str, Dict[str, Any]] = {}
+    for candidate in keyword_candidates:
+        for form in [candidate.get("keyword"), *(candidate.get("matched_terms") or [])]:
+            candidate_by_form.setdefault(fold_text(form), candidate)
+    written: set = set()
 
     if semantic_topics:
         for semantic_topic in semantic_topics:
             labeled = _match_topic_label(semantic_topic, labeled_topics)
             label = (labeled.get("label") or semantic_topic.get("label") or "Unclassified concept").strip()[:200]
-            concept_candidates = [
-                candidate
-                for candidate in keyword_candidates
-                if candidate.get("keyword") in set(semantic_topic.get("keywords") or [])
-            ]
+            topic_kinds[label] = str(labeled.get("kind") or semantic_topic.get("kind") or "subject")
+            concept_candidates = []
+            for member in semantic_topic.get("keywords") or []:
+                candidate = candidate_by_form.get(fold_text(member))
+                if candidate is not None and id(candidate) not in written:
+                    written.add(id(candidate))
+                    concept_candidates.append(candidate)
 
             first_span = choose_first_span([candidate.get("first_span") or {} for candidate in concept_candidates])
             matched_terms = safe_json_list(
@@ -350,6 +363,7 @@ def build_dataset_node(state: IngestionState) -> Dict[str, Any]:
         "year": year,
         "year_resolution": year_resolution,
         "analysis_quality": analysis_quality,
+        "topic_kinds": topic_kinds,
         "papers": [
             {
                 "id": paper_id,

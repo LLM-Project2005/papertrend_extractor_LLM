@@ -47,6 +47,7 @@ import type {
 } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
 import { describeRunFailure } from "@/lib/ingestion-status";
+import { formatReanalysisEstimate } from "@/lib/reanalysis";
 
 type ViewMode = "list" | "grid";
 type TypeFilter = "all" | "pdf" | "image" | "document" | "other";
@@ -822,6 +823,37 @@ export default function AdminImportClient() {
     }
   }
 
+  function projectIdOfRun(run: IngestionRunRow): string | null {
+    const payloadProjectId = typeof run.input_payload?.project_id === "string" ? run.input_payload.project_id : null;
+    return run.folder_id ? folderById.get(run.folder_id)?.project_id ?? payloadProjectId : payloadProjectId;
+  }
+
+  async function handleReanalyze(selection: { runIds: string[] } | { projectId: string }, paperCount: number) {
+    if (paperCount === 0) {
+      setError("There are no finished papers to analyse again.");
+      return;
+    }
+    const confirmed = window.confirm(
+      `Analyse again with the current pipeline?\n\n${formatReanalysisEstimate(paperCount)}. ` +
+        "Titles and years you corrected are kept."
+    );
+    if (!confirmed) return;
+    const response = await fetch("/api/workspace/library/reanalyze", {
+      method: "POST",
+      headers: jsonRequestHeaders,
+      body: JSON.stringify(selection),
+    });
+    const payload = (await response.json().catch(() => ({}))) as { queuedCount?: number; error?: string };
+    if (!response.ok) {
+      throw new Error(payload.error ?? "The papers could not be queued.");
+    }
+    setMessage(
+      `${payload.queuedCount ?? 0} paper${payload.queuedCount === 1 ? "" : "s"} queued to be analysed again. ` +
+        "Progress shows on Home."
+    );
+    await loadRuns();
+  }
+
   async function handleTrashRun(run: IngestionRunRow) {
     await patchRun(run.id, { action: "trash" });
     setMessage(`Moved "${titleOf(run)}" to Trash.`);
@@ -1166,10 +1198,15 @@ export default function AdminImportClient() {
         // status pill at all, so before this a failed file there looked exactly
         // like a ready one; and with the History page gone this is the only place
         // an older failure can still explain itself.
+        // The worker compares each paper's text with the repository's other
+        // papers and notes an earlier copy; the reader decides what to keep.
+        const duplicateOf = run.input_payload?.duplicate_of as { title?: string } | null | undefined;
         const subtitle =
           run.status === "failed"
             ? describeRunFailure(run.error_message)
-            : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
+            : duplicateOf?.title
+              ? `Possible copy of "${duplicateOf.title}"`
+              : `${sourceLabel} \u2022 ${extOf(run).toUpperCase()}`;
         return {
           id: `file:${run.id}`,
           kind: "file",
@@ -1287,6 +1324,25 @@ export default function AdminImportClient() {
               <span>Upload PDFs</span>
             </span>
           </button>
+          {libraryProject ? (
+            <button
+              type="button"
+              onClick={async () => {
+                setToolbarPopover(null);
+                const count = runs.filter(
+                  (run) => run.status === "succeeded" && !run.trashed_at && projectIdOfRun(run) === libraryProject.id
+                ).length;
+                try {
+                  await handleReanalyze({ projectId: libraryProject.id }, count);
+                } catch (reanalyzeError) {
+                  setError(reanalyzeError instanceof Error ? reanalyzeError.message : "The papers could not be queued.");
+                }
+              }}
+              className={itemClass}
+            >
+              <span>Analyse repository again</span>
+            </button>
+          ) : null}
         </div>
       );
     }
@@ -1570,6 +1626,25 @@ export default function AdminImportClient() {
         >
           {activeMenuRun.is_favorite ? "Remove favorite" : "Add to favorite"}
         </button>
+        {activeMenuRun.status === "succeeded" && !activeMenuRun.trashed_at ? (
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await handleReanalyze({ runIds: [activeMenuRun.id] }, 1);
+              } catch (reanalyzeError) {
+                setError(
+                  reanalyzeError instanceof Error ? reanalyzeError.message : "The paper could not be queued."
+                );
+              } finally {
+                setItemMenuState(null);
+              }
+            }}
+            className={itemClass}
+          >
+            Analyse again
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => {
@@ -2401,6 +2476,24 @@ export default function AdminImportClient() {
           }}
           onToggleFavorite={() => handleToggleFavorite(analysisRun)}
           onRename={() => handleRenameRun(analysisRun)}
+          onCorrect={async (correction) => {
+            const response = await fetch(`/api/workspace/library/${analysisRun.id}`, {
+              method: "PATCH",
+              headers: jsonRequestHeaders,
+              body: JSON.stringify({ action: "correct", ...correction }),
+            });
+            const payload = (await response.json().catch(() => ({}))) as {
+              paper?: { title: string; year: string };
+              error?: string;
+            };
+            if (!response.ok || !payload.paper) {
+              throw new Error(payload.error ?? "The correction could not be saved.");
+            }
+            setAnalysisDetail((current) =>
+              current ? { ...current, title: payload.paper!.title, year: payload.paper!.year } : current
+            );
+            setMessage(`Saved the correction for "${payload.paper.title}".`);
+          }}
           onOpenDashboard={() => {
             if (typeof window !== "undefined") {
               window.location.assign("/workspace/dashboard");

@@ -96,9 +96,8 @@ Step 5: Group 4 - Policy, Sociolinguistic & Critical.
 ---
 
 Return structured output with:
-- primary_group_number
-- primary_group_name
-- secondary_group_number and secondary_group_name, or null when none
+- primary_group_number (1-4)
+- secondary_group_number (1-4), or 0 when there is none
 - stated_purpose
 - primary_contribution
 - group_match
@@ -122,5 +121,5 @@ Results:
 Conclusion:
 {conclusion}
 
-Canonical concepts from this paper:
+Topics identified in this paper:
 {concepts}

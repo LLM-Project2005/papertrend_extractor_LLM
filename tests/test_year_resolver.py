@@ -274,3 +274,15 @@ class YearResolverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UserMarkedUnknownTests(unittest.TestCase):
+    def test_a_user_can_mark_the_year_unknown(self) -> None:
+        resolution = resolve_publication_year(
+            raw_text="Vol 28, No 2, May - August 2021",
+            input_payload={"user_overrides": {"year": "Unknown"}},
+            llm_year="2021",
+        )
+        self.assertEqual(resolution["year"], "Unknown")
+        self.assertEqual(resolution["year_source"], "user")
+        self.assertFalse(resolution["needs_review"])
