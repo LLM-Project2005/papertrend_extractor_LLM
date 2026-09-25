@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
@@ -330,6 +330,16 @@ export default function WorkspaceShell({
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
   const isChatPage = pathname.startsWith("/workspace/chat");
+  // A new upload opens the progress card, so the reader who just added papers
+  // from the Library or Chat sees them start instead of a small badge.
+  const analysisSessionKey = analysisSession?.runIds.join(",") ?? "";
+  const seenAnalysisSessionKeyRef = useRef(analysisSessionKey);
+  useEffect(() => {
+    if (analysisSessionKey && analysisSessionKey !== seenAnalysisSessionKeyRef.current) {
+      setStatusPanelOpen(true);
+    }
+    seenAnalysisSessionKeyRef.current = analysisSessionKey;
+  }, [analysisSessionKey]);
 
   useEffect(() => {
     if (!authHydrated || user) {
@@ -362,7 +372,6 @@ export default function WorkspaceShell({
     cancelAllActiveRuns,
     retryActiveProcessing,
     startQueuedProcessing,
-    debugClearQueue,
     refresh,
   } =
     useIngestionRuns({
@@ -472,23 +481,6 @@ export default function WorkspaceShell({
     }
   }
 
-  async function handleDebugClearQueue() {
-    try {
-      await debugClearQueue(analysisSession?.folderJobId ?? undefined);
-      clearAnalysisSession();
-      await refresh();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to clear the worker queue.";
-      console.error("[workspace] failed to debug-clear queue", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: message,
-      });
-      if (typeof window !== "undefined") {
-        window.alert(message);
-      }
-    }
-  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-[#f2f2f2]">
@@ -607,13 +599,18 @@ export default function WorkspaceShell({
                   runs={activeRuns}
                   folderJob={folderJob}
                   compact
-                  onExpand={() => setAnalysisMinimized(false)}
+                  onExpand={() => {
+                    setAnalysisMinimized(false);
+                    if (pathname !== "/workspace/home") {
+                      handleNavigate("/workspace/home");
+                      router.push("/workspace/home");
+                    }
+                  }}
                   onClear={clearAnalysisSession}
                   onCancelRun={handleCancelRun}
                   onCancelAll={handleCancelAllRuns}
                   onRetryQueue={handleRetryQueue}
                   onStartProcessing={handleStartProcessing}
-                  onDebugClearQueue={handleDebugClearQueue}
                 />
                 <button
                   type="button"

@@ -247,6 +247,8 @@ export interface IngestionRunRow {
   created_at?: string;
   updated_at?: string;
   completed_at?: string | null;
+  /** The analysed paper's title, joined in by the Library list (not a column). */
+  paper_title?: string | null;
 }
 
 export interface PaperFullRow {

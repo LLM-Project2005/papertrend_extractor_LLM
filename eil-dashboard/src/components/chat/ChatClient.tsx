@@ -4273,14 +4273,9 @@ export default function ChatClient() {
         </Modal>
       ) : null}
 
-          <AnalyzeFlowModal
-            open={showAnalyzeModal}
-            onClose={() => setShowAnalyzeModal(false)}
-            defaultFolder={
-              activeKnowledgeScope.kind === "folder" ? activeFolderLabel : "Repository"
-            }
-        title="Add files"
-        eyebrow="Upload"
+      <AnalyzeFlowModal
+        open={showAnalyzeModal}
+        onClose={() => setShowAnalyzeModal(false)}
         onCreated={handleCreatedRuns}
       />
     </>

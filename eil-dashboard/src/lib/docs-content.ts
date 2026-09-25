@@ -237,11 +237,11 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Papertrend uses a queue-based upload flow so large PDF analysis does not block the browser request. The browser uploads the file, the app creates an analysis run, and a background worker analyzes the file later.",
             ],
             steps: [
-              "Choose a project or folder context.",
-              "Open Repositories, choose a repository, and select upload.",
-              "Select up to 50 PDF files; every file must be 10 MB or smaller.",
-              "Confirm the queue action.",
-              "Watch the status indicators or continue working while Cloud Tasks triggers processing.",
+              "Choose Add papers on Home, or New then Add papers inside a repository in the Library. The dialog names the repository the papers go to.",
+              "Drop PDFs on the dialog or click to choose them: up to 50 at a time, each 10 MB or smaller. A PDF already analyzed in this account is flagged before anything uploads.",
+              "Choose Analyze and keep the tab open until the upload finishes; the dialog shows how many files are done.",
+              "Follow progress on Home, or in the corner of any other page. Each paper usually takes a few minutes.",
+              "A finished paper appears in the Library under its own title, and on the Dashboard and in Chat.",
             ],
           },
           {
@@ -251,10 +251,10 @@ const rawDocsCategories: DocsCategoryBase[] = [
               "Status values explain where the file is in the analysis lifecycle. They are also the first thing to check when dashboard or chart results seem missing.",
             ],
             bullets: [
-              "queued: the file is waiting for the queue worker.",
-              "processing: extraction or LLM analysis is currently running.",
-              "succeeded: data was saved and can be used by dashboard, chat, and chart mode.",
-              "failed: analysis stopped before producing a complete persisted result.",
+              "Queued: the paper is waiting its turn to be analyzed.",
+              "Analyzing: its text is being read and analyzed now.",
+              "Ready: the results were saved and the Dashboard, Chat and chart mode can use them.",
+              "Failed: the analysis stopped before it finished; the Library says why.",
             ],
             callout: {
               tone: "warning",
@@ -527,9 +527,9 @@ const rawDocsCategories: DocsCategoryBase[] = [
           },
           {
             id: "analyse-again",
-            title: "Analysing papers again",
+            title: "Analyzing papers again",
             body: [
-              "When the analysis improves, papers analysed earlier can be analysed again from the library: \"Analyse again\" on a paper's menu, or \"Analyse repository again\" under New. The confirmation shows how many papers will be analysed and the approximate model cost. Titles and years you corrected are kept.",
+              "When the analysis improves, papers analyzed earlier can be analyzed again from the library: \"Analyze again\" on a paper's menu, or \"Analyze repository again\" under New. The confirmation shows how many papers will be analyzed and the approximate model cost. Titles and years you corrected are kept.",
               "The library also notes when a paper's text closely matches another paper in the same repository, which usually means the same study was uploaded twice. Nothing is removed; you decide which copy to keep.",
             ],
           },

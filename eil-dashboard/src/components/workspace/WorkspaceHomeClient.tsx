@@ -8,7 +8,12 @@ import { useIngestionRuns } from "@/hooks/useIngestionRuns";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
-import { getRunStageCaption, getRunStageMessage } from "@/lib/ingestion-status";
+import {
+  getRunDisplayTitle,
+  getRunStageCaption,
+  getRunStageMessage,
+  getRunStatusLabel,
+} from "@/lib/ingestion-status";
 import {
   ArrowRightIcon,
   ChartIcon,
@@ -184,7 +189,7 @@ function InsightList({
 }
 
 function runTitleOf(run: IngestionRunRow) {
-  return run.display_name || run.source_filename || "Untitled file";
+  return getRunDisplayTitle(run);
 }
 
 function getRunTimestamp(run: IngestionRunRow) {
@@ -239,7 +244,7 @@ function statusTone(status: IngestionRunRow["status"], stuck: boolean) {
 function RunActivityRow({ run }: { run: IngestionRunRow }) {
   const stuck = isRunStuck(run);
   const timestamp = getRunTimestamp(run);
-  const statusLabel = stuck ? "needs attention" : run.status;
+  const statusLabel = stuck ? "Needs attention" : getRunStatusLabel(run);
   const stageMessage = getRunStageMessage(run);
 
   return (
@@ -255,11 +260,11 @@ function RunActivityRow({ run }: { run: IngestionRunRow }) {
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 truncate text-sm font-medium text-[#171717] dark:text-white">
+          <p className="min-w-0 truncate text-sm font-medium text-[#171717] dark:text-white" title={runTitleOf(run)}>
             {runTitleOf(run)}
           </p>
           <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-normal ${statusTone(
+            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone(
               run.status,
               stuck
             )}`}
@@ -304,7 +309,6 @@ export default function WorkspaceHomeClient() {
     cancelAllActiveRuns,
     retryActiveProcessing,
     startQueuedProcessing,
-    debugClearQueue,
     refresh,
   } = useIngestionRuns({
     enabled: Boolean(analysisSession?.runIds.length),
@@ -426,7 +430,8 @@ export default function WorkspaceHomeClient() {
     [workspaceRuns]
   );
   const recentRuns = useMemo(() => workspaceRuns.slice(0, 5), [workspaceRuns]);
-  const isPreviewMode = data?.useMock ?? true;
+  // Only once the data has arrived: while it loads there is nothing to say.
+  const isPreviewMode = data?.useMock ?? false;
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
   const hasLiveAnalysisSession =
     Boolean(analysisSession?.runIds.length) && !analysisSession?.minimized;
@@ -578,23 +583,6 @@ export default function WorkspaceHomeClient() {
     }
   }
 
-  async function handleDebugClearQueue() {
-    try {
-      await debugClearQueue(analysisSession?.folderJobId ?? undefined);
-      clearAnalysisSession();
-      await refresh();
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to clear the worker queue.";
-      console.error("[workspace.home] failed to debug-clear queue", {
-        folderJobId: analysisSession?.folderJobId ?? null,
-        error: message,
-      });
-      if (typeof window !== "undefined") {
-        window.alert(message);
-      }
-    }
-  }
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
@@ -602,17 +590,14 @@ export default function WorkspaceHomeClient() {
         <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
           <div className="max-w-3xl">
             <p className={eyebrowClass}>
-              Repository command center
+              Repository
             </p>
             <h1 className="mt-3 text-4xl font-semibold leading-[1.05] tracking-normal text-[#171717] dark:text-white">
               {currentProject?.name ?? profile.name}
             </h1>
             <p className="mt-4 max-w-2xl text-base leading-7 text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Bring papers into analysis, watch the queue, and jump straight into AI
-              workflows once this repository has data.
-            </p>
-            <p className="mt-4 inline-flex rounded-full bg-[#fafafa] px-3 py-1 font-mono text-xs text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#030303] dark:text-[#a3a3a3] dark:ring-[#242424]">
-              Showing all analyzed data across this repository
+              Add papers, follow their analysis here, then explore the results on the
+              Dashboard or ask about them in Chat.
             </p>
           </div>
 
@@ -623,7 +608,7 @@ export default function WorkspaceHomeClient() {
               className={primaryButtonClass}
             >
               <UploadIcon className="h-4 w-4" />
-              <span>Analyze papers</span>
+              <span>Add papers</span>
             </button>
             <Link
               href="/workspace/chat"
@@ -647,19 +632,18 @@ export default function WorkspaceHomeClient() {
           onCancelAll={handleCancelAllRuns}
           onRetryQueue={handleRetryQueue}
           onStartProcessing={handleStartProcessing}
-          onDebugClearQueue={handleDebugClearQueue}
         />
       ) : null}
 
       {liveDataError ? (
         <section className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-5 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
-          Live dashboard data could not be loaded right now. The backend returned an error while assembling this repository&apos;s analytics: {liveDataError}
+          This repository&apos;s results could not be loaded just now ({liveDataError}). Refresh the page to try again.
         </section>
       ) : null}
 
       {isPreviewMode ? (
         <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 text-sm text-[#ab570a] dark:border-[#5f3b00] dark:bg-[#211600] dark:text-[#ffd38a]">
-          Preview data is active, so dashboard, papers, and chat remain usable even before running Analyze. Live results can replace this dataset once the backend pipeline is restored.
+          Showing sample data because this repository&apos;s own results could not be loaded. They replace it as soon as they load.
         </section>
       ) : null}
 
@@ -677,7 +661,7 @@ export default function WorkspaceHomeClient() {
                 Needs attention
               </p>
               <p className="mt-1 text-sm leading-6 text-[#ab570a] dark:text-[#ffd38a]">
-                {attentionRuns.length} recent file{attentionRuns.length === 1 ? "" : "s"} failed or stopped updating.
+                {attentionRuns.length} recent paper{attentionRuns.length === 1 ? "" : "s"} failed or stopped updating. The Library says why for each one.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -758,10 +742,10 @@ export default function WorkspaceHomeClient() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className={eyebrowClass}>
-                Repository signal
+                At a glance
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
-                Compact insight preview
+                Top topics and keywords
               </h2>
             </div>
             <Link
@@ -777,12 +761,12 @@ export default function WorkspaceHomeClient() {
             <InsightList
               title="Top topics"
               items={summary.topTopics}
-              emptyLabel="No topic rows are available yet. Analyze papers to populate this view."
+              emptyLabel="Topics appear here once a paper has been analyzed."
             />
             <InsightList
               title="Top keywords"
               items={summary.topKeywords}
-              emptyLabel="No keyword rows are available yet. Analyze papers to populate this view."
+              emptyLabel="Keywords appear here once a paper has been analyzed."
             />
           </div>
         </article>
@@ -791,17 +775,17 @@ export default function WorkspaceHomeClient() {
           <div className="flex items-center justify-between gap-4">
             <div>
               <p className={eyebrowClass}>
-                Operations
+                Activity
               </p>
               <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
-                Recent repository activity
+                Recently added papers
               </h2>
             </div>
             <Link
               href="/workspace/library"
               className="-my-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
             >
-              Repositories
+              Open Library
             </Link>
           </div>
 
@@ -810,7 +794,7 @@ export default function WorkspaceHomeClient() {
               <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
                 <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#a1a1a1] border-t-transparent dark:border-[#8e8e8e]" />
                 <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
-                  Loading repository activity
+                  Loading recent papers
                 </p>
               </div>
             ) : libraryError ? (
@@ -823,11 +807,19 @@ export default function WorkspaceHomeClient() {
               <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
                 <CheckCircleIcon className="mx-auto h-8 w-8 text-[#a1a1a1] dark:text-[#555555]" />
                 <p className="mt-3 text-sm font-medium text-[#171717] dark:text-[#d0d0d0]">
-                  No file activity yet
+                  No papers yet
                 </p>
                 <p className="mt-1 text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
-                  Analyze papers to start building the repository record.
+                  Add PDFs and each one shows here while it is analyzed.
                 </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAnalyzeModal(true)}
+                  className={`${secondaryButtonClass} mt-4`}
+                >
+                  <UploadIcon className="h-4 w-4" />
+                  <span>Add papers</span>
+                </button>
               </div>
             )}
           </div>
@@ -882,9 +874,6 @@ export default function WorkspaceHomeClient() {
       <AnalyzeFlowModal
         open={showAnalyzeModal}
         onClose={() => setShowAnalyzeModal(false)}
-        title="Analyze documents for this repository"
-        eyebrow="Analyze"
-        defaultFolder="Repository"
         onCreated={handleAnalyzeCreated}
       />
     </div>
