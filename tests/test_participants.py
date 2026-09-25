@@ -11,7 +11,7 @@ from pathlib import Path
 
 from nodes.keyword_extractor import ground_candidates
 from nodes.keyword_grouper import merge_author_keywords
-from nodes.participants import PERSON_NOUNS, is_participant_descriptor
+from nodes.participants import PERSON_NOUNS, THAI_PERSON_PREFIXES, is_participant_descriptor
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -37,6 +37,8 @@ class ParticipantRuleTests(unittest.TestCase):
             "young EFL learners",
             "Thai freshmen",
             "test-takers",
+            "low English proficiency young Thai learners of English",
+            "ผู้เรียนภาษาอังกฤษในฐานะภาษาต่างประเทศ",
         ):
             self.assertTrue(is_participant_descriptor(phrase), phrase)
 
@@ -50,6 +52,8 @@ class ParticipantRuleTests(unittest.TestCase):
             "student engagement",
             "speaking anxiety",
             "EIL context",
+            "perceptions of teachers",
+            "ผู้เรียนเป็นศูนย์กลาง",
         ):
             self.assertFalse(is_participant_descriptor(phrase), phrase)
 
@@ -87,6 +91,8 @@ class ParticipantRuleTests(unittest.TestCase):
         source = (ROOT / "eil-dashboard" / "src" / "lib" / "participant-terms.ts").read_text(encoding="utf-8")
         block = source[source.index("export const PERSON_NOUNS") : source.index("]);")]
         self.assertEqual(set(re.findall(r'"([a-z-]+)"', block)), set(PERSON_NOUNS))
+        prefixes = source[source.index("export const THAI_PERSON_PREFIXES") :].split("];", 1)[0]
+        self.assertEqual(set(re.findall(r'"([^"]+)"', prefixes)), set(THAI_PERSON_PREFIXES))
 
 
 if __name__ == "__main__":
