@@ -13,7 +13,7 @@ Additional user-provided context:
 
 ### WHAT TO EXTRACT ###
 Return 12 to 20 concepts (fewer only for a very short text), the most central first: the ones a reader would use to say what this paper is about.
-- kind "subject": the phenomena, constructs, skills, populations, contexts, interventions, materials and theories the paper investigates or proposes. Examples: "teacher agency", "English-medium instruction (EMI)", "dynamic assessment", "genre-based writing instruction", "Thai EFL undergraduate students".
+- kind "subject": the phenomena, constructs, skills, interventions, materials and theories the paper investigates or proposes. Examples: "teacher agency", "English-medium instruction (EMI)", "dynamic assessment", "genre-based writing instruction", "speaking anxiety".
   Go beyond the words of the title: include the specific dimensions, factors, categories, constructs and findings the paper reports (for example the named aspects a questionnaire measured, the types of agency it found, the discourse functions it identified).
 - kind "method": how the study was done: designs, instruments and analyses. Examples: "semi-structured interviews", "Rasch analysis", "paired-samples t-test". Give at most 3, only those central to the study.
 A theory or framework the paper applies to its subject (e.g. "sociocultural theory") is a subject.
@@ -26,6 +26,7 @@ A theory or framework the paper applies to its subject (e.g. "sociocultural theo
 5. List each concept once. If one concept is a sub-phrase of another ("reading comprehension" and "English reading comprehension"), keep the more specific one and put the other in matched_terms.
 6. Skip generic words ("the study", "participants", "data", "results", "English", "learners") unless they are part of a specific phrase.
 7. Take concepts from the paper's own work, not from other studies it only cites.
+8. Who took part is not a concept: never return a phrase that only names a group of people, however specific ("Thai EFL undergraduate students", "L1 Thai learners", "native English speakers", "high school teachers"). Name a group only inside what was studied about it, e.g. "EFL learners' speaking anxiety".
 
 ### SOURCE TEXT ###
 <source_text>

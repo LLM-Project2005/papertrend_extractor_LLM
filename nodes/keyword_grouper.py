@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Sequence
 
 from nodes import ModelTask, get_task_llm
 from nodes.common import load_prompt, locate_text_span, normalize_analysis_profile, normalize_whitespace, safe_json_list
+from nodes.participants import is_participant_descriptor
 from nodes.text_matching import acronym_letters, count_any, fold_text, phrase_in, sentence_with, spells_acronym
 from state import IngestionState, KeywordGrouperSchema
 
@@ -78,6 +79,10 @@ def merge_author_keywords(
         keyword = normalize_whitespace(str(item.get("keyword") or ""))
         folded = fold_text(keyword)
         if not folded or not phrase_in(folded_source, keyword):
+            continue
+        # A paper's own list often names its participants ("Thai EFL
+        # learners"); that is who was studied, not a topic.
+        if is_participant_descriptor(keyword):
             continue
         if any(folded == form or f" {folded} " in f" {form} " or f" {form} " in f" {folded} " for form in covered):
             continue

@@ -6,6 +6,7 @@ import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import {
   filterTopicFamiliesByPaperIds,
   loadOrBuildProjectCorpusTopicCache,
+  withoutParticipantTopics,
 } from "@/lib/corpus-topic-cache";
 import { materializeDashboardSummaryCache } from "@/lib/dashboard-summary-cache";
 import { applyStoredThemes } from "@/lib/topic-theme-service";
@@ -568,7 +569,7 @@ async function loadTableData(
     ]);
     return shapeTableDashboardData(
       metadata,
-      loaded.keywords,
+      withoutParticipantTopics(loaded.keywords),
       loaded.single,
       loaded.multi,
       categoryAssignments
@@ -609,7 +610,7 @@ async function loadTableData(
   }
 
   const keywordsByPaperId = new Map<PaperId, Record<string, unknown>[]>();
-  ((keywordsResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
+  withoutParticipantTopics((keywordsResult.data ?? []) as Record<string, unknown>[]).forEach((row) => {
     const paperId = normalizePaperId(row.paper_id);
     if (!paperId) {
       return;
