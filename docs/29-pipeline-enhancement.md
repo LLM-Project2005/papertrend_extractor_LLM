@@ -1,6 +1,7 @@
 # 29 — Analysis pipeline enhancement
 
-Status: **phases 0–7 done on the pilot; promotion to production waiting** (2026-09-26)
+Status: **phases 0–7 in production** (2026-09-26; web `papertrend-web-production-00046`, worker
+`papertrend-worker-production-00040`)
 
 ## The question this answers
 
@@ -145,8 +146,17 @@ Reclassification and theme regrouping add a few cents; they are not recorded per
   it (14 of 44 runs on the pilot), breaking the Library's title join and dashboard links to a paper.
   Paper ids are now resolved from the run, and a Library copy keeps its payload in SQL.
 
+## Production
+
+Promoted on 2026-09-26 and checked live on papertrend.web.app. The first real upload there failed
+with "Failed to fetch": the production upload bucket's CORS rule did not allow papertrend.web.app
+(the pilot bucket allows every origin, so the pilot check could not show it). The origin was added
+to the bucket and to `gcs-cors.papertrend-production.json`, which the Hosting deploy script applies;
+`tests/test_production_upload_origins.py` keeps the two lists equal.
+
 ## Still to do
 
-1. Promote to production.
-2. Evaluation set re-run for the keyword prompt change (participant rule) if the numbers above are
+1. Evaluation set re-run for the keyword prompt change (participant rule) if the numbers above are
    to be restated; the rule itself is deterministic and tested.
+2. The Library's "move" action only relabels the run, not the paper's rows; it is not offered in the
+   interface, but needs fixing before it is.
