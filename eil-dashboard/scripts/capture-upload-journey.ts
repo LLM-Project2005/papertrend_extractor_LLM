@@ -29,6 +29,7 @@ const PAPER_TITLE = process.env.UI_PAPER_TITLE ?? "";
 const PROJECT_NAME = process.env.UI_PROJECT_NAME ?? "";
 const ANALYSIS_WAIT_MS = Number(process.env.UI_ANALYSIS_WAIT_MS ?? 420000);
 const VIEWPORTS = (process.env.UI_VIEWPORTS ?? "desktop,mobile").split(",");
+const DASHBOARD_TABS = (process.env.UI_DASHBOARD_TABS ?? "").split(",").map((tab) => tab.trim()).filter(Boolean);
 const SIZES: Record<string, { width: number; height: number }> = {
   desktop: { width: 1440, height: 900 },
   mobile: { width: 390, height: 844 },
@@ -233,6 +234,12 @@ async function main() {
         await shot(page, viewport, "07-paper-view");
         await page.keyboard.press("Escape");
       }
+    }
+    // Where the analysed papers end up: the repository's dashboard tabs.
+    for (const tab of DASHBOARD_TABS) {
+      await page.goto(`${BASE}/workspace/dashboard?tab=${encodeURIComponent(tab)}`, { waitUntil: "domcontentloaded" });
+      await page.waitForTimeout(9000);
+      await shot(page, viewport, `10-dashboard-${tab}`);
     }
     notes.push({ step: "console", viewport, problems: consoleErrors.slice(0, 10) });
     await context.close();
