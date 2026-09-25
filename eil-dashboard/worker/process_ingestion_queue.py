@@ -34,6 +34,7 @@ from analysis_pipeline import (
     persist_dataset,
     process_pdf_run,
 )
+from analysis_pipeline.duplicates import find_duplicate, text_fingerprint
 from supabase_http import build_retrying_session
 from database_client import create_worker_database_client
 
@@ -1381,6 +1382,28 @@ def resume_waiting_research_sessions_for_folder(
         )
 
 
+def duplicate_payload(client: Any, run: Dict[str, Any], raw_text: str, title: str) -> Dict[str, Any]:
+    """Fingerprint the paper's text and note an earlier copy in the same
+    repository. A failed lookup never fails the paper."""
+
+    fingerprint = text_fingerprint(raw_text)
+    if not fingerprint:
+        return {}
+    duplicate = None
+    lister = getattr(client, "list_run_fingerprints", None)
+    if callable(lister):
+        try:
+            others = lister(
+                str(run.get("owner_user_id") or ""),
+                str(run.get("folder_id") or "") or None,
+                str(run.get("id") or ""),
+            )
+            duplicate = find_duplicate(fingerprint, title, others)
+        except Exception as error:
+            logger.warning("duplicate check skipped", extra={"run_id": run.get("id"), "error": str(error)[:200]})
+    return {"text_fingerprint": fingerprint, "duplicate_of": duplicate}
+
+
 def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str, Any]) -> None:
     run_started = time.perf_counter()
     run_id = str(run["id"])
@@ -1538,9 +1561,14 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             )
 
             ensure_run_active(client, run_id)
+            paper_rows = result.dataset.get("papers") or [{}]
+            duplicate_patch = duplicate_payload(
+                client, run, result.raw_text, str((paper_rows[0] or {}).get("title") or "")
+            )
             final_input_payload = merge_input_payload(
                 run,
                 {
+                    **duplicate_patch,
                     "analysis_mode": "automatic",
                     "analysis_label": AUTO_ANALYSIS_LABEL,
                     "pipeline": PIPELINE_NAME,
@@ -1549,6 +1577,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "year": result.dataset.get("year"),
                     "year_resolution": result.dataset.get("year_resolution"),
                     "analysis_quality": result.dataset.get("analysis_quality"),
+                    "topic_kinds": result.dataset.get("topic_kinds"),
                     "raw_text_length": len(result.raw_text),
                     "keyword_count": len(result.dataset["keywords"]),
                     "analysis_metrics": merge_analysis_metrics(

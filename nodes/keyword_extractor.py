@@ -1,17 +1,38 @@
 import re
 from collections import Counter
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, List, Sequence, Tuple
 
 from nodes import ModelTask, get_task_llm
 from nodes.common import load_prompt, locate_text_span, normalize_analysis_profile, normalize_whitespace, safe_json_list
+from nodes.text_matching import count_any, evidence_in, fold_text, phrase_in, sentence_with
 from state import IngestionState, KeywordCandidateSchema
 
 keyword_extraction_llm = get_task_llm(ModelTask.KEYWORD_EXTRACTION)
 
 KEYWORD_MAX_COMPLETION_TOKENS = 6000
 MAX_FALLBACK_CANDIDATES = 20
+MAX_METHOD_CANDIDATES = 3
 
-_TOKEN_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*")
+# What the keyword step reads, and how much of each section. The introduction
+# and literature review say what a paper is about; the bibliography is other
+# people's work, so it is left out.
+KEYWORD_SECTION_BUDGETS: Tuple[Tuple[str, int], ...] = (
+    ("title", 500),
+    ("abstract_claims", 3000),
+    ("introduction", 4500),
+    ("literature_review", 3500),
+    ("methods", 2500),
+    ("results", 5000),
+    ("discussion", 3500),
+    ("conclusion", 3000),
+)
+_MIN_SECTION_CHARS = 4000
+_BODY_BUDGET = 20000
+_REFERENCES_HEADING = re.compile(
+    r"(?im)^[ \t#*]*(?:references|bibliography|works cited|เอกสารอ้างอิง|บรรณานุกรม)[ \t*]*$"
+)
+
+_TOKEN_PATTERN = re.compile(r"[^\W\d_][^\W_]*(?:[-'][^\W_]+)*")
 _SENTENCE_PATTERN = re.compile(r"(?<=[.!?])\s+|\r?\n+")
 _STOPWORDS = {
     "a", "about", "above", "after", "again", "against", "all", "also", "among",
@@ -32,38 +53,58 @@ _GENERIC_TERMS = {
 }
 
 
-def _section_texts(paper_json: Dict[str, Any]) -> List[str]:
-    parts = []
-    for section, text in paper_json.items():
-        if text:
-            parts.append(f"--- SECTION: {section.upper()} ---\n{text}")
-    return parts
+def _trim(text: str, limit: int) -> str:
+    text = str(text or "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit]
+    boundary = max(cut.rfind(". "), cut.rfind(".\n"))
+    return cut[: boundary + 1] if boundary > limit * 0.6 else cut
+
+
+def keyword_input_sections(paper_json: Dict[str, Any], document_text: str = "") -> Dict[str, str]:
+    """The text the keyword step reads, section by section, within budgets."""
+
+    sections = {
+        key: _trim(paper_json.get(key) or "", budget)
+        for key, budget in KEYWORD_SECTION_BUDGETS
+        if str(paper_json.get(key) or "").strip()
+    }
+    body_chars = sum(len(value) for key, value in sections.items() if key != "title")
+    if body_chars < _MIN_SECTION_CHARS and document_text.strip():
+        # The headings were not found: read the running text before the references.
+        references = _REFERENCES_HEADING.search(document_text)
+        body = document_text[: references.start()] if references else document_text
+        sections["body"] = _trim(body, _BODY_BUDGET)
+    return sections
+
+
+def _section_texts(sections: Dict[str, str]) -> List[str]:
+    return [f"--- SECTION: {name.upper()} ---\n{text}" for name, text in sections.items() if text]
 
 
 def _compact_prompt(context_text: str) -> str:
-    return f"""Extract grounded research concepts from the supplied paper text.
+    return f"""Extract the research concepts this paper studies.
 
-Return 8 to 20 candidates, or fewer only when the source does not support more.
-Keep every field short so the response remains valid JSON:
-- keyword: exact phrase from the source, at most 8 words
-- count: integer frequency estimate
-- evidence: one verbatim sentence, at most 240 characters
-- matched_terms: at most 4 exact surface forms
-- section: title, abstract_claims, methods, results, conclusion, or bibliography
+Return 12 to 20 candidates. Keep every field short so the response stays valid JSON:
+- keyword: an exact phrase from the source, at most 8 words
+- kind: "subject" (what the paper studies) or "method" (how it was done; at most 3)
+- evidence: one sentence copied from the source, at most 200 characters
+- matched_terms: at most 4 other exact forms of the same concept
+- section: title, abstract_claims, introduction, literature_review, methods, results, discussion, conclusion, or body
 
-Do not invent concepts, paraphrase keywords, or include generic words such as "the study"
-or "the participants". Return JSON that matches the requested schema completely.
+Do not invent or paraphrase concepts, and skip generic words such as "the study" or "participants".
 
 <source_text>
 {context_text}
 </source_text>"""
 
 
-def _fallback_keyword_candidates(paper_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Extract short, source-grounded phrases when structured output is truncated."""
+def _fallback_keyword_candidates(sections: Dict[str, str]) -> List[Dict[str, Any]]:
+    """Frequent source phrases, used only when the model fails twice."""
 
     candidates: Dict[str, Dict[str, Any]] = {}
-    for section, raw_text in paper_json.items():
+    for section, raw_text in sections.items():
         text = str(raw_text or "").strip()
         if not text or section == "bibliography":
             continue
@@ -97,20 +138,16 @@ def _fallback_keyword_candidates(paper_json: Dict[str, Any]) -> List[Dict[str, A
                     key = " ".join(normalized_tokens)
                     frequency = max(
                         1,
-                        len(
-                            re.findall(
-                                r"(?i)(?<![A-Za-z])" + re.escape(key) + r"(?![A-Za-z])",
-                                text,
-                            )
-                        ),
+                        len(re.findall(r"(?i)(?<![^\W\d_])" + re.escape(key) + r"(?![^\W\d_])", text)),
                     )
                     score = (len(content_tokens) * 3) + frequency + (1 if size > 1 else 0)
                     current = candidates.get(key)
                     if current is None or score > current["_score"]:
                         candidates[key] = {
                             "keyword": keyword,
+                            "kind": "subject",
                             "count": frequency,
-                            "evidence": sentence[:5000],
+                            "evidence": sentence[:300],
                             "matched_terms": [keyword],
                             "section": section,
                             "_score": score,
@@ -130,55 +167,67 @@ def _fallback_keyword_candidates(paper_json: Dict[str, Any]) -> List[Dict[str, A
     ]
 
 
-def _enrich_candidates(result: KeywordCandidateSchema, paper_json: Dict[str, Any]) -> List[Dict[str, Any]]:
-    enriched_candidates = []
-    for candidate in result.candidates:
-        section_name = normalize_whitespace(candidate.section).lower() or "abstract_claims"
-        section_name = section_name if section_name in paper_json else "abstract_claims"
-        matched_terms = safe_json_list([candidate.keyword, *candidate.matched_terms], limit=10)
-        span = locate_text_span(
-            section_name=section_name,
-            section_text=paper_json.get(section_name, ""),
-            evidence=candidate.evidence,
-            matched_terms=matched_terms,
-        )
-        enriched_candidates.append(
-            {
-                "keyword": normalize_whitespace(candidate.keyword),
-                "count": max(int(candidate.count), 1),
-                "evidence": candidate.evidence.strip(),
-                "matched_terms": matched_terms,
-                "section": section_name,
-                "first_span": span,
-            }
-        )
-    return enriched_candidates
+def ground_candidates(
+    raw_candidates: Sequence[Dict[str, Any]],
+    sections: Dict[str, str],
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Keep only concepts that appear in the text, count them, and dedupe.
 
+    A keyword the model paraphrased is replaced by one of its exact surface
+    forms when possible, and dropped otherwise. Evidence that is not in the
+    text is replaced by the sentence where the keyword first appears.
+    """
 
-def _fallback_with_spans(
-    fallback_candidates: Sequence[Dict[str, Any]],
-    paper_json: Dict[str, Any],
-) -> List[Dict[str, Any]]:
-    enriched = []
-    for candidate in fallback_candidates:
-        matched_terms = safe_json_list(
-            candidate.get("matched_terms") or [candidate.get("keyword")],
-            limit=10,
-        )
-        section_name = str(candidate.get("section") or "abstract_claims")
-        enriched.append(
+    source_text = "\n\n".join(sections.values())
+    folded_source = fold_text(source_text)
+    grounded: List[Dict[str, Any]] = []
+    seen: set = set()
+    dropped: List[str] = []
+    methods = 0
+    for candidate in raw_candidates:
+        keyword = normalize_whitespace(str(candidate.get("keyword") or ""))
+        variants = safe_json_list([keyword, *(candidate.get("matched_terms") or [])], limit=10)
+        present = [variant for variant in variants if phrase_in(folded_source, variant)]
+        if not present:
+            if keyword:
+                dropped.append(keyword)
+            continue
+        if keyword not in present:
+            keyword = present[0]
+        key = fold_text(keyword)
+        variant_keys = {fold_text(variant) for variant in present}
+        if key in seen or variant_keys & seen:
+            continue
+        kind = "method" if str(candidate.get("kind") or "") == "method" else "subject"
+        if kind == "method":
+            if methods >= MAX_METHOD_CANDIDATES:
+                continue
+            methods += 1
+        seen.update(variant_keys)
+
+        section = normalize_whitespace(str(candidate.get("section") or "")).lower()
+        if section not in sections:
+            section = next((name for name, text in sections.items() if phrase_in(fold_text(text), keyword)), "abstract_claims")
+        evidence = str(candidate.get("evidence") or "").strip()
+        if not evidence_in(folded_source, evidence):
+            evidence = sentence_with(sections.get(section, ""), keyword) or sentence_with(source_text, keyword) or keyword
+        grounded.append(
             {
-                **candidate,
-                "matched_terms": matched_terms,
+                "keyword": keyword,
+                "kind": kind,
+                "count": max(1, count_any(folded_source, present)),
+                "evidence": evidence[:500],
+                "matched_terms": present,
+                "section": section,
                 "first_span": locate_text_span(
-                    section_name=section_name,
-                    section_text=paper_json.get(section_name, ""),
-                    evidence=str(candidate.get("evidence") or ""),
-                    matched_terms=matched_terms,
+                    section_name=section,
+                    section_text=sections.get(section, ""),
+                    evidence=evidence,
+                    matched_terms=present,
                 ),
             }
         )
-    return enriched
+    return grounded, dropped
 
 
 def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
@@ -186,7 +235,9 @@ def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
     if not paper_json:
         return {"errors": ["No segmented data found for keyword extraction."], "status": "failed"}
 
-    context_text = "\n\n".join(_section_texts(paper_json))
+    document = state.get("cleaned_english_text") or state.get("cleaned_text") or ""
+    sections = keyword_input_sections(paper_json, document)
+    context_text = "\n\n".join(_section_texts(sections))
     analysis_profile = normalize_analysis_profile(state.get("input_payload") or {})
     full_prompt = load_prompt("keyword_extractor.txt").format(
         analysis_domain=analysis_profile.get("domain", "General academic research"),
@@ -211,25 +262,31 @@ def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
                 method="json_schema",
             )
             result = structured_llm.invoke(prompt)
-            if not result.candidates:
-                raise ValueError("structured output returned no candidates")
+            candidates, dropped = ground_candidates([item.model_dump() for item in result.candidates], sections)
+            if not candidates:
+                raise ValueError("no extracted concept appears in the text")
+            warnings = []
+            if errors:
+                warnings.append(f"keywords: the full prompt failed, so a shorter retry prompt was used ({errors[-1][:160]})")
+            if dropped:
+                warnings.append(
+                    f"keywords: dropped {len(dropped)} concept(s) not found in the text ({', '.join(dropped[:3])[:160]})"
+                )
             return {
-                "keyword_candidates": _enrich_candidates(result, paper_json),
-                "warnings": (
-                    [f"keywords: the full prompt failed, so a shorter retry prompt was used ({errors[-1][:160]})"]
-                    if errors
-                    else []
-                ),
+                "keyword_candidates": candidates,
+                "keyword_input_sections": sections,
+                "warnings": warnings,
                 "errors": [],
                 "status": "keywords_ready",
             }
         except Exception as error:
             errors.append(str(error).replace("\n", " ")[:240])
 
-    fallback_candidates = _fallback_keyword_candidates(paper_json)
+    fallback_candidates, _dropped = ground_candidates(_fallback_keyword_candidates(sections), sections)
     if fallback_candidates:
         return {
-            "keyword_candidates": _fallback_with_spans(fallback_candidates, paper_json),
+            "keyword_candidates": fallback_candidates,
+            "keyword_input_sections": sections,
             "warnings": [
                 "keywords: the model failed, so frequent phrases were taken from the text instead ("
                 + (errors[-1][:160] if errors else "unknown model error")
@@ -240,6 +297,7 @@ def grounded_keyword_extractor_node(state: IngestionState) -> Dict[str, Any]:
         }
 
     return {
+        "keyword_input_sections": sections,
         "errors": [
             "Keyword extraction failed after retry and fallback: "
             + (errors[-1] if errors else "unknown model error")

@@ -42,7 +42,8 @@ from state import (  # noqa: E402
     KeywordCandidateSchema,
     KeywordGrouperSchema,
     PaperMetadataSchema,
-    TopicLabelerSchema,
+    ResearchTypologySchema,
+    TopicLabelsSchema,
     TrackClassificationSchema,
 )
 
@@ -129,14 +130,14 @@ TAILORED = {
         candidates=[
             {
                 "keyword": "teacher agency",
-                "count": 6,
+                "kind": "subject",
                 "evidence": "Teacher agency depends on institutional culture more than on policy mandates.",
                 "matched_terms": ["teacher agency"],
                 "section": "conclusion",
             },
             {
                 "keyword": "assessment policy",
-                "count": 4,
+                "kind": "subject",
                 "evidence": "Assessment policy in Thai universities requires standardized English tests for graduation.",
                 "matched_terms": ["assessment policy"],
                 "section": "abstract_claims",
@@ -145,25 +146,22 @@ TAILORED = {
     ),
     KeywordGrouperSchema: KeywordGrouperSchema(
         topics=[
-            {
-                "label": "teacher agency",
-                "keywords": ["teacher agency"],
-                "matched_terms": ["teacher agency"],
-                "total_count": 6,
-                "rationale": "Agency of teachers.",
-                "evidence": ["Teacher agency depends on institutional culture more than on policy mandates."],
-            },
-            {
-                "label": "assessment policy",
-                "keywords": ["assessment policy"],
-                "matched_terms": ["assessment policy"],
-                "total_count": 4,
-                "rationale": "Policy on assessment.",
-                "evidence": ["Assessment policy in Thai universities requires standardized English tests for graduation."],
-            },
+            {"label": "teacher agency", "kind": "subject", "keywords": ["teacher agency"], "rationale": "Agency."},
+            {"label": "assessment policy", "kind": "subject", "keywords": ["assessment policy"], "rationale": "Policy."},
         ]
     ),
-    TopicLabelerSchema: TopicLabelerSchema(topic_label="Teacher Agency", justification="Names the concept."),
+    TopicLabelsSchema: TopicLabelsSchema(
+        labels=[{"group": 1, "label": "Teacher Agency"}, {"group": 2, "label": "Assessment Policy"}]
+    ),
+    ResearchTypologySchema: ResearchTypologySchema(
+        primary_group_number=4,
+        secondary_group_number=0,
+        stated_purpose="Examine agency.",
+        primary_contribution="Types of agency.",
+        group_match="Policy focus.",
+        boundary_rule="Not applied.",
+        verdict="Group 4.",
+    ),
     TrackClassificationSchema: TrackClassificationSchema(
         single_category_key="eli",
         multi_category_keys=["eli", "lae"],

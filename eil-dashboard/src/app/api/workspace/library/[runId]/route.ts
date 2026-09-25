@@ -4,6 +4,9 @@ import { cloudSqlLibraryRepository } from "@/lib/cloudsql/library-repository";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { createGcsSignedReadUrl } from "@/lib/gcs-signed-urls";
+import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
+import { paperIdFromRunId } from "@/lib/paper-id";
+import { validatePaperCorrection } from "@/lib/reanalysis";
 
 export const runtime = "nodejs";
 
@@ -19,13 +22,37 @@ export async function PATCH(
   try {
     const { runId } = await params;
     const body = (await request.json()) as {
-      action?: "rename" | "favorite" | "move" | "trash" | "restore";
+      action?: "rename" | "favorite" | "move" | "trash" | "restore" | "correct";
       value?: string | boolean | null;
       folderId?: string | null;
+      title?: unknown;
+      year?: unknown;
     };
     const action = body.action;
     if (!action) {
       return NextResponse.json({ error: "Action is required." }, { status: 400 });
+    }
+
+    if (action === "correct") {
+      // A corrected title or year is saved on the run, so analysing the
+      // paper again keeps it, and applied to the stored paper at once.
+      if (getDatabaseProvider() !== "cloud-sql") {
+        return NextResponse.json({ error: "Corrections need the Cloud SQL workspace." }, { status: 501 });
+      }
+      const correction = validatePaperCorrection({ title: body.title, year: body.year });
+      if (!correction.ok) {
+        return NextResponse.json({ error: correction.error }, { status: 400 });
+      }
+      const paper = await cloudSqlAnalysisJobRepository.correctPaper(
+        user.id,
+        runId,
+        { title: correction.title, year: correction.year },
+        paperIdFromRunId(runId)
+      );
+      if (!paper) {
+        return NextResponse.json({ error: "Library file not found." }, { status: 404 });
+      }
+      return NextResponse.json({ paper });
     }
 
     if (getDatabaseProvider() === "cloud-sql") {

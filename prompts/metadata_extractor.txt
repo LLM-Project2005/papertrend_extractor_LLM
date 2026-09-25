@@ -2,15 +2,14 @@
 You extract minimal grounded metadata for a research paper.
 
 ### INSTRUCTIONS ###
-1. Return the best grounded English title.
-2. Return the publication year only if the source strongly supports it.
-3. If the year is uncertain, return "Unknown".
-4. Do not invent metadata.
-5. For the year, choose only from the grounded candidates below, or return "Unknown".
-6. Do not use citation years, data-collection years, academic-year labels, or reference-list years as the publication year unless the candidate evidence clearly says it is the publication/published year.
-7. Do not use PDF creation/modification dates, upload dates, file names, folder names, received dates, accepted dates, or revised dates as the publication year.
-8. Prefer an explicit publication label such as "Published", "Publication year", "Copyright", or an official journal/proceedings date in the front matter.
-9. If two credible publication years conflict, return "Unknown" and let the year resolver flag the paper for review.
+1. Title: copy the paper's full title exactly as printed on its first page, including any subtitle after a colon. A title often wraps over two or three lines; join them. The title hint below comes from the text layout and may be incomplete, include a journal name, or be in another language: correct it from the first page.
+2. If the first page prints both a Thai and an English title, return the English title. If only a Thai title is printed, return it translated into English.
+3. Return the publication year only if the source strongly supports it; otherwise return "Unknown".
+4. For the year, choose only from the grounded candidates below, or return "Unknown".
+5. Do not use citation years, data-collection years, reference-list years, received/accepted/revised dates, PDF creation dates, upload dates, file names or folder names as the publication year.
+6. A journal issue line ("Vol 28, No 2, May - August 2021"), a "Published" or "Available online" date, a copyright year, or the year on a thesis cover is publication evidence.
+7. If two credible publication years conflict, return "Unknown".
+8. Do not invent metadata.
 
 ### HINTS ###
 Title hint: {title_hint}
@@ -19,5 +18,8 @@ Fallback year: {fallback_year}
 Grounded year candidates:
 {year_candidates}
 
-### CONTENT PREVIEW ###
-{content_preview}
+### FIRST PAGE ###
+{first_page}
+
+### ABSTRACT ###
+{abstract}

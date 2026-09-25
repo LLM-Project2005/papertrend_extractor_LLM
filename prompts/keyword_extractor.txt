@@ -1,8 +1,5 @@
 ### ROLE ###
-You are a high-fidelity research concept miner for an academic trend platform.
-
-### OBJECTIVE ###
-Extract up to 20 research-significant concept candidates. Prefer 12-20 when the source supports them, but return fewer rather than inventing or truncating output.
+You identify the research concepts a paper studies, for a dashboard that groups many papers into research topics.
 
 ### PROJECT CONTEXT ###
 Research domain:
@@ -14,30 +11,21 @@ Research domain definition:
 Additional user-provided context:
 {additional_context}
 
-### CRITICAL RULE: EXACT VERBATIM ###
-You MUST extract every candidate as EXACT VERBATIM text from the source. 
-- Do not paraphrase. 
-- Do not normalize the 'matched_terms' yet.
-- Do not fix capitalization or punctuation if it is part of a formal term.
-- If the text says "‘English-for-Teaching’ framework", you must extract exactly "‘English-for-Teaching’ framework".
+### WHAT TO EXTRACT ###
+Return 12 to 20 concepts (fewer only for a very short text), the most central first: the ones a reader would use to say what this paper is about.
+- kind "subject": the phenomena, constructs, skills, populations, contexts, interventions, materials and theories the paper investigates or proposes. Examples: "teacher agency", "English-medium instruction (EMI)", "dynamic assessment", "genre-based writing instruction", "Thai EFL undergraduate students".
+  Go beyond the words of the title: include the specific dimensions, factors, categories, constructs and findings the paper reports (for example the named aspects a questionnaire measured, the types of agency it found, the discourse functions it identified).
+- kind "method": how the study was done: designs, instruments and analyses. Examples: "semi-structured interviews", "Rasch analysis", "paired-samples t-test". Give at most 3, only those central to the study.
+A theory or framework the paper applies to its subject (e.g. "sociocultural theory") is a subject.
 
-### INSTRUCTIONS ###
-1. Analyze all supplied sections together.
-2. Extract concepts, frameworks, constructs, methods, measures, systems, materials, cases, contexts, and contribution-specific terms that matter for this project's domain.
-3. For the 'canonical_phrase', select the most complete verbatim version found in the text.
-4. Include `matched_terms` with other verbatim variants found in the text that refer to the same concept.
-5. Estimate `count` based on the frequency of these verbatim strings.
-6. Provide one concise verbatim evidence sentence for each, no longer than 240 characters.
-7. Set `section` to one of: title, abstract_claims, methods, results, conclusion, bibliography.
-
-### TECHNICAL DENSITY CALIBRATION ###
-- GOOD (Technical/Verbatim): "English-medium instruction (EMI)", "grammar-of-choice view", "pedagogical transformation of subject knowledge", "Hallidayan lens".
-- BAD (Generic/Paraphrased): "Teaching methods", "Thai teachers", "Language problems", "Learning English".
-
-### RESTRICTIONS ###
-1. Avoid generic procedural noise (e.g., "the study", "the participants").
-2. **QUANTITY: Return up to 20 unique candidates.** If you reach 15 and need more, extract specific cited frameworks from the 'Literature Review' or 'Methodology' sections. Never pad the response with generic concepts.
-3. Keep `matched_terms` to at most 4 concise verbatim variants per candidate so the JSON response remains complete.
+### RULES ###
+1. keyword: an exact phrase copied from the source text, usually 2 to 6 words. When the text gives an acronym with its expansion, keep both, e.g. "English-medium instruction (EMI)". Never paraphrase or invent.
+2. matched_terms: up to 4 other exact forms of the same concept that appear in the text (abbreviation, plural, the authors' synonym).
+3. evidence: one sentence copied exactly from the source that shows the concept, at most 240 characters.
+4. section: where the evidence comes from: title, abstract_claims, introduction, literature_review, methods, results, discussion, conclusion, or body.
+5. List each concept once. If one concept is a sub-phrase of another ("reading comprehension" and "English reading comprehension"), keep the more specific one and put the other in matched_terms.
+6. Skip generic words ("the study", "participants", "data", "results", "English", "learners") unless they are part of a specific phrase.
+7. Take concepts from the paper's own work, not from other studies it only cites.
 
 ### SOURCE TEXT ###
 <source_text>

@@ -107,6 +107,43 @@ class ModelRouterTests(unittest.TestCase):
         self.assertIn("Keep it shorter", calls[1][1])
         self.assertEqual(calls[2][1], "Group these keywords.")
 
+    def test_schema_validation_exception_is_repaired_before_fallback(self) -> None:
+        from pydantic import BaseModel, ValidationError
+
+        from nodes import model_router
+
+        class Answer(BaseModel):
+            group: int
+
+        calls = []
+
+        class FakeRunnable:
+            def __init__(self, model_name):
+                self.model_name = model_name
+
+            def invoke(self, prompt, **_kwargs):
+                calls.append((self.model_name, prompt))
+                if len(calls) == 1:
+                    Answer.model_validate({})  # raises like an empty {} reply
+                return {"raw": None, "parsed": Answer(group=2), "parsing_error": None}
+
+        class FakeClient:
+            def __init__(self, model_name):
+                self.model_name = model_name
+
+            def with_structured_output(self, *_args, **_kwargs):
+                return FakeRunnable(self.model_name)
+
+        with patch.dict(os.environ, {"MODEL_POLICY_PRESET": "budget-structured"}, clear=False), patch.object(
+            model_router, "_create_chat_openai", lambda model_name, _config, **_kw: FakeClient(model_name)
+        ):
+            result = model_router.RoutedChatModel(ModelTask.RESEARCH_TYPOLOGY).with_structured_output(Answer).invoke("Classify.")
+
+        self.assertEqual(result.group, 2)
+        self.assertEqual([model for model, _prompt in calls], ["google/gemini-3.1-flash-lite"] * 2)
+        self.assertIn("could not be used", calls[1][1])
+        self.assertTrue(issubclass(ValidationError, Exception))
+
     def test_gemma_4_31b_preset_is_available(self) -> None:
         with patch.dict(os.environ, {"MODEL_POLICY_PRESET": "gemma-4-31b"}, clear=False):
             config = get_task_config(ModelTask.KEYWORD_EXTRACTION)

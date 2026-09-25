@@ -97,6 +97,20 @@ def count_phrase(folded_haystack: str, phrase: str) -> int:
     return len(re.findall(rf"(?<!\S){re.escape(needle)}(?!\S)", folded_haystack))
 
 
+def _count_without_overlap(folded_haystack: str, phrases: Iterable[Any]) -> int:
+    """Occurrences under any surface form, longest form first, without
+    counting "EMI" again inside "English-medium instruction (EMI)"."""
+
+    forms = sorted({fold(phrase) for phrase in phrases if fold(phrase)}, key=len, reverse=True)
+    remaining = f" {folded_haystack} "
+    total = 0
+    for form in forms:
+        pattern = rf"(?<!\S){re.escape(form)}(?!\S)"
+        total += len(re.findall(pattern, remaining))
+        remaining = re.sub(pattern, " ", remaining)
+    return total
+
+
 def evidence_found(folded_haystack: str, evidence: str) -> bool:
     parts = [part for part in re.split(r"\.\.\.|\u2026", str(evidence or "")) if len(part.strip()) >= 20]
     if not parts:
@@ -286,8 +300,9 @@ def _probe_after(pattern: re.Pattern[str], text: str, length: int = 160) -> str:
         return ""
     following = text[match.end() : match.end() + 1200]
     following = re.sub(r"\s+", " ", following).strip()
-    # Skip a short second heading line or page furniture to reach running text.
-    return following[:length]
+    # Stop at a whole word: a probe cut mid-word never matches on word boundaries.
+    probe = following[: length + 1]
+    return probe.rsplit(" ", 1)[0] if len(following) > length and " " in probe else probe[:length]
 
 
 def _keyword_input_text(state: Dict[str, Any]) -> str:
@@ -350,19 +365,29 @@ def score_run(paper: Dict[str, Any], record: Dict[str, Any]) -> Dict[str, Any]:
     evidence_ok = [evidence_found(folded_input, evidence) for evidence in evidence_rows]
     frequency_errors = []
     frequency_exact = []
+    concept_frequency_close = []
+    forms_by_keyword = {
+        fold(candidate.get("keyword")): [candidate.get("keyword"), *(candidate.get("matched_terms") or [])]
+        for candidate in state.get("keyword_candidates") or []
+    }
     for row in keyword_rows:
         counted = count_phrase(folded_input, str(row.get("keyword") or ""))
         stored = int(row.get("keyword_frequency") or 0)
         frequency_errors.append(abs(stored - counted))
         frequency_exact.append(stored == counted)
+        # Added after the baseline: keyword_frequency is documented as the
+        # concept's count across its surface forms ("EMI" and "English-medium
+        # instruction"), so also check it against that count, within 1.
+        forms = forms_by_keyword.get(fold(row.get("keyword")), [row.get("keyword")])
+        concept_frequency_close.append(abs(stored - _count_without_overlap(folded_input, forms)) <= 1)
 
-    intro_probe = _probe_after(_INTRO_HEADING, document)
+    intro_probe = _probe_after(_INTRO_HEADING, document, 100)
     intro_expected = bool(gold.get("has_introduction")) and bool(intro_probe)
-    intro_captured = intro_expected and contains_phrase(folded_input, intro_probe[:100])
-    references_probe = _probe_after(_REFERENCE_HEADING, document)
+    intro_captured = intro_expected and contains_phrase(folded_input, intro_probe)
+    references_probe = _probe_after(_REFERENCE_HEADING, document, 100)
     input_sections = state.get("keyword_input_sections") or state.get("final_json") or {}
     bibliography_in_input = bool(str(input_sections.get("bibliography") or "").strip()) or (
-        bool(references_probe) and contains_phrase(folded_input, references_probe[:100])
+        bool(references_probe) and contains_phrase(folded_input, references_probe)
     )
 
     stored_phrases = [
@@ -440,6 +465,7 @@ def score_run(paper: Dict[str, Any], record: Dict[str, Any]) -> Dict[str, Any]:
         "keywords_grounded_in_document": share(grounded_document),
         "evidence_grounded": share(evidence_ok),
         "frequency_exact": share(frequency_exact),
+        "frequency_concept_within_1": share(concept_frequency_close),
         "frequency_mean_abs_error": round(statistics.mean(frequency_errors), 2) if frequency_errors else None,
         "author_keyword_recall": share(author_recall),
         "author_keyword_extraction_recall": share(author_extraction_recall),
@@ -520,6 +546,7 @@ def summarize(manifest: Dict[str, Any], scored: List[Dict[str, Any]]) -> Dict[st
         "P7_keywords_grounded_in_input": mean("keywords_grounded_in_input"),
         "P7_evidence_grounded": mean("evidence_grounded"),
         "P7_frequency_exact": mean("frequency_exact"),
+        "frequency_concept_within_1": mean("frequency_concept_within_1"),
         "frequency_mean_abs_error": mean("frequency_mean_abs_error"),
         "P8_author_keyword_recall": mean("author_keyword_recall"),
         "author_keyword_extraction_recall": mean("author_keyword_extraction_recall"),

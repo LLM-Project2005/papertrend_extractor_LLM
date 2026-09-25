@@ -24,18 +24,18 @@ def keep_failure(current: Any, update: Any) -> Any:
     return update if update is not None else current
 
 
-class SectionIndices(BaseModel):
-    start: int = Field(description="Starting character index in the source section.")
-    end: int = Field(description="Ending character index in the source section.")
+class SectionOutlineSchema(BaseModel):
+    """Which outline line starts each section (0 when the paper has none)."""
 
-
-class SemanticIndexSchema(BaseModel):
-    title: SectionIndices
-    abstract_claims: SectionIndices
-    methods: SectionIndices
-    results: SectionIndices
-    conclusion: SectionIndices
-    bibliography: SectionIndices
+    abstract: int = Field(description="Outline line number where the abstract starts, or 0.")
+    introduction: int = Field(description="Outline line number of the introduction or background, or 0.")
+    literature_review: int = Field(description="Outline line number of the literature review or theoretical framework, or 0.")
+    methods: int = Field(description="Outline line number of the methodology or methods, or 0.")
+    results: int = Field(description="Outline line number of the results or findings, or 0.")
+    discussion: int = Field(description="Outline line number of a separate discussion, or 0.")
+    conclusion: int = Field(description="Outline line number of the conclusion, or 0.")
+    references: int = Field(description="Outline line number of the references or bibliography, or 0.")
+    back_matter: int = Field(description="Outline line number where acknowledgements, author notes or appendices begin, or 0.")
 
 
 class TextSpan(BaseModel):
@@ -45,14 +45,16 @@ class TextSpan(BaseModel):
 
 
 class KeywordCandidate(BaseModel):
-    keyword: str = Field(description="Canonical English keyword or phrase.")
-    count: int = Field(description="Frequency count across direct mentions and close variants.")
-    evidence: str = Field(description="Verbatim evidence sentence from the paper.")
+    keyword: str = Field(description="The concept, copied exactly from the paper's text.")
+    kind: Literal["subject", "method"] = Field(
+        description="subject: what the paper studies; method: how the study was done."
+    )
+    evidence: str = Field(description="One sentence copied exactly from the paper that shows the concept.")
     matched_terms: List[str] = Field(
         default_factory=list,
-        description="Observed literal surface forms that should normalize to the same concept.",
+        description="Other exact surface forms of the same concept in the paper.",
     )
-    section: str = Field(description="Primary section where the evidence is found.")
+    section: str = Field(description="Section the evidence comes from.")
 
 
 class KeywordCandidateSchema(BaseModel):
@@ -60,24 +62,23 @@ class KeywordCandidateSchema(BaseModel):
 
 
 class SemanticTopic(BaseModel):
-    label: str = Field(description="Best grounded canonical phrase for this concept family.")
-    keywords: List[str] = Field(description="Original keyword candidates in this group.")
-    matched_terms: List[str] = Field(
-        default_factory=list,
-        description="Observed surface forms merged into this concept family.",
-    )
-    total_count: int = Field(description="Summed frequency across all member keywords.")
-    rationale: str = Field(description="Why these keywords belong together.")
-    evidence: List[str] = Field(description="Verbatim evidence snippets for the concept.")
+    label: str = Field(description="The member phrase that best names this topic.")
+    kind: Literal["subject", "method"] = Field(description="subject or method, matching its members.")
+    keywords: List[str] = Field(description="Candidate phrases in this group, copied exactly from the list.")
+    rationale: str = Field(description="Why these phrases name one topic, in one short sentence.")
 
 
 class KeywordGrouperSchema(BaseModel):
     topics: List[SemanticTopic]
 
 
-class TopicLabelerSchema(BaseModel):
-    topic_label: str = Field(description="Short academic label no longer than five words.")
-    justification: str = Field(description="Grounded justification for the chosen label.")
+class TopicLabel(BaseModel):
+    group: int = Field(description="The group number from the input.")
+    label: str = Field(description="A specific label of two to five words.")
+
+
+class TopicLabelsSchema(BaseModel):
+    labels: List[TopicLabel]
 
 
 class TrackClassificationSchema(BaseModel):
@@ -119,22 +120,15 @@ class AuthorProvidedKeywordSchema(BaseModel):
 
 
 class ResearchTypologySchema(BaseModel):
-    primary_group_number: Literal[1, 2, 3, 4]
-    primary_group_name: Literal[
-        "Descriptive & Explanatory",
-        "Pedagogical & Intervention",
-        "Assessment & Measurement",
-        "Policy, Sociolinguistic & Critical",
-    ]
-    secondary_group_number: Optional[Literal[1, 2, 3, 4]] = None
-    secondary_group_name: Optional[
-        Literal[
-            "Descriptive & Explanatory",
-            "Pedagogical & Intervention",
-            "Assessment & Measurement",
-            "Policy, Sociolinguistic & Critical",
-        ]
-    ] = None
+    """Group names depend on the repository profile, so only numbers are asked for.
+
+    Plain integers: Gemini's structured output does not support integer enums
+    or nullable fields and answers them with an empty object. The range is
+    checked by the typology node.
+    """
+
+    primary_group_number: int = Field(description="The primary group: 1, 2, 3 or 4.")
+    secondary_group_number: int = Field(description="A genuine secondary group 1-4, or 0 when there is none.")
     stated_purpose: str = Field(description="Direct quote or close paraphrase of the stated aim.")
     primary_contribution: str = Field(description="What the paper primarily adds to the field.")
     group_match: str = Field(description="Why the primary group fits and any secondary group touched.")
@@ -274,6 +268,7 @@ class IngestionState(TypedDict, total=False):
     segmentation_warning: str
     paper_metadata: Optional[Dict[str, Any]]
     year_resolution: Optional[Dict[str, Any]]
+    keyword_input_sections: Dict[str, str]
     keyword_candidates: List[Dict[str, Any]]
     semantic_topics: List[Dict[str, Any]]
     final_labeled_topics: List[Dict[str, Any]]

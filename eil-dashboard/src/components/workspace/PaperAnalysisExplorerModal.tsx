@@ -26,6 +26,8 @@ type Props = {
   onToggleFavorite: () => Promise<void>;
   onRename: () => Promise<void>;
   onOpenDashboard: () => void;
+  /** Save a corrected title or year; kept when the paper is analysed again. */
+  onCorrect?: (correction: { title?: string; year?: string }) => Promise<void>;
 };
 
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
@@ -290,8 +292,44 @@ export default function PaperAnalysisExplorerModal({
   onToggleFavorite,
   onRename,
   onOpenDashboard,
+  onCorrect,
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaperExplorerTab>("overview");
+  const [correcting, setCorrecting] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
+  const [yearDraft, setYearDraft] = useState("");
+  const [correctionError, setCorrectionError] = useState<string | null>(null);
+  const [correctionSaving, setCorrectionSaving] = useState(false);
+
+  function startCorrection() {
+    setTitleDraft(detail?.title || titleOf(run));
+    setYearDraft(detail?.year && detail.year !== "Unknown" ? detail.year : "");
+    setCorrectionError(null);
+    setCorrecting(true);
+  }
+
+  async function saveCorrection() {
+    if (!onCorrect) return;
+    const title = titleDraft.replace(/\s+/g, " ").trim();
+    const year = yearDraft.trim() || "Unknown";
+    const correction: { title?: string; year?: string } = {};
+    if (title && title !== (detail?.title || titleOf(run))) correction.title = title;
+    if (year !== (detail?.year || "Unknown")) correction.year = year;
+    if (!correction.title && !correction.year) {
+      setCorrecting(false);
+      return;
+    }
+    setCorrectionSaving(true);
+    setCorrectionError(null);
+    try {
+      await onCorrect(correction);
+      setCorrecting(false);
+    } catch (saveError) {
+      setCorrectionError(saveError instanceof Error ? saveError.message : "The correction could not be saved.");
+    } finally {
+      setCorrectionSaving(false);
+    }
+  }
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -381,13 +419,75 @@ export default function PaperAnalysisExplorerModal({
               <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                 Paper Explorer
               </p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                {detail?.title || titleOf(run)}
-              </h2>
+              {correcting ? (
+                <form
+                  className="mt-2 grid gap-2 sm:grid-cols-[1fr_7rem_auto]"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void saveCorrection();
+                  }}
+                >
+                  <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
+                    Title
+                    <input
+                      value={titleDraft}
+                      onChange={(event) => setTitleDraft(event.target.value)}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                    />
+                  </label>
+                  <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
+                    Year
+                    <input
+                      value={yearDraft}
+                      onChange={(event) => setYearDraft(event.target.value)}
+                      placeholder="Unknown"
+                      inputMode="numeric"
+                      maxLength={4}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                    />
+                  </label>
+                  <div className="flex items-end gap-2">
+                    <button
+                      type="submit"
+                      disabled={correctionSaving}
+                      className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
+                    >
+                      {correctionSaving ? "Saving" : "Save"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCorrecting(false)}
+                      className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-600 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-[#8e8e8e] sm:col-span-3">
+                    Your correction is kept when the paper is analysed again. Leave the year empty if the paper has none.
+                  </p>
+                  {correctionError ? (
+                    <p className="text-xs text-red-600 dark:text-red-300 sm:col-span-3">{correctionError}</p>
+                  ) : null}
+                </form>
+              ) : (
+                <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                  {detail?.title || titleOf(run)}
+                </h2>
+              )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                   {detail?.year || "Year unavailable"}
                 </span>
+                {onCorrect && !correcting && run.status === "succeeded" ? (
+                  <button
+                    type="button"
+                    onClick={startCorrection}
+                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+                  >
+                    <PencilSquareIcon className="h-3.5 w-3.5" />
+                    <span>Correct title or year</span>
+                  </button>
+                ) : null}
                 <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
                   {run.status === "succeeded" ? "Pipeline analysis ready" : run.status}
                 </span>

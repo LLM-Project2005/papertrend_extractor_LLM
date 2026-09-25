@@ -186,6 +186,42 @@ class CloudSqlWorkerClient:
             )
             return self._rows(cursor)
 
+    def list_run_fingerprints(
+        self, owner_user_id: str, folder_id: Optional[str], exclude_run_id: str, limit: int = 2000
+    ) -> List[Dict[str, Any]]:
+        """Text fingerprints of the owner's other analysed papers in the same
+        repository (the folder's project), for duplicate detection."""
+
+        if not owner_user_id or not folder_id:
+            return []
+        with self._connection() as connection, connection.cursor() as cursor:
+            set_transaction_owner(cursor, owner_user_id)
+            cursor.execute(
+                """
+                SELECT ir.id AS run_id,
+                       ir.input_payload -> 'text_fingerprint' AS fingerprint,
+                       ir.input_payload ->> 'paper_id' AS paper_id,
+                       COALESCE(p.title, ir.display_name, ir.source_filename) AS title
+                FROM public.ingestion_runs ir
+                LEFT JOIN public.papers p
+                  ON p.id = NULLIF(ir.input_payload ->> 'paper_id', '')::bigint AND p.owner_user_id = ir.owner_user_id
+                WHERE ir.owner_user_id = %s AND ir.status = 'succeeded' AND ir.id <> %s
+                  AND ir.trashed_at IS NULL AND ir.input_payload ? 'text_fingerprint'
+                  AND ir.folder_id IN (
+                    SELECT rf.id FROM public.research_folders rf
+                    WHERE rf.owner_user_id = %s AND (
+                      rf.id = %s OR rf.project_id = (
+                        SELECT project_id FROM public.research_folders WHERE id = %s AND owner_user_id = %s
+                      )
+                    )
+                  )
+                ORDER BY ir.created_at ASC
+                LIMIT %s
+                """,
+                (owner_user_id, exclude_run_id, owner_user_id, folder_id, folder_id, owner_user_id, max(int(limit), 1)),
+            )
+            return self._rows(cursor)
+
     def list_active_runs_for_folder(
         self, owner_user_id: str, folder_id: str
     ) -> List[Dict[str, Any]]:

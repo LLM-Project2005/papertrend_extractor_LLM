@@ -51,13 +51,66 @@ def _select_vision_page_indices(page_count: int, page_limit: int) -> list[int]:
     return sorted(selected)[:page_limit]
 
 
+def _page_texts(document: Any) -> list[str]:
+    return [str(page.get_text("text") or "").strip() for page in document]
+
+
 def _extract_with_fitz(document: Any) -> str:
-    pages = []
-    for page in document:
-        page_text = page.get_text("text")
-        if page_text and page_text.strip():
-            pages.append(page_text.strip())
-    return "\n\n".join(pages).strip()
+    return "\n\n".join(text for text in _page_texts(document) if text).strip()
+
+
+def _scanned_pages(document: Any, page_texts: list[str]) -> list[int]:
+    """Pages that carry an image but almost no text layer."""
+
+    scanned = []
+    for index, text in enumerate(page_texts):
+        letters = re.findall(r"[^\W\d_]", text, flags=re.UNICODE)
+        if len(letters) >= 40:
+            continue
+        try:
+            has_image = bool(document.load_page(index).get_images())
+        except Exception:
+            has_image = False
+        if has_image:
+            scanned.append(index)
+    return scanned
+
+
+def _ocr_pages(document: Any, pdf_path: str, page_indices: list[int]) -> Dict[int, str]:
+    import base64
+
+    import fitz
+    from langchain_core.messages import HumanMessage
+
+    llm_kwargs: Dict[str, Any] = {"max_completion_tokens": 4096}
+    vision_model = (os.getenv("OPENAI_MODEL_VISION") or "").strip()
+    if vision_model:
+        llm_kwargs["model"] = vision_model
+    vision_client = get_task_llm(ModelTask.VISION_OCR, **llm_kwargs)
+
+    document_pages = len(document)
+    results: Dict[int, str] = {}
+    for page_num in page_indices:
+        page = document.load_page(page_num)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
+        image_b64 = base64.b64encode(pixmap.tobytes("png")).decode("utf-8")
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text",
+                    "text": f"Page {page_num + 1}/{document_pages}. OCR the page verbatim in Markdown. Preserve headings and Thai or English text exactly.",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{image_b64}"},
+                },
+            ]
+        )
+        response = vision_client.invoke([message])
+        page_text = str(response.content).strip()
+        if page_text:
+            results[page_num] = page_text
+    return results
 
 
 def _extract_with_vision(document: Any, pdf_path: str) -> str:
@@ -74,7 +127,7 @@ def _extract_with_vision(document: Any, pdf_path: str) -> str:
 
     vision_pages = []
     document_pages = len(document)
-    page_limit = max(1, int(os.getenv("VISION_OCR_MAX_PAGES", "24")))
+    page_limit = _vision_page_limit()
     page_indices = _select_vision_page_indices(document_pages, page_limit)
     for page_num in page_indices:
         page = document.load_page(page_num)
@@ -103,6 +156,10 @@ def _extract_with_vision(document: Any, pdf_path: str) -> str:
     return combined
 
 
+def _vision_page_limit() -> int:
+    return max(1, int(os.getenv("VISION_OCR_MAX_PAGES", "24")))
+
+
 def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
     import fitz
 
@@ -112,6 +169,7 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
 
     md_text = ""
     extraction_method = "fitz_text"
+    warnings: list[str] = []
 
     try:
         logger.info("starting extraction", extra={"pdf_path": pdf_path})
@@ -119,6 +177,7 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
         document_metadata = getattr(document, "metadata", {}) or {}
         pdf_metadata = dict(document_metadata) if isinstance(document_metadata, dict) else {}
         try:
+            page_count = len(document)
             md_text = _extract_with_fitz(document)
             if not md_text.strip() or _looks_like_garbage(md_text):
                 extraction_method = "vision_fallback"
@@ -127,6 +186,30 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
                     extra={"pdf_path": pdf_path},
                 )
                 md_text = _extract_with_vision(document, pdf_path)
+                if page_count > _vision_page_limit():
+                    warnings.append(
+                        f"extraction: the PDF is scanned, and OCR read {_vision_page_limit()} of its {page_count} "
+                        "pages (the opening, the end and pages spread between)"
+                    )
+            else:
+                # A typed PDF can still have scanned pages, often the cover
+                # that carries the title and year. OCR those pages too.
+                page_texts = _page_texts(document)
+                scanned = _scanned_pages(document, page_texts)
+                if scanned and (scanned[0] < 2 or len(scanned) >= max(2, page_count // 5)):
+                    chosen = scanned[: _vision_page_limit()]
+                    recovered = _ocr_pages(document, pdf_path, chosen)
+                    if recovered:
+                        extraction_method = "fitz_text+vision_pages"
+                        merged = [recovered.get(index) or text for index, text in enumerate(page_texts)]
+                        md_text = "\n\n".join(text for text in merged if text).strip()
+                    if len(scanned) > len(chosen):
+                        warnings.append(
+                            f"extraction: {len(scanned) - len(chosen)} scanned page(s) were beyond the OCR limit and skipped"
+                        )
+            max_pages = int(os.getenv("MAX_PDF_PAGES", "0") or 0)
+            if max_pages and page_count > max_pages:
+                warnings.append(f"extraction: the PDF has {page_count} pages, more than the {max_pages}-page limit")
         finally:
             document.close()
 
@@ -140,6 +223,7 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
             "raw_text": md_text,
             "pdf_metadata": pdf_metadata,
             "extraction_method": extraction_method,
+            "warnings": warnings,
             "status": "extracted",
             "errors": [],
         }

@@ -109,6 +109,19 @@ def resolve_publication_year(
     strongest = max(publication, key=_publication_sort_key, default=None)
 
     user_year = _user_override_year(input_payload)
+    if user_year == "Unknown":
+        return {
+            "year": "Unknown",
+            "year_confidence": 0.0,
+            "best_candidate_confidence": 0.0,
+            "year_confidence_band": "unresolved",
+            "year_source": "user",
+            "year_evidence": "A user marked the year as unknown in the paper library.",
+            "year_candidates": [candidate_to_dict(candidate) for candidate in candidates],
+            "year_resolution_strategy": "user_correction",
+            "llm_year": llm_normalized,
+            "needs_review": False,
+        }
     if user_year:
         selected = YearCandidate(
             year=user_year,
@@ -618,11 +631,13 @@ def _is_derived_year_payload(payload: Dict[str, Any]) -> bool:
 
 
 def _user_override_year(payload: Optional[Dict[str, Any]]) -> Optional[str]:
+    """A year corrected by a user: a year, "Unknown" (the user says there is
+    none), or None when there is no correction."""
+
     overrides = (payload or {}).get("user_overrides")
     if not isinstance(overrides, dict) or not overrides.get("year"):
         return None
-    year = normalize_publication_year(overrides.get("year"))
-    return None if year == "Unknown" else year
+    return normalize_publication_year(overrides.get("year"))
 
 
 def _candidate_priority(candidate: YearCandidate) -> int:
