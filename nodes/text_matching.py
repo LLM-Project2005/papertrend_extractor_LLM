@@ -77,6 +77,36 @@ def evidence_in(folded_haystack: str, evidence: Any) -> bool:
     return bool(folded_parts) and all(f" {part} " in f" {folded_haystack} " for part in folded_parts)
 
 
+FUNCTION_WORDS = frozenset({"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "the", "to", "with"})
+
+
+def acronym_letters(acronym: str) -> str:
+    """"LPRs" -> "lpr", "C-DA" -> "cda"."""
+
+    letters = re.sub(r"[^A-Za-z]", "", acronym)
+    if len(letters) > 2 and letters.endswith("s") and letters[:-1].isupper():
+        letters = letters[:-1]
+    return letters.lower()
+
+
+def spells_acronym(words: Iterable[str], letters: str) -> bool:
+    """Whether ``words`` spell ``letters`` from their initials, allowing
+    skipped function words ("Test of English for International
+    Communication" spells TOEIC)."""
+
+    parts = [piece for word in words for piece in re.split(r"[-\u2010-\u2014]", word) if piece]
+    initials = [piece[0].lower() for piece in parts]
+    if not parts or not letters or initials[0] != letters[0]:
+        return False
+    index = 0
+    for part, initial in zip(parts, initials):
+        if index < len(letters) and initial == letters[index]:
+            index += 1
+        elif part.lower() not in FUNCTION_WORDS:
+            return False
+    return index == len(letters)
+
+
 def sentence_with(text: str, phrase: Any, limit: int = 300) -> Optional[str]:
     """The first sentence of ``text`` that contains ``phrase``."""
 

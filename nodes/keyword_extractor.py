@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 from nodes import ModelTask, get_task_llm
 from nodes.common import load_prompt, locate_text_span, normalize_analysis_profile, normalize_whitespace, safe_json_list
-from nodes.text_matching import count_any, evidence_in, fold_text, phrase_in, sentence_with
+from nodes.text_matching import acronym_letters, count_any, evidence_in, fold_text, phrase_in, sentence_with, spells_acronym
 from state import IngestionState, KeywordCandidateSchema
 
 keyword_extraction_llm = get_task_llm(ModelTask.KEYWORD_EXTRACTION)
@@ -167,6 +167,37 @@ def _fallback_keyword_candidates(sections: Dict[str, str]) -> List[Dict[str, Any
     ]
 
 
+_FORM_STOPWORDS = {"a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "the", "to", "with"}
+
+
+def _content_tokens(folded: str) -> set:
+    return {token for token in folded.split() if token not in _FORM_STOPWORDS and len(token) > 1}
+
+
+def _is_acronym_of(term: str, keyword: str) -> bool:
+    # "EMI", "C-DA", "LPRs": capitals, optionally hyphenated, optionally a plural s.
+    if not re.fullmatch(r"[A-Z][A-Z0-9\-]{1,10}s?", term.strip()):
+        return False
+    letters = acronym_letters(term)
+    words = [piece for piece in keyword.split() if piece]
+    return len(letters) >= 2 and spells_acronym(words, letters)
+
+
+def is_surface_form(keyword: str, term: str) -> bool:
+    """Whether ``term`` is another way of writing ``keyword``, not a related
+    concept. The model sometimes listed "paired-samples t-test" as a form of
+    "inferential statistics", which inflated the keyword's count."""
+
+    folded_keyword, folded_term = fold_text(keyword), fold_text(term)
+    if not folded_keyword or not folded_term:
+        return False
+    if f" {folded_term} " in f" {folded_keyword} " or f" {folded_keyword} " in f" {folded_term} ":
+        return True
+    if _content_tokens(folded_keyword) & _content_tokens(folded_term):
+        return True
+    return _is_acronym_of(term, keyword)
+
+
 def ground_candidates(
     raw_candidates: Sequence[Dict[str, Any]],
     sections: Dict[str, str],
@@ -186,7 +217,8 @@ def ground_candidates(
     methods = 0
     for candidate in raw_candidates:
         keyword = normalize_whitespace(str(candidate.get("keyword") or ""))
-        variants = safe_json_list([keyword, *(candidate.get("matched_terms") or [])], limit=10)
+        forms = [term for term in candidate.get("matched_terms") or [] if is_surface_form(keyword, str(term))]
+        variants = safe_json_list([keyword, *forms], limit=10)
         present = [variant for variant in variants if phrase_in(folded_source, variant)]
         if not present:
             if keyword:

@@ -465,3 +465,24 @@ class NewIngestionNodeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuthorKeywordCleaningTests(unittest.TestCase):
+    def test_a_bracketed_abbreviation_keeps_its_pair(self) -> None:
+        from nodes.author_keywords import _clean_keyword
+
+        self.assertEqual(_clean_keyword("Voice Onset Time (VOT)"), "Voice Onset Time (VOT)")
+        self.assertEqual(_clean_keyword("EMI)"), "EMI")
+        self.assertEqual(_clean_keyword("[pronunciation]"), "pronunciation")
+        self.assertEqual(_clean_keyword("Keywords: dynamic assessment;"), "dynamic assessment")
+
+
+class SurfaceFormTests(unittest.TestCase):
+    def test_related_concepts_are_not_counted_as_forms_of_a_keyword(self) -> None:
+        from nodes.keyword_extractor import is_surface_form
+
+        self.assertFalse(is_surface_form("inferential statistics", "paired-samples t-test"))
+        self.assertFalse(is_surface_form("teacher agency", "room for manoeuvre"))
+        self.assertTrue(is_surface_form("English-medium instruction", "EMI"))
+        self.assertTrue(is_surface_form("Language Proficiency Requirements", "LPRs"))
+        self.assertTrue(is_surface_form("English reading comprehension", "reading comprehension"))
