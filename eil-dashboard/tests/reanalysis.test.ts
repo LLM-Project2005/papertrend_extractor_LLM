@@ -88,3 +88,17 @@ test("the reclassification job can be created on Cloud SQL", async () => {
     }
   }
 });
+
+test("publishing a reclassification replaces its papers' rows, including rows saved with no repository", async () => {
+  // Pilot: "duplicate key value violates unique constraint
+  // paper_category_definitions_owner_user_id_paper_id_category__key" - the key
+  // has no repository in it, and rows from runs without a project_id survived.
+  const source = await readFile(new URL("../src/lib/project-reclassification-repository.ts", import.meta.url), "utf8");
+  const publish = source.slice(source.indexOf("export async function publishReclassificationJob"));
+  for (const table of ["paper_category_assignments", "paper_category_definitions"]) {
+    assert.ok(
+      publish.includes(`DELETE FROM public.${table} WHERE owner_user_id=$1 AND (project_id=$2 OR paper_id=ANY($3::bigint[]))`),
+      `${table} is cleared for the job's own papers`
+    );
+  }
+});
