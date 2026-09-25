@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { runKeywordSearchFallback } from "@/lib/keyword-search-fallback";
-import { GuardError, assertAndRecordAiUsage } from "@/lib/security-guards";
+import { GuardError, countInMemory, hashSubject } from "@/lib/security-guards";
 import type { KeywordSearchRequest } from "@/types/keyword-search";
 
 export const runtime = "nodejs";
+const SEARCHES_PER_MINUTE = 120;
 
 const KeywordSearchSchema = z
   .object({
@@ -13,7 +14,7 @@ const KeywordSearchSchema = z
     folderId: z.string().max(80).optional(),
     projectId: z.string().max(80).optional(),
     selectedYears: z.array(z.string().max(20)).max(80).optional(),
-    selectedTracks: z.array(z.string().max(20)).max(20).optional(),
+    selectedTracks: z.array(z.string().max(80)).max(20).optional(),
   })
   .passthrough();
 
@@ -29,11 +30,15 @@ export async function POST(request: Request) {
     if (!ownerUserId) {
       return NextResponse.json({ error: "Sign in to search workspace keywords." }, { status: 401 });
     }
-    await assertAndRecordAiUsage(ownerUserId, "chat_message", { route: "keyword-search" });
     const query = body.query?.trim();
-
     if (!query) {
       return NextResponse.json({ error: "Query is required." }, { status: 400 });
+    }
+    // Concept search runs in the database with no model call, so it no longer
+    // spends the chat allowance (it used to, on every pause in typing). A plain
+    // rate limit keeps it from being hammered.
+    if (countInMemory(hashSubject(`keyword-search:${ownerUserId}`), 60_000, Date.now()) > SEARCHES_PER_MINUTE) {
+      return NextResponse.json({ error: "Too many searches at once. Wait a moment and try again." }, { status: 429 });
     }
 
     const fallback = await runKeywordSearchFallback(body, ownerUserId);

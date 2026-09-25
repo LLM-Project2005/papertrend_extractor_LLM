@@ -5,6 +5,7 @@ import { normalizePaperId, paperIdFromRunId } from "@/lib/paper-id";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
+import type { RunAnalysisExtracted } from "@/types/database";
 
 export const runtime = "nodejs";
 
@@ -17,6 +18,53 @@ function extractTrackLabels(row: Record<string, unknown> | null): string[] {
     const field = track.toLowerCase() as "el" | "eli" | "lae" | "other";
     return Number(row[field] ?? 0) === 1;
   }).map((track) => `${track} - ${TRACK_NAMES[track as TrackKey]}`);
+}
+
+function buildExtractedDetails(
+  run: Record<string, unknown>,
+  year: Record<string, unknown> | null,
+  typology: Record<string, unknown> | null,
+  authorKeywords: string[]
+): RunAnalysisExtracted {
+  const payload = (run.input_payload && typeof run.input_payload === "object" ? run.input_payload : {}) as Record<
+    string,
+    unknown
+  >;
+  const quality = (payload.analysis_quality && typeof payload.analysis_quality === "object"
+    ? payload.analysis_quality
+    : {}) as Record<string, unknown>;
+  const duplicate = (payload.duplicate_of && typeof payload.duplicate_of === "object"
+    ? payload.duplicate_of
+    : null) as Record<string, unknown> | null;
+  const topicKinds = (payload.topic_kinds && typeof payload.topic_kinds === "object" ? payload.topic_kinds : {}) as Record<
+    string,
+    unknown
+  >;
+  return {
+    year: year
+      ? {
+          source: String(year.year_source ?? ""),
+          confidence: Number(year.year_confidence ?? 0),
+          evidence: String(year.year_evidence ?? "").slice(0, 400),
+        }
+      : null,
+    typology: typology?.primary_group_name
+      ? {
+          primary: String(typology.primary_group_name),
+          secondary: typology.secondary_group_name ? String(typology.secondary_group_name) : null,
+          statedPurpose: String(typology.stated_purpose ?? "").slice(0, 600),
+          verdict: String(typology.verdict ?? "").slice(0, 600),
+        }
+      : null,
+    authorKeywords,
+    methodTopics: Object.entries(topicKinds)
+      .filter(([, kind]) => kind === "method")
+      .map(([label]) => label),
+    analysisNotes: Array.isArray(quality.warnings) ? quality.warnings.map(String).slice(0, 10) : [],
+    duplicateOf: duplicate?.title
+      ? { title: String(duplicate.title), score: Number(duplicate.score ?? 0) }
+      : null,
+  };
 }
 
 function coerceJsonStringList(value: unknown): string[] {
@@ -639,10 +687,40 @@ export async function GET(
       ]),
     ];
 
+    // What the analysis extracted beyond topics: how the year was found, the
+    // research type, the paper's own keyword list, and any stage that fell
+    // back to a weaker result.
+    const extracted = useCloudSql
+      ? await withCloudSqlOwnerTransaction(user.id, async (client) => {
+          const [yearRows, typologyRows, authorRows] = await Promise.all([
+            client.query<Record<string, unknown>>(
+              `SELECT year_source, year_confidence, year_evidence FROM public.papers WHERE owner_user_id=$1 AND id=$2`,
+              [user.id, paperId]
+            ),
+            client.query<Record<string, unknown>>(
+              `SELECT primary_group_name, secondary_group_name, stated_purpose, verdict
+               FROM public.paper_research_typologies WHERE owner_user_id=$1 AND paper_id=$2`,
+              [user.id, paperId]
+            ),
+            client.query<Record<string, unknown>>(
+              `SELECT keyword FROM public.paper_author_keywords WHERE owner_user_id=$1 AND paper_id=$2 ORDER BY position`,
+              [user.id, paperId]
+            ),
+          ]);
+          return buildExtractedDetails(
+            run as Record<string, unknown>,
+            yearRows.rows[0] ?? null,
+            typologyRows.rows[0] ?? null,
+            authorRows.rows.map((row) => String(row.keyword ?? "")).filter(Boolean)
+          );
+        })
+      : null;
+
     return NextResponse.json({
       run,
       analysis: {
         available: true,
+        extracted,
         paper_id: paperId,
         title: String(paper.title ?? ""),
         year: String(paper.year ?? ""),

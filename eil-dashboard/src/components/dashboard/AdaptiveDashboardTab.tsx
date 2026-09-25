@@ -62,11 +62,15 @@ export default function AdaptiveDashboardTab({
   data,
   analytics,
   adaptiveSection,
+  trackLabels,
 }: {
   data: Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies">;
   analytics: NormalizedAnalyticsPayload;
   adaptiveSection: VisualizationPlanSection;
+  /** The repository's own category names for the stored el/eli/lae/other slots. */
+  trackLabels?: Partial<Record<TrackKey, string>>;
 }) {
+  const trackLabel = (track: TrackKey) => trackLabels?.[track] || TRACK_NAMES[track];
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
   const categoryLabels = labelColumn(useIsNarrow(), { width: 210, chars: 30 });
@@ -84,9 +88,9 @@ export default function AdaptiveDashboardTab({
   const subjects = subjectRows(data.trends);
   const singleTrackByPaper = new Map(data.tracksSingle.map((row) => [row.paper_id, row]));
   const totalPapers = analytics.overview.paper_count;
-  const totalTopics = analytics.overview.topic_count;
   const totalKeywords = analytics.overview.keyword_count;
-  const totalYears = analytics.overview.available_years.length;
+  // Years with a dated paper: "Unknown" is not a year.
+  const totalYears = new Set(data.trends.map((row) => row.year).filter(isDatedYear)).size;
   const sparseDataMode = totalPapers < 12 || years.length < 3;
   const minTopicPaperSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_PAPER_SUPPORT;
   const minTopicTrackSupport = sparseDataMode ? 1 : STRICT_MIN_TOPIC_TRACK_SUPPORT;
@@ -102,6 +106,9 @@ export default function AdaptiveDashboardTab({
     bucket.add(row.paper_id);
     topicPaperSupport.set(topic, bucket);
   }
+
+  // A topic only one paper mentions is not a shared research topic.
+  const sharedTopicCount = [...topicPaperSupport.values()].filter((papers) => papers.size >= 2).length;
 
   const eligibleTopics = new Set(
     [...topicPaperSupport.entries()]
@@ -169,7 +176,7 @@ export default function AdaptiveDashboardTab({
       const chartData = analytics.track_totals.single
         .map((row) => ({
           track: row.track,
-          label: `${row.track} - ${TRACK_NAMES[row.track]}`,
+          label: trackLabel(row.track),
           papers: row.value,
         }))
         .filter((row) => row.papers > 0);
@@ -438,7 +445,7 @@ export default function AdaptiveDashboardTab({
                     key={track}
                     dataKey={track}
                     fill={TRACK_COLORS[track]}
-                    name={`${track} - ${TRACK_NAMES[track]}`}
+                    name={trackLabel(track)}
                     radius={[6, 6, 0, 0]}
                   />
                 ))}
@@ -492,7 +499,7 @@ export default function AdaptiveDashboardTab({
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Papers", value: totalPapers, tone: "text-slate-900 dark:text-white" },
-          { label: "Canonical topics", value: totalTopics, tone: "text-slate-900 dark:text-white" },
+          { label: "Topics in 2+ papers", value: sharedTopicCount, tone: "text-slate-900 dark:text-white" },
           { label: "Grounded keywords", value: totalKeywords, tone: "text-slate-900 dark:text-white" },
           { label: "Years represented", value: totalYears, tone: "text-slate-900 dark:text-white" },
         ].map((card) => (

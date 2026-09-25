@@ -325,7 +325,7 @@ export default function KeywordExplorer({
                     </h3>
                   </div>
                   <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#030303] dark:text-slate-300">
-                    {conceptResult.source === "fallback" ? "Fallback analysis" : "Node analysis"}
+                    {conceptResult.source === "repository" ? "From this repository" : "Node analysis"}
                   </span>
                 </div>
 

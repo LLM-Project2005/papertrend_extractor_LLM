@@ -1112,6 +1112,7 @@ export default function DashboardClient({
                 data={adaptiveSnapshot}
                 analytics={adaptiveAnalytics}
                 adaptiveSection={adaptiveSection}
+                trackLabels={categoryLabels}
               />
             ) : (
               <section className="app-surface flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
