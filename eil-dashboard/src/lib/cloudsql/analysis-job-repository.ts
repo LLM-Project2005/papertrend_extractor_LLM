@@ -55,11 +55,17 @@ export class CloudSqlAnalysisJobRepository {
    * the same. Only the owner's own succeeded, untrashed runs with a stored
    * file qualify. A user's title/year corrections live in input_payload and
    * are kept.
+   *
+   * `analysisProfile` is the repository's current profile, as an upload gets
+   * it. Papers uploaded before profiles existed carry none, and without one
+   * the classifier has no categories - re-analysing testtest left 37 of 39
+   * papers "Other" in an EIL repository.
    */
   async queueReanalysis(
     ownerUserId: string,
     selection: { runIds?: string[]; projectId?: string },
-    limit = 200
+    limit = 200,
+    analysisProfile?: unknown
   ): Promise<string[]> {
     const runIds = (selection.runIds ?? []).filter(Boolean);
     if (!runIds.length && !selection.projectId) return [];
@@ -78,6 +84,7 @@ export class CloudSqlAnalysisJobRepository {
       }
       values.push(limit);
       const timestamp = new Date().toISOString();
+      const profileJson = analysisProfile ? JSON.stringify(analysisProfile) : null;
       const result = await client.query<{ id: string }>(
         `UPDATE public.ingestion_runs ir SET status = 'queued', completed_at = NULL, error_message = NULL,
            updated_at = now(),
@@ -89,15 +96,37 @@ export class CloudSqlAnalysisJobRepository {
                   'progress_message', 'Queued to be analysed again',
                   'progress_detail', 'This paper will be analysed again with the current pipeline.',
                   'progress_updated_at', $${values.length + 1}::text)
+             || CASE WHEN $${values.length + 2}::jsonb IS NULL THEN '{}'::jsonb
+                     ELSE jsonb_build_object('analysis_profile', $${values.length + 2}::jsonb) END
          WHERE ir.id IN (
            SELECT ir.id FROM public.ingestion_runs ir
            WHERE ir.owner_user_id = $1 AND ir.trashed_at IS NULL
              AND COALESCE(ir.source_path, '') <> '' AND ${scope}
            ORDER BY ir.created_at ASC LIMIT $${values.length})
          RETURNING ir.id`,
-        [...values, timestamp]
+        [...values, timestamp, profileJson]
       );
       return result.rows.map((row) => String(row.id));
+    });
+  }
+
+  /** The repository each of the owner's runs belongs to, through its folder. */
+  async projectsOfRuns(ownerUserId: string, runIds: string[]): Promise<Map<string, string[]>> {
+    const byProject = new Map<string, string[]>();
+    if (runIds.length === 0) return byProject;
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ id: string; project_id: string | null }>(
+        `SELECT ir.id, rf.project_id
+         FROM public.ingestion_runs ir
+         LEFT JOIN public.research_folders rf ON rf.id = ir.folder_id AND rf.owner_user_id = ir.owner_user_id
+         WHERE ir.owner_user_id = $1 AND ir.id = ANY($2::uuid[])`,
+        [ownerUserId, runIds]
+      );
+      for (const row of result.rows) {
+        const key = row.project_id ? String(row.project_id) : "";
+        byProject.set(key, [...(byProject.get(key) ?? []), String(row.id)]);
+      }
+      return byProject;
     });
   }
 

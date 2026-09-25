@@ -4,6 +4,12 @@ import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repos
 import { getDatabaseProvider } from "@/lib/server-env";
 import { triggerWorkerQueueWithRetries } from "@/lib/worker-queue-start";
 import { REANALYSIS_COST_PER_PAPER_USD } from "@/lib/reanalysis";
+import { getWorkspaceRepository } from "@/lib/workspace-repository";
+import {
+  createGeneralAnalysisProfile,
+  sanitizeProjectAnalysisProfile,
+  toIngestionAnalysisProfile,
+} from "@/lib/project-analysis-profile";
 
 export const runtime = "nodejs";
 
@@ -34,11 +40,32 @@ export async function POST(request: Request) {
   }
 
   try {
-    const queued = await cloudSqlAnalysisJobRepository.queueReanalysis(
-      user.id,
-      runIds.length ? { runIds } : { projectId },
-      MAX_RUNS_PER_REQUEST
-    );
+    // Each paper is analysed with its repository's current profile, taken
+    // from the stored repository exactly as an upload takes it.
+    const workspace = getWorkspaceRepository();
+    const profileFor = async (id: string) => {
+      const project = await workspace.getProject(user.id, id);
+      if (!project) return null;
+      return toIngestionAnalysisProfile(
+        project.analysis_profile ? sanitizeProjectAnalysisProfile(project.analysis_profile) : createGeneralAnalysisProfile()
+      );
+    };
+    const queued: string[] = [];
+    if (runIds.length) {
+      const byProject = await cloudSqlAnalysisJobRepository.projectsOfRuns(user.id, runIds);
+      for (const [groupProjectId, ids] of byProject) {
+        const profile = groupProjectId ? await profileFor(groupProjectId) : null;
+        queued.push(
+          ...(await cloudSqlAnalysisJobRepository.queueReanalysis(user.id, { runIds: ids }, MAX_RUNS_PER_REQUEST, profile ?? undefined))
+        );
+      }
+    } else {
+      const profile = await profileFor(projectId);
+      if (!profile) {
+        return NextResponse.json({ error: "Repository not found." }, { status: 404 });
+      }
+      queued.push(...(await cloudSqlAnalysisJobRepository.queueReanalysis(user.id, { projectId }, MAX_RUNS_PER_REQUEST, profile)));
+    }
     if (!queued.length) {
       return NextResponse.json(
         { error: "None of these papers can be analyzed again: only papers with a stored PDF that are finished (or, picked one by one, failed) qualify." },
