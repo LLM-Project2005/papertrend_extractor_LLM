@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Sequence, Tuple
 
 from nodes import ModelTask, get_task_llm
 from nodes.common import load_prompt, locate_text_span, normalize_analysis_profile, normalize_whitespace, safe_json_list
+from nodes.participants import is_participant_descriptor
 from nodes.text_matching import acronym_letters, count_any, evidence_in, fold_text, phrase_in, sentence_with, spells_acronym
 from state import IngestionState, KeywordCandidateSchema
 
@@ -231,6 +232,9 @@ def ground_candidates(
         if key in seen or variant_keys & seen:
             continue
         kind = "method" if str(candidate.get("kind") or "") == "method" else "subject"
+        # Who took part is not what the paper studies (nodes/participants.py).
+        if kind == "subject" and is_participant_descriptor(keyword):
+            continue
         if kind == "method":
             if methods >= MAX_METHOD_CANDIDATES:
                 continue

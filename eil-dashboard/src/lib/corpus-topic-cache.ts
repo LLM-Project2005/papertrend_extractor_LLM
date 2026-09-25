@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { createChatCompletion } from "@/lib/openai";
 import { normalizePaperId } from "@/lib/paper-id";
+import { isParticipantDescriptor } from "@/lib/participant-terms";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import type {
@@ -817,7 +818,24 @@ async function loadProjectConceptSourceRows(
     throw new Error(error.message);
   }
 
-  return (data ?? []) as ConceptSourceRow[];
+  // A participant group is who was studied, not a concept (participant-terms.ts).
+  return ((data ?? []) as ConceptSourceRow[]).filter(
+    (row) => !isParticipantDescriptor(coerceString(row.concept_label))
+  );
+}
+
+/**
+ * Keyword rows without participant groups. A keyword that only names people
+ * is dropped; a real concept filed under a topic that only names people
+ * becomes its own topic, so theme grouping can place it.
+ */
+export function withoutParticipantTopics<T extends { topic?: unknown; keyword?: unknown }>(rows: T[]): T[] {
+  return rows.flatMap((row) => {
+    const keyword = coerceString(row.keyword);
+    if (isParticipantDescriptor(keyword)) return [];
+    if (isParticipantDescriptor(coerceString(row.topic))) return [{ ...row, topic: keyword }];
+    return [row];
+  });
 }
 
 async function loadProjectKeywordSourceRows(
@@ -839,7 +857,7 @@ async function loadProjectKeywordSourceRows(
     throw new Error(error.message);
   }
 
-  return (data ?? []) as KeywordSourceRow[];
+  return withoutParticipantTopics((data ?? []) as KeywordSourceRow[]);
 }
 
 async function loadWorkspaceProfileRecord(ownerUserId: string): Promise<Record<string, unknown>> {
