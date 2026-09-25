@@ -3,9 +3,10 @@
 import Link from "next/link";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import {
-  getRunModelLabel,
+  getRunDisplayTitle,
   getRunStageCaption,
   getRunStageMessage,
+  getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import {
   ArrowRightIcon,
@@ -36,12 +37,12 @@ const TIMELINE_STAGES: TimelineStage[] = [
   },
   {
     key: "download",
-    label: "Download",
+    label: "Prepare",
     stages: ["preparing", "downloading"],
   },
   {
     key: "extract",
-    label: "Extract",
+    label: "Read text",
     stages: ["starting_analysis", "extracting", "extracting_text", "cleaning_text"],
     graphNodes: ["extract", "clean"],
   },
@@ -263,18 +264,12 @@ function RunTimeline({ run }: { run: IngestionRunRow }) {
 function RunMetrics({ run }: { run: IngestionRunRow }) {
   const metrics = readMetrics(run);
   const queueWait = formatSeconds(metrics.queue_wait_seconds);
-  const download = formatSeconds(metrics.download_seconds);
   const graph = formatSeconds(metrics.graph_seconds);
-  const save = formatSeconds(metrics.save_seconds);
   const total = formatSeconds(metrics.total_worker_seconds);
-  const completedNodes = readCompletedGraphNodes(run).size;
   const values = [
-    queueWait ? ["Queue", queueWait] : null,
-    download ? ["Download", download] : null,
-    graph ? ["Graph", graph] : null,
-    save ? ["Save", save] : null,
+    queueWait ? ["Waited", queueWait] : null,
+    graph ? ["Analysis", graph] : null,
     total ? ["Total", total] : null,
-    completedNodes > 0 ? ["Nodes", `${completedNodes}`] : null,
   ].filter(Boolean) as Array<[string, string]>;
   if (values.length === 0) return null;
   return (
@@ -349,7 +344,6 @@ export default function AnalysisStatusCard({
   onCancelAll,
   onRetryQueue,
   onStartProcessing,
-  onDebugClearQueue,
 }: {
   runs: IngestionRunRow[];
   folderJob?: FolderAnalysisJobRow | null;
@@ -362,7 +356,6 @@ export default function AnalysisStatusCard({
   onCancelAll?: () => void | Promise<void>;
   onRetryQueue?: () => void | Promise<void>;
   onStartProcessing?: () => void | Promise<void>;
-  onDebugClearQueue?: () => void | Promise<void>;
 }) {
   const summary = summarizeRuns(runs);
   const allTerminal =
@@ -415,7 +408,11 @@ export default function AnalysisStatusCard({
           >
             <div>
               <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                {folderJob ? "Batch analysis" : "Analysis active"}
+                {allTerminal
+                  ? summary.failed > 0
+                    ? "Analysis finished with problems"
+                    : "Analysis finished"
+                  : `Analyzing ${summary.total} paper${summary.total === 1 ? "" : "s"}`}
               </p>
               <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
                 {loading
@@ -474,17 +471,6 @@ export default function AnalysisStatusCard({
               Start now
             </button>
           ) : null}
-          {onDebugClearQueue ? (
-            <button
-              type="button"
-              onClick={() => void onDebugClearQueue()}
-              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-rose-300 bg-rose-50 px-3 text-xs font-medium text-rose-800 transition-colors hover:border-rose-400 hover:bg-rose-100 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:border-rose-800"
-              aria-label="Debug clear worker queue"
-              title="Debug clear queue"
-            >
-              Debug reset
-            </button>
-          ) : null}
         </div>
       </div>
     );
@@ -495,17 +481,21 @@ export default function AnalysisStatusCard({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-            {folderJob ? "Batch analysis status" : "Analysis status"}
+            Analysis progress
           </p>
           <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-            {folderJob
-              ? "Your folder batch is moving through analysis"
-              : "Your files are being prepared for analysis"}
+            {allTerminal
+              ? summary.failed > 0
+                ? `${summary.succeeded} of ${summary.total} paper${summary.total === 1 ? "" : "s"} analyzed`
+                : `${summary.total === 1 ? "Your paper is" : `All ${summary.total} papers are`} ready`
+              : `Analyzing ${summary.total} paper${summary.total === 1 ? "" : "s"}`}
           </h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-            {folderJob?.progress_detail
-              ? folderJob.progress_detail
-              : "The app has queued the upload successfully. The external analysis worker now picks up the files, runs the extraction pipeline, and writes results back into Supabase."}
+            {allTerminal
+              ? summary.failed > 0
+                ? "Papers that failed say why below. Add them again from the Library once the problem is fixed."
+                : "Finished papers are in the Library and on the Dashboard, and Chat can cite them."
+              : "Each paper is read for its title, year, topics, methods and category, usually in a few minutes. This page updates by itself, and you can leave it while the analysis runs."}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -542,17 +532,6 @@ export default function AnalysisStatusCard({
               Start processing now
             </button>
           ) : null}
-          {onDebugClearQueue ? (
-            <button
-              type="button"
-              onClick={() => void onDebugClearQueue()}
-              className="inline-flex items-center justify-center rounded-lg border border-rose-300 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-800 transition-colors hover:border-rose-400 hover:bg-rose-100 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:border-rose-800"
-              aria-label="Debug clear worker queue"
-              title="Debug clear queue"
-            >
-              Debug clear queue
-            </button>
-          ) : null}
           <button
             type="button"
             onClick={onMinimize}
@@ -582,23 +561,22 @@ export default function AnalysisStatusCard({
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
-        {folderJob ? (
-          <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
-            Stage: {folderJob.progress_message || folderJob.status}
-          </span>
-        ) : null}
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
-          {summary.total} total
-        </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
-          {summary.queued} queued
-        </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
-          {summary.processing} processing
-        </span>
-        <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#c9c9c9]">
-          {summary.succeeded} succeeded
-        </span>
+        {(
+          [
+            [summary.queued, "waiting"],
+            [summary.processing, "analyzing"],
+            [summary.succeeded, "ready"],
+          ] as Array<[number, string]>
+        )
+          .filter(([count]) => count > 0)
+          .map(([count, label]) => (
+            <span
+              key={label}
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#0a0a0a] dark:text-[#c9c9c9]"
+            >
+              {count} {label}
+            </span>
+          ))}
         {summary.failed > 0 ? (
           <span className="rounded-full bg-red-100 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-200">
             {summary.failed} failed
@@ -609,12 +587,12 @@ export default function AnalysisStatusCard({
       <div className="mt-5 space-y-3">
         {isLikelyStalled ? (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
-            Processing appears stalled. The queue has not advanced for about {Math.floor(staleMinutes)} minute{Math.floor(staleMinutes) === 1 ? "" : "s"}. Use Retry processing to trigger the worker again.
+            Nothing has moved for about {Math.floor(staleMinutes)} minute{Math.floor(staleMinutes) === 1 ? "" : "s"}. Use Retry processing to start the analysis again.
           </div>
         ) : null}
         {isLongRunningStage ? (
           <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-200">
-            The worker is still active. The current stage has been running for about {stageDurationLabel}, and some paper-analysis steps can legitimately take several minutes before the next visible progress update.
+            Still working. This step has been running for about {stageDurationLabel}; long papers can spend several minutes on one step before the next update.
           </div>
         ) : null}
         {folderJob ? (
@@ -622,7 +600,7 @@ export default function AnalysisStatusCard({
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                  Upload batch progress
+                  This upload
                 </p>
                 <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
                   {folderJob.progress_message || folderJob.status}
@@ -633,15 +611,12 @@ export default function AnalysisStatusCard({
                   </p>
                 ) : null}
               </div>
-              <span className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                {folderJob.status}
-              </span>
             </div>
           </article>
         ) : null}
         {runs.length === 0 ? (
           <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3]">
-            {loading ? "Loading run status..." : "Waiting for run status to appear."}
+            {loading ? "Loading progress..." : "Waiting for the first progress update."}
           </div>
         ) : (
           runs.map((run) => (
@@ -651,21 +626,18 @@ export default function AnalysisStatusCard({
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
-                    {run.source_filename || run.id}
+                  <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]" title={getRunDisplayTitle(run)}>
+                    {getRunDisplayTitle(run)}
                   </p>
                   <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
                     {getRunStageMessage(run)}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
-                    {getRunModelLabel(run)}
                   </p>
                   <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
                     {getRunStageCaption(run)}
                   </p>
                   {run.status === "processing" && getRunStageEpochMs(run) > 0 ? (
                     <p className="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300">
-                      Current stage duration:{" "}
+                      On this step for{" "}
                       {formatDurationMinutes(
                         Math.floor(
                           (Date.now() - getRunStageEpochMs(run)) / 60000
@@ -682,7 +654,7 @@ export default function AnalysisStatusCard({
                       type="button"
                       onClick={() => void onCancelRun(run.id)}
                       className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a0a0a0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-                      aria-label={`Cancel analysis for ${run.source_filename || run.id}`}
+                      aria-label={`Cancel analysis for ${getRunDisplayTitle(run)}`}
                       title="Cancel analysis"
                     >
                       <CloseIcon className="h-3.5 w-3.5" />
@@ -693,8 +665,8 @@ export default function AnalysisStatusCard({
                   ) : (
                     <CircleIcon className="h-4 w-4 text-slate-500 dark:text-[#8f8f8f]" />
                   )}
-                  <span className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                    {run.status}
+                  <span className={`text-xs font-medium ${run.status === "failed" ? "text-red-700 dark:text-red-300" : "text-slate-500 dark:text-[#8f8f8f]"}`}>
+                    {getRunStatusLabel(run)}
                   </span>
                 </div>
               </div>

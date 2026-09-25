@@ -151,7 +151,7 @@ export class CloudSqlLibraryRepository {
   ): Promise<IngestionRunRow[]> {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const values: unknown[] = [ownerUserId];
-      const conditions = ["owner_user_id = $1"];
+      const conditions = ["r.owner_user_id = $1"];
 
       if (options.projectId) {
         const folders = await client.query<{ id: string }>(
@@ -168,24 +168,33 @@ export class CloudSqlLibraryRepository {
         }
 
         values.push(folders.rows.map((folder) => folder.id));
-        conditions.push(`folder_id = ANY($${values.length}::uuid[])`);
+        conditions.push(`r.folder_id = ANY($${values.length}::uuid[])`);
       }
 
       if (!options.includeTrashed) {
-        conditions.push("trashed_at IS NULL");
+        conditions.push("r.trashed_at IS NULL");
       }
 
       if (options.logsOnly) {
-        conditions.push("status IN ('succeeded', 'failed')");
+        conditions.push("r.status IN ('succeeded', 'failed')");
       }
 
       values.push(options.limit, options.offset);
+      // The paper's title is joined in so the Library can name a paper by its
+      // title rather than by the file it arrived in. The CASE keeps a run whose
+      // paper_id is missing or not a number from failing the cast.
       const result = await client.query<IngestionRunRow>(
         `
-          SELECT *
-          FROM public.ingestion_runs
+          SELECT r.*, p.title AS paper_title
+          FROM public.ingestion_runs r
+          LEFT JOIN public.papers p
+            ON p.id = CASE
+                 WHEN r.input_payload->>'paper_id' ~ '^[0-9]{1,18}$'
+                 THEN (r.input_payload->>'paper_id')::bigint
+               END
+           AND p.owner_user_id = r.owner_user_id
           WHERE ${conditions.join(" AND ")}
-          ORDER BY updated_at DESC NULLS LAST
+          ORDER BY r.updated_at DESC NULLS LAST
           LIMIT $${values.length - 1}
           OFFSET $${values.length}
         `,

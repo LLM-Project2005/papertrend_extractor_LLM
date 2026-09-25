@@ -1562,9 +1562,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
 
             ensure_run_active(client, run_id)
             paper_rows = result.dataset.get("papers") or [{}]
-            duplicate_patch = duplicate_payload(
-                client, run, result.raw_text, str((paper_rows[0] or {}).get("title") or "")
-            )
+            paper_title = str((paper_rows[0] or {}).get("title") or "").strip()
+            duplicate_patch = duplicate_payload(client, run, result.raw_text, paper_title)
             final_input_payload = merge_input_payload(
                 run,
                 {
@@ -1574,6 +1573,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "pipeline": PIPELINE_NAME,
                     "ingestion_graph_mode": INGESTION_GRAPH_MODE,
                     "paper_id": result.dataset["paper_id"],
+                    # The progress card and Library name the paper by its title.
+                    "paper_title": paper_title[:500] or None,
                     "year": result.dataset.get("year"),
                     "year_resolution": result.dataset.get("year_resolution"),
                     "analysis_quality": result.dataset.get("analysis_quality"),

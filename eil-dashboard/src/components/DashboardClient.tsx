@@ -236,6 +236,7 @@ export default function DashboardClient({
   const [adaptiveSnapshot, setAdaptiveSnapshot] = useState<AdaptiveDashboardSnapshot | null>(null);
   const [adaptiveAnalytics, setAdaptiveAnalytics] = useState<NormalizedAnalyticsPayload | null>(null);
   const [generatedAdaptiveSignature, setGeneratedAdaptiveSignature] = useState<string | null>(null);
+  const [generatedAdaptiveFilterSignature, setGeneratedAdaptiveFilterSignature] = useState<string | null>(null);
   const [adaptiveGenerating, setAdaptiveGenerating] = useState(false);
   const [adaptiveError, setAdaptiveError] = useState<string | null>(null);
   const previousAllYearsRef = useRef<string[]>([]);
@@ -596,12 +597,46 @@ export default function DashboardClient({
       filteredData.trends,
     ]
   );
+  // The filters alone. The full signature above also moves when the data does -
+  // after Refresh, or when new topics are grouped into themes - and that used to
+  // be announced as "Filters changed" although no filter had been touched.
+  const adaptiveFilterSignature = useMemo(
+    () =>
+      stableSerialize({
+        projectId: selectedProjectId ?? "all",
+        folders: [...selectedFolderIds].sort(),
+        selectedYears: [...selectedYears].sort(),
+        selectedTracks: [...selectedTracks].sort(),
+        searchQuery: searchQuery.trim(),
+      }),
+    [searchQuery, selectedFolderIds, selectedProjectId, selectedTracks, selectedYears]
+  );
+
+  // Charts planned for one repository are not about the next one.
+  const adaptiveProjectRef = useRef(selectedProjectId);
+  useEffect(() => {
+    if (adaptiveProjectRef.current === selectedProjectId) return;
+    adaptiveProjectRef.current = selectedProjectId;
+    setPlanState(null);
+    setAdaptiveSnapshot(null);
+    setAdaptiveAnalytics(null);
+    setGeneratedAdaptiveSignature(null);
+    setGeneratedAdaptiveFilterSignature(null);
+    setAdaptiveError(null);
+  }, [selectedProjectId]);
+
   const adaptiveSection =
     planState?.plan.sections.find(
       (section) => section.section_key === "adaptive"
     ) ?? null;
   const adaptiveFiltersChanged = Boolean(
-    generatedAdaptiveSignature && adaptivePlanSignature !== generatedAdaptiveSignature
+    generatedAdaptiveFilterSignature && adaptiveFilterSignature !== generatedAdaptiveFilterSignature
+  );
+  const adaptiveDataChanged = Boolean(
+    !adaptiveFiltersChanged &&
+      generatedAdaptiveSignature &&
+      adaptivePlanSignature &&
+      adaptivePlanSignature !== generatedAdaptiveSignature
   );
 
   async function generateAdaptiveCharts() {
@@ -654,6 +689,7 @@ export default function DashboardClient({
         })),
       });
       setGeneratedAdaptiveSignature(adaptivePlanSignature);
+      setGeneratedAdaptiveFilterSignature(adaptiveFilterSignature);
     } catch (error) {
       setAdaptiveError(
         error instanceof DOMException && error.name === "AbortError"
@@ -808,6 +844,10 @@ export default function DashboardClient({
                 <p className="mt-2 text-sm font-medium text-amber-700 dark:text-amber-300">
                   Filters changed. Existing charts still show the previous snapshot until you update them.
                 </p>
+              ) : adaptiveDataChanged ? (
+                <p className="mt-2 text-sm text-slate-600 dark:text-[#b8b8b8]">
+                  The repository&apos;s data has changed since these charts were made. Update them to include it.
+                </p>
               ) : null}
               {adaptiveError ? (
                 <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300">{adaptiveError}</p>
@@ -839,7 +879,7 @@ export default function DashboardClient({
                 {adaptiveGenerating
                   ? "Building charts..."
                   : planState
-                    ? adaptiveFiltersChanged
+                    ? adaptiveFiltersChanged || adaptiveDataChanged
                       ? "Update charts"
                       : "Regenerate"
                     : "Generate charts"}
