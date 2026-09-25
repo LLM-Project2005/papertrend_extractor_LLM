@@ -580,7 +580,6 @@ The charts must come only from the approved chart catalog below.
 Do not invent new chart types, layouts, or code.
 Prefer a compact set of charts that together tell the strongest story in the current filtered corpus.
 Use normalized canonical topics, not raw per-paper topic labels.
-If multiple folders are active, prefer at least one comparison chart.
 Prefer plan stability. If the corpus signature is broadly similar, keep the chart mix conservative instead of changing it just to be novel.
 Assume KPI cards are already shown separately, so your chart picks should complement those KPI cards rather than repeat them.
 Every chart reason must explain the decision value of the chart, not just restate what the axes show.
