@@ -11,6 +11,7 @@ import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import Modal from "@/components/ui/Modal";
+import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
 import { ChartIcon, CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
@@ -233,6 +234,14 @@ export default function DashboardClient({
   }, [categoryOptions, selectedTracks]);
   const themeStatus = data?.topicThemes ?? null;
   const [filterOpen, setFilterOpen] = useState(false);
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setFilterOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filterOpen]);
   const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
   const [planState, setPlanState] = useState<{
     plan: VisualizationPlan;
@@ -299,6 +308,8 @@ export default function DashboardClient({
   const currentTabKey = optimisticTabKey;
   const isAdaptiveTab = currentTabKey === "adaptive";
   const isSemanticMapTab = currentTabKey === "semantic_map";
+  const [tabNav, setTabNav] = useState<HTMLElement | null>(null);
+  const tabBox = useTabIndicator(tabNav, currentTabKey);
   const requestHeaders = useMemo<Record<string, string>>(
     (): Record<string, string> => session?.access_token
       ? { Authorization: `Bearer ${session.access_token}` }
@@ -740,7 +751,7 @@ export default function DashboardClient({
         </div>
         <span className="skeleton block h-28 w-full" />
         <span className="skeleton block h-80 w-full" />
-        <p className="sr-only">Loading dashboard data...</p>
+        <p className="sr-only">Loading dashboard data…</p>
       </div>
     );
   }
@@ -770,7 +781,8 @@ export default function DashboardClient({
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search papers, topics, keywords, or years"
+              placeholder="Search papers, topics, keywords, or years…"
+              aria-label="Search the dashboard"
               className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
             />
           </label>
@@ -798,7 +810,7 @@ export default function DashboardClient({
               }}
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
-              {refreshing ? "Refreshing..." : "Refresh"}
+              {refreshing ? "Refreshing…" : "Refresh"}
             </button>
             <button
               type="button"
@@ -889,7 +901,7 @@ export default function DashboardClient({
               >
                 <ChartIcon className="h-4 w-4" />
                 {adaptiveGenerating
-                  ? "Building charts..."
+                  ? "Building charts…"
                   : planState
                     ? adaptiveFiltersChanged || adaptiveDataChanged
                       ? "Update charts"
@@ -901,10 +913,12 @@ export default function DashboardClient({
         </section> : null}
 
         <nav
-          className="flex gap-1 overflow-x-auto border-b border-hairline"
+          ref={setTabNav}
+          className={`relative flex gap-1 overflow-x-auto border-b border-hairline ${tabBox ? "tabs-sliding" : ""}`}
           aria-label="Tabs"
           aria-busy={isRoutePending}
         >
+          <TabIndicator box={tabBox} />
           {TAB_DEFINITIONS.map((tab) => (
             <button
               key={tab.key}
@@ -929,7 +943,15 @@ export default function DashboardClient({
 
       <div className="min-w-0">
         {!isSemanticMapTab && filterOpen && (
-          <div className="fixed inset-0 z-40 bg-black/55 xl:hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Analytics filters"
+            className="fixed inset-0 z-40 bg-black/55 xl:hidden"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setFilterOpen(false);
+            }}
+          >
             <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] xl:max-w-md">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#1f1f1f] sm:px-5">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
@@ -944,7 +966,7 @@ export default function DashboardClient({
                   <CloseIcon className="h-4 w-4" />
                 </button>
               </div>
-              <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
+              <div className="h-[calc(100%-65px)] overflow-y-auto overscroll-contain p-3 sm:p-4">
                 <FilterPanel
                   allYears={allYears}
                   selectedYears={selectedYears}
@@ -1116,8 +1138,10 @@ export default function DashboardClient({
         {!isSemanticMapTab ? <div className="hidden xl:block">
           <div
             className={`fixed right-6 top-[124px] z-40 hidden w-full max-w-sm xl:block ${
-              filterOpen ? "" : "pointer-events-none opacity-0"
-            } transition-all`}
+              // invisible, not only transparent: a closed panel leaves the tab
+              // order and the accessibility tree.
+              filterOpen ? "" : "pointer-events-none invisible -translate-y-1 opacity-0"
+            } transition-[opacity,transform,visibility] duration-150 ease-out-expo`}
           >
             <div className="rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
@@ -1227,7 +1251,7 @@ export default function DashboardClient({
                   className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
                 >
                   <ChartIcon className="h-4 w-4" />
-                  {adaptiveGenerating ? "Building charts..." : "Generate charts"}
+                  {adaptiveGenerating ? "Building charts…" : "Generate charts"}
                 </button>
               </section>
             )

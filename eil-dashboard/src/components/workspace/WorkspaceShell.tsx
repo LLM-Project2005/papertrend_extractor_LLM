@@ -188,7 +188,7 @@ function DesktopSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-hairline bg-surface transition-[width,box-shadow] duration-250 ease-out-expo hover:w-[216px] hover:shadow-float lg:block">
+    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-hairline bg-surface transition-[width,box-shadow] duration-250 ease-out-expo hover:w-[216px] hover:shadow-float has-[:focus-visible]:w-[216px] has-[:focus-visible]:shadow-float lg:block">
       <div className="flex h-full flex-col py-2">
         <nav className="flex-1 overflow-y-auto px-2">
           {NAV_SECTIONS.map((section, sectionIndex) => (
@@ -196,7 +196,7 @@ function DesktopSidebar({
               key={section.id}
               className={sectionIndex === 0 ? "" : "mt-3 border-t border-hairline pt-3"}
             >
-              <p className="whitespace-nowrap px-3 text-xs font-medium text-mute opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+              <p className="whitespace-nowrap px-3 text-xs font-medium text-mute opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
@@ -210,7 +210,7 @@ function DesktopSidebar({
                       href={item.href}
                       prefetch={false}
                       onClick={() => onNavigate(item.href)}
-                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-[background-color,color,width,margin,padding] duration-200 ease-out-quart group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
+                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-[background-color,color,width,margin,padding] duration-200 ease-out-quart group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 group-has-[:focus-visible]:mx-0 group-has-[:focus-visible]:w-full group-has-[:focus-visible]:justify-start group-has-[:focus-visible]:px-3 ${
                         isActive
                           // #111111 on the rail's #050505 surface is 1.08:1 - the
                           // chip was there in the markup and absent to the eye.
@@ -221,7 +221,9 @@ function DesktopSidebar({
                       aria-current={isActive ? "page" : undefined}
                     >
                       <Icon className="h-[18px] w-[18px] flex-none" weight={isActive ? "fill" : "regular"} />
-                      <span className="ml-3 hidden whitespace-nowrap text-sm font-medium group-hover:block">
+                      {/* sr-only rather than hidden: the name stays readable to
+                          assistive technology while the rail is collapsed. */}
+                      <span className="sr-only ml-3 whitespace-nowrap text-sm font-medium group-hover:not-sr-only group-has-[:focus-visible]:not-sr-only">
                         {item.label}
                       </span>
                     </Link>
@@ -261,6 +263,7 @@ function MobileSidebar({
           </div>
           <button
             type="button"
+            autoFocus
             onClick={onClose}
             className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-mute transition-colors hover:bg-subtle hover:text-ink"
             aria-label="Close workspace navigation"
@@ -332,6 +335,24 @@ export default function WorkspaceShell({
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerWasOpen = useRef(false);
+  // Escape closes the drawer, and closing it puts focus back on the button
+  // that opened it, so a keyboard reader is not dropped at the top of the page.
+  useEffect(() => {
+    if (sidebarOpen) {
+      drawerWasOpen.current = true;
+      const onKey = (event: KeyboardEvent) => {
+        if (event.key === "Escape") setSidebarOpen(false);
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }
+    if (drawerWasOpen.current) {
+      drawerWasOpen.current = false;
+      menuButtonRef.current?.focus();
+    }
+  }, [sidebarOpen]);
   const [navigating, setNavigating] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
@@ -484,14 +505,22 @@ export default function WorkspaceShell({
 
   return (
     <div className="min-h-[100dvh] bg-canvas text-ink">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-overlay"
+      >
+        Skip to content
+      </a>
       <header className="fixed inset-x-0 top-0 z-40 border-b border-hairline bg-canvas/80 backdrop-blur-md backdrop-saturate-150">
         <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
+              ref={menuButtonRef}
               onClick={() => setSidebarOpen(true)}
               className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-body transition-colors hover:bg-subtle hover:text-ink lg:hidden"
               aria-label="Open workspace navigation"
+              aria-expanded={sidebarOpen}
             >
               <MenuIcon className="h-4 w-4" />
             </button>
@@ -501,7 +530,7 @@ export default function WorkspaceShell({
               prefetch={false}
               onClick={() => handleNavigate("/")}
               className="flex h-10 w-10 items-center justify-center text-slate-950 transition-transform hover:scale-[1.04] dark:text-white"
-              aria-label="Go to front page"
+              aria-label="Papertrend front page"
             >
               <LogoMarkIcon className="h-7 w-7" />
             </Link>
@@ -519,7 +548,7 @@ export default function WorkspaceShell({
               prefetch={false}
               onClick={() => handleNavigate("/docs")}
               className="hidden h-9 items-center justify-center gap-2 rounded-lg px-2.5 text-sm font-medium text-body transition-colors duration-150 hover:bg-subtle hover:text-ink sm:inline-flex"
-              aria-label="Open documentation"
+              aria-label="Docs"
             >
               <BookOpenIcon className="h-4 w-4" />
               <span className="hidden md:inline">Docs</span>
@@ -551,7 +580,10 @@ export default function WorkspaceShell({
 
       {sidebarOpen ? (
         <div
-          className="fixed inset-0 z-50 bg-black/40 motion-safe:animate-fade-in lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Workspace navigation"
+          className="fixed inset-0 z-50 overscroll-contain bg-black/40 motion-safe:animate-fade-in lg:hidden"
           onClick={(event) => {
             if (event.target === event.currentTarget) setSidebarOpen(false);
           }}
@@ -566,7 +598,11 @@ export default function WorkspaceShell({
       ) : null}
 
       <div className="min-h-[100dvh] pt-16 lg:pl-14">
-        <main className={isChatPage ? "min-w-0" : "workspace-content-enter min-w-0 px-4 py-6 sm:px-8 sm:py-8"}>
+        <main
+          id="main"
+          tabIndex={-1}
+          className={isChatPage ? "min-w-0 outline-none" : "workspace-content-enter min-w-0 px-4 py-6 outline-none sm:px-8 sm:py-8"}
+        >
           {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
           ) : hasActiveProject ? (

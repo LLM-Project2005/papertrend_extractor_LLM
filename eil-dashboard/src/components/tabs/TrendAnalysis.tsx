@@ -28,7 +28,7 @@ import {
 import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 
@@ -138,7 +138,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                   value === "earlier" ? `${periods.earlyLabel} (${periods.earlyPapers} papers)` : `${periods.lateLabel} (${periods.latePapers} papers)`
                 )}
               />
-              <Bar
+              <Bar isAnimationActive={chartAnimationActive()}
                 dataKey="earlier"
                 fill={ct.barFillMuted}
                 radius={[0, 4, 4, 0]}
@@ -148,7 +148,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                 }}
                 className={onDrilldown ? "cursor-pointer" : undefined}
               />
-              <Bar
+              <Bar isAnimationActive={chartAnimationActive()}
                 dataKey="later"
                 fill={ct.barFill}
                 radius={[0, 4, 4, 0]}
@@ -207,7 +207,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                   <Tooltip />
                   <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                   {topThemes.map((topic, index) => (
-                    <Bar
+                    <Bar isAnimationActive={chartAnimationActive()}
                       key={topic}
                       dataKey={topic}
                       stackId="themes"

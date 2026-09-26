@@ -36,7 +36,7 @@ function truncate(value: string, max: number): string {
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
@@ -287,11 +287,12 @@ export default function KeywordExplorer({
 
         <div className="mt-4">
           <input
-            type="text"
-            placeholder="Search a concept, e.g. intelligibility / comprehensibility"
+            type="search"
+            aria-label="Search a concept"
+            placeholder="Search a concept, e.g. intelligibility / comprehensibility…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white"
+            className="w-full rounded-xl border border-hairline-strong bg-surface px-4 py-3 text-base text-ink transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-ink/30 focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
           />
         </div>
       </section>
@@ -469,7 +470,7 @@ export default function KeywordExplorer({
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
                         <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
-                        <Line
+                        <Line isAnimationActive={chartAnimationActive()}
                           type="monotone"
                           dataKey="frequency"
                           name="Frequency"
@@ -477,7 +478,7 @@ export default function KeywordExplorer({
                           strokeWidth={3}
                           dot={{ r: 3 }}
                         />
-                        <Line
+                        <Line isAnimationActive={chartAnimationActive()}
                           type="monotone"
                           dataKey="papers"
                           name="Papers"
@@ -503,7 +504,7 @@ export default function KeywordExplorer({
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
-                        <Bar dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
+                        <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -663,7 +664,7 @@ export default function KeywordExplorer({
                     "Used by",
                   ]}
                 />
-                <Bar
+                <Bar isAnimationActive={chartAnimationActive()}
                   dataKey="papers"
                   name="Papers"
                   fill={ct.barFill}
@@ -868,7 +869,7 @@ export default function KeywordExplorer({
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {comparisonThemes.map((topic, index) => (
-                  <Line
+                  <Line isAnimationActive={chartAnimationActive()}
                     key={topic}
                     type="linear"
                     dataKey={topic}

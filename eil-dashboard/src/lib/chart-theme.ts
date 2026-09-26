@@ -68,3 +68,14 @@ export function chartTheme(isDark: boolean): ChartTheme {
 export function tickStyle(theme: ChartTheme, fontSize = 12) {
   return { fontSize, fill: theme.label };
 }
+
+/**
+ * Whether charts should animate. Recharts tweens its bars and lines in
+ * JavaScript, which the stylesheet's reduced-motion rule cannot reach, so each
+ * series asks here. Charts draw only after they measure on the client, so
+ * reading the media query during render cannot disagree with the server.
+ */
+export function chartAnimationActive(): boolean {
+  if (typeof window === "undefined") return false;
+  return !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}

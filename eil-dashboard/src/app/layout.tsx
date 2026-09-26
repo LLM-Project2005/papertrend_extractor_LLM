@@ -29,7 +29,6 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  viewportFit: "cover",
   // The browser's own chrome (the mobile address bar) matches the canvas.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#fafafa" },

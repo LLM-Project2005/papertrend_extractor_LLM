@@ -18,4 +18,4 @@ export const leadClass = "text-[17px] leading-8 text-body";
  * negative margin make the target taller than the text without moving it.
  */
 export const arrowLinkClass =
-  "group -my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-ink underline-offset-4 hover:underline";
+  "group -my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-ink underline-offset-4 hover:underline focus-visible:underline";

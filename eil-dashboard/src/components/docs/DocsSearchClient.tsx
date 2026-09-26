@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   docsSearchItems,
   docsSuggestedQueries,
@@ -50,6 +50,7 @@ function scoreItem(item: DocsSearchItem, query: string) {
 
 export default function DocsSearchClient() {
   const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Accept ?q= so a search can be linked to and shared, and so the tag pills on
   // a documentation page have somewhere to lead. Read from location rather than
@@ -58,8 +59,23 @@ export default function DocsSearchClient() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const initial = new URLSearchParams(window.location.search).get("q");
-    if (initial) setQuery(initial);
+    if (initial) {
+      setQuery(initial);
+    } else if (window.matchMedia("(pointer: fine)").matches) {
+      // Straight into the field on a desktop; on a phone the keyboard would
+      // cover the page before the reader has seen it.
+      inputRef.current?.focus();
+    }
   }, []);
+
+  // The address follows the query, so reload, Back and a copied link keep it.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const trimmed = query.trim();
+      window.history.replaceState(null, "", trimmed ? `?q=${encodeURIComponent(trimmed)}` : window.location.pathname);
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const results = useMemo(() => {
     const trimmed = query.trim();
@@ -86,7 +102,7 @@ export default function DocsSearchClient() {
             Docs
           </Link>
           <span aria-hidden="true">/</span>
-          <span>Search</span>
+          <span aria-current="page">Search</span>
         </nav>
         <h1 className="mt-4 text-4xl font-semibold tracking-[-0.03em] text-ink">Search the docs</h1>
         <p className="mt-3 text-[15px] leading-7 text-body">
@@ -95,18 +111,29 @@ export default function DocsSearchClient() {
       </header>
 
       <div className="sticky top-16 z-10 -mx-4 mt-8 border-b border-hairline bg-white/85 px-4 pb-4 pt-4 backdrop-blur-md dark:bg-black/80 sm:-mx-6 sm:px-6">
+        <form
+          role="search"
+          onSubmit={(event) => {
+            event.preventDefault();
+            (document.activeElement as HTMLElement | null)?.blur();
+          }}
+        >
         <label className="relative block">
           <span className="sr-only">Search the documentation</span>
           <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-mute" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            autoFocus
+            ref={inputRef}
+            name="q"
             type="search"
-            placeholder="Upload failed, unknown year, deep research..."
+            enterKeyHint="search"
+            autoComplete="off"
+            placeholder="Upload failed, unknown year, deep research…"
             className="h-12 w-full rounded-xl border border-hairline bg-surface pl-12 pr-4 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15"
           />
         </label>
+        </form>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {docsSuggestedQueries.map((suggestion) => (
             <button
@@ -121,7 +148,11 @@ export default function DocsSearchClient() {
         </div>
       </div>
 
-      <section className="mt-6" aria-live="polite">
+      {/* Only the count is announced; the list itself changes on every key. */}
+      <p role="status" className="sr-only">
+        {query.trim() ? `${results.length} result${results.length === 1 ? "" : "s"}` : ""}
+      </p>
+      <section className="mt-6">
         <h2 className="text-sm font-medium text-mute">
           {query.trim() ? `${results.length} result${results.length === 1 ? "" : "s"}` : "Suggested pages"}
         </h2>

@@ -131,6 +131,20 @@ export function markCitations(
   };
 }
 
+/**
+ * A citation's paper id, exactly.
+ *
+ * Paper ids are 18-digit integers. Deep research stored some citations with the
+ * id as a JSON number, and a JavaScript number cannot hold 18 digits, so
+ * 654436454321652795 arrived as 654436454321652700 and matched nothing in the
+ * report's text. The citation's link was written as a string and kept every
+ * digit, so the id is read from there first.
+ */
+export function citationPaperId(citation: { paperId?: unknown; href?: unknown }): string {
+  const fromHref = /[?&]paperId=(\d+)/.exec(String(citation.href ?? ""))?.[1];
+  return fromHref ?? String(citation.paperId ?? "");
+}
+
 /** `[Paper 12]`, `[Paper 12, Paper 34]` or `[Paper 12; 34]`, as older reports wrote them. */
 const LEGACY_CITATION_GROUP = /\[(Paper\s+\d{1,24}(?:\s*[,;]\s*(?:Paper\s+)?\d{1,24})*)\]/gi;
 

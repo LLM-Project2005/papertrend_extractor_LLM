@@ -18,6 +18,7 @@ import {
   sectionTitleClass,
 } from "@/components/marketing/styles";
 import { ArrowRightIcon, CheckIcon, PlusIcon } from "@/components/ui/Icons";
+import Mascot from "@/components/ui/Mascot";
 
 export const metadata: Metadata = {
   title: { absolute: "Papertrend | Read a whole field of research at once" },
@@ -98,7 +99,14 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="mx-auto max-w-3xl text-center">
             <h1 className={`${displayClass} text-[2.6rem] leading-[1.04] sm:text-6xl sm:leading-[1.02] lg:text-[4.5rem]`}>
-              Read a whole field of research at once.
+              {/* Each word rises in turn: the page's one piece of type in motion. */}
+              {"Read a whole field of research at once.".split(" ").map((word, index) => (
+                <span key={index}>
+                  <span className="word-rise" style={{ animationDelay: `${index * 60}ms` }}>
+                    {word}
+                  </span>{" "}
+                </span>
+              ))}
             </h1>
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-body">
               Upload the papers you work with. Papertrend reads each one for its year, methods,
@@ -126,7 +134,7 @@ export default function LandingPage() {
       </section>
 
       {/* ---------------------------------------------------- how it works */}
-      <section id="how" className="scroll-mt-20 px-4 pb-8 pt-16 sm:px-6 sm:pt-20">
+      <section id="how" className="px-4 pb-8 pt-16 sm:px-6 sm:pt-20">
         <div className="mx-auto max-w-6xl">
           <h2 className={`reveal max-w-2xl ${sectionTitleClass}`}>
             From a folder of PDFs to answers you can check.
@@ -267,6 +275,7 @@ export default function LandingPage() {
       {/* ------------------------------------------------------- final cta */}
       <section className="px-4 pb-28 sm:px-6">
         <div className="reveal mx-auto max-w-6xl rounded-[28px] border border-hairline bg-canvas px-6 py-20 text-center dark:bg-surface sm:px-12 sm:py-24">
+          <Mascot size={56} className="mx-auto mb-8 text-ink" />
           <h2 className={`mx-auto max-w-2xl ${sectionTitleClass}`}>Start with the papers on your desk.</h2>
           <p className={`mx-auto mt-5 max-w-xl ${leadClass}`}>
             Make a repository, add a few PDFs, and see what they have in common within minutes.

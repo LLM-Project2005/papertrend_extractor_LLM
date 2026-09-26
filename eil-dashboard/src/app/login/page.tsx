@@ -81,7 +81,7 @@ export default function LoginPage() {
       fallback={
         <main className="flex min-h-[100dvh] items-center justify-center bg-canvas">
           <p className="text-sm text-mute" role="status">
-            Loading
+            Loading…
           </p>
         </main>
       }

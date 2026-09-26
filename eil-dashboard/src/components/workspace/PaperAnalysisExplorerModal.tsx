@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Modal from "@/components/ui/Modal";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
@@ -388,6 +388,18 @@ export default function PaperAnalysisExplorerModal({
 }: Props) {
   const [activeTab, setActiveTab] = useState<PaperExplorerTab>("overview");
   const [correcting, setCorrecting] = useState(false);
+  // The button that opened the form disappears while it is open, so focus is
+  // put back on it when the form closes instead of falling to the page.
+  const correctButtonRef = useRef<HTMLButtonElement>(null);
+  const wasCorrecting = useRef(false);
+  useEffect(() => {
+    if (correcting) {
+      wasCorrecting.current = true;
+    } else if (wasCorrecting.current) {
+      wasCorrecting.current = false;
+      correctButtonRef.current?.focus();
+    }
+  }, [correcting]);
   const [titleDraft, setTitleDraft] = useState("");
   const [yearDraft, setYearDraft] = useState("");
   const [correctionError, setCorrectionError] = useState<string | null>(null);
@@ -519,20 +531,27 @@ export default function PaperAnalysisExplorerModal({
                   <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
                     Title
                     <input
+                      autoFocus
+                      name="title"
+                      autoComplete="off"
                       value={titleDraft}
                       onChange={(event) => setTitleDraft(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                      aria-describedby={correctionError ? "correction-error" : undefined}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white sm:text-sm"
                     />
                   </label>
                   <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
                     Year
                     <input
+                      name="year"
+                      autoComplete="off"
                       value={yearDraft}
                       onChange={(event) => setYearDraft(event.target.value)}
+                      aria-describedby={correctionError ? "correction-error" : undefined}
                       placeholder="Unknown"
                       inputMode="numeric"
                       maxLength={4}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white sm:text-sm"
                     />
                   </label>
                   <div className="flex items-end gap-2">
@@ -541,7 +560,7 @@ export default function PaperAnalysisExplorerModal({
                       disabled={correctionSaving}
                       className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
                     >
-                      {correctionSaving ? "Saving" : "Save"}
+                      {correctionSaving ? "Saving…" : "Save"}
                     </button>
                     <button
                       type="button"
@@ -555,7 +574,7 @@ export default function PaperAnalysisExplorerModal({
                     Your correction is kept when the paper is analysed again. Leave the year empty if the paper has none.
                   </p>
                   {correctionError ? (
-                    <p className="text-xs text-red-600 dark:text-red-300 sm:col-span-3">{correctionError}</p>
+                    <p id="correction-error" role="alert" className="text-xs text-red-600 dark:text-red-300 sm:col-span-3">{correctionError}</p>
                   ) : null}
                 </form>
               ) : (
@@ -570,6 +589,7 @@ export default function PaperAnalysisExplorerModal({
                 {onCorrect && !correcting && run.status === "succeeded" ? (
                   <button
                     type="button"
+                    ref={correctButtonRef}
                     onClick={startCorrection}
                     className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-body ring-1 ring-inset ring-hairline transition-colors hover:bg-subtle hover:text-ink"
                   >
@@ -691,7 +711,7 @@ export default function PaperAnalysisExplorerModal({
             <div className="space-y-4" role="status">
               <span className="skeleton block h-40 w-full rounded-xl" />
               <span className="skeleton block h-56 w-full rounded-xl" />
-              <p className="text-center text-sm text-mute">Loading this paper&apos;s analysis...</p>
+              <p className="text-center text-sm text-mute">Loading this paper&apos;s analysis…</p>
             </div>
           ) : null}
 

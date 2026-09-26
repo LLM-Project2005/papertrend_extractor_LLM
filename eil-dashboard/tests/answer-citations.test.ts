@@ -5,6 +5,7 @@ import {
   CITATION_TITLE_MAX,
   FOLD_THRESHOLD_CHARS,
   citationLabel,
+  citationPaperId,
   foldPoint,
   markCitations,
 } from "../src/lib/answer-citations";
@@ -259,3 +260,19 @@ test("text that can carry Thai clears the floor; fixed English chrome need not",
 
 /* --------------------------------------------------- the marker reaches the page */
 
+
+test("an 18-digit paper id survives a citation stored as a JSON number", () => {
+  // A real deep research citation: the number lost its last digits in
+  // JSON.parse, the link kept them, and the report text uses the exact id.
+  const stored = JSON.parse(
+    '{"paperId": 654436454321652795, "href": "/workspace/library?paperId=654436454321652795", "title": "Metalinguistic Knowledge", "year": ""}'
+  );
+  assert.notEqual(String(stored.paperId), "654436454321652795", "the precision loss this guards against");
+  assert.equal(citationPaperId(stored), "654436454321652795");
+  assert.equal(citationPaperId({ paperId: "42", href: "" }), "42", "without a link the id is used as given");
+
+  const marked = markCitations("Undergraduates dominate [Paper 654436454321652795].", [
+    { paperId: citationPaperId(stored), title: stored.title, year: "", href: stored.href },
+  ]);
+  assert.equal(marked.text, "Undergraduates dominate [[cite:1]].");
+});

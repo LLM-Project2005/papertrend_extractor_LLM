@@ -121,7 +121,7 @@ export default function ProjectIndexClient() {
   const header = (
     <header className="sticky top-0 z-30 border-b border-hairline bg-canvas/80 backdrop-blur-md backdrop-saturate-150">
       <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-3 px-4 sm:px-6">
-        <Link href="/" className="flex items-center gap-2.5" aria-label="Go to front page">
+        <Link href="/" className="flex items-center gap-2.5" aria-label="Papertrend front page">
           <LogoMarkIcon className="h-6 w-6 text-ink" />
           <span className="text-[15px] font-semibold tracking-tight text-ink">Papertrend</span>
         </Link>

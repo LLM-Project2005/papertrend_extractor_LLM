@@ -14,6 +14,7 @@ import React, { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   foldPoint,
+  citationPaperId,
   markCitations,
   type CitationSource,
 } from "@/lib/answer-citations";
@@ -513,7 +514,7 @@ export function AssistantAnswer({
         (citations ?? [])
           .filter((citation) => citation.paperId)
           .map((citation) => ({
-            paperId: String(citation.paperId),
+            paperId: citationPaperId(citation),
             title: String(citation.title ?? ""),
             year: String(citation.year ?? ""),
             href: String(citation.href ?? ""),
