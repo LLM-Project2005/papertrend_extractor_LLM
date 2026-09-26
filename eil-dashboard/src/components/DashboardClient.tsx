@@ -123,13 +123,18 @@ function matchesTrack(row: TrackRow | undefined, track: TrackKey | null): boolea
   return Number(row[field] ?? 0) > 0;
 }
 
-function buildDashboardDrilldownTitle(target: DashboardDrilldownTarget | null): string {
+function buildDashboardDrilldownTitle(
+  target: DashboardDrilldownTarget | null,
+  categoryLabel: (key: string) => string
+): string {
   if (!target) {
     return "Associated papers";
   }
 
+  // The category is named as the reader knows it ("English Language
+  // Instruction"), not by its internal key ("eli").
   const parts = [
-    target.track ? `Category: ${target.track}` : "",
+    target.track ? `Category: ${categoryLabel(target.track)}` : "",
     target.year ? `Year: ${target.year}` : "",
     target.keyword ? `Keyword: ${target.keyword}` : target.topic ? `Topic: ${target.topic}` : "",
   ].filter(Boolean);
@@ -722,20 +727,27 @@ export default function DashboardClient({
 
   if (loading && !data) {
     return (
-      <div className="app-surface flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-500 border-t-transparent dark:border-[#8e8e8e]" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Loading dashboard data...
-          </p>
+      <div className="mx-auto max-w-[1500px] space-y-6 pt-2 sm:pt-4" role="status" aria-label="Loading dashboard data">
+        <div className="space-y-3">
+          <span className="skeleton block h-9 w-48" />
+          <span className="skeleton block h-4 w-96 max-w-full" />
         </div>
+        <span className="skeleton block h-10 w-full max-w-2xl" />
+        <div className="flex gap-4 border-b border-hairline pb-3">
+          {[0, 1, 2, 3, 4, 5].map((index) => (
+            <span key={index} className="skeleton block h-4 w-24" />
+          ))}
+        </div>
+        <span className="skeleton block h-28 w-full" />
+        <span className="skeleton block h-80 w-full" />
+        <p className="sr-only">Loading dashboard data...</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5">
-      <div className="space-y-4">
+    <div className="mx-auto max-w-[1500px] space-y-6 pt-2 sm:pt-4">
+      <div className="space-y-5">
         {/*
           This page had no h1 at all - it opened straight onto a search field.
           Every other workspace page names itself, so this was the one place a
@@ -743,28 +755,28 @@ export default function DashboardClient({
           one page a screen reader announced with no title.
         */}
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">
             Dashboard
           </h1>
-          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+          <p className="mt-2 text-[15px] leading-7 text-body">
             Trends, topics, and coverage across the analyzed papers in this repository.
           </p>
         </div>
 
         {!isSemanticMapTab ? <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <label className="relative block w-full max-w-2xl">
-            <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#8e8e8e]" />
+            <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
             <input
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder="Search papers, topics, keywords, or years"
-              className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
+              className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
             />
           </label>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
+            <span className="rounded-full bg-subtle px-3 py-1.5 text-xs text-body">
               {selectedYears.length === 0 || selectedYears.length === allYears.length
                 ? "All years"
                 : `${selectedYears.length} year${selectedYears.length === 1 ? "" : "s"}`}
@@ -774,7 +786,7 @@ export default function DashboardClient({
               switched off - a count of filter checkboxes, not of anything in the
               data.
             */}
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
+            <span className="rounded-full bg-subtle px-3 py-1.5 text-xs text-body">
               {classificationEnabled
                 ? `${activeCategoryCount} categor${activeCategoryCount === 1 ? "y" : "ies"}`
                 : "Categories off"}
@@ -784,14 +796,14 @@ export default function DashboardClient({
               onClick={() => {
                 void refresh();
               }}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
             <button
               type="button"
               onClick={() => setFilterOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <FilterIcon className="h-4 w-4" />
               <span>Filters</span>
@@ -889,13 +901,15 @@ export default function DashboardClient({
         </section> : null}
 
         <nav
-          className="flex gap-2 overflow-x-auto pb-1"
+          className="flex gap-1 overflow-x-auto border-b border-hairline"
           aria-label="Tabs"
           aria-busy={isRoutePending}
         >
           {TAB_DEFINITIONS.map((tab) => (
             <button
               key={tab.key}
+              type="button"
+              aria-current={currentTabKey === tab.key ? "page" : undefined}
               onClick={() => updateRouteForTab(tab.key)}
               className={`tab-btn ${
                 currentTabKey === tab.key ? "tab-btn-active" : "tab-btn-inactive"
@@ -964,7 +978,14 @@ export default function DashboardClient({
                       Dashboard drilldown
                     </p>
                     <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                      {buildDashboardDrilldownTitle(drilldownTarget)}
+                      {buildDashboardDrilldownTitle(drilldownTarget, (key) => {
+                        const normalized = normalizeDrilldownCategoryKey(key);
+                        return (
+                          categoryOptions.find((category) => category.key === normalized)?.label ??
+                          categoryLabels[key.toLowerCase() as TrackKey] ??
+                          key
+                        );
+                      })}
                     </h2>
                     <p className="mt-2 text-sm text-slate-500 dark:text-[#a3a3a3]">
                       {drilldownPapers.length} associated paper{drilldownPapers.length === 1 ? "" : "s"} in the current dashboard scope.

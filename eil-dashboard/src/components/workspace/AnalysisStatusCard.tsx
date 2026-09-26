@@ -182,8 +182,31 @@ function getStageIndex(run: IngestionRunRow): number {
     item.stages.includes(stage)
   );
   if (explicitIndex >= 0) return explicitIndex;
+  if (run.status === "failed") return failedStageIndex(run);
   if (run.status === "processing") return Math.max(1, explicitIndex);
   return 0;
+}
+
+/**
+ * Where a failed paper stopped.
+ *
+ * The worker writes the stage "failed", which is not one of the ten steps, so
+ * this used to fall back to step 1 and every failed paper appeared to have
+ * stopped at Upload, wherever it really did. The error says whether it never
+ * left upload or storage; otherwise the furthest step whose parts all finished
+ * says how far the analysis got.
+ */
+function failedStageIndex(run: IngestionRunRow): number {
+  const message = (run.error_message ?? "").toLowerCase();
+  if (/upload|storage path/.test(message)) return 0;
+  if (/download|cloud storage|empty file/.test(message)) return 2;
+  const completed = readCompletedGraphNodes(run);
+  let furthest = -1;
+  TIMELINE_STAGES.forEach((stage, index) => {
+    if (stage.graphNodes?.length && stage.graphNodes.every((node) => completed.has(node))) furthest = index;
+  });
+  if (furthest < 0 && /cancel/.test(message)) return 1;
+  return Math.min(TIMELINE_STAGES.length - 2, Math.max(3, furthest + 1));
 }
 
 function getTimelineStatus(
@@ -922,7 +945,7 @@ export default function AnalysisStatusCard({
 
   const description = allTerminal
     ? summary.failed > 0
-      ? "Papers that failed say why below. Add them again from the Library once the problem is fixed."
+      ? "Papers that failed say why below. Once the problem is fixed, use Try again on each one in the Library."
       : "Finished papers are in the Library and on the Dashboard, and Chat can cite them."
     : "Each paper is read for its title, year, topics, methods and category, usually in a few minutes. This updates by itself, and you can leave the page while it runs.";
   const percent = Math.round(progress * 100);
@@ -971,7 +994,7 @@ export default function AnalysisStatusCard({
             {/* Was "Open imports" pointing at /workspace/imports, which redirects to
                 /workspace/library. The label promised a view that does not exist. */}
             <Link href="/workspace/library" className={buttonClass("secondary")}>
-              Open repositories
+              Open library
             </Link>
             {onMinimize ? (
               <button type="button" onClick={onMinimize} className={buttonClass("secondary")}>

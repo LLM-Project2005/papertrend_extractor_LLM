@@ -6,7 +6,8 @@
  *   UI_BASE_URL=https://... UI_ROUTES=/,/docs,/workspace/home npx tsx scripts/capture-pages.ts
  *
  * UI_THEMES (light,dark), UI_VIEWPORTS (desktop,mobile), UI_OUT_DIR,
- * UI_PROJECT_ID (the repository workspace pages open on), UI_FULL_PAGE (1).
+ * UI_PROJECT_ID (the repository workspace pages open on), UI_FULL_PAGE (1),
+ * UI_REDUCED_MOTION (1 to capture the no-animation path).
  */
 import { chromium, type Page } from "playwright";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -33,12 +34,25 @@ async function signIn(page: Page) {
   const email = process.env.UI_TEST_EMAIL ?? "";
   const password = process.env.UI_TEST_PASSWORD ?? "";
   if (!email || !password) return;
-  await page.goto(`${BASE}/login`, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await visit(page, `${BASE}/login`);
   await page.waitForTimeout(2000);
   await page.locator('input[type="email"]').first().fill(email);
   await page.locator('input[type="password"]').first().fill(password);
   await page.locator('button[type="submit"]').first().click();
   for (let i = 0; i < 40 && page.url().includes("/login"); i += 1) await page.waitForTimeout(1000);
+}
+
+/** A transient DNS or network blip should not end a long capture run. */
+async function visit(page: Page, url: string) {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+      return;
+    } catch (error) {
+      if (attempt >= 3) throw error;
+      await page.waitForTimeout(3000 * attempt);
+    }
+  }
 }
 
 async function inspect(page: Page): Promise<string[]> {
@@ -60,7 +74,13 @@ async function main() {
   const notes: Note[] = [];
   for (const viewport of VIEWPORTS) {
     for (const theme of THEMES) {
-      const context = await browser.newContext({ viewport: SIZES[viewport], colorScheme: theme === "dark" ? "dark" : "light" });
+      // UI_REDUCED_MOTION=1 photographs the no-animation path, which is also
+      // the only way a full-page capture shows scroll-revealed sections.
+      const context = await browser.newContext({
+        viewport: SIZES[viewport],
+        colorScheme: theme === "dark" ? "dark" : "light",
+        reducedMotion: process.env.UI_REDUCED_MOTION === "1" ? "reduce" : "no-preference",
+      });
       await context.addInitScript(`try { localStorage.setItem("papertrend_theme", ${JSON.stringify(theme)}); } catch (e) {}`);
       const projectId = process.env.UI_PROJECT_ID;
       if (projectId) {
@@ -69,8 +89,17 @@ async function main() {
       const page = await context.newPage();
       await signIn(page);
       for (const route of ROUTES) {
-        await page.goto(`${BASE}${route}`, { waitUntil: "domcontentloaded", timeout: 60000 });
+        await visit(page, `${BASE}${route}`);
         await page.waitForTimeout(Number(process.env.UI_SETTLE_MS ?? 6000));
+        // Walk down the page first so lazy images load before a full-page shot.
+        await page.evaluate(async () => {
+          for (let y = 0; y < document.documentElement.scrollHeight; y += 700) {
+            window.scrollTo(0, y);
+            await new Promise((resolve) => setTimeout(resolve, 120));
+          }
+          window.scrollTo(0, 0);
+        });
+        await page.waitForTimeout(800);
         notes.push({ route, theme, viewport, problems: await inspect(page) });
         await page.screenshot({ path: join(OUT, `${viewport}-${theme}-${slug(route)}.png`), fullPage: FULL_PAGE });
       }

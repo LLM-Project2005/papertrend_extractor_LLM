@@ -127,6 +127,22 @@ test("an answer with no citations passes through untouched", () => {
   assert.equal(markCitations("", [READING]).text, "");
 });
 
+test("an older report's raw paper ids become the same numbered markers", () => {
+  // Reports written before the server rendered citations carry
+  // "[Paper 3606803487645584445]" - a database id, shown to the reader as-is.
+  const big = { paperId: "3606803487645584445", title: "Dynamic Assessment in Thai EFL Writing", year: "2021", href: "/p" };
+  const answer = `Gains were reported [Paper 3606803487645584445]. Both agree [Paper 12, Paper 3606803487645584445].`;
+  const { text, sources } = markCitations(answer, [READING, big]);
+  assert.equal(text, "Gains were reported [[cite:1]]. Both agree [[cite:2,1]].");
+  assert.deepEqual(sources.map((source) => source.paperId), [big.paperId, READING.paperId]);
+});
+
+test("a raw id that is not one of the message's sources is left as written", () => {
+  const answer = "See [Paper 999] and [2] and [Paper 12; 7].";
+  const { text } = markCitations(answer, [READING, AUTONOMY]);
+  assert.equal(text, "See [Paper 999] and [2] and [[cite:1,2]].");
+});
+
 test("a title containing regex characters does not break the match", () => {
   const tricky = { paperId: "9", title: "Reading (L2) + Writing [a study]", year: "2018", href: "/x" };
   const answer = `Found (${citationLabel(tricky)}).`;

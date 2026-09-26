@@ -301,7 +301,7 @@ export default function KeywordExplorer({
           {conceptLoading ? (
             <div className="app-surface px-5 py-5">
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Searching the concept family across the workspace...
+                Searching this repository for the concept...
               </p>
             </div>
           ) : null}
@@ -318,7 +318,7 @@ export default function KeywordExplorer({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                      Canonical concept
+                      Concept
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
                       {conceptResult.canonicalConcept || query}
@@ -368,7 +368,13 @@ export default function KeywordExplorer({
               </section>
 
               {conceptResult.firstAppearance ? (
-                <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
+                <section
+                  className={`grid gap-4 ${
+                    conceptResult.objectiveVerbs.length > 0 || conceptResult.contributionTypes.length > 0
+                      ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]"
+                      : ""
+                  }`}
+                >
                   <article className="app-surface px-5 py-5">
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       First appearance
@@ -400,6 +406,7 @@ export default function KeywordExplorer({
                     </Link>
                   </article>
 
+                  {conceptResult.objectiveVerbs.length > 0 ? (
                   <article className="app-surface px-5 py-5">
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Objective verbs
@@ -421,7 +428,9 @@ export default function KeywordExplorer({
                       )}
                     </div>
                   </article>
+                  ) : null}
 
+                  {conceptResult.contributionTypes.length > 0 ? (
                   <article className="app-surface px-5 py-5">
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Contribution groups
@@ -443,6 +452,7 @@ export default function KeywordExplorer({
                       )}
                     </div>
                   </article>
+                  ) : null}
                 </section>
               ) : null}
 
@@ -454,7 +464,7 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={conceptResult.timeline}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d4" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
@@ -489,7 +499,7 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={conceptResult.trackSpread}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d4" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />

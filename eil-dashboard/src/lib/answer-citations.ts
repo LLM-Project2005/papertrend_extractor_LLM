@@ -79,32 +79,49 @@ export function markCitations(
   if (labels.length === 0) return { text: answer, sources: [] };
 
   const assigned = new Map<string, CitationSource>();
+  const assign = (citation: (typeof citations)[number]): number => {
+    let source = assigned.get(citation.paperId);
+    if (!source) {
+      source = {
+        paperId: citation.paperId,
+        title: citation.title,
+        year: citation.year,
+        href: citation.href,
+        number: assigned.size + 1,
+      };
+      assigned.set(citation.paperId, source);
+    }
+    return source.number;
+  };
   const group = new RegExp(
     `\\((${labels.map(escapeForRegex).join("|")})(?:;\\s*(?:${labels.map(escapeForRegex).join("|")}))*\\)`,
     "g"
   );
 
-  const text = answer.replace(group, (whole) => {
+  const withParentheticals = answer.replace(group, (whole) => {
     const inner = whole.slice(1, -1);
     const parts = inner.split(/;\s*/).map((part) => part.trim());
     const numbers: number[] = [];
     for (const part of parts) {
       const citation = byLabel.get(part);
       if (!citation) return whole;
-      let source = assigned.get(citation.paperId);
-      if (!source) {
-        source = {
-          paperId: citation.paperId,
-          title: citation.title,
-          year: citation.year,
-          href: citation.href,
-          number: assigned.size + 1,
-        };
-        assigned.set(citation.paperId, source);
-      }
-      if (!numbers.includes(source.number)) numbers.push(source.number);
+      const number = assign(citation);
+      if (!numbers.includes(number)) numbers.push(number);
     }
     if (numbers.length === 0) return whole;
+    return `[[cite:${numbers.join(",")}]]`;
+  });
+
+  // Reports written before the server learned to render citations still carry
+  // the raw `[Paper 3606803487645584445]` form, sometimes several to a bracket.
+  // An id this message cites becomes the same numbered marker; a bracket that
+  // names none of its sources is left as written rather than guessed at.
+  const byId = new Map(citations.map((citation) => [citation.paperId, citation]));
+  const text = withParentheticals.replace(LEGACY_CITATION_GROUP, (whole, inner: string) => {
+    const ids = inner.split(/\s*[,;]\s*/).map((part) => part.replace(/^Paper\s+/i, "").trim());
+    const known = ids.map((id) => byId.get(id)).filter((citation): citation is (typeof citations)[number] => Boolean(citation));
+    if (known.length === 0) return whole;
+    const numbers = [...new Set(known.map(assign))];
     return `[[cite:${numbers.join(",")}]]`;
   });
 
@@ -113,6 +130,9 @@ export function markCitations(
     sources: [...assigned.values()].sort((left, right) => left.number - right.number),
   };
 }
+
+/** `[Paper 12]`, `[Paper 12, Paper 34]` or `[Paper 12; 34]`, as older reports wrote them. */
+const LEGACY_CITATION_GROUP = /\[(Paper\s+\d{1,24}(?:\s*[,;]\s*(?:Paper\s+)?\d{1,24})*)\]/gi;
 
 /** Above this length an answer is folded, with the opening always visible. */
 export const FOLD_THRESHOLD_CHARS = 2_400;

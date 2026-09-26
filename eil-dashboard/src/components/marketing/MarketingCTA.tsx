@@ -8,6 +8,7 @@ import { getStoredWorkspaceRoute } from "@/lib/workspace-session";
 
 interface MarketingCTAProps {
   variant?: "primary" | "secondary" | "ghost";
+  size?: "sm" | "lg";
   label?: string;
   loggedInLabel?: string;
   className?: string;
@@ -15,17 +16,25 @@ interface MarketingCTAProps {
 }
 
 const variantClasses = {
-  primary:
-    "bg-slate-950 text-white hover:bg-slate-800 shadow-[0_0_0_1px_rgba(15,23,42,0.08)] dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2] dark:shadow-[0_0_0_1px_rgba(255,255,255,0.18)]",
-  secondary:
-    "border border-slate-200 bg-white text-slate-950 hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]",
-  ghost:
-    "border border-transparent bg-transparent text-slate-700 hover:bg-slate-100 hover:text-slate-950 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white",
+  primary: "bg-ink text-canvas shadow-raise hover:bg-ink/85",
+  secondary: "border border-hairline bg-surface text-ink hover:border-hairline-strong hover:bg-subtle",
+  ghost: "text-body hover:bg-subtle hover:text-ink",
 };
 
+const sizeClasses = {
+  sm: "h-9 px-4 text-sm",
+  lg: "h-12 px-6 text-[15px]",
+};
+
+/**
+ * The one call to action on the public pages. A signed-out visitor is sent to
+ * sign in; a signed-in one goes straight back to the workspace page they last
+ * had open.
+ */
 export default function MarketingCTA({
   variant = "primary",
-  label = "Start your project",
+  size = "sm",
+  label = "Get started",
   loggedInLabel = "Open workspace",
   className = "",
   showArrow = true,
@@ -45,10 +54,12 @@ export default function MarketingCTA({
   return (
     <Link
       href={href}
-      className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-5 py-2.5 text-sm font-medium transition-colors ${variantClasses[variant]} ${className}`}
+      className={`group inline-flex select-none items-center justify-center gap-2 whitespace-nowrap rounded-full font-medium transition-[background-color,border-color,color,transform] duration-150 ease-out-quart active:scale-[0.98] ${sizeClasses[size]} ${variantClasses[variant]} ${className}`}
     >
       <span>{copy}</span>
-      {showArrow ? <ArrowRightIcon className="h-4 w-4" /> : null}
+      {showArrow ? (
+        <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 ease-out-quart group-hover:translate-x-0.5" />
+      ) : null}
     </Link>
   );
 }

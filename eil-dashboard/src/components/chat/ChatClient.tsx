@@ -69,7 +69,9 @@ import {
   CircleIcon,
   CloseIcon,
   CopyIcon,
+  BooksIcon,
   DriveIcon,
+  ListViewIcon,
   EqualizerIcon,
   ExitFullscreenIcon,
   FileIcon,
@@ -1266,6 +1268,16 @@ export default function ChatClient() {
   } = useWorkspaceProfile();
   const [chatScopeProjectId, setChatScopeProjectId] = useState<string>("all");
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
+  // A chat opened inside a repository asks that repository until the reader
+  // picks another scope. It used to start on every repository in the account,
+  // so "Ask about these papers" on a repository's Home searched papers from
+  // other repositories as well.
+  const scopeChosenRef = useRef(false);
+  useEffect(() => {
+    if (scopeChosenRef.current || !currentProject?.id) return;
+    setChatScopeProjectId(currentProject.id);
+    setChatScopeFolderId("all");
+  }, [currentProject?.id]);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -1910,6 +1922,7 @@ export default function ChatClient() {
           const allowed = new Set(runIds);
           setLibraryRuns(rows);
           setSelectedLibraryRuns(rows.filter((run) => allowed.has(run.id) && run.status === "succeeded"));
+          scopeChosenRef.current = true;
           setChatScopeProjectId(transfer.projectId!);
           setChatScopeFolderId("all");
           if (transfer.prompt?.trim()) setDraft(transfer.prompt.trim());
@@ -2386,15 +2399,6 @@ export default function ChatClient() {
     }
   }
 
-  function handleParameterChange<K extends keyof ChatGenerationParameters>(
-    key: K,
-    value: ChatGenerationParameters[K]
-  ) {
-    setChatParameters((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  }
 
   function toggleResearchPolicy(key: "includeWorkspace" | "allowWeb" | "allowCharts") {
     setResearchSourcePolicy((current) => {
@@ -2721,7 +2725,7 @@ export default function ChatClient() {
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
               <p className="truncate text-sm font-medium text-slate-800 dark:text-[#ececec]">
-                {currentProject?.name ? `${currentProject.name} chats` : "Repository chats"}
+                Your chats
               </p>
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
@@ -2839,6 +2843,21 @@ export default function ChatClient() {
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
               >
                 <PencilSquareIcon className="h-4 w-4" />
+              </button>
+              {/* Below the large breakpoint the conversation list is hidden, and this
+                  was the only way back to an earlier chat: the search dialog lists
+                  every conversation, grouped by day, before anything is typed. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setChatSearchQuery("");
+                  setSearchModalOpen(true);
+                }}
+                aria-label="Open your chats"
+                title="Your chats"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
+              >
+                <ListViewIcon className="h-4 w-4" />
               </button>
               <p className="truncate text-lg font-semibold text-slate-900 dark:text-[#ececec]">
                 {pageTitle}
@@ -3642,6 +3661,7 @@ export default function ChatClient() {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    scopeChosenRef.current = true;
                                     setChatScopeProjectId("all");
                                     setChatScopeFolderId("all");
                                     setSelectedLibraryRuns([]);
@@ -3649,7 +3669,7 @@ export default function ChatClient() {
                                   }}
                                   className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeProjectId === "all" && chatScopeFolderId === "all" ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                 >
-                                  <DriveIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                  <BooksIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">All repositories</span>
                                     <span className="block truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">Every analyzed paper in this account</span>
@@ -3666,6 +3686,7 @@ export default function ChatClient() {
                                       key={project.id}
                                       type="button"
                                       onClick={() => {
+                                        scopeChosenRef.current = true;
                                         setChatScopeProjectId(project.id);
                                         setChatScopeFolderId("all");
                                         setSelectedLibraryRuns([]);
@@ -3673,7 +3694,7 @@ export default function ChatClient() {
                                       }}
                                       className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${projectActive ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                     >
-                                      <DriveIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                      <BooksIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                       <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{project.name}</span>
                                       {projectActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                     </button>
@@ -3707,7 +3728,7 @@ export default function ChatClient() {
                                 <FileIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
                                   <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Attach papers</span>
-                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose specific files from this repository</span>
+                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose specific papers from any repository</span>
                                 </span>
                                 {selectedLibraryRuns.length > 0 ? <span className="text-xs font-medium">{selectedLibraryRuns.length}</span> : null}
                               </button>
@@ -3847,147 +3868,9 @@ export default function ChatClient() {
                   </div>
 
                   <div className="relative flex items-center gap-2" ref={parameterMenuRef}>
-                    {!deepResearchEnabled && !chartModeEnabled ? (
-                      <button
-                        type="button"
-                        onClick={() => setParameterMenuOpen((current) => !current)}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
-                          parameterMenuOpen
-                            ? "border-slate-300 bg-slate-100 text-slate-900 dark:border-white/30 dark:bg-[#050505] dark:text-white"
-                            : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a]"
-                        }`}
-                        aria-label="Open generation parameters"
-                        title="Generation parameters"
-                      >
-                        <EqualizerIcon className="h-4 w-4" />
-                      </button>
-                    ) : null}
-
-                    {parameterMenuOpen && !deepResearchEnabled && !chartModeEnabled ? (
-                      <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
-                        <div className="mb-3 flex items-center justify-between">
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-600 dark:text-[#9b9b9b]">
-                            Generation
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setChatParameters(DEFAULT_CHAT_PARAMETERS)}
-                            className="text-xs font-medium text-sky-800 hover:text-sky-900 dark:text-[#f3f3f3] dark:hover:text-[#c9e2ff]"
-                          >
-                            Reset
-                          </button>
-                        </div>
-
-                        <div className="space-y-3 text-xs text-slate-700 dark:text-[#d8d8d8]">
-                          <label className="block">
-                            <div className="mb-1 flex items-center justify-between">
-                              <span>Temperature</span>
-                              <span className="text-slate-600 dark:text-[#9b9b9b]">{chatParameters.temperature.toFixed(2)}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={2}
-                              step={0.05}
-                              value={chatParameters.temperature}
-                              onChange={(event) =>
-                                handleParameterChange("temperature", Number(event.target.value))
-                              }
-                              className="w-full accent-sky-600 dark:accent-[#9cc8ff]"
-                            />
-                          </label>
-
-                          <label className="block">
-                            <div className="mb-1 flex items-center justify-between">
-                              <span>Top P</span>
-                              <span className="text-slate-600 dark:text-[#9b9b9b]">{chatParameters.topP.toFixed(2)}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={1}
-                              step={0.01}
-                              value={chatParameters.topP}
-                              onChange={(event) =>
-                                handleParameterChange("topP", Number(event.target.value))
-                              }
-                              className="w-full accent-sky-600 dark:accent-[#9cc8ff]"
-                            />
-                          </label>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="block">
-                              <span className="mb-1 block">Top K</span>
-                              <input
-                                type="number"
-                                min={0}
-                                max={200}
-                                step={1}
-                                value={chatParameters.topK}
-                                onChange={(event) =>
-                                  handleParameterChange("topK", Number(event.target.value || 0))
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-
-                            <label className="block">
-                              <span className="mb-1 block">Max Tokens</span>
-                              <input
-                                type="number"
-                                min={64}
-                                max={8192}
-                                step={1}
-                                value={chatParameters.maxTokens}
-                                onChange={(event) =>
-                                  handleParameterChange("maxTokens", Number(event.target.value || 0))
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="block">
-                              <span className="mb-1 block">Frequency Penalty</span>
-                              <input
-                                type="number"
-                                min={-2}
-                                max={2}
-                                step={0.1}
-                                value={chatParameters.frequencyPenalty}
-                                onChange={(event) =>
-                                  handleParameterChange(
-                                    "frequencyPenalty",
-                                    Number(event.target.value || 0)
-                                  )
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-
-                            <label className="block">
-                              <span className="mb-1 block">Presence Penalty</span>
-                              <input
-                                type="number"
-                                min={-2}
-                                max={2}
-                                step={0.1}
-                                value={chatParameters.presencePenalty}
-                                onChange={(event) =>
-                                  handleParameterChange(
-                                    "presencePenalty",
-                                    Number(event.target.value || 0)
-                                  )
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
+                    {/* The generation parameters (temperature, top P...) were removed from
+                        here: answers run through the repository pipeline, which never read
+                        them, so the panel changed nothing. */}
                     <button
                       type="submit"
                       disabled={

@@ -264,6 +264,19 @@ export default function WorkspaceGlobalSearch({
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
         setOpen(false);
+        return;
+      }
+      // "/" opens search from anywhere, as the badge on the button promises,
+      // unless the reader is typing in a field (where "/" is just a slash).
+      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const target = event.target as HTMLElement | null;
+        const typing =
+          target?.isContentEditable ||
+          (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+        if (!typing) {
+          event.preventDefault();
+          setOpen(true);
+        }
       }
     }
 
@@ -447,18 +460,19 @@ export default function WorkspaceGlobalSearch({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white sm:w-[168px] sm:justify-start sm:gap-2 sm:px-3"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-surface text-mute shadow-raise transition-[border-color,color] duration-150 hover:border-hairline-strong hover:text-ink sm:w-[184px] sm:justify-start sm:gap-2 sm:px-3"
         aria-label="Search repository"
+        aria-keyshortcuts="/"
       >
         <SearchIcon className="h-4 w-4 flex-none" />
         <span className="hidden min-w-0 truncate text-sm sm:block">Search</span>
-        <span className="ml-auto hidden rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 dark:border-[#2a2a2a] dark:text-[#8f8f8f] xl:block">
+        <kbd className="ml-auto hidden rounded border border-hairline bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-mute xl:block">
           /
-        </span>
+        </kbd>
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-3 w-[min(680px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div className="absolute right-0 z-50 mt-2 w-[min(680px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay motion-safe:animate-scale-in">
           <form
             onSubmit={(event) => {
               event.preventDefault();

@@ -1,152 +1,284 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { FeatureBand, FinalCTA, SellingPoint } from "@/components/marketing/FeatureBand";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
 import { MarketingShell } from "@/components/marketing/MarketingLayout";
-import { AnimatedProductFrame, MotionReveal } from "@/components/marketing/MarketingMotion";
+import ProductShot from "@/components/marketing/ProductShot";
 import {
+  faqs,
   marketingFeatures,
-  proofMetrics,
-  valuePillars,
+  productDetails,
   workflowSteps,
+  type MarketingFeature,
 } from "@/components/marketing/marketing-content";
-import { ArrowRightIcon } from "@/components/ui/Icons";
+import {
+  arrowLinkClass,
+  displayClass,
+  leadClass,
+  secondaryPillClass,
+  sectionTitleClass,
+} from "@/components/marketing/styles";
+import { ArrowRightIcon, CheckIcon, PlusIcon } from "@/components/ui/Icons";
 
 export const metadata: Metadata = {
-  title: "Papertrend | Research libraries into living insight",
+  title: { absolute: "Papertrend | Read a whole field of research at once" },
   description:
-    "Papertrend turns research paper collections into structured analysis, dashboards, charts, and AI research chat.",
+    "Upload research papers and Papertrend reads each one for its year, methods, topics and category, charts how the field has moved, and answers questions with a citation for every claim.",
   alternates: {
     canonical: "/",
   },
 };
 
+function feature(slug: MarketingFeature["slug"]) {
+  return marketingFeatures.find((item) => item.slug === slug)!;
+}
+
+function Bullets({ items }: { items: string[] }) {
+  return (
+    <ul className="mt-8 space-y-3.5">
+      {items.map((item) => (
+        <li key={item} className="flex gap-3 text-[15px] leading-6 text-body">
+          <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-subtle text-ink">
+            <CheckIcon weight="bold" className="h-3 w-3" />
+          </span>
+          {item}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** Text on one side, the real screen on the other; flips every other row. */
+function FeatureRow({
+  item,
+  shot,
+  shotAlt,
+  bullets,
+  flip = false,
+}: {
+  item: MarketingFeature;
+  shot: string;
+  shotAlt: string;
+  bullets: string[];
+  flip?: boolean;
+}) {
+  return (
+    <section className="px-4 py-20 sm:px-6 sm:py-28">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-16">
+        <div className={`reveal lg:col-span-5 ${flip ? "lg:order-2" : ""}`}>
+          <h2 className={sectionTitleClass}>{item.title}</h2>
+          <p className={`mt-5 ${leadClass}`}>{item.description}</p>
+          <Bullets items={bullets} />
+          <Link href={`/features/${item.slug}`} className={`mt-9 ${arrowLinkClass}`}>
+            More on {item.navLabel.toLowerCase()}
+            <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+          </Link>
+        </div>
+        <div className={`reveal lg:col-span-7 ${flip ? "lg:order-1" : ""}`}>
+          <ProductShot name={shot} alt={shotAlt} sizes="(min-width: 1024px) 680px, 100vw" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function LandingPage() {
+  const analysis = feature("paper-analysis");
+  const dashboard = feature("research-dashboard");
+  const chat = feature("ai-research-chat");
+  const batch = feature("cloud-queue");
+
   return (
     <MarketingShell>
-      <section className="relative overflow-hidden px-4 pb-20 pt-32 sm:px-6 lg:pb-28">
-        <div className="marketing-grid pointer-events-none absolute inset-0 opacity-40" />
-        <div className="absolute inset-x-0 top-16 h-px bg-gradient-to-r from-transparent via-[#2a2a2a] to-transparent" />
-        <div className="relative mx-auto max-w-7xl text-center">
-          <MotionReveal>
-            <p className="mx-auto inline-flex rounded-md border border-[#1f1f1f] bg-[#050505] px-3 py-1.5 font-mono text-xs text-[#8f8f8f]">
-              RESEARCH INTELLIGENCE PLATFORM
-            </p>
-            <h1 className="mx-auto mt-7 max-w-5xl text-4xl font-semibold leading-tight text-white sm:text-7xl lg:text-8xl">
-              Turn research libraries into living insight.
+      {/* ------------------------------------------------------------ hero */}
+      <section className="relative isolate px-4 pt-32 sm:px-6 sm:pt-40">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[720px] bg-[radial-gradient(55%_45%_at_50%_0%,rgb(var(--ink)/0.07),transparent_72%)]"
+        />
+        <div className="mx-auto max-w-6xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <h1 className={`${displayClass} text-[2.6rem] leading-[1.04] sm:text-6xl sm:leading-[1.02] lg:text-[4.5rem]`}>
+              Read a whole field of research at once.
             </h1>
-            <p className="mx-auto mt-7 max-w-3xl text-base leading-8 text-[#a3a3a3] sm:text-lg">
-              Papertrend analyzes paper collections, organizes evidence, visualizes
-              research movement, and gives every workspace an AI layer that can
-              reason across files, charts, and web citations.
+            <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-body">
+              Upload the papers you work with. Papertrend reads each one for its year, methods,
+              topics and category, charts how the field has moved, and answers your questions with
+              a citation for every claim.
             </p>
-            <div className="mt-9 flex flex-wrap justify-center gap-3">
-              <MarketingCTA />
-              <Link
-                href="/features/paper-analysis"
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-950 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]"
-              >
-                Explore features
-                <ArrowRightIcon className="h-4 w-4" />
-              </Link>
+            <div className="mt-9 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+              <MarketingCTA size="lg" label="Start with your papers" />
+              <a href="#how" className={secondaryPillClass}>
+                See how it works
+              </a>
             </div>
-          </MotionReveal>
-
-          <AnimatedProductFrame />
+            <p className="mt-5 text-[13px] text-mute">English and Thai papers · PDFs up to 10 MB · 50 at a time</p>
+          </div>
+          <div className="hero-rise mt-16 sm:mt-20">
+            <ProductShot
+              name={dashboard.shot}
+              alt={dashboard.shotAlt}
+              priority
+              fade
+              sizes="(min-width: 1152px) 1152px, 100vw"
+            />
+          </div>
         </div>
       </section>
 
-      <section className="border-y border-[#1f1f1f] bg-[#030303]">
-        <div className="mx-auto grid max-w-7xl gap-px bg-[#1f1f1f] sm:grid-cols-3">
-          {/* Display size is for quantities. "Async" set at 3xl reads as a
-              statistic the reader then cannot find. */}
-          {proofMetrics.map((item) => (
-            <div key={item.label} className="bg-[#030303] px-6 py-8 text-center">
-              <p
-                className={
-                  /^[\d][\d.,]*\+?$/.test(item.value.trim())
-                    ? "text-3xl font-semibold text-white"
-                    : "text-lg font-semibold text-white"
-                }
-              >
-                {item.value}
-              </p>
-              <p className="mt-2 text-sm text-[#8f8f8f]">{item.label}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-20 sm:px-6">
-        <MotionReveal className="max-w-3xl">
-          <p className="font-mono text-xs text-[#8f8f8f]">CAPABILITIES</p>
-          <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-5xl">
-            One workspace for papers, charts, chat, and cloud analysis.
+      {/* ---------------------------------------------------- how it works */}
+      <section id="how" className="scroll-mt-20 px-4 pb-8 pt-16 sm:px-6 sm:pt-20">
+        <div className="mx-auto max-w-6xl">
+          <h2 className={`reveal max-w-2xl ${sectionTitleClass}`}>
+            From a folder of PDFs to answers you can check.
           </h2>
-          <p className="mt-5 text-base leading-7 text-[#a3a3a3]">
-            Start with a repository of PDFs and move toward a searchable research
-            system with evidence, dashboard views, charts, and AI conversation.
-          </p>
-        </MotionReveal>
-
-        <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {marketingFeatures.map((feature, index) => (
-            <FeatureBand key={feature.slug} feature={feature} delay={index * 0.08} />
-          ))}
-        </div>
-      </section>
-
-      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-20 sm:px-6">
-        <div className="mx-auto max-w-7xl">
-          <MotionReveal className="grid gap-10 lg:grid-cols-[0.8fr_1.2fr] lg:items-start">
-            <div>
-              <p className="font-mono text-xs text-[#8f8f8f]">WORKFLOW</p>
-              <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-5xl">
-                A research workflow that keeps moving after upload.
-              </h2>
-              <p className="mt-5 text-base leading-7 text-[#a3a3a3]">
-                Papertrend is built around the way research teams actually work:
-                collect papers, analyze them reliably, inspect the corpus, and ask
-                sharper questions from the same source of truth.
-              </p>
-            </div>
-            <div className="grid gap-px overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#1f1f1f] sm:grid-cols-2">
-              {workflowSteps.map((step) => {
-                const Icon = step.icon;
-                return (
-                  <div key={step.title} className="bg-[#050505] p-6">
-                    <Icon className="h-5 w-5 text-[#d0d0d0]" />
-                    <h3 className="mt-5 text-lg font-semibold text-white">{step.title}</h3>
-                    <p className="mt-3 text-sm leading-6 text-[#a3a3a3]">{step.copy}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </MotionReveal>
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[0.9fr_1.1fr]">
-        <MotionReveal>
-          <p className="font-mono text-xs text-[#8f8f8f]">WHY PAPERTREND</p>
-          <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-5xl">
-            Built for research operations, not another file drawer.
-          </h2>
-          <p className="mt-5 text-base leading-7 text-[#a3a3a3]">
-            Papertrend connects the operational layer of upload queues and library
-            status with the analytical layer of dashboard insight and AI chat.
-          </p>
-        </MotionReveal>
-        <MotionReveal delay={0.12} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-          <ul className="grid gap-4 sm:grid-cols-2">
-            {valuePillars.map((pillar) => (
-              <SellingPoint key={pillar}>{pillar}</SellingPoint>
+          <ol className="mt-14 grid gap-10 md:grid-cols-3 md:gap-10">
+            {workflowSteps.map((step, index) => (
+              <li key={step.title} className="reveal border-t border-hairline pt-6">
+                <span className="font-mono text-sm tabular-nums text-mute">0{index + 1}</span>
+                <h3 className="mt-3 text-lg font-medium tracking-tight text-ink">{step.title}</h3>
+                <p className="mt-2 text-[15px] leading-7 text-body">{step.copy}</p>
+              </li>
             ))}
-          </ul>
-        </MotionReveal>
+          </ol>
+        </div>
       </section>
 
-      <FinalCTA />
+      {/* -------------------------------------------------------- features */}
+      <FeatureRow
+        item={analysis}
+        shot="paper"
+        shotAlt={analysis.shotAlt}
+        bullets={analysis.sections[0].bullets}
+      />
+      <FeatureRow
+        item={dashboard}
+        shot="dashboard-categories"
+        shotAlt={dashboard.sections[0].shotAlt ?? dashboard.shotAlt}
+        bullets={[...dashboard.sections[0].bullets, ...dashboard.sections[1].bullets.slice(0, 1)]}
+        flip
+      />
+
+      <section className="border-y border-hairline bg-canvas px-4 py-24 dark:bg-surface sm:px-6 sm:py-32">
+        <div className="mx-auto max-w-6xl">
+          <div className="reveal mx-auto max-w-2xl text-center">
+            <h2 className={sectionTitleClass}>{chat.title}</h2>
+            <p className={`mt-5 ${leadClass}`}>{chat.description}</p>
+          </div>
+          <div className="reveal mt-14">
+            <ProductShot name={chat.shot} alt={chat.shotAlt} />
+          </div>
+          <dl className="reveal mx-auto mt-14 grid max-w-4xl gap-8 sm:grid-cols-3">
+            {[
+              ["Cited", "Every claim carries a number that opens the paper it came from."],
+              ["Scoped", "Ask a whole repository, or only the papers you attach."],
+              ["Honest", "When the papers do not answer the question, the answer says so."],
+            ].map(([term, detail]) => (
+              <div key={term} className="border-l border-hairline pl-5">
+                <dt className="text-sm font-medium text-ink">{term}</dt>
+                <dd className="mt-1.5 text-[15px] leading-7 text-body">{detail}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="mt-12 text-center">
+            <Link href={`/features/${chat.slug}`} className={arrowLinkClass}>
+              More on research chat
+              <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 py-20 sm:px-6 sm:py-28">
+        <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-16">
+          <div className="reveal lg:col-span-5">
+            <h2 className={sectionTitleClass}>Your categories, not a fixed list.</h2>
+            <p className={`mt-5 ${leadClass}`}>
+              Each repository chooses how its papers are classified: no forced categories, the
+              official EIL tracks, or a taxonomy of your own. Change your mind later and reclassify
+              the papers already analyzed.
+            </p>
+            <Bullets
+              items={[
+                "General research: signals without forced categories",
+                "EIL tracks: EL, ELI and LAE with their boundary rules",
+                "Custom: 2 to 12 categories you define",
+                "Every classification comes with its reason",
+              ]}
+            />
+          </div>
+          <div className="reveal lg:col-span-7">
+            <ProductShot
+              name="settings-analysis"
+              alt="Repository settings: choosing between General Research, EIL Tracks and a custom taxonomy, with the official EIL category definitions."
+              sizes="(min-width: 1024px) 680px, 100vw"
+            />
+          </div>
+        </div>
+      </section>
+
+      <FeatureRow
+        item={batch}
+        shot={batch.shot}
+        shotAlt={batch.shotAlt}
+        bullets={[...batch.sections[0].bullets, batch.sections[1].bullets[0]]}
+        flip
+      />
+
+      {/* --------------------------------------------------------- details */}
+      <section className="px-4 py-24 sm:px-6 sm:py-32">
+        <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-12 lg:gap-16">
+          <div className="reveal lg:col-span-4">
+            <h2 className={sectionTitleClass}>The details.</h2>
+            <p className={`mt-5 ${leadClass}`}>What it handles, how it handles it, and who can see the result.</p>
+            <Link href="/docs" className={`mt-8 ${arrowLinkClass}`}>
+              Read the documentation
+              <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Link>
+          </div>
+          <dl className="reveal divide-y divide-hairline border-y border-hairline lg:col-span-8">
+            {productDetails.map((item) => (
+              <div key={item.term} className="grid gap-1.5 py-5 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-6">
+                <dt className="text-sm font-medium text-ink">{item.term}</dt>
+                <dd className="text-[15px] leading-7 text-body">{item.detail}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------------- faq */}
+      <section className="px-4 pb-24 sm:px-6 sm:pb-32">
+        <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-12 lg:gap-16">
+          <h2 className={`reveal lg:col-span-4 ${sectionTitleClass}`}>Questions people ask first.</h2>
+          <div className="reveal border-t border-hairline lg:col-span-8">
+            {faqs.map((item) => (
+              <details key={item.question} className="faq group border-b border-hairline">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 py-5 text-left text-[17px] font-medium text-ink [&::-webkit-details-marker]:hidden">
+                  {item.question}
+                  <PlusIcon className="h-4 w-4 flex-none text-mute transition-transform duration-300 ease-out-expo group-open:rotate-45" />
+                </summary>
+                <p className="max-w-2xl pb-6 text-[15px] leading-7 text-body">{item.answer}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------- final cta */}
+      <section className="px-4 pb-28 sm:px-6">
+        <div className="reveal mx-auto max-w-6xl rounded-[28px] border border-hairline bg-canvas px-6 py-20 text-center dark:bg-surface sm:px-12 sm:py-24">
+          <h2 className={`mx-auto max-w-2xl ${sectionTitleClass}`}>Start with the papers on your desk.</h2>
+          <p className={`mx-auto mt-5 max-w-xl ${leadClass}`}>
+            Make a repository, add a few PDFs, and see what they have in common within minutes.
+          </p>
+          <div className="mt-9 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
+            <MarketingCTA size="lg" />
+            <Link href="/docs/getting-started" className={secondaryPillClass}>
+              Read the guide
+            </Link>
+          </div>
+        </div>
+      </section>
     </MarketingShell>
   );
 }

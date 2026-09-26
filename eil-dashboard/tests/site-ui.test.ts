@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 
 function read(relative: string): string {
   return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
@@ -153,9 +153,13 @@ test("documentation search accepts a query from the URL", () => {
 test("the popular documentation list is a shortlist, not the whole shelf", () => {
   // Nine of thirteen pages carried popular: true - 69%, so the label curated
   // nothing, and the same pages were listed again grouped immediately below.
-  const content = read("src/lib/docs-content.ts");
+  // The pages live in one module per category under src/lib/docs.
+  const content = readdirSync(new URL("../src/lib/docs/", import.meta.url))
+    .filter((name) => name.endsWith(".ts"))
+    .map((name) => read(`src/lib/docs/${name}`))
+    .join(" ");
   const popular = (content.match(/popular: true/g) ?? []).length;
-  const pages = (content.match(/^\s{8}slug: "/gm) ?? []).length;
+  const pages = (content.match(/^\s+slug: "/gm) ?? []).length;
   assert.ok(popular > 0, "the shortlist should not be empty");
   assert.ok(
     popular <= Math.ceil(pages / 3),

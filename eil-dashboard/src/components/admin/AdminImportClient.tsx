@@ -24,6 +24,7 @@ import {
   ChevronDownIcon,
   CloseIcon,
   DownloadIcon,
+  BooksIcon,
   DriveIcon,
   FileIcon,
   FolderIcon,
@@ -240,16 +241,12 @@ function glyphForEntry(item: LibraryEntry) {
 }
 
 function badgeToneForEntry(item: LibraryEntry) {
-  if (item.typeFilter === "pdf") {
-    return "bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-300";
+  // One quiet tone for every file: the glyph already says what it is, and a
+  // red square beside each PDF read as an error on every row.
+  if (item.run?.status === "failed") {
+    return "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 dark:bg-red-950/30 dark:text-red-300 dark:ring-red-900/60";
   }
-  if (item.typeFilter === "image") {
-    return "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300";
-  }
-  if (item.sourceFilter === "google-drive") {
-    return "bg-sky-100 text-sky-600 dark:bg-sky-950/30 dark:text-sky-300";
-  }
-  return "bg-slate-200 text-slate-700 dark:bg-[#050505] dark:text-[#d6d6d6]";
+  return "bg-subtle text-body ring-1 ring-inset ring-hairline";
 }
 
 function defaultDirectionForSort(sortKey: SortKey): SortDirection {
@@ -835,13 +832,28 @@ export default function AdminImportClient() {
       headers: jsonRequestHeaders,
       body: JSON.stringify(selection),
     });
-    const payload = (await response.json().catch(() => ({}))) as { queuedCount?: number; error?: string };
+    const payload = (await response.json().catch(() => ({}))) as {
+      queuedCount?: number;
+      queuedRunIds?: string[];
+      error?: string;
+    };
     if (!response.ok) {
       throw new Error(payload.error ?? "The papers could not be queued.");
     }
+    // Follow the re-queued papers in the progress tray, exactly as an upload
+    // is followed. The message used to promise progress "on Home", where
+    // nothing about a re-analysis ever appeared.
+    const queuedIds = new Set(payload.queuedRunIds ?? []);
+    const queuedRuns = runs.filter((run) => queuedIds.has(run.id));
+    if (queuedRuns.length > 0) {
+      startAnalysisSession(queuedRuns, {
+        sourceKind: "reanalysis",
+        folder: libraryProject?.name ?? "Repository",
+      });
+    }
     setMessage(
       `${payload.queuedCount ?? 0} paper${payload.queuedCount === 1 ? "" : "s"} queued to be analyzed again. ` +
-        "Progress shows on Home."
+        "The progress tray follows each one."
     );
     await loadRuns();
   }
@@ -1077,9 +1089,9 @@ export default function AdminImportClient() {
     if (!toolbarPopover) return null;
 
     const sectionClass =
-      "rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]";
+      "z-50 origin-top rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in";
     const itemClass =
-      "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
+      "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
 
     if (toolbarPopover.kind === "new") {
       return (
@@ -1265,14 +1277,14 @@ export default function AdminImportClient() {
     if (!itemMenuState) return null;
 
     const itemClass =
-      "flex w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
+      "flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
     const menuItem = itemMenuState.item;
 
     if (!activeMenuRun) return null;
 
     return (
       <div
-        className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]"
+        className="fixed z-50 origin-top rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
         style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
       >
         {activeMenuRun.status === "succeeded" ? (
@@ -1486,7 +1498,7 @@ export default function AdminImportClient() {
                 setItemMenuState(null);
               }
             }}
-            className="flex w-full rounded-xl px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
+            className="flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-red-700 transition-colors duration-150 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
           >
             Move to trash
           </button>
@@ -1503,10 +1515,10 @@ export default function AdminImportClient() {
       <button
         type="button"
         onClick={(event) => openToolbarMenu(event, kind, 220)}
-        className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
       >
         <span>{label}</span>
-        <ChevronDownIcon className="h-4 w-4" />
+        <ChevronDownIcon className="h-3.5 w-3.5 text-mute" />
       </button>
     );
   }
@@ -1553,17 +1565,17 @@ export default function AdminImportClient() {
                     }}
                     className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   >
-                    Repositories
+                    Library
                   </button>
                   <span>/</span>
                   <span className="font-medium text-slate-900 dark:text-white">{libraryProject.name}</span>
                 </>
               ) : (
-                <span>Repositories</span>
+                <span>Library</span>
               )}
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-              {showTrash ? "Trash" : libraryProject?.name ?? "Repositories"}
+              {showTrash ? "Trash" : libraryProject?.name ?? "Library"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
               {showTrash
@@ -1591,7 +1603,7 @@ export default function AdminImportClient() {
                 }
                 openToolbarMenu(event, "new", 240);
               }}
-              className="inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-300 bg-[#e8f0fe] px-5 text-sm font-semibold text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition hover:border-slate-400 dark:border-[#1f1f1f] dark:bg-white dark:text-[#171717] dark:hover:border-[#3a3a3a] dark:hover:bg-[#f2f2f2]"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-medium text-canvas shadow-raise transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
             >
               <PlusIcon className="h-4 w-4" />
               <span>New</span>
@@ -1604,24 +1616,24 @@ export default function AdminImportClient() {
                 setSelectedFolderId("all");
                 setQuery("");
               }}
-              className={`inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border px-5 text-sm font-semibold transition ${
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-medium shadow-raise transition-[background-color,border-color,transform] duration-150 active:scale-[0.98] ${
                 showTrash
-                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black"
-                  : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                  ? "border-ink bg-ink text-canvas"
+                  : "border-hairline bg-surface text-ink hover:border-hairline-strong hover:bg-subtle"
               }`}
             >
               <TrashIcon className="h-4 w-4" />
-              <span>{showTrash ? "Back to repositories" : "Trash"}</span>
+              <span>{showTrash ? "Back to library" : "Trash"}</span>
             </button>
 
             <label className="relative col-span-2 block min-w-0 flex-1">
-              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#808080]" />
+              <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
               <input
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={libraryProject ? `Search in ${libraryProject.name}` : "Search repositories"}
-                className="h-14 w-full rounded-[20px] border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-slate-900/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a] dark:focus:ring-[#242424]"
+                className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
               />
             </label>
           </div>
@@ -1644,7 +1656,7 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={(event) => openToolbarMenu(event, "sort", 260)}
-              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <SortIcon className="h-4 w-4" />
               <span>Sort</span>
@@ -1652,18 +1664,18 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={() => void loadRuns()}
-              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               {loading ? "Refreshing..." : "Refresh"}
             </button>
-            <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="inline-flex rounded-lg border border-hairline bg-surface p-0.5 shadow-raise">
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
                   viewMode === "list"
-                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
-                    : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
+                    ? "bg-subtle text-ink"
+                    : "text-mute hover:text-ink"
                 }`}
                 aria-label="List layout"
               >
@@ -1672,10 +1684,10 @@ export default function AdminImportClient() {
               <button
                 type="button"
                 onClick={() => setViewMode("grid")}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
                   viewMode === "grid"
-                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
-                    : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
+                    ? "bg-subtle text-ink"
+                    : "text-mute hover:text-ink"
                 }`}
                 aria-label="Grid layout"
               >
@@ -1761,7 +1773,7 @@ export default function AdminImportClient() {
               >
                 <span>Name</span>
                 {sortKey === "name" ? (
-                  <span className="text-xs text-sky-600 dark:text-sky-300">
+                  <span className="text-xs text-ink">
                     {sortDirection === "asc" ? "\u2191" : "\u2193"}
                   </span>
                 ) : null}
@@ -1774,7 +1786,7 @@ export default function AdminImportClient() {
               >
                 <span>Date modified</span>
                 {sortKey === "modified" ? (
-                  <span className="text-xs text-sky-600 dark:text-sky-300">
+                  <span className="text-xs text-ink">
                     {sortDirection === "asc" ? "\u2191" : "\u2193"}
                   </span>
                 ) : null}
@@ -1786,7 +1798,7 @@ export default function AdminImportClient() {
               >
                 <span>File size</span>
                 {sortKey === "size" ? (
-                  <span className="text-xs text-sky-600 dark:text-sky-300">
+                  <span className="text-xs text-ink">
                     {sortDirection === "asc" ? "\u2191" : "\u2193"}
                   </span>
                 ) : null}
@@ -1805,7 +1817,7 @@ export default function AdminImportClient() {
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
                         <span
-                          className={`mt-0.5 flex h-12 w-12 flex-none items-center justify-center rounded-[18px] ${badgeToneForEntry(item)}`}
+                          className={`mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-lg ${badgeToneForEntry(item)}`}
                         >
                           <Glyph className="h-5 w-5" />
                         </span>
@@ -1815,7 +1827,7 @@ export default function AdminImportClient() {
                               type="button"
                               onClick={() => void handleOpenPrimaryFileAction(item.run)}
                               title={item.name}
-                              className="line-clamp-2 min-w-0 text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
+                              className="line-clamp-2 min-w-0 text-left text-sm font-medium text-ink underline-offset-2 hover:underline"
                             >
                               {item.name}
                             </button>
@@ -1854,7 +1866,7 @@ export default function AdminImportClient() {
                     </div>
 
                     <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-[#b6b6b6]">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-xs font-semibold text-white">
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-subtle text-[11px] font-semibold text-ink ring-1 ring-inset ring-hairline">
                         {ownerInitial}
                       </span>
                       <span>{item.ownerLabel}</span>
@@ -1886,7 +1898,7 @@ export default function AdminImportClient() {
                                 );
                               }
                             }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                             aria-label={`Download ${item.name}`}
                           >
                             <DownloadIcon className="h-4 w-4" />
@@ -1904,7 +1916,7 @@ export default function AdminImportClient() {
                                 );
                               }
                             }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                             aria-label={`Rename ${item.name}`}
                           >
                             <PencilSquareIcon className="h-4 w-4" />
@@ -1937,7 +1949,7 @@ export default function AdminImportClient() {
                       <button
                         type="button"
                         onClick={(event) => openItemMenu(event, item)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                         aria-label={`Open actions for ${item.name}`}
                       >
                         <MoreHorizontalIcon className="h-4 w-4" />
@@ -1972,7 +1984,7 @@ export default function AdminImportClient() {
                         >
                           <div className="relative flex h-44 items-center justify-center overflow-hidden bg-slate-100 dark:bg-[#050505]">
                             <span
-                              className={`flex h-16 w-16 items-center justify-center rounded-[20px] ${badgeToneForEntry(item)}`}
+                              className={`flex h-14 w-14 items-center justify-center rounded-xl ${badgeToneForEntry(item)}`}
                             >
                               <Glyph className="h-7 w-7" />
                             </span>
@@ -2022,7 +2034,7 @@ export default function AdminImportClient() {
                                   );
                                 }
                               }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                               aria-label={`Download ${item.name}`}
                             >
                               <DownloadIcon className="h-4 w-4" />
@@ -2040,7 +2052,7 @@ export default function AdminImportClient() {
                                   );
                                 }
                               }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                               aria-label={`Rename ${item.name}`}
                             >
                               <PencilSquareIcon className="h-4 w-4" />
@@ -2073,7 +2085,7 @@ export default function AdminImportClient() {
                           <button
                             type="button"
                             onClick={(event) => openItemMenu(event, item)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                             aria-label={`Open actions for ${item.name}`}
                           >
                             <MoreHorizontalIcon className="h-4 w-4" />
@@ -2123,7 +2135,7 @@ export default function AdminImportClient() {
                       className="group flex min-h-32 items-start gap-4 rounded-lg border border-slate-200 bg-white p-5 text-left transition-colors hover:border-slate-400 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                     >
                       <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">
-                        <DriveIcon className="h-5 w-5" />
+                        <BooksIcon className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">{project.name}</span>
