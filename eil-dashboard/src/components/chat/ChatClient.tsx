@@ -3511,7 +3511,9 @@ export default function ChatClient() {
 
           <div className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">
             <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
-              <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+              {/* The composer shows keyboard focus on its own border, rather
+                  than an outline drawn inside it around the text box. */}
+              <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] transition-colors duration-150 has-[textarea:focus-visible]:border-[rgb(var(--focus))] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] dark:has-[textarea:focus-visible]:border-[rgb(var(--focus))]">
                 {error ? (
                   <div role="alert" className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
                     {error}
@@ -3665,7 +3667,7 @@ export default function ChatClient() {
                       : "Ask the repository…"
                   }
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none placeholder:text-slate-600 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none focus-visible:outline-none placeholder:text-slate-600 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
