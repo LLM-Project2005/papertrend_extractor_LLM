@@ -1552,29 +1552,31 @@ export default function AdminImportClient() {
 
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-              {showTrash ? (
-                <span>Trash</span>
-              ) : libraryProject ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
+            {/* A way back up, only where there is somewhere to go back to: at
+                the root it would just repeat the heading. */}
+            {showTrash || libraryProject ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (showTrash) {
+                      setShowTrash(false);
+                    } else {
                       setLibraryProjectId(null);
                       setSelectedFolderId("all");
-                    }}
-                    className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                  >
-                    Library
-                  </button>
-                  <span>/</span>
-                  <span className="font-medium text-slate-900 dark:text-white">{libraryProject.name}</span>
-                </>
-              ) : (
-                <span>Library</span>
-              )}
-            </div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
+                    }
+                  }}
+                  className="-mx-2 rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                >
+                  Library
+                </button>
+                <span aria-hidden="true">/</span>
+                <span className="font-medium text-slate-900 dark:text-white">
+                  {showTrash ? "Trash" : libraryProject?.name}
+                </span>
+              </div>
+            ) : null}
+            <h1 className="text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
               {showTrash ? "Trash" : libraryProject?.name ?? "Library"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
