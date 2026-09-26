@@ -123,13 +123,18 @@ function matchesTrack(row: TrackRow | undefined, track: TrackKey | null): boolea
   return Number(row[field] ?? 0) > 0;
 }
 
-function buildDashboardDrilldownTitle(target: DashboardDrilldownTarget | null): string {
+function buildDashboardDrilldownTitle(
+  target: DashboardDrilldownTarget | null,
+  categoryLabel: (key: string) => string
+): string {
   if (!target) {
     return "Associated papers";
   }
 
+  // The category is named as the reader knows it ("English Language
+  // Instruction"), not by its internal key ("eli").
   const parts = [
-    target.track ? `Category: ${target.track}` : "",
+    target.track ? `Category: ${categoryLabel(target.track)}` : "",
     target.year ? `Year: ${target.year}` : "",
     target.keyword ? `Keyword: ${target.keyword}` : target.topic ? `Topic: ${target.topic}` : "",
   ].filter(Boolean);
@@ -973,7 +978,14 @@ export default function DashboardClient({
                       Dashboard drilldown
                     </p>
                     <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                      {buildDashboardDrilldownTitle(drilldownTarget)}
+                      {buildDashboardDrilldownTitle(drilldownTarget, (key) => {
+                        const normalized = normalizeDrilldownCategoryKey(key);
+                        return (
+                          categoryOptions.find((category) => category.key === normalized)?.label ??
+                          categoryLabels[key.toLowerCase() as TrackKey] ??
+                          key
+                        );
+                      })}
                     </h2>
                     <p className="mt-2 text-sm text-slate-500 dark:text-[#a3a3a3]">
                       {drilldownPapers.length} associated paper{drilldownPapers.length === 1 ? "" : "s"} in the current dashboard scope.
