@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/Icons";
 import DocsOnThisPage from "@/components/docs/DocsOnThisPage";
 import { DocsText, plainDocsText } from "@/components/docs/DocsText";
+import { sectionPlainText } from "@/lib/docs/plain-text";
 import ProductShot from "@/components/marketing/ProductShot";
 
 /*
@@ -32,18 +33,7 @@ import ProductShot from "@/components/marketing/ProductShot";
 const bodyClass = "text-base leading-7 text-body";
 
 function readingMinutes(page: DocsPage): number {
-  const text = page.sections
-    .flatMap((section) => [
-      ...section.body,
-      ...(section.bullets ?? []),
-      ...(section.steps ?? []),
-      ...(section.checklist ?? []),
-      ...(section.subsections ?? []).flatMap((sub) => [...sub.body, ...(sub.bullets ?? [])]),
-      ...(section.table?.rows.flat() ?? []),
-      ...(section.definitions ?? []).map((item) => `${item.term} ${item.detail}`),
-    ])
-    .map(plainDocsText)
-    .join(" ");
+  const text = page.sections.flatMap(sectionPlainText).join(" ");
   const words = text.split(/\s+/).filter(Boolean).length;
   return Math.max(1, Math.round(words / 220));
 }

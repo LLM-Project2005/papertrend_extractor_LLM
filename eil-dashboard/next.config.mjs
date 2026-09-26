@@ -9,7 +9,30 @@ const securityHeaders = [
   },
 ];
 
+// The documentation was reorganized in September 2026. Old addresses, from
+// bookmarks and earlier links, land on the page that now covers the subject.
+const movedDocs = {
+  "workspace-concepts": "repositories",
+  "library-uploads": "uploading-papers",
+  "google-drive-imports": "uploading-papers",
+  "search-navigation": "repositories",
+  "settings-profile": "account-and-settings",
+  "paper-analysis": "analysis-pipeline",
+  "research-dashboard": "dashboard",
+  "ai-research-chat": "chat",
+  "deep-research-agent": "deep-research",
+  "cloud-queue": "uploading-papers",
+  "evaluation-quality": "reading-a-paper",
+};
+
 const nextConfig = {
+  async redirects() {
+    return Object.entries(movedDocs).map(([from, to]) => ({
+      source: `/docs/${from}`,
+      destination: `/docs/${to}`,
+      permanent: true,
+    }));
+  },
   async headers() {
     return [
       {

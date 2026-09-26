@@ -50,10 +50,4 @@ export function DocsText({ text }: { text: string }) {
   );
 }
 
-/** The same string with its marks removed, for search and reading time. */
-export function plainDocsText(text: string): string {
-  return text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)\s]+\)/g, "$1");
-}
+export { plainDocsText } from "@/lib/docs/plain-text";

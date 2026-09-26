@@ -162,7 +162,7 @@ export function MarketingShell({
   activeSlug?: string;
 }) {
   return (
-    <div className="marketing-shell min-h-[100dvh] overflow-x-clip bg-canvas text-ink">
+    <div className="min-h-[100dvh] overflow-x-clip bg-canvas text-ink">
       <MarketingNav activeSlug={activeSlug} wide={activeSlug === "docs"} />
       <main>{children}</main>
       <MarketingFooter />
