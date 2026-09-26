@@ -747,6 +747,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
   const profileDirty = JSON.stringify(profileDraft) !== JSON.stringify(savedProjectProfile);
   const jobRunning = Boolean(reclassificationJob && ["queued", "processing"].includes(reclassificationJob.status));
   const needsReclassification = classificationCoverage.previousProfile + classificationCoverage.unclassified;
+  const analyzedTotal = classificationCoverage.classified + needsReclassification;
 
   useEffect(() => onDirtyChange(profileDirty), [onDirtyChange, profileDirty]);
 
@@ -867,7 +868,10 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
                 </span>
               ) : (
                 <span className="text-mute">
-                  Profile version {savedProjectProfile.version} · {savedProjectProfile.displayName}
+                  {savedProjectProfile.displayName}
+                  {currentProject?.analysis_profile_updated_at
+                    ? ` · saved ${formatDate(currentProject.analysis_profile_updated_at)}`
+                    : ""}
                 </span>
               )}
             </div>
@@ -930,7 +934,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
             {profileDirty
               ? "Save the profile first, so papers are classified against what you see."
               : needsReclassification > 0
-                ? `${needsReclassification} paper${needsReclassification === 1 ? "" : "s"} can be brought up to date.`
+                ? `${needsReclassification} of ${analyzedTotal} paper${analyzedTotal === 1 ? "" : "s"} use an earlier profile or none. Reclassifying reads all ${analyzedTotal} again, so every paper uses the same one.`
                 : "Every analyzed paper already uses the current profile."}
           </p>
           <button

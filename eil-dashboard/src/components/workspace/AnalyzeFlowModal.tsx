@@ -578,7 +578,11 @@ export default function AnalyzeFlowModal({
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Analysis profile</p>
                   <p className="mt-1 text-sm font-medium leading-6 text-slate-900 dark:text-white">{profileSummary(activeAnalysisProfile)}</p>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-[#999]">Every paper in this upload is classified with it.</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-[#999]">
+                    {activeAnalysisProfile.classificationEnabled
+                      ? "Every paper in this upload is classified with it."
+                      : "Papers are analyzed without being sorted into categories."}
+                  </p>
                   {previousProfileCount > 0 ? (
                     <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
                       {plural(previousProfileCount, "existing paper")} still use an earlier profile. New papers use this one.

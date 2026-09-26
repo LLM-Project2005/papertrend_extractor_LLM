@@ -213,7 +213,8 @@ test("progress under a paper describes the paper, not the queue machinery", () =
   // The paper view no longer reports where its rows came from in pipeline terms.
   const paperView = read("src/components/workspace/PaperAnalysisExplorerModal.tsx");
   assert.doesNotMatch(paperView, /Canonical node output|Pipeline analysis ready/);
-  assert.match(paperView, /<div className="mt-5 flex flex-wrap items-center gap-2">/);
+  // Its action buttons wrap rather than scroll sideways.
+  assert.match(paperView, /<div className="mt-5 flex flex-wrap items-center gap-[\d.]+">/);
 });
 
 test("the progress card is sent what it reads from the payload", () => {

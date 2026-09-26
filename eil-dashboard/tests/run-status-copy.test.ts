@@ -62,3 +62,30 @@ test("a failed paper explains itself where the papers are", () => {
   assert.match(library, /describeRunFailure\(run\.error_message\)/);
   assert.match(library, /title=\{item\.subtitle\}/);
 });
+
+test("terse worker messages get the sentence a reader needs", () => {
+  // "Extraction produced no usable text for 3f2c...pdf" named the internal run
+  // id in place of the file, and "Canceled by user." did not say what to do.
+  const cases: Array<[string, RegExp]> = [
+    ["Canceled by user.", /Try again/],
+    ["Extraction produced no usable text for 3f2c9a1e-0000-4000-8000-000000000000.pdf.", /No readable text/],
+    ["Critical extraction failure: cannot open broken document", /could not be read/],
+    ["Upload did not produce a storage path; this run cannot be processed.", /Add the PDF again/],
+    ["Direct upload failed before queueing.", /did not reach storage/],
+  ];
+  for (const [raw, expected] of cases) {
+    const shown = describeRunFailure(raw);
+    assert.match(shown, expected, raw);
+    assert.equal(/[0-9a-f]{8}-[0-9a-f]{4}-/.test(shown), false, "no internal id reaches the reader");
+  }
+});
+
+test("a failed paper is shown stopping where it stopped, not at Upload", () => {
+  // The worker writes the stage "failed", which is not one of the ten steps,
+  // so the card fell back to step 1 for every failure.
+  const card = read("src/components/workspace/AnalysisStatusCard.tsx");
+  assert.match(card, /if \(run\.status === "failed"\) return failedStageIndex\(run\);/);
+  const helper = card.slice(card.indexOf("function failedStageIndex"));
+  assert.match(helper, /upload\|storage path/, "an upload failure still stops at Upload");
+  assert.match(helper, /readCompletedGraphNodes\(run\)/, "otherwise the furthest finished step decides");
+});
