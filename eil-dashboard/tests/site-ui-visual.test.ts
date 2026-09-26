@@ -177,7 +177,9 @@ test("footer navigation looks like navigation", () => {
     false,
     "a link should not wear the control treatment"
   );
-  assert.match(footer, /-mx-2 rounded px-2 py-2 text-sm/, "padding keeps the hit area the boxes gave");
+  // inline-block, or the vertical padding on an inline link overlaps its
+  // neighbours instead of making the target taller.
+  assert.match(footer, /-mx-2 inline-block rounded px-2 py-2 text-sm/, "padding keeps the hit area the boxes gave");
 });
 
 test("a perpetual rainbow sweep no longer runs over every product frame", () => {

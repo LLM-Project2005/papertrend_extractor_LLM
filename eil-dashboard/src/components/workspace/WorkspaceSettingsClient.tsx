@@ -314,7 +314,7 @@ function ProfileSection() {
               onClick={() => void save()}
               className={buttonClass("primary", "sm")}
             >
-              {saving ? "Saving..." : "Save profile"}
+              {saving ? "Saving…" : "Save profile"}
             </button>
           </div>
         </>
@@ -437,7 +437,7 @@ function SecuritySection() {
               onClick={() => void sendReset()}
               className={buttonClass("secondary", "sm")}
             >
-              {resetState === "sending" ? "Sending..." : resetState === "sent" ? "Link sent" : "Email me a reset link"}
+              {resetState === "sending" ? "Sending…" : resetState === "sent" ? "Link sent" : "Email me a reset link"}
             </button>
             {resetState === "sent" ? (
               <span className="text-[13px] text-body" role="status">
@@ -477,7 +477,7 @@ function SecuritySection() {
           className={buttonClass("secondary", "sm")}
         >
           <LogoutIcon className="h-4 w-4" />
-          {signingOut ? "Signing out..." : "Sign out"}
+          {signingOut ? "Signing out…" : "Sign out"}
         </button>
       </Row>
     </Section>
@@ -656,7 +656,7 @@ function RepositorySection() {
               onClick={() => void save()}
               className={buttonClass("primary", "sm")}
             >
-              {saving ? "Saving..." : "Save changes"}
+              {saving ? "Saving…" : "Save changes"}
             </button>
           </div>
         </>
@@ -893,7 +893,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
                 onClick={() => void saveAnalysisProfile()}
                 className={buttonClass("primary", "sm")}
               >
-                {savingProfile ? "Saving..." : "Save profile"}
+                {savingProfile ? "Saving…" : "Save profile"}
               </button>
             </div>
           </>
@@ -943,7 +943,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
             onClick={() => void startReclassification()}
             className={buttonClass("secondary", "sm")}
           >
-            {reclassificationBusy ? "Starting..." : jobRunning ? "Reclassifying..." : "Reclassify existing papers"}
+            {reclassificationBusy ? "Starting…" : jobRunning ? "Reclassifying…" : "Reclassify existing papers"}
           </button>
         </div>
 
@@ -957,7 +957,7 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
                     ? "Stopped. The previous categories are kept."
                     : reclassificationJob.status === "canceled"
                       ? "Canceled. The previous categories are kept."
-                      : "Classifying analyzed papers..."}
+                      : "Classifying analyzed papers…"}
               </span>
               <span className="tabular-nums text-mute">
                 {reclassificationJob.processed_items}/{reclassificationJob.total_items || "..."}

@@ -1,5 +1,6 @@
 "use client";
 
+import { chartAnimationActive } from "@/lib/chart-theme";
 import Link from "next/link";
 import {
   FormEvent,
@@ -47,8 +48,9 @@ import {
   ANSWER_META_SM_CLASS,
 } from "@/lib/answer-typography";
 import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody";
-import { markCitations, type CitationSource } from "@/lib/answer-citations";
+import { citationPaperId, markCitations, type CitationSource } from "@/lib/answer-citations";
 import { ChatIntro, FollowUpSuggestions } from "@/components/chat/ChatIntro";
+import ThinkingOrb, { orbStateForStage } from "@/components/ui/ThinkingOrb";
 import {
   exampleQuestions,
   followUpSuggestions,
@@ -70,6 +72,8 @@ import {
   CloseIcon,
   CopyIcon,
   BooksIcon,
+  GeminiIcon,
+  OpenAIIcon,
   DriveIcon,
   ListViewIcon,
   EqualizerIcon,
@@ -270,9 +274,14 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
 };
 
 const MODEL_OPTIONS = [
-  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna" },
-  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash" },
+  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna", Mark: OpenAIIcon },
+  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash", Mark: GeminiIcon },
 ] as const;
+
+function ModelMark({ model, className }: { model: string; className?: string }) {
+  const Mark = MODEL_OPTIONS.find((option) => option.value === model)?.Mark;
+  return Mark ? <Mark className={className} /> : null;
+}
 
 const CHART_INTENT_PATTERN =
   /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
@@ -489,7 +498,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                 <YAxis allowDecimals={false} tick={{ fill: "#9ca3af", fontSize: 12 }} />
                 <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, index) => (
-                  <Line
+                  <Line isAnimationActive={chartAnimationActive()}
                     key={key}
                     type="monotone"
                     dataKey={key}
@@ -503,7 +512,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
             ) : chart.chartType === "pie" ? (
               <PieChart>
                 <Tooltip {...chatChartTooltipTheme} />
-                <Pie
+                <Pie isAnimationActive={chartAnimationActive()}
                   data={chartData}
                   dataKey={primaryKey}
                   nameKey="label"
@@ -540,7 +549,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                 />
                 <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, keyIndex) => (
-                  <Bar key={key} dataKey={key} radius={[4, 4, 0, 0]}>
+                  <Bar isAnimationActive={chartAnimationActive()} key={key} dataKey={key} radius={[4, 4, 0, 0]}>
                     {chartData.map((row, index) => (
                       <Cell
                         key={`${String(row.label)}-${key}-${index}`}
@@ -935,11 +944,11 @@ function renderLoadingLabel(
   chartModeEnabled: boolean,
   activeSession?: DeepResearchSessionRecord | null
 ) {
-  if (chartModeEnabled) return "Building chart...";
-  if (!deepResearchEnabled) return "Generating answer...";
-  if (activeSession?.status === "planned") return "Planning deep research...";
-  if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis...";
-  return "Running deep research...";
+  if (chartModeEnabled) return "Building chart…";
+  if (!deepResearchEnabled) return "Generating answer…";
+  if (activeSession?.status === "planned") return "Planning deep research…";
+  if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis…";
+  return "Running deep research…";
 }
 
 function buildResearchTitle(
@@ -1330,6 +1339,18 @@ export default function ChatClient() {
   const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen && !conversationMenuOpen && !threadMenuId && !reportFullViewOpen) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      setConversationMenuOpen(false);
+      setThreadMenuId(null);
+      setReportFullViewOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen, conversationMenuOpen, threadMenuId, reportFullViewOpen]);
   const [sourcesPanelOpen, setSourcesPanelOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
@@ -1474,7 +1495,7 @@ export default function ChatClient() {
       (reportMessage?.citations ?? [])
         .filter((citation) => citation.paperId && citation.sourceType !== "web")
         .map((citation) => ({
-          paperId: String(citation.paperId),
+          paperId: citationPaperId(citation),
           title: String(citation.title ?? ""),
           year: String(citation.year ?? ""),
           href: String(citation.href ?? ""),
@@ -1669,7 +1690,9 @@ export default function ChatClient() {
   }, [draft, resizeComposer]);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollAnchorRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
   }, [deepSession?.status, loading, messages]);
 
   useEffect(() => {
@@ -2544,7 +2567,7 @@ export default function ChatClient() {
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
@@ -2648,8 +2671,8 @@ export default function ChatClient() {
       <div
         className={`flex min-h-0 w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-black dark:text-[#ececec] ${
           fullscreenEnabled
-            ? "fixed inset-0 z-50 h-screen"
-            : "h-[calc(100vh-5rem)]"
+            ? "fixed inset-0 z-50 h-screen supports-[height:100dvh]:h-dvh"
+            : "h-[calc(100vh-5rem)] supports-[height:100dvh]:h-[calc(100dvh-5rem)]"
         }`}
       >
         <aside
@@ -2782,7 +2805,10 @@ export default function ChatClient() {
                           current === thread.id ? null : thread.id
                         )
                       }
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
+                      aria-label={`Options for ${thread.title || "this chat"}`}
+                      aria-haspopup="menu"
+                      aria-expanded={threadMenuId === thread.id}
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
@@ -3304,8 +3330,9 @@ export default function ChatClient() {
                                   ref={editComposerRef}
                                   value={editingDraft}
                                   onChange={(event) => setEditingDraft(event.target.value)}
+                                  aria-label="Edit message"
                                   rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
-                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-8 text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-base leading-8 sm:text-[15px] text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
                                 />
                                 <div className="mt-4 flex justify-end gap-2">
                                   <button
@@ -3327,7 +3354,7 @@ export default function ChatClient() {
                               </div>
                             ) : (
                               <>
-                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100">
+                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/message:opacity-100 [@media(hover:none)]:opacity-100">
                                   <button
                                     type="button"
                                     onClick={() => void copyMessageContent(message)}
@@ -3336,9 +3363,9 @@ export default function ChatClient() {
                                     title="Copy"
                                   >
                                     {copiedMessageId === message.id ? (
-                                      <CheckIcon className="h-4 w-4" />
+                                      <CheckIcon key="copied" className="h-4 w-4 animate-scale-in" />
                                     ) : (
-                                      <CopyIcon className="h-4 w-4" />
+                                      <CopyIcon key="copy" className="h-4 w-4" />
                                     )}
                                   </button>
                                   <button
@@ -3434,16 +3461,32 @@ export default function ChatClient() {
 
                 {loading ? (
                   <div className="flex items-start gap-3">
-                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
+                    <ThinkingOrb
+                      size={32}
+                      className="mt-0.5"
+                      state={
+                        chartModeEnabled
+                          ? "shaping"
+                          : deepResearchEnabled
+                            ? deepSession?.status === "planned"
+                              ? "breathing"
+                              : "working"
+                            : orbStateForStage(progress?.stage)
+                      }
+                    />
                     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                       <span className="flex flex-wrap items-baseline gap-x-2">
                         <span aria-live="polite">
-                          {progress?.label ??
-                            renderLoadingLabel(
-                              deepResearchEnabled,
-                              chartModeEnabled,
-                              deepSession
-                            )}
+                          {/* Keyed on the words, so each new step slides in
+                              rather than replacing the last one in place. */}
+                          <span key={progress?.label ?? "pending"} className="status-swap inline-block">
+                            {progress?.label ??
+                              renderLoadingLabel(
+                                deepResearchEnabled,
+                                chartModeEnabled,
+                                deepSession
+                              )}
+                          </span>
                         </span>
                         {progress?.detail ? (
                           <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">
@@ -3460,7 +3503,7 @@ export default function ChatClient() {
             {detailLoading ? (
               <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                <span>Loading chat...</span>
+                <span>Loading chat…</span>
               </div>
             ) : null}
             <div ref={scrollAnchorRef} />
@@ -3470,7 +3513,7 @@ export default function ChatClient() {
             <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
               <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
                 {error ? (
-                  <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
+                  <div role="alert" className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
                     {error}
                   </div>
                 ) : null}
@@ -3499,7 +3542,7 @@ export default function ChatClient() {
                                 current.filter((item) => item.id !== run.id)
                               )
                             }
-                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
+                            className="-my-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                             aria-label={`Remove ${runTitleOf(run)}`}
                           >
                             <CloseIcon className="h-3 w-3" />
@@ -3615,10 +3658,11 @@ export default function ChatClient() {
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
+                  aria-label="Message"
                   placeholder={
                     chartModeEnabled
                       ? "Ask for a repository chart, or leave blank for the best chart"
-                      : "Ask the repository"
+                      : "Ask the repository…"
                   }
                   rows={1}
                   className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none placeholder:text-slate-600 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
@@ -3635,6 +3679,8 @@ export default function ChatClient() {
                         }}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                         aria-label="Open attachment and tool menu"
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
                       >
                         <PlusIcon className="h-5 w-5" />
                       </button>
@@ -3795,11 +3841,12 @@ export default function ChatClient() {
 
                     {!deepResearchEnabled && !chartModeEnabled ? (
                       <label className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                        <span>Model</span>
+                        <ModelMark model={selectedModel} className="h-3.5 w-3.5 flex-none text-ink" />
+                        <span className="sr-only">Model</span>
                         <select
                           value={selectedModel}
                           onChange={(event) => setSelectedModel(event.target.value)}
-                          className="rounded-md bg-white text-xs font-medium text-slate-900 outline-none dark:bg-[#050505] dark:text-[#ececec]"
+                          className="rounded-md bg-slate-50 text-xs font-medium text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
                         >
                           {MODEL_OPTIONS.map((option) => (
                             <option
@@ -3821,7 +3868,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setDeepResearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                           aria-label="Disable deep research"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3836,7 +3883,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setChartModeEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                           aria-label="Disable chart mode"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3851,7 +3898,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setWebSearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                           aria-label="Disable web search"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3877,7 +3924,7 @@ export default function ChatClient() {
                         (!loading && draft.trim().length === 0 && !chartModeEnabled) ||
                         (deepResearchEnabled && !canPersist)
                       }
-                      className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                      className={`group inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
                         loading
                           ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
                           : draft.trim().length > 0 || chartModeEnabled
@@ -3889,7 +3936,11 @@ export default function ChatClient() {
                       {loading ? (
                         <StopIcon className="h-4 w-4" />
                       ) : (
-                        <SendIcon className="h-4 w-4" />
+                        <SendIcon
+                          className={`h-4 w-4 transition-transform duration-200 ease-out-expo ${
+                            draft.trim().length > 0 || chartModeEnabled ? "group-hover:-translate-y-px group-hover:translate-x-0.5" : ""
+                          }`}
+                        />
                       )}
                     </button>
                   </div>
@@ -3944,7 +3995,12 @@ export default function ChatClient() {
       </div>
 
       {reportFullViewOpen && researchReport ? (
-        <div className="fixed inset-0 z-50 bg-slate-50 text-slate-900 dark:bg-[#050505] dark:text-[#ececec]">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Deep research report"
+          className="fixed inset-0 z-50 overscroll-contain bg-slate-50 text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
+        >
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f] sm:px-6">
               <div className="flex items-center gap-3">
@@ -3999,7 +4055,7 @@ export default function ChatClient() {
                   type="search"
                   value={chatSearchQuery}
                   onChange={(event) => setChatSearchQuery(event.target.value)}
-                  placeholder="Search chats..."
+                  placeholder="Search chats…"
                   className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#c7c7c7]"
                   autoFocus
                 />
@@ -4030,7 +4086,7 @@ export default function ChatClient() {
               {chatSearchLoading ? (
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                  <span>Searching chats...</span>
+                  <span>Searching chats…</span>
                 </div>
               ) : null}
 
@@ -4126,8 +4182,9 @@ export default function ChatClient() {
                 type="search"
                 value={libraryQuery}
                 onChange={(event) => setLibraryQuery(event.target.value)}
-                placeholder="Search files"
-                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-600 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
+                placeholder="Search files…"
+                aria-label="Search files"
+                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-base text-slate-900 sm:text-sm outline-none placeholder:text-slate-600 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
               />
             </label>
 
@@ -4135,7 +4192,7 @@ export default function ChatClient() {
               {libraryLoading ? (
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                  <span>Loading repository files...</span>
+                  <span>Loading repository files…</span>
                 </div>
               ) : filteredLibraryRuns.length === 0 ? (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">

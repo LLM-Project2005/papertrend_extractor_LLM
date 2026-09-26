@@ -313,7 +313,7 @@ export default function AnalysisProfileEditor({
             }}
             className={`${fieldClass} font-normal`}
           >
-            <option value="">Choose a repository profile...</option>
+            <option value="">Choose a repository profile…</option>
             {templates.map((template) => <option key={template.projectId} value={template.projectId}>{template.projectName} - {template.profile.displayName}</option>)}
           </select>
         </label>

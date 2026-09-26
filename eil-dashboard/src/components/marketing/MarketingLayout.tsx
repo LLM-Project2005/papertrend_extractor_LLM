@@ -133,7 +133,7 @@ export function MarketingFooter() {
                   <li key={link.href}>
                     <Link
                       href={link.href}
-                      className="-mx-2 rounded px-2 py-2 text-sm text-body transition-colors hover:text-ink"
+                      className="-mx-2 inline-block rounded px-2 py-2 text-sm text-body transition-colors hover:text-ink"
                     >
                       {link.label}
                     </Link>
@@ -163,8 +163,16 @@ export function MarketingShell({
 }) {
   return (
     <div className="min-h-[100dvh] overflow-x-clip bg-canvas text-ink">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-overlay"
+      >
+        Skip to content
+      </a>
       <MarketingNav activeSlug={activeSlug} wide={activeSlug === "docs"} />
-      <main>{children}</main>
+      <main id="main" tabIndex={-1} className="outline-none">
+        {children}
+      </main>
       <MarketingFooter />
     </div>
   );

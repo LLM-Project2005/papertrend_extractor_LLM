@@ -101,7 +101,7 @@ export default function FeaturePage({ params }: FeaturePageProps) {
                 Overview
               </Link>
               <span aria-hidden="true">/</span>
-              <span className="text-body">{feature.navLabel}</span>
+              <span className="text-body" aria-current="page">{feature.navLabel}</span>
             </nav>
             <h1 className={`mt-4 ${displayClass} text-4xl leading-[1.05] sm:text-6xl`}>{feature.title}</h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-body">{feature.description}</p>

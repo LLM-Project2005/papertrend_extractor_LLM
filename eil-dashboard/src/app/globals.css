@@ -114,6 +114,7 @@ body {
 }
 
 html {
+  scroll-padding-top: 6rem;
   -webkit-text-size-adjust: 100%;
   text-rendering: optimizeLegibility;
 }
@@ -221,9 +222,73 @@ textarea {
   @apply border-transparent text-mute hover:border-hairline-strong hover:text-ink;
 }
 
+/* One sliding underline (src/components/ui/TabIndicator.tsx) takes over from
+   the selected tab's own once it has measured. */
+.tabs-sliding .tab-btn-active {
+  border-color: transparent;
+}
+
+.tab-indicator {
+  position: absolute;
+  left: 0;
+  height: 2px;
+  width: 1px;
+  background: rgb(var(--ink));
+  transform-origin: left center;
+  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+/*
+ * A figure that has just changed (src/components/MetricCard.tsx): each
+ * character rises into place in turn, so a new number reads as new.
+ */
+.digit-pop {
+  display: inline-block;
+  animation: digit-pop 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes digit-pop {
+  from {
+    opacity: 0;
+    transform: translateY(0.3em);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
 /* Recharts tooltip */
 .recharts-tooltip-wrapper {
   @apply !outline-none;
+}
+
+/*
+ * Every chart's tooltip and hover band from the theme tokens. Recharts draws
+ * its default tooltip with inline white styles and a #ccc cursor, so most
+ * tooltips were white boxes with near-white labels in dark mode, and hovering
+ * a bar lit a bright band behind it. The inline styles need !important to be
+ * overridden; the cursor's fill is a presentation attribute and yields to CSS.
+ */
+.recharts-default-tooltip {
+  background-color: rgb(var(--surface)) !important;
+  border: 1px solid rgb(var(--hairline)) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
+  color: rgb(var(--ink)) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.recharts-default-tooltip .recharts-tooltip-label {
+  color: rgb(var(--ink)) !important;
+  font-weight: 500;
+}
+
+.recharts-tooltip-cursor {
+  fill: rgb(var(--ink) / 0.05);
 }
 
 .app-surface {
@@ -252,6 +317,7 @@ textarea {
 
 @media print {
   .reveal,
+  .word-rise,
   .hero-rise {
     animation: none !important;
   }
@@ -292,17 +358,38 @@ html:focus-within {
   }
 }
 
+/* The front page headline, word by word (per-word crossfade from
+   pixel-point/animate-text: a short rise out of transparency, 60ms apart). */
+.word-rise {
+  display: inline-block;
+  animation: word-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.18em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* The one authored entrance on the front page: the product rises into view. */
 .hero-rise {
-  animation: hero-rise 1100ms cubic-bezier(0.16, 1, 0.3, 1) 120ms both;
+  animation: hero-rise 1000ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @keyframes hero-rise {
-  from {
+  0% {
     opacity: 0;
-    transform: translateY(48px) scale(0.965);
+    transform: translateY(40px) scale(0.97);
   }
-  to {
+  20% {
+    opacity: 1;
+  }
+  100% {
     opacity: 1;
     transform: none;
   }
@@ -347,6 +434,109 @@ html:focus-within {
   }
 }
 
+/*
+ * A status line that changes while work is under way (chat's "Searching your
+ * papers" becoming "Writing the answer"). The new words rise a few pixels out
+ * of a slight blur, so the change registers without the line jumping.
+ */
+.status-swap {
+  animation: status-swap 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes status-swap {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/*
+ * The mascot (src/components/ui/Mascot.tsx). Each state moves in one small
+ * way. The transform written on each rule is the resting pose, which is all a
+ * reader who asks for less motion sees, so it has to read on its own: eyes
+ * looking up while thinking, down while reading.
+ */
+.mascot-gaze,
+.mascot-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mascot-idle .mascot-gaze {
+  animation: mascot-gaze 9s ease-in-out infinite;
+}
+
+.mascot-idle .mascot-blink,
+.mascot-thinking .mascot-blink {
+  animation: mascot-blink 5.5s ease-in-out infinite;
+}
+
+.mascot-thinking .mascot-gaze {
+  transform: translate(0, -6px);
+  animation: mascot-ponder 3.6s ease-in-out infinite;
+}
+
+.mascot-reading .mascot-gaze {
+  transform: translate(0, 4px);
+  animation: mascot-read 1.8s ease-in-out infinite;
+}
+
+@keyframes mascot-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes mascot-gaze {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  28% {
+    transform: translate(-2px, 1px);
+  }
+  50% {
+    transform: translate(0, 0);
+  }
+  72% {
+    transform: translate(2.5px, -1px);
+  }
+}
+
+@keyframes mascot-ponder {
+  0%,
+  100% {
+    transform: translate(-3px, -6px);
+  }
+  40%,
+  58% {
+    transform: translate(3px, -6px);
+  }
+}
+
+@keyframes mascot-read {
+  0% {
+    transform: translate(-5px, 4px);
+  }
+  78% {
+    transform: translate(5px, 4px);
+  }
+  100% {
+    transform: translate(-5px, 4px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .modal-backdrop,
   .modal-panel,
@@ -377,6 +567,7 @@ html:focus-within {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }

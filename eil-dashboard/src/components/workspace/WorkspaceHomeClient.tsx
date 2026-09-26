@@ -40,6 +40,7 @@ import {
   WarningIcon,
 } from "@/components/ui/Icons";
 import { buttonClass, chipClass, panelClass } from "@/components/ui/controls";
+import Mascot from "@/components/ui/Mascot";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { isDatedYear } from "@/lib/dated-year";
 
@@ -271,10 +272,15 @@ function GettingStarted({ onAdd }: { onAdd: () => void }) {
   ];
   return (
     <section className={`${panelClass} p-6 sm:p-8`}>
-      <h2 className="text-lg font-semibold tracking-tight text-ink">Start with a few papers</h2>
-      <p className="mt-1 max-w-2xl text-sm leading-6 text-body">
-        This repository is empty. Add papers and the rest of the workspace fills in as each one is analyzed.
-      </p>
+      <div className="flex items-start gap-5">
+        <Mascot size={44} className="hidden text-ink sm:block" />
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight text-ink">Start with a few papers</h2>
+          <p className="mt-1 max-w-2xl text-sm leading-6 text-body">
+            This repository is empty. Add papers and the rest of the workspace fills in as each one is analyzed.
+          </p>
+        </div>
+      </div>
       <ol className="mt-6 grid gap-6 md:grid-cols-3">
         {steps.map((step, index) => (
           <li key={step.title} className="flex gap-3">

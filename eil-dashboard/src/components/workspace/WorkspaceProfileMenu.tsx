@@ -35,6 +35,7 @@ export default function WorkspaceProfileMenu({
   const { hydrated, user, profile, isAdmin, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -45,6 +46,7 @@ export default function WorkspaceProfileMenu({
 
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        if (containerRef.current?.contains(document.activeElement)) buttonRef.current?.focus();
         setOpen(false);
       }
     }
@@ -97,12 +99,19 @@ export default function WorkspaceProfileMenu({
     "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
 
   return (
-    <div ref={containerRef} className="relative">
+    <div
+      ref={containerRef}
+      className="relative"
+      onBlur={(event) => {
+        // Tabbing past the last link closes it, as a click elsewhere does.
+        if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget as Node)) setOpen(false);
+      }}
+    >
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen((current) => !current)}
         className="inline-flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-hairline transition-[box-shadow,transform] duration-150 hover:ring-hairline-strong active:scale-95"
-        aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Open account menu"
       >
@@ -122,7 +131,6 @@ export default function WorkspaceProfileMenu({
 
       {open ? (
         <div
-          role="menu"
           className="absolute right-0 z-50 mt-2 w-[min(280px,calc(100vw-1.5rem))] origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
         >
           <div className="px-2.5 pb-2.5 pt-2">
@@ -130,15 +138,15 @@ export default function WorkspaceProfileMenu({
             <p className="mt-0.5 truncate text-xs text-mute">{identity.email}</p>
           </div>
           <div className="border-t border-hairline pt-1.5">
-            <Link href="/workspace/settings?section=profile" role="menuitem" onClick={() => setOpen(false)} className={itemClass}>
+            <Link href="/workspace/settings?section=profile" onClick={() => setOpen(false)} className={itemClass}>
               <SettingsIcon className="h-4 w-4" />
               <span>Account settings</span>
             </Link>
-            <Link href="/workspaces" role="menuitem" onClick={() => setOpen(false)} className={itemClass}>
+            <Link href="/workspaces" onClick={() => setOpen(false)} className={itemClass}>
               <HomeIcon className="h-4 w-4" />
               <span>Repositories</span>
             </Link>
-            <Link href="/docs" role="menuitem" onClick={() => setOpen(false)} className={itemClass}>
+            <Link href="/docs" onClick={() => setOpen(false)} className={itemClass}>
               <BookOpenIcon className="h-4 w-4" />
               <span>Documentation</span>
             </Link>
@@ -146,7 +154,7 @@ export default function WorkspaceProfileMenu({
           <div className="mt-1.5 border-t border-hairline pt-1.5">
             <button
               type="button"
-              role="menuitem"
+             
               onClick={() => {
                 setOpen(false);
                 void signOut();

@@ -15,7 +15,7 @@
  */
 
 import Link from "next/link";
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import {
   describeRunFailure,
@@ -723,7 +723,7 @@ function LoadingRows({ loading }: { loading?: boolean }) {
         </div>
       </div>
       <p className="mt-3 text-xs text-mute" role="status">
-        {loading ? "Loading progress..." : "Waiting for the first progress update."}
+        {loading ? "Loading progress…" : "Waiting for the first progress update."}
       </p>
     </li>
   );
@@ -872,7 +872,7 @@ export default function AnalysisStatusCard({
               {headline}
             </h2>
             <p className="truncate text-xs tabular-nums text-mute" aria-live="polite">
-              {loading ? "Refreshing status..." : counts || "Starting..."}
+              {loading ? "Refreshing status…" : counts || "Starting…"}
             </p>
           </div>
           {onExpand ? (
@@ -918,14 +918,7 @@ export default function AnalysisStatusCard({
         {hasFooter ? (
           <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-hairline px-4 py-2.5">
             {hasActiveRuns && onCancelAll ? (
-              <button
-                type="button"
-                onClick={() => void onCancelAll()}
-                className={buttonClass("ghost", "sm", "mr-auto text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200")}
-                aria-label="Cancel all active analysis runs"
-              >
-                Cancel all
-              </button>
+              <CancelAllButton onConfirm={onCancelAll} size="sm" className="mr-auto" />
             ) : null}
             {isLikelyStalled && onRetryQueue ? (
               <button type="button" onClick={() => void onRetryQueue()} className={buttonClass("primary", "sm")}>
@@ -971,7 +964,6 @@ export default function AnalysisStatusCard({
                 type="button"
                 onClick={() => void onRetryQueue()}
                 className={buttonClass("primary")}
-                aria-label="Retry stalled analysis queue"
               >
                 Retry processing
               </button>
@@ -981,7 +973,6 @@ export default function AnalysisStatusCard({
                 type="button"
                 onClick={() => void onStartProcessing()}
                 className={buttonClass("primary")}
-                aria-label="Start queued analysis processing now"
               >
                 Start processing now
               </button>
@@ -1002,21 +993,14 @@ export default function AnalysisStatusCard({
               </button>
             ) : null}
             {hasActiveRuns && onCancelAll ? (
-              <button
-                type="button"
-                onClick={() => void onCancelAll()}
-                className={buttonClass("ghost", "md", "text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200")}
-                aria-label="Cancel all active analysis runs"
-              >
-                Cancel all
-              </button>
+              <CancelAllButton onConfirm={onCancelAll} size="md" />
             ) : null}
           </div>
         </div>
 
         <div className="mt-6">
           <div className="flex items-center justify-between gap-4 text-xs tabular-nums text-mute">
-            <span aria-live="polite">{loading && runs.length === 0 ? "Loading progress..." : counts || "Starting..."}</span>
+            <span aria-live="polite">{loading && runs.length === 0 ? "Loading progress…" : counts || "Starting…"}</span>
             <span>{percent}%</span>
           </div>
           <div
@@ -1056,5 +1040,57 @@ export default function AnalysisStatusCard({
 
       <ul className="divide-y divide-hairline border-t border-hairline px-5 sm:px-6">{rows}</ul>
     </section>
+  );
+}
+
+/**
+ * Cancelling every analysis cannot be undone (the papers must be uploaded
+ * again), so the first press only asks. The question withdraws itself after
+ * a few seconds if nothing is chosen.
+ */
+function CancelAllButton({
+  onConfirm,
+  size,
+  className = "",
+}: {
+  onConfirm: () => void | Promise<void>;
+  size: "sm" | "md";
+  className?: string;
+}) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const timer = window.setTimeout(() => setArmed(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [armed]);
+
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        onClick={() => setArmed(true)}
+        className={buttonClass("ghost", size, `text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200 ${className}`)}
+      >
+        Cancel all
+      </button>
+    );
+  }
+  return (
+    <span role="group" aria-label="Confirm cancelling every analysis" className={`inline-flex items-center gap-1 ${className}`}>
+      <button
+        type="button"
+        autoFocus
+        onClick={() => {
+          setArmed(false);
+          void onConfirm();
+        }}
+        className={buttonClass("danger", size)}
+      >
+        Cancel every analysis
+      </button>
+      <button type="button" onClick={() => setArmed(false)} className={buttonClass("ghost", size)}>
+        Keep
+      </button>
+    </span>
   );
 }

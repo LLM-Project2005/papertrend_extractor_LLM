@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { GoogleIcon, FacebookIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
 import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
@@ -40,6 +40,16 @@ export default function AuthPanel({
     authError,
   } = useAuth();
   const [busy, setBusy] = useState(false);
+  // Back from the Google or Facebook consent screen can restore this page from
+  // the browser's cache with the buttons still disabled; a restored page is
+  // ready again.
+  useEffect(() => {
+    const onShow = (event: PageTransitionEvent) => {
+      if (event.persisted) setBusy(false);
+    };
+    window.addEventListener("pageshow", onShow);
+    return () => window.removeEventListener("pageshow", onShow);
+  }, []);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [passwordMode, setPasswordMode] = useState<"signin" | "signup">("signin");
@@ -83,7 +93,7 @@ export default function AuthPanel({
         <span className="skeleton block h-11 w-full rounded-lg" />
         <span className="skeleton block h-11 w-full rounded-lg" />
         <span className="skeleton mt-6 block h-40 w-full rounded-lg" />
-        <p className="sr-only">Loading sign-in...</p>
+        <p className="sr-only">Loading sign-in…</p>
       </div>
     );
   }
@@ -128,16 +138,20 @@ export default function AuthPanel({
 
   const messages = (
     <>
-      {visibleError ? (
-        <div role="alert" className="mt-5 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-          {visibleError}
-        </div>
-      ) : null}
-      {notice ? (
-        <div role="status" className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
-          {notice}
-        </div>
-      ) : null}
+      <div role="alert">
+        {visibleError ? (
+          <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            {visibleError}
+          </div>
+        ) : null}
+      </div>
+      <div role="status">
+        {notice ? (
+          <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-3 text-sm leading-6 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200">
+            {notice}
+          </div>
+        ) : null}
+      </div>
     </>
   );
 
@@ -155,7 +169,7 @@ export default function AuthPanel({
             </p>
           </div>
         </div>
-        <p className="mt-4 text-sm text-body">You are signed in. Taking you to your workspace...</p>
+        <p className="mt-4 text-sm text-body">You are signed in. Taking you to your workspace…</p>
         <button
           type="button"
           onClick={() => {
@@ -219,6 +233,7 @@ export default function AuthPanel({
             </label>
             <input
               id="auth-name"
+              name="name"
               value={fullName}
               onChange={(event) => setFullName(event.target.value)}
               maxLength={120}
@@ -235,7 +250,10 @@ export default function AuthPanel({
           </label>
           <input
             id="auth-email"
+            name="email"
             type="email"
+            spellCheck={false}
+            autoCapitalize="none"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             autoComplete="email"
@@ -261,6 +279,7 @@ export default function AuthPanel({
           </div>
           <input
             id="auth-password"
+            name="password"
             type="password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}

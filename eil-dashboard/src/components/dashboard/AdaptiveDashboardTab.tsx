@@ -20,7 +20,7 @@ import { TOPIC_PALETTE, TRACK_COLORS, TRACK_NAMES, type TrackKey } from "@/lib/c
 import type { DashboardData, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { NormalizedAnalyticsPayload, VisualizationPlanSection } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 
@@ -131,7 +131,7 @@ export default function AdaptiveDashboardTab({
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -164,7 +164,7 @@ export default function AdaptiveDashboardTab({
                 <XAxis type="number" allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis type="category" dataKey="topic" width={categoryLabels.width} tick={tickStyle(ct, 11)} tickFormatter={(value) => truncateLabel(String(value), categoryLabels.chars)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[0, 6, 6, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" name="Papers" fill={ct.barFill} radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -190,7 +190,7 @@ export default function AdaptiveDashboardTab({
                 <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -261,7 +261,7 @@ export default function AdaptiveDashboardTab({
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {topTopics.map((topic, index) => (
-                  <Line
+                  <Line isAnimationActive={chartAnimationActive()}
                     key={topic}
                     type="linear"
                     dataKey={topic}
@@ -323,8 +323,8 @@ export default function AdaptiveDashboardTab({
                       : `${shifts.periods?.lateLabel ?? "Later"} (share of papers)`
                   )}
                 />
-                <Bar dataKey="earlier" fill={ct.barFillMuted} radius={[0, 4, 4, 0]} />
-                <Bar dataKey="later" fill={ct.barFill} radius={[0, 4, 4, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="earlier" fill={ct.barFillMuted} radius={[0, 4, 4, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="later" fill={ct.barFill} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -441,7 +441,7 @@ export default function AdaptiveDashboardTab({
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {drawnTracks.map((track) => (
-                  <Bar
+                  <Bar isAnimationActive={chartAnimationActive()}
                     key={track}
                     dataKey={track}
                     fill={TRACK_COLORS[track]}

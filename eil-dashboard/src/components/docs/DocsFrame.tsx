@@ -40,9 +40,9 @@ function readingMinutes(page: DocsPage): number {
 
 function DocsNavList({ activeSlug }: { activeSlug?: string }) {
   return (
-    <div className="space-y-7">
+    <nav aria-label="Documentation" className="space-y-7">
       {docsCategories.map((category) => (
-        <nav key={category.id} aria-label={category.label}>
+        <div key={category.id}>
           <p className="px-3 text-xs font-medium text-mute">{category.label}</p>
           <ul className="mt-2 space-y-0.5">
             {category.pages.map((page) => {
@@ -62,9 +62,9 @@ function DocsNavList({ activeSlug }: { activeSlug?: string }) {
               );
             })}
           </ul>
-        </nav>
+        </div>
       ))}
-    </div>
+    </nav>
   );
 }
 
@@ -114,9 +114,11 @@ function DocsCalloutBox({ callout }: { callout: DocsCallout }) {
 
 function DocsSectionBlock({ section }: { section: DocsSection }) {
   return (
-    <section id={section.id} className="group/section scroll-mt-24 pt-12 first:pt-0">
-      <h2 className="flex items-baseline gap-2 text-2xl font-semibold tracking-tight text-ink">
-        {section.title}
+    <section id={section.id} className="group/section pt-12 first:pt-0">
+      {/* The permalink sits beside the heading, not inside it, so the heading's
+          name is only its title when a screen reader lists the headings. */}
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-2xl font-semibold tracking-tight text-ink">{section.title}</h2>
         <a
           href={`#${section.id}`}
           aria-label={`Link to ${section.title}`}
@@ -124,7 +126,7 @@ function DocsSectionBlock({ section }: { section: DocsSection }) {
         >
           #
         </a>
-      </h2>
+      </div>
 
       <div className="mt-4 space-y-4">
         {section.body.map((paragraph) => (
@@ -280,8 +282,8 @@ export function DocsArticle({ page }: { page: DocsPage }) {
 
       <article className="min-w-0 max-w-[720px]">
         {/* On a phone the page list and the contents fold away above the article. */}
-        <div className="mb-8 space-y-2 lg:hidden">
-          <details className="group rounded-xl border border-hairline bg-surface">
+        <div className="mb-8 space-y-2 xl:hidden">
+          <details className="group rounded-xl border border-hairline bg-surface lg:hidden">
             <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
               Browse the documentation
               <ChevronDownIcon className="h-4 w-4 text-mute transition-transform duration-200 group-open:rotate-180" />
@@ -292,6 +294,26 @@ export function DocsArticle({ page }: { page: DocsPage }) {
               </div>
               <DocsNavList activeSlug={page.slug} />
             </div>
+          </details>
+          <details className="group rounded-xl border border-hairline bg-surface">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
+              On this page
+              <ChevronDownIcon className="h-4 w-4 text-mute transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <nav aria-label="On this page" className="border-t border-hairline px-2 py-3">
+              <ul className="space-y-0.5">
+                {page.sections.map((section) => (
+                  <li key={section.id}>
+                    <a
+                      href={`#${section.id}`}
+                      className="block rounded-lg px-2 py-1.5 text-sm leading-6 text-body transition-colors hover:bg-subtle hover:text-ink"
+                    >
+                      {section.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
           </details>
         </div>
 
@@ -415,7 +437,7 @@ export function DocsHome() {
               id="docs-home-search"
               name="q"
               type="search"
-              placeholder="Search: upload failed, unknown year, deep research..."
+              placeholder="Search: upload failed, unknown year, deep research…"
               className="min-w-0 flex-1 bg-transparent py-2 text-base text-ink outline-none placeholder:text-mute focus-visible:outline-none"
             />
             <button

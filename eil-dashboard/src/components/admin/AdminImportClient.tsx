@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -27,7 +28,6 @@ import {
   BooksIcon,
   DriveIcon,
   FileIcon,
-  FolderIcon,
   GridViewIcon,
   ImageIcon,
   ListViewIcon,
@@ -50,6 +50,7 @@ import {
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
+import Mascot from "@/components/ui/Mascot";
 
 type ViewMode = "list" | "grid";
 type TypeFilter = "all" | "pdf" | "image" | "document" | "other";
@@ -422,6 +423,12 @@ export default function AdminImportClient() {
   const [showTrash, setShowTrash] = useState(false);
   const [toolbarPopover, setToolbarPopover] = useState<ToolbarPopoverState | null>(null);
   const [itemMenuState, setItemMenuState] = useState<ItemMenuState | null>(null);
+  // The menus open in a portal at the end of the page, so focus is carried
+  // into them and back by hand: the first item takes focus when one opens,
+  // arrows move through it, and Escape or Tab closes it and returns focus to
+  // the button that opened it.
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -600,7 +607,8 @@ export default function AdminImportClient() {
 
   useEffect(() => {
     if (!toolbarPopover && !itemMenuState) return;
-    const closeMenus = () => {
+    const closeMenus = (event?: Event) => {
+      if (event?.target instanceof Node && menuRef.current?.contains(event.target)) return;
       setToolbarPopover(null);
       setItemMenuState(null);
     };
@@ -611,6 +619,36 @@ export default function AdminImportClient() {
       window.removeEventListener("scroll", closeMenus, true);
     };
   }, [itemMenuState, toolbarPopover]);
+
+  useEffect(() => {
+    if (!toolbarPopover && !itemMenuState) return;
+    const frame = window.requestAnimationFrame(() => {
+      menuRef.current
+        ?.querySelector<HTMLElement>("button:not([disabled]), [href]")
+        ?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [itemMenuState, toolbarPopover]);
+
+  function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), [href]") ?? []
+    );
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape" || event.key === "Tab") {
+      event.preventDefault();
+      setToolbarPopover(null);
+      setItemMenuState(null);
+      menuTriggerRef.current?.focus({ preventScroll: true });
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(index + step + items.length) % items.length]?.focus({ preventScroll: true });
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus({ preventScroll: true });
+    }
+  }
 
   async function patchRun(runId: string, body: Record<string, unknown>) {
     const response = await fetch(`/api/workspace/library/${runId}`, {
@@ -745,9 +783,13 @@ export default function AdminImportClient() {
   }, [requestedPaperId, requestedRunId, router, runs]);
 
   async function handleOpenRunInNewTab(run: IngestionRunRow) {
+    const opened = window.open("", "_blank");
     const url = await getRunOpenUrl(run);
-    if (url) {
-      window.open(url, "_blank", "noopener,noreferrer");
+    if (opened && url) {
+      opened.opener = null;
+      opened.location.href = url;
+    } else {
+      opened?.close();
     }
   }
 
@@ -916,6 +958,7 @@ export default function AdminImportClient() {
       setToolbarPopover(null);
       return;
     }
+    menuTriggerRef.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     const position = getPopoverPosition(rect, width, kind === "sort" ? 360 : 280);
     setToolbarPopover({
@@ -931,6 +974,7 @@ export default function AdminImportClient() {
     event: ReactMouseEvent<HTMLButtonElement>,
     item: LibraryEntry
   ) {
+    menuTriggerRef.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     const position = getPopoverPosition(rect, 224, 390);
     setItemMenuState({
@@ -1668,7 +1712,7 @@ export default function AdminImportClient() {
               onClick={() => void loadRuns()}
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
-              {loading ? "Refreshing..." : "Refresh"}
+              {loading ? "Refreshing…" : "Refresh"}
             </button>
             <div className="inline-flex rounded-lg border border-hairline bg-surface p-0.5 shadow-raise">
               <button
@@ -1701,12 +1745,12 @@ export default function AdminImportClient() {
       </div>
 
       {message ? (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
+        <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
           {message}
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
           {error}
         </div>
       ) : null}
@@ -1731,9 +1775,11 @@ export default function AdminImportClient() {
         {visibleEntries.length === 0 ? (
           <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
             <div>
-              <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
-                <FolderIcon className="h-7 w-7" />
-              </span>
+              <Mascot
+                state={showTrash ? "sleeping" : fileEntries.length === 0 ? "idle" : "surprised"}
+                size={52}
+                className="mx-auto text-ink"
+              />
               {fileEntries.length === 0 && !showTrash ? (
                 <>
                   <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -1875,13 +1921,13 @@ export default function AdminImportClient() {
                     </div>
 
                     <div
-                      className="text-sm text-slate-600 dark:text-[#b6b6b6]"
+                      className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]"
                       title={formatDetailedDate(item.modifiedAt)}
                     >
                       {formatShortDate(item.modifiedAt)}
                     </div>
 
-                    <div className="text-sm text-slate-600 dark:text-[#b6b6b6]">
+                    <div className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]">
                       {item.sizeLabel}
                     </div>
 
@@ -2015,7 +2061,7 @@ export default function AdminImportClient() {
                                 {item.subtitle}
                               </p>
                             </div>
-                            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-[#9c9c9c]">
+                            <div className="flex items-center justify-between text-xs tabular-nums text-slate-500 dark:text-[#9c9c9c]">
                               <span>{formatShortDate(item.modifiedAt)}</span>
                               <span>{item.sizeLabel}</span>
                             </div>
@@ -2190,7 +2236,7 @@ export default function AdminImportClient() {
         fieldLabel="File name"
         fieldPlaceholder="File name"
         submitLabel="Save name"
-        busyLabel="Saving..."
+        busyLabel="Saving…"
         busy={renaming}
         error={renameError}
         onValueChange={setRenameDraft}
@@ -2215,8 +2261,10 @@ export default function AdminImportClient() {
                 role="presentation"
               />
               <div
+                ref={menuRef}
                 className="fixed z-50"
                 onClick={(event) => event.stopPropagation()}
+                onKeyDown={handleMenuKeyDown}
                 role="presentation"
               >
                 {renderToolbarPopover()}
@@ -2731,9 +2779,19 @@ export default function AdminImportClient() {
       {infoRun ? (
         <Modal onClose={() => setInfoRun(null)}>
           <div className="w-[min(560px,92vw)] rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              File information
-            </h2>
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                File information
+              </h2>
+              <button
+                type="button"
+                onClick={() => setInfoRun(null)}
+                aria-label="Close"
+                className="-mr-2 -mt-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-mute transition-colors hover:bg-subtle hover:text-ink"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
             <dl className="mt-5 space-y-4 text-sm">
               <div className="flex items-start justify-between gap-4">
                 <dt className="text-slate-500 dark:text-[#9c9c9c]">Name</dt>
