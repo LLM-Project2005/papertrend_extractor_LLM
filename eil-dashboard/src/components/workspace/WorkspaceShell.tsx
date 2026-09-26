@@ -48,7 +48,7 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     id: "overview",
     label: "Overview",
     items: [
-      { href: "/workspace/home", label: "Repository Overview", icon: HomeIcon },
+      { href: "/workspace/home", label: "Home", icon: HomeIcon },
       { href: "/workspace/dashboard", label: "Dashboard", icon: ChartIcon },
     ],
   },
@@ -57,7 +57,10 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     label: "Repository",
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
-      { href: "/workspace/library", label: "Repositories", icon: FolderIcon },
+      // The file browser. Every other screen already called it the Library;
+      // only this entry said "Repositories", the name of the picker at
+      // /workspaces, so one word named two different pages.
+      { href: "/workspace/library", label: "Library", icon: FolderIcon },
     ],
   },
   {
@@ -82,8 +85,8 @@ const SEARCH_PAGE_ITEMS = [
   },
   {
     id: "project-overview",
-    label: "Repository Overview",
-    description: "Open the repository home and status view",
+    label: "Home",
+    description: "The repository's overview, recent papers and progress",
     href: "/workspace/home",
     icon: HomeIcon,
     keywords: ["overview", "home", "repository", "project", "activity", "status", "recent papers"],
@@ -109,8 +112,8 @@ const SEARCH_PAGE_ITEMS = [
   },
   {
     id: "library",
-    label: "Repositories",
-    description: "Browse account repositories and analyzed papers",
+    label: "Library",
+    description: "Browse, rename and restore the papers in each repository",
     href: "/workspace/library",
     icon: FolderIcon,
     keywords: ["papers", "files", "imports", "documents", "upload", "analyze paper", "search library", "paper detail"],
@@ -150,7 +153,7 @@ function WorkspaceBreadcrumb({
           which tells a reader nothing at all.
           Below sm the parent collapses to a back arrow rather than disappearing:
           this link is the only route back to the repository picker, since the
-          drawer's "Repositories" entry points at /workspace/library instead. */}
+          drawer's "Library" entry points at /workspace/library instead. */}
       <div className="flex min-w-0 items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
           href="/workspaces"

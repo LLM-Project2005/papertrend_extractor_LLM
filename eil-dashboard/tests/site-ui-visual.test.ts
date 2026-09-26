@@ -328,7 +328,9 @@ test("a button says where it actually goes", () => {
   // /workspace/library - a page titled "Repositories".
   const card = read("src/components/workspace/AnalysisStatusCard.tsx");
   assert.equal(/href="\/workspace\/imports"/.test(card), false);
-  assert.match(card, /href="\/workspace\/library"[\s\S]{0,400}Open repositories/);
+  // And /workspace/library is the Library: "Repositories" is the picker at
+  // /workspaces, so the old label here named the wrong page as well.
+  assert.match(card, /href="\/workspace\/library"[\s\S]{0,400}Open library/);
 });
 
 /* --------------------------------------------------------------- hit areas */

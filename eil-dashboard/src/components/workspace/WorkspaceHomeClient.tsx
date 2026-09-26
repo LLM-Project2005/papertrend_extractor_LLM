@@ -224,7 +224,7 @@ function RecentPaperRow({ run }: { run: IngestionRunRow }) {
   return (
     <li>
       <Link
-        href="/workspace/library"
+        href={`/workspace/library?runId=${encodeURIComponent(run.id)}`}
         className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-150 hover:bg-subtle"
       >
         <RunStatusIcon run={run} />

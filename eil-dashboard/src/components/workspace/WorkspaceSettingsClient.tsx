@@ -281,7 +281,7 @@ function ProfileSection() {
   return (
     <Section
       title="Profile"
-      description="Shown in the workspace header and on anything you share from a repository."
+      description="How you appear in the workspace header and the account menu."
       footer={
         <>
           <div className="min-h-5 text-[13px]">

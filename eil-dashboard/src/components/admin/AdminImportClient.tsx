@@ -832,13 +832,28 @@ export default function AdminImportClient() {
       headers: jsonRequestHeaders,
       body: JSON.stringify(selection),
     });
-    const payload = (await response.json().catch(() => ({}))) as { queuedCount?: number; error?: string };
+    const payload = (await response.json().catch(() => ({}))) as {
+      queuedCount?: number;
+      queuedRunIds?: string[];
+      error?: string;
+    };
     if (!response.ok) {
       throw new Error(payload.error ?? "The papers could not be queued.");
     }
+    // Follow the re-queued papers in the progress tray, exactly as an upload
+    // is followed. The message used to promise progress "on Home", where
+    // nothing about a re-analysis ever appeared.
+    const queuedIds = new Set(payload.queuedRunIds ?? []);
+    const queuedRuns = runs.filter((run) => queuedIds.has(run.id));
+    if (queuedRuns.length > 0) {
+      startAnalysisSession(queuedRuns, {
+        sourceKind: "reanalysis",
+        folder: libraryProject?.name ?? "Repository",
+      });
+    }
     setMessage(
       `${payload.queuedCount ?? 0} paper${payload.queuedCount === 1 ? "" : "s"} queued to be analyzed again. ` +
-        "Progress shows on Home."
+        "The progress tray follows each one."
     );
     await loadRuns();
   }
@@ -1550,17 +1565,17 @@ export default function AdminImportClient() {
                     }}
                     className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                   >
-                    Repositories
+                    Library
                   </button>
                   <span>/</span>
                   <span className="font-medium text-slate-900 dark:text-white">{libraryProject.name}</span>
                 </>
               ) : (
-                <span>Repositories</span>
+                <span>Library</span>
               )}
             </div>
             <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-              {showTrash ? "Trash" : libraryProject?.name ?? "Repositories"}
+              {showTrash ? "Trash" : libraryProject?.name ?? "Library"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
               {showTrash
@@ -1608,7 +1623,7 @@ export default function AdminImportClient() {
               }`}
             >
               <TrashIcon className="h-4 w-4" />
-              <span>{showTrash ? "Back to repositories" : "Trash"}</span>
+              <span>{showTrash ? "Back to library" : "Trash"}</span>
             </button>
 
             <label className="relative col-span-2 block min-w-0 flex-1">

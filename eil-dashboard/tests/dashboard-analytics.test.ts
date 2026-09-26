@@ -144,6 +144,16 @@ test("the server does not serve category rows for a repository that does not cla
   assert.match(planner, /\(classificationEnabled \? TRACK_COLS : \[\]\)/, "no track chart can be planned");
 });
 
+test("a paper moved to Trash leaves the dashboard and Home's counts", () => {
+  // Chat, the semantic map, reclassification and re-analysis skipped trashed
+  // papers, but the dashboard selected every run in the repository's folder,
+  // so a paper put in Trash went on being counted in every chart.
+  const server = read("src/lib/dashboard-data-server.ts");
+  const scope = server.slice(server.indexOf("async function resolveScopedRunIds"), server.indexOf("async function loadPaperMetadata"));
+  assert.match(scope, /folder_id = ANY\(\$2::uuid\[\]\) AND trashed_at IS NULL/, "Cloud SQL path");
+  assert.match(scope, /\.is\("trashed_at", null\)/, "Supabase path");
+});
+
 /* ---------------------------------------------------------- the interface */
 
 test("the planner panel belongs to the Adaptive tab, and no data pill remains (U2)", () => {

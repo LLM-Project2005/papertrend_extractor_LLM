@@ -2,8 +2,14 @@
 
 import { useEffect, useState } from "react";
 import type { DocsSection } from "@/lib/docs-content";
-import DocsFixedRail from "@/components/docs/DocsFixedRail";
 
+/**
+ * The page's own contents, with the section being read marked.
+ *
+ * An IntersectionObserver reports which headings sit in the top band of the
+ * viewport, so nothing runs on every scroll event. The list sits in a sticky
+ * column, so it needs no positioning script either.
+ */
 export default function DocsOnThisPage({
   sections,
 }: {
@@ -12,72 +18,49 @@ export default function DocsOnThisPage({
   const [activeId, setActiveId] = useState(sections[0]?.id ?? "");
 
   useEffect(() => {
-    if (sections.length === 0) return undefined;
-
-    const sectionIds = new Set(sections.map((section) => section.id));
     const elements = sections
       .map((section) => document.getElementById(section.id))
       .filter((element): element is HTMLElement => Boolean(element));
-
     if (elements.length === 0) return undefined;
 
-    function updateActiveSection() {
-      const visibleSection = elements
-        .map((element) => ({
-          id: element.id,
-          top: element.getBoundingClientRect().top,
-        }))
-        .filter((item) => item.top <= 140)
-        .sort((a, b) => b.top - a.top)[0];
-
-      if (visibleSection && sectionIds.has(visibleSection.id)) {
-        setActiveId(visibleSection.id);
-        return;
-      }
-
-      const nextSection = elements
-        .map((element) => ({
-          id: element.id,
-          top: element.getBoundingClientRect().top,
-        }))
-        .filter((item) => item.top > 140)
-        .sort((a, b) => a.top - b.top)[0];
-
-      if (nextSection && sectionIds.has(nextSection.id)) {
-        setActiveId(nextSection.id);
-      }
-    }
-
-    updateActiveSection();
-    window.addEventListener("scroll", updateActiveSection, { passive: true });
-    window.addEventListener("resize", updateActiveSection);
-
-    return () => {
-      window.removeEventListener("scroll", updateActiveSection);
-      window.removeEventListener("resize", updateActiveSection);
-    };
+    const visible = new Map<string, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.set(entry.target.id, entry.boundingClientRect.top);
+          else visible.delete(entry.target.id);
+        }
+        const topmost = [...visible.entries()].sort((a, b) => a[1] - b[1])[0];
+        if (topmost) setActiveId(topmost[0]);
+      },
+      // A heading counts as "being read" from just under the header to about a
+      // third of the way down the screen.
+      { rootMargin: "-88px 0px -62% 0px", threshold: 0 }
+    );
+    elements.forEach((element) => observer.observe(element));
+    return () => observer.disconnect();
   }, [sections]);
 
+  if (sections.length < 2) return null;
+
   return (
-    <DocsFixedRail side="right">
-      <p className="text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-        On this page
-      </p>
+    <div>
+      <p className="text-xs font-medium text-mute">On this page</p>
       {/* py-1 on each link rather than a gap between them: the gap was dead space
           a pointer could not use, so every entry was a 20px-tall target. */}
-      <nav className="mt-3 space-y-1">
+      <nav aria-label="On this page" className="mt-3 space-y-1 border-l border-hairline">
         {sections.map((section) => {
           const active = section.id === activeId;
-
           return (
             <a
               key={section.id}
               href={`#${section.id}`}
               onClick={() => setActiveId(section.id)}
-              className={`block py-1 text-sm leading-5 transition-colors ${
+              aria-current={active ? "location" : undefined}
+              className={`block py-1 text-sm leading-5 -ml-px border-l pl-3 transition-colors duration-150 ${
                 active
-                  ? "font-semibold text-slate-950 dark:text-white"
-                  : "font-normal text-slate-500 hover:text-slate-950 dark:text-[#8f8f8f] dark:hover:text-white"
+                  ? "border-ink font-medium text-ink"
+                  : "border-transparent text-mute hover:border-hairline-strong hover:text-ink"
               }`}
             >
               {section.title}
@@ -85,6 +68,6 @@ export default function DocsOnThisPage({
           );
         })}
       </nav>
-    </DocsFixedRail>
+    </div>
   );
 }

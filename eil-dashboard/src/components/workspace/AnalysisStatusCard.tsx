@@ -971,7 +971,7 @@ export default function AnalysisStatusCard({
             {/* Was "Open imports" pointing at /workspace/imports, which redirects to
                 /workspace/library. The label promised a view that does not exist. */}
             <Link href="/workspace/library" className={buttonClass("secondary")}>
-              Open repositories
+              Open library
             </Link>
             {onMinimize ? (
               <button type="button" onClick={onMinimize} className={buttonClass("secondary")}>
