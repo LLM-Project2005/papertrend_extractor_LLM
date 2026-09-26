@@ -1,21 +1,53 @@
 "use client";
 
+/*
+ * Analysis progress, in one visual language at three sizes:
+ *
+ *  - the pill (AnalysisTrayPill): a progress ring and one line, floating in
+ *    the corner of every workspace page while papers are analysed;
+ *  - the tray (compact): the pill opened - every paper with its steps, over
+ *    the page on desktop and as a bottom sheet on a phone;
+ *  - the page card: the same rows with room to show every step by name.
+ *
+ * Each paper keeps the full ten-step pipeline. Folded, the steps are a
+ * ten-segment bar; unfolded, a stepper - horizontal where there is width for
+ * ten labels, vertical where there is not - so nothing needs sideways scroll.
+ */
+
 import Link from "next/link";
+import { useId, useState, type ReactNode } from "react";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import {
+  describeRunFailure,
   getRunDisplayTitle,
   getRunStageCaption,
   getRunStageMessage,
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import {
-  ArrowRightIcon,
   CheckCircleIcon,
-  CircleIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  ClockIcon,
   CloseIcon,
+  FullscreenIcon,
+  InfoIcon,
+  SpinnerIcon,
+  WarningCircleIcon,
+  WarningIcon,
 } from "@/components/ui/Icons";
+import {
+  buttonClass,
+  chipClass,
+  floatingPanelClass,
+  iconButtonClass,
+  panelClass,
+  type ChipTone,
+} from "@/components/ui/controls";
 
 type StageStatus = "done" | "active" | "waiting" | "failed";
+type OverallTone = "active" | "done" | "failed";
 
 type TimelineStage = {
   key: string;
@@ -82,6 +114,20 @@ const TIMELINE_STAGES: TimelineStage[] = [
     stages: ["completed"],
   },
 ];
+
+const STATE_WORD: Record<StageStatus, string> = {
+  done: "Done",
+  active: "In progress",
+  waiting: "Waiting",
+  failed: "Stopped here",
+};
+
+const SEGMENT_TONE: Record<StageStatus, string> = {
+  done: "bg-ink",
+  active: "bg-ink/15",
+  waiting: "bg-hairline-strong",
+  failed: "bg-red-500",
+};
 
 function summarizeRuns(runs: IngestionRunRow[]) {
   return runs.reduce(
@@ -166,6 +212,44 @@ function getTimelineStatus(
   return "waiting";
 }
 
+function stageStates(run: IngestionRunRow): StageStatus[] {
+  return TIMELINE_STAGES.map((stage, index) => getTimelineStatus(run, stage, index));
+}
+
+/** How far one paper is, from 0 to 1. A finished or failed paper counts as 1. */
+function runProgress(run: IngestionRunRow): number {
+  if (run.status === "succeeded" || run.status === "failed") return 1;
+  return getStageIndex(run) / (TIMELINE_STAGES.length - 1);
+}
+
+function analysisOverview(runs: IngestionRunRow[]) {
+  const summary = summarizeRuns(runs);
+  const active = summary.queued + summary.processing;
+  const terminal = runs.length > 0 && active === 0;
+  const progress = runs.length
+    ? runs.reduce((total, run) => total + runProgress(run), 0) / runs.length
+    : 0;
+  const tone: OverallTone = !terminal ? "active" : summary.failed > 0 ? "failed" : "done";
+  const plural = summary.total === 1 ? "" : "s";
+  const headline = terminal
+    ? summary.failed > 0
+      ? `${summary.succeeded} of ${summary.total} paper${plural} analyzed`
+      : `${summary.total === 1 ? "Your paper is" : `All ${summary.total} papers are`} ready`
+    : `Analyzing ${summary.total} paper${plural}`;
+  const counts = (
+    [
+      [summary.processing, "analyzing"],
+      [summary.queued, "waiting"],
+      [summary.succeeded, "ready"],
+      [summary.failed, "failed"],
+    ] as Array<[number, string]>
+  )
+    .filter(([count]) => count > 0)
+    .map(([count, label]) => `${count} ${label}`)
+    .join(" · ");
+  return { summary, active, terminal, progress, tone, headline, counts };
+}
+
 function formatSeconds(value: unknown): string {
   const seconds = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(seconds) || seconds < 0) return "";
@@ -174,116 +258,6 @@ function formatSeconds(value: unknown): string {
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.round(seconds % 60);
   return `${minutes}m ${remaining}s`;
-}
-
-function RunTimeline({ run }: { run: IngestionRunRow }) {
-  return (
-    <div className="mt-4 overflow-x-auto pb-2 pt-1">
-      <div className="grid min-w-[760px] grid-cols-10">
-        {TIMELINE_STAGES.map((stage, index) => {
-          const status = getTimelineStatus(run, stage, index);
-          const previousStatus =
-            index > 0
-              ? getTimelineStatus(run, TIMELINE_STAGES[index - 1], index - 1)
-              : null;
-          const lineDone =
-            status === "done" ||
-            status === "active" ||
-            status === "failed" ||
-            previousStatus === "done";
-          const dotTone =
-            status === "done"
-              ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-[#111111]"
-              : status === "active"
-                ? "border-slate-900 bg-white text-slate-900 shadow-[0_0_0_4px_rgba(15,23,42,0.08)] dark:border-white dark:bg-[#050505] dark:text-white dark:shadow-[0_0_0_4px_rgba(255,255,255,0.12)]"
-                : status === "failed"
-                  ? "border-red-400 bg-red-50 text-red-700 dark:border-red-500/70 dark:bg-red-950/30 dark:text-red-200"
-                  : "border-slate-200 bg-white text-slate-300 dark:border-[#242424] dark:bg-[#050505] dark:text-[#555555]";
-          const labelTone =
-            status === "waiting"
-              ? "text-slate-500 dark:text-[#8f8f8f]"
-              : "text-slate-700 dark:text-[#d4d4d4]";
-          const stateLabel =
-            status === "done" ? "Done" : status === "active" ? "Now" : status;
-          return (
-            <div
-              key={stage.key}
-              className="relative flex min-h-[58px] flex-col items-center px-1 text-center"
-            >
-              {index > 0 ? (
-                <span
-                  className={`absolute left-0 right-1/2 top-3 h-px ${
-                    lineDone
-                      ? "bg-slate-300 dark:bg-[#5f5f5f]"
-                      : "bg-slate-200 dark:bg-[#1f1f1f]"
-                  }`}
-                />
-              ) : null}
-              {index < TIMELINE_STAGES.length - 1 ? (
-                <span
-                  className={`absolute left-1/2 right-0 top-3 h-px ${
-                    status === "done"
-                      ? "bg-slate-300 dark:bg-[#5f5f5f]"
-                      : "bg-slate-200 dark:bg-[#1f1f1f]"
-                  }`}
-                />
-              ) : null}
-              <span
-                className={`relative z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border ${dotTone}`}
-                title={`${stage.label}: ${stateLabel}`}
-                aria-label={`${stage.label}: ${stateLabel}`}
-              >
-                {status === "done" ? (
-                  <CheckCircleIcon className="h-4 w-4" />
-                ) : status === "failed" ? (
-                  <CloseIcon className="h-3.5 w-3.5" />
-                ) : (
-                  <CircleIcon
-                    className={`h-3.5 w-3.5 ${
-                      status === "active" ? "animate-pulse" : ""
-                    }`}
-                  />
-                )}
-              </span>
-              <span
-                className={`mt-2 text-[11px] font-semibold uppercase tracking-normal ${labelTone}`}
-              >
-                {stage.label}
-              </span>
-              <span className="mt-0.5 text-[10px] capitalize text-slate-500 dark:text-[#777777]">
-                {stateLabel}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function RunMetrics({ run }: { run: IngestionRunRow }) {
-  const metrics = readMetrics(run);
-  const queueWait = formatSeconds(metrics.queue_wait_seconds);
-  const graph = formatSeconds(metrics.graph_seconds);
-  const total = formatSeconds(metrics.total_worker_seconds);
-  const values = [
-    queueWait ? ["Waited", queueWait] : null,
-    graph ? ["Analysis", graph] : null,
-    total ? ["Total", total] : null,
-  ].filter(Boolean) as Array<[string, string]>;
-  if (values.length === 0) return null;
-  return (
-    <div className="mt-3 flex flex-wrap gap-2">
-      {values.map(([label, value]) => (
-        <span
-          key={label}
-          className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 font-mono text-[11px] text-slate-600 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#a3a3a3]"
-        >
-          {label}: {value}
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function toEpochMs(value?: string | null): number {
@@ -332,6 +306,442 @@ function formatDurationMinutes(totalMinutes: number) {
   return `${hours} hour${hours === 1 ? "" : "s"} ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
+/* ------------------------------------------------------------ small parts */
+
+/** A ring that fills as the batch advances; a check or a warning once it ends. */
+function ProgressRing({ value, tone, size = 20 }: { value: number; tone: OverallTone; size?: number }) {
+  if (tone === "done") {
+    return (
+      <span className="flex flex-none" style={{ width: size, height: size }} aria-hidden="true">
+        <CheckCircleIcon weight="fill" className="h-full w-full text-emerald-600 dark:text-emerald-400" />
+      </span>
+    );
+  }
+  const radius = 8;
+  const circumference = 2 * Math.PI * radius;
+  const filled = Math.max(0.06, Math.min(1, value));
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      width={size}
+      height={size}
+      className="flex-none -rotate-90"
+      aria-hidden="true"
+    >
+      <circle cx="10" cy="10" r={radius} fill="none" strokeWidth="2.25" className="stroke-hairline-strong" />
+      <circle
+        cx="10"
+        cy="10"
+        r={radius}
+        fill="none"
+        strokeWidth="2.25"
+        strokeLinecap="round"
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference * (1 - filled)}
+        className={`transition-[stroke-dashoffset] duration-700 ease-out-expo ${
+          tone === "failed" ? "stroke-red-600 dark:stroke-red-400" : "stroke-ink"
+        }`}
+      />
+    </svg>
+  );
+}
+
+function RunGlyph({ run }: { run: IngestionRunRow }) {
+  return (
+    <span className="flex h-5 w-5 flex-none items-center justify-center" aria-hidden="true">
+      {run.status === "succeeded" ? (
+        <CheckCircleIcon weight="fill" className="h-[18px] w-[18px] text-emerald-600 dark:text-emerald-400" />
+      ) : run.status === "failed" ? (
+        <WarningCircleIcon weight="fill" className="h-[18px] w-[18px] text-red-600 dark:text-red-400" />
+      ) : run.status === "processing" ? (
+        <SpinnerIcon className="h-4 w-4 text-ink" />
+      ) : (
+        <ClockIcon className="h-[18px] w-[18px] text-mute" />
+      )}
+    </span>
+  );
+}
+
+function statusChipTone(run: IngestionRunRow): ChipTone {
+  if (run.status === "succeeded") return "success";
+  if (run.status === "failed") return "danger";
+  if (run.status === "processing") return "accent";
+  return "neutral";
+}
+
+/** The ten steps, folded into ten segments. */
+function StepBar({ states }: { states: StageStatus[] }) {
+  return (
+    <div className="flex gap-[3px]" aria-hidden="true">
+      {states.map((status, index) => (
+        <span
+          key={TIMELINE_STAGES[index].key}
+          title={`${TIMELINE_STAGES[index].label}: ${STATE_WORD[status]}`}
+          className={`relative h-1 flex-1 overflow-hidden rounded-full transition-colors duration-500 ease-out-expo ${SEGMENT_TONE[status]}`}
+        >
+          {status === "active" ? (
+            <span className="absolute inset-y-0 left-0 w-1/2 rounded-full bg-ink/70 motion-safe:animate-progress-sweep motion-reduce:w-full motion-reduce:bg-ink/40" />
+          ) : null}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function StepNode({ status }: { status: StageStatus }) {
+  const ring = "relative z-10 flex h-5 w-5 flex-none items-center justify-center rounded-full transition-colors duration-500 ease-out-expo";
+  if (status === "done") {
+    return (
+      <span className={`${ring} bg-ink text-canvas`}>
+        <CheckIcon weight="bold" className="h-3 w-3" />
+      </span>
+    );
+  }
+  if (status === "failed") {
+    return (
+      <span className={`${ring} bg-red-600 text-white dark:bg-red-500`}>
+        <CloseIcon weight="bold" className="h-3 w-3" />
+      </span>
+    );
+  }
+  if (status === "active") {
+    return (
+      <span className={`${ring} border-[1.5px] border-ink bg-surface`}>
+        <span className="h-2 w-2 rounded-full bg-ink motion-safe:animate-pulse" />
+      </span>
+    );
+  }
+  return (
+    <span className={`${ring} border border-hairline-strong bg-surface`}>
+      <span className="h-1.5 w-1.5 rounded-full bg-hairline-strong" />
+    </span>
+  );
+}
+
+/** Every step by name, top to bottom: the tray and narrow screens. */
+function StepList({ run, states }: { run: IngestionRunRow; states: StageStatus[] }) {
+  return (
+    <ol aria-label="Analysis steps">
+      {TIMELINE_STAGES.map((stage, index) => {
+        const status = states[index];
+        const last = index === TIMELINE_STAGES.length - 1;
+        return (
+          <li
+            key={stage.key}
+            className="relative flex gap-3 pb-3 last:pb-0"
+            aria-current={status === "active" ? "step" : undefined}
+          >
+            {!last ? (
+              <span
+                aria-hidden="true"
+                className={`absolute bottom-0 left-[9.5px] top-5 w-px transition-colors duration-500 ${
+                  status === "done" ? "bg-ink" : "bg-hairline-strong"
+                }`}
+              />
+            ) : null}
+            <StepNode status={status} />
+            <div className="min-w-0 flex-1 pt-px">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className={`text-[13px] font-medium ${status === "waiting" ? "text-mute" : "text-ink"}`}>
+                  {stage.label}
+                </span>
+                <span
+                  className={`flex-none text-xs ${
+                    status === "failed" ? "text-red-700 dark:text-red-300" : "text-mute"
+                  }`}
+                >
+                  {STATE_WORD[status]}
+                </span>
+              </div>
+              {status === "active" ? (
+                <p className="mt-0.5 text-[13px] leading-5 text-body">{getRunStageMessage(run)}</p>
+              ) : null}
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/** Every step by name, left to right: the page card on a wide screen. */
+function StepTrack({ states }: { states: StageStatus[] }) {
+  const short: Record<StageStatus, string> = { done: "Done", active: "Now", waiting: "", failed: "Stopped" };
+  return (
+    <ol className="grid grid-cols-10" aria-label="Analysis steps">
+      {TIMELINE_STAGES.map((stage, index) => {
+        const status = states[index];
+        return (
+          <li
+            key={stage.key}
+            className="relative flex flex-col items-center text-center"
+            aria-current={status === "active" ? "step" : undefined}
+          >
+            {index > 0 ? (
+              <span
+                aria-hidden="true"
+                className={`absolute left-0 right-1/2 top-[9.5px] h-px transition-colors duration-500 ${
+                  states[index - 1] === "done" ? "bg-ink" : "bg-hairline-strong"
+                }`}
+              />
+            ) : null}
+            {index < TIMELINE_STAGES.length - 1 ? (
+              <span
+                aria-hidden="true"
+                className={`absolute left-1/2 right-0 top-[9.5px] h-px transition-colors duration-500 ${
+                  status === "done" ? "bg-ink" : "bg-hairline-strong"
+                }`}
+              />
+            ) : null}
+            <StepNode status={status} />
+            <span
+              className={`mt-2 px-0.5 text-xs font-medium leading-4 ${
+                status === "waiting" ? "text-mute" : "text-ink"
+              }`}
+            >
+              {stage.label}
+            </span>
+            <span
+              className={`mt-0.5 h-4 text-[11px] leading-4 ${
+                status === "failed" ? "text-red-700 dark:text-red-300" : "text-mute"
+              }`}
+            >
+              {short[status]}
+              <span className="sr-only">{status === "waiting" ? STATE_WORD.waiting : ""}</span>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function RunMetrics({ run }: { run: IngestionRunRow }) {
+  const metrics = readMetrics(run);
+  const queueWait = formatSeconds(metrics.queue_wait_seconds);
+  const graph = formatSeconds(metrics.graph_seconds);
+  const total = formatSeconds(metrics.total_worker_seconds);
+  const values = [
+    queueWait ? ["Waited", queueWait] : null,
+    graph ? ["Analysis", graph] : null,
+    total ? ["Total", total] : null,
+  ].filter(Boolean) as Array<[string, string]>;
+  if (values.length === 0) return null;
+  return (
+    <dl className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-mute">
+      {values.map(([label, value]) => (
+        <div key={label} className="flex gap-1.5">
+          <dt>{label}</dt>
+          <dd className="font-mono tabular-nums text-body">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function Notice({ tone, children }: { tone: "warning" | "info"; children: ReactNode }) {
+  const Icon = tone === "warning" ? WarningIcon : InfoIcon;
+  return (
+    <div
+      role="status"
+      className={`flex gap-2.5 rounded-lg border px-3.5 py-3 text-[13px] leading-5 ${
+        tone === "warning"
+          ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200"
+          : "border-hairline bg-subtle text-body"
+      }`}
+    >
+      <Icon className="mt-0.5 h-4 w-4 flex-none" />
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- one paper */
+
+function RunRow({
+  run,
+  wide,
+  defaultOpen,
+  onCancelRun,
+}: {
+  run: IngestionRunRow;
+  /** The page card: a horizontal stepper once the screen is wide enough. */
+  wide: boolean;
+  defaultOpen: boolean;
+  onCancelRun?: (runId: string) => void | Promise<void>;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const detailId = useId();
+  const states = stageStates(run);
+  const title = getRunDisplayTitle(run);
+  const active = run.status === "queued" || run.status === "processing";
+  const stepStartedMs = getRunStageEpochMs(run);
+  const onThisStep =
+    run.status === "processing" && stepStartedMs > 0
+      ? formatDurationMinutes(Math.floor((Date.now() - stepStartedMs) / 60000))
+      : "";
+  const failure = run.status === "failed" ? describeRunFailure(run.error_message) : "";
+
+  return (
+    <li className="py-4">
+      <div className="flex items-start gap-3">
+        <RunGlyph run={run} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-3">
+            <p className="min-w-0 truncate text-sm font-medium text-ink" title={title}>
+              {title}
+            </p>
+            <div className="-mt-0.5 flex flex-none items-center gap-1">
+              <span className={chipClass(statusChipTone(run))}>{getRunStatusLabel(run)}</span>
+              {onCancelRun && active ? (
+                <button
+                  type="button"
+                  onClick={() => void onCancelRun(run.id)}
+                  className={iconButtonClass("sm")}
+                  aria-label={`Cancel analysis for ${title}`}
+                  title="Cancel analysis"
+                >
+                  <CloseIcon className="h-3.5 w-3.5" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+          <p className="mt-0.5 text-[13px] leading-5 text-body">
+            {getRunStageMessage(run)}
+            {active ? (
+              <span className="tabular-nums text-mute">
+                {" "}
+                · Step {getStageIndex(run) + 1} of {TIMELINE_STAGES.length}
+              </span>
+            ) : null}
+          </p>
+          {onThisStep ? (
+            <p className="mt-0.5 text-xs text-mute">On this step for {onThisStep}</p>
+          ) : null}
+
+          {failure ? (
+            <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-[13px] leading-5 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+              <p className="font-medium">{failure}</p>
+              {run.error_message && run.error_message.trim() !== failure ? (
+                <p className="mt-1 break-words font-mono text-xs opacity-80">{run.error_message}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <div
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out-expo ${
+              open ? "grid-rows-[0fr] opacity-0" : "grid-rows-[1fr] opacity-100"
+            }`}
+            aria-hidden="true"
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="pt-3">
+                <StepBar states={states} />
+              </div>
+            </div>
+          </div>
+
+          <div
+            id={detailId}
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out-expo ${
+              open ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+            }`}
+            aria-hidden={!open}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div className="pt-4">
+                {wide ? (
+                  <>
+                    <div className="hidden md:block">
+                      <StepTrack states={states} />
+                    </div>
+                    <div className="md:hidden">
+                      <StepList run={run} states={states} />
+                    </div>
+                  </>
+                ) : (
+                  <StepList run={run} states={states} />
+                )}
+                {!failure ? (
+                  <p className="mt-4 text-[13px] leading-5 text-mute">{getRunStageCaption(run)}</p>
+                ) : null}
+                <RunMetrics run={run} />
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            aria-expanded={open}
+            aria-controls={detailId}
+            className="mt-2 inline-flex items-center gap-1 rounded-md py-1 text-xs font-medium text-mute transition-colors duration-150 hover:text-ink"
+          >
+            {open ? "Hide steps" : "Show all steps"}
+            <ChevronDownIcon
+              className={`h-3.5 w-3.5 transition-transform duration-200 ease-out-quart ${open ? "rotate-180" : ""}`}
+            />
+          </button>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function LoadingRows({ loading }: { loading?: boolean }) {
+  return (
+    <li className="py-4">
+      <div className="flex gap-3">
+        <span className="skeleton h-5 w-5 flex-none rounded-full" />
+        <div className="flex-1 space-y-2.5">
+          <span className="skeleton block h-4 w-2/3" />
+          <span className="skeleton block h-3 w-1/3" />
+          <span className="skeleton block h-1 w-full" />
+        </div>
+      </div>
+      <p className="mt-3 text-xs text-mute" role="status">
+        {loading ? "Loading progress..." : "Waiting for the first progress update."}
+      </p>
+    </li>
+  );
+}
+
+/* ------------------------------------------------------------- the pill */
+
+export function AnalysisTrayPill({
+  runs,
+  onOpen,
+}: {
+  runs: IngestionRunRow[];
+  onOpen: () => void;
+}) {
+  const { summary, terminal, progress, tone } = analysisOverview(runs);
+  const plural = summary.total === 1 ? "" : "s";
+  const label = !terminal
+    ? `Analyzing ${summary.total} paper${plural}`
+    : summary.failed > 0
+      ? `${summary.failed} of ${summary.total} failed`
+      : `${summary.total} paper${plural} ready`;
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      aria-label={`Open analysis progress: ${label}`}
+      title="Open analysis progress"
+      className="group pointer-events-auto inline-flex h-11 max-w-full items-center gap-2.5 rounded-full border border-hairline bg-surface pl-3 pr-3.5 text-sm font-medium text-ink shadow-float transition-[border-color,transform] duration-150 ease-out-quart hover:border-hairline-strong active:scale-[0.98] motion-safe:animate-rise-in"
+    >
+      <ProgressRing value={progress} tone={tone} size={20} />
+      <span className="truncate">{label}</span>
+      {!terminal ? (
+        <span className="tabular-nums text-mute">{Math.round(progress * 100)}%</span>
+      ) : null}
+      <ChevronUpIcon className="h-3.5 w-3.5 flex-none text-mute transition-transform duration-200 ease-out-quart group-hover:-translate-y-0.5" />
+    </button>
+  );
+}
+
+/* ------------------------------------------------------ the tray and card */
+
 export default function AnalysisStatusCard({
   runs,
   folderJob,
@@ -339,6 +749,7 @@ export default function AnalysisStatusCard({
   compact = false,
   onMinimize,
   onExpand,
+  onCollapse,
   onClear,
   onCancelRun,
   onCancelAll,
@@ -348,35 +759,27 @@ export default function AnalysisStatusCard({
   runs: IngestionRunRow[];
   folderJob?: FolderAnalysisJobRow | null;
   loading?: boolean;
+  /** The floating tray rather than the page card. */
   compact?: boolean;
   onMinimize?: () => void;
+  /** Tray: open the full progress on Home. */
   onExpand?: () => void;
+  /** Tray: fold back into the pill. */
+  onCollapse?: () => void;
   onClear?: () => void;
   onCancelRun?: (runId: string) => void | Promise<void>;
   onCancelAll?: () => void | Promise<void>;
   onRetryQueue?: () => void | Promise<void>;
   onStartProcessing?: () => void | Promise<void>;
 }) {
-  const summary = summarizeRuns(runs);
-  const allTerminal =
-    runs.length > 0 &&
-    runs.every((run) => run.status === "succeeded" || run.status === "failed");
-  const hasActiveRuns = runs.some(
-    (run) => run.status === "queued" || run.status === "processing"
-  );
-  const hasQueuedWithoutProcessing =
-    runs.some((run) => run.status === "queued") &&
-    !runs.some((run) => run.status === "processing");
+  const headingId = useId();
+  const { summary, active, terminal: allTerminal, progress, tone, headline, counts } = analysisOverview(runs);
+  const hasActiveRuns = active > 0;
+  const hasQueuedWithoutProcessing = summary.queued > 0 && summary.processing === 0;
   const leadRun =
     runs.find((run) => run.status === "processing") ??
     runs.find((run) => run.status === "queued") ??
     runs[0];
-  const leadMessage = folderJob?.progress_message || (leadRun ? getRunStageMessage(leadRun) : "");
-  const leadDetail = folderJob?.progress_detail
-    ? folderJob.progress_detail
-    : hasActiveRuns
-      ? `${summary.processing + summary.queued} active run${summary.processing + summary.queued === 1 ? "" : "s"}`
-      : `${summary.succeeded} completed`;
   const staleReferenceMs = Math.max(
     getRunProgressEpochMs(leadRun),
     toEpochMs(folderJob?.updated_at ?? null)
@@ -396,290 +799,239 @@ export default function AnalysisStatusCard({
     stageMinutes >= 3 &&
     hasRecentWorkerTouch;
   const stageDurationLabel = formatDurationMinutes(Math.floor(stageMinutes));
+  const staleLabel = `${Math.floor(staleMinutes)} minute${Math.floor(staleMinutes) === 1 ? "" : "s"}`;
+
+  const notices = (
+    <>
+      {isLikelyStalled ? (
+        <Notice tone="warning">
+          Nothing has moved for about {staleLabel}. Use Retry processing to start the analysis again.
+        </Notice>
+      ) : null}
+      {isLongRunningStage ? (
+        <Notice tone="info">
+          Still working. This step has been running for about {stageDurationLabel}; long papers can
+          spend several minutes on one step before the next update.
+        </Notice>
+      ) : null}
+    </>
+  );
+
+  const rows =
+    runs.length === 0 ? (
+      <LoadingRows loading={loading} />
+    ) : (
+      runs.map((run) => (
+        <RunRow
+          key={run.id}
+          run={run}
+          wide={!compact}
+          defaultOpen={compact ? runs.length === 1 : runs.length <= 3 || run.id === leadRun?.id}
+          onCancelRun={onCancelRun}
+        />
+      ))
+    );
 
   if (compact) {
+    const hasFooter =
+      (hasActiveRuns && onCancelAll) ||
+      (isLikelyStalled && onRetryQueue) ||
+      (hasQueuedWithoutProcessing && onStartProcessing);
     return (
-      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-xl dark:border-[#1f1f1f] dark:bg-[#050505]">
-        <div className="flex items-start gap-3">
-          <button
-            type="button"
-            onClick={onExpand}
-            className="flex min-w-0 flex-1 items-center justify-between gap-4 text-left"
-          >
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                {allTerminal
-                  ? summary.failed > 0
-                    ? "Analysis finished with problems"
-                    : "Analysis finished"
-                  : `Analyzing ${summary.total} paper${summary.total === 1 ? "" : "s"}`}
-              </p>
-              <p className="mt-1 text-sm font-medium text-slate-900 dark:text-[#ececec]">
-                {loading
-                  ? "Refreshing status..."
-                  : leadMessage || `${summary.processing + summary.queued} in progress, ${summary.succeeded} done`}
-              </p>
-              {!loading ? (
-                <p className="mt-1 text-xs text-slate-500 dark:text-[#8f8f8f]">
-                  {leadDetail}
-                </p>
-              ) : null}
-            </div>
-            <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8f8f8f]" />
-          </button>
+      <section
+        aria-labelledby={headingId}
+        className={`${floatingPanelClass} pointer-events-auto flex max-h-[min(72dvh,600px)] origin-bottom-right flex-col overflow-hidden motion-safe:animate-scale-in`}
+      >
+        <header className="flex items-center gap-3 border-b border-hairline py-2.5 pl-4 pr-2">
+          <ProgressRing value={progress} tone={tone} size={22} />
+          <div className="min-w-0 flex-1">
+            <h2 id={headingId} className="truncate text-sm font-semibold text-ink">
+              {headline}
+            </h2>
+            <p className="truncate text-xs tabular-nums text-mute" aria-live="polite">
+              {loading ? "Refreshing status..." : counts || "Starting..."}
+            </p>
+          </div>
+          {onExpand ? (
+            <button
+              type="button"
+              onClick={onExpand}
+              className={iconButtonClass("md")}
+              aria-label="Open the full analysis progress"
+              title="Open full progress"
+            >
+              <FullscreenIcon className="h-4 w-4" />
+            </button>
+          ) : null}
           {allTerminal && onClear ? (
             <button
               type="button"
               onClick={onClear}
-              className="inline-flex h-8 w-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a0a0a0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className={iconButtonClass("md")}
               aria-label="Dismiss analysis status"
               title="Dismiss"
             >
-              <CloseIcon className="h-3.5 w-3.5" />
+              <CloseIcon className="h-4 w-4" />
             </button>
           ) : null}
-          {hasActiveRuns && onCancelAll ? (
+          {onCollapse ? (
             <button
               type="button"
-              onClick={() => void onCancelAll()}
-              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-              aria-label="Cancel all active analysis runs"
-              title="Cancel all processing"
+              onClick={onCollapse}
+              className={iconButtonClass("md")}
+              aria-label="Minimize analysis progress"
+              title="Minimize"
             >
-              Cancel all
+              <ChevronDownIcon className="h-4 w-4" />
             </button>
           ) : null}
-          {isLikelyStalled && onRetryQueue ? (
-            <button
-              type="button"
-              onClick={() => void onRetryQueue()}
-              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 transition-colors hover:border-amber-400 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:border-amber-800"
-              aria-label="Retry stalled analysis queue"
-              title="Retry processing"
-            >
-              Retry
-            </button>
-          ) : null}
-          {hasQueuedWithoutProcessing && onStartProcessing ? (
-            <button
-              type="button"
-              onClick={() => void onStartProcessing()}
-              className="inline-flex h-8 flex-none items-center justify-center rounded-full border border-sky-300 bg-sky-50 px-3 text-xs font-medium text-sky-800 transition-colors hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200 dark:hover:border-sky-800"
-              aria-label="Start queued analysis processing now"
-              title="Start processing now"
-            >
-              Start now
-            </button>
-          ) : null}
-        </div>
-      </div>
+        </header>
+        {isLikelyStalled || isLongRunningStage ? (
+          <div className="space-y-2 px-4 pt-3">{notices}</div>
+        ) : null}
+        <ul className="min-h-0 flex-1 divide-y divide-hairline overflow-y-auto overscroll-contain px-4">
+          {rows}
+        </ul>
+        {hasFooter ? (
+          <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-hairline px-4 py-2.5">
+            {hasActiveRuns && onCancelAll ? (
+              <button
+                type="button"
+                onClick={() => void onCancelAll()}
+                className={buttonClass("ghost", "sm", "mr-auto text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200")}
+                aria-label="Cancel all active analysis runs"
+              >
+                Cancel all
+              </button>
+            ) : null}
+            {isLikelyStalled && onRetryQueue ? (
+              <button type="button" onClick={() => void onRetryQueue()} className={buttonClass("primary", "sm")}>
+                Retry processing
+              </button>
+            ) : null}
+            {hasQueuedWithoutProcessing && onStartProcessing ? (
+              <button type="button" onClick={() => void onStartProcessing()} className={buttonClass("primary", "sm")}>
+                Start now
+              </button>
+            ) : null}
+          </footer>
+        ) : null}
+      </section>
     );
   }
 
+  const description = allTerminal
+    ? summary.failed > 0
+      ? "Papers that failed say why below. Add them again from the Library once the problem is fixed."
+      : "Finished papers are in the Library and on the Dashboard, and Chat can cite them."
+    : "Each paper is read for its title, year, topics, methods and category, usually in a few minutes. This updates by itself, and you can leave the page while it runs.";
+  const percent = Math.round(progress * 100);
+
   return (
-    <section className="app-surface px-6 py-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-            Analysis progress
-          </p>
-          <h2 className="mt-1 text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-            {allTerminal
-              ? summary.failed > 0
-                ? `${summary.succeeded} of ${summary.total} paper${summary.total === 1 ? "" : "s"} analyzed`
-                : `${summary.total === 1 ? "Your paper is" : `All ${summary.total} papers are`} ready`
-              : `Analyzing ${summary.total} paper${summary.total === 1 ? "" : "s"}`}
-          </h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-            {allTerminal
-              ? summary.failed > 0
-                ? "Papers that failed say why below. Add them again from the Library once the problem is fixed."
-                : "Finished papers are in the Library and on the Dashboard, and Chat can cite them."
-              : "Each paper is read for its title, year, topics, methods and category, usually in a few minutes. This page updates by itself, and you can leave it while the analysis runs."}
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {hasActiveRuns && onCancelAll ? (
-            <button
-              type="button"
-              onClick={() => void onCancelAll()}
-              className="inline-flex items-center justify-center rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 transition-colors hover:border-red-300 hover:bg-red-100 dark:border-red-900/60 dark:bg-red-950/20 dark:text-red-200 dark:hover:border-red-800 dark:hover:bg-red-950/35"
-              aria-label="Cancel all active analysis runs"
-              title="Cancel all processing"
-            >
-              Cancel all processing
-            </button>
-          ) : null}
-          {isLikelyStalled && onRetryQueue ? (
-            <button
-              type="button"
-              onClick={() => void onRetryQueue()}
-              className="inline-flex items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm font-medium text-amber-800 transition-colors hover:border-amber-400 hover:bg-amber-100 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:border-amber-800"
-              aria-label="Retry stalled analysis queue"
-              title="Retry processing"
-            >
-              Retry processing
-            </button>
-          ) : null}
-          {hasQueuedWithoutProcessing && onStartProcessing ? (
-            <button
-              type="button"
-              onClick={() => void onStartProcessing()}
-              className="inline-flex items-center justify-center rounded-lg border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-medium text-sky-800 transition-colors hover:border-sky-400 hover:bg-sky-100 dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-200 dark:hover:border-sky-800"
-              aria-label="Start queued analysis processing now"
-              title="Start processing now"
-            >
-              Start processing now
-            </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={onMinimize}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-          >
-            Minimize
-          </button>
-          {/* Was "Open imports" pointing at /workspace/imports, which redirects to
-              /workspace/library - a page titled "Repositories". The label promised
-              a view that does not exist, and the hop was invisible but pointless. */}
-          <Link
-            href="/workspace/library"
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-          >
-            Open repositories
-          </Link>
-          {allTerminal && onClear ? (
-            <button
-              type="button"
-              onClick={onClear}
-              className="rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-[#ececec] dark:text-[#171717] dark:hover:bg-white"
-            >
-              Dismiss
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="mt-5 flex flex-wrap gap-2">
-        {(
-          [
-            [summary.queued, "waiting"],
-            [summary.processing, "analyzing"],
-            [summary.succeeded, "ready"],
-          ] as Array<[number, string]>
-        )
-          .filter(([count]) => count > 0)
-          .map(([count, label]) => (
-            <span
-              key={label}
-              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#0a0a0a] dark:text-[#c9c9c9]"
-            >
-              {count} {label}
+    <section aria-labelledby={headingId} className={`${panelClass} overflow-hidden`}>
+      <div className="p-5 sm:p-6">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="flex min-w-0 gap-4">
+            <span className="flex h-10 w-10 flex-none items-center justify-center rounded-full bg-subtle">
+              <ProgressRing value={progress} tone={tone} size={22} />
             </span>
-          ))}
-        {summary.failed > 0 ? (
-          <span className="rounded-full bg-red-100 px-3 py-1.5 text-xs text-red-700 dark:bg-red-950/30 dark:text-red-200">
-            {summary.failed} failed
-          </span>
-        ) : null}
-      </div>
+            <div className="min-w-0">
+              <h2 id={headingId} className="text-lg font-semibold tracking-tight text-ink">
+                {headline}
+              </h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-body">{description}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 lg:flex-none lg:justify-end">
+            {isLikelyStalled && onRetryQueue ? (
+              <button
+                type="button"
+                onClick={() => void onRetryQueue()}
+                className={buttonClass("primary")}
+                aria-label="Retry stalled analysis queue"
+              >
+                Retry processing
+              </button>
+            ) : null}
+            {hasQueuedWithoutProcessing && onStartProcessing ? (
+              <button
+                type="button"
+                onClick={() => void onStartProcessing()}
+                className={buttonClass("primary")}
+                aria-label="Start queued analysis processing now"
+              >
+                Start processing now
+              </button>
+            ) : null}
+            {allTerminal && onClear ? (
+              <button type="button" onClick={onClear} className={buttonClass("primary")}>
+                Dismiss
+              </button>
+            ) : null}
+            {/* Was "Open imports" pointing at /workspace/imports, which redirects to
+                /workspace/library. The label promised a view that does not exist. */}
+            <Link href="/workspace/library" className={buttonClass("secondary")}>
+              Open repositories
+            </Link>
+            {onMinimize ? (
+              <button type="button" onClick={onMinimize} className={buttonClass("secondary")}>
+                Minimize
+              </button>
+            ) : null}
+            {hasActiveRuns && onCancelAll ? (
+              <button
+                type="button"
+                onClick={() => void onCancelAll()}
+                className={buttonClass("ghost", "md", "text-red-700 hover:text-red-800 dark:text-red-300 dark:hover:text-red-200")}
+                aria-label="Cancel all active analysis runs"
+              >
+                Cancel all
+              </button>
+            ) : null}
+          </div>
+        </div>
 
-      <div className="mt-5 space-y-3">
-        {isLikelyStalled ? (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
-            Nothing has moved for about {Math.floor(staleMinutes)} minute{Math.floor(staleMinutes) === 1 ? "" : "s"}. Use Retry processing to start the analysis again.
+        <div className="mt-6">
+          <div className="flex items-center justify-between gap-4 text-xs tabular-nums text-mute">
+            <span aria-live="polite">{loading && runs.length === 0 ? "Loading progress..." : counts || "Starting..."}</span>
+            <span>{percent}%</span>
           </div>
-        ) : null}
-        {isLongRunningStage ? (
-          <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-4 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/20 dark:text-sky-200">
-            Still working. This step has been running for about {stageDurationLabel}; long papers can spend several minutes on one step before the next update.
+          <div
+            className="mt-2 h-1 overflow-hidden rounded-full bg-hairline"
+            role="progressbar"
+            aria-label="Overall analysis progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <div
+              className={`h-full origin-left rounded-full transition-transform duration-700 ease-out-expo ${
+                tone === "failed" ? "bg-red-500" : tone === "done" ? "bg-emerald-500" : "bg-ink"
+              }`}
+              style={{ transform: `scaleX(${Math.max(0.02, progress)})` }}
+            />
           </div>
-        ) : null}
-        {folderJob ? (
-          <article className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <div className="flex items-start justify-between gap-4">
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-900 dark:text-[#f2f2f2]">
+        </div>
+
+        {isLikelyStalled || isLongRunningStage || folderJob ? (
+          <div className="mt-5 space-y-2">
+            {notices}
+            {folderJob ? (
+              <div className="rounded-lg bg-subtle px-3.5 py-3 text-[13px] leading-5">
+                <p className="font-medium text-ink">
                   This upload
-                </p>
-                <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
-                  {folderJob.progress_message || folderJob.status}
+                  <span className="font-normal text-body"> · {folderJob.progress_message || folderJob.status}</span>
                 </p>
                 {folderJob.progress_detail ? (
-                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
-                    {folderJob.progress_detail}
-                  </p>
+                  <p className="mt-1 text-mute">{folderJob.progress_detail}</p>
                 ) : null}
               </div>
-            </div>
-          </article>
-        ) : null}
-        {runs.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-500 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3]">
-            {loading ? "Loading progress..." : "Waiting for the first progress update."}
+            ) : null}
           </div>
-        ) : (
-          runs.map((run) => (
-            <article
-              key={run.id}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-slate-900 dark:text-[#f2f2f2]" title={getRunDisplayTitle(run)}>
-                    {getRunDisplayTitle(run)}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-600 dark:text-[#cfcfcf]">
-                    {getRunStageMessage(run)}
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
-                    {getRunStageCaption(run)}
-                  </p>
-                  {run.status === "processing" && getRunStageEpochMs(run) > 0 ? (
-                    <p className="mt-2 text-xs font-medium text-sky-700 dark:text-sky-300">
-                      On this step for{" "}
-                      {formatDurationMinutes(
-                        Math.floor(
-                          (Date.now() - getRunStageEpochMs(run)) / 60000
-                        )
-                      )}
-                    </p>
-                  ) : null}
-                  <RunMetrics run={run} />
-                </div>
-                <div className="flex items-center gap-2">
-                  {onCancelRun &&
-                  (run.status === "queued" || run.status === "processing") ? (
-                    <button
-                      type="button"
-                      onClick={() => void onCancelRun(run.id)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a0a0a0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-                      aria-label={`Cancel analysis for ${getRunDisplayTitle(run)}`}
-                      title="Cancel analysis"
-                    >
-                      <CloseIcon className="h-3.5 w-3.5" />
-                    </button>
-                  ) : null}
-                  {run.status === "succeeded" ? (
-                    <CheckCircleIcon className="h-4 w-4 text-blue-600 dark:text-blue-300" />
-                  ) : (
-                    <CircleIcon className="h-4 w-4 text-slate-500 dark:text-[#8f8f8f]" />
-                  )}
-                  <span className={`text-xs font-medium ${run.status === "failed" ? "text-red-700 dark:text-red-300" : "text-slate-500 dark:text-[#8f8f8f]"}`}>
-                    {getRunStatusLabel(run)}
-                  </span>
-                </div>
-              </div>
-              {run.error_message ? (
-                <p className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-                  {run.error_message}
-                </p>
-              ) : null}
-              <RunTimeline run={run} />
-            </article>
-          ))
-        )}
+        ) : null}
       </div>
+
+      <ul className="divide-y divide-hairline border-t border-hairline px-5 sm:px-6">{rows}</ul>
     </section>
   );
 }

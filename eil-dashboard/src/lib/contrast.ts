@@ -9,21 +9,14 @@
  * This resolves the classes to their hex values and computes the ratio, so the
  * question has an answer a test can check.
  */
+import { GRAY } from "./palette";
 
-/** The Tailwind slate ramp, as Tailwind 3 defines it. */
-const SLATE: Record<string, string> = {
-  "50": "#f8fafc",
-  "100": "#f1f5f9",
-  "200": "#e2e8f0",
-  "300": "#cbd5e1",
-  "400": "#94a3b8",
-  "500": "#64748b",
-  "600": "#475569",
-  "700": "#334155",
-  "800": "#1e293b",
-  "900": "#0f172a",
-  "950": "#020617",
-};
+/**
+ * The `slate` ramp as this app's Tailwind config defines it. The config maps
+ * `slate` to the neutral ramp in ./palette, so the checker reads the same
+ * object rather than Tailwind's stock values.
+ */
+const SLATE: Record<string, string> = GRAY;
 
 const SKY: Record<string, string> = {
   "50": "#f0f9ff",

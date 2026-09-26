@@ -126,9 +126,12 @@ test("Firebase project target and production URL split stay pinned to Papertrend
   const cors = JSON.parse(readRootFile("gcs-cors.papertrend-production.json")) as Array<{
     origin: string[];
   }>;
+  // papertrend.web.app is the address people use; without it every browser
+  // upload to the production bucket failed with "Failed to fetch".
   assert.deepEqual(cors[0]?.origin, [
     "https://papertrend-web-production-javhavgdsq-as.a.run.app",
     "https://research-trend-analysis.web.app",
+    "https://papertrend.web.app",
   ]);
 
   const nextConfig = readRootFile("eil-dashboard/next.config.mjs");

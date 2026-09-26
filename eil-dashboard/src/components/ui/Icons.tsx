@@ -1,35 +1,241 @@
-interface IconProps {
+/*
+ * One icon family for the whole product: Phosphor, at one weight.
+ *
+ * The exports keep the names the app already imports, so a call site never
+ * changes when a glyph does. Phosphor's SSR entry is used because it reads no
+ * React context, which lets these render in server components (the marketing
+ * pages and docs) as well as client ones.
+ *
+ * Sizing comes from the caller's classes (h-4 w-4 and so on); CSS width and
+ * height override the 1em attributes Phosphor writes. Colour is currentColor.
+ *
+ * Brand marks (Papertrend's own logo, Google, Facebook, Microsoft) are drawn
+ * here as authored logos, not glyphs: a person scanning for the Google "G" is
+ * looking for that exact object.
+ */
+import type { Icon as PhosphorGlyph } from "@phosphor-icons/react";
+import {
+  ArrowClockwiseIcon,
+  ArrowCounterClockwiseIcon,
+  ArrowLeftIcon as PhArrowLeft,
+  ArrowRightIcon as PhArrowRight,
+  ArrowSquareOutIcon,
+  ArrowUpRightIcon as PhArrowUpRight,
+  ArrowsDownUpIcon,
+  ArrowsInIcon,
+  ArrowsOutIcon,
+  BookOpenIcon as PhBookOpen,
+  BooksIcon as PhBooks,
+  CaretDownIcon,
+  CaretLeftIcon,
+  CaretRightIcon,
+  CaretUpIcon,
+  CaretUpDownIcon as PhCaretUpDown,
+  ChartBarIcon,
+  ChatCircleTextIcon,
+  CheckCircleIcon as PhCheckCircle,
+  CheckIcon as PhCheck,
+  CircleHalfIcon,
+  CircleIcon as PhCircle,
+  CircleNotchIcon,
+  ClockIcon as PhClock,
+  CloudIcon as PhCloud,
+  CopyIcon as PhCopy,
+  DatabaseIcon as PhDatabase,
+  DotsThreeIcon,
+  DownloadSimpleIcon,
+  EnvelopeSimpleIcon,
+  EyeIcon as PhEye,
+  FileIcon as PhFile,
+  FilePdfIcon as PhFilePdf,
+  FileTextIcon,
+  FolderIcon as PhFolder,
+  FolderOpenIcon as PhFolderOpen,
+  FunnelIcon,
+  GearSixIcon,
+  GlobeIcon as PhGlobe,
+  GoogleDriveLogoIcon,
+  HourglassIcon as PhHourglass,
+  HouseIcon,
+  ImageIcon as PhImage,
+  InfoIcon as PhInfo,
+  KeyIcon as PhKey,
+  LightningIcon as PhLightning,
+  ListBulletsIcon,
+  ListIcon,
+  LockIcon as PhLock,
+  MagnifyingGlassIcon,
+  MinusIcon as PhMinus,
+  MonitorIcon as PhMonitor,
+  MoonIcon as PhMoon,
+  PaletteIcon as PhPalette,
+  PaperPlaneRightIcon,
+  PaperclipIcon,
+  PencilSimpleIcon,
+  PlusIcon as PhPlus,
+  PushPinIcon,
+  QuestionIcon as PhQuestion,
+  ShieldCheckIcon as PhShieldCheck,
+  SidebarSimpleIcon,
+  SignOutIcon,
+  SlidersHorizontalIcon,
+  SparkleIcon,
+  SquaresFourIcon,
+  StackIcon as PhStack,
+  StarIcon as PhStar,
+  StopIcon as PhStop,
+  SunIcon as PhSun,
+  TagIcon as PhTag,
+  TranslateIcon as PhTranslate,
+  TrashIcon as PhTrash,
+  UploadSimpleIcon,
+  TreeStructureIcon as PhTreeStructure,
+  UserCircleIcon as PhUserCircle,
+  UserIcon as PhUser,
+  WarningCircleIcon as PhWarningCircle,
+  WarningIcon as PhWarning,
+  XCircleIcon as PhXCircle,
+  XIcon,
+  AppleLogoIcon,
+} from "@phosphor-icons/react/dist/ssr";
+
+export type IconWeight = "regular" | "bold" | "fill";
+
+export interface IconProps {
   className?: string;
+  /** "fill" marks an on state, such as a favourite; "regular" everywhere else. */
+  weight?: IconWeight;
 }
 
-function BaseIcon({
-  className,
-  children,
-}: IconProps & { children: React.ReactNode }) {
+function glyph(Glyph: PhosphorGlyph, name: string) {
+  function Icon({ className, weight = "regular" }: IconProps) {
+    return <Glyph aria-hidden="true" focusable="false" weight={weight} className={className} />;
+  }
+  Icon.displayName = name;
+  return Icon;
+}
+
+/* ------------------------------------------------------------ navigation */
+
+export const HomeIcon = glyph(HouseIcon, "HomeIcon");
+export const ChartIcon = glyph(ChartBarIcon, "ChartIcon");
+export const ChatIcon = glyph(ChatCircleTextIcon, "ChatIcon");
+export const PaperIcon = glyph(FileTextIcon, "PaperIcon");
+export const UploadIcon = glyph(UploadSimpleIcon, "UploadIcon");
+export const SettingsIcon = glyph(GearSixIcon, "SettingsIcon");
+export const MenuIcon = glyph(ListIcon, "MenuIcon");
+export const SidebarIcon = glyph(SidebarSimpleIcon, "SidebarIcon");
+export const BooksIcon = glyph(PhBooks, "BooksIcon");
+export const BookOpenIcon = glyph(PhBookOpen, "BookOpenIcon");
+
+/* ---------------------------------------------------------------- actions */
+
+export const ArrowRightIcon = glyph(PhArrowRight, "ArrowRightIcon");
+export const ArrowLeftIcon = glyph(PhArrowLeft, "ArrowLeftIcon");
+export const ArrowUpRightIcon = glyph(PhArrowUpRight, "ArrowUpRightIcon");
+export const ExternalLinkIcon = glyph(ArrowSquareOutIcon, "ExternalLinkIcon");
+export const PlusIcon = glyph(PhPlus, "PlusIcon");
+export const MinusIcon = glyph(PhMinus, "MinusIcon");
+export const SendIcon = glyph(PaperPlaneRightIcon, "SendIcon");
+export const CloseIcon = glyph(XIcon, "CloseIcon");
+export const CopyIcon = glyph(PhCopy, "CopyIcon");
+export const RefreshIcon = glyph(ArrowClockwiseIcon, "RefreshIcon");
+export const UndoIcon = glyph(ArrowCounterClockwiseIcon, "UndoIcon");
+export const AttachmentIcon = glyph(PaperclipIcon, "AttachmentIcon");
+export const DownloadIcon = glyph(DownloadSimpleIcon, "DownloadIcon");
+export const PencilSquareIcon = glyph(PencilSimpleIcon, "PencilSquareIcon");
+export const TrashIcon = glyph(PhTrash, "TrashIcon");
+export const PinIcon = glyph(PushPinIcon, "PinIcon");
+export const StopIcon = glyph(PhStop, "StopIcon");
+export const StarIcon = glyph(PhStar, "StarIcon");
+export const LogoutIcon = glyph(SignOutIcon, "LogoutIcon");
+export const FullscreenIcon = glyph(ArrowsOutIcon, "FullscreenIcon");
+export const ExitFullscreenIcon = glyph(ArrowsInIcon, "ExitFullscreenIcon");
+export const MoreHorizontalIcon = glyph(DotsThreeIcon, "MoreHorizontalIcon");
+
+/* ------------------------------------------------------ direction, choice */
+
+export const ChevronDownIcon = glyph(CaretDownIcon, "ChevronDownIcon");
+export const ChevronUpIcon = glyph(CaretUpIcon, "ChevronUpIcon");
+export const ChevronLeftIcon = glyph(CaretLeftIcon, "ChevronLeftIcon");
+export const ChevronRightIcon = glyph(CaretRightIcon, "ChevronRightIcon");
+export const CaretUpDownIcon = glyph(PhCaretUpDown, "CaretUpDownIcon");
+export const CheckIcon = glyph(PhCheck, "CheckIcon");
+export const CheckCircleIcon = glyph(PhCheckCircle, "CheckCircleIcon");
+export const CircleIcon = glyph(PhCircle, "CircleIcon");
+export const XCircleIcon = glyph(PhXCircle, "XCircleIcon");
+
+/* --------------------------------------------------------- view controls */
+
+export const FilterIcon = glyph(FunnelIcon, "FilterIcon");
+export const EqualizerIcon = glyph(SlidersHorizontalIcon, "EqualizerIcon");
+export const SearchIcon = glyph(MagnifyingGlassIcon, "SearchIcon");
+export const ListViewIcon = glyph(ListBulletsIcon, "ListViewIcon");
+export const GridViewIcon = glyph(SquaresFourIcon, "GridViewIcon");
+export const SortIcon = glyph(ArrowsDownUpIcon, "SortIcon");
+export const EyeIcon = glyph(PhEye, "EyeIcon");
+
+/* ------------------------------------------------------ objects, sources */
+
+export const FolderIcon = glyph(PhFolder, "FolderIcon");
+export const FolderOpenIcon = glyph(PhFolderOpen, "FolderOpenIcon");
+export const FileIcon = glyph(PhFile, "FileIcon");
+export const FilePdfIcon = glyph(PhFilePdf, "FilePdfIcon");
+export const CloudIcon = glyph(PhCloud, "CloudIcon");
+export const DriveIcon = glyph(GoogleDriveLogoIcon, "DriveIcon");
+export const ImageIcon = glyph(PhImage, "ImageIcon");
+export const DatabaseIcon = glyph(PhDatabase, "DatabaseIcon");
+export const StackIcon = glyph(PhStack, "StackIcon");
+export const TagIcon = glyph(PhTag, "TagIcon");
+export const TreeIcon = glyph(PhTreeStructure, "TreeIcon");
+export const TranslateIcon = glyph(PhTranslate, "TranslateIcon");
+export const SparkIcon = glyph(SparkleIcon, "SparkIcon");
+export const LightningIcon = glyph(PhLightning, "LightningIcon");
+
+/* ------------------------------------------------------ people, account */
+
+export const UserIcon = glyph(PhUser, "UserIcon");
+export const UserCircleIcon = glyph(PhUserCircle, "UserCircleIcon");
+export const EmailIcon = glyph(EnvelopeSimpleIcon, "EmailIcon");
+export const KeyIcon = glyph(PhKey, "KeyIcon");
+export const LockIcon = glyph(PhLock, "LockIcon");
+export const ShieldCheckIcon = glyph(PhShieldCheck, "ShieldCheckIcon");
+export const GlobeIcon = glyph(PhGlobe, "GlobeIcon");
+
+/* -------------------------------------------------------------- theme */
+
+export const SunIcon = glyph(PhSun, "SunIcon");
+export const MoonIcon = glyph(PhMoon, "MoonIcon");
+export const MonitorIcon = glyph(PhMonitor, "MonitorIcon");
+export const ContrastIcon = glyph(CircleHalfIcon, "ContrastIcon");
+export const PaletteIcon = glyph(PhPalette, "PaletteIcon");
+
+/* ------------------------------------------------------------- status */
+
+export const InfoIcon = glyph(PhInfo, "InfoIcon");
+export const WarningIcon = glyph(PhWarning, "WarningIcon");
+export const WarningCircleIcon = glyph(PhWarningCircle, "WarningCircleIcon");
+export const QuestionIcon = glyph(PhQuestion, "QuestionIcon");
+export const ClockIcon = glyph(PhClock, "ClockIcon");
+export const HourglassIcon = glyph(PhHourglass, "HourglassIcon");
+
+/** A spinner for the few places a skeleton cannot stand in (inside a button). */
+export function SpinnerIcon({ className }: { className?: string }) {
   return (
-    <svg
+    <CircleNotchIcon
       aria-hidden="true"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      {children}
-    </svg>
+      focusable="false"
+      weight="bold"
+      className={`animate-spin motion-reduce:animate-none ${className ?? ""}`}
+    />
   );
 }
 
-export function LogoMarkIcon({ className }: IconProps) {
+/* ------------------------------------------------------------ brand marks */
+
+export function LogoMarkIcon({ className }: { className?: string }) {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 64 64"
-      fill="none"
-      className={className}
-    >
+    <svg aria-hidden="true" viewBox="0 0 64 64" fill="none" className={className}>
       <path fill="currentColor" d="M29.2 4.4 7.4 47 29.2 35.7V4.4Z" />
       <path fill="currentColor" d="M34.8 4.4 56.6 47 34.8 35.7V4.4Z" />
       <path fill="currentColor" d="m35.3 40.5 22.5 9.9-22.9 10.7-10-18.7 10.4-1.9Z" />
@@ -38,245 +244,14 @@ export function LogoMarkIcon({ className }: IconProps) {
   );
 }
 
-export function HomeIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M4 10.5 12 4l8 6.5" />
-      <path d="M6.5 9.5V20h11V9.5" />
-    </BaseIcon>
-  );
-}
-
-export function ChartIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M4 19h16" />
-      <path d="M7 16V9" />
-      <path d="M12 16V5" />
-      <path d="M17 16v-7" />
-    </BaseIcon>
-  );
-}
-
-export function ChatIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M5 6.5h14a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H10l-5 4v-4H5a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2Z" />
-    </BaseIcon>
-  );
-}
-
-export function PaperIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M8 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 7 20V5A1.5 1.5 0 0 1 8.5 3.5Z" />
-      <path d="M14 3.5V8h4" />
-      <path d="M10 12h4" />
-      <path d="M10 15h4" />
-    </BaseIcon>
-  );
-}
-
-export function UploadIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M12 16V4" />
-      <path d="m7.5 8.5 4.5-4.5 4.5 4.5" />
-      <path d="M5 19.5h14" />
-    </BaseIcon>
-  );
-}
-
-export function SettingsIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M12 8.5A3.5 3.5 0 1 1 8.5 12 3.5 3.5 0 0 1 12 8.5Z" />
-      <path d="M19 12a7.1 7.1 0 0 0-.1-1l2.1-1.6-2-3.4-2.5 1a7.8 7.8 0 0 0-1.8-1L14.2 3h-4.4l-.5 3a7.8 7.8 0 0 0-1.8 1l-2.5-1-2 3.4L5.1 11A7.1 7.1 0 0 0 5 12c0 .3 0 .7.1 1l-2.1 1.6 2 3.4 2.5-1a7.8 7.8 0 0 0 1.8 1l.5 3h4.4l.5-3a7.8 7.8 0 0 0 1.8-1l2.5 1 2-3.4-2.1-1.6c.1-.3.1-.7.1-1Z" />
-    </BaseIcon>
-  );
-}
-
-export function ArrowRightIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M5 12h14" />
-      <path d="m13 6 6 6-6 6" />
-    </BaseIcon>
-  );
-}
-
-export function PlusIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M12 5v14" />
-      <path d="M5 12h14" />
-    </BaseIcon>
-  );
-}
-
-export function SendIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m21 3-9.5 9.5" />
-      <path d="M21 3 14 21l-2.8-7.2L4 11l17-8Z" />
-    </BaseIcon>
-  );
-}
-
-export function SparkIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M12 3.5 13.7 8l4.8 1.7-4.8 1.8-1.7 4.5-1.7-4.5L5.5 9.7 10.3 8 12 3.5Z" />
-    </BaseIcon>
-  );
-}
-
-export function MenuIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M4 7h16" />
-      <path d="M4 12h16" />
-      <path d="M4 17h16" />
-    </BaseIcon>
-  );
-}
-
-export function CloseIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m6 6 12 12" />
-      <path d="M18 6 6 18" />
-    </BaseIcon>
-  );
-}
-
-export function SunIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2.5v2.2" />
-      <path d="M12 19.3v2.2" />
-      <path d="m4.9 4.9 1.6 1.6" />
-      <path d="m17.5 17.5 1.6 1.6" />
-      <path d="M2.5 12h2.2" />
-      <path d="M19.3 12h2.2" />
-      <path d="m4.9 19.1 1.6-1.6" />
-      <path d="m17.5 6.5 1.6-1.6" />
-    </BaseIcon>
-  );
-}
-
-export function MoonIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M20 14.2A7.8 7.8 0 0 1 9.8 4a8.5 8.5 0 1 0 10.1 10.2Z" />
-    </BaseIcon>
-  );
-}
-
-export function FilterIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M4 6h16" />
-      <path d="M7 12h10" />
-      <path d="M10 18h4" />
-    </BaseIcon>
-  );
-}
-
-export function EqualizerIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M6 5.5v13" />
-      <path d="M12 5.5v13" />
-      <path d="M18 5.5v13" />
-      <circle cx="6" cy="9" r="1.6" />
-      <circle cx="12" cy="14" r="1.6" />
-      <circle cx="18" cy="10.5" r="1.6" />
-    </BaseIcon>
-  );
-}
-
-export function SearchIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <circle cx="11" cy="11" r="6.5" />
-      <path d="m16 16 4 4" />
-    </BaseIcon>
-  );
-}
-
-export function CheckCircleIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M21 12a9 9 0 1 1-9-9 9 9 0 0 1 9 9Z" />
-      <path d="m8.5 12 2.3 2.3 4.7-4.8" />
-    </BaseIcon>
-  );
-}
-
-export function CircleIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <circle cx="12" cy="12" r="8" />
-    </BaseIcon>
-  );
-}
-
-export function UserIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <circle cx="12" cy="8.5" r="3.5" />
-      <path d="M5 19a7 7 0 0 1 14 0" />
-    </BaseIcon>
-  );
-}
-
-export function LogoutIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M10 5H6.5A1.5 1.5 0 0 0 5 6.5v11A1.5 1.5 0 0 0 6.5 19H10" />
-      <path d="M14 8.5 19 12l-5 3.5" />
-      <path d="M19 12H9" />
-    </BaseIcon>
-  );
-}
-
-export function EmailIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <rect x="3.5" y="5.5" width="17" height="13" rx="2" />
-      <path d="m5 7 7 6 7-6" />
-    </BaseIcon>
-  );
-}
-
-export function MicrosoftIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <rect x="4.5" y="4.5" width="6" height="6" />
-      <rect x="13.5" y="4.5" width="6" height="6" />
-      <rect x="4.5" y="13.5" width="6" height="6" />
-      <rect x="13.5" y="13.5" width="6" height="6" />
-    </BaseIcon>
-  );
-}
-
 /*
- * The two provider marks below are drawn as filled logos, deliberately outside
- * BaseIcon.
- *
- * BaseIcon renders `fill="none" stroke="currentColor"`, which is right for the
- * line-icon set but cannot draw a logo: the previous Google mark was four
- * disconnected stroke fragments and read as a scribble, on the one page where a
- * reader is deciding whether to trust the site with an account.
- *
- * They keep the providers' own colours rather than the monochrome palette.
- * These are third-party marks, not Papertrend's - a person scanning for the
- * Google "G" is looking for that specific object, and Google's sign-in branding
- * guidance asks for the official mark.
+ * The provider marks below are drawn as filled logos in the providers' own
+ * colours rather than the monochrome glyph set. They are third-party marks,
+ * not Papertrend's, and Google's sign-in branding guidance asks for the
+ * official mark on the one page where a reader decides whether to trust the
+ * site with an account.
  */
-export function GoogleIcon({ className }: IconProps) {
+export function GoogleIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
       <path
@@ -296,7 +271,7 @@ export function GoogleIcon({ className }: IconProps) {
   );
 }
 
-export function FacebookIcon({ className }: IconProps) {
+export function FacebookIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
       <path
@@ -307,257 +282,17 @@ export function FacebookIcon({ className }: IconProps) {
   );
 }
 
-export function AppleIcon({ className }: IconProps) {
+export function MicrosoftIcon({ className }: { className?: string }) {
   return (
-    <BaseIcon className={className}>
-      <path d="M14 5.5c.7-.8 1.1-1.9 1-3-.9.1-2 .6-2.7 1.4-.6.7-1.1 1.8-1 2.9 1 0 2-.5 2.7-1.3Z" />
-      <path d="M12.2 8.4c-1.5 0-2.2.9-3.3.9-1.1 0-1.4-.8-3-.8-2 0-4.1 1.7-4.1 5 .1 2.4 1 4.8 2.5 6.7.8 1 1.8 2.2 3.1 2.1 1.2-.1 1.7-.8 3.2-.8s1.9.8 3.3.8c1.4 0 2.2-1.1 3-2.1.6-.8 1.2-1.8 1.6-2.8-2.4-.9-3.5-4-1.7-6 .8-.9 1.8-1.4 2.8-1.5-.7-1-1.9-2.5-3.9-2.5-1.3 0-2.3.9-3.5.9Z" />
-    </BaseIcon>
+    <svg viewBox="0 0 24 24" aria-hidden="true" className={className}>
+      <path fill="#F25022" d="M2 2h9.5v9.5H2z" />
+      <path fill="#7FBA00" d="M12.5 2H22v9.5h-9.5z" />
+      <path fill="#00A4EF" d="M2 12.5h9.5V22H2z" />
+      <path fill="#FFB900" d="M12.5 12.5H22V22h-9.5z" />
+    </svg>
   );
 }
 
-export function FolderIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4l1.5 2h8.5A1.5 1.5 0 0 1 20.5 9.5v8A1.5 1.5 0 0 1 19 19H5A1.5 1.5 0 0 1 3.5 17.5Z" />
-    </BaseIcon>
-  );
-}
-
-export function FileIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M8 3.5h6l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 7 20V5A1.5 1.5 0 0 1 8.5 3.5Z" />
-      <path d="M14 3.5V8h4" />
-    </BaseIcon>
-  );
-}
-
-export function CloudIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M8.5 18.5h9a3.5 3.5 0 0 0 .5-7 5 5 0 0 0-9.5-1.5A3.8 3.8 0 0 0 8.5 18.5Z" />
-    </BaseIcon>
-  );
-}
-
-export function DriveIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m9 4 4 7-4 7H5l4-7-4-7Z" />
-      <path d="m9 4 4 7h6l-4-7Z" />
-      <path d="m13 11-4 7h6l4-7Z" />
-    </BaseIcon>
-  );
-}
-
-export function OneDriveIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M7.5 18.5h9.8a3.2 3.2 0 0 0 .2-6.4 4.6 4.6 0 0 0-8.4-1.7A3.9 3.9 0 0 0 7.5 18.5Z" />
-      <path d="M6.8 12.4a2.8 2.8 0 0 0-2.8 2.8 3.2 3.2 0 0 0 3.2 3.3h1.3" />
-    </BaseIcon>
-  );
-}
-
-export function SharePointIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <circle cx="8" cy="12" r="3.5" />
-      <circle cx="16.5" cy="8.5" r="2.5" />
-      <circle cx="17" cy="16.5" r="2.5" />
-      <path d="M11 10.5 14.2 9" />
-      <path d="M11 13.5 14.5 15" />
-    </BaseIcon>
-  );
-}
-
-export function CopyIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <rect x="9" y="9" width="10.5" height="10.5" rx="2" />
-      <path d="M15 9V7a2 2 0 0 0-2-2H6.5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2H9" />
-    </BaseIcon>
-  );
-}
-
-export function RefreshIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
-      <path d="M20 4v7h-7" />
-    </BaseIcon>
-  );
-}
-
-export function AttachmentIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m8.5 12.5 5.7-5.7a3 3 0 1 1 4.3 4.2l-7.4 7.5a5 5 0 1 1-7.1-7.1l7.3-7.4" />
-    </BaseIcon>
-  );
-}
-
-export function ChevronDownIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m6 9 6 6 6-6" />
-    </BaseIcon>
-  );
-}
-
-export function CheckIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m5 12 4.2 4.2L19 6.5" />
-    </BaseIcon>
-  );
-}
-
-export function SidebarIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <rect x="4" y="5" width="16" height="14" rx="2.5" />
-      <path d="M9.5 5v14" />
-    </BaseIcon>
-  );
-}
-
-export function FullscreenIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M8.5 4.5H5.8A1.3 1.3 0 0 0 4.5 5.8v2.7" />
-      <path d="M15.5 4.5h2.7a1.3 1.3 0 0 1 1.3 1.3v2.7" />
-      <path d="M19.5 15.5v2.7a1.3 1.3 0 0 1-1.3 1.3h-2.7" />
-      <path d="M8.5 19.5H5.8a1.3 1.3 0 0 1-1.3-1.3v-2.7" />
-    </BaseIcon>
-  );
-}
-
-export function ExitFullscreenIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M9 5v3.2A.8.8 0 0 1 8.2 9H5" />
-      <path d="M15 5v3.2a.8.8 0 0 0 .8.8H19" />
-      <path d="M19 15h-3.2a.8.8 0 0 0-.8.8V19" />
-      <path d="M5 15h3.2a.8.8 0 0 1 .8.8V19" />
-    </BaseIcon>
-  );
-}
-
-export function DownloadIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M12 4.5v10" />
-      <path d="m7.5 10.5 4.5 4.5 4.5-4.5" />
-      <path d="M5 18.5h14" />
-    </BaseIcon>
-  );
-}
-
-export function StarIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m12 4.5 2.3 4.8 5.2.7-3.8 3.8.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.8 5.2-.7Z" />
-    </BaseIcon>
-  );
-}
-
-export function ListViewIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M8 7h11" />
-      <path d="M8 12h11" />
-      <path d="M8 17h11" />
-      <path d="M4.5 7h.01" />
-      <path d="M4.5 12h.01" />
-      <path d="M4.5 17h.01" />
-    </BaseIcon>
-  );
-}
-
-export function GridViewIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <rect x="4.5" y="4.5" width="6" height="6" rx="1.2" />
-      <rect x="13.5" y="4.5" width="6" height="6" rx="1.2" />
-      <rect x="4.5" y="13.5" width="6" height="6" rx="1.2" />
-      <rect x="13.5" y="13.5" width="6" height="6" rx="1.2" />
-    </BaseIcon>
-  );
-}
-
-export function SortIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M5 7h11" />
-      <path d="M5 12h8" />
-      <path d="M5 17h5" />
-      <path d="m17 7 2 2 2-2" />
-      <path d="M19 9v8" />
-    </BaseIcon>
-  );
-}
-
-export function ImageIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <rect x="3.5" y="5" width="17" height="14" rx="2" />
-      <circle cx="9" cy="10" r="1.5" />
-      <path d="m6.5 16 3.5-3.5 2.8 2.8 2-2 2.7 2.7" />
-    </BaseIcon>
-  );
-}
-
-export function MoreHorizontalIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <circle cx="6" cy="12" r="1.2" fill="currentColor" stroke="none" />
-      <circle cx="12" cy="12" r="1.2" fill="currentColor" stroke="none" />
-      <circle cx="18" cy="12" r="1.2" fill="currentColor" stroke="none" />
-    </BaseIcon>
-  );
-}
-
-export function PencilSquareIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M4.5 6.5A2 2 0 0 1 6.5 4.5h7" />
-      <path d="M4.5 9.5v8a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-7" />
-      <path d="m13.5 5.5 5 5" />
-      <path d="m11.5 17.5 1-4 7-7a1.4 1.4 0 0 0-2-2l-7 7-4 1Z" />
-    </BaseIcon>
-  );
-}
-
-export function TrashIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="M4.5 7.5h15" />
-      <path d="M9 7.5v-2h6v2" />
-      <path d="M7.5 7.5 8.3 19a1.5 1.5 0 0 0 1.5 1.4h4.4a1.5 1.5 0 0 0 1.5-1.4l.8-11.5" />
-      <path d="M10 11v5.5" />
-      <path d="M14 11v5.5" />
-    </BaseIcon>
-  );
-}
-
-export function PinIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <path d="m14 4 6 6" />
-      <path d="m16 9-5 5" />
-      <path d="M8 6.5 17.5 16" />
-      <path d="m10 14-6 6" />
-      <path d="m6.5 8 9.5 9.5" />
-    </BaseIcon>
-  );
-}
-
-export function StopIcon({ className }: IconProps) {
-  return (
-    <BaseIcon className={className}>
-      <rect x="7" y="7" width="10" height="10" rx="1.8" />
-    </BaseIcon>
-  );
+export function AppleIcon({ className }: { className?: string }) {
+  return <AppleLogoIcon aria-hidden="true" focusable="false" weight="fill" className={className} />;
 }

@@ -70,6 +70,9 @@ export function firebaseUserToPapertrendUser(
       provider: "firebase",
       providers: ["firebase"],
       firebase_uid: firebaseUser.uid,
+      // How this person actually signs in ("password", "google.com"...), so
+      // Settings can offer a password reset only to a password account.
+      sign_in_methods: firebaseUser.providerData.map((entry) => entry.providerId),
     },
     user_metadata: {
       full_name: firebaseUser.displayName ?? null,

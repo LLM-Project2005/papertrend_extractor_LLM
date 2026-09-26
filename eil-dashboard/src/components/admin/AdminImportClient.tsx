@@ -1931,7 +1931,7 @@ export default function AdminImportClient() {
                               item.favorite ? "from" : "to"
                             } favorites`}
                           >
-                            <StarIcon className="h-4 w-4" />
+                            <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
                           </button>
                       </>
                       <button
@@ -1981,7 +1981,7 @@ export default function AdminImportClient() {
                             </span>
                             {item.favorite ? (
                               <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-600 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
-                                <StarIcon className="h-4 w-4" />
+                                <StarIcon className="h-4 w-4" weight="fill" />
                               </span>
                             ) : null}
                           </div>
@@ -2067,7 +2067,7 @@ export default function AdminImportClient() {
                                 item.favorite ? "from" : "to"
                               } favorites`}
                             >
-                              <StarIcon className="h-4 w-4" />
+                              <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
                             </button>
                           </div>
                           <button

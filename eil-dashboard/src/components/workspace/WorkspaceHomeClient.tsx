@@ -1,7 +1,18 @@
 "use client";
 
+/*
+ * A repository's home: what is in it, what is happening to it, and the one
+ * next step a reader most likely wants - add papers, or ask about the ones
+ * already here.
+ *
+ * It deliberately carries no card grid of metrics or of identical actions.
+ * The facts are one line under the name; asking is one field; the rest is two
+ * ranked lists and the latest papers, each a link to the page that owns it.
+ */
+
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
@@ -9,8 +20,8 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
 import {
+  describeRunFailure,
   getRunDisplayTitle,
-  getRunStageCaption,
   getRunStageMessage,
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
@@ -19,12 +30,16 @@ import {
   ChartIcon,
   ChatIcon,
   CheckCircleIcon,
-  FileIcon,
-  PaperIcon,
-  RefreshIcon,
+  ChevronRightIcon,
+  ClockIcon,
+  InfoIcon,
   SparkIcon,
+  SpinnerIcon,
   UploadIcon,
+  WarningCircleIcon,
+  WarningIcon,
 } from "@/components/ui/Icons";
+import { buttonClass, chipClass, panelClass } from "@/components/ui/controls";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { isDatedYear } from "@/lib/dated-year";
 
@@ -36,156 +51,17 @@ type RankedItem = {
 
 const STUCK_RUN_MINUTES = 15;
 
-const AI_ACTIONS = [
-  {
-    title: "Ask the repository",
-    description: "Start with a grounded question across all analyzed papers.",
-    prompt: "What are the main findings across this repository?",
-    icon: ChatIcon,
-  },
-  {
-    title: "Create a chart",
-    description: "Use Chart mode to visualize topics, keywords, years, or categories.",
-    prompt: "Create the most useful chart from this repository.",
-    icon: ChartIcon,
-  },
-  {
-    title: "Summarize recent papers",
-    description: "Turn the latest analyzed files into a compact reading brief.",
-    prompt: "Summarize the recent papers and highlight what matters.",
-    icon: PaperIcon,
-  },
-  {
-    title: "Compare papers",
-    description: "Ask for similarities, differences, methods, and contributions.",
-    prompt: "Compare the strongest papers in this repository.",
-    icon: SparkIcon,
-  },
-  {
-    title: "Find research gaps",
-    description: "Look for missing angles, weak evidence, and next-study ideas.",
-    prompt: "Find research gaps and possible future study ideas.",
-    icon: RefreshIcon,
-  },
+/** Starting questions. Each opens Chat with the question in the composer. */
+const SUGGESTED_QUESTIONS = [
+  { label: "Main findings", prompt: "What are the main findings across this repository?" },
+  { label: "Make a chart", prompt: "Create the most useful chart from this repository." },
+  { label: "Summarize recent papers", prompt: "Summarize the recent papers and highlight what matters." },
+  { label: "Compare papers", prompt: "Compare the strongest papers in this repository." },
+  { label: "Find research gaps", prompt: "Find research gaps and possible future study ideas." },
 ] as const;
 
-const surfaceClass =
-  "rounded-xl border border-[#ebebeb] bg-white shadow-[0_1px_1px_rgba(0,0,0,0.02),0_2px_2px_rgba(0,0,0,0.04)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-none";
-const softSurfaceClass =
-  "rounded-lg border border-[#ebebeb] bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#030303]";
-const eyebrowClass =
-  "font-mono text-[11px] font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]";
-const primaryButtonClass =
-  "inline-flex min-h-11 items-center gap-2 rounded-full bg-[#171717] px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]";
-const secondaryButtonClass =
-  "inline-flex min-h-11 items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-5 py-2.5 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]";
-
-function MetricCard({
-  label,
-  value,
-  icon,
-  detail,
-}: {
-  label: string;
-  value: string;
-  icon: React.ReactNode;
-  detail?: string;
-}) {
-  return (
-    <article className={`${surfaceClass} px-5 py-5`}>
-      <div className="flex items-center justify-between gap-3">
-        <p className={eyebrowClass}>{label}</p>
-        <span className="text-slate-500 dark:text-[#8f8f8f]">{icon}</span>
-      </div>
-      <p className="mt-5 text-3xl font-semibold tracking-normal text-[#171717] dark:text-white">
-        {value}
-      </p>
-      {detail ? (
-        <p className="mt-2 text-sm leading-5 text-[#4d4d4d] dark:text-[#a3a3a3]">{detail}</p>
-      ) : null}
-    </article>
-  );
-}
-
-function AIActionCard({
-  title,
-  description,
-  prompt,
-  icon: Icon,
-}: {
-  title: string;
-  description: string;
-  prompt: string;
-  icon: (props: { className?: string }) => JSX.Element;
-}) {
-  return (
-    <Link
-      href="/workspace/chat"
-      className={`${surfaceClass} group flex min-h-[150px] flex-col justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]`}
-    >
-      <div>
-        <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#ebebeb] bg-white text-[#171717] dark:border-[#1f1f1f] dark:bg-black dark:text-white">
-          <Icon className="h-5 w-5" />
-        </span>
-        <h3 className="mt-4 text-sm font-semibold text-[#171717] dark:text-white">
-          {title}
-        </h3>
-        <p className="mt-2 text-sm leading-6 text-[#4d4d4d] dark:text-[#a3a3a3]">
-          {description}
-        </p>
-      </div>
-      <p className="mt-4 line-clamp-2 rounded-md bg-[#fafafa] px-3 py-2 font-mono text-xs leading-5 text-[#4d4d4d] transition-colors group-hover:bg-white dark:bg-[#030303] dark:text-[#8f8f8f] dark:group-hover:bg-[#050505]">
-        {prompt}
-      </p>
-    </Link>
-  );
-}
-
-function InsightList({
-  title,
-  items,
-  emptyLabel,
-}: {
-  title: string;
-  items: RankedItem[];
-  emptyLabel: string;
-}) {
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-sm font-semibold text-[#171717] dark:text-white">{title}</h3>
-        <span className="font-mono text-xs text-slate-500 dark:text-[#8f8f8f]">Top 5</span>
-      </div>
-      <div className="mt-3 space-y-2">
-        {items.length > 0 ? (
-          items.map((item, index) => (
-            <div
-              key={`${title}-${item.label}`}
-              className="flex items-center justify-between gap-4 rounded-lg border border-[#ebebeb] bg-white px-3 py-2.5 dark:border-[#1f1f1f] dark:bg-[#050505]"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-[#171717] dark:text-white">
-                  {index + 1}. {item.label}
-                </p>
-                {item.detail ? (
-                  <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-[#8f8f8f]">
-                    {item.detail}
-                  </p>
-                ) : null}
-              </div>
-              <span className="rounded-full bg-[#fafafa] px-2.5 py-1 font-mono text-xs text-[#4d4d4d] dark:bg-[#030303] dark:text-[#d0d0d0]">
-                {item.value.toLocaleString()}
-              </span>
-            </div>
-          ))
-        ) : (
-          <p className="rounded-lg border border-dashed border-[#ebebeb] px-3 py-4 text-sm text-[#4d4d4d] dark:border-[#1f1f1f] dark:text-[#8f8f8f]">
-            {emptyLabel}
-          </p>
-        )}
-      </div>
-    </div>
-  );
+function chatHref(question: string) {
+  return `/workspace/chat?q=${encodeURIComponent(question)}`;
 }
 
 function runTitleOf(run: IngestionRunRow) {
@@ -217,7 +93,7 @@ function isRunStuck(run: IngestionRunRow) {
 }
 
 function formatTimestamp(value?: string | null) {
-  if (!value) return "Not available";
+  if (!value) return "";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString(undefined, {
@@ -228,68 +104,208 @@ function formatTimestamp(value?: string | null) {
   });
 }
 
-function statusTone(status: IngestionRunRow["status"], stuck: boolean) {
-  if (status === "succeeded") {
-    return "bg-[#d3e5ff] text-[#0761d1] dark:bg-[#0b274a] dark:text-[#58a6ff]";
-  }
-  if (status === "failed") {
-    return "bg-[#f7d4d6] text-[#c50000] dark:bg-[#351113] dark:text-[#ffb4b8]";
-  }
-  if (stuck) {
-    return "bg-[#ffefcf] text-[#ab570a] dark:bg-[#382300] dark:text-[#ffd38a]";
-  }
-  return "bg-[#fafafa] text-[#4d4d4d] ring-1 ring-[#ebebeb] dark:bg-[#050505] dark:text-[#d0d0d0] dark:ring-[#242424]";
-}
+/* ------------------------------------------------------------ small parts */
 
-function RunActivityRow({ run }: { run: IngestionRunRow }) {
-  const stuck = isRunStuck(run);
-  const timestamp = getRunTimestamp(run);
-  const statusLabel = stuck ? "Needs attention" : getRunStatusLabel(run);
-  const stageMessage = getRunStageMessage(run);
-
+function Fact({ value, label, loading }: { value: string; label: string; loading: boolean }) {
   return (
-    <div className="flex items-start gap-3 rounded-lg border border-[#ebebeb] bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <span
-        className={`mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full border ${
-          run.status === "processing"
-            ? "border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200"
-            : "border-[#ebebeb] bg-white text-[#4d4d4d] dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#bdbdbd]"
-        }`}
-      >
-        <FileIcon className="h-4 w-4" />
+    <div className="flex items-baseline gap-1.5">
+      <dt className="sr-only">{label}</dt>
+      <dd className="text-sm font-semibold tabular-nums text-ink">
+        {loading ? <span className="skeleton inline-block h-4 w-8 align-middle" /> : value}
+      </dd>
+      <span aria-hidden="true" className="text-sm text-mute">
+        {label}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 truncate text-sm font-medium text-[#171717] dark:text-white" title={runTitleOf(run)}>
-            {runTitleOf(run)}
-          </p>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusTone(
-              run.status,
-              stuck
-            )}`}
-          >
-            {statusLabel}
-          </span>
-        </div>
-        <p className="mt-1 text-sm font-medium text-[#171717] dark:text-[#f2f2f2]">
-          {stageMessage}
-        </p>
-        <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#4d4d4d] dark:text-[#8f8f8f]">
-          {getRunStageCaption(run)}
-        </p>
-        <p className="mt-2 font-mono text-[11px] text-slate-500 dark:text-[#8f8f8f]">
-          {formatTimestamp(timestamp)}
-        </p>
-      </div>
     </div>
   );
 }
 
+function Notice({ tone, children }: { tone: "danger" | "warning" | "info"; children: React.ReactNode }) {
+  const Icon = tone === "info" ? InfoIcon : tone === "warning" ? WarningIcon : WarningCircleIcon;
+  const toneClass =
+    tone === "danger"
+      ? "border-red-200 bg-red-50 text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-200"
+      : tone === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-200"
+        : "border-hairline bg-subtle text-body";
+  return (
+    <section className={`flex gap-3 rounded-xl border px-4 py-3.5 text-sm leading-6 ${toneClass}`}>
+      <Icon className="mt-1 h-4 w-4 flex-none" />
+      <div className="min-w-0 flex-1">{children}</div>
+    </section>
+  );
+}
+
+function RankedList({
+  title,
+  unit,
+  items,
+  emptyLabel,
+  loading,
+}: {
+  title: string;
+  unit: string;
+  items: RankedItem[];
+  emptyLabel: string;
+  loading: boolean;
+}) {
+  const max = Math.max(1, ...items.map((item) => item.value));
+  return (
+    <div className="min-w-0">
+      <div className="flex items-baseline justify-between gap-3 border-b border-hairline pb-2.5">
+        <h3 className="text-sm font-semibold text-ink">{title}</h3>
+        <span className="text-xs text-mute">{unit}</span>
+      </div>
+      {loading ? (
+        <div className="space-y-4 pt-4" aria-hidden="true">
+          {[0, 1, 2, 3, 4].map((index) => (
+            <div key={index} className="space-y-2">
+              <span className="skeleton block h-3.5 w-3/4" />
+              <span className="skeleton block h-1 w-full" />
+            </div>
+          ))}
+        </div>
+      ) : items.length > 0 ? (
+        <ol className="space-y-4 pt-4">
+          {items.map((item, index) => (
+            <li key={`${title}-${item.label}`}>
+              <div className="flex items-baseline justify-between gap-3 text-sm">
+                <span className="flex min-w-0 items-baseline gap-2.5">
+                  <span className="w-3 flex-none text-right text-xs tabular-nums text-mute">{index + 1}</span>
+                  <span className="truncate text-ink" title={item.label}>
+                    {item.label}
+                  </span>
+                </span>
+                <span className="flex-none text-[13px] tabular-nums text-body">
+                  {item.value.toLocaleString()}
+                </span>
+              </div>
+              <div className="ml-[22px] mt-1.5 h-1 overflow-hidden rounded-full bg-subtle">
+                <div
+                  className="h-full origin-left rounded-full bg-ink/75 transition-transform duration-700 ease-out-expo"
+                  style={{ transform: `scaleX(${item.value / max})` }}
+                />
+              </div>
+              {item.detail ? <p className="ml-[22px] mt-1 text-xs text-mute">{item.detail}</p> : null}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="pt-4 text-sm leading-6 text-mute">{emptyLabel}</p>
+      )}
+    </div>
+  );
+}
+
+function RunStatusIcon({ run }: { run: IngestionRunRow }) {
+  if (run.status === "succeeded") {
+    return <CheckCircleIcon weight="fill" className="h-4 w-4 flex-none text-emerald-600 dark:text-emerald-400" />;
+  }
+  if (run.status === "failed") {
+    return <WarningCircleIcon weight="fill" className="h-4 w-4 flex-none text-red-600 dark:text-red-400" />;
+  }
+  if (run.status === "processing") {
+    return <SpinnerIcon className="h-4 w-4 flex-none text-ink" />;
+  }
+  return <ClockIcon className="h-4 w-4 flex-none text-mute" />;
+}
+
+function RecentPaperRow({ run }: { run: IngestionRunRow }) {
+  const stuck = isRunStuck(run);
+  const time = formatTimestamp(getRunTimestamp(run));
+  const detail =
+    run.status === "failed"
+      ? describeRunFailure(run.error_message)
+      : run.status === "succeeded"
+        ? "Ready"
+        : stuck
+          ? "Stopped updating"
+          : getRunStageMessage(run);
+  return (
+    <li>
+      <Link
+        href="/workspace/library"
+        className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-150 hover:bg-subtle"
+      >
+        <RunStatusIcon run={run} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium text-ink" title={runTitleOf(run)}>
+            {runTitleOf(run)}
+          </span>
+          <span className="mt-0.5 block truncate text-xs text-mute">
+            <span className={run.status === "failed" ? "text-red-700 dark:text-red-300" : ""}>{detail}</span>
+            {time ? <span> · {time}</span> : null}
+          </span>
+        </span>
+        {run.status !== "succeeded" ? (
+          <span
+            className={chipClass(
+              run.status === "failed" ? "danger" : stuck ? "warning" : run.status === "processing" ? "accent" : "neutral",
+              "flex-none"
+            )}
+          >
+            {stuck ? "Needs attention" : getRunStatusLabel(run)}
+          </span>
+        ) : null}
+        <ChevronRightIcon className="h-4 w-4 flex-none text-mute opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
+      </Link>
+    </li>
+  );
+}
+
+/** What a new repository shows instead of empty lists: the three steps. */
+function GettingStarted({ onAdd }: { onAdd: () => void }) {
+  const steps = [
+    {
+      title: "Add PDFs",
+      body: "Upload papers from your computer. Each one is stored in this repository only.",
+    },
+    {
+      title: "Let the analysis run",
+      body: "Every paper is read for its title, year, topics, methods and category. Most take a few minutes.",
+    },
+    {
+      title: "Explore and ask",
+      body: "The Dashboard charts what the papers cover over time; Chat answers questions and cites its sources.",
+    },
+  ];
+  return (
+    <section className={`${panelClass} p-6 sm:p-8`}>
+      <h2 className="text-lg font-semibold tracking-tight text-ink">Start with a few papers</h2>
+      <p className="mt-1 max-w-2xl text-sm leading-6 text-body">
+        This repository is empty. Add papers and the rest of the workspace fills in as each one is analyzed.
+      </p>
+      <ol className="mt-6 grid gap-6 md:grid-cols-3">
+        {steps.map((step, index) => (
+          <li key={step.title} className="flex gap-3">
+            <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full border border-hairline-strong text-xs font-medium tabular-nums text-ink">
+              {index + 1}
+            </span>
+            <div>
+              <p className="text-sm font-medium text-ink">{step.title}</p>
+              <p className="mt-1 text-sm leading-6 text-body">{step.body}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-7 flex flex-wrap gap-2">
+        <button type="button" onClick={onAdd} className={buttonClass("primary", "lg")}>
+          <UploadIcon className="h-4 w-4" />
+          Add papers
+        </button>
+        <Link href="/docs/getting-started" className={buttonClass("ghost", "lg")}>
+          Read the guide
+          <ArrowRightIcon className="h-4 w-4" />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 export default function WorkspaceHomeClient() {
+  const router = useRouter();
   const { session } = useAuth();
   const {
-    profile,
     currentProject,
     refreshFolders,
     analysisSession,
@@ -319,14 +335,15 @@ export default function WorkspaceHomeClient() {
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryError, setLibraryError] = useState<string | null>(null);
+  const [question, setQuestion] = useState("");
 
   const summary = useMemo(() => {
     if (!data) {
       return {
-        paperCount: "0",
-        topicCount: "0",
-        keywordCount: "0",
-        yearRange: "No data yet",
+        paperCount: 0,
+        topicCount: 0,
+        keywordCount: 0,
+        yearRange: "",
         topTopics: [] as RankedItem[],
         topKeywords: [] as RankedItem[],
       };
@@ -404,11 +421,15 @@ export default function WorkspaceHomeClient() {
       .slice(0, 5);
 
     return {
-      paperCount: paperIds.size.toLocaleString(),
-      topicCount: topicCount.toLocaleString(),
-      keywordCount: keywords.size.toLocaleString(),
+      paperCount: paperIds.size,
+      topicCount,
+      keywordCount: keywords.size,
       yearRange:
-        years.length > 0 ? `${years[0]} to ${years[years.length - 1]}` : "No data yet",
+        years.length === 0
+          ? ""
+          : years[0] === years[years.length - 1]
+            ? String(years[0])
+            : `${years[0]}–${years[years.length - 1]}`,
       topTopics: topicItems,
       topKeywords: keywordItems,
     };
@@ -429,12 +450,15 @@ export default function WorkspaceHomeClient() {
         .slice(0, 3),
     [workspaceRuns]
   );
-  const recentRuns = useMemo(() => workspaceRuns.slice(0, 5), [workspaceRuns]);
+  const recentRuns = useMemo(() => workspaceRuns.slice(0, 6), [workspaceRuns]);
   // Only once the data has arrived: while it loads there is nothing to say.
   const isPreviewMode = data?.useMock ?? false;
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
   const hasLiveAnalysisSession =
     Boolean(analysisSession?.runIds.length) && !analysisSession?.minimized;
+  const statsLoading = loading && !data;
+  const isEmpty =
+    !statsLoading && !libraryLoading && summary.paperCount === 0 && workspaceRuns.length === 0;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -583,43 +607,51 @@ export default function WorkspaceHomeClient() {
     }
   }
 
+  function handleAsk(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmed = question.trim();
+    if (!trimmed) return;
+    router.push(chatHref(trimmed));
+  }
+
+  const plural = (count: number, word: string) => `${word}${count === 1 ? "" : "s"}`;
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6">
-      <section className={`${surfaceClass} relative overflow-hidden px-6 py-8 sm:px-8`}>
-        <div className="relative flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <p className={eyebrowClass}>
-              Repository
-            </p>
-            <h1 className="mt-3 text-4xl font-semibold leading-[1.05] tracking-normal text-[#171717] dark:text-white">
-              {currentProject?.name ?? profile.name}
-            </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Add papers, follow their analysis here, then explore the results on the
-              Dashboard or ask about them in Chat.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setShowAnalyzeModal(true)}
-              className={primaryButtonClass}
-            >
-              <UploadIcon className="h-4 w-4" />
-              <span>Add papers</span>
-            </button>
-            <Link
-              href="/workspace/chat"
-              className={secondaryButtonClass}
-            >
-              <ChatIcon className="h-4 w-4" />
-              <span>Open chat</span>
-            </Link>
-          </div>
+    <div className="mx-auto max-w-[1180px] space-y-8 pb-16 pt-2 sm:pt-4">
+      <header className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0 max-w-3xl">
+          <h1 className="truncate text-3xl font-semibold tracking-tight text-ink sm:text-[2.5rem] sm:leading-[1.1]">
+            {currentProject?.name ?? "Repository"}
+          </h1>
+          <p className="mt-3 max-w-2xl text-[15px] leading-7 text-body">
+            {currentProject?.description?.trim() ||
+              "Add papers, follow their analysis here, then explore the results on the Dashboard or ask about them in Chat."}
+          </p>
+          <dl className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+            <Fact value={summary.paperCount.toLocaleString()} label={plural(summary.paperCount, "paper")} loading={statsLoading} />
+            <Fact value={summary.topicCount.toLocaleString()} label={plural(summary.topicCount, "topic")} loading={statsLoading} />
+            <Fact value={summary.keywordCount.toLocaleString()} label={plural(summary.keywordCount, "keyword")} loading={statsLoading} />
+            {summary.yearRange || statsLoading ? (
+              <Fact value={summary.yearRange} label="published" loading={statsLoading} />
+            ) : null}
+          </dl>
         </div>
-      </section>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAnalyzeModal(true)}
+            className={buttonClass("primary", "lg")}
+          >
+            <UploadIcon className="h-4 w-4" />
+            <span>Add papers</span>
+          </button>
+          <Link href="/workspace/dashboard" className={buttonClass("secondary", "lg")}>
+            <ChartIcon className="h-4 w-4" />
+            <span>Open dashboard</span>
+          </Link>
+        </div>
+      </header>
 
       {hasLiveAnalysisSession ? (
         <AnalysisStatusCard
@@ -636,240 +668,187 @@ export default function WorkspaceHomeClient() {
       ) : null}
 
       {liveDataError ? (
-        <section className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-5 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
+        <Notice tone="danger">
           This repository&apos;s results could not be loaded just now ({liveDataError}). Refresh the page to try again.
-        </section>
+        </Notice>
       ) : null}
 
       {isPreviewMode ? (
-        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 text-sm text-[#ab570a] dark:border-[#5f3b00] dark:bg-[#211600] dark:text-[#ffd38a]">
+        <Notice tone="warning">
           Showing sample data because this repository&apos;s own results could not be loaded. They replace it as soon as they load.
-        </section>
+        </Notice>
       ) : null}
 
       {data?.diagnostics?.recoveredFromLegacyScope ? (
-        <section className="rounded-lg border border-[#d3e5ff] bg-[#f5f9ff] px-5 py-4 text-sm text-[#0761d1] dark:border-[#14395f] dark:bg-[#07192b] dark:text-[#8bbcff]">
+        <Notice tone="info">
           Showing recovered historical analyses because this repository has older canonical rows available.
-        </section>
+        </Notice>
       ) : null}
 
       {attentionRuns.length > 0 ? (
-        <section className="rounded-lg border border-[#ffefcf] bg-[#fffaf0] px-5 py-4 dark:border-[#5f3b00] dark:bg-[#211600]">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-[#171717] dark:text-[#fff4dc]">
-                Needs attention
-              </p>
-              <p className="mt-1 text-sm leading-6 text-[#ab570a] dark:text-[#ffd38a]">
-                {attentionRuns.length} recent paper{attentionRuns.length === 1 ? "" : "s"} failed or stopped updating. The Library says why for each one.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {attentionRuns.map((run) => (
-                <span
-                  key={run.id}
-                  className="max-w-[260px] truncate rounded-full border border-[#ffefcf] bg-white px-3 py-1 font-mono text-xs text-[#ab570a] dark:border-[#5f3b00] dark:bg-[#050505] dark:text-[#fff4dc]"
-                >
-                  {runTitleOf(run)}
-                </span>
-              ))}
-              <Link
-                href="/workspace/library"
-                className="inline-flex items-center gap-1 rounded-full bg-[#171717] px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-black dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
-              >
-                Review
-                <ArrowRightIcon className="h-3 w-3" />
-              </Link>
-            </div>
+        <Notice tone="warning">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              <span className="font-medium">
+                {attentionRuns.length} recent {plural(attentionRuns.length, "paper")} failed or stopped updating.
+              </span>{" "}
+              The Library says why for each one.
+            </p>
+            <Link href="/workspace/library" className={buttonClass("secondary", "sm", "flex-none")}>
+              Review in Library
+              <ArrowRightIcon className="h-3.5 w-3.5" />
+            </Link>
           </div>
-        </section>
+        </Notice>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Papers"
-          value={loading ? "..." : summary.paperCount}
-          detail="Unique analyzed papers"
-          icon={<PaperIcon className="h-5 w-5" />}
-        />
-        <MetricCard
-          label="Topics"
-          value={loading ? "..." : summary.topicCount}
-          detail="Repository topic groups"
-          icon={<ChartIcon className="h-5 w-5" />}
-        />
-        <MetricCard
-          label="Keywords"
-          value={loading ? "..." : summary.keywordCount}
-          detail="Extracted keyword labels"
-          icon={<ChatIcon className="h-5 w-5" />}
-        />
-        <MetricCard
-          label="Coverage"
-          value={loading ? "..." : summary.yearRange}
-          detail="Publication year span"
-          icon={<UploadIcon className="h-5 w-5" />}
-        />
-      </section>
-
-      <section className={`${surfaceClass} p-6`}>
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className={eyebrowClass}>
-              AI actions
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
-              What do you want to do with these papers?
-            </h2>
-          </div>
-          <Link
-            href="/workspace/chat"
-            className="-my-2 inline-flex items-center gap-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
-          >
-            Open full chat
-            <ArrowRightIcon className="h-4 w-4" />
-          </Link>
-        </div>
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {AI_ACTIONS.map((action) => (
-            <AIActionCard key={action.title} {...action} />
-          ))}
-        </div>
-      </section>
-
-      <section className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">
-        <article className={`${surfaceClass} min-w-0 p-5 sm:p-6`}>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className={eyebrowClass}>
-                At a glance
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
-                Top topics and keywords
+      {isEmpty ? (
+        <GettingStarted onAdd={() => setShowAnalyzeModal(true)} />
+      ) : (
+        <>
+          <section className={`${panelClass} p-5 sm:p-6`} aria-labelledby="home-ask">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+              <h2 id="home-ask" className="text-base font-semibold text-ink">
+                Ask about these papers
               </h2>
+              <p className="text-[13px] text-mute">Answers cite the papers they come from.</p>
             </div>
-            <Link
-              href="/workspace/dashboard"
-              className="inline-flex items-center gap-2 rounded-full border border-[#ebebeb] bg-white px-4 py-2 text-sm font-medium text-[#171717] transition-colors hover:border-[#a1a1a1] hover:bg-[#fafafa] dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
+            <form
+              onSubmit={handleAsk}
+              className="mt-4 flex items-center gap-2 rounded-xl border border-hairline bg-canvas p-1.5 pl-3.5 transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15"
             >
-              Dashboard
-              <ArrowRightIcon className="h-4 w-4" />
-            </Link>
-          </div>
-
-          <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <InsightList
-              title="Top topics"
-              items={summary.topTopics}
-              emptyLabel="Topics appear here once a paper has been analyzed."
-            />
-            <InsightList
-              title="Top keywords"
-              items={summary.topKeywords}
-              emptyLabel="Keywords appear here once a paper has been analyzed."
-            />
-          </div>
-        </article>
-
-        <article className={`${surfaceClass} min-w-0 p-5 sm:p-6`}>
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <p className={eyebrowClass}>
-                Activity
-              </p>
-              <h2 className="mt-2 text-2xl font-semibold tracking-normal text-[#171717] dark:text-white">
-                Recently added papers
-              </h2>
-            </div>
-            <Link
-              href="/workspace/library"
-              className="-my-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
-            >
-              Open Library
-            </Link>
-          </div>
-
-          <div className="mt-5 space-y-3">
-            {libraryLoading ? (
-              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
-                <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-[#a1a1a1] border-t-transparent dark:border-[#8e8e8e]" />
-                <p className="text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
-                  Loading recent papers
-                </p>
-              </div>
-            ) : libraryError ? (
-              <p className="rounded-lg border border-[#f7d4d6] bg-[#fff7f7] px-4 py-4 text-sm text-[#c50000] dark:border-[#5d1f24] dark:bg-[#220b0d] dark:text-[#ffb4b8]">
-                {libraryError}
-              </p>
-            ) : recentRuns.length > 0 ? (
-              recentRuns.map((run) => <RunActivityRow key={run.id} run={run} />)
-            ) : (
-              <div className="rounded-lg border border-dashed border-[#ebebeb] px-4 py-8 text-center dark:border-[#1f1f1f]">
-                <CheckCircleIcon className="mx-auto h-8 w-8 text-[#a1a1a1] dark:text-[#555555]" />
-                <p className="mt-3 text-sm font-medium text-[#171717] dark:text-[#d0d0d0]">
-                  No papers yet
-                </p>
-                <p className="mt-1 text-sm text-[#4d4d4d] dark:text-[#8f8f8f]">
-                  Add PDFs and each one shows here while it is analyzed.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowAnalyzeModal(true)}
-                  className={`${secondaryButtonClass} mt-4`}
+              <SparkIcon className="h-4 w-4 flex-none text-mute" />
+              <label htmlFor="home-question" className="sr-only">
+                Your question
+              </label>
+              <input
+                id="home-question"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                placeholder="What do these papers find about...?"
+                autoComplete="off"
+                className="min-w-0 flex-1 bg-transparent py-2 text-base text-ink outline-none placeholder:text-mute focus-visible:outline-none"
+              />
+              <button
+                type="submit"
+                disabled={!question.trim()}
+                className={buttonClass("primary", "md", "flex-none")}
+              >
+                <span className="hidden sm:inline">Ask</span>
+                <ArrowRightIcon className="h-4 w-4" />
+                <span className="sr-only sm:hidden">Ask</span>
+              </button>
+            </form>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {SUGGESTED_QUESTIONS.map((suggestion) => (
+                <Link
+                  key={suggestion.label}
+                  href={chatHref(suggestion.prompt)}
+                  title={suggestion.prompt}
+                  className="rounded-full border border-hairline bg-surface px-3 py-1.5 text-[13px] text-body transition-colors duration-150 hover:border-hairline-strong hover:text-ink"
                 >
-                  <UploadIcon className="h-4 w-4" />
-                  <span>Add papers</span>
-                </button>
-              </div>
-            )}
-          </div>
-        </article>
-      </section>
+                  {suggestion.label}
+                </Link>
+              ))}
+              <Link
+                href="/workspace/chat"
+                className="inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-[13px] font-medium text-ink transition-colors duration-150 hover:bg-subtle"
+              >
+                <ChatIcon className="h-3.5 w-3.5" />
+                Open chat
+              </Link>
+            </div>
+          </section>
 
-      <section className="grid gap-3 md:grid-cols-3">
-        <Link
-          href="/workspace/dashboard"
-          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
-        >
-          <span>
-            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
-              Review analytics
-            </span>
-            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Trends, categories, keywords
-            </span>
-          </span>
-          <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8e8e8e]" />
-        </Link>
-        <Link
-          href="/workspace/library"
-          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
-        >
-          <span>
-            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
-              Manage library
-            </span>
-            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Files and analysis
-            </span>
-          </span>
-          <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8e8e8e]" />
-        </Link>
-        <Link
-          href="/workspace/chat"
-          className={`${softSurfaceClass} flex items-center justify-between px-4 py-4 transition-colors hover:border-[#a1a1a1] dark:hover:border-[#3a3a3a]`}
-        >
-          <span>
-            <span className="block text-sm font-semibold text-[#171717] dark:text-white">
-              Ask with sources
-            </span>
-            <span className="mt-1 block text-sm text-[#4d4d4d] dark:text-[#a3a3a3]">
-              Chat, charts, web search
-            </span>
-          </span>
-          <ArrowRightIcon className="h-4 w-4 text-slate-500 dark:text-[#8e8e8e]" />
-        </Link>
-      </section>
+          <div className="grid grid-cols-1 gap-8 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+            <section className={`${panelClass} min-w-0 p-5 sm:p-6`} aria-labelledby="home-cover">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 id="home-cover" className="text-base font-semibold text-ink">
+                  What the papers cover
+                </h2>
+                <Link
+                  href="/workspace/dashboard"
+                  className="inline-flex items-center gap-1 text-[13px] font-medium text-body transition-colors hover:text-ink"
+                >
+                  Dashboard
+                  <ArrowRightIcon className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+              <div className="mt-5 grid grid-cols-1 gap-8 md:grid-cols-2">
+                <RankedList
+                  title="Top topics"
+                  unit="Keyword mentions"
+                  items={summary.topTopics}
+                  loading={statsLoading}
+                  emptyLabel="Topics appear here once a paper has been analyzed."
+                />
+                <RankedList
+                  title="Top keywords"
+                  unit="Mentions"
+                  items={summary.topKeywords}
+                  loading={statsLoading}
+                  emptyLabel="Keywords appear here once a paper has been analyzed."
+                />
+              </div>
+            </section>
+
+            <section className={`${panelClass} min-w-0 p-5 sm:p-6`} aria-labelledby="home-recent">
+              <div className="flex items-baseline justify-between gap-4">
+                <h2 id="home-recent" className="text-base font-semibold text-ink">
+                  Recent papers
+                </h2>
+                <Link
+                  href="/workspace/library"
+                  className="inline-flex items-center gap-1 text-[13px] font-medium text-body transition-colors hover:text-ink"
+                >
+                  Library
+                  <ArrowRightIcon className="h-3.5 w-3.5" />
+                </Link>
+              </div>
+              <div className="mt-3">
+                {libraryLoading && recentRuns.length === 0 ? (
+                  <ul className="space-y-1" aria-label="Loading recent papers">
+                    {[0, 1, 2, 3, 4].map((index) => (
+                      <li key={index} className="flex items-center gap-3 py-2.5">
+                        <span className="skeleton h-4 w-4 flex-none rounded-full" />
+                        <span className="flex-1 space-y-1.5">
+                          <span className="skeleton block h-3.5 w-4/5" />
+                          <span className="skeleton block h-3 w-2/5" />
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : libraryError ? (
+                  <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/25 dark:text-red-200">
+                    {libraryError}
+                  </p>
+                ) : recentRuns.length > 0 ? (
+                  <ul>
+                    {recentRuns.map((run) => (
+                      <RecentPaperRow key={run.id} run={run} />
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="py-8 text-center">
+                    <p className="text-sm font-medium text-ink">No papers yet</p>
+                    <p className="mt-1 text-sm text-mute">
+                      Add PDFs and each one shows here while it is analyzed.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setShowAnalyzeModal(true)}
+                      className={buttonClass("secondary", "md", "mt-4")}
+                    >
+                      <UploadIcon className="h-4 w-4" />
+                      <span>Add papers</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        </>
+      )}
 
       <AnalyzeFlowModal
         open={showAnalyzeModal}

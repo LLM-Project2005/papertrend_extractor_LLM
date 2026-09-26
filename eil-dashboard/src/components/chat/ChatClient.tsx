@@ -401,10 +401,10 @@ const chatChartTooltipTheme = {
     border: "1px solid rgba(148, 163, 184, 0.35)",
     borderRadius: "12px",
     boxShadow: "0 18px 40px rgba(0, 0, 0, 0.32)",
-    color: "#f8fafc",
+    color: "#fafafa",
   },
   labelStyle: {
-    color: "#f8fafc",
+    color: "#fafafa",
     fontWeight: 600,
   },
   itemStyle: {
@@ -1919,6 +1919,20 @@ export default function ChatClient() {
       // Ignore malformed or stale handoff data.
     }
   }, [canPersist, session?.access_token]);
+
+  useEffect(() => {
+    // Home's "Ask about these papers" links here with ?q=. The question goes
+    // into the composer rather than being sent, so the reader can edit it and
+    // pick a mode first; the parameter is then dropped so a reload does not
+    // put it back.
+    const params = new URLSearchParams(window.location.search);
+    const question = params.get("q")?.trim();
+    if (!question) return;
+    setDraft(question.slice(0, 4000));
+    params.delete("q");
+    const rest = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+  }, []);
 
   useEffect(() => {
     if (!searchModalOpen) return;

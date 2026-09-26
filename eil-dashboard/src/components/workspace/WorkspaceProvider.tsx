@@ -110,7 +110,8 @@ interface WorkspaceContextValue {
     analysisProfile: ProjectAnalysisProfile
   ) => Promise<WorkspaceProjectRow>;
   createFolder: (folderName: string) => Promise<ResearchFolderRow>;
-  renameProject: (projectId: string, name: string) => Promise<WorkspaceProjectRow>;
+  /** Renames a repository; a description, when given, is saved with it. */
+  renameProject: (projectId: string, name: string, description?: string | null) => Promise<WorkspaceProjectRow>;
   renameFolder: (folderId: string, name: string) => Promise<ResearchFolderRow>;
 }
 
@@ -824,7 +825,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const renameProject = useCallback(
-    async (projectId: string, name: string) => {
+    async (projectId: string, name: string, description?: string | null) => {
       if (!user || !session?.access_token) {
         throw new Error("Sign in before renaming projects.");
       }
@@ -835,7 +836,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ projectId, name }),
+        body: JSON.stringify(
+          description === undefined ? { projectId, name } : { projectId, name, description }
+        ),
       });
 
       const payload = (await response.json()) as {

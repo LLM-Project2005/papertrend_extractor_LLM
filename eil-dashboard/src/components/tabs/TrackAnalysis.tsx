@@ -309,7 +309,7 @@ export default function TrackAnalysis({
           <div className="mt-4 h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stackedData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d4" />
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />

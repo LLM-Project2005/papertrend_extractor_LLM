@@ -127,7 +127,7 @@ const ACTION_ITEMS: Array<{
     id: "profile",
     label: "Profile",
     description: "Manage your account name, avatar, and profile details.",
-    href: "/workspace/profile",
+    href: "/workspace/settings?section=profile",
     icon: UserIcon,
     keywords: ["profile", "account", "user", "avatar"],
   },
