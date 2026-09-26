@@ -129,7 +129,7 @@ export default function WorkspaceProfileMenu({
 
           <div className="mt-2 space-y-1">
             <Link
-              href="/workspace/profile"
+              href="/workspace/settings?section=profile"
               onClick={() => setOpen(false)}
               className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
             >

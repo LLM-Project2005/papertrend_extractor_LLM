@@ -1921,6 +1921,20 @@ export default function ChatClient() {
   }, [canPersist, session?.access_token]);
 
   useEffect(() => {
+    // Home's "Ask about these papers" links here with ?q=. The question goes
+    // into the composer rather than being sent, so the reader can edit it and
+    // pick a mode first; the parameter is then dropped so a reload does not
+    // put it back.
+    const params = new URLSearchParams(window.location.search);
+    const question = params.get("q")?.trim();
+    if (!question) return;
+    setDraft(question.slice(0, 4000));
+    params.delete("q");
+    const rest = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+  }, []);
+
+  useEffect(() => {
     if (!searchModalOpen) return;
     void loadChatSearchDetails();
   }, [loadChatSearchDetails, searchModalOpen]);

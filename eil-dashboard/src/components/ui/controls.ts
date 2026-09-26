@@ -57,9 +57,12 @@ export const floatingPanelClass = "rounded-xl border border-hairline bg-surface 
 /** A quiet well inside a panel. */
 export const wellClass = "rounded-lg bg-subtle";
 
-/** Text inputs, selects and textareas. */
+/**
+ * Text inputs, selects and textareas. 16px on a phone: iOS Safari zooms the
+ * page into any field smaller than that when it takes focus.
+ */
 export const fieldClass =
-  "block w-full rounded-lg border border-hairline bg-surface px-3 py-2 text-sm text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-60";
+  "block w-full rounded-lg border border-hairline bg-surface px-3 py-2 text-base text-ink sm:text-sm shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-60";
 
 /** The label above a field. */
 export const labelClass = "block text-sm font-medium text-ink";

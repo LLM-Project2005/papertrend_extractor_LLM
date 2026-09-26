@@ -220,16 +220,25 @@ test("the workspace tells you which page you are on, in both themes", () => {
   assert.equal((shell.match(/bg-slate-900 text-white dark:bg-\[#1f1f1f\]/g) ?? []).length, 2);
 });
 
-test("a selected preference looks different from an unselected one in dark mode", () => {
-  // Active and inactive rendered byte-identical dark classes, and hovering an
-  // option you had NOT chosen gave it a brighter border than the one you had.
+test("a selected choice looks different from an unselected one, in both themes", () => {
+  // Active and inactive once rendered byte-identical dark classes, and hovering
+  // an option you had NOT chosen gave it a brighter border than the one you had.
+  // The choices now read the theme tokens, so one class is right in both
+  // themes: the chosen card gets an ink ring, the others only a hairline, and
+  // the choice is exposed as a radio rather than inferred from colour.
+  for (const file of [
+    "src/components/workspace/WorkspaceSettingsClient.tsx",
+    "src/components/workspace/AnalysisProfileEditor.tsx",
+  ]) {
+    const source = read(file);
+    assert.match(source, /role="radiogroup"/, `${file} groups its choices`);
+    assert.match(source, /role="radio"\s+aria-checked=\{selected\}/, `${file} says which one is chosen`);
+    assert.match(source, /\? "border-ink shadow-\[0_0_0_1px_rgb\(var\(--ink\)\)\]"/, `${file} rings the chosen card`);
+    assert.match(source, /: "border-hairline hover:border-hairline-strong hover:bg-subtle"/);
+  }
+  // The legacy goal, intake and output groups wrote to nothing and are gone.
   const settings = read("src/components/workspace/WorkspaceSettingsClient.tsx");
-  assert.equal(
-    settings.includes('? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"'),
-    false
-  );
-  const active = settings.match(/\? "border-slate-400 bg-slate-50 dark:border-\[#8f8f8f\] dark:bg-\[#0a0a0a\]"/g) ?? [];
-  assert.equal(active.length, 3, "all three preference groups need a visible selected state");
+  assert.doesNotMatch(settings, /WORKSPACE_GOALS|WORKSPACE_SOURCES|WORKSPACE_OUTPUTS|Research Signal Lab|Supabase/);
 });
 
 test("a failed chat message can be read in light mode", () => {

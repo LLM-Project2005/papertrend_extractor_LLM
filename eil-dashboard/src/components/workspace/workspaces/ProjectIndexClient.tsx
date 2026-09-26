@@ -73,7 +73,7 @@ export default function ProjectIndexClient() {
         selectedOrganizationId ?? organizations[0]?.id ?? null;
       if (!organizationId) {
         const organization = await createOrganization(
-          profile.name.trim() || "Personal repositories",
+          "Personal repositories",
           "personal"
         );
         organizationId = organization.id;
