@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
+  BookOpenIcon,
   HomeIcon,
   LogoutIcon,
   SettingsIcon,
@@ -69,37 +70,43 @@ export default function WorkspaceProfileMenu({
   }, [isAdmin, profile?.avatar_url, profile?.email, profile?.full_name, user?.email]);
 
   if (!hydrated) {
-    return (
-      <div
-        className="h-10 w-10 rounded-full border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]"
-        aria-label="Loading account"
-      />
-    );
+    return <div className="h-9 w-9 rounded-full bg-subtle" aria-label="Loading account" />;
   }
 
   if (!user) {
-    return (
+    // On the public pages a signed-out visitor needs the words, not an icon.
+    return variant === "marketing" ? (
+      <Link
+        href="/login"
+        className="inline-flex h-9 items-center rounded-full px-3 text-sm font-medium text-body transition-colors hover:text-ink"
+      >
+        Sign in
+      </Link>
+    ) : (
       <Link
         href="/login"
         aria-label="Sign in"
-        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-body transition-colors hover:bg-subtle hover:text-ink"
       >
         <UserIcon className="h-4 w-4" />
       </Link>
     );
   }
 
+  const itemClass =
+    "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
+
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-left text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        className="inline-flex h-9 w-9 items-center justify-center rounded-full ring-1 ring-hairline transition-[box-shadow,transform] duration-150 hover:ring-hairline-strong active:scale-95"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label="Open account menu"
       >
-        <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-slate-100 text-[11px] font-semibold text-slate-700 dark:bg-[#0a0a0a] dark:text-[#f2f2f2]">
+        <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-full bg-subtle text-[11px] font-semibold text-ink">
           {identity.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -114,63 +121,37 @@ export default function WorkspaceProfileMenu({
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-3 w-[min(320px,calc(100vw-1.5rem))] rounded-xl border border-slate-200 bg-white p-2 shadow-[0_16px_48px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_16px_48px_rgba(0,0,0,0.45)]">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 dark:border-[#1f1f1f] dark:bg-[#0a0a0a]">
-            <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
-              {identity.name}
-            </p>
-            <p className="mt-1 truncate text-xs text-slate-500 dark:text-[#9b9b9b]">
-              {identity.email}
-            </p>
-            <p className="mt-2 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-              {identity.roleLabel}
-            </p>
+        <div
+          role="menu"
+          className="absolute right-0 z-50 mt-2 w-[min(280px,calc(100vw-1.5rem))] origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
+        >
+          <div className="px-2.5 pb-2.5 pt-2">
+            <p className="truncate text-sm font-medium text-ink">{identity.name}</p>
+            <p className="mt-0.5 truncate text-xs text-mute">{identity.email}</p>
           </div>
-
-          <div className="mt-2 space-y-1">
-            <Link
-              href="/workspace/settings?section=profile"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-            >
-              <UserIcon className="h-4 w-4" />
-              <span>Profile settings</span>
+          <div className="border-t border-hairline pt-1.5">
+            <Link href="/workspace/settings?section=profile" role="menuitem" onClick={() => setOpen(false)} className={itemClass}>
+              <SettingsIcon className="h-4 w-4" />
+              <span>Account settings</span>
             </Link>
-            {variant === "marketing" ? (
-              <Link
-                href="/workspaces"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-              >
-                <HomeIcon className="h-4 w-4" />
-                <span>Projects</span>
-              </Link>
-            ) : (
-              <Link
-                href="/workspace/settings"
-                onClick={() => setOpen(false)}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-              >
-                <SettingsIcon className="h-4 w-4" />
-                <span>Settings</span>
-              </Link>
-            )}
+            <Link href="/workspaces" role="menuitem" onClick={() => setOpen(false)} className={itemClass}>
+              <HomeIcon className="h-4 w-4" />
+              <span>Repositories</span>
+            </Link>
+            <Link href="/docs" role="menuitem" onClick={() => setOpen(false)} className={itemClass}>
+              <BookOpenIcon className="h-4 w-4" />
+              <span>Documentation</span>
+            </Link>
           </div>
-
-          <div className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-3 dark:border-red-900/50 dark:bg-red-950/20">
-            <p className="text-[11px] font-semibold uppercase tracking-normal text-red-500 dark:text-red-300">
-              Dangerous zone
-            </p>
-            <p className="mt-2 text-sm leading-6 text-red-600 dark:text-red-200">
-              Sign out from this account on this device.
-            </p>
+          <div className="mt-1.5 border-t border-hairline pt-1.5">
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
                 setOpen(false);
                 void signOut();
               }}
-              className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:bg-[#1a1212] dark:text-red-200 dark:hover:bg-[#211515]"
+              className={`${itemClass} w-full`}
             >
               <LogoutIcon className="h-4 w-4" />
               <span>Sign out</span>

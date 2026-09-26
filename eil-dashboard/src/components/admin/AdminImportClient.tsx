@@ -24,6 +24,7 @@ import {
   ChevronDownIcon,
   CloseIcon,
   DownloadIcon,
+  BooksIcon,
   DriveIcon,
   FileIcon,
   FolderIcon,
@@ -2123,7 +2124,7 @@ export default function AdminImportClient() {
                       className="group flex min-h-32 items-start gap-4 rounded-lg border border-slate-200 bg-white p-5 text-left transition-colors hover:border-slate-400 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                     >
                       <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">
-                        <DriveIcon className="h-5 w-5" />
+                        <BooksIcon className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">{project.name}</span>

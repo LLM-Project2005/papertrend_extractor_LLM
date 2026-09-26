@@ -454,7 +454,7 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={conceptResult.timeline}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d4" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
@@ -489,7 +489,7 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={conceptResult.trackSpread}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d4" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />

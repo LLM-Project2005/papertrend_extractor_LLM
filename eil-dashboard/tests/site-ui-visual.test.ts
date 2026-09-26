@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+
+function exists(relative: string): boolean {
+  return existsSync(new URL(`../${relative}`, import.meta.url));
+}
 
 function read(relative: string): string {
   return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
@@ -48,6 +52,9 @@ test("charts read the theme instead of hardcoding one", () => {
     assert.equal(/#94a3b8/.test(src), false, `${file} still hardcodes the axis colour`);
     assert.match(src, /chartTheme\(hydrated && theme === "dark"\)/, `${file} must read the theme`);
     assert.match(src, /tickStyle\(ct/, `${file} must set an explicit tick fill`);
+    // Three gridlines still had a fixed light grey and drew bright white dashes
+    // across the dark dashboard, the loudest thing on the chart.
+    assert.equal(/<CartesianGrid[^>]*stroke="#/.test(src), false, `${file} hardcodes a grid colour`);
   }
 });
 
@@ -89,9 +96,9 @@ test("the borrowed template palette appears nowhere in the app", () => {
   for (const file of [
     "src/app/page.tsx",
     "src/app/features/[slug]/page.tsx",
-    "src/components/marketing/FeatureShowcases.tsx",
-    "src/components/marketing/MarketingMotion.tsx",
-    "src/components/marketing/FeatureBand.tsx",
+    "src/components/marketing/MarketingLayout.tsx",
+    "src/components/marketing/ProductShot.tsx",
+    "src/components/marketing/styles.ts",
     "src/components/marketing/marketing-content.ts",
     "src/components/dashboard/AdaptiveDashboardTab.tsx",
   ]) {
@@ -102,31 +109,29 @@ test("the borrowed template palette appears nowhere in the app", () => {
   }
 });
 
-test("nothing claims to be live that is a drawing", () => {
-  const motion = readCode("src/components/marketing/MarketingMotion.tsx");
-  assert.equal(/LIVE REPOSITORY/.test(motion), false);
-  assert.equal(
-    /research-trend-analysis\.web\.app/.test(motion),
-    false,
-    "a real address beside a connected-dot is what made the drawing read as a live session"
-  );
-  assert.match(motion, /EXAMPLE WORKSPACE/);
-  assert.match(readCode("src/components/marketing/FeatureShowcases.tsx"), /illustration/);
-});
-
-test("the product illustration shows stages the product actually has", () => {
-  // "Extract text 96%" and "Find metadata 88%" read as accuracy figures, and
-  // nothing in the product measures or publishes such a number.
-  const showcases = readCode("src/components/marketing/FeatureShowcases.tsx");
-  for (const invented of ["96%", "88%", "74%", "91%"]) {
-    assert.equal(
-      showcases.includes(`"${invented}"`),
-      false,
-      `${invented} reads as a measurement the product never makes`
-    );
+test("the public pages show the product, not a drawing of it", () => {
+  // The front page used to carry div-built imitations of the product - an
+  // "example workspace" with invented stages and percentages that read as
+  // accuracy figures nothing measures. The pages now show screenshots of the
+  // real app, captured in both themes by scripts/capture-marketing-shots.ts.
+  for (const gone of ["FeatureShowcases.tsx", "MarketingMotion.tsx", "FeatureBand.tsx"]) {
+    assert.equal(exists(`src/components/marketing/${gone}`), false, `${gone} was a drawing of the product`);
   }
-  assert.match(showcases, /Extract and clean text/);
-  assert.match(showcases, /Classify tracks and typology/);
+  const pages = [read("src/app/page.tsx"), read("src/app/features/[slug]/page.tsx")].join("\n");
+  assert.match(pages, /<ProductShot/);
+  const content = read("src/components/marketing/marketing-content.ts");
+  const names = new Set([
+    ...[...pages.matchAll(/<ProductShot[\s\S]*?name="([a-z-]+)"/g)].map((m) => m[1]),
+    ...[...content.matchAll(/shot: "([a-z-]+)"/g)].map((m) => m[1]),
+  ]);
+  assert.ok(names.size >= 5, `expected several screenshots, found ${[...names].join(", ")}`);
+  const manifest = read("src/components/marketing/shot-manifest.ts");
+  for (const name of names) {
+    for (const theme of ["light", "dark"]) {
+      assert.ok(exists(`public/marketing/${name}-${theme}.webp`), `${name}-${theme}.webp is missing`);
+    }
+    assert.match(manifest, new RegExp(`"${name}":`), `${name} has no recorded size, so its box cannot be reserved`);
+  }
 });
 
 test("a published number can be traced to the thing it counts", () => {
@@ -177,12 +182,7 @@ test("footer navigation looks like navigation", () => {
 
 test("a perpetual rainbow sweep no longer runs over every product frame", () => {
   assert.equal(read("src/app/globals.css").includes("marketing-scanline"), false);
-  for (const file of [
-    "src/components/marketing/FeatureShowcases.tsx",
-    "src/components/marketing/MarketingMotion.tsx",
-  ]) {
-    assert.equal(read(file).includes("marketing-scanline"), false);
-  }
+  assert.equal(read("src/components/marketing/ProductShot.tsx").includes("marketing-scanline"), false);
 });
 
 test("variant colours survive the light-mode retrofit", () => {
@@ -199,9 +199,8 @@ test("variant colours survive the light-mode retrofit", () => {
   for (const file of [
     "src/app/page.tsx",
     "src/app/features/[slug]/page.tsx",
-    "src/components/marketing/FeatureBand.tsx",
-    "src/components/marketing/FeatureShowcases.tsx",
-    "src/components/marketing/MarketingMotion.tsx",
+    "src/components/marketing/MarketingLayout.tsx",
+    "src/components/marketing/ProductShot.tsx",
   ]) {
     assert.equal(banned.test(read(file)), false, `${file} hover state cannot reach light mode`);
   }
@@ -341,11 +340,9 @@ test("a chat thread row is clickable across its whole height", () => {
   assert.match(chat, /className="block w-full min-w-0 py-1\.5 text-left"/);
 });
 
-test("the feature card link is bigger than its text", () => {
-  assert.match(
-    read("src/components/marketing/FeatureBand.tsx"),
-    /-my-1\.5 mt-\[18px\] inline-flex items-center gap-2 py-1\.5/
-  );
+test("a text link on the public pages is bigger than its text", () => {
+  // The link under each feature was a 20px target for a 14px line of text.
+  assert.match(read("src/components/marketing/styles.ts"), /arrowLinkClass =\s*"group -my-2 inline-flex items-center gap-1\.5 py-2/);
 });
 
 /* -------------------------------------------------------- page structure */
