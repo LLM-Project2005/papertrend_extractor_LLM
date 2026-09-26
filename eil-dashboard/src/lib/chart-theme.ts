@@ -13,7 +13,7 @@
  *
  * The label colour below is the lightest grey that still clears 4.5:1 on each
  * background, so the chart chrome stays quiet without becoming unreadable:
- * slate-500 measures 4.55:1 on the light page, #a3a3a3 measures 8.33:1 on black.
+ * gray-500 (#707070) measures 4.8:1 on the light page, #a3a3a3 measures 8.33:1 on black.
  *
  * An axis *line* is a graphical object rather than text, so it is allowed to sit
  * lower; it is kept lighter than the labels deliberately, so the numbers lead.
@@ -44,22 +44,22 @@ export function chartTheme(isDark: boolean): ChartTheme {
   return isDark
     ? {
         label: "#a3a3a3",
-        axisLine: "#3f3f46",
+        axisLine: "#3f3f3f",
         grid: "#242424",
         barFill: "#d4d4d4",
-        barFillMuted: "#6b7280",
+        barFillMuted: "#737373",
         segmentEdge: "#1f1f1f",
         heatScale: ["#141414", "#e5e5e5"],
         heatScaleAccent: ["#0f172a", "#60a5fa"],
       }
     : {
-        label: "#64748b",
-        axisLine: "#cbd5e1",
-        grid: "#e2e8f0",
-        barFill: "#334155",
-        barFillMuted: "#64748b",
+        label: "#707070",
+        axisLine: "#d4d4d4",
+        grid: "#e8e8e8",
+        barFill: "#3f3f3f",
+        barFillMuted: "#707070",
         segmentEdge: "#ffffff",
-        heatScale: ["#f1f5f9", "#1e293b"],
+        heatScale: ["#f4f4f4", "#262626"],
         heatScaleAccent: ["#eff6ff", "#1e40af"],
       };
 }

@@ -42,12 +42,12 @@ export function generateMetadata({ params }: FeaturePageProps): Metadata {
 
   if (!feature) {
     return {
-      title: "Papertrend feature",
+      title: "Features",
     };
   }
 
   return {
-    title: `${feature.navLabel} | Papertrend`,
+    title: feature.navLabel,
     description: feature.description,
     alternates: {
       canonical: `/features/${feature.slug}`,

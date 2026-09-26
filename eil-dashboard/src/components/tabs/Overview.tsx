@@ -179,9 +179,9 @@ export default function Overview({
     : {
         contentStyle: {
           backgroundColor: "#ffffff",
-          border: "1px solid #e2e8f0",
+          border: "1px solid #e8e8e8",
           borderRadius: "16px",
-          color: "#0f172a",
+          color: "#171717",
         },
         cursor: { fill: "rgba(15,23,42,0.04)" },
       };

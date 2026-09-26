@@ -401,10 +401,10 @@ const chatChartTooltipTheme = {
     border: "1px solid rgba(148, 163, 184, 0.35)",
     borderRadius: "12px",
     boxShadow: "0 18px 40px rgba(0, 0, 0, 0.32)",
-    color: "#f8fafc",
+    color: "#fafafa",
   },
   labelStyle: {
-    color: "#f8fafc",
+    color: "#fafafa",
     fontWeight: 600,
   },
   itemStyle: {

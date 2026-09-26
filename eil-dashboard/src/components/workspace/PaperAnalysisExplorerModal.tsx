@@ -640,7 +640,7 @@ export default function PaperAnalysisExplorerModal({
               onClick={onToggleFavorite}
               className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
             >
-              <StarIcon className="h-4 w-4" />
+              <StarIcon className="h-4 w-4" weight={run.is_favorite ? "fill" : "regular"} />
               <span>{run.is_favorite ? "Favorited" : "Favorite"}</span>
             </button>
             <button

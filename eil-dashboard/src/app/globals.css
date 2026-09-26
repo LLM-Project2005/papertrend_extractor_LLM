@@ -7,22 +7,64 @@
      form controls, the flash of background before CSS arrives. Without it the
      native parts stay light while the page is dark. */
   color-scheme: light;
-  --bg-plot: #fafbfd;
+  --bg-plot: #fafafa;
   --radius-control: 8px;
   --radius-panel: 12px;
   --motion-fast: 140ms;
   --motion-ui: 220ms;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --semantic-cluster-bg: rgba(255, 255, 255, 0.9);
-  --semantic-cluster-text: #334155;
-  --semantic-edge: #64748b;
+  --semantic-cluster-text: #3f3f3f;
+  --semantic-edge: #707070;
   --semantic-edge-active: #b45309;
+
+  /* Semantic colours, as RGB channels so Tailwind's opacity modifiers work.
+     tailwind.config exposes them as bg-canvas, text-ink, border-hairline... */
+  --canvas: 250 250 250;
+  --surface: 255 255 255;
+  --subtle: 244 244 244;
+  --hairline: 232 232 232;
+  --hairline-strong: 212 212 212;
+  --ink: 23 23 23;
+  --body: 82 82 82;
+  --mute: 112 112 112;
+  --accent: 37 99 235;
+  --accent-soft: 239 246 255;
+  --accent-ink: 29 78 216;
+  --focus: 37 99 235;
+
+  /* Stacked, offset shadows - a near layer and a far one - that sit under a
+     1px hairline border rather than replacing it. */
+  --shadow-raise: 0 1px 1px rgb(0 0 0 / 0.02), 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-float: 0 2px 4px rgb(0 0 0 / 0.04), 0 8px 16px -4px rgb(0 0 0 / 0.08), 0 20px 40px -12px rgb(0 0 0 / 0.1);
+  --shadow-overlay: 0 4px 8px rgb(0 0 0 / 0.04), 0 16px 32px -8px rgb(0 0 0 / 0.1), 0 32px 64px -16px rgb(0 0 0 / 0.16);
+}
+
+.dark {
+  --canvas: 0 0 0;
+  --surface: 10 10 10;
+  --subtle: 20 20 20;
+  --hairline: 31 31 31;
+  --hairline-strong: 46 46 46;
+  --ink: 237 237 237;
+  --body: 161 161 161;
+  --mute: 143 143 143;
+  --accent: 96 165 250;
+  --accent-soft: 23 37 84;
+  --accent-ink: 147 197 253;
+  --focus: 96 165 250;
+
+  /* A shadow is invisible on black, so depth in dark comes from a lit top
+     edge; the far layer only separates a floating panel from the page. */
+  --shadow-raise: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 16px 40px -8px rgb(0 0 0 / 0.75);
+  --shadow-overlay: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 24px 64px -12px rgb(0 0 0 / 0.85);
 }
 
 .semantic-map-flow {
   --xy-controls-button-background-color-default: rgba(255, 255, 255, 0.96);
-  --xy-controls-button-color-default: #334155;
-  --xy-controls-button-border-color-default: #e2e8f0;
+  --xy-controls-button-color-default: #3f3f3f;
+  --xy-controls-button-border-color-default: #e8e8e8;
   --xy-minimap-background-color-default: rgba(255, 255, 255, 0.94);
 }
 
@@ -71,8 +113,14 @@ body {
   overflow-x: clip;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-slate-50 font-sans text-slate-900 antialiased;
+  font-feature-settings: "liga" 1, "calt" 1;
   transition:
     background-color var(--motion-ui) ease,
     color var(--motion-ui) ease;
@@ -84,48 +132,81 @@ body {
 
 .dark body {
   background-color: #000000;
-  color: #f2f2f2;
+  color: #ededed;
+}
+
+/* Headings wrap to balanced lines; paragraphs avoid a one-word last line. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+li,
+dd {
+  text-wrap: pretty;
 }
 
 ::selection {
-  background: #171717;
-  color: #ffffff;
-}
-
-.dark ::selection {
-  background: #f2f2f2;
-  color: #000000;
+  background: rgb(var(--accent) / 0.2);
+  color: inherit;
 }
 
 /* Includes tabindex elements: the citation marker and the fold are reached
    that way, and were controls a keyboard user could not see. */
 :where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline: 2px solid #171717;
+  outline: 2px solid rgb(var(--focus));
   outline-offset: 2px;
 }
 
 .dark :where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline-color: #f2f2f2;
+  outline-color: rgb(var(--focus));
 }
 
-/* Custom scrollbar */
+input,
+textarea {
+  caret-color: rgb(var(--accent));
+}
+
+/* Scrollbars: thin, on a clear track, in the theme's hairline colour. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--hairline-strong)) transparent;
+}
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-slate-100;
-}
-
-.dark ::-webkit-scrollbar-track {
-  background-color: #050505;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-slate-300;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  background-color: rgb(var(--hairline-strong));
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--mute) / 0.6);
 }
 
-.dark ::-webkit-scrollbar-thumb {
-  background-color: #2a2a2a;
+/* A loading placeholder that shimmers once the page has settled. */
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--subtle)) 0%,
+    rgb(var(--hairline)) 50%,
+    rgb(var(--subtle)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
 }
 
 /* Smooth tab transitions */
@@ -170,7 +251,7 @@ body {
 
 .marketing-shell {
   background-color: #ffffff;
-  color: #020617;
+  color: #0a0a0a;
 }
 
 .dark .marketing-shell {
@@ -180,7 +261,7 @@ body {
 
 :root:not(.dark) .marketing-shell :where(.bg-black),
 :root:not(.dark) .marketing-shell :where(.bg-\[\#030303\]) {
-  background-color: #f8fafc;
+  background-color: #fafafa;
 }
 
 :root:not(.dark) .marketing-shell :where(.bg-\[\#050505\]) {
@@ -189,11 +270,11 @@ body {
 
 :root:not(.dark) .marketing-shell :where(.bg-\[\#0a0a0a\]),
 :root:not(.dark) .marketing-shell :where(.bg-\[\#111111\]) {
-  background-color: #f1f5f9;
+  background-color: #f4f4f4;
 }
 
 :root:not(.dark) .marketing-shell :where(.bg-\[\#1f1f1f\]) {
-  background-color: #e2e8f0;
+  background-color: #e8e8e8;
 }
 
 :root:not(.dark) .marketing-shell :where(.bg-\[\#120f05\]) {
@@ -203,29 +284,29 @@ body {
 :root:not(.dark) .marketing-shell :where(.border-\[\#1f1f1f\]),
 :root:not(.dark) .marketing-shell :where(.border-\[\#2a2a2a\]),
 :root:not(.dark) .marketing-shell :where(.border-\[\#3a3a3a\]) {
-  border-color: #e2e8f0;
+  border-color: #e8e8e8;
 }
 
 :root:not(.dark) .marketing-shell :where(.text-white),
 :root:not(.dark) .marketing-shell :where(.text-\[\#ececec\]),
 :root:not(.dark) .marketing-shell :where(.text-\[\#f3f3f3\]) {
-  color: #020617;
+  color: #0a0a0a;
 }
 
 :root:not(.dark) .marketing-shell :where(.text-\[\#d0d0d0\]) {
-  color: #334155;
+  color: #3f3f3f;
 }
 
 :root:not(.dark) .marketing-shell :where(.text-\[\#a3a3a3\]),
 :root:not(.dark) .marketing-shell :where(.text-\[\#9c9c9c\]) {
-  color: #475569;
+  color: #525252;
 }
 
 :root:not(.dark) .marketing-shell :where(.text-\[\#8f8f8f\]),
 :root:not(.dark) .marketing-shell :where(.text-\[\#6f6f6f\]) {
-  /* slate-500 measured 4.34:1 against the slate-100 panels these labels sit on.
-     slate-600 clears AA on both that and plain white. */
-  color: #475569;
+  /* gray-500 sits near 4.5:1 against the gray-100 panels these labels sit
+     on. gray-600 clears AA on both that and plain white. */
+  color: #525252;
 }
 
 :root:not(.dark) .marketing-shell :where(.bg-gradient-to-br.text-white),

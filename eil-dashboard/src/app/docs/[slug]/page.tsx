@@ -21,12 +21,12 @@ export function generateMetadata({
 
   if (!page) {
     return {
-      title: "Papertrend Docs",
+      title: "Docs",
     };
   }
 
   return {
-    title: `${page.title} | Papertrend Docs`,
+    title: `${page.title} | Docs`,
     description: page.description,
     alternates: {
       canonical: `/docs/${page.slug}`,

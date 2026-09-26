@@ -357,7 +357,7 @@ export default function ForceDirectedSemanticGraph({
                 onPointerUp={endNodeDrag}
                 onPointerCancel={endNodeDrag}
               >
-                <circle r={selected ? 15 : 11} fill={colors[point.paperId] ?? "#64748b"} stroke={selected ? "white" : colors[point.paperId] ?? "#64748b"} strokeWidth={selected ? 4 : 3} vectorEffect="non-scaling-stroke" />
+                <circle r={selected ? 15 : 11} fill={colors[point.paperId] ?? "#707070"} stroke={selected ? "white" : colors[point.paperId] ?? "#707070"} strokeWidth={selected ? 4 : 3} vectorEffect="non-scaling-stroke" />
                 {showLabels ? (
                   <foreignObject x={-84} y={labelY} width={168} height={48} pointerEvents="none" overflow="visible">
                     <div className="mx-auto w-fit max-w-[180px] rounded-md bg-white/92 px-2 py-1 text-center text-[10px] font-semibold leading-[14px] text-slate-800 shadow-sm backdrop-blur-sm dark:bg-black/92 dark:text-[#eee]">

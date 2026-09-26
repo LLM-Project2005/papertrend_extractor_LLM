@@ -71,7 +71,7 @@ const TreemapCell = (props: {
   edge?: string;
   onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
 }) => {
-  const { x, y, width, height, name, value, depth, fill = "#334155", textFill = "#ffffff", edge = "#ffffff", onDrilldown } = props;
+  const { x, y, width, height, name, value, depth, fill = "#3f3f3f", textFill = "#ffffff", edge = "#ffffff", onDrilldown } = props;
   // The root spans the whole chart under the cells, labelled with the sum of
   // every theme - "63 papers" in a 39-paper repository, hidden but in the page.
   if (depth === 0) return null;
@@ -454,7 +454,7 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={conceptResult.timeline}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d4" />
                         <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
@@ -489,7 +489,7 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={conceptResult.trackSpread}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#d4d4d4" />
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />

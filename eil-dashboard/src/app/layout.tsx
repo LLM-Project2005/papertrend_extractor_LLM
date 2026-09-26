@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { GeistMono } from "geist/font/mono";
+import { GeistSans } from "geist/font/sans";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
@@ -11,9 +13,12 @@ const metadataBase = new URL(
 
 export const metadata: Metadata = {
   metadataBase,
-  title: "Papertrend Workspace",
+  title: {
+    default: "Papertrend",
+    template: "%s | Papertrend",
+  },
   description:
-    "Landing, onboarding, analytics, chat, and import tooling for reusable research-paper workspaces",
+    "Turn a folder of research papers into topics, trends and cited answers you can check.",
   icons: {
     icon: [{ url: "/brand/papertrend-mark.svg", type: "image/svg+xml" }],
     shortcut: "/brand/papertrend-mark.svg",
@@ -25,6 +30,11 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  // The browser's own chrome (the mobile address bar) matches the canvas.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#000000" },
+  ],
 };
 
 /**
@@ -59,7 +69,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
