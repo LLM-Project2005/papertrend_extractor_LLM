@@ -448,13 +448,11 @@ test("a tab row does not resize when you click a tab", () => {
   // width that made every inactive pill 2px wider and taller than the active
   // one, so clicking reflowed the whole nowrap row sideways under the pointer.
   const modal = readCode("src/components/workspace/PaperAnalysisExplorerModal.tsx");
-  assert.match(modal, /flex-none rounded-full border px-4 py-2/);
-  assert.match(modal, /border-slate-900 bg-slate-900 text-white/);
-  assert.equal(
-    /\? "bg-slate-900 text-white dark:bg-white dark:text-\[#171717\]"/.test(modal),
-    false,
-    "the active branch must carry a border too"
-  );
+  assert.match(modal, /className=\{`tab-btn \$\{activeTab === tab\.id \? "tab-btn-active" : "tab-btn-inactive"\}`\}/);
+  // Both tab states carry the same 2px bottom border, so neither is larger.
+  const css = read("src/app/globals.css");
+  assert.match(css, /\.tab-btn \{\s*@apply[^;]*border-b-2/);
+  assert.match(css, /\.tab-btn-inactive \{\s*@apply border-transparent/);
 });
 
 test("nothing on a dark page is painted in a light-only palette", () => {

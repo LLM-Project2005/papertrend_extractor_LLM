@@ -79,37 +79,41 @@ export default function DocsSearchClient() {
   }, [query]);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 pb-20 pt-28 sm:px-6">
-      <section className="border-b border-slate-200 pb-8 dark:border-[#1f1f1f]">
-        <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Documentation search</p>
-        <h1 className="mt-4 text-4xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-5xl">
-          Search Papertrend docs.
-        </h1>
-        <p className="mt-5 max-w-2xl text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-          Search across public feature guides, troubleshooting, evaluation notes,
-          and workspace concepts. Search runs locally in your browser.
+    <div className="mx-auto max-w-3xl px-4 pb-24 pt-32 sm:px-6 sm:pt-36">
+      <header>
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-mute">
+          <Link href="/docs" className="transition-colors hover:text-ink">
+            Docs
+          </Link>
+          <span aria-hidden="true">/</span>
+          <span>Search</span>
+        </nav>
+        <h1 className="mt-4 text-4xl font-semibold tracking-[-0.03em] text-ink">Search the docs</h1>
+        <p className="mt-3 text-[15px] leading-7 text-body">
+          Every guide and section, searched in your browser as you type.
         </p>
-      </section>
+      </header>
 
-      <div className="sticky top-16 z-10 -mx-4 border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95 sm:-mx-6 sm:px-6">
+      <div className="sticky top-16 z-10 -mx-4 mt-8 border-b border-hairline bg-white/85 px-4 pb-4 pt-4 backdrop-blur-md dark:bg-black/80 sm:-mx-6 sm:px-6">
         <label className="relative block">
-          <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-500 dark:text-[#777777]" />
+          <span className="sr-only">Search the documentation</span>
+          <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-mute" />
           <input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             autoFocus
-            placeholder="Search upload, chart mode, queue stuck, unknown year..."
-            className="h-14 w-full rounded-lg border border-slate-200 bg-white pl-12 pr-4 text-base text-slate-950 outline-none transition focus:border-slate-400 focus:ring-4 focus:ring-slate-950/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a] dark:focus:ring-white/10"
+            type="search"
+            placeholder="Upload failed, unknown year, deep research..."
+            className="h-12 w-full rounded-xl border border-hairline bg-surface pl-12 pr-4 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15"
           />
         </label>
-
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {docsSuggestedQueries.map((suggestion) => (
             <button
               key={suggestion}
               type="button"
               onClick={() => setQuery(suggestion)}
-              className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="rounded-full bg-subtle px-3 py-1 text-[13px] text-body transition-colors hover:text-ink"
             >
               {suggestion}
             </button>
@@ -117,60 +121,36 @@ export default function DocsSearchClient() {
         </div>
       </div>
 
-      <section className="mt-8">
-        <div className="flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">
-            {query.trim() ? `${results.length} result${results.length === 1 ? "" : "s"}` : "Suggested docs"}
-          </h2>
-          <Link
-            href="/docs"
-            className="-my-2 rounded px-1 py-2 text-sm font-medium text-slate-600 transition-colors hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:text-white"
-          >
-            Docs home
-          </Link>
-        </div>
-
-        <div className="mt-5 space-y-3">
+      <section className="mt-6" aria-live="polite">
+        <h2 className="text-sm font-medium text-mute">
+          {query.trim() ? `${results.length} result${results.length === 1 ? "" : "s"}` : "Suggested pages"}
+        </h2>
+        <ul className="mt-3 divide-y divide-hairline border-y border-hairline">
           {results.map((item) => (
-            <Link
-              key={item.id}
-              href={item.href}
-              className="group block rounded-lg border border-slate-200 bg-white p-5 transition-colors hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
+            <li key={item.id}>
+              <Link href={item.href} className="group flex items-start justify-between gap-4 py-4">
+                <span className="min-w-0">
+                  <span className="block text-[13px] text-mute">
                     {item.category}
-                    {item.sectionId ? " / Section" : " / Guide"}
-                  </p>
-                  <h3 className="mt-2 text-lg font-semibold text-slate-950 dark:text-white">
-                    {item.title}
-                  </h3>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
-                    {item.description}
-                  </p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {item.tags.slice(0, 5).map((tag) => (
-                      <span
-                        key={tag}
-                        className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-500 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f]"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <ArrowRightIcon className="mt-2 h-4 w-4 flex-none text-slate-500 transition-transform group-hover:translate-x-0.5 group-hover:text-slate-950 dark:text-[#8f8f8f] dark:group-hover:text-white" />
-              </div>
-            </Link>
+                    {item.sectionId ? ` · ${item.description}` : ""}
+                  </span>
+                  <span className="mt-0.5 block text-[15px] font-medium text-ink">{item.title}</span>
+                  {!item.sectionId ? (
+                    <span className="mt-1 block text-sm leading-6 text-body">{item.description}</span>
+                  ) : null}
+                </span>
+                <ArrowRightIcon className="mt-5 h-4 w-4 flex-none text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
+              </Link>
+            </li>
           ))}
-        </div>
+        </ul>
 
         {results.length === 0 ? (
-          <div className="mt-5 rounded-lg border border-slate-200 bg-white px-6 py-10 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <p className="text-base font-semibold text-slate-950 dark:text-white">No docs found</p>
-            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
-              Try a feature name, a task, or a symptom like failed file, dashboard filters, or queue stuck.
+          <div className="py-12 text-center">
+            <p className="text-base font-medium text-ink">Nothing matches that yet</p>
+            <p className="mt-1.5 text-sm leading-6 text-body">
+              Try the name of a screen, a task, or the message you saw, such as &ldquo;failed&rdquo; or
+              &ldquo;queue&rdquo;.
             </p>
           </div>
         ) : null}

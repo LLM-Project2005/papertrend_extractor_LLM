@@ -7,6 +7,7 @@ import {
   ChartIcon,
   CloseIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   PencilSquareIcon,
   StarIcon,
 } from "@/components/ui/Icons";
@@ -503,13 +504,10 @@ export default function PaperAnalysisExplorerModal({
 
   return (
     <Modal onClose={onClose}>
-      <div className="flex max-h-[92vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
-        <div className="flex-none border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
+      <div className="flex max-h-[92vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-2xl border border-hairline bg-surface shadow-overlay">
+        <div className="flex-none border-b border-hairline px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                Paper Explorer
-              </p>
               {correcting ? (
                 <form
                   className="mt-2 grid gap-2 sm:grid-cols-[1fr_7rem_auto]"
@@ -561,25 +559,25 @@ export default function PaperAnalysisExplorerModal({
                   ) : null}
                 </form>
               ) : (
-                <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                <h2 className="text-xl font-semibold leading-snug tracking-tight text-ink sm:text-2xl">
                   {detail?.title || titleOf(run)}
                 </h2>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
+                <span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body tabular-nums">
                   {detail?.year || "Year unavailable"}
                 </span>
                 {onCorrect && !correcting && run.status === "succeeded" ? (
                   <button
                     type="button"
                     onClick={startCorrection}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-body ring-1 ring-inset ring-hairline transition-colors hover:bg-subtle hover:text-ink"
                   >
                     <PencilSquareIcon className="h-3.5 w-3.5" />
                     <span>Correct title or year</span>
                   </button>
                 ) : null}
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                   {run.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(run)}
                 </span>
                 {/* Where the rows came from matters only when it is not the
@@ -597,7 +595,7 @@ export default function PaperAnalysisExplorerModal({
                   {trackBadges.map((track) => (
                     <span
                       key={track}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d7d7d7]"
+                      className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body"
                     >
                       {track}
                     </span>
@@ -609,7 +607,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+              className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
               aria-label="Close paper explorer"
             >
               <CloseIcon className="h-4 w-4" />
@@ -618,11 +616,11 @@ export default function PaperAnalysisExplorerModal({
 
           {/* Wraps rather than scrolling: on a phone a sideways-scrolling row
               looked like two buttons with a third cut off. */}
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={onDownloadReport}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download report</span>
@@ -630,7 +628,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onDownload}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download PDF</span>
@@ -638,7 +636,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onToggleFavorite}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <StarIcon className="h-4 w-4" weight={run.is_favorite ? "fill" : "regular"} />
               <span>{run.is_favorite ? "Favorited" : "Favorite"}</span>
@@ -646,7 +644,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onRename}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <PencilSquareIcon className="h-4 w-4" />
               <span>Rename</span>
@@ -654,37 +652,35 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onOpenDashboard}
-              className="flex-none whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
+              <ChartIcon className="h-4 w-4" />
               Open dashboard charts
             </button>
             <button
               type="button"
               onClick={() => void onOpenInNewTab()}
-              className="flex-none whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
+              <ExternalLinkIcon className="h-4 w-4" />
               Open in new tab
             </button>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
-          <nav className="sticky top-0 z-20 -mx-5 mb-5 flex flex-nowrap gap-2 overflow-x-auto border-b border-slate-200 bg-white px-5 py-3 dark:border-[#1f1f1f] dark:bg-[#030303] sm:-mx-6 sm:px-6" aria-label="Paper explorer tabs">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-7 sm:pb-7">
+          <nav className="sticky top-0 z-20 -mx-5 mb-6 flex flex-nowrap gap-1 overflow-x-auto border-b border-hairline bg-surface/90 px-5 pt-2 backdrop-blur-md sm:-mx-7 sm:px-7" aria-label="Paper explorer tabs">
             {TAB_LABELS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
+                aria-current={activeTab === tab.id ? "page" : undefined}
                 // The border lives in the base class, not on one branch. It used
-                // to sit only on the inactive pills, and under border-box sizing
-                // with auto width that made every inactive pill 2px wider and
-                // taller than the active one - so clicking a tab reflowed the
-                // whole nowrap row sideways under the pointer.
-                className={`flex-none rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === tab.id
-                    ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-[#171717]"
-                    : "border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
-                }`}
+                // to sit only on the inactive tabs, and under border-box sizing
+                // that made every inactive tab 2px larger than the active one -
+                // so clicking a tab reflowed the whole nowrap row sideways.
+                className={`tab-btn ${activeTab === tab.id ? "tab-btn-active" : "tab-btn-inactive"}`}
               >
                 {tab.label}
               </button>
@@ -692,11 +688,10 @@ export default function PaperAnalysisExplorerModal({
           </nav>
 
           {loading ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-              <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
-              <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                Loading the pipeline analysis for this paper...
-              </p>
+            <div className="space-y-4" role="status">
+              <span className="skeleton block h-40 w-full rounded-xl" />
+              <span className="skeleton block h-56 w-full rounded-xl" />
+              <p className="text-center text-sm text-mute">Loading this paper&apos;s analysis...</p>
             </div>
           ) : null}
 

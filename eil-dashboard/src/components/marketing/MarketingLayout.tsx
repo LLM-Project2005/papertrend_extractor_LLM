@@ -8,6 +8,8 @@ import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 
 interface MarketingNavProps {
   activeSlug?: string;
+  /** Match the documentation's wider three-column layout. */
+  wide?: boolean;
 }
 
 function navLinkClass(active: boolean) {
@@ -16,10 +18,10 @@ function navLinkClass(active: boolean) {
   }`;
 }
 
-export function MarketingNav({ activeSlug }: MarketingNavProps) {
+export function MarketingNav({ activeSlug, wide = false }: MarketingNavProps) {
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b border-hairline/70 bg-white/75 backdrop-blur-md backdrop-saturate-150 dark:bg-black/70">
-      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className={`mx-auto flex h-16 items-center justify-between gap-4 px-4 sm:px-6 ${wide ? "max-w-[1240px]" : "max-w-6xl"}`}>
         <Link href="/" className="flex min-w-0 items-center gap-2.5" aria-label="Papertrend home">
           <LogoMarkIcon className="h-6 w-6 flex-none text-ink" />
           <span className="text-[15px] font-semibold tracking-tight text-ink">Papertrend</span>
@@ -161,7 +163,7 @@ export function MarketingShell({
 }) {
   return (
     <div className="marketing-shell min-h-[100dvh] overflow-x-clip bg-canvas text-ink">
-      <MarketingNav activeSlug={activeSlug} />
+      <MarketingNav activeSlug={activeSlug} wide={activeSlug === "docs"} />
       <main>{children}</main>
       <MarketingFooter />
     </div>
