@@ -209,15 +209,16 @@ textarea {
   to { background-position: -200% 0; }
 }
 
-/* Smooth tab transitions */
+/* Underlined view tabs. Both states carry the same 2px border, so a tab
+   never changes size when it becomes the active one. */
 .tab-btn {
-  @apply rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150;
+  @apply relative -mb-px flex-none whitespace-nowrap border-b-2 px-3 pb-3 pt-2 text-sm font-medium transition-colors duration-150;
 }
 .tab-btn-active {
-  @apply border-slate-900 bg-slate-900 text-white dark:border-[#e8e8e8] dark:bg-[#e8e8e8] dark:text-[#171717];
+  @apply border-ink text-ink;
 }
 .tab-btn-inactive {
-  @apply border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b5b5b5] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a] dark:hover:text-[#f0f0f0];
+  @apply border-transparent text-mute hover:border-hairline-strong hover:text-ink;
 }
 
 /* Recharts tooltip */
@@ -226,11 +227,11 @@ textarea {
 }
 
 .app-surface {
-  @apply rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505];
+  @apply rounded-xl border border-hairline bg-surface shadow-raise;
 }
 
 .app-card {
-  @apply rounded-lg border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505];
+  @apply rounded-lg border border-hairline bg-surface;
 }
 
 .marketing-grid {

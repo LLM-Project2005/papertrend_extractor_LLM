@@ -352,7 +352,7 @@ test("the dashboard names itself", () => {
   // and the only one a screen reader announced with no title.
   assert.match(
     read("src/components/DashboardClient.tsx"),
-    /<h1 className="text-2xl font-semibold[^"]*">\s*Dashboard\s*<\/h1>/
+    /<h1 className="text-(?:2xl|3xl) font-semibold[^"]*">\s*Dashboard\s*<\/h1>/
   );
 });
 
@@ -520,11 +520,12 @@ test("the first screen after signing in is not an empty box", () => {
     /return <main className="min-h-screen bg-slate-50 dark:bg-black" \/>;/.test(index),
     false
   );
-  const loading = index.slice(index.indexOf("if (!hydrated || workspaceLoading)"), index.indexOf("return (\n    <main className=\"min-h-screen bg-slate-50 text-slate-900"));
-  assert.match(index, /aria-busy="true"/);
-  assert.match(index, /Loading your repositories/);
-  assert.match(index, /animate-pulse/, "the cards are blocked out so the page does not jump");
-  assert.ok(loading.length > 0);
+  const start = index.indexOf("if (!hydrated || workspaceLoading)");
+  const loading = index.slice(start, index.indexOf(String.fromCharCode(10) + "  return (", start));
+  assert.match(loading, /aria-busy="true"/);
+  assert.match(loading, /Loading your repositories/);
+  assert.match(loading, /skeleton/, "the cards are blocked out so the page does not jump");
+  assert.match(loading, /\{header\}/, "the real chrome is there while it loads");
 });
 
 test("the dashboard feature page does not claim what the code refuses to do", () => {

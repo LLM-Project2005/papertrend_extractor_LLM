@@ -8,7 +8,9 @@ import CreateEntityModal from "@/components/workspace/CreateEntityModal";
 import AnalysisProfileEditor from "@/components/workspace/AnalysisProfileEditor";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
-import { FileIcon, LogoMarkIcon, MoreHorizontalIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
+import { BooksIcon, LogoMarkIcon, PencilSquareIcon, PlusIcon, SearchIcon } from "@/components/ui/Icons";
+import ThemeToggle from "@/components/theme/ThemeToggle";
+import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 
 const PROJECT_ANALYSIS_PROFILES_ENABLED =
   process.env.NEXT_PUBLIC_PROJECT_ANALYSIS_PROFILES_ENABLED === "true";
@@ -19,7 +21,6 @@ export default function ProjectIndexClient() {
   const {
     allProjects,
     organizations,
-    profile,
     selectedOrganizationId,
     workspaceLoading,
     workspaceLoadError,
@@ -117,42 +118,35 @@ export default function ProjectIndexClient() {
     }
   }
 
-  if (!hydrated || workspaceLoading) {
-    // This is where /login lands and where every workspace breadcrumb points, and
-    // it used to render an empty coloured box for the whole projects round-trip -
-    // no logo, no heading, no spinner, nothing to say the app was working. It is
-    // the first screen after signing in. Every other loading surface in the app
-    // at least says what is happening; this one now shows the real chrome with
-    // the cards blocked out, so the page does not jump when they arrive.
-    return (
-      <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
-        <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
-          <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-4">
-            <span className="flex h-9 w-9 items-center justify-center text-slate-950 dark:text-white">
-              <LogoMarkIcon className="h-7 w-7" />
-            </span>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                Papertrend
-              </p>
-              <span className="text-lg font-semibold">Repositories</span>
-            </div>
-          </div>
-        </header>
+  const header = (
+    <header className="sticky top-0 z-30 border-b border-hairline bg-canvas/80 backdrop-blur-md backdrop-saturate-150">
+      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-3 px-4 sm:px-6">
+        <Link href="/" className="flex items-center gap-2.5" aria-label="Go to front page">
+          <LogoMarkIcon className="h-6 w-6 text-ink" />
+          <span className="text-[15px] font-semibold tracking-tight text-ink">Papertrend</span>
+        </Link>
+        <div className="flex items-center gap-1.5">
+          <ThemeToggle compact />
+          <WorkspaceProfileMenu />
+        </div>
+      </div>
+    </header>
+  );
 
-        <section className="mx-auto max-w-7xl px-6 py-16" aria-busy="true">
-          <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">
-            Your repositories
-          </h1>
-          <p className="mt-4 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-            Loading your repositories...
-          </p>
+  if (!hydrated || workspaceLoading) {
+    // This is where /login lands and where every workspace breadcrumb points.
+    // It shows the real chrome with the cards blocked out, so the first screen
+    // after signing in says the app is working and does not jump when the
+    // repositories arrive.
+    return (
+      <main className="min-h-[100dvh] bg-canvas text-ink">
+        {header}
+        <section className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16" aria-busy="true">
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">Repositories</h1>
+          <p className="mt-2 text-[15px] leading-7 text-body">Loading your repositories...</p>
           <div className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {[0, 1, 2].map((index) => (
-              <div
-                key={index}
-                className="h-40 animate-pulse rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]"
-              />
+              <div key={index} className="skeleton h-44 rounded-xl" />
             ))}
           </div>
         </section>
@@ -161,44 +155,28 @@ export default function ProjectIndexClient() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-white">
-      <header className="border-b border-slate-200 bg-white/80 dark:border-[#1f1f1f] dark:bg-transparent">
-        <div className="mx-auto flex max-w-7xl items-center gap-3 px-6 py-4">
-          <Link
-            href="/"
-            className="flex h-9 w-9 items-center justify-center text-slate-950 dark:text-white"
-            aria-label="Go to front page"
-          >
-            <LogoMarkIcon className="h-7 w-7" />
-          </Link>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-              Papertrend
-            </p>
-            <span className="text-lg font-semibold">Repositories</span>
-          </div>
-        </div>
-      </header>
+    <main className="min-h-[100dvh] bg-canvas text-ink">
+      {header}
 
-      <section className="mx-auto max-w-7xl px-6 py-16">
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
-          <div className="max-w-3xl">
-            <h1 className="text-4xl font-semibold tracking-normal text-slate-950 dark:text-white">
-              Your repositories
-            </h1>
-            <p className="mt-4 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-              Choose a repository to manage its papers, dashboard, and research chat.
+      <section className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
+        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+          <div className="max-w-xl">
+            <h1 className="text-3xl font-semibold tracking-tight text-ink">Repositories</h1>
+            <p className="mt-2 text-[15px] leading-7 text-body">
+              Each repository keeps its own papers, dashboard and chat. Open one, or start a new
+              collection.
             </p>
           </div>
 
-          <div className="flex w-full max-w-xl flex-col gap-3 sm:flex-row">
-            <label className="flex flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 dark:border-[#1f1f1f] dark:bg-[#050505]">
-              <SearchIcon className="h-4 w-4 text-slate-500 dark:text-[#7a7a7a]" />
+          <div className="flex w-full flex-col gap-2 sm:flex-row md:max-w-md">
+            <label className="relative block min-w-0 flex-1">
+              <span className="sr-only">Search repositories</span>
+              <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search repositories"
-                className="w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white dark:placeholder:text-[#8f8f8f]"
+                className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
               />
             </label>
             <button
@@ -210,7 +188,7 @@ export default function ProjectIndexClient() {
                 setAnalysisProfileError(null);
                 setShowCreateModal(true);
               }}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-slate-950 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-medium text-canvas shadow-raise transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
             >
               <PlusIcon className="h-4 w-4" />
               <span>New repository</span>
@@ -219,83 +197,92 @@ export default function ProjectIndexClient() {
         </div>
 
         {error ? (
-          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+          <div className="mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
             {error}
           </div>
         ) : null}
 
         {workspaceLoadError ? (
-          <div className="mt-6 flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+          <div className="mt-6 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
             <div>
-              <p className="font-semibold">Repositories could not be loaded</p>
-              <p className="mt-1 text-amber-800 dark:text-amber-200/80">
+              <p className="font-medium">Repositories could not be loaded</p>
+              <p className="mt-1 text-amber-900 dark:text-amber-200/90">
                 Your data has not been removed. {workspaceLoadError}
               </p>
             </div>
             <button
               type="button"
               onClick={() => void refreshAllProjects()}
-              className="shrink-0 rounded-lg border border-amber-400 px-3 py-2 font-semibold transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:border-amber-700 dark:hover:bg-amber-900/40"
+              className="shrink-0 rounded-lg border border-amber-300 px-3 py-2 font-medium transition-colors hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900/40"
             >
               Retry
             </button>
           </div>
         ) : null}
 
-        <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        <ul className="mt-10 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {visibleProjects.map((project) => (
-            <article
-              key={project.id}
-              className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedProjectId(project.id);
-                    router.push("/workspace/home");
-                  }}
-                  className="min-w-0 flex-1 text-left"
-                >
-                  <div className="flex items-center gap-2 text-slate-500 dark:text-[#8f8f8f]">
-                    <FileIcon className="h-4 w-4" />
-                    <span className="text-xs font-medium uppercase tracking-normal">Repository</span>
-                  </div>
-                  <p className="mt-3 text-2xl font-semibold text-slate-900 dark:text-white">
-                    {project.name}
-                  </p>
-                  <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
-                    {project.description || "Papers, analytics, and research chat."}
-                  </p>
+            <li key={project.id} className="group relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedProjectId(project.id);
+                  router.push("/workspace/home");
+                }}
+                className="flex h-full min-h-44 w-full flex-col rounded-xl border border-hairline bg-surface p-5 text-left shadow-raise transition-[border-color,box-shadow,transform] duration-200 ease-out-quart hover:-translate-y-0.5 hover:border-hairline-strong hover:shadow-float active:translate-y-0 motion-reduce:hover:translate-y-0"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-subtle text-body ring-1 ring-inset ring-hairline">
+                  <BooksIcon className="h-5 w-5" />
+                </span>
+                <span className="mt-4 block truncate pr-8 text-base font-semibold tracking-tight text-ink">
+                  {project.name}
+                </span>
+                {project.description ? (
+                  <span className="mt-1.5 line-clamp-2 text-sm leading-6 text-body">{project.description}</span>
+                ) : null}
+                <span className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-5 text-xs text-mute">
                   {PROJECT_ANALYSIS_PROFILES_ENABLED && project.analysis_profile ? (
-                    <span className="mt-4 inline-flex rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#2a2a2a] dark:text-[#aaa]">
+                    <span className="rounded-full bg-subtle px-2 py-0.5 font-medium text-body">
                       {project.analysis_profile.displayName}
                     </span>
                   ) : null}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleRenameProject(project.id, project.name)}
-                  className="rounded-lg p-2 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#111111] dark:hover:text-white"
-                  aria-label={`Rename ${project.name}`}
-                  title="Rename repository"
-                >
-                  <MoreHorizontalIcon className="h-4 w-4" />
-                </button>
-              </div>
-            </article>
+                  {project.updated_at ? (
+                    <span>
+                      Updated{" "}
+                      {new Date(project.updated_at).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </span>
+                  ) : null}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRenameProject(project.id, project.name)}
+                className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute opacity-100 transition-[opacity,background-color,color] duration-150 hover:bg-subtle hover:text-ink sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                aria-label={`Rename ${project.name}`}
+                title="Rename repository"
+              >
+                <PencilSquareIcon className="h-4 w-4" />
+              </button>
+            </li>
           ))}
-        </div>
+        </ul>
 
         {!workspaceLoadError && visibleProjects.length === 0 ? (
-          <div className="mt-16 rounded-xl border border-dashed border-slate-200 bg-white px-6 py-14 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-            <p className="text-lg font-medium text-slate-900 dark:text-white">
-              {query.trim() ? "No matching repositories" : "No repositories yet"}
+          <div className="mt-6 rounded-xl border border-dashed border-hairline-strong px-6 py-16 text-center">
+            <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-subtle text-body">
+              <BooksIcon className="h-5 w-5" />
+            </span>
+            <p className="mt-4 text-base font-medium text-ink">
+              {query.trim() ? "No repository matches that name" : "Start your first repository"}
             </p>
-            <p className="mt-3 text-sm leading-7 text-slate-500 dark:text-[#9c9c9c]">
+            <p className="mx-auto mt-1.5 max-w-sm text-sm leading-6 text-body">
               {query.trim()
-                ? "Try a different repository name."
-                : "Create a repository to start organizing and analyzing papers."}
+                ? "Check the spelling, or clear the search to see them all."
+                : "A repository holds one collection of papers: a thesis, a review, a course reading list."}
             </p>
           </div>
         ) : null}

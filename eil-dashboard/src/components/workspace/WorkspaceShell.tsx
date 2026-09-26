@@ -515,7 +515,7 @@ export default function WorkspaceShell({
               href="/docs"
               prefetch={false}
               onClick={() => handleNavigate("/docs")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg px-2.5 text-sm font-medium text-body transition-colors duration-150 hover:bg-subtle hover:text-ink"
+              className="hidden h-9 items-center justify-center gap-2 rounded-lg px-2.5 text-sm font-medium text-body transition-colors duration-150 hover:bg-subtle hover:text-ink sm:inline-flex"
               aria-label="Open documentation"
             >
               <BookOpenIcon className="h-4 w-4" />
