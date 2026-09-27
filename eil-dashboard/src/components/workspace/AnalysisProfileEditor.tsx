@@ -10,6 +10,7 @@ import {
 } from "@/lib/project-analysis-profile";
 import { CheckIcon, ChevronDownIcon, PlusIcon, TrashIcon } from "@/components/ui/Icons";
 import { buttonClass, fieldClass, iconButtonClass } from "@/components/ui/controls";
+import Select from "@/components/ui/Select";
 import type { ProjectAnalysisProfile, WorkspaceAnalysisCategory } from "@/types/workspace";
 
 export interface AnalysisProfileTemplate {
@@ -302,21 +303,28 @@ export default function AnalysisProfileEditor({
       ) : null}
 
       {templates.length > 0 ? (
-        <label className="grid gap-1.5 text-sm font-medium text-ink">
-          Copy from repository
-          <select
-            defaultValue=""
-            onChange={(event) => {
-              const template = templates.find((item) => item.projectId === event.target.value);
+        <div className="grid gap-1.5 text-sm font-medium text-ink">
+          <span>Copy from repository</span>
+          {/* An action, not a setting: choosing a repository copies its
+              profile into this form and the picker returns to its prompt. */}
+          <Select
+            value=""
+            label="Copy from repository"
+            className="w-full"
+            options={[
+              { value: "", label: "Choose a repository profile…" },
+              ...templates.map((template) => ({
+                value: template.projectId,
+                label: template.projectName,
+                description: template.profile.displayName,
+              })),
+            ]}
+            onChange={(projectId) => {
+              const template = templates.find((item) => item.projectId === projectId);
               if (template) onChange({ ...template.profile, categories: template.profile.categories.map((category) => ({ ...category })) });
-              event.currentTarget.value = "";
             }}
-            className={`${fieldClass} font-normal`}
-          >
-            <option value="">Choose a repository profile…</option>
-            {templates.map((template) => <option key={template.projectId} value={template.projectId}>{template.projectName} - {template.profile.displayName}</option>)}
-          </select>
-        </label>
+          />
+        </div>
       ) : null}
 
       {error ? <p className="text-sm text-red-700 dark:text-red-300" role="alert">{error}</p> : null}

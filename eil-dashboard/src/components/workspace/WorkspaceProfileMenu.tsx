@@ -1,5 +1,6 @@
 "use client";
 
+import { menuItemClass } from "@/components/ui/controls";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -95,8 +96,7 @@ export default function WorkspaceProfileMenu({
     );
   }
 
-  const itemClass =
-    "flex items-center gap-3 rounded-lg px-2.5 py-2 text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
+  const itemClass = menuItemClass();
 
   return (
     <div

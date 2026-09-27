@@ -50,6 +50,7 @@ import {
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
+import { menuItemClass, menuPanelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 
 type ViewMode = "list" | "grid";
@@ -1132,10 +1133,8 @@ export default function AdminImportClient() {
   function renderToolbarPopover() {
     if (!toolbarPopover) return null;
 
-    const sectionClass =
-      "z-50 origin-top rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in";
-    const itemClass =
-      "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
+    const sectionClass = `z-50 origin-top ${menuPanelClass}`;
+    const itemClass = menuItemClass(false, "justify-between");
 
     if (toolbarPopover.kind === "new") {
       return (
@@ -1320,8 +1319,7 @@ export default function AdminImportClient() {
   function renderItemMenu() {
     if (!itemMenuState) return null;
 
-    const itemClass =
-      "flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
+    const itemClass = menuItemClass();
     const menuItem = itemMenuState.item;
 
     if (!activeMenuRun) return null;

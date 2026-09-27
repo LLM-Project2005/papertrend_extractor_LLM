@@ -23,11 +23,18 @@ import {
   semanticMapMethodology,
 } from "@/lib/semantic-map-presentation";
 import ForceDirectedSemanticGraph from "@/components/workspace/ForceDirectedSemanticGraph";
+import Select, { type SelectOption } from "@/components/ui/Select";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
 import type { RepositorySemanticMap, SemanticMapCoverage, SemanticMapEdge, SemanticMapPoint } from "@/types/semantic-map";
 import { ChartIcon, CheckIcon, CloseIcon, FilterIcon, RefreshIcon, SearchIcon, SparkIcon } from "@/components/ui/Icons";
 
 type ColorMode = "cluster" | "category" | "year" | "track";
+
+const COLOR_MODE_OPTIONS: SelectOption<ColorMode>[] = [
+  { value: "cluster", label: "Neighborhood", description: "Papers the map found near each other" },
+  { value: "category", label: "Category", description: "The repository's own categories" },
+  { value: "year", label: "Year", description: "One colour for each publication year" },
+];
 
 interface Props {
   projectId: string;
@@ -43,6 +50,8 @@ type PaperNodeData = {
   label: string;
   title: string;
   dimmed: boolean;
+  /** Outside the selection: shown faintly so the selected papers stand out. */
+  receded?: boolean;
 };
 
 type RelationshipEdgeData = {
@@ -58,7 +67,10 @@ function handleId(position: Position, type: "source" | "target"): string {
 function PaperMapNode({ data, selected }: NodeProps) {
   const node = data as PaperNodeData;
   return (
-    <div className={`relative h-6 w-6 ${node.dimmed ? "opacity-15" : "opacity-100"}`} title={node.title}>
+    <div
+      className={`relative h-6 w-6 transition-opacity duration-200 ${node.dimmed ? "opacity-15" : node.receded ? "opacity-25" : "opacity-100"}`}
+      title={node.title}
+    >
       {HANDLE_POSITIONS.map((position) => (
         <Handle key={handleId(position, "target")} id={handleId(position, "target")} type="target" position={position} className="!pointer-events-none !h-0 !w-0 !border-0 !bg-transparent" />
       ))}
@@ -281,15 +293,20 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     const searchMatched = matchedIds.has(point.paperId);
     const clusterMatched = activeClusterId === null || point.clusterId === activeClusterId;
     const selected = selectedPaperIds.includes(point.paperId);
+    const inFocus = selected || point.paperId === focusedPaperId;
+    const hasSelection = selectedPaperIds.length > 0 || Boolean(focusedPaperId);
     const color = pointColor(point, colorMode);
     return {
       id: point.paperId,
       type: "paper",
       position: { x: point.x, y: point.y },
+      // A selected paper is drawn above its neighbours, never under them.
+      zIndex: inFocus ? 1000 : 0,
       data: {
         color,
         title: `${point.title} (${point.year})`,
         dimmed: !clusterMatched || Boolean(normalizedQuery && !searchMatched),
+        receded: hasSelection && !inFocus,
         // Shortened for the canvas; the whole title stays on the tooltip,
         // in the paper list and in the detail panel.
         label: showPaperLabels ? nodeLabel(point.title) : "",
@@ -297,7 +314,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
       ariaLabel: `${point.title}, ${point.year}, ${colorLabel(point, colorMode, map!)}`,
       selected,
     };
-  }), [activeClusterId, colorMode, map, matchedIds, normalizedQuery, selectedPaperIds, showPaperLabels, visiblePoints]);
+  }), [activeClusterId, colorMode, focusedPaperId, map, matchedIds, normalizedQuery, selectedPaperIds, showPaperLabels, visiblePoints]);
 
   const candidateEdges = useMemo(() => (map?.edges ?? [])
     .filter((edge) => visibleIds.has(edge.sourcePaperId) && visibleIds.has(edge.targetPaperId))
@@ -307,6 +324,12 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   const forceDimmedIds = useMemo(() => new Set(visiblePoints
     .filter((point) => (activeClusterId !== null && point.clusterId !== activeClusterId) || Boolean(normalizedQuery && !matchedIds.has(point.paperId)))
     .map((point) => point.paperId)), [activeClusterId, matchedIds, normalizedQuery, visiblePoints]);
+  const forceRecededIds = useMemo(() => {
+    const inFocus = new Set(selectedPaperIds);
+    if (focusedPaperId) inFocus.add(focusedPaperId);
+    if (inFocus.size === 0) return new Set<string>();
+    return new Set(visiblePoints.filter((point) => !inFocus.has(point.paperId)).map((point) => point.paperId));
+  }, [focusedPaperId, selectedPaperIds, visiblePoints]);
 
   const contextPaperId = selectedPaperIds.length <= 1 ? focusedPaperId : null;
   const visibleEdges = useMemo(() => showEdges ? candidateEdges : [], [candidateEdges, showEdges]);
@@ -475,15 +498,15 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
         <div className="relative h-[clamp(560px,72vh,780px)] overflow-hidden rounded-xl border border-slate-200 bg-[#fafafa] dark:border-[#202020] dark:bg-black">
           <div className="nodrag nopan absolute left-3 right-3 top-3 z-10 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-[#242424] dark:bg-[#080808]/95">
             <label className="relative min-w-[200px] flex-1"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a paper, topic, or keyword" aria-label="Find on map" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-base sm:text-sm outline-none focus:border-slate-400 dark:border-[#292929] dark:text-white" /></label>
-            <select value={colorMode} onChange={(event) => { setColorMode(event.target.value as ColorMode); setFocusedClusterId(null); }} aria-label="Color papers by" className="h-9 rounded-md border border-slate-200 bg-white px-2 text-sm dark:border-[#292929] dark:bg-[#080808] dark:text-white"><option value="cluster">Color: neighborhood</option><option value="category">Color: category</option><option value="year">Color: year</option><option value="track">Color: track</option></select>
-            <details className="group relative"><summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 dark:border-[#292929] dark:bg-[#080808] dark:text-white"><FilterIcon className="h-4 w-4" /> Papers {visiblePoints.length}/{map.points.length}</summary><div className="nodrag nopan absolute right-0 top-11 z-30 w-[min(380px,calc(100vw-3rem))] rounded-lg border border-slate-200 bg-white p-3 shadow-xl dark:border-[#292929] dark:bg-[#080808]"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950 dark:text-white">Papers in view</p><p className="text-xs text-slate-500 dark:text-[#999]">Hide papers without rebuilding the map.</p></div><button type="button" onClick={() => setHiddenPaperIds([])} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Show all</button></div><label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" aria-label="Filter paper list" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-base sm:text-sm text-slate-950 outline-none dark:border-[#292929] dark:text-white" /></label>{paperFilterNotice ? <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{paperFilterNotice}</p> : null}<div className="nowheel mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">{paperFilterPoints.map((point) => { const visible = !hiddenIds.has(point.paperId); return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#121212]"><input type="checkbox" checked={visible} onChange={(event) => setPaperVisible(point.paperId, event.target.checked)} className="peer sr-only" /><span aria-hidden="true" className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border peer-focus-visible:ring-2 peer-focus-visible:ring-[rgb(var(--focus))] peer-focus-visible:ring-offset-2 ${visible ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black" : "border-slate-300 dark:border-[#444]"}`}>{visible ? <CheckIcon className="h-3 w-3" /> : null}</span><span className="min-w-0"><span className="block text-xs font-medium leading-5 text-slate-800 dark:text-[#eee]">{point.title}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{point.year}</span></span></label>; })}</div></div></details>
+            <Select<ColorMode> value={colorMode} onChange={(next) => { setColorMode(next); setFocusedClusterId(null); }} label="Color papers by" prefix="Color:" options={COLOR_MODE_OPTIONS} />
+            <details className="group relative"><summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-sm font-medium text-ink transition-colors hover:border-hairline-strong [&::-webkit-details-marker]:hidden"><FilterIcon className="h-4 w-4" /> Papers <span className="tabular-nums">{visiblePoints.length}/{map.points.length}</span></summary><div className="nodrag nopan absolute right-0 top-11 z-30 w-[min(380px,calc(100vw-3rem))] origin-top-right rounded-xl border border-hairline bg-surface p-3 shadow-overlay motion-safe:animate-scale-in"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950 dark:text-white">Papers in view</p><p className="text-xs text-slate-500 dark:text-[#999]">Hide papers without rebuilding the map.</p></div><button type="button" onClick={() => setHiddenPaperIds([])} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Show all</button></div><label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" aria-label="Filter paper list" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-base sm:text-sm text-slate-950 outline-none dark:border-[#292929] dark:text-white" /></label>{paperFilterNotice ? <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{paperFilterNotice}</p> : null}<div className="nowheel mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">{paperFilterPoints.map((point) => { const visible = !hiddenIds.has(point.paperId); return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#121212]"><input type="checkbox" checked={visible} onChange={(event) => setPaperVisible(point.paperId, event.target.checked)} className="peer sr-only" /><span aria-hidden="true" className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border peer-focus-visible:ring-2 peer-focus-visible:ring-[rgb(var(--focus))] peer-focus-visible:ring-offset-2 ${visible ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black" : "border-slate-300 dark:border-[#444]"}`}>{visible ? <CheckIcon className="h-3 w-3" /> : null}</span><span className="min-w-0"><span className="block text-xs font-medium leading-5 text-slate-800 dark:text-[#eee]">{point.title}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{point.year}</span></span></label>; })}</div></div></details>
           </div>
           {layoutMode === "projection" ? <ReactFlow key={`${map.mapId}:projection`} nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onInit={fitInitialView} onNodeClick={onNodeClick} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable autoPanOnNodeFocus={false} minZoom={0.45} maxZoom={2.5} className="semantic-map-flow">
             <Background color="#707070" gap={28} size={0.6} /><Controls showInteractive={false} /><MiniMap pannable zoomable nodeColor={(node) => String((node.data as Partial<PaperNodeData>)?.color ?? "#64748b")} /* The mask is what shows which part of the map you are looking at. At 8%
                  it was invisible, so the minimap showed dots and told the reader
                  nothing about where they were. */
               maskColor="rgba(15,23,42,.22)" />
-          </ReactFlow> : <ForceDirectedSemanticGraph points={visiblePoints} edges={visibleEdges} colors={forceColors} dimmedPaperIds={forceDimmedIds} selectedPaperIds={selectedIdSet} selectedEdgeId={focusedEdge ? `${focusedEdge.sourcePaperId}:${focusedEdge.targetPaperId}` : null} running={forceRunning} resetVersion={forceResetVersion} showLabels={showPaperLabels} onPaperSelect={togglePaperSelection} onEdgeSelect={(edge) => { setFocusedPaperId(null); setFocusedEdge(edge); }} />}
+          </ReactFlow> : <ForceDirectedSemanticGraph points={visiblePoints} edges={visibleEdges} colors={forceColors} dimmedPaperIds={forceDimmedIds} recededPaperIds={forceRecededIds} focusedPaperId={focusedPaperId} selectedPaperIds={selectedIdSet} selectedEdgeId={focusedEdge ? `${focusedEdge.sourcePaperId}:${focusedEdge.targetPaperId}` : null} running={forceRunning} resetVersion={forceResetVersion} showLabels={showPaperLabels} onPaperSelect={togglePaperSelection} onEdgeSelect={(edge) => { setFocusedPaperId(null); setFocusedEdge(edge); }} />}
           <ul className="sr-only focus-within:not-sr-only focus-within:absolute focus-within:bottom-3 focus-within:left-3 focus-within:z-20 focus-within:max-h-64 focus-within:w-80 focus-within:overflow-y-auto focus-within:rounded-lg focus-within:border focus-within:border-hairline focus-within:bg-surface focus-within:p-2 focus-within:text-sm focus-within:shadow-overlay" aria-label={`Papers in ${projectName} semantic map`}>{visiblePoints.map((point) => <li key={point.paperId}><button type="button" aria-pressed={selectedIdSet.has(point.paperId)} className="block w-full rounded px-2 py-1 text-left aria-pressed:bg-subtle" onClick={() => { setFocusedPaperId(point.paperId); togglePaperSelection(point.paperId); }}>{point.title}, {point.year}</button></li>)}</ul>
         </div>
 
@@ -491,13 +514,13 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]">
             <div className="flex items-center justify-between gap-3">
               <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Display</p>
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:bg-[#151515] dark:text-[#aaa]">{layoutMode === "projection" ? map.projection.algorithm?.toUpperCase() ?? "Projection" : "D3 force"}</span>
+              <span className="rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600 dark:bg-[#151515] dark:text-[#aaa]">{layoutMode === "projection" ? map.projection.algorithm?.toUpperCase() ?? "Fixed projection" : "Free graph"}</span>
             </div>
             <div className="mt-4 grid grid-cols-2 rounded-lg bg-slate-100 p-1 dark:bg-[#111]" role="group" aria-label="Semantic map layout">
-              <button type="button" aria-pressed={layoutMode === "projection"} onClick={() => changeLayoutMode("projection")} className={`h-9 rounded-md px-2 text-xs font-semibold transition ${layoutMode === "projection" ? "bg-white text-slate-950 shadow-sm dark:bg-[#292929] dark:text-white" : "text-slate-500 hover:text-slate-900 dark:text-[#888] dark:hover:text-white"}`}>Projection</button>
-              <button type="button" aria-pressed={layoutMode === "force"} onClick={() => changeLayoutMode("force")} className={`h-9 rounded-md px-2 text-xs font-semibold transition ${layoutMode === "force" ? "bg-white text-slate-950 shadow-sm dark:bg-[#292929] dark:text-white" : "text-slate-500 hover:text-slate-900 dark:text-[#888] dark:hover:text-white"}`}>Force graph</button>
+              <button type="button" aria-pressed={layoutMode === "projection"} onClick={() => changeLayoutMode("projection")} className={`h-9 rounded-md px-2 text-xs font-semibold transition ${layoutMode === "projection" ? "bg-white text-slate-950 shadow-sm dark:bg-[#292929] dark:text-white" : "text-slate-500 hover:text-slate-900 dark:text-[#888] dark:hover:text-white"}`}>Fixed projection</button>
+              <button type="button" aria-pressed={layoutMode === "force"} onClick={() => changeLayoutMode("force")} className={`h-9 rounded-md px-2 text-xs font-semibold transition ${layoutMode === "force" ? "bg-white text-slate-950 shadow-sm dark:bg-[#292929] dark:text-white" : "text-slate-500 hover:text-slate-900 dark:text-[#888] dark:hover:text-white"}`}>Free graph</button>
             </div>
-            <p className="mt-3 text-[11px] leading-5 text-slate-500 dark:text-[#888]">{layoutMode === "projection" ? "Stable UMAP/PCA coordinates for reading semantic distance." : "Free physics layout. Drag a paper and connected papers respond through relationship springs."}</p>
+            <p className="mt-3 text-[11px] leading-5 text-slate-500 dark:text-[#888]">{layoutMode === "projection" ? "Positions come from what each paper says, so papers close together are similar in content." : "Positions come from the links between papers and from your dragging. Distance here does not show how similar two papers are; use Fixed projection to read similarity."}</p>
             {layoutMode === "force" ? <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => setForceRunning((current) => !current)} disabled={prefersReducedMotion} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">{forceRunning ? "Pause motion" : "Resume motion"}</button><button type="button" onClick={resetForceLayout} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">Reset graph</button></div> : null}
             <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-[#999]"><span>Retained relationships</span><span className="font-semibold tabular-nums text-slate-800 dark:text-[#eee]">{candidateEdges.length}</span></div><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Relationships</span><input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} /></label><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Paper labels</span><input type="checkbox" checked={showPaperLabels} onChange={(event) => setShowPaperLabels(event.target.checked)} /></label>
           </div>

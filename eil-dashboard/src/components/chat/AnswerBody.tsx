@@ -41,8 +41,30 @@ export interface AnswerCitation {
  * paragraph making three claims carried three of them. The marker keeps the
  * sentence readable while the source stays one pointer away, and the same card
  * opens on keyboard focus so it is not mouse-only.
+ *
+ * Clicking the number pins the card open with a link to each paper's
+ * evidence, where the passage behind the claim is highlighted in the PDF.
+ * A click used to do nothing at all.
  */
 export function CitationMarker({ numbers, sources }: { numbers: number[]; sources: CitationSource[] }) {
+  const [pinned, setPinned] = useState(false);
+  const containerRef = React.useRef<HTMLSpanElement>(null);
+  React.useEffect(() => {
+    if (!pinned) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setPinned(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setPinned(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [pinned]);
+
   const referenced = numbers
     .map((number) => sources.find((source) => source.number === number))
     .filter((source): source is CitationSource => Boolean(source));
@@ -52,17 +74,22 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
     .join("; ");
 
   return (
-    <span className="group relative inline-block align-baseline">
+    <span ref={containerRef} className="group relative inline-block align-baseline">
       <button
         type="button"
         aria-label={`Source: ${label}`}
-        className="ml-0.5 cursor-help rounded align-super text-[0.68em] font-semibold text-sky-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-200"
+        aria-expanded={pinned}
+        onClick={() => setPinned((current) => !current)}
+        className="ml-0.5 cursor-pointer rounded align-super text-[0.68em] font-semibold text-sky-700 underline decoration-dotted underline-offset-2 transition-colors hover:text-sky-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 dark:text-sky-300 dark:hover:text-sky-200"
       >
         {numbers.join(",")}
       </button>
       <span
-        role="tooltip"
-        className={`pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg group-focus-within:block group-hover:block dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4]`}
+        role={pinned ? "group" : "tooltip"}
+        aria-label={pinned ? "Cited papers" : undefined}
+        className={`absolute bottom-full left-1/2 z-30 mb-2 w-72 -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 text-left ${ANSWER_META_CLASS} text-slate-700 shadow-lg dark:border-[#2a2a2a] dark:bg-[#121212] dark:text-[#d4d4d4] ${
+          pinned ? "block" : "pointer-events-none hidden group-focus-within:block group-hover:block"
+        }`}
       >
         {referenced.map((source) => (
           <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-slate-200 [&+&]:pt-2 dark:[&+&]:border-[#2a2a2a]">
@@ -70,11 +97,25 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
             <span className="block text-slate-600 dark:text-[#8e8e8e]">
               {source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
             </span>
+            {pinned && source.href ? (
+              <a
+                href={evidenceHref(source.href)}
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-sky-700 underline-offset-2 hover:underline dark:text-sky-300"
+              >
+                Open the evidence
+              </a>
+            ) : null}
           </span>
         ))}
       </span>
     </span>
   );
+}
+
+/** A paper's link, opened on its Evidence tab. */
+export function evidenceHref(href: string): string {
+  if (!href.startsWith("/workspace/library")) return href;
+  return `${href}${href.includes("?") ? "&" : "?"}tab=evidence`;
 }
 
 export function renderInlineMarkdown(

@@ -809,3 +809,34 @@ class DeepResearchExecutionContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DirectorDecidesToolsTests(unittest.TestCase):
+    """The director chooses the tools; the caller's policy only grants permission."""
+
+    def _policy(self, allow_web: bool):
+        return {
+            "scope": "project",
+            "allowWeb": allow_web,
+            "allowCharts": True,
+            "agentDirected": True,
+            "budget": {"maxLibraryPapers": 8, "maxWebSearches": 5, "maxSources": 12},
+        }
+
+    def test_web_used_only_when_permitted_and_wanted(self):
+        from nodes import deep_research as dr
+
+        wanted = dr._apply_director_to_source_policy(self._policy(True), {"use_web": True, "use_charts": False})
+        self.assertTrue(wanted["allowWeb"])
+        self.assertEqual(wanted["budget"]["maxWebSearches"], 5)
+        self.assertFalse(wanted["allowCharts"])
+
+        not_wanted = dr._apply_director_to_source_policy(self._policy(True), {"use_web": False, "use_charts": True})
+        self.assertFalse(not_wanted["allowWeb"])
+        self.assertEqual(not_wanted["budget"]["maxWebSearches"], 0)
+        self.assertTrue(not_wanted["allowCharts"])
+
+        not_permitted = dr._apply_director_to_source_policy(self._policy(False), {"use_web": True})
+        self.assertFalse(not_permitted["allowWeb"])
+        self.assertEqual(not_permitted["budget"]["maxWebSearches"], 0)
+        self.assertTrue(not_permitted["budget"].get("webRecommended"))

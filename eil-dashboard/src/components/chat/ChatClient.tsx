@@ -51,6 +51,7 @@ import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody
 import { citationPaperId, markCitations, type CitationSource } from "@/lib/answer-citations";
 import { ChatIntro, FollowUpSuggestions } from "@/components/chat/ChatIntro";
 import ThinkingOrb, { orbStateForStage } from "@/components/ui/ThinkingOrb";
+import Select from "@/components/ui/Select";
 import {
   exampleQuestions,
   followUpSuggestions,
@@ -274,14 +275,10 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
 };
 
 const MODEL_OPTIONS = [
-  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna", Mark: OpenAIIcon },
-  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash", Mark: GeminiIcon },
+  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna", description: "By OpenAI. The default.", Mark: OpenAIIcon },
+  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash", description: "By Google.", Mark: GeminiIcon },
 ] as const;
 
-function ModelMark({ model, className }: { model: string; className?: string }) {
-  const Mark = MODEL_OPTIONS.find((option) => option.value === model)?.Mark;
-  return Mark ? <Mark className={className} /> : null;
-}
 
 const CHART_INTENT_PATTERN =
   /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
@@ -997,6 +994,42 @@ function ResearchSources({ sources }: { sources: CitationSource[] }) {
   );
 }
 
+/**
+ * What the research director chose for this plan: where to look, and whether
+ * web search and charts help. Shown on the plan so the reader can Edit before
+ * Start instead of setting switches up front.
+ */
+function ResearchChoices({ session }: { session: DeepResearchSessionRecord }) {
+  const policy = session.steps?.find((step) => step.input_payload?.sourcePolicy)?.input_payload?.sourcePolicy;
+  if (!policy) return null;
+  const selected = session.steps?.find((step) => step.input_payload?.selectedRunIds?.length)?.input_payload?.selectedRunIds?.length ?? 0;
+  const scope =
+    policy.scope === "attached"
+      ? `${selected || "The"} attached paper${selected === 1 ? "" : "s"}`
+      : policy.scope === "workspace"
+        ? "All your repositories"
+        : "This repository";
+  const webSearches = policy.allowWeb ? policy.budget?.maxWebSearches ?? 0 : 0;
+  const choices = [
+    { label: "Looks in", value: scope },
+    { label: "Web", value: webSearches > 0 ? `Up to ${webSearches} searches` : "Not needed" },
+    { label: "Charts", value: policy.allowCharts ? "Yes" : "Not needed" },
+  ];
+  return (
+    <dl className="mt-4 flex flex-wrap gap-2">
+      {choices.map((choice) => (
+        <div
+          key={choice.label}
+          className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-3 py-1 text-xs"
+        >
+          <dt className="text-mute">{choice.label}</dt>
+          <dd className="font-medium text-ink">{choice.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 function splitReportBlocks(report?: string | null) {
   return String(report || "")
     .split(/\n{2,}/)
@@ -1413,18 +1446,14 @@ export default function ChatClient() {
         researchSourcePolicy.includeWorkspace ||
         (chatScopeProjectId === "all" && chatScopeFolderId === "all"),
       agentDirected: true,
-      allowWeb: researchSourcePolicy.allowWeb || webSearchEnabled,
+      // Permission, not a choice: the research director decides whether web
+      // search and charts help this question, within this budget.
+      allowWeb: true,
+      allowCharts: true,
       allowCode: false,
-      budget: {
-        ...STRICT_RESEARCH_BUDGET,
-        ...researchSourcePolicy.budget,
-        maxWebSearches:
-          researchSourcePolicy.allowWeb || webSearchEnabled
-            ? researchSourcePolicy.budget.maxWebSearches
-            : 0,
-      },
+      budget: { ...STRICT_RESEARCH_BUDGET },
     }),
-    [chatScopeFolderId, chatScopeProjectId, researchSourcePolicy, selectedRunIds.length, webSearchEnabled]
+    [chatScopeFolderId, chatScopeProjectId, researchSourcePolicy, selectedRunIds.length]
   );
   const selectedAttachments = useMemo(
     () =>
@@ -2423,35 +2452,6 @@ export default function ChatClient() {
   }
 
 
-  function toggleResearchPolicy(key: "includeWorkspace" | "allowWeb" | "allowCharts") {
-    setResearchSourcePolicy((current) => {
-      if (key === "includeWorkspace") {
-        const enabled = !current.includeWorkspace;
-        return {
-          ...current,
-          includeWorkspace: enabled,
-          includeCurrentScope: true,
-          scope: enabled ? "workspace" : selectedRunIds.length > 0 ? "attached" : "project",
-        };
-      }
-      if (key === "allowWeb") {
-        const enabled = !current.allowWeb;
-        return {
-          ...current,
-          allowWeb: enabled,
-          budget: {
-            ...current.budget,
-            maxWebSearches: enabled ? STRICT_RESEARCH_BUDGET.maxWebSearches : 0,
-          },
-        };
-      }
-      return {
-        ...current,
-        allowCharts: !current.allowCharts,
-      };
-    });
-  }
-
   async function handlePlanResearch() {
     const prompt = draft.trim();
     if (!prompt) return;
@@ -2814,14 +2814,14 @@ export default function ChatClient() {
                     </button>
 
                     {threadMenuId === thread.id ? (
-                      <div className="absolute right-2 top-9 z-20 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-[0_12px_36px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                      <div className="absolute right-2 top-9 z-20 w-44 origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in">
                         <button
                           type="button"
                           onClick={() => {
                             togglePinnedThread(thread.id);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                         >
                           <PinIcon className="h-4 w-4" />
                           <span>{pinned ? "Unpin chat" : "Pin chat"}</span>
@@ -2832,7 +2832,7 @@ export default function ChatClient() {
                             void renameThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                         >
                           <PencilSquareIcon className="h-4 w-4" />
                           <span>Rename</span>
@@ -2843,7 +2843,7 @@ export default function ChatClient() {
                             void deleteThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none dark:text-red-300 dark:hover:bg-red-950/20 dark:focus-visible:bg-red-950/20"
                         >
                           <TrashIcon className="h-4 w-4" />
                           <span>Delete</span>
@@ -2920,14 +2920,14 @@ export default function ChatClient() {
                 <MoreHorizontalIcon className="h-4 w-4" />
               </button>
               {conversationMenuOpen ? (
-                <div className="absolute right-0 top-11 z-30 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_48px_rgba(0,0,0,0.4)]">
+                <div className="absolute right-0 top-11 z-30 w-60 origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in">
                   <button
                     type="button"
                     onClick={() => {
                       setSourcesPanelOpen(true);
                       setConversationMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                   >
                     <PaperIcon className="h-4 w-4" />
                     <span className="min-w-0 flex-1">Files in this conversation</span>
@@ -3036,6 +3036,7 @@ export default function ChatClient() {
                             {deepSession.plan_summary}
                           </p>
                         ) : null}
+                        <ResearchChoices session={deepSession} />
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -3585,60 +3586,14 @@ export default function ChatClient() {
                 ) : null}
 
                 {deepResearchEnabled ? (
-                  <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-[#ececec]">
-                        <SparkIcon className="h-3.5 w-3.5" />
-                        Agent-directed research
-                      </span>
-                      <span>
-                        The agent infers scope and tool strategy. Strict budget:{" "}
-                        {effectiveResearchSourcePolicy.budget.maxLibraryPapers} papers,{" "}
-                        {effectiveResearchSourcePolicy.budget.maxWebSearches} web searches,{" "}
-                        {effectiveResearchSourcePolicy.budget.maxSources} sources
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
-                        {selectedRunIds.length > 0
-                          ? `${selectedRunIds.length} attached file${selectedRunIds.length === 1 ? "" : "s"}`
-                          : chatScopeFolderId === "all"
-                            ? "Current repository"
-                            : activeFolderLabel}
-                      </span>
-                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
-                        Library + analytics
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (effectiveResearchSourcePolicy.allowWeb) setWebSearchEnabled(false);
-                          toggleResearchPolicy("allowWeb");
-                        }}
-                        className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
-                          effectiveResearchSourcePolicy.allowWeb
-                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                        }`}
-                      >
-                        Web search
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleResearchPolicy("allowCharts")}
-                        className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
-                          effectiveResearchSourcePolicy.allowCharts
-                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                        }`}
-                      >
-                        Charts/data
-                      </button>
-                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-600 dark:border-[#1f1f1f] dark:bg-black dark:text-[#8e8e8e]">
-                        Code analysis later
-                      </span>
-                    </div>
-                  </div>
+                  <p className="mb-2 flex items-start gap-2 text-xs leading-5 text-mute">
+                    <SparkIcon className="mt-0.5 h-3.5 w-3.5 flex-none" />
+                    <span>
+                      Deep research plans its own scope and sources, and shows its plan before it starts. Up to{" "}
+                      {STRICT_RESEARCH_BUDGET.maxLibraryPapers} papers, {STRICT_RESEARCH_BUDGET.maxWebSearches} web
+                      searches and {STRICT_RESEARCH_BUDGET.maxSources} sources.
+                    </span>
+                  </p>
                 ) : null}
 
                 {/* What this question will search, before it is sent. The
@@ -3688,7 +3643,7 @@ export default function ChatClient() {
                       </button>
 
                       {menuOpen ? (
-                        <div className="absolute bottom-12 left-0 z-30 w-[min(21rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_16px_42px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]">
+                        <div className="absolute bottom-12 left-0 z-30 w-[min(21rem,calc(100vw-2rem))] origin-bottom-left overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay motion-safe:animate-scale-in">
                           {menuView === "scope" ? (
                             <>
                               <div className="flex h-12 items-center gap-2 border-b border-slate-200 px-2 dark:border-[#1f1f1f]">
@@ -3756,7 +3711,7 @@ export default function ChatClient() {
                               <button
                                 type="button"
                                 onClick={() => setMenuView("scope")}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                               >
                                 <FolderIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -3771,7 +3726,7 @@ export default function ChatClient() {
                                   setShowLibraryPicker(true);
                                   setMenuOpen(false);
                                 }}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                               >
                                 <FileIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -3786,7 +3741,7 @@ export default function ChatClient() {
                                   setShowAnalyzeModal(true);
                                   setMenuOpen(false);
                                 }}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                               >
                                 <PaperIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -3817,13 +3772,10 @@ export default function ChatClient() {
                                         const nextEnabled = !deepResearchEnabled;
                                         setDeepResearchEnabled(nextEnabled);
                                         setChartModeEnabled(false);
-                                        if (nextEnabled && webSearchEnabled) {
-                                          setResearchSourcePolicy((current) => ({ ...current, allowWeb: true, budget: { ...current.budget, maxWebSearches: STRICT_RESEARCH_BUDGET.maxWebSearches } }));
-                                        }
                                       }
                                       setMenuOpen(false);
                                     }}
-                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${item.active ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong ${item.active ? "bg-subtle" : "hover:bg-subtle"}`}
                                   >
                                     <Icon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                     <span className="min-w-0 flex-1">
@@ -3842,25 +3794,20 @@ export default function ChatClient() {
                     </div>
 
                     {!deepResearchEnabled && !chartModeEnabled ? (
-                      <label className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                        <ModelMark model={selectedModel} className="h-3.5 w-3.5 flex-none text-ink" />
-                        <span className="sr-only">Model</span>
-                        <select
-                          value={selectedModel}
-                          onChange={(event) => setSelectedModel(event.target.value)}
-                          className="rounded-md bg-slate-50 text-xs font-medium text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
-                        >
-                          {MODEL_OPTIONS.map((option) => (
-                            <option
-                              key={option.value}
-                              value={option.value}
-                              className="bg-white text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
-                            >
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <Select
+                        value={selectedModel}
+                        onChange={setSelectedModel}
+                        label="Model"
+                        placement="top"
+                        size="sm"
+                        panelClassName="w-64"
+                        options={MODEL_OPTIONS.map((option) => ({
+                          value: option.value,
+                          label: option.label,
+                          description: option.description,
+                          icon: <option.Mark className="h-3.5 w-3.5" />,
+                        }))}
+                      />
                     ) : null}
 
                     {deepResearchEnabled ? (

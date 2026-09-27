@@ -211,8 +211,10 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(forceGraph, /x1=\{source\.x\}/);
   assert.match(forceGraph, /x2=\{target\.x\}/);
   assert.match(component, /nodesDraggable=\{false\}/);
-  assert.match(component, /Projection/);
-  assert.match(component, /Force graph/);
+  assert.match(component, />Fixed projection</);
+  assert.match(component, />Free graph</);
+  // In the free graph distance is not similarity, and the map says so.
+  assert.match(forceGraph, /distance does not show similarity/);
   assert.match(component, /All retained relationships are visible/);
   // Labels still come from the point's title and are still gated on the
   // toggle; they are now shortened for the canvas, because the longest one
