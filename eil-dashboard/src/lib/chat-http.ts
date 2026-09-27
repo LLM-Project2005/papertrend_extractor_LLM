@@ -62,6 +62,13 @@ export async function readChatStream<T extends ChatErrorPayload>(
   if (response.status === 502 || response.status === 504) {
     throw new Error(FIREBASE_GATEWAY_TIMEOUT_MESSAGE);
   }
+  // A refusal - the daily token limit, a request that is too large - comes
+  // back as plain JSON rather than a stream. Read as a stream it held no
+  // frames, and the reader was told "unreadable response" instead of why.
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!response.ok || contentType.includes("application/json")) {
+    return readChatResponse<T>(response);
+  }
   if (!response.body) {
     throw new Error("The chat service returned an unreadable response. Please retry.");
   }

@@ -20,6 +20,7 @@ import {
   type ExampleQuestion,
 } from "@/lib/chat-guidance";
 import { ANSWER_META_CLASS } from "@/lib/answer-typography";
+import Mascot from "@/components/ui/Mascot";
 
 export function ChatIntro({
   scopeLabel,
@@ -36,7 +37,8 @@ export function ChatIntro({
 
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-col items-center gap-8 py-10">
-      <div className="space-y-3 text-center">
+      <div className="flex flex-col items-center gap-3 text-center">
+        <Mascot size={52} className="mb-2 text-ink" />
         <h1 className="text-[2rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec] sm:text-[2.5rem]">
           Ask your papers
         </h1>

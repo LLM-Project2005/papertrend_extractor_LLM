@@ -1,5 +1,6 @@
 "use client";
 
+import { chartAnimationActive } from "@/lib/chart-theme";
 import Link from "next/link";
 import {
   FormEvent,
@@ -47,8 +48,10 @@ import {
   ANSWER_META_SM_CLASS,
 } from "@/lib/answer-typography";
 import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody";
-import { markCitations, type CitationSource } from "@/lib/answer-citations";
+import { citationPaperId, markCitations, type CitationSource } from "@/lib/answer-citations";
 import { ChatIntro, FollowUpSuggestions } from "@/components/chat/ChatIntro";
+import ThinkingOrb, { orbStateForStage } from "@/components/ui/ThinkingOrb";
+import Select from "@/components/ui/Select";
 import {
   exampleQuestions,
   followUpSuggestions,
@@ -69,7 +72,11 @@ import {
   CircleIcon,
   CloseIcon,
   CopyIcon,
+  BooksIcon,
+  GeminiIcon,
+  OpenAIIcon,
   DriveIcon,
+  ListViewIcon,
   EqualizerIcon,
   ExitFullscreenIcon,
   FileIcon,
@@ -268,9 +275,10 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
 };
 
 const MODEL_OPTIONS = [
-  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna" },
-  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash" },
+  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna", description: "By OpenAI. The default.", Mark: OpenAIIcon },
+  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash", description: "By Google.", Mark: GeminiIcon },
 ] as const;
+
 
 const CHART_INTENT_PATTERN =
   /\b(create|build|make|show|draw|plot|visuali[sz]e)\b.{0,24}\b(chart|graph|plot)\b|\b(chart|graph|plot)\b|สร้างกราฟ|ทำกราฟ|กราฟ|แผนภูมิ/i;
@@ -401,10 +409,10 @@ const chatChartTooltipTheme = {
     border: "1px solid rgba(148, 163, 184, 0.35)",
     borderRadius: "12px",
     boxShadow: "0 18px 40px rgba(0, 0, 0, 0.32)",
-    color: "#f8fafc",
+    color: "#fafafa",
   },
   labelStyle: {
-    color: "#f8fafc",
+    color: "#fafafa",
     fontWeight: 600,
   },
   itemStyle: {
@@ -487,7 +495,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                 <YAxis allowDecimals={false} tick={{ fill: "#9ca3af", fontSize: 12 }} />
                 <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, index) => (
-                  <Line
+                  <Line isAnimationActive={chartAnimationActive()}
                     key={key}
                     type="monotone"
                     dataKey={key}
@@ -501,7 +509,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
             ) : chart.chartType === "pie" ? (
               <PieChart>
                 <Tooltip {...chatChartTooltipTheme} />
-                <Pie
+                <Pie isAnimationActive={chartAnimationActive()}
                   data={chartData}
                   dataKey={primaryKey}
                   nameKey="label"
@@ -538,7 +546,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                 />
                 <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, keyIndex) => (
-                  <Bar key={key} dataKey={key} radius={[4, 4, 0, 0]}>
+                  <Bar isAnimationActive={chartAnimationActive()} key={key} dataKey={key} radius={[4, 4, 0, 0]}>
                     {chartData.map((row, index) => (
                       <Cell
                         key={`${String(row.label)}-${key}-${index}`}
@@ -933,11 +941,11 @@ function renderLoadingLabel(
   chartModeEnabled: boolean,
   activeSession?: DeepResearchSessionRecord | null
 ) {
-  if (chartModeEnabled) return "Building chart...";
-  if (!deepResearchEnabled) return "Generating answer...";
-  if (activeSession?.status === "planned") return "Planning deep research...";
-  if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis...";
-  return "Running deep research...";
+  if (chartModeEnabled) return "Building chart…";
+  if (!deepResearchEnabled) return "Generating answer…";
+  if (activeSession?.status === "planned") return "Planning deep research…";
+  if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis…";
+  return "Running deep research…";
 }
 
 function buildResearchTitle(
@@ -983,6 +991,42 @@ function ResearchSources({ sources }: { sources: CitationSource[] }) {
         ))}
       </ol>
     </section>
+  );
+}
+
+/**
+ * What the research director chose for this plan: where to look, and whether
+ * web search and charts help. Shown on the plan so the reader can Edit before
+ * Start instead of setting switches up front.
+ */
+function ResearchChoices({ session }: { session: DeepResearchSessionRecord }) {
+  const policy = session.steps?.find((step) => step.input_payload?.sourcePolicy)?.input_payload?.sourcePolicy;
+  if (!policy) return null;
+  const selected = session.steps?.find((step) => step.input_payload?.selectedRunIds?.length)?.input_payload?.selectedRunIds?.length ?? 0;
+  const scope =
+    policy.scope === "attached"
+      ? `${selected || "The"} attached paper${selected === 1 ? "" : "s"}`
+      : policy.scope === "workspace"
+        ? "All your repositories"
+        : "This repository";
+  const webSearches = policy.allowWeb ? policy.budget?.maxWebSearches ?? 0 : 0;
+  const choices = [
+    { label: "Looks in", value: scope },
+    { label: "Web", value: webSearches > 0 ? `Up to ${webSearches} searches` : "Not needed" },
+    { label: "Charts", value: policy.allowCharts ? "Yes" : "Not needed" },
+  ];
+  return (
+    <dl className="mt-4 flex flex-wrap gap-2">
+      {choices.map((choice) => (
+        <div
+          key={choice.label}
+          className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-3 py-1 text-xs"
+        >
+          <dt className="text-mute">{choice.label}</dt>
+          <dd className="font-medium text-ink">{choice.value}</dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -1266,6 +1310,16 @@ export default function ChatClient() {
   } = useWorkspaceProfile();
   const [chatScopeProjectId, setChatScopeProjectId] = useState<string>("all");
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
+  // A chat opened inside a repository asks that repository until the reader
+  // picks another scope. It used to start on every repository in the account,
+  // so "Ask about these papers" on a repository's Home searched papers from
+  // other repositories as well.
+  const scopeChosenRef = useRef(false);
+  useEffect(() => {
+    if (scopeChosenRef.current || !currentProject?.id) return;
+    setChatScopeProjectId(currentProject.id);
+    setChatScopeFolderId("all");
+  }, [currentProject?.id]);
   const [selectedModel, setSelectedModel] = useState(DEFAULT_CHAT_MODEL);
   const [deepResearchEnabled, setDeepResearchEnabled] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -1288,6 +1342,13 @@ export default function ChatClient() {
   });
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
+  // Conversations arrive a page at a time; older ones load on request.
+  const [threadsHasMore, setThreadsHasMore] = useState(false);
+  const [olderThreadsLoading, setOlderThreadsLoading] = useState(false);
+  // A long conversation opens on its newest messages; earlier ones load on request.
+  const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
+  const [earlierLoading, setEarlierLoading] = useState(false);
+  const oldestMessageAtRef = useRef<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState<WorkspaceThreadSummary | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
@@ -1318,6 +1379,18 @@ export default function ChatClient() {
   const [fullscreenEnabled, setFullscreenEnabled] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen && !conversationMenuOpen && !threadMenuId && !reportFullViewOpen) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setMenuOpen(false);
+      setConversationMenuOpen(false);
+      setThreadMenuId(null);
+      setReportFullViewOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menuOpen, conversationMenuOpen, threadMenuId, reportFullViewOpen]);
   const [sourcesPanelOpen, setSourcesPanelOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
@@ -1380,18 +1453,14 @@ export default function ChatClient() {
         researchSourcePolicy.includeWorkspace ||
         (chatScopeProjectId === "all" && chatScopeFolderId === "all"),
       agentDirected: true,
-      allowWeb: researchSourcePolicy.allowWeb || webSearchEnabled,
+      // Permission, not a choice: the research director decides whether web
+      // search and charts help this question, within this budget.
+      allowWeb: true,
+      allowCharts: true,
       allowCode: false,
-      budget: {
-        ...STRICT_RESEARCH_BUDGET,
-        ...researchSourcePolicy.budget,
-        maxWebSearches:
-          researchSourcePolicy.allowWeb || webSearchEnabled
-            ? researchSourcePolicy.budget.maxWebSearches
-            : 0,
-      },
+      budget: { ...STRICT_RESEARCH_BUDGET },
     }),
-    [chatScopeFolderId, chatScopeProjectId, researchSourcePolicy, selectedRunIds.length, webSearchEnabled]
+    [chatScopeFolderId, chatScopeProjectId, researchSourcePolicy, selectedRunIds.length]
   );
   const selectedAttachments = useMemo(
     () =>
@@ -1462,7 +1531,7 @@ export default function ChatClient() {
       (reportMessage?.citations ?? [])
         .filter((citation) => citation.paperId && citation.sourceType !== "web")
         .map((citation) => ({
-          paperId: String(citation.paperId),
+          paperId: citationPaperId(citation),
           title: String(citation.title ?? ""),
           year: String(citation.year ?? ""),
           href: String(citation.href ?? ""),
@@ -1657,7 +1726,9 @@ export default function ChatClient() {
   }, [draft, resizeComposer]);
 
   useEffect(() => {
-    scrollAnchorRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollAnchorRef.current?.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
   }, [deepSession?.status, loading, messages]);
 
   useEffect(() => {
@@ -1672,6 +1743,8 @@ export default function ChatClient() {
       setActiveThread(null);
       loadedThreadIdRef.current = null;
       setMessages([]);
+      setHasEarlierMessages(false);
+      oldestMessageAtRef.current = null;
       setDeepSession(null);
       setSelectedLibraryRuns([]);
       setError(null);
@@ -1717,11 +1790,12 @@ export default function ChatClient() {
       }
       setThreadsLoading(true);
       try {
-        const response = await fetch("/api/chat/threads", {
+        const response = await fetch("/api/chat/threads?limit=50", {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const payload = (await response.json()) as {
           threads?: WorkspaceThreadSummary[];
+          hasMore?: boolean;
           error?: string;
         };
         if (!response.ok) {
@@ -1729,6 +1803,7 @@ export default function ChatClient() {
         }
         const nextThreads = payload.threads ?? [];
         setThreads(nextThreads);
+        setThreadsHasMore(Boolean(payload.hasMore));
         setActiveThreadId((current) =>
           preferredThreadId ??
           (current && nextThreads.some((item) => item.id === current) ? current : null)
@@ -1774,6 +1849,8 @@ export default function ChatClient() {
         }
         setActiveThread(payload.thread);
         setDeepResearchEnabled(payload.thread.mode === "deep_research");
+        setHasEarlierMessages(Boolean(payload.hasEarlierMessages));
+        oldestMessageAtRef.current = payload.messages?.[0]?.created_at ?? null;
         setMessages(
           (payload.messages ?? [])
             .filter((message) => message.message_kind !== "deep_research_plan")
@@ -1794,40 +1871,86 @@ export default function ChatClient() {
     [canPersist, session?.access_token]
   );
 
-  const loadChatSearchDetails = useCallback(async () => {
-    if (!canPersist || !session?.access_token) {
-      setChatSearchDetails([]);
-      return;
-    }
+  const loadChatSearchDetails = useCallback(
+    async (query: string) => {
+      if (!canPersist || !session?.access_token) {
+        setChatSearchDetails([]);
+        return;
+      }
+      const trimmed = query.trim();
+      if (!trimmed) {
+        setChatSearchError(null);
+        setChatSearchDetails(sortedThreads.map((thread) => ({ thread, messages: [] })));
+        return;
+      }
+      setChatSearchLoading(true);
+      setChatSearchError(null);
+      try {
+        const response = await fetch(`/api/chat/threads?q=${encodeURIComponent(trimmed)}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const payload = (await response.json()) as { results?: ChatThreadDetail[]; error?: string };
+        if (!response.ok) throw new Error(payload.error ?? "Failed to search chat history.");
+        setChatSearchDetails(payload.results ?? []);
+      } catch (nextError) {
+        setChatSearchError(nextError instanceof Error ? nextError.message : "Failed to search chat history.");
+      } finally {
+        setChatSearchLoading(false);
+      }
+    },
+    [canPersist, session?.access_token, sortedThreads]
+  );
 
-    setChatSearchLoading(true);
-    setChatSearchError(null);
+  const loadOlderThreads = useCallback(async () => {
+    const oldest = threads[threads.length - 1];
+    if (!oldest?.updated_at || !session?.access_token) return;
+    setOlderThreadsLoading(true);
     try {
-      const details = await Promise.all(
-        sortedThreads.map(async (thread) => {
-          const response = await fetch(`/api/chat/threads/${thread.id}`, {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-          const payload = (await response.json()) as ChatThreadDetail & {
-            error?: string;
-          };
-          if (!response.ok) {
-            throw new Error(payload.error ?? "Failed to load chat thread.");
-          }
-          return payload;
-        })
+      const response = await fetch(
+        `/api/chat/threads?limit=50&before=${encodeURIComponent(oldest.updated_at)}`,
+        { headers: { Authorization: `Bearer ${session.access_token}` } }
       );
-      setChatSearchDetails(details);
+      const payload = (await response.json()) as { threads?: WorkspaceThreadSummary[]; hasMore?: boolean; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load older chats.");
+      setThreads((current) => {
+        const known = new Set(current.map((thread) => thread.id));
+        return [...current, ...(payload.threads ?? []).filter((thread) => !known.has(thread.id))];
+      });
+      setThreadsHasMore(Boolean(payload.hasMore));
     } catch (nextError) {
-      setChatSearchError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Failed to search chat history."
-      );
+      setError(nextError instanceof Error ? nextError.message : "Failed to load older chats.");
     } finally {
-      setChatSearchLoading(false);
+      setOlderThreadsLoading(false);
     }
-  }, [canPersist, session?.access_token, sortedThreads]);
+  }, [session?.access_token, threads]);
+
+  const loadEarlierMessages = useCallback(async () => {
+    const threadId = activeThreadId;
+    const before = oldestMessageAtRef.current;
+    if (!threadId || !before || !session?.access_token) return;
+    setEarlierLoading(true);
+    try {
+      const response = await fetch(`/api/chat/threads/${threadId}?before=${encodeURIComponent(before)}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const payload = (await response.json()) as ChatThreadDetail & { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load earlier messages.");
+      if (loadedThreadIdRef.current !== threadId) return;
+      oldestMessageAtRef.current = payload.messages?.[0]?.created_at ?? before;
+      setHasEarlierMessages(Boolean(payload.hasEarlierMessages));
+      const earlier = (payload.messages ?? [])
+        .filter((message) => message.message_kind !== "deep_research_plan")
+        .map(mapMessage);
+      setMessages((current) => {
+        const known = new Set(current.map((message) => message.id));
+        return [...earlier.filter((message) => !known.has(message.id)), ...current];
+      });
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to load earlier messages.");
+    } finally {
+      setEarlierLoading(false);
+    }
+  }, [activeThreadId, session?.access_token]);
 
   const loadLibraryRuns = useCallback(async () => {
     if (!canPersist) {
@@ -1910,6 +2033,7 @@ export default function ChatClient() {
           const allowed = new Set(runIds);
           setLibraryRuns(rows);
           setSelectedLibraryRuns(rows.filter((run) => allowed.has(run.id) && run.status === "succeeded"));
+          scopeChosenRef.current = true;
           setChatScopeProjectId(transfer.projectId!);
           setChatScopeFolderId("all");
           if (transfer.prompt?.trim()) setDraft(transfer.prompt.trim());
@@ -1921,9 +2045,25 @@ export default function ChatClient() {
   }, [canPersist, session?.access_token]);
 
   useEffect(() => {
+    // Home's "Ask about these papers" links here with ?q=. The question goes
+    // into the composer rather than being sent, so the reader can edit it and
+    // pick a mode first; the parameter is then dropped so a reload does not
+    // put it back.
+    const params = new URLSearchParams(window.location.search);
+    const question = params.get("q")?.trim();
+    if (!question) return;
+    setDraft(question.slice(0, 4000));
+    params.delete("q");
+    const rest = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+  }, []);
+
+  useEffect(() => {
     if (!searchModalOpen) return;
-    void loadChatSearchDetails();
-  }, [loadChatSearchDetails, searchModalOpen]);
+    // Typing waits a moment before searching, so each key is not a request.
+    const timer = window.setTimeout(() => void loadChatSearchDetails(chatSearchQuery), chatSearchQuery.trim() ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [chatSearchQuery, loadChatSearchDetails, searchModalOpen]);
 
   useEffect(() => {
     if (!copiedMessageId) return;
@@ -2372,44 +2512,6 @@ export default function ChatClient() {
     }
   }
 
-  function handleParameterChange<K extends keyof ChatGenerationParameters>(
-    key: K,
-    value: ChatGenerationParameters[K]
-  ) {
-    setChatParameters((current) => ({
-      ...current,
-      [key]: value,
-    }));
-  }
-
-  function toggleResearchPolicy(key: "includeWorkspace" | "allowWeb" | "allowCharts") {
-    setResearchSourcePolicy((current) => {
-      if (key === "includeWorkspace") {
-        const enabled = !current.includeWorkspace;
-        return {
-          ...current,
-          includeWorkspace: enabled,
-          includeCurrentScope: true,
-          scope: enabled ? "workspace" : selectedRunIds.length > 0 ? "attached" : "project",
-        };
-      }
-      if (key === "allowWeb") {
-        const enabled = !current.allowWeb;
-        return {
-          ...current,
-          allowWeb: enabled,
-          budget: {
-            ...current.budget,
-            maxWebSearches: enabled ? STRICT_RESEARCH_BUDGET.maxWebSearches : 0,
-          },
-        };
-      }
-      return {
-        ...current,
-        allowCharts: !current.allowCharts,
-      };
-    });
-  }
 
   async function handlePlanResearch() {
     const prompt = draft.trim();
@@ -2526,7 +2628,7 @@ export default function ChatClient() {
   }
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
+    if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.keyCode !== 229) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
     }
@@ -2630,8 +2732,8 @@ export default function ChatClient() {
       <div
         className={`flex min-h-0 w-full overflow-hidden bg-slate-100 text-slate-900 dark:bg-black dark:text-[#ececec] ${
           fullscreenEnabled
-            ? "fixed inset-0 z-50 h-screen"
-            : "h-[calc(100vh-5rem)]"
+            ? "fixed inset-0 z-50 h-screen supports-[height:100dvh]:h-dvh"
+            : "h-[calc(100vh-5rem)] supports-[height:100dvh]:h-[calc(100dvh-5rem)]"
         }`}
       >
         <aside
@@ -2707,7 +2809,7 @@ export default function ChatClient() {
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
               <p className="truncate text-sm font-medium text-slate-800 dark:text-[#ececec]">
-                {currentProject?.name ? `${currentProject.name} chats` : "Repository chats"}
+                Your chats
               </p>
             </div>
             <div className="mt-3 min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
@@ -2764,20 +2866,23 @@ export default function ChatClient() {
                           current === thread.id ? null : thread.id
                         )
                       }
-                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
+                      aria-label={`Options for ${thread.title || "this chat"}`}
+                      aria-haspopup="menu"
+                      aria-expanded={threadMenuId === thread.id}
+                      className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                     >
                       <MoreHorizontalIcon className="h-4 w-4" />
                     </button>
 
                     {threadMenuId === thread.id ? (
-                      <div className="absolute right-2 top-9 z-20 w-40 rounded-xl border border-slate-200 bg-white p-1 shadow-[0_12px_36px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+                      <div className="absolute right-2 top-9 z-20 w-44 origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in">
                         <button
                           type="button"
                           onClick={() => {
                             togglePinnedThread(thread.id);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                         >
                           <PinIcon className="h-4 w-4" />
                           <span>{pinned ? "Unpin chat" : "Pin chat"}</span>
@@ -2788,7 +2893,7 @@ export default function ChatClient() {
                             void renameThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                         >
                           <PencilSquareIcon className="h-4 w-4" />
                           <span>Rename</span>
@@ -2799,7 +2904,7 @@ export default function ChatClient() {
                             void deleteThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none dark:text-red-300 dark:hover:bg-red-950/20 dark:focus-visible:bg-red-950/20"
                         >
                           <TrashIcon className="h-4 w-4" />
                           <span>Delete</span>
@@ -2809,13 +2914,23 @@ export default function ChatClient() {
                   </div>
                 );
               })}
+              {threadsHasMore ? (
+                <button
+                  type="button"
+                  onClick={() => void loadOlderThreads()}
+                  disabled={olderThreadsLoading}
+                  className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-mute transition-colors hover:bg-subtle hover:text-ink disabled:opacity-60"
+                >
+                  {olderThreadsLoading ? "Loading older chats\u2026" : "Show older chats"}
+                </button>
+              ) : null}
             </div>
           </div>
           ) : null}
         </aside>
 
         <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-100 dark:bg-black">
-          <header className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-white/8 sm:px-6">
+          <header className="flex h-14 flex-none items-center justify-between border-b border-hairline px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
@@ -2825,6 +2940,21 @@ export default function ChatClient() {
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
               >
                 <PencilSquareIcon className="h-4 w-4" />
+              </button>
+              {/* Below the large breakpoint the conversation list is hidden, and this
+                  was the only way back to an earlier chat: the search dialog lists
+                  every conversation, grouped by day, before anything is typed. */}
+              <button
+                type="button"
+                onClick={() => {
+                  setChatSearchQuery("");
+                  setSearchModalOpen(true);
+                }}
+                aria-label="Open your chats"
+                title="Your chats"
+                className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
+              >
+                <ListViewIcon className="h-4 w-4" />
               </button>
               <p className="truncate text-lg font-semibold text-slate-900 dark:text-[#ececec]">
                 {pageTitle}
@@ -2861,14 +2991,14 @@ export default function ChatClient() {
                 <MoreHorizontalIcon className="h-4 w-4" />
               </button>
               {conversationMenuOpen ? (
-                <div className="absolute right-0 top-11 z-30 w-60 rounded-xl border border-slate-200 bg-white p-1.5 shadow-[0_18px_48px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_18px_48px_rgba(0,0,0,0.4)]">
+                <div className="absolute right-0 top-11 z-30 w-60 origin-top-right rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in">
                   <button
                     type="button"
                     onClick={() => {
                       setSourcesPanelOpen(true);
                       setConversationMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                   >
                     <PaperIcon className="h-4 w-4" />
                     <span className="min-w-0 flex-1">Files in this conversation</span>
@@ -2977,6 +3107,7 @@ export default function ChatClient() {
                             {deepSession.plan_summary}
                           </p>
                         ) : null}
+                        <ResearchChoices session={deepSession} />
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -3252,6 +3383,16 @@ export default function ChatClient() {
               />
             ) : (
               <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
+                {hasEarlierMessages ? (
+                  <button
+                    type="button"
+                    onClick={() => void loadEarlierMessages()}
+                    disabled={earlierLoading}
+                    className="mx-auto rounded-full border border-hairline bg-surface px-4 py-1.5 text-xs font-medium text-body transition-colors hover:border-hairline-strong hover:text-ink disabled:opacity-60"
+                  >
+                    {earlierLoading ? "Loading earlier messages\u2026" : "Load earlier messages"}
+                  </button>
+                ) : null}
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);
@@ -3271,8 +3412,9 @@ export default function ChatClient() {
                                   ref={editComposerRef}
                                   value={editingDraft}
                                   onChange={(event) => setEditingDraft(event.target.value)}
+                                  aria-label="Edit message"
                                   rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
-                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-[15px] leading-8 text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-base leading-8 sm:text-[15px] text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
                                 />
                                 <div className="mt-4 flex justify-end gap-2">
                                   <button
@@ -3294,7 +3436,7 @@ export default function ChatClient() {
                               </div>
                             ) : (
                               <>
-                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity group-hover/message:opacity-100">
+                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/message:opacity-100 [@media(hover:none)]:opacity-100">
                                   <button
                                     type="button"
                                     onClick={() => void copyMessageContent(message)}
@@ -3303,9 +3445,9 @@ export default function ChatClient() {
                                     title="Copy"
                                   >
                                     {copiedMessageId === message.id ? (
-                                      <CheckIcon className="h-4 w-4" />
+                                      <CheckIcon key="copied" className="h-4 w-4 animate-scale-in" />
                                     ) : (
-                                      <CopyIcon className="h-4 w-4" />
+                                      <CopyIcon key="copy" className="h-4 w-4" />
                                     )}
                                   </button>
                                   <button
@@ -3401,16 +3543,32 @@ export default function ChatClient() {
 
                 {loading ? (
                   <div className="flex items-start gap-3">
-                    <div className="mt-1 h-7 w-7 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
+                    <ThinkingOrb
+                      size={32}
+                      className="mt-0.5"
+                      state={
+                        chartModeEnabled
+                          ? "shaping"
+                          : deepResearchEnabled
+                            ? deepSession?.status === "planned"
+                              ? "breathing"
+                              : "working"
+                            : orbStateForStage(progress?.stage)
+                      }
+                    />
                     <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                       <span className="flex flex-wrap items-baseline gap-x-2">
                         <span aria-live="polite">
-                          {progress?.label ??
-                            renderLoadingLabel(
-                              deepResearchEnabled,
-                              chartModeEnabled,
-                              deepSession
-                            )}
+                          {/* Keyed on the words, so each new step slides in
+                              rather than replacing the last one in place. */}
+                          <span key={progress?.label ?? "pending"} className="status-swap inline-block">
+                            {progress?.label ??
+                              renderLoadingLabel(
+                                deepResearchEnabled,
+                                chartModeEnabled,
+                                deepSession
+                              )}
+                          </span>
                         </span>
                         {progress?.detail ? (
                           <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">
@@ -3427,7 +3585,7 @@ export default function ChatClient() {
             {detailLoading ? (
               <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                <span>Loading chat...</span>
+                <span>Loading chat…</span>
               </div>
             ) : null}
             <div ref={scrollAnchorRef} />
@@ -3435,9 +3593,11 @@ export default function ChatClient() {
 
           <div className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">
             <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
-              <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+              {/* The composer shows keyboard focus on its own border, rather
+                  than an outline drawn inside it around the text box. */}
+              <div className="rounded-xl border border-slate-200 bg-white px-4 pb-3 pt-3 shadow-[0_10px_34px_rgba(15,23,42,0.12)] transition-colors duration-150 has-[textarea:focus-visible]:border-[rgb(var(--focus))] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)] dark:has-[textarea:focus-visible]:border-[rgb(var(--focus))]">
                 {error ? (
-                  <div className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
+                  <div role="alert" className="mb-3 rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-200">
                     {error}
                   </div>
                 ) : null}
@@ -3466,7 +3626,7 @@ export default function ChatClient() {
                                 current.filter((item) => item.id !== run.id)
                               )
                             }
-                            className="inline-flex h-5 w-5 items-center justify-center rounded-full text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100"
+                            className="-my-0.5 inline-flex h-6 w-6 items-center justify-center rounded-full text-slate-600 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                             aria-label={`Remove ${runTitleOf(run)}`}
                           >
                             <CloseIcon className="h-3 w-3" />
@@ -3507,60 +3667,14 @@ export default function ChatClient() {
                 ) : null}
 
                 {deepResearchEnabled ? (
-                  <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-2 font-medium text-slate-900 dark:text-[#ececec]">
-                        <SparkIcon className="h-3.5 w-3.5" />
-                        Agent-directed research
-                      </span>
-                      <span>
-                        The agent infers scope and tool strategy. Strict budget:{" "}
-                        {effectiveResearchSourcePolicy.budget.maxLibraryPapers} papers,{" "}
-                        {effectiveResearchSourcePolicy.budget.maxWebSearches} web searches,{" "}
-                        {effectiveResearchSourcePolicy.budget.maxSources} sources
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
-                        {selectedRunIds.length > 0
-                          ? `${selectedRunIds.length} attached file${selectedRunIds.length === 1 ? "" : "s"}`
-                          : chatScopeFolderId === "all"
-                            ? "Current repository"
-                            : activeFolderLabel}
-                      </span>
-                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-700 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec]">
-                        Library + analytics
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (effectiveResearchSourcePolicy.allowWeb) setWebSearchEnabled(false);
-                          toggleResearchPolicy("allowWeb");
-                        }}
-                        className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
-                          effectiveResearchSourcePolicy.allowWeb
-                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                        }`}
-                      >
-                        Web search
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => toggleResearchPolicy("allowCharts")}
-                        className={`inline-flex h-8 items-center rounded-full border px-3 transition-colors ${
-                          effectiveResearchSourcePolicy.allowCharts
-                            ? "border-sky-200 bg-sky-100 text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]"
-                            : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-black dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                        }`}
-                      >
-                        Charts/data
-                      </button>
-                      <span className="inline-flex h-8 items-center rounded-full border border-slate-200 bg-white px-3 text-slate-600 dark:border-[#1f1f1f] dark:bg-black dark:text-[#8e8e8e]">
-                        Code analysis later
-                      </span>
-                    </div>
-                  </div>
+                  <p className="mb-2 flex items-start gap-2 text-xs leading-5 text-mute">
+                    <SparkIcon className="mt-0.5 h-3.5 w-3.5 flex-none" />
+                    <span>
+                      Deep research plans its own scope and sources, and shows its plan before it starts. Up to{" "}
+                      {STRICT_RESEARCH_BUDGET.maxLibraryPapers} papers, {STRICT_RESEARCH_BUDGET.maxWebSearches} web
+                      searches and {STRICT_RESEARCH_BUDGET.maxSources} sources.
+                    </span>
+                  </p>
                 ) : null}
 
                 {/* What this question will search, before it is sent. The
@@ -3582,13 +3696,14 @@ export default function ChatClient() {
                   value={draft}
                   onChange={(event) => setDraft(event.target.value)}
                   onKeyDown={handleComposerKeyDown}
+                  aria-label="Message"
                   placeholder={
                     chartModeEnabled
                       ? "Ask for a repository chart, or leave blank for the best chart"
-                      : "Ask the repository"
+                      : "Ask the repository…"
                   }
                   rows={1}
-                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none placeholder:text-slate-600 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
+                  className="max-h-[220px] min-h-[28px] w-full resize-none overflow-y-auto bg-transparent px-1 py-1 text-[16px] leading-8 text-slate-900 outline-none focus-visible:outline-none placeholder:text-slate-600 dark:text-[#ececec] dark:placeholder:text-[#8e8e8e]"
                 />
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
@@ -3602,12 +3717,14 @@ export default function ChatClient() {
                         }}
                         className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
                         aria-label="Open attachment and tool menu"
+                        aria-haspopup="menu"
+                        aria-expanded={menuOpen}
                       >
                         <PlusIcon className="h-5 w-5" />
                       </button>
 
                       {menuOpen ? (
-                        <div className="absolute bottom-12 left-0 z-30 w-[min(21rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_16px_42px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]">
+                        <div className="absolute bottom-12 left-0 z-30 w-[min(21rem,calc(100vw-2rem))] origin-bottom-left overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay motion-safe:animate-scale-in">
                           {menuView === "scope" ? (
                             <>
                               <div className="flex h-12 items-center gap-2 border-b border-slate-200 px-2 dark:border-[#1f1f1f]">
@@ -3628,6 +3745,7 @@ export default function ChatClient() {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    scopeChosenRef.current = true;
                                     setChatScopeProjectId("all");
                                     setChatScopeFolderId("all");
                                     setSelectedLibraryRuns([]);
@@ -3635,7 +3753,7 @@ export default function ChatClient() {
                                   }}
                                   className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${chatScopeProjectId === "all" && chatScopeFolderId === "all" ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                 >
-                                  <DriveIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                  <BooksIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                   <span className="min-w-0 flex-1">
                                     <span className="block truncate text-sm font-medium text-slate-900 dark:text-[#ececec]">All repositories</span>
                                     <span className="block truncate text-[11px] text-slate-600 dark:text-[#8e8e8e]">Every analyzed paper in this account</span>
@@ -3652,6 +3770,7 @@ export default function ChatClient() {
                                       key={project.id}
                                       type="button"
                                       onClick={() => {
+                                        scopeChosenRef.current = true;
                                         setChatScopeProjectId(project.id);
                                         setChatScopeFolderId("all");
                                         setSelectedLibraryRuns([]);
@@ -3659,7 +3778,7 @@ export default function ChatClient() {
                                       }}
                                       className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${projectActive ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
                                     >
-                                      <DriveIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
+                                      <BooksIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                       <span className="min-w-0 flex-1 truncate text-sm text-slate-800 dark:text-[#ececec]">{project.name}</span>
                                       {projectActive ? <CheckIcon className="h-4 w-4 flex-none" /> : null}
                                     </button>
@@ -3673,7 +3792,7 @@ export default function ChatClient() {
                               <button
                                 type="button"
                                 onClick={() => setMenuView("scope")}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                               >
                                 <FolderIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -3688,12 +3807,12 @@ export default function ChatClient() {
                                   setShowLibraryPicker(true);
                                   setMenuOpen(false);
                                 }}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                               >
                                 <FileIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
                                   <span className="block text-sm font-medium text-slate-900 dark:text-[#ececec]">Attach papers</span>
-                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose specific files from this repository</span>
+                                  <span className="block text-[11px] text-slate-600 dark:text-[#8e8e8e]">Choose specific papers from any repository</span>
                                 </span>
                                 {selectedLibraryRuns.length > 0 ? <span className="text-xs font-medium">{selectedLibraryRuns.length}</span> : null}
                               </button>
@@ -3703,7 +3822,7 @@ export default function ChatClient() {
                                   setShowAnalyzeModal(true);
                                   setMenuOpen(false);
                                 }}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                               >
                                 <PaperIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -3734,13 +3853,10 @@ export default function ChatClient() {
                                         const nextEnabled = !deepResearchEnabled;
                                         setDeepResearchEnabled(nextEnabled);
                                         setChartModeEnabled(false);
-                                        if (nextEnabled && webSearchEnabled) {
-                                          setResearchSourcePolicy((current) => ({ ...current, allowWeb: true, budget: { ...current.budget, maxWebSearches: STRICT_RESEARCH_BUDGET.maxWebSearches } }));
-                                        }
                                       }
                                       setMenuOpen(false);
                                     }}
-                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors ${item.active ? "bg-slate-100 dark:bg-[#111111]" : "hover:bg-slate-50 dark:hover:bg-[#0a0a0a]"}`}
+                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong ${item.active ? "bg-subtle" : "hover:bg-subtle"}`}
                                   >
                                     <Icon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                     <span className="min-w-0 flex-1">
@@ -3759,24 +3875,20 @@ export default function ChatClient() {
                     </div>
 
                     {!deepResearchEnabled && !chartModeEnabled ? (
-                      <label className="inline-flex h-9 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                        <span>Model</span>
-                        <select
-                          value={selectedModel}
-                          onChange={(event) => setSelectedModel(event.target.value)}
-                          className="rounded-md bg-white text-xs font-medium text-slate-900 outline-none dark:bg-[#050505] dark:text-[#ececec]"
-                        >
-                          {MODEL_OPTIONS.map((option) => (
-                            <option
-                              key={option.value}
-                              value={option.value}
-                              className="bg-white text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
-                            >
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                      <Select
+                        value={selectedModel}
+                        onChange={setSelectedModel}
+                        label="Model"
+                        placement="top"
+                        size="sm"
+                        panelClassName="w-64"
+                        options={MODEL_OPTIONS.map((option) => ({
+                          value: option.value,
+                          label: option.label,
+                          description: option.description,
+                          icon: <option.Mark className="h-3.5 w-3.5" />,
+                        }))}
+                      />
                     ) : null}
 
                     {deepResearchEnabled ? (
@@ -3786,7 +3898,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setDeepResearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                           aria-label="Disable deep research"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3801,7 +3913,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setChartModeEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                           aria-label="Disable chart mode"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3816,7 +3928,7 @@ export default function ChatClient() {
                         <button
                           type="button"
                           onClick={() => setWebSearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100"
+                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
                           aria-label="Disable web search"
                         >
                           <CloseIcon className="h-3 w-3" />
@@ -3833,154 +3945,16 @@ export default function ChatClient() {
                   </div>
 
                   <div className="relative flex items-center gap-2" ref={parameterMenuRef}>
-                    {!deepResearchEnabled && !chartModeEnabled ? (
-                      <button
-                        type="button"
-                        onClick={() => setParameterMenuOpen((current) => !current)}
-                        className={`inline-flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
-                          parameterMenuOpen
-                            ? "border-slate-300 bg-slate-100 text-slate-900 dark:border-white/30 dark:bg-[#050505] dark:text-white"
-                            : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a]"
-                        }`}
-                        aria-label="Open generation parameters"
-                        title="Generation parameters"
-                      >
-                        <EqualizerIcon className="h-4 w-4" />
-                      </button>
-                    ) : null}
-
-                    {parameterMenuOpen && !deepResearchEnabled && !chartModeEnabled ? (
-                      <div className="absolute bottom-14 right-0 z-30 w-[320px] rounded-xl border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_24px_60px_rgba(0,0,0,0.45)]">
-                        <div className="mb-3 flex items-center justify-between">
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-600 dark:text-[#9b9b9b]">
-                            Generation
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => setChatParameters(DEFAULT_CHAT_PARAMETERS)}
-                            className="text-xs font-medium text-sky-800 hover:text-sky-900 dark:text-[#f3f3f3] dark:hover:text-[#c9e2ff]"
-                          >
-                            Reset
-                          </button>
-                        </div>
-
-                        <div className="space-y-3 text-xs text-slate-700 dark:text-[#d8d8d8]">
-                          <label className="block">
-                            <div className="mb-1 flex items-center justify-between">
-                              <span>Temperature</span>
-                              <span className="text-slate-600 dark:text-[#9b9b9b]">{chatParameters.temperature.toFixed(2)}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={2}
-                              step={0.05}
-                              value={chatParameters.temperature}
-                              onChange={(event) =>
-                                handleParameterChange("temperature", Number(event.target.value))
-                              }
-                              className="w-full accent-sky-600 dark:accent-[#9cc8ff]"
-                            />
-                          </label>
-
-                          <label className="block">
-                            <div className="mb-1 flex items-center justify-between">
-                              <span>Top P</span>
-                              <span className="text-slate-600 dark:text-[#9b9b9b]">{chatParameters.topP.toFixed(2)}</span>
-                            </div>
-                            <input
-                              type="range"
-                              min={0}
-                              max={1}
-                              step={0.01}
-                              value={chatParameters.topP}
-                              onChange={(event) =>
-                                handleParameterChange("topP", Number(event.target.value))
-                              }
-                              className="w-full accent-sky-600 dark:accent-[#9cc8ff]"
-                            />
-                          </label>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="block">
-                              <span className="mb-1 block">Top K</span>
-                              <input
-                                type="number"
-                                min={0}
-                                max={200}
-                                step={1}
-                                value={chatParameters.topK}
-                                onChange={(event) =>
-                                  handleParameterChange("topK", Number(event.target.value || 0))
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-
-                            <label className="block">
-                              <span className="mb-1 block">Max Tokens</span>
-                              <input
-                                type="number"
-                                min={64}
-                                max={8192}
-                                step={1}
-                                value={chatParameters.maxTokens}
-                                onChange={(event) =>
-                                  handleParameterChange("maxTokens", Number(event.target.value || 0))
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <label className="block">
-                              <span className="mb-1 block">Frequency Penalty</span>
-                              <input
-                                type="number"
-                                min={-2}
-                                max={2}
-                                step={0.1}
-                                value={chatParameters.frequencyPenalty}
-                                onChange={(event) =>
-                                  handleParameterChange(
-                                    "frequencyPenalty",
-                                    Number(event.target.value || 0)
-                                  )
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-
-                            <label className="block">
-                              <span className="mb-1 block">Presence Penalty</span>
-                              <input
-                                type="number"
-                                min={-2}
-                                max={2}
-                                step={0.1}
-                                value={chatParameters.presencePenalty}
-                                onChange={(event) =>
-                                  handleParameterChange(
-                                    "presencePenalty",
-                                    Number(event.target.value || 0)
-                                  )
-                                }
-                                className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#ececec] dark:focus:border-[#9cc8ff]"
-                              />
-                            </label>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
+                    {/* The generation parameters (temperature, top P...) were removed from
+                        here: answers run through the repository pipeline, which never read
+                        them, so the panel changed nothing. */}
                     <button
                       type="submit"
                       disabled={
                         (!loading && draft.trim().length === 0 && !chartModeEnabled) ||
                         (deepResearchEnabled && !canPersist)
                       }
-                      className={`inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
+                      className={`group inline-flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
                         loading
                           ? "bg-slate-900 text-white hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f3f3f3]"
                           : draft.trim().length > 0 || chartModeEnabled
@@ -3992,7 +3966,11 @@ export default function ChatClient() {
                       {loading ? (
                         <StopIcon className="h-4 w-4" />
                       ) : (
-                        <SendIcon className="h-4 w-4" />
+                        <SendIcon
+                          className={`h-4 w-4 transition-transform duration-200 ease-out-expo ${
+                            draft.trim().length > 0 || chartModeEnabled ? "group-hover:-translate-y-px group-hover:translate-x-0.5" : ""
+                          }`}
+                        />
                       )}
                     </button>
                   </div>
@@ -4047,7 +4025,12 @@ export default function ChatClient() {
       </div>
 
       {reportFullViewOpen && researchReport ? (
-        <div className="fixed inset-0 z-50 bg-slate-50 text-slate-900 dark:bg-[#050505] dark:text-[#ececec]">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Deep research report"
+          className="fixed inset-0 z-50 overscroll-contain bg-slate-50 text-slate-900 dark:bg-[#050505] dark:text-[#ececec]"
+        >
           <div className="flex h-full flex-col">
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f] sm:px-6">
               <div className="flex items-center gap-3">
@@ -4102,7 +4085,7 @@ export default function ChatClient() {
                   type="search"
                   value={chatSearchQuery}
                   onChange={(event) => setChatSearchQuery(event.target.value)}
-                  placeholder="Search chats..."
+                  placeholder="Search chats…"
                   className="w-full bg-transparent py-4 pl-8 pr-4 text-xl text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#c7c7c7]"
                   autoFocus
                 />
@@ -4133,7 +4116,7 @@ export default function ChatClient() {
               {chatSearchLoading ? (
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-white/5 dark:text-[#c7c7c7]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                  <span>Searching chats...</span>
+                  <span>Searching chats…</span>
                 </div>
               ) : null}
 
@@ -4229,8 +4212,9 @@ export default function ChatClient() {
                 type="search"
                 value={libraryQuery}
                 onChange={(event) => setLibraryQuery(event.target.value)}
-                placeholder="Search files"
-                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-600 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
+                placeholder="Search files…"
+                aria-label="Search files"
+                className="w-full rounded-xl border border-slate-200 bg-white py-3 pl-11 pr-4 text-base text-slate-900 sm:text-sm outline-none placeholder:text-slate-600 focus:border-slate-400 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:placeholder:text-[#8e8e8e] dark:focus:border-white/20"
               />
             </label>
 
@@ -4238,7 +4222,7 @@ export default function ChatClient() {
               {libraryLoading ? (
                 <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-300 border-t-slate-700 dark:border-[#1f1f1f] dark:border-t-white" />
-                  <span>Loading repository files...</span>
+                  <span>Loading repository files…</span>
                 </div>
               ) : filteredLibraryRuns.length === 0 ? (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-5 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#8e8e8e]">

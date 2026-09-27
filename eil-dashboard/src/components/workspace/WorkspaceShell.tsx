@@ -7,10 +7,10 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
   ArrowRightIcon,
+  BookOpenIcon,
   ChartIcon,
   ChatIcon,
   CloseIcon,
-  FileIcon,
   FolderIcon,
   HomeIcon,
   LogoMarkIcon,
@@ -18,13 +18,14 @@ import {
   SettingsIcon,
   UserIcon,
 } from "@/components/ui/Icons";
+import type { IconProps } from "@/components/ui/Icons";
 import { useIngestionRuns } from "@/hooks/useIngestionRuns";
 import { useLongTaskLogger } from "@/hooks/useLongTaskLogger";
 import {
   ANALYSIS_SESSION_STORAGE_KEY,
   persistWorkspaceRoute,
 } from "@/lib/workspace-session";
-import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
+import AnalysisStatusCard, { AnalysisTrayPill } from "@/components/workspace/AnalysisStatusCard";
 import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch";
 import WorkspaceLoadingState from "@/components/workspace/WorkspaceLoadingState";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
@@ -33,7 +34,7 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 type WorkspaceNavItem = {
   href: string;
   label: string;
-  icon: (props: { className?: string }) => JSX.Element;
+  icon: (props: IconProps) => JSX.Element;
 };
 
 type WorkspaceNavSection = {
@@ -47,7 +48,7 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     id: "overview",
     label: "Overview",
     items: [
-      { href: "/workspace/home", label: "Repository Overview", icon: HomeIcon },
+      { href: "/workspace/home", label: "Home", icon: HomeIcon },
       { href: "/workspace/dashboard", label: "Dashboard", icon: ChartIcon },
     ],
   },
@@ -56,7 +57,10 @@ const NAV_SECTIONS: WorkspaceNavSection[] = [
     label: "Repository",
     items: [
       { href: "/workspace/chat", label: "Chat", icon: ChatIcon },
-      { href: "/workspace/library", label: "Repositories", icon: FolderIcon },
+      // The file browser. Every other screen already called it the Library;
+      // only this entry said "Repositories", the name of the picker at
+      // /workspaces, so one word named two different pages.
+      { href: "/workspace/library", label: "Library", icon: FolderIcon },
     ],
   },
   {
@@ -81,8 +85,8 @@ const SEARCH_PAGE_ITEMS = [
   },
   {
     id: "project-overview",
-    label: "Repository Overview",
-    description: "Open the repository home and status view",
+    label: "Home",
+    description: "The repository's overview, recent papers and progress",
     href: "/workspace/home",
     icon: HomeIcon,
     keywords: ["overview", "home", "repository", "project", "activity", "status", "recent papers"],
@@ -108,8 +112,8 @@ const SEARCH_PAGE_ITEMS = [
   },
   {
     id: "library",
-    label: "Repositories",
-    description: "Browse account repositories and analyzed papers",
+    label: "Library",
+    description: "Browse, rename and restore the papers in each repository",
     href: "/workspace/library",
     icon: FolderIcon,
     keywords: ["papers", "files", "imports", "documents", "upload", "analyze paper", "search library", "paper detail"],
@@ -126,8 +130,8 @@ const SEARCH_PAGE_ITEMS = [
   {
     id: "profile",
     label: "Profile",
-    description: "Manage your account details",
-    href: "/workspace/profile",
+    description: "Manage your name, picture and sign-in",
+    href: "/workspace/settings?section=profile",
     icon: UserIcon,
     keywords: ["account", "user", "avatar", "profile settings"],
   },
@@ -149,7 +153,7 @@ function WorkspaceBreadcrumb({
           which tells a reader nothing at all.
           Below sm the parent collapses to a back arrow rather than disappearing:
           this link is the only route back to the repository picker, since the
-          drawer's "Repositories" entry points at /workspace/library instead. */}
+          drawer's "Library" entry points at /workspace/library instead. */}
       <div className="flex min-w-0 items-center gap-2 text-sm text-slate-500 dark:text-[#9b9b9b]">
         <Link
           href="/workspaces"
@@ -184,15 +188,15 @@ function DesktopSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-slate-200 bg-white transition-[width] duration-200 ease-out hover:w-[208px] dark:border-[#1f1f1f] dark:bg-[#050505] lg:block">
+    <aside className="group fixed bottom-0 left-0 top-16 z-30 hidden w-14 overflow-hidden border-r border-hairline bg-surface transition-[width,box-shadow] duration-250 ease-out-expo hover:w-[216px] hover:shadow-float has-[:focus-visible]:w-[216px] has-[:focus-visible]:shadow-float lg:block">
       <div className="flex h-full flex-col py-2">
         <nav className="flex-1 overflow-y-auto px-2">
           {NAV_SECTIONS.map((section, sectionIndex) => (
             <div
               key={section.id}
-              className={sectionIndex === 0 ? "" : "mt-3 border-t border-slate-200 pt-3 dark:border-[#1f1f1f]"}
+              className={sectionIndex === 0 ? "" : "mt-3 border-t border-hairline pt-3"}
             >
-              <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-500 opacity-0 transition-opacity duration-150 group-hover:opacity-100 dark:text-[#5f5f5f]">
+              <p className="whitespace-nowrap px-3 text-xs font-medium text-mute opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-has-[:focus-visible]:opacity-100">
                 {section.label}
               </p>
               <div className="mt-2 space-y-1">
@@ -206,17 +210,20 @@ function DesktopSidebar({
                       href={item.href}
                       prefetch={false}
                       onClick={() => onNavigate(item.href)}
-                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-all duration-200 group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 ${
+                      className={`mx-auto flex h-10 w-10 items-center justify-center rounded-lg text-sm transition-[background-color,color,width,margin,padding] duration-200 ease-out-quart group-hover:mx-0 group-hover:w-full group-hover:justify-start group-hover:px-3 group-has-[:focus-visible]:mx-0 group-has-[:focus-visible]:w-full group-has-[:focus-visible]:justify-start group-has-[:focus-visible]:px-3 ${
                         isActive
                           // #111111 on the rail's #050505 surface is 1.08:1 - the
                           // chip was there in the markup and absent to the eye.
                           // #1f1f1f is the brand's own raised tone and reads.
                           ? "bg-slate-900 text-white dark:bg-[#1f1f1f]"
-                          : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8e8e8e] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                          : "text-mute hover:bg-subtle hover:text-ink"
                       }`}
+                      aria-current={isActive ? "page" : undefined}
                     >
-                      <Icon className="h-[18px] w-[18px] flex-none" />
-                      <span className="ml-3 hidden whitespace-nowrap text-sm font-medium group-hover:block">
+                      <Icon className="h-[18px] w-[18px] flex-none" weight={isActive ? "fill" : "regular"} />
+                      {/* sr-only rather than hidden: the name stays readable to
+                          assistive technology while the rail is collapsed. */}
+                      <span className="sr-only ml-3 whitespace-nowrap text-sm font-medium group-hover:not-sr-only group-has-[:focus-visible]:not-sr-only">
                         {item.label}
                       </span>
                     </Link>
@@ -243,8 +250,8 @@ function MobileSidebar({
   onNavigate: (href: string) => void;
 }) {
   return (
-    <div className="h-full w-full max-w-[260px] overflow-y-auto border-r border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <div className="sticky top-0 border-b border-slate-200 bg-white px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
+    <div className="h-full w-full max-w-[280px] overflow-y-auto border-r border-hairline bg-surface shadow-overlay motion-safe:animate-drawer-in">
+      <div className="sticky top-0 border-b border-hairline bg-surface px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div className="space-y-3">
             <span className="flex h-10 w-10 items-center justify-center text-slate-950 dark:text-white">
@@ -256,8 +263,9 @@ function MobileSidebar({
           </div>
           <button
             type="button"
+            autoFocus
             onClick={onClose}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-mute transition-colors hover:bg-subtle hover:text-ink"
             aria-label="Close workspace navigation"
           >
             <CloseIcon className="h-4 w-4" />
@@ -268,7 +276,7 @@ function MobileSidebar({
       <nav className="space-y-4 px-3 py-4">
         {NAV_SECTIONS.map((section) => (
           <div key={section.id}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#5f5f5f]">
+            <p className="px-3 text-xs font-medium text-mute">
               {section.label}
             </p>
             <div className="mt-2 space-y-1">
@@ -285,16 +293,17 @@ function MobileSidebar({
                       onNavigate(item.href);
                       onClose();
                     }}
-                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition-colors ${
+                    aria-current={isActive ? "page" : undefined}
+                    className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors ${
                       isActive
                         // #030303 is darker than the drawer's own #050505 surface,
                         // so the "you are here" chip was not merely invisible, it
                         // was inverted. Matches the rail's active tone.
                         ? "bg-slate-900 text-white dark:bg-[#1f1f1f]"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-[#c7c7c7] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                        : "text-body hover:bg-subtle hover:text-ink"
                     }`}
                   >
-                    <Icon className="h-4 w-4 flex-none" />
+                    <Icon className="h-4 w-4 flex-none" weight={isActive ? "fill" : "regular"} />
                     <span className="font-medium">{item.label}</span>
                   </Link>
                 );
@@ -326,6 +335,24 @@ export default function WorkspaceShell({
     clearAnalysisSession,
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const drawerWasOpen = useRef(false);
+  // Escape closes the drawer, and closing it puts focus back on the button
+  // that opened it, so a keyboard reader is not dropped at the top of the page.
+  useEffect(() => {
+    if (sidebarOpen) {
+      drawerWasOpen.current = true;
+      const onKey = (event: KeyboardEvent) => {
+        if (event.key === "Escape") setSidebarOpen(false);
+      };
+      window.addEventListener("keydown", onKey);
+      return () => window.removeEventListener("keydown", onKey);
+    }
+    if (drawerWasOpen.current) {
+      drawerWasOpen.current = false;
+      menuButtonRef.current?.focus();
+    }
+  }, [sidebarOpen]);
   const [navigating, setNavigating] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
@@ -413,12 +440,6 @@ export default function WorkspaceShell({
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
     : [];
-  const activeRunCount = activeRuns.filter(
-    (run) => run.status === "queued" || run.status === "processing"
-  ).length;
-  const failedRunCount = activeRuns.filter((run) => run.status === "failed").length;
-  const completedRunCount = activeRuns.filter((run) => run.status === "succeeded").length;
-  const statusBadgeCount = activeRunCount || failedRunCount || completedRunCount;
 
   async function handleCancelRun(runId: string) {
     try {
@@ -483,15 +504,23 @@ export default function WorkspaceShell({
 
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-[#f2f2f2]">
-      <header className="fixed inset-x-0 top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-[#1f1f1f] dark:bg-black/95">
+    <div className="min-h-[100dvh] bg-canvas text-ink">
+      <a
+        href="#main"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-3 focus:z-[60] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-ink focus:shadow-overlay"
+      >
+        Skip to content
+      </a>
+      <header className="fixed inset-x-0 top-0 z-40 border-b border-hairline bg-canvas/80 backdrop-blur-md backdrop-saturate-150">
         <div className="mx-auto flex max-w-[1600px] items-center gap-3 px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
+              ref={menuButtonRef}
               onClick={() => setSidebarOpen(true)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] lg:hidden"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-lg text-body transition-colors hover:bg-subtle hover:text-ink lg:hidden"
               aria-label="Open workspace navigation"
+              aria-expanded={sidebarOpen}
             >
               <MenuIcon className="h-4 w-4" />
             </button>
@@ -501,7 +530,7 @@ export default function WorkspaceShell({
               prefetch={false}
               onClick={() => handleNavigate("/")}
               className="flex h-10 w-10 items-center justify-center text-slate-950 transition-transform hover:scale-[1.04] dark:text-white"
-              aria-label="Go to front page"
+              aria-label="Papertrend front page"
             >
               <LogoMarkIcon className="h-7 w-7" />
             </Link>
@@ -518,10 +547,10 @@ export default function WorkspaceShell({
               href="/docs"
               prefetch={false}
               onClick={() => handleNavigate("/docs")}
-              className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-              aria-label="Open documentation"
+              className="hidden h-9 items-center justify-center gap-2 rounded-lg px-2.5 text-sm font-medium text-body transition-colors duration-150 hover:bg-subtle hover:text-ink sm:inline-flex"
+              aria-label="Docs"
             >
-              <FileIcon className="h-4 w-4" />
+              <BookOpenIcon className="h-4 w-4" />
               <span className="hidden md:inline">Docs</span>
             </Link>
             <ThemeToggle compact />
@@ -550,7 +579,15 @@ export default function WorkspaceShell({
       <DesktopSidebar pathname={pathname} onNavigate={handleNavigate} />
 
       {sidebarOpen ? (
-        <div className="fixed inset-0 z-50 bg-black/45 lg:hidden">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Workspace navigation"
+          className="fixed inset-0 z-50 overscroll-contain bg-black/40 motion-safe:animate-fade-in lg:hidden"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setSidebarOpen(false);
+          }}
+        >
           <MobileSidebar
             pathname={pathname}
             projectName={currentProject?.name ?? ""}
@@ -560,28 +597,35 @@ export default function WorkspaceShell({
         </div>
       ) : null}
 
-      <div className="min-h-screen pt-16 lg:pl-14">
-        <main className={isChatPage ? "min-w-0" : "workspace-content-enter min-w-0 px-4 py-5 sm:px-6 sm:py-6"}>
+      <div className="min-h-[100dvh] pt-16 lg:pl-14">
+        <main
+          id="main"
+          tabIndex={-1}
+          className={isChatPage ? "min-w-0 outline-none" : "workspace-content-enter min-w-0 px-4 py-6 outline-none sm:px-8 sm:py-8"}
+        >
           {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
           ) : hasActiveProject ? (
             children
           ) : (
-            <div className="mx-auto flex min-h-[70vh] max-w-4xl items-center justify-center">
-              <div className="w-full rounded-xl border border-slate-200 bg-white px-8 py-10 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-                <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">Repository setup</p>
-                <h1 className="mt-3 text-3xl font-semibold text-slate-900 dark:text-white">
-                  Select a repository to continue
+            <div className="mx-auto flex min-h-[70vh] max-w-xl items-center justify-center">
+              <div className="w-full text-center">
+                <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-subtle text-body">
+                  <FolderIcon className="h-5 w-5" />
+                </span>
+                <h1 className="mt-5 text-2xl font-semibold tracking-tight text-ink">
+                  Choose a repository
                 </h1>
-                <p className="mt-4 text-sm leading-7 text-slate-600 dark:text-[#a3a3a3]">
-                  Choose a repository to open its overview, dashboard, chat, library,
-                  repositories and paper details.
+                <p className="mt-2 text-sm leading-6 text-body">
+                  Each repository keeps its own papers, dashboard and chat. Pick one to open, or
+                  create a new one.
                 </p>
                 <Link
                   href="/workspaces"
-                  className="mt-8 inline-flex items-center rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
+                  className="mt-6 inline-flex h-10 items-center gap-2 rounded-lg bg-ink px-4 text-sm font-medium text-canvas transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
                 >
                   Open repositories
+                  <ArrowRightIcon className="h-4 w-4" />
                 </Link>
               </div>
             </div>
@@ -592,9 +636,9 @@ export default function WorkspaceShell({
         (analysisSession.minimized ||
           !ALL_NAV_ITEMS.some((item) => pathname.startsWith(item.href)) ||
           pathname !== "/workspace/home") ? (
-          <div className="fixed bottom-4 right-4 z-40">
+          <div className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 flex justify-end sm:inset-x-auto sm:bottom-5 sm:right-5">
             {statusPanelOpen ? (
-              <div className="w-[min(360px,calc(100vw-2rem))]">
+              <div className="w-full sm:w-[400px]">
                 <AnalysisStatusCard
                   runs={activeRuns}
                   folderJob={folderJob}
@@ -606,42 +650,16 @@ export default function WorkspaceShell({
                       router.push("/workspace/home");
                     }
                   }}
+                  onCollapse={() => setStatusPanelOpen(false)}
                   onClear={clearAnalysisSession}
                   onCancelRun={handleCancelRun}
                   onCancelAll={handleCancelAllRuns}
                   onRetryQueue={handleRetryQueue}
                   onStartProcessing={handleStartProcessing}
                 />
-                <button
-                  type="button"
-                  onClick={() => setStatusPanelOpen(false)}
-                  className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-xl transition hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b8b8b8] dark:hover:text-white"
-                >
-                  Hide status
-                </button>
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setStatusPanelOpen(true)}
-                className="relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-xl transition hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-                aria-label="Open analysis progress"
-                title="Open analysis progress"
-              >
-                <FileIcon className="h-5 w-5" />
-                {statusBadgeCount > 0 ? (
-                  <span
-                    className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold text-white ${
-                      failedRunCount > 0 ? "bg-red-600" : "bg-blue-600"
-                    }`}
-                  >
-                    {Math.min(statusBadgeCount, 9)}
-                  </span>
-                ) : null}
-                {activeRunCount > 0 ? (
-                  <span className="absolute inset-0 rounded-full border border-blue-500/50 motion-safe:animate-ping" />
-                ) : null}
-              </button>
+              <AnalysisTrayPill runs={activeRuns} onOpen={() => setStatusPanelOpen(true)} />
             )}
           </div>
         ) : null}

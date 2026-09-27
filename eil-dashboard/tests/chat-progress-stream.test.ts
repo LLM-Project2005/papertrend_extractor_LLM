@@ -129,3 +129,13 @@ test("malformed frames are skipped rather than aborting the stream", async () =>
   );
   assert.equal(payload.answer, "Survived.");
 });
+
+test("a refusal sent as plain JSON reaches the reader with its reason", async () => {
+  // The daily token limit is refused before any stream opens. Read as a
+  // stream, that reply held no frames and showed "unreadable response".
+  const refusal = new Response(
+    JSON.stringify({ error: "Daily chat token limit reached (1,000,000 tokens). Please try again tomorrow." }),
+    { status: 429, headers: { "Content-Type": "application/json" } }
+  );
+  await assert.rejects(() => readChatStream(refusal, () => undefined), /Daily chat token limit reached/);
+});

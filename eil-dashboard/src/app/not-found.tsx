@@ -1,20 +1,25 @@
 import Link from "next/link";
+import Mascot from "@/components/ui/Mascot";
+import { buttonClass } from "@/components/ui/controls";
 
 export default function NotFound() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 text-slate-900 dark:bg-black dark:text-white">
-      <section className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
-        <p className="text-sm font-medium text-slate-500 dark:text-[#9b9b9b]">404</p>
-        <h1 className="mt-2 text-2xl font-semibold">Page not found</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-          The page may have moved, or you may not have access to it.
+    <main className="flex min-h-[100dvh] items-center justify-center bg-canvas px-6 text-ink">
+      <section className="flex w-full max-w-md flex-col items-center text-center">
+        <Mascot state="surprised" size={64} className="text-ink" />
+        <p className="mt-8 text-sm font-medium tabular-nums text-mute">404</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-tight">This page does not exist</h1>
+        <p className="mt-3 text-[15px] leading-7 text-body">
+          It may have moved, or the link may be mistyped. The documentation and your repositories are a click away.
         </p>
-        <Link
-          href="/"
-          className="mt-5 inline-flex rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-black dark:hover:bg-[#e5e5e5]"
-        >
-          Go home
-        </Link>
+        <div className="mt-7 flex flex-wrap justify-center gap-3">
+          <Link href="/" className={buttonClass("primary", "md")}>
+            Go home
+          </Link>
+          <Link href="/docs" className={buttonClass("secondary", "md")}>
+            Documentation
+          </Link>
+        </div>
       </section>
     </main>
   );

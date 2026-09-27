@@ -1,15 +1,14 @@
 import type {
   WorkspaceAnalysisCategory,
-  WorkspaceGoal,
-  WorkspaceOutput,
   WorkspaceProfile,
-  WorkspaceSource,
 } from "@/types/workspace";
 
 export const WORKSPACE_PROFILE_STORAGE_KEY = "papertrend_workspace_profile_v1";
 
 export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
-  name: "Research Signal Lab",
+  // Unused by the interface; repositories carry their own names. Kept empty so
+  // a stale default can never be shown as though it were a real name.
+  name: "",
   organization: "Faculty or department team",
   domain: "General academic research",
   domainDefinition: "",
@@ -25,103 +24,6 @@ export const DEFAULT_WORKSPACE_PROFILE: WorkspaceProfile = {
   onboardingComplete: false,
   updatedAt: null,
 };
-
-export const WORKSPACE_GOALS: Array<{
-  id: WorkspaceGoal;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: "trend-mapping",
-    label: "Trend mapping",
-    description: "Surface themes, category shifts, and publication patterns over time.",
-  },
-  {
-    id: "corpus-chat",
-    label: "Corpus chat",
-    description: "Ask flexible questions across a research collection and cite papers back.",
-  },
-  {
-    id: "curriculum-design",
-    label: "Curriculum design",
-    description: "Turn a corpus into teaching directions, reading lists, and learning paths.",
-  },
-  {
-    id: "literature-review",
-    label: "Literature review",
-    description: "Organize evidence quickly for reviews, grant proposals, and scoping work.",
-  },
-];
-
-export const WORKSPACE_SOURCES: Array<{
-  id: WorkspaceSource;
-  label: string;
-  description: string;
-  status: "ready" | "planned";
-}> = [
-  {
-    id: "pdf-upload",
-    label: "PDF upload",
-    description: "Upload paper PDFs directly into the workspace import queue.",
-    status: "ready",
-  },
-  {
-    id: "csv-import",
-    label: "CSV or notebook outputs",
-    description: "Sync structured outputs from your notebook pipeline into Supabase.",
-    status: "ready",
-  },
-  {
-    id: "onedrive",
-    label: "OneDrive",
-    description: "Planned connector for faculty-managed document libraries.",
-    status: "planned",
-  },
-  {
-    id: "sharepoint",
-    label: "SharePoint",
-    description: "Planned connector for institutional document repositories.",
-    status: "planned",
-  },
-  {
-    id: "cloud-storage",
-    label: "Cloud storage",
-    description: "Planned connector for buckets and shared research archives.",
-    status: "planned",
-  },
-];
-
-export const WORKSPACE_OUTPUTS: Array<{
-  id: WorkspaceOutput;
-  label: string;
-  description: string;
-}> = [
-  {
-    id: "dashboard",
-    label: "Dashboard analytics",
-    description: "Monitor trends, topic clusters, and category-level patterns.",
-  },
-  {
-    id: "chat",
-    label: "Corpus assistant",
-    description: "Ask grounded questions and move quickly between synthesis and evidence.",
-  },
-  {
-    id: "paper-library",
-    label: "Paper library",
-    description: "Browse titles, keywords, categories, and detailed per-paper evidence.",
-  },
-  {
-    id: "track-classification",
-    label: "Category classification",
-    description: "Keep single-label and multi-label categorization visible in the workspace.",
-  },
-  {
-    id: "curriculum-paths",
-    label: "Curriculum paths",
-    description: "Prepare the workspace for future teaching and pathway recommendations.",
-  },
-];
 
 export function loadWorkspaceProfile(): WorkspaceProfile {
   if (typeof window === "undefined") {

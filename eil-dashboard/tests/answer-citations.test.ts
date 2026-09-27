@@ -5,6 +5,7 @@ import {
   CITATION_TITLE_MAX,
   FOLD_THRESHOLD_CHARS,
   citationLabel,
+  citationPaperId,
   foldPoint,
   markCitations,
 } from "../src/lib/answer-citations";
@@ -127,6 +128,22 @@ test("an answer with no citations passes through untouched", () => {
   assert.equal(markCitations("", [READING]).text, "");
 });
 
+test("an older report's raw paper ids become the same numbered markers", () => {
+  // Reports written before the server rendered citations carry
+  // "[Paper 3606803487645584445]" - a database id, shown to the reader as-is.
+  const big = { paperId: "3606803487645584445", title: "Dynamic Assessment in Thai EFL Writing", year: "2021", href: "/p" };
+  const answer = `Gains were reported [Paper 3606803487645584445]. Both agree [Paper 12, Paper 3606803487645584445].`;
+  const { text, sources } = markCitations(answer, [READING, big]);
+  assert.equal(text, "Gains were reported [[cite:1]]. Both agree [[cite:2,1]].");
+  assert.deepEqual(sources.map((source) => source.paperId), [big.paperId, READING.paperId]);
+});
+
+test("a raw id that is not one of the message's sources is left as written", () => {
+  const answer = "See [Paper 999] and [2] and [Paper 12; 7].";
+  const { text } = markCitations(answer, [READING, AUTONOMY]);
+  assert.equal(text, "See [Paper 999] and [2] and [[cite:1,2]].");
+});
+
 test("a title containing regex characters does not break the match", () => {
   const tricky = { paperId: "9", title: "Reading (L2) + Writing [a study]", year: "2018", href: "/x" };
   const answer = `Found (${citationLabel(tricky)}).`;
@@ -243,3 +260,19 @@ test("text that can carry Thai clears the floor; fixed English chrome need not",
 
 /* --------------------------------------------------- the marker reaches the page */
 
+
+test("an 18-digit paper id survives a citation stored as a JSON number", () => {
+  // A real deep research citation: the number lost its last digits in
+  // JSON.parse, the link kept them, and the report text uses the exact id.
+  const stored = JSON.parse(
+    '{"paperId": 654436454321652795, "href": "/workspace/library?paperId=654436454321652795", "title": "Metalinguistic Knowledge", "year": ""}'
+  );
+  assert.notEqual(String(stored.paperId), "654436454321652795", "the precision loss this guards against");
+  assert.equal(citationPaperId(stored), "654436454321652795");
+  assert.equal(citationPaperId({ paperId: "42", href: "" }), "42", "without a link the id is used as given");
+
+  const marked = markCitations("Undergraduates dominate [Paper 654436454321652795].", [
+    { paperId: citationPaperId(stored), title: stored.title, year: "", href: stored.href },
+  ]);
+  assert.equal(marked.text, "Undergraduates dominate [[cite:1]].");
+});

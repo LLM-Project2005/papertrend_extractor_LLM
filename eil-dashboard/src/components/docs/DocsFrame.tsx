@@ -9,139 +9,250 @@ import {
   type DocsSection,
 } from "@/lib/docs-content";
 import {
+  ArrowLeftIcon,
   ArrowRightIcon,
   CheckCircleIcon,
-  FileIcon,
+  ChevronDownIcon,
+  InfoIcon,
   SearchIcon,
-  SparkIcon,
+  WarningIcon,
 } from "@/components/ui/Icons";
-import DocsFixedRail from "@/components/docs/DocsFixedRail";
 import DocsOnThisPage from "@/components/docs/DocsOnThisPage";
+import { DocsText, plainDocsText } from "@/components/docs/DocsText";
+import { sectionPlainText } from "@/lib/docs/plain-text";
+import ProductShot from "@/components/marketing/ProductShot";
 
-function calloutClasses(tone: DocsCallout["tone"]) {
-  if (tone === "warning") {
-    return "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100";
-  }
+/*
+ * The documentation's reading layout: a sticky list of pages on the left, the
+ * article held to a comfortable measure in the middle, and the page's own
+ * contents on the right. The side columns are CSS sticky, so they need no
+ * script to follow the page; below the large breakpoint they fold into two
+ * disclosures above the article.
+ */
 
-  if (tone === "success") {
-    return "border-sky-300 bg-sky-50 text-sky-950 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-100";
-  }
+const bodyClass = "text-base leading-7 text-body";
 
-  return "border-slate-200 bg-slate-50 text-slate-800 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]";
+function readingMinutes(page: DocsPage): number {
+  const text = page.sections.flatMap(sectionPlainText).join(" ");
+  const words = text.split(/\s+/).filter(Boolean).length;
+  return Math.max(1, Math.round(words / 220));
 }
 
-function DocsSidebar({ activeSlug }: { activeSlug?: string }) {
+function DocsNavList({ activeSlug }: { activeSlug?: string }) {
   return (
-    <DocsFixedRail side="left">
-      <div className="space-y-2">
-        <Link
-          href="/docs/search"
-          className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#a3a3a3] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-        >
-          <SearchIcon className="h-4 w-4" />
-          Search docs
-        </Link>
-        <Link
-          href="/docs"
-          className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-            activeSlug
-              ? "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-              : "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
-          }`}
-        >
-          <FileIcon className="h-4 w-4" />
-          Documentation
-        </Link>
-      </div>
-
-      <div className="mt-5 space-y-5">
-        {docsCategories.map((category) => (
-          <nav key={category.id} aria-label={category.label}>
-            <p className="px-3 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-              {category.label}
-            </p>
-            <div className="mt-2 space-y-1">
-              {category.pages.map((page) => {
-                const active = page.slug === activeSlug;
-
-                return (
+    <nav aria-label="Documentation" className="space-y-7">
+      {docsCategories.map((category) => (
+        <div key={category.id}>
+          <p className="px-3 text-xs font-medium text-mute">{category.label}</p>
+          <ul className="mt-2 space-y-0.5">
+            {category.pages.map((page) => {
+              const active = page.slug === activeSlug;
+              return (
+                <li key={page.slug}>
                   <Link
-                    key={page.slug}
                     href={`/docs/${page.slug}`}
-                    className={`block rounded-lg px-3 py-2 text-sm leading-5 transition-colors ${
-                      active
-                        ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-950 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                    aria-current={active ? "page" : undefined}
+                    className={`block rounded-lg px-3 py-1.5 text-sm leading-6 transition-colors duration-150 ${
+                      active ? "bg-subtle font-medium text-ink" : "text-body hover:bg-subtle/70 hover:text-ink"
                     }`}
                   >
                     {page.title}
                   </Link>
-                );
-              })}
-            </div>
-          </nav>
-        ))}
-      </div>
-    </DocsFixedRail>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ))}
+    </nav>
   );
 }
 
-function DocsCalloutBox({ callout }: { callout: DocsCallout }) {
+function DocsSearchLink() {
   return (
-    <div className={`mt-5 rounded-lg border px-4 py-4 ${calloutClasses(callout.tone)}`}>
-      <p className="text-sm font-semibold">{callout.title}</p>
-      <p className="mt-2 text-sm leading-6 opacity-85">{callout.body}</p>
-    </div>
+    <Link
+      href="/docs/search"
+      className="flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-sm text-mute shadow-raise transition-colors hover:border-hairline-strong hover:text-ink"
+    >
+      <SearchIcon className="h-4 w-4" />
+      Search the docs
+    </Link>
+  );
+}
+
+function calloutTone(tone: DocsCallout["tone"]) {
+  if (tone === "warning") {
+    return {
+      box: "border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/25 dark:text-amber-100",
+      icon: WarningIcon,
+    };
+  }
+  if (tone === "success") {
+    return {
+      box: "border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/25 dark:text-emerald-100",
+      icon: CheckCircleIcon,
+    };
+  }
+  return { box: "border-hairline bg-subtle text-ink", icon: InfoIcon };
+}
+
+function DocsCalloutBox({ callout }: { callout: DocsCallout }) {
+  const tone = calloutTone(callout.tone);
+  const Icon = tone.icon;
+  return (
+    <aside className={`mt-6 flex gap-3 rounded-xl border px-4 py-4 ${tone.box}`}>
+      <Icon className="mt-0.5 h-5 w-5 flex-none opacity-80" />
+      <div className="min-w-0">
+        <p className="text-sm font-semibold">{callout.title}</p>
+        <p className="mt-1 text-sm leading-6 opacity-90">
+          <DocsText text={callout.body} />
+        </p>
+      </div>
+    </aside>
   );
 }
 
 function DocsSectionBlock({ section }: { section: DocsSection }) {
   return (
-    <section id={section.id} className="scroll-mt-24 border-t border-slate-200 py-9 first:border-t-0 first:pt-0 dark:border-[#1f1f1f]">
-      <h2 className="text-2xl font-semibold tracking-normal text-slate-950 dark:text-white">
-        {section.title}
-      </h2>
+    <section id={section.id} className="group/section pt-12 first:pt-0">
+      {/* The permalink sits beside the heading, not inside it, so the heading's
+          name is only its title when a screen reader lists the headings. */}
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-2xl font-semibold tracking-tight text-ink">{section.title}</h2>
+        <a
+          href={`#${section.id}`}
+          aria-label={`Link to ${section.title}`}
+          className="text-lg font-normal text-mute opacity-0 transition-opacity duration-150 hover:text-ink focus-visible:opacity-100 group-hover/section:opacity-100"
+        >
+          #
+        </a>
+      </div>
 
       <div className="mt-4 space-y-4">
         {section.body.map((paragraph) => (
-          <p key={paragraph} className="text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-            {paragraph}
+          <p key={paragraph} className={bodyClass}>
+            <DocsText text={paragraph} />
           </p>
         ))}
       </div>
 
-      {section.bullets ? (
-        <ul className="mt-5 space-y-3">
-          {section.bullets.map((item) => (
-            <li key={item} className="flex gap-3 text-sm leading-7 text-slate-600 dark:text-[#b8b8b8]">
-              <CheckCircleIcon className="mt-1 h-4 w-4 flex-none text-slate-950 dark:text-white" />
-              <span>{item}</span>
-            </li>
-          ))}
-        </ul>
+      {section.figure ? (
+        <figure className="mt-7">
+          <ProductShot name={section.figure.shot} alt={section.figure.alt} sizes="(min-width: 1024px) 720px, 100vw" />
+          {section.figure.caption ? (
+            <figcaption className="mt-3 text-center text-[13px] leading-5 text-mute">{section.figure.caption}</figcaption>
+          ) : null}
+        </figure>
       ) : null}
 
       {section.steps ? (
-        <ol className="mt-5 space-y-3">
+        <ol className="mt-6 space-y-4">
           {section.steps.map((step, index) => (
-            <li key={step} className="flex gap-3 text-sm leading-7 text-slate-600 dark:text-[#b8b8b8]">
-              <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full bg-slate-950 text-xs font-semibold text-white dark:bg-white dark:text-[#171717]">
+            <li key={step} className="flex gap-3.5">
+              <span className="mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded-full border border-hairline-strong text-xs font-medium tabular-nums text-ink">
                 {index + 1}
               </span>
-              <span>{step}</span>
+              <span className={bodyClass}>
+                <DocsText text={step} />
+              </span>
             </li>
           ))}
         </ol>
       ) : null}
 
+      {section.bullets ? (
+        <ul className="mt-5 space-y-2.5">
+          {section.bullets.map((item) => (
+            <li key={item} className="flex gap-3">
+              <span className="mt-[0.7rem] h-1.5 w-1.5 flex-none rounded-full bg-hairline-strong" />
+              <span className={bodyClass}>
+                <DocsText text={item} />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {section.table ? (
+        <div className="mt-6 overflow-x-auto rounded-xl border border-hairline">
+          <table className="w-full min-w-[520px] border-collapse text-left text-sm">
+            {section.table.caption ? (
+              <caption className="border-b border-hairline px-4 py-3 text-left text-[13px] text-mute">
+                {section.table.caption}
+              </caption>
+            ) : null}
+            <thead>
+              <tr className="bg-subtle">
+                {section.table.columns.map((column) => (
+                  <th key={column} scope="col" className="px-4 py-2.5 font-medium text-ink">
+                    {column}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-hairline">
+              {section.table.rows.map((row) => (
+                <tr key={row.join("|")} className="align-top">
+                  {row.map((cell, index) => (
+                    <td key={index} className={`px-4 py-3 leading-6 ${index === 0 ? "font-medium text-ink" : "text-body"}`}>
+                      <DocsText text={cell} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {section.definitions ? (
+        <dl className="mt-6 divide-y divide-hairline border-y border-hairline">
+          {section.definitions.map((item) => (
+            <div key={item.term} className="grid gap-1 py-4 sm:grid-cols-[180px_minmax(0,1fr)] sm:gap-6">
+              <dt className="text-sm font-medium text-ink">{item.term}</dt>
+              <dd className="text-[15px] leading-7 text-body">
+                <DocsText text={item.detail} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+
+      {section.subsections?.map((sub) => (
+        <div key={sub.title} className="mt-8">
+          <h3 className="text-lg font-semibold tracking-tight text-ink">{sub.title}</h3>
+          <div className="mt-2.5 space-y-3">
+            {sub.body.map((paragraph) => (
+              <p key={paragraph} className={bodyClass}>
+                <DocsText text={paragraph} />
+              </p>
+            ))}
+          </div>
+          {sub.bullets ? (
+            <ul className="mt-3 space-y-2">
+              {sub.bullets.map((item) => (
+                <li key={item} className="flex gap-3">
+                  <span className="mt-[0.7rem] h-1.5 w-1.5 flex-none rounded-full bg-hairline-strong" />
+                  <span className={bodyClass}>
+                    <DocsText text={item} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ))}
+
       {section.checklist ? (
-        <div className="mt-5 rounded-lg border border-slate-200 bg-white p-4 dark:border-[#1f1f1f] dark:bg-[#050505]">
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">Checklist</p>
-          <ul className="mt-3 space-y-2">
+        <div className="mt-6 rounded-xl border border-hairline bg-surface p-5">
+          <p className="text-sm font-semibold text-ink">Checklist</p>
+          <ul className="mt-3 space-y-2.5">
             {section.checklist.map((item) => (
-              <li key={item} className="flex gap-3 text-sm leading-6 text-slate-600 dark:text-[#b8b8b8]">
-                <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-slate-950 dark:bg-white" />
-                <span>{item}</span>
+              <li key={item} className="flex gap-3 text-[15px] leading-6 text-body">
+                <CheckCircleIcon className="mt-0.5 h-5 w-5 flex-none text-mute" />
+                <span>
+                  <DocsText text={item} />
+                </span>
               </li>
             ))}
           </ul>
@@ -155,208 +266,234 @@ function DocsSectionBlock({ section }: { section: DocsSection }) {
 
 export function DocsArticle({ page }: { page: DocsPage }) {
   const relatedDocs = getRelatedDocs(page);
+  const index = docsPages.findIndex((item) => item.slug === page.slug);
+  const previous = index > 0 ? docsPages[index - 1] : null;
+  const next = index >= 0 && index < docsPages.length - 1 ? docsPages[index + 1] : null;
+  const minutes = readingMinutes(page);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-20 pt-28 sm:px-6">
-      <DocsSidebar activeSlug={page.slug} />
+    <div className="mx-auto max-w-[1240px] px-4 pb-24 pt-24 sm:px-6 lg:grid lg:grid-cols-[232px_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[232px_minmax(0,1fr)_196px]">
+      <aside className="hidden lg:block">
+        <div className="sticky top-24 max-h-[calc(100dvh-7rem)] space-y-6 overflow-y-auto overscroll-contain pb-10 pr-1">
+          <DocsSearchLink />
+          <DocsNavList activeSlug={page.slug} />
+        </div>
+      </aside>
 
-      <article className="min-w-0 lg:ml-[292px] xl:mr-[252px]">
-        <div className="mb-8 rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505] lg:hidden">
-          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-            Documentation
-          </p>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            {docsPages.map((item) => (
-              <Link
-                key={item.slug}
-                href={`/docs/${item.slug}`}
-                className={`rounded-md px-3 py-2 text-sm transition-colors ${
-                  item.slug === page.slug
-                    ? "bg-slate-950 text-white dark:bg-white dark:text-[#171717]"
-                    : "text-slate-600 hover:bg-slate-100 dark:text-[#a3a3a3] dark:hover:bg-[#0a0a0a]"
-                }`}
-              >
-                {item.title}
-              </Link>
-            ))}
-          </div>
+      <article className="min-w-0 max-w-[720px]">
+        {/* On a phone the page list and the contents fold away above the article. */}
+        <div className="mb-8 space-y-2 xl:hidden">
+          <details className="group rounded-xl border border-hairline bg-surface lg:hidden">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
+              Browse the documentation
+              <ChevronDownIcon className="h-4 w-4 text-mute transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <div className="space-y-5 border-t border-hairline px-1 pb-4 pt-4">
+              <div className="px-3">
+                <DocsSearchLink />
+              </div>
+              <DocsNavList activeSlug={page.slug} />
+            </div>
+          </details>
+          <details className="group rounded-xl border border-hairline bg-surface">
+            <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-medium text-ink [&::-webkit-details-marker]:hidden">
+              On this page
+              <ChevronDownIcon className="h-4 w-4 text-mute transition-transform duration-200 group-open:rotate-180" />
+            </summary>
+            <nav aria-label="On this page" className="border-t border-hairline px-2 py-3">
+              <ul className="space-y-0.5">
+                {page.sections.map((section) => (
+                  <li key={section.id}>
+                    <a
+                      href={`#${section.id}`}
+                      className="block rounded-lg px-2 py-1.5 text-sm leading-6 text-body transition-colors hover:bg-subtle hover:text-ink"
+                    >
+                      {section.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          </details>
         </div>
 
-        <div className="border-b border-slate-200 pb-8 dark:border-[#1f1f1f]">
-          <p className="text-sm font-medium text-slate-500 dark:text-[#8f8f8f]">
-            {page.categoryLabel}
-          </p>
-          <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-5xl">
+        <header className="border-b border-hairline pb-8">
+          <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-mute">
+            <Link href="/docs" className="transition-colors hover:text-ink">
+              Docs
+            </Link>
+            <span aria-hidden="true">/</span>
+            <span>{page.categoryLabel}</span>
+          </nav>
+          <h1 className="mt-4 text-4xl font-semibold leading-[1.1] tracking-[-0.03em] text-ink sm:text-[2.75rem]">
             {page.title}
           </h1>
-          <p className="mt-5 max-w-3xl text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-            {page.description}
+          <p className="mt-4 text-lg leading-8 text-body">
+            <DocsText text={page.description} />
           </p>
-          <div className="mt-5 flex flex-wrap gap-2">
-            {/* These were spans styled exactly like filter chips - rounded, bordered,
-                tinted - so they invited a click and did nothing. They now search the
-                documentation for the tag, which is what a reader was reaching for. */}
-            {page.tags.slice(0, 6).map((tag) => (
-              <Link
-                key={tag}
-                href={`/docs/search?q=${encodeURIComponent(tag)}`}
-                className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-500 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-              >
-                {tag}
-              </Link>
-            ))}
+          <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-mute">
+            <span>{minutes} min read</span>
+            <span aria-hidden="true">·</span>
+            <span className="flex flex-wrap gap-1.5">
+              {/* These were spans styled exactly like filter chips - rounded, bordered,
+                  tinted - so they invited a click and did nothing. They now search the
+                  documentation for the tag, which is what a reader was reaching for. */}
+              {page.tags.slice(0, 5).map((tag) => (
+                <Link
+                  key={tag}
+                  href={`/docs/search?q=${encodeURIComponent(tag)}`}
+                  className="rounded-full bg-subtle px-2.5 py-0.5 text-body transition-colors hover:text-ink"
+                >
+                  {tag}
+                </Link>
+              ))}
+            </span>
           </div>
-        </div>
+        </header>
 
-        <div className="py-9">
+        <div className="py-10">
           {page.sections.map((section) => (
             <DocsSectionBlock key={section.id} section={section} />
           ))}
         </div>
 
         {relatedDocs.length > 0 ? (
-          <section className="border-t border-slate-200 pt-8 dark:border-[#1f1f1f]">
-            <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Related docs</h2>
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <section className="border-t border-hairline pt-8">
+            <h2 className="text-base font-semibold text-ink">Related pages</h2>
+            <ul className="mt-4 divide-y divide-hairline">
               {relatedDocs.map((related) => (
-                <Link
-                  key={related.slug}
-                  href={`/docs/${related.slug}`}
-                  className="group rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
-                >
-                  <p className="text-sm font-semibold text-slate-950 dark:text-white">
-                    {related.title}
-                  </p>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
-                    {related.description}
-                  </p>
-                  <span className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-white">
-                    Read more
-                    <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                  </span>
-                </Link>
+                <li key={related.slug}>
+                  <Link href={`/docs/${related.slug}`} className="group flex items-start justify-between gap-4 py-3.5">
+                    <span className="min-w-0">
+                      <span className="block text-[15px] font-medium text-ink">{related.title}</span>
+                      <span className="mt-0.5 block text-sm leading-6 text-body">{plainDocsText(related.description)}</span>
+                    </span>
+                    <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
+                  </Link>
+                </li>
               ))}
-            </div>
+            </ul>
           </section>
         ) : null}
+
+        <nav aria-label="Previous and next page" className="mt-10 grid gap-3 sm:grid-cols-2">
+          {previous ? (
+            <Link
+              href={`/docs/${previous.slug}`}
+              className="group rounded-xl border border-hairline bg-surface px-4 py-3.5 transition-[border-color,box-shadow] duration-150 hover:border-hairline-strong hover:shadow-raise"
+            >
+              <span className="flex items-center gap-1.5 text-[13px] text-mute">
+                <ArrowLeftIcon className="h-3.5 w-3.5 transition-transform duration-200 group-hover:-translate-x-0.5" />
+                Previous
+              </span>
+              <span className="mt-1 block text-[15px] font-medium text-ink">{previous.title}</span>
+            </Link>
+          ) : (
+            <span />
+          )}
+          {next ? (
+            <Link
+              href={`/docs/${next.slug}`}
+              className="group rounded-xl border border-hairline bg-surface px-4 py-3.5 text-right transition-[border-color,box-shadow] duration-150 hover:border-hairline-strong hover:shadow-raise"
+            >
+              <span className="flex items-center justify-end gap-1.5 text-[13px] text-mute">
+                Next
+                <ArrowRightIcon className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+              </span>
+              <span className="mt-1 block text-[15px] font-medium text-ink">{next.title}</span>
+            </Link>
+          ) : null}
+        </nav>
       </article>
 
-      <DocsOnThisPage sections={page.sections} />
+      <aside className="hidden xl:block">
+        <div className="sticky top-24">
+          <DocsOnThisPage sections={page.sections} />
+        </div>
+      </aside>
     </div>
   );
 }
 
 export function DocsHome() {
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-20 pt-28 sm:px-6">
-      <section className="relative overflow-hidden rounded-lg border border-slate-200 bg-white p-6 dark:border-[#1f1f1f] dark:bg-[#050505] sm:p-10">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(0,124,240,0.12),transparent_34%),radial-gradient(circle_at_bottom_left,rgba(255,0,128,0.10),transparent_32%)]" />
-        <div className="relative max-w-3xl">
-          <p className="inline-flex rounded-md border border-slate-200 bg-slate-50 px-3 py-1.5 font-mono text-xs text-slate-500 dark:border-[#1f1f1f] dark:bg-[#030303] dark:text-[#8f8f8f]">
-            PAPERTREND DOCS
-          </p>
-          <h1 className="mt-6 text-4xl font-semibold tracking-normal text-slate-950 dark:text-white sm:text-6xl">
-            Learn, operate, and trust your research workspace.
-          </h1>
-          <p className="mt-6 text-base leading-8 text-slate-600 dark:text-[#a3a3a3]">
-            Detailed product documentation for uploads, analysis, dashboards, AI chat,
-            deep research, cloud queue behavior, evaluation, and troubleshooting.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link
-              href="/docs/getting-started"
-              className="inline-flex min-h-11 items-center gap-2 rounded-md bg-slate-950 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f2f2f2]"
+    <div className="mx-auto max-w-[1080px] px-4 pb-24 pt-32 sm:px-6 sm:pt-36">
+      <header className="max-w-2xl">
+        <h1 className="text-4xl font-semibold leading-[1.08] tracking-[-0.035em] text-ink sm:text-5xl">
+          Documentation
+        </h1>
+        <p className="mt-5 text-lg leading-8 text-body">
+          How Papertrend reads your papers, what each screen shows, and what to do when something
+          does not go as expected.
+        </p>
+        {/* A plain GET form: it works before any script has loaded. */}
+        <form action="/docs/search" method="get" className="mt-8" role="search">
+          <label htmlFor="docs-home-search" className="sr-only">
+            Search the documentation
+          </label>
+          <div className="flex items-center gap-2 rounded-xl border border-hairline bg-surface p-1.5 pl-4 shadow-raise transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15">
+            <SearchIcon className="h-4 w-4 flex-none text-mute" />
+            <input
+              id="docs-home-search"
+              name="q"
+              type="search"
+              placeholder="Search: upload failed, unknown year, deep research…"
+              className="min-w-0 flex-1 bg-transparent py-2 text-base text-ink outline-none placeholder:text-mute focus-visible:outline-none"
+            />
+            <button
+              type="submit"
+              className="h-9 flex-none rounded-lg bg-ink px-4 text-sm font-medium text-canvas transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
             >
-              Start reading
-              <ArrowRightIcon className="h-4 w-4" />
-            </Link>
-            <Link
-              href="/docs/search"
-              className="inline-flex min-h-11 items-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-950 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]"
-            >
-              <SearchIcon className="h-4 w-4" />
-              Search docs
-            </Link>
+              Search
+            </button>
           </div>
-        </div>
-      </section>
+        </form>
+      </header>
 
-      <section className="mt-10 grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505]">
-          <div className="flex items-center gap-2">
-            <SparkIcon className="h-5 w-5 text-slate-950 dark:text-white" />
-            <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Popular docs</h2>
-          </div>
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
-            {popularDocsPages.map((page) => (
-              <Link
-                key={page.slug}
-                href={`/docs/${page.slug}`}
-                className="group rounded-lg border border-slate-200 bg-slate-50 p-4 transition-colors hover:border-slate-300 hover:bg-white dark:border-[#1f1f1f] dark:bg-[#030303] dark:hover:border-[#3a3a3a] dark:hover:bg-[#050505]"
-              >
-                <p className="text-sm font-semibold text-slate-950 dark:text-white">{page.title}</p>
-                <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500 dark:text-[#8f8f8f]">
-                  {page.description}
-                </p>
-                <span className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-slate-950 dark:text-white">
-                  Open
-                  <ArrowRightIcon className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      <section className="mt-16" aria-labelledby="docs-popular">
+        <h2 id="docs-popular" className="text-sm font-medium text-mute">
+          Most read
+        </h2>
+        <ul className="mt-4 grid gap-x-10 border-t border-hairline sm:grid-cols-2">
+          {popularDocsPages.map((page) => (
+            <li key={page.slug} className="border-b border-hairline">
+              <Link href={`/docs/${page.slug}`} className="group flex items-start justify-between gap-4 py-4">
+                <span className="min-w-0">
+                  <span className="block text-[15px] font-medium text-ink">{page.title}</span>
+                  <span className="mt-1 block text-sm leading-6 text-body">{plainDocsText(page.description)}</span>
                 </span>
+                <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
               </Link>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505]">
-          <h2 className="text-lg font-semibold text-slate-950 dark:text-white">Common tasks</h2>
-          <div className="mt-5 space-y-2">
-            {[
-              { label: "Upload and analyze papers", href: "/docs/library-uploads" },
-              { label: "Build charts in chat", href: "/docs/ai-research-chat#chart-mode" },
-              { label: "Review unknown years", href: "/docs/evaluation-quality#year-quality" },
-              { label: "Fix queue or failed-file issues", href: "/docs/troubleshooting" },
-              { label: "Understand deep research", href: "/docs/deep-research-agent" },
-            ].map((task) => (
-              <Link
-                key={task.href}
-                href={task.href}
-                className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 px-4 py-3 text-sm text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-              >
-                {task.label}
-                <ArrowRightIcon className="h-4 w-4 flex-none" />
-              </Link>
-            ))}
-          </div>
-        </div>
+            </li>
+          ))}
+        </ul>
       </section>
 
-      <section className="mt-10 grid gap-5 md:grid-cols-3">
+      <div className="mt-16 space-y-14">
         {docsCategories.map((category) => (
-          <div
-            key={category.id}
-            className="rounded-lg border border-slate-200 bg-white p-5 dark:border-[#1f1f1f] dark:bg-[#050505]"
-          >
-            <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-              {category.label}
-            </p>
-            <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#a3a3a3]">
-              {category.description}
-            </p>
-            <div className="mt-5 space-y-2">
-              {category.pages.map((page) => (
-                <Link
-                  key={page.slug}
-                  href={`/docs/${page.slug}`}
-                  className="flex items-center justify-between gap-3 rounded-md px-3 py-2 text-sm text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                >
-                  {page.title}
-                  <ArrowRightIcon className="h-3.5 w-3.5 flex-none" />
-                </Link>
-              ))}
+          <section key={category.id} aria-labelledby={`docs-cat-${category.id}`} className="grid gap-6 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-12">
+            <div>
+              <h2 id={`docs-cat-${category.id}`} className="text-lg font-semibold tracking-tight text-ink">
+                {category.label}
+              </h2>
+              <p className="mt-1.5 text-sm leading-6 text-body">{category.description}</p>
             </div>
-          </div>
+            <ul className="divide-y divide-hairline border-y border-hairline">
+              {category.pages.map((page) => (
+                <li key={page.slug}>
+                  <Link href={`/docs/${page.slug}`} className="group flex items-start justify-between gap-4 py-3.5">
+                    <span className="min-w-0">
+                      <span className="block text-[15px] font-medium text-ink">{page.title}</span>
+                      <span className="mt-0.5 block text-sm leading-6 text-body">{plainDocsText(page.description)}</span>
+                    </span>
+                    <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
         ))}
-      </section>
+      </div>
     </div>
   );
 }

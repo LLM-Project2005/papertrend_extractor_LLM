@@ -127,7 +127,7 @@ const ACTION_ITEMS: Array<{
     id: "profile",
     label: "Profile",
     description: "Manage your account name, avatar, and profile details.",
-    href: "/workspace/profile",
+    href: "/workspace/settings?section=profile",
     icon: UserIcon,
     keywords: ["profile", "account", "user", "avatar"],
   },
@@ -249,6 +249,7 @@ export default function WorkspaceGlobalSearch({
   } = useWorkspaceProfile();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
@@ -263,7 +264,22 @@ export default function WorkspaceGlobalSearch({
 
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // Focus goes back to the button, not to the top of the page.
+        if (containerRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
         setOpen(false);
+        return;
+      }
+      // "/" opens search from anywhere, as the badge on the button promises,
+      // unless the reader is typing in a field (where "/" is just a slash).
+      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const target = event.target as HTMLElement | null;
+        const typing =
+          target?.isContentEditable ||
+          (target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+        if (!typing) {
+          event.preventDefault();
+          setOpen(true);
+        }
       }
     }
 
@@ -445,20 +461,23 @@ export default function WorkspaceGlobalSearch({
   return (
     <div ref={containerRef} className="relative">
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white sm:w-[168px] sm:justify-start sm:gap-2 sm:px-3"
+        aria-expanded={open}
+        className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-surface text-mute shadow-raise transition-[border-color,color] duration-150 hover:border-hairline-strong hover:text-ink sm:w-[184px] sm:justify-start sm:gap-2 sm:px-3"
         aria-label="Search repository"
+        aria-keyshortcuts="/"
       >
         <SearchIcon className="h-4 w-4 flex-none" />
         <span className="hidden min-w-0 truncate text-sm sm:block">Search</span>
-        <span className="ml-auto hidden rounded border border-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500 dark:border-[#2a2a2a] dark:text-[#8f8f8f] xl:block">
+        <kbd className="ml-auto hidden rounded border border-hairline bg-subtle px-1.5 py-0.5 font-mono text-[10px] text-mute xl:block">
           /
-        </span>
+        </kbd>
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-3 w-[min(680px,calc(100vw-1rem))] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_20px_60px_rgba(15,23,42,0.16)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+        <div className="absolute right-0 z-50 mt-2 w-[min(680px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay motion-safe:animate-scale-in">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -475,13 +494,16 @@ export default function WorkspaceGlobalSearch({
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search actions, papers, repositories, docs..."
+                placeholder="Search actions, papers, repositories, docs…"
                 aria-label="Search actions, papers, repositories, and documentation"
-                className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
+                className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-base text-slate-900 sm:text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
               />
             </label>
           </form>
 
+          <p role="status" className="sr-only">
+            {query.trim() ? `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}` : ""}
+          </p>
           {groupedResults.length > 0 ? (
             <div className="max-h-[460px] overflow-y-auto p-2">
               {groupedResults.map((group) => (

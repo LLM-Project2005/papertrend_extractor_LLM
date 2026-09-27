@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+
+function exists(relative: string): boolean {
+  return existsSync(new URL(`../${relative}`, import.meta.url));
+}
 
 function read(relative: string): string {
   return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
@@ -48,6 +52,9 @@ test("charts read the theme instead of hardcoding one", () => {
     assert.equal(/#94a3b8/.test(src), false, `${file} still hardcodes the axis colour`);
     assert.match(src, /chartTheme\(hydrated && theme === "dark"\)/, `${file} must read the theme`);
     assert.match(src, /tickStyle\(ct/, `${file} must set an explicit tick fill`);
+    // Three gridlines still had a fixed light grey and drew bright white dashes
+    // across the dark dashboard, the loudest thing on the chart.
+    assert.equal(/<CartesianGrid[^>]*stroke="#/.test(src), false, `${file} hardcodes a grid colour`);
   }
 });
 
@@ -89,9 +96,9 @@ test("the borrowed template palette appears nowhere in the app", () => {
   for (const file of [
     "src/app/page.tsx",
     "src/app/features/[slug]/page.tsx",
-    "src/components/marketing/FeatureShowcases.tsx",
-    "src/components/marketing/MarketingMotion.tsx",
-    "src/components/marketing/FeatureBand.tsx",
+    "src/components/marketing/MarketingLayout.tsx",
+    "src/components/marketing/ProductShot.tsx",
+    "src/components/marketing/styles.ts",
     "src/components/marketing/marketing-content.ts",
     "src/components/dashboard/AdaptiveDashboardTab.tsx",
   ]) {
@@ -102,31 +109,52 @@ test("the borrowed template palette appears nowhere in the app", () => {
   }
 });
 
-test("nothing claims to be live that is a drawing", () => {
-  const motion = readCode("src/components/marketing/MarketingMotion.tsx");
-  assert.equal(/LIVE REPOSITORY/.test(motion), false);
-  assert.equal(
-    /research-trend-analysis\.web\.app/.test(motion),
-    false,
-    "a real address beside a connected-dot is what made the drawing read as a live session"
-  );
-  assert.match(motion, /EXAMPLE WORKSPACE/);
-  assert.match(readCode("src/components/marketing/FeatureShowcases.tsx"), /illustration/);
+test("the public pages show the product, not a drawing of it", () => {
+  // The front page used to carry div-built imitations of the product - an
+  // "example workspace" with invented stages and percentages that read as
+  // accuracy figures nothing measures. The pages now show screenshots of the
+  // real app, taken in both themes by scripts/marketing-mock/record-clips.ts.
+  for (const gone of ["FeatureShowcases.tsx", "MarketingMotion.tsx", "FeatureBand.tsx"]) {
+    assert.equal(exists(`src/components/marketing/${gone}`), false, `${gone} was a drawing of the product`);
+  }
+  const pages = [read("src/app/page.tsx"), read("src/app/features/[slug]/page.tsx")].join("\n");
+  assert.match(pages, /<ProductShot/);
+  const content = read("src/components/marketing/marketing-content.ts");
+  const names = new Set([
+    ...[...pages.matchAll(/<ProductShot[\s\S]*?name="([a-z-]+)"/g)].map((m) => m[1]),
+    ...[...content.matchAll(/shot: "([a-z-]+)"/g)].map((m) => m[1]),
+  ]);
+  assert.ok(names.size >= 5, `expected several screenshots, found ${[...names].join(", ")}`);
+  const manifest = read("src/components/marketing/shot-manifest.ts");
+  for (const name of names) {
+    for (const theme of ["light", "dark"]) {
+      assert.ok(exists(`public/marketing/${name}-${theme}.webp`), `${name}-${theme}.webp is missing`);
+    }
+    assert.match(manifest, new RegExp(`"${name}":`), `${name} has no recorded size, so its box cannot be reserved`);
+  }
 });
 
-test("the product illustration shows stages the product actually has", () => {
-  // "Extract text 96%" and "Find metadata 88%" read as accuracy figures, and
-  // nothing in the product measures or publishes such a number.
-  const showcases = readCode("src/components/marketing/FeatureShowcases.tsx");
-  for (const invented of ["96%", "88%", "74%", "91%"]) {
-    assert.equal(
-      showcases.includes(`"${invented}"`),
-      false,
-      `${invented} reads as a measurement the product never makes`
-    );
+test("the product clips play only what they should, with the invented collection", () => {
+  // The landing page loops short recordings of the product over its stills.
+  // They are recorded against the mock API, which refuses anything it does not
+  // know, so a real account's papers cannot reach a public video.
+  const shot = read("src/components/marketing/ProductShot.tsx");
+  const clips = [...(shot.match(/const CLIPS = new Set\(\[([^\]]*)\]\)/)?.[1] ?? "").matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+  assert.ok(clips.length >= 3, "the front page has clips");
+  for (const name of clips) {
+    for (const theme of ["light", "dark"]) {
+      assert.ok(exists(`public/marketing/video/${name}-${theme}.mp4`), `${name}-${theme}.mp4 is missing`);
+    }
   }
-  assert.match(showcases, /Extract and clean text/);
-  assert.match(showcases, /Classify tracks and typology/);
+  const clip = read("src/components/marketing/ProductClip.tsx");
+  assert.match(clip, /prefers-reduced-motion: reduce/, "no autoplay for readers who asked for less motion");
+  assert.match(clip, /muted/);
+  assert.match(clip, /playsInline/);
+  assert.match(clip, /IntersectionObserver/, "a clip off screen does not play");
+  assert.match(clip, /Pause the product video/, "moving content beside text can be stopped");
+  const harness = read("scripts/marketing-mock/harness.ts");
+  assert.match(harness, /Not available in the demo recording\./, "unknown requests are refused, never passed through");
+  assert.equal(exists("scripts/capture-marketing-shots.ts"), false, "the real-data capture script is gone");
 });
 
 test("a published number can be traced to the thing it counts", () => {
@@ -172,17 +200,14 @@ test("footer navigation looks like navigation", () => {
     false,
     "a link should not wear the control treatment"
   );
-  assert.match(footer, /-mx-2 rounded px-2 py-2 text-sm/, "padding keeps the hit area the boxes gave");
+  // inline-block, or the vertical padding on an inline link overlaps its
+  // neighbours instead of making the target taller.
+  assert.match(footer, /-mx-2 inline-block rounded px-2 py-2 text-sm/, "padding keeps the hit area the boxes gave");
 });
 
 test("a perpetual rainbow sweep no longer runs over every product frame", () => {
   assert.equal(read("src/app/globals.css").includes("marketing-scanline"), false);
-  for (const file of [
-    "src/components/marketing/FeatureShowcases.tsx",
-    "src/components/marketing/MarketingMotion.tsx",
-  ]) {
-    assert.equal(read(file).includes("marketing-scanline"), false);
-  }
+  assert.equal(read("src/components/marketing/ProductShot.tsx").includes("marketing-scanline"), false);
 });
 
 test("variant colours survive the light-mode retrofit", () => {
@@ -199,9 +224,8 @@ test("variant colours survive the light-mode retrofit", () => {
   for (const file of [
     "src/app/page.tsx",
     "src/app/features/[slug]/page.tsx",
-    "src/components/marketing/FeatureBand.tsx",
-    "src/components/marketing/FeatureShowcases.tsx",
-    "src/components/marketing/MarketingMotion.tsx",
+    "src/components/marketing/MarketingLayout.tsx",
+    "src/components/marketing/ProductShot.tsx",
   ]) {
     assert.equal(banned.test(read(file)), false, `${file} hover state cannot reach light mode`);
   }
@@ -220,16 +244,25 @@ test("the workspace tells you which page you are on, in both themes", () => {
   assert.equal((shell.match(/bg-slate-900 text-white dark:bg-\[#1f1f1f\]/g) ?? []).length, 2);
 });
 
-test("a selected preference looks different from an unselected one in dark mode", () => {
-  // Active and inactive rendered byte-identical dark classes, and hovering an
-  // option you had NOT chosen gave it a brighter border than the one you had.
+test("a selected choice looks different from an unselected one, in both themes", () => {
+  // Active and inactive once rendered byte-identical dark classes, and hovering
+  // an option you had NOT chosen gave it a brighter border than the one you had.
+  // The choices now read the theme tokens, so one class is right in both
+  // themes: the chosen card gets an ink ring, the others only a hairline, and
+  // the choice is exposed as a radio rather than inferred from colour.
+  for (const file of [
+    "src/components/workspace/WorkspaceSettingsClient.tsx",
+    "src/components/workspace/AnalysisProfileEditor.tsx",
+  ]) {
+    const source = read(file);
+    assert.match(source, /role="radiogroup"/, `${file} groups its choices`);
+    assert.match(source, /role="radio"\s+aria-checked=\{selected\}/, `${file} says which one is chosen`);
+    assert.match(source, /\? "border-ink shadow-\[0_0_0_1px_rgb\(var\(--ink\)\)\]"/, `${file} rings the chosen card`);
+    assert.match(source, /: "border-hairline hover:border-hairline-strong hover:bg-subtle"/);
+  }
+  // The legacy goal, intake and output groups wrote to nothing and are gone.
   const settings = read("src/components/workspace/WorkspaceSettingsClient.tsx");
-  assert.equal(
-    settings.includes('? "border-slate-400 bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505]"'),
-    false
-  );
-  const active = settings.match(/\? "border-slate-400 bg-slate-50 dark:border-\[#8f8f8f\] dark:bg-\[#0a0a0a\]"/g) ?? [];
-  assert.equal(active.length, 3, "all three preference groups need a visible selected state");
+  assert.doesNotMatch(settings, /WORKSPACE_GOALS|WORKSPACE_SOURCES|WORKSPACE_OUTPUTS|Research Signal Lab|Supabase/);
 });
 
 test("a failed chat message can be read in light mode", () => {
@@ -320,7 +353,9 @@ test("a button says where it actually goes", () => {
   // /workspace/library - a page titled "Repositories".
   const card = read("src/components/workspace/AnalysisStatusCard.tsx");
   assert.equal(/href="\/workspace\/imports"/.test(card), false);
-  assert.match(card, /href="\/workspace\/library"[\s\S]{0,400}Open repositories/);
+  // And /workspace/library is the Library: "Repositories" is the picker at
+  // /workspaces, so the old label here named the wrong page as well.
+  assert.match(card, /href="\/workspace\/library"[\s\S]{0,400}Open library/);
 });
 
 /* --------------------------------------------------------------- hit areas */
@@ -332,11 +367,9 @@ test("a chat thread row is clickable across its whole height", () => {
   assert.match(chat, /className="block w-full min-w-0 py-1\.5 text-left"/);
 });
 
-test("the feature card link is bigger than its text", () => {
-  assert.match(
-    read("src/components/marketing/FeatureBand.tsx"),
-    /-my-1\.5 mt-\[18px\] inline-flex items-center gap-2 py-1\.5/
-  );
+test("a text link on the public pages is bigger than its text", () => {
+  // The link under each feature was a 20px target for a 14px line of text.
+  assert.match(read("src/components/marketing/styles.ts"), /arrowLinkClass =\s*"group -my-2 inline-flex items-center gap-1\.5 py-2/);
 });
 
 /* -------------------------------------------------------- page structure */
@@ -346,7 +379,7 @@ test("the dashboard names itself", () => {
   // and the only one a screen reader announced with no title.
   assert.match(
     read("src/components/DashboardClient.tsx"),
-    /<h1 className="text-2xl font-semibold[^"]*">\s*Dashboard\s*<\/h1>/
+    /<h1 className="text-(?:2xl|3xl) font-semibold[^"]*">\s*Dashboard\s*<\/h1>/
   );
 });
 
@@ -440,13 +473,11 @@ test("a tab row does not resize when you click a tab", () => {
   // width that made every inactive pill 2px wider and taller than the active
   // one, so clicking reflowed the whole nowrap row sideways under the pointer.
   const modal = readCode("src/components/workspace/PaperAnalysisExplorerModal.tsx");
-  assert.match(modal, /flex-none rounded-full border px-4 py-2/);
-  assert.match(modal, /border-slate-900 bg-slate-900 text-white/);
-  assert.equal(
-    /\? "bg-slate-900 text-white dark:bg-white dark:text-\[#171717\]"/.test(modal),
-    false,
-    "the active branch must carry a border too"
-  );
+  assert.match(modal, /className=\{`tab-btn \$\{activeTab === tab\.id \? "tab-btn-active" : "tab-btn-inactive"\}`\}/);
+  // Both tab states carry the same 2px bottom border, so neither is larger.
+  const css = read("src/app/globals.css");
+  assert.match(css, /\.tab-btn \{\s*@apply[^;]*border-b-2/);
+  assert.match(css, /\.tab-btn-inactive \{\s*@apply border-transparent/);
 });
 
 test("nothing on a dark page is painted in a light-only palette", () => {
@@ -514,11 +545,12 @@ test("the first screen after signing in is not an empty box", () => {
     /return <main className="min-h-screen bg-slate-50 dark:bg-black" \/>;/.test(index),
     false
   );
-  const loading = index.slice(index.indexOf("if (!hydrated || workspaceLoading)"), index.indexOf("return (\n    <main className=\"min-h-screen bg-slate-50 text-slate-900"));
-  assert.match(index, /aria-busy="true"/);
-  assert.match(index, /Loading your repositories/);
-  assert.match(index, /animate-pulse/, "the cards are blocked out so the page does not jump");
-  assert.ok(loading.length > 0);
+  const start = index.indexOf("if (!hydrated || workspaceLoading)");
+  const loading = index.slice(start, index.indexOf(String.fromCharCode(10) + "  return (", start));
+  assert.match(loading, /aria-busy="true"/);
+  assert.match(loading, /Loading your repositories/);
+  assert.match(loading, /skeleton/, "the cards are blocked out so the page does not jump");
+  assert.match(loading, /\{header\}/, "the real chrome is there while it loads");
 });
 
 test("the dashboard feature page does not claim what the code refuses to do", () => {

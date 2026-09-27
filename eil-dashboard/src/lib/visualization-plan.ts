@@ -207,9 +207,9 @@ function buildAdaptiveSection(
     },
     {
       chart_key: "adaptive_track_topic_comparison",
-      title: "Track-to-topic comparison",
+      title: "Topics across categories",
       reason:
-        "Selected to answer alignment questions: compares how leading topics distribute across tracks so program-level emphasis differences are visible.",
+        "Compares how the leading topics spread across the repository's categories, so differences in emphasis are visible.",
       config: { top_n: 6, selected_tracks: selectedTracks },
     },
   ];
@@ -252,7 +252,7 @@ export function createDefaultVisualizationPlan(
     summary:
       mode === "mock"
         ? "Preview data is active, so the adaptive tab is using a safe default chart mix."
-        : "The adaptive tab is focusing on normalized corpus topics, their movement over time, and how they interact with track structure.",
+        : "The adaptive tab is focusing on normalized corpus topics, their movement over time, and how they sit across the repository's categories.",
     sections: [buildAdaptiveSection(mode, selectedTracks, includeFolderComparison)],
   };
 }

@@ -16,6 +16,7 @@ import {
   ANSWER_MEASURE_CH,
   ANSWER_MEASURE_CLASS,
 } from "../src/lib/answer-typography";
+import { GRAY } from "../src/lib/palette";
 
 function chatSource(): string {
   return ["ChatClient.tsx", "AnswerBody.tsx", "ChatIntro.tsx"]
@@ -38,8 +39,12 @@ test("contrast is computed the way WCAG defines it", () => {
   assert.equal(Math.round(luminance("#000000")), 0);
 });
 
-test("the palette tokens resolve to the values Tailwind ships", () => {
-  assert.equal(resolveColour("slate-500"), "#64748b");
+test("the palette tokens resolve to the values the Tailwind config defines", () => {
+  // tailwind.config maps `slate` to the neutral ramp, so the checker must read
+  // the same ramp or every verdict about a slate class is about a colour the
+  // page never paints.
+  assert.equal(resolveColour("slate-500"), GRAY["500"]);
+  assert.match(readFileSync(new URL("../tailwind.config.ts", import.meta.url), "utf8"), /slate: GRAY/);
   assert.equal(resolveColour("white"), "#ffffff");
   assert.equal(resolveColour("[#8e8e8e]"), "#8e8e8e");
   assert.equal(resolveColour("[#abc]"), "#aabbcc");

@@ -36,7 +36,7 @@ function truncate(value: string, max: number): string {
 import type { KeywordSearchResponse } from "@/types/keyword-search";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
@@ -71,7 +71,7 @@ const TreemapCell = (props: {
   edge?: string;
   onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
 }) => {
-  const { x, y, width, height, name, value, depth, fill = "#334155", textFill = "#ffffff", edge = "#ffffff", onDrilldown } = props;
+  const { x, y, width, height, name, value, depth, fill = "#3f3f3f", textFill = "#ffffff", edge = "#ffffff", onDrilldown } = props;
   // The root spans the whole chart under the cells, labelled with the sum of
   // every theme - "63 papers" in a 39-paper repository, hidden but in the page.
   if (depth === 0) return null;
@@ -287,11 +287,12 @@ export default function KeywordExplorer({
 
         <div className="mt-4">
           <input
-            type="text"
-            placeholder="Search a concept, e.g. intelligibility / comprehensibility"
+            type="search"
+            aria-label="Search a concept"
+            placeholder="Search a concept, e.g. intelligibility / comprehensibility…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white"
+            className="w-full rounded-xl border border-hairline-strong bg-surface px-4 py-3 text-base text-ink transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-ink/30 focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
           />
         </div>
       </section>
@@ -301,7 +302,7 @@ export default function KeywordExplorer({
           {conceptLoading ? (
             <div className="app-surface px-5 py-5">
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                Searching the concept family across the workspace...
+                Searching this repository for the concept...
               </p>
             </div>
           ) : null}
@@ -318,7 +319,7 @@ export default function KeywordExplorer({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                      Canonical concept
+                      Concept
                     </p>
                     <h3 className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
                       {conceptResult.canonicalConcept || query}
@@ -368,7 +369,13 @@ export default function KeywordExplorer({
               </section>
 
               {conceptResult.firstAppearance ? (
-                <section className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]">
+                <section
+                  className={`grid gap-4 ${
+                    conceptResult.objectiveVerbs.length > 0 || conceptResult.contributionTypes.length > 0
+                      ? "lg:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,0.8fr)]"
+                      : ""
+                  }`}
+                >
                   <article className="app-surface px-5 py-5">
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       First appearance
@@ -400,6 +407,7 @@ export default function KeywordExplorer({
                     </Link>
                   </article>
 
+                  {conceptResult.objectiveVerbs.length > 0 ? (
                   <article className="app-surface px-5 py-5">
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Objective verbs
@@ -421,7 +429,9 @@ export default function KeywordExplorer({
                       )}
                     </div>
                   </article>
+                  ) : null}
 
+                  {conceptResult.contributionTypes.length > 0 ? (
                   <article className="app-surface px-5 py-5">
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                       Contribution groups
@@ -443,6 +453,7 @@ export default function KeywordExplorer({
                       )}
                     </div>
                   </article>
+                  ) : null}
                 </section>
               ) : null}
 
@@ -454,12 +465,12 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={conceptResult.timeline}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
                         <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
-                        <Line
+                        <Line isAnimationActive={chartAnimationActive()}
                           type="monotone"
                           dataKey="frequency"
                           name="Frequency"
@@ -467,7 +478,7 @@ export default function KeywordExplorer({
                           strokeWidth={3}
                           dot={{ r: 3 }}
                         />
-                        <Line
+                        <Line isAnimationActive={chartAnimationActive()}
                           type="monotone"
                           dataKey="papers"
                           name="Papers"
@@ -489,11 +500,11 @@ export default function KeywordExplorer({
                   <div className="mt-5 h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={conceptResult.trackSpread}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                        <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <Tooltip />
-                        <Bar dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
+                        <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -653,7 +664,7 @@ export default function KeywordExplorer({
                     "Used by",
                   ]}
                 />
-                <Bar
+                <Bar isAnimationActive={chartAnimationActive()}
                   dataKey="papers"
                   name="Papers"
                   fill={ct.barFill}
@@ -858,7 +869,7 @@ export default function KeywordExplorer({
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {comparisonThemes.map((topic, index) => (
-                  <Line
+                  <Line isAnimationActive={chartAnimationActive()}
                     key={topic}
                     type="linear"
                     dataKey={topic}

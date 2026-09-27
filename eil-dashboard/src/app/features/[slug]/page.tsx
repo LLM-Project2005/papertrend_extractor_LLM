@@ -1,22 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { FinalCTA, SellingPoint } from "@/components/marketing/FeatureBand";
-import {
-  AIResearchChatShowcase,
-  AnalysisFullPipelineShowcase,
-  AdaptiveDashboardShowcase,
-  CloudQueueShowcase,
-  CloudWebsiteFlowShowcase,
-  DeepResearchGraphShowcase,
-  PaperAnalysisShowcase,
-  ResearchDashboardShowcase,
-} from "@/components/marketing/FeatureShowcases";
 import MarketingCTA from "@/components/marketing/MarketingCTA";
 import { MarketingShell } from "@/components/marketing/MarketingLayout";
-import { MotionReveal } from "@/components/marketing/MarketingMotion";
+import ProductShot from "@/components/marketing/ProductShot";
 import { marketingFeatures, type MarketingFeature } from "@/components/marketing/marketing-content";
-import { ArrowRightIcon } from "@/components/ui/Icons";
+import {
+  arrowLinkClass,
+  displayClass,
+  leadClass,
+  secondaryPillClass,
+  sectionTitleClass,
+} from "@/components/marketing/styles";
+import { ArrowRightIcon, CheckIcon } from "@/components/ui/Icons";
 
 interface FeaturePageProps {
   params: {
@@ -26,6 +22,14 @@ interface FeaturePageProps {
 
 export const dynamic = "force-static";
 export const dynamicParams = false;
+
+/** The documentation page that explains each feature in full. */
+const FEATURE_DOCS: Record<MarketingFeature["slug"], { href: string; label: string }> = {
+  "paper-analysis": { href: "/docs/analysis-pipeline", label: "How a paper is analyzed" },
+  "research-dashboard": { href: "/docs/dashboard", label: "Using the dashboard" },
+  "ai-research-chat": { href: "/docs/chat", label: "Using research chat" },
+  "cloud-queue": { href: "/docs/uploading-papers", label: "Uploading papers" },
+};
 
 function findFeature(slug: string) {
   return marketingFeatures.find((feature) => feature.slug === slug);
@@ -42,12 +46,12 @@ export function generateMetadata({ params }: FeaturePageProps): Metadata {
 
   if (!feature) {
     return {
-      title: "Papertrend feature",
+      title: "Features",
     };
   }
 
   return {
-    title: `${feature.navLabel} | Papertrend`,
+    title: feature.navLabel,
     description: feature.description,
     alternates: {
       canonical: `/features/${feature.slug}`,
@@ -55,531 +59,150 @@ export function generateMetadata({ params }: FeaturePageProps): Metadata {
   };
 }
 
-function BackLink() {
-  return (
-    <Link
-      href="/"
-      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-sm font-medium text-slate-950 transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white dark:hover:border-[#4d4d4d] dark:hover:bg-[#0a0a0a]"
-    >
-      Back to overview
-      <ArrowRightIcon className="h-4 w-4" />
-    </Link>
-  );
-}
-
-/** A value the reader should read as a measurement, e.g. "9", "20+", "1,200". */
+/** A value to read as a measurement ("12", "10 MB") rather than a word. */
 function isQuantity(value: string): boolean {
-  return /^[\d][\d.,]*\+?$/.test(value.trim());
+  return /^[\d][\d.,]*\+?(?:\s?[A-Z]{1,3})?$/.test(value.trim());
 }
 
-function ProofStrip({ feature, className = "" }: { feature: MarketingFeature; className?: string }) {
+function Bullets({ items }: { items: string[] }) {
   return (
-    <div className={`grid gap-px overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#1f1f1f] sm:grid-cols-3 ${className}`}>
-      {/*
-        Only some of these values are quantities. "9" wants the display size; a
-        phrase like "Tools search + charts" set at 3xl reads as a headline that
-        ran out of room, and invites the eye to expect a statistic that is not
-        there. The type is fitted to the content instead.
-      */}
-      {feature.proof.map((item) => (
-        <div key={item.label} className="bg-[#030303] px-6 py-7">
-          <p
-            className={
-              isQuantity(item.metric)
-                ? "text-3xl font-semibold text-white"
-                : "text-lg font-semibold text-white"
-            }
-          >
-            {item.metric}
-          </p>
-          <p className="mt-2 text-sm text-[#8f8f8f]">{item.label}</p>
-        </div>
+    <ul className="mt-7 space-y-3.5">
+      {items.map((item) => (
+        <li key={item} className="flex gap-3 text-[15px] leading-6 text-body">
+          <span className="mt-0.5 flex h-5 w-5 flex-none items-center justify-center rounded-full bg-subtle text-ink">
+            <CheckIcon weight="bold" className="h-3 w-3" />
+          </span>
+          {item}
+        </li>
       ))}
-    </div>
-  );
-}
-
-function TechNoteGrid({
-  eyebrow,
-  title,
-  copy,
-  items,
-}: {
-  eyebrow: string;
-  title: string;
-  copy: string;
-  items: string[];
-}) {
-  return (
-    <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-      <p className="font-mono text-xs text-[#8f8f8f]">{eyebrow}</p>
-      <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">{title}</h2>
-      <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{copy}</p>
-      <div className="mt-6 grid gap-3 sm:grid-cols-2">
-        {items.map((item) => (
-          <div key={item} className="rounded-md border border-[#1f1f1f] bg-[#030303] px-3 py-2 text-sm leading-6 text-[#d0d0d0]">
-            {item}
-          </div>
-        ))}
-      </div>
-    </MotionReveal>
-  );
-}
-
-function LogicSteps({
-  eyebrow,
-  title,
-  copy,
-  steps,
-}: {
-  eyebrow: string;
-  title: string;
-  copy: string;
-  steps: string[];
-}) {
-  return (
-    <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-      <div className="grid gap-8 lg:grid-cols-[0.72fr_1.28fr]">
-        <div>
-          <p className="font-mono text-xs text-[#8f8f8f]">{eyebrow}</p>
-          <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">{title}</h2>
-          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{copy}</p>
-        </div>
-        <div className="grid gap-px overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#1f1f1f] sm:grid-cols-2">
-          {steps.map((step, index) => (
-            <div key={step} className="bg-[#030303] p-4">
-              <p className="font-mono text-xs text-[#8f8f8f]">0{index + 1}</p>
-              <p className="mt-3 text-sm leading-6 text-[#d0d0d0]">{step}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </MotionReveal>
-  );
-}
-
-function DeepResearchSpotlight() {
-  return (
-    <section className="relative overflow-hidden border-y border-[#1f1f1f] bg-[#030303] px-4 py-20 sm:px-6">
-      <div className="marketing-grid pointer-events-none absolute inset-0 opacity-20" />
-      <div className="relative mx-auto grid max-w-7xl gap-8 lg:grid-cols-[0.78fr_1.22fr] lg:items-center">
-        <MotionReveal>
-          <p className="font-mono text-xs text-[#8f8f8f]">DEEP RESEARCH AGENT</p>
-          <h2 className="mt-4 text-3xl font-semibold leading-tight text-white sm:text-5xl">
-            The agent plans first, researches second, and writes last.
-          </h2>
-          <p className="mt-5 text-base leading-8 text-[#a3a3a3]">
-            This is the big mode for serious questions. It behaves like a
-            LangGraph-style state graph: resolve intent, plan steps, call scoped
-            tools, verify evidence coverage, then synthesize a grounded report.
-          </p>
-          <div className="mt-7 grid gap-3">
-            {[
-              "Planner produces visible research steps before synthesis.",
-              "Tool steps can fetch papers, read sections, search keywords, and inspect dashboard summaries.",
-              "Verification catches weak evidence before the final report is written.",
-            ].map((item) => (
-              <SellingPoint key={item}>{item}</SellingPoint>
-            ))}
-          </div>
-        </MotionReveal>
-        <DeepResearchGraphShowcase />
-      </div>
-    </section>
-  );
-}
-
-function PaperAnalysisPage({ feature }: { feature: MarketingFeature }) {
-  const Icon = feature.icon;
-
-  return (
-    <MarketingShell activeSlug={feature.slug}>
-      <section className="relative overflow-hidden px-4 pb-16 pt-32 sm:px-6 lg:pb-24">
-        <div className="marketing-grid pointer-events-none absolute inset-0 opacity-35" />
-        <div className="relative mx-auto grid max-w-7xl gap-12 lg:grid-cols-[0.82fr_1.18fr] lg:items-center">
-          <MotionReveal>
-            <span className={`inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br ${feature.gradient} text-white`}>
-              <Icon className="h-6 w-6" />
-            </span>
-            <p className="mt-7 font-mono text-xs text-[#8f8f8f]">{feature.eyebrow}</p>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight text-white sm:text-6xl">
-              Extract the paper before you argue with it.
-            </h1>
-            <p className="mt-6 max-w-2xl text-base leading-8 text-[#a3a3a3] sm:text-lg">
-              {feature.description} This page shows the analysis engine as a lab bench:
-              file intake, section recovery, metadata, year evidence, topics,
-              categories, facets, and workspace tables becoming structured output.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <MarketingCTA />
-              <BackLink />
-            </div>
-          </MotionReveal>
-          <PaperAnalysisShowcase />
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-          <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-            <p className="font-mono text-xs text-[#8f8f8f]">MARKETING VERSION</p>
-            <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
-              The simple story: clean the paper, find the signals, save the evidence.
-            </h2>
-            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
-              The real worker does more than one AI call. For users, the journey
-              can be understood in four plain stages: take in the PDF, recover
-              usable sections, extract research signals, then persist evidence
-              so the dashboard and chat can reuse it.
-            </p>
-            <div className="mt-6 grid gap-px overflow-hidden rounded-lg border border-[#1f1f1f] bg-[#1f1f1f] md:grid-cols-4">
-              {["Ingest", "Recover", "Analyze", "Persist"].map((step, index) => (
-                <div key={step} className="bg-[#030303] p-5">
-                  <p className="font-mono text-xs text-[#8f8f8f]">0{index + 1}</p>
-                  <h3 className="mt-4 text-lg font-semibold text-white">{step}</h3>
-                </div>
-              ))}
-            </div>
-          </MotionReveal>
-          <MotionReveal delay={0.1} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-            <h2 className="text-2xl font-semibold leading-tight text-white">{feature.sections[0].title}</h2>
-            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{feature.sections[0].copy}</p>
-            <ul className="mt-6 space-y-3">
-              {feature.sections[0].bullets.map((bullet) => (
-                <SellingPoint key={bullet}>{bullet}</SellingPoint>
-              ))}
-            </ul>
-          </MotionReveal>
-        </div>
-        <ProofStrip feature={feature} className="mt-4" />
-      </section>
-
-      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-16 sm:px-6">
-        <div className="mx-auto grid max-w-7xl gap-6 lg:grid-cols-[1.25fr_0.75fr]">
-          <AnalysisFullPipelineShowcase />
-          <TechNoteGrid
-            eyebrow="FULL PIPELINE"
-            title="A full run becomes reusable research data."
-            copy="The worker keeps every output close to a paper, owner, folder, and evidence trail. That makes the same analysis available to the library, dashboard, charts, and chat without re-reading the PDF every time."
-            items={[
-              "Text extraction first, vision/OCR fallback when text is unusable.",
-              "Structured model calls for segmentation, metadata, keywords, topics, categories, typology, and facets.",
-              "Supabase persistence writes paper rows, content, keyword rows, concepts, categories, and analysis facets.",
-              "Retry-safe queue records let failed or incomplete files be resumed instead of silently disappearing.",
-            ]}
-          />
-        </div>
-      </section>
-
-      <FinalCTA />
-    </MarketingShell>
-  );
-}
-
-function ResearchDashboardPage({ feature }: { feature: MarketingFeature }) {
-  const Icon = feature.icon;
-
-  return (
-    <MarketingShell activeSlug={feature.slug}>
-      <section className="relative overflow-hidden px-4 pb-12 pt-32 sm:px-6">
-        <div className="marketing-grid pointer-events-none absolute inset-0 opacity-25" />
-        <div className="relative mx-auto max-w-7xl">
-          <MotionReveal className="mx-auto max-w-4xl text-center">
-            <span className={`mx-auto inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br ${feature.gradient} text-white`}>
-              <Icon className="h-6 w-6" />
-            </span>
-            <p className="mt-7 font-mono text-xs text-[#8f8f8f]">{feature.eyebrow}</p>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight text-white sm:text-6xl">
-              See the whole workspace before opening a single file.
-            </h1>
-            <p className="mx-auto mt-6 max-w-3xl text-base leading-8 text-[#a3a3a3] sm:text-lg">
-              {feature.description} The dashboard page is a command wall: filters,
-              trends, topic movement, track distribution, paper coverage, and
-              library status in one scan.
-            </p>
-            <div className="mt-8 flex flex-wrap justify-center gap-3">
-              <MarketingCTA />
-              <BackLink />
-            </div>
-          </MotionReveal>
-          <div className="mt-12">
-            <ResearchDashboardShowcase />
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-4 px-4 py-16 sm:px-6 lg:grid-cols-[0.78fr_1.22fr]">
-        <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-          <h2 className="text-2xl font-semibold leading-tight text-white">{feature.sections[0].title}</h2>
-          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{feature.sections[0].copy}</p>
-          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
-            This part is intentionally deterministic: most charts are built from
-            stored tables and views, not fresh model guesses. That keeps dashboard
-            numbers stable when users switch folders, years, categories, or workspace scope.
-          </p>
-          <ul className="mt-6 space-y-3">
-            {feature.sections[0].bullets.map((bullet) => (
-              <SellingPoint key={bullet}>{bullet}</SellingPoint>
-            ))}
-          </ul>
-        </MotionReveal>
-        <ProofStrip feature={feature} />
-      </section>
-
-      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-16 sm:px-6">
-        <div className="mx-auto grid max-w-7xl gap-4 md:grid-cols-3">
-          {feature.heroPoints.map((point, index) => (
-            <MotionReveal key={point} delay={index * 0.08} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-              <p className="font-mono text-xs text-[#8f8f8f]">DASHBOARD SIGNAL</p>
-              <h3 className="mt-4 text-xl font-semibold text-white">{point}</h3>
-            </MotionReveal>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
-        <AdaptiveDashboardShowcase />
-        <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-          <p className="font-mono text-xs text-[#8f8f8f]">ADAPTIVE DASHBOARD</p>
-          <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
-            The dashboard can choose the chart mix for the current corpus.
-          </h2>
-          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
-            The Adaptive tab uses a visualization planner to pick a balanced set
-            of charts from the deterministic chart catalog. It looks for time
-            signals, comparison signals, and structure signals, then falls back to
-            a safe plan when the scoped data is thin.
-          </p>
-          <div className="mt-6 grid gap-3">
-            {["topic momentum", "emerging topics", "keyword heatmap", "track/topic comparison"].map((item) => (
-              <div key={item} className="rounded-md border border-[#1f1f1f] bg-[#030303] px-3 py-2 font-mono text-xs text-[#d0d0d0]">
-                {item}
-              </div>
-            ))}
-          </div>
-        </MotionReveal>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
-        <LogicSteps
-          eyebrow="DASHBOARD LOGIC"
-          title="Fast views come from normalized research tables."
-          copy="The dashboard reads analyzed paper rows, keyword rows, concept rows, and track rows, then aggregates them into views the user can filter instantly."
-          steps={[
-            "AI creates source signals during ingestion; dashboard math stays deterministic.",
-            "Workspace, year, folder, and track filters reuse the same normalized data shape.",
-            "Adaptive charts are selected from an allowed catalog, not invented at render time.",
-            "Chat chart mode can reuse the same stable dashboard data.",
-          ]}
-        />
-      </section>
-
-      <FinalCTA />
-    </MarketingShell>
-  );
-}
-
-function AIResearchChatPage({ feature }: { feature: MarketingFeature }) {
-  const Icon = feature.icon;
-
-  return (
-    <MarketingShell activeSlug={feature.slug}>
-      <section className="relative overflow-hidden px-4 pb-16 pt-32 sm:px-6 lg:pb-24">
-        <div className="marketing-grid pointer-events-none absolute inset-0 opacity-30" />
-        <div className="relative mx-auto grid max-w-7xl gap-10 lg:grid-cols-[1.12fr_0.88fr] lg:items-center">
-          <AIResearchChatShowcase />
-          <MotionReveal>
-            <span className={`inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br ${feature.gradient} text-white`}>
-              <Icon className="h-6 w-6" />
-            </span>
-            <p className="mt-7 font-mono text-xs text-[#8f8f8f]">{feature.eyebrow}</p>
-            <h1 className="mt-5 text-4xl font-semibold leading-tight text-white sm:text-6xl">
-              A research chat that can act on the paper in the room.
-            </h1>
-            <p className="mt-6 text-base leading-8 text-[#a3a3a3] sm:text-lg">
-              {feature.description} It should feel like a serious assistant:
-              attached-file context, chart mode, web citations, and deeper
-              research steps when the question calls for it.
-            </p>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <MarketingCTA />
-              <BackLink />
-            </div>
-          </MotionReveal>
-        </div>
-      </section>
-
-      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-16 sm:px-6">
-        <div className="mx-auto grid max-w-7xl gap-4 lg:grid-cols-3">
-          {feature.sections.map((section, index) => (
-            <MotionReveal
-              key={section.title}
-              delay={index * 0.08}
-              className={index === 0 ? "rounded-lg border border-[#1f1f1f] bg-[#050505] p-6 lg:col-span-2" : "rounded-lg border border-[#1f1f1f] bg-[#050505] p-6"}
-            >
-              <h2 className="text-2xl font-semibold leading-tight text-white">{section.title}</h2>
-              <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{section.copy}</p>
-              <ul className="mt-6 space-y-3">
-                {section.bullets.map((bullet) => (
-                  <SellingPoint key={bullet}>{bullet}</SellingPoint>
-                ))}
-              </ul>
-            </MotionReveal>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <LogicSteps
-          eyebrow="CHAT LOGIC"
-          title="Different requests take different routes."
-          copy="The chat UI is one surface, but the backend separates everyday answers, chart mode, web search, and deep research so the assistant can stay useful without doing expensive work for every prompt."
-          steps={[
-            "Attached papers and recent messages create the first context window.",
-            "Chart requests go through an LLM chart planner before deterministic data builders render the chart.",
-            "Web search is opt-in and returns citation links as visible tool metadata.",
-            "Unanalyzed library attachments can be sent back into the worker queue before charting.",
-          ]}
-        />
-      </section>
-
-      <DeepResearchSpotlight />
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <ProofStrip feature={feature} />
-      </section>
-
-      <FinalCTA />
-    </MarketingShell>
-  );
-}
-
-function CloudQueuePage({ feature }: { feature: MarketingFeature }) {
-  const Icon = feature.icon;
-
-  return (
-    <MarketingShell activeSlug={feature.slug}>
-      <section className="relative overflow-hidden px-4 pb-16 pt-32 sm:px-6">
-        <div className="marketing-grid pointer-events-none absolute inset-0 opacity-30" />
-        <div className="relative mx-auto max-w-7xl">
-          <div className="grid gap-10 lg:grid-cols-[0.7fr_1.3fr] lg:items-end">
-            <MotionReveal>
-              <span className={`inline-flex h-12 w-12 items-center justify-center rounded-lg bg-gradient-to-br ${feature.gradient} text-white`}>
-                <Icon className="h-6 w-6" />
-              </span>
-              <p className="mt-7 font-mono text-xs text-[#8f8f8f]">{feature.eyebrow}</p>
-              <h1 className="mt-5 text-4xl font-semibold leading-tight text-white sm:text-6xl">
-                The queue keeps working after the browser stops watching.
-              </h1>
-              <p className="mt-6 text-base leading-8 text-[#a3a3a3] sm:text-lg">
-                {feature.description} The animation here focuses on the real handoff:
-                upload record, Cloud Task, worker claim, heartbeat, persistence,
-                and continuation.
-              </p>
-              <div className="mt-8 flex flex-wrap gap-3">
-                <MarketingCTA />
-                <BackLink />
-              </div>
-            </MotionReveal>
-            <CloudQueueShowcase />
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6">
-        <div className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-          <ProofStrip feature={feature} />
-          <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-            <h2 className="text-2xl font-semibold leading-tight text-white">{feature.sections[1].title}</h2>
-            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">{feature.sections[1].copy}</p>
-            <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
-              Technically, the web app creates ingestion runs, then Google Cloud
-              Tasks calls the worker endpoint. The worker claims one run at a time,
-              updates heartbeats, saves results, and triggers the next task when
-              more papers are waiting.
-            </p>
-            <ul className="mt-6 space-y-3">
-              {feature.sections[1].bullets.map((bullet) => (
-                <SellingPoint key={bullet}>{bullet}</SellingPoint>
-              ))}
-            </ul>
-          </MotionReveal>
-        </div>
-      </section>
-
-      <section className="border-y border-[#1f1f1f] bg-[#030303] px-4 py-16 sm:px-6">
-        <div className="mx-auto grid max-w-7xl gap-4 md:grid-cols-3">
-          {feature.heroPoints.map((point, index) => (
-            <MotionReveal key={point} delay={index * 0.08} className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-              <p className="font-mono text-xs text-[#8f8f8f]">QUEUE CAPABILITY</p>
-              <h3 className="mt-4 text-xl font-semibold text-white">{point}</h3>
-            </MotionReveal>
-          ))}
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-6 px-4 py-16 sm:px-6 lg:grid-cols-[0.84fr_1.16fr] lg:items-center">
-        <MotionReveal className="rounded-lg border border-[#1f1f1f] bg-[#050505] p-6">
-          <p className="font-mono text-xs text-[#8f8f8f]">WEBSITE TO GOOGLE CLOUD</p>
-          <h2 className="mt-4 text-2xl font-semibold leading-tight text-white">
-            The website starts the work. Google Cloud keeps it moving.
-          </h2>
-          <p className="mt-4 text-sm leading-7 text-[#a3a3a3]">
-            The browser never owns the long-running analysis. It uploads files
-            and creates queue records; Cloud Tasks calls the Cloud Run worker;
-            the worker claims a run, heartbeats, saves results, and schedules the
-            next continuation if more files are waiting.
-          </p>
-          <div className="mt-6 space-y-3">
-            {[
-              "429 while busy is expected: it protects one-at-a-time queue processing.",
-              "Cloud Run can start cold, process one file, then scale back down.",
-              "Supabase rows hold durable status so the UI can refresh safely.",
-            ].map((item) => (
-              <SellingPoint key={item}>{item}</SellingPoint>
-            ))}
-          </div>
-        </MotionReveal>
-        <CloudWebsiteFlowShowcase />
-      </section>
-
-      <section className="mx-auto max-w-7xl px-4 pb-16 sm:px-6">
-        <MotionReveal className="grid gap-4 rounded-lg border border-[#1f1f1f] bg-[#050505] p-6 lg:grid-cols-[1fr_1fr_1fr]">
-          {[
-            ["Trigger", "Cloud Tasks sends an authenticated POST to the worker endpoint."],
-            ["Claim", "The worker locks one queued run so duplicate tasks cannot double-process a file."],
-            ["Continue", "When a run finishes, the service schedules the next queued paper automatically."],
-          ].map(([title, copy]) => (
-            <div key={title} className="border-[#1f1f1f] lg:border-r lg:pr-5 lg:last:border-r-0">
-              <p className="font-mono text-xs text-[#8f8f8f]">{title}</p>
-              <p className="mt-3 text-sm leading-6 text-[#d0d0d0]">{copy}</p>
-            </div>
-          ))}
-        </MotionReveal>
-      </section>
-
-      <FinalCTA />
-    </MarketingShell>
+    </ul>
   );
 }
 
 export default function FeaturePage({ params }: FeaturePageProps) {
   const feature = findFeature(params.slug);
-
   if (!feature) {
     notFound();
   }
+  const docs = FEATURE_DOCS[feature.slug];
+  const others = marketingFeatures.filter((item) => item.slug !== feature.slug);
 
-  switch (feature.slug) {
-    case "paper-analysis":
-      return <PaperAnalysisPage feature={feature} />;
-    case "research-dashboard":
-      return <ResearchDashboardPage feature={feature} />;
-    case "ai-research-chat":
-      return <AIResearchChatPage feature={feature} />;
-    case "cloud-queue":
-      return <CloudQueuePage feature={feature} />;
-    default:
-      notFound();
-  }
+  return (
+    <MarketingShell activeSlug={feature.slug}>
+      <section className="relative isolate px-4 pt-32 sm:px-6 sm:pt-40">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[640px] bg-[radial-gradient(55%_45%_at_50%_0%,rgb(var(--ink)/0.06),transparent_72%)]"
+        />
+        <div className="mx-auto max-w-6xl">
+          <div className="max-w-3xl">
+            <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-sm text-mute">
+              <Link href="/" className="transition-colors hover:text-ink">
+                Overview
+              </Link>
+              <span aria-hidden="true">/</span>
+              <span className="text-body" aria-current="page">{feature.navLabel}</span>
+            </nav>
+            <h1 className={`mt-4 ${displayClass} text-4xl leading-[1.05] sm:text-6xl`}>{feature.title}</h1>
+            <p className="mt-6 max-w-2xl text-lg leading-8 text-body">{feature.description}</p>
+            <div className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <MarketingCTA size="lg" />
+              <Link href={docs.href} className={secondaryPillClass}>
+                {docs.label}
+              </Link>
+            </div>
+          </div>
+          <div className="hero-rise mt-14 sm:mt-16">
+            <ProductShot name={feature.shot} alt={feature.shotAlt} priority sizes="(min-width: 1152px) 1152px, 100vw" />
+          </div>
+
+          <dl className="mt-14 grid gap-px overflow-hidden rounded-2xl border border-hairline bg-hairline sm:grid-cols-3">
+            {/*
+              Only some of these are quantities. "12" wants the larger size; a
+              word such as "Cites" set as large reads as a statistic that is not
+              there, so the type is fitted to the value.
+            */}
+            {feature.proof.map((item) => (
+              <div key={item.label} className="bg-surface px-6 py-6">
+                <dt className="sr-only">{item.label}</dt>
+                <dd
+                  className={
+                    isQuantity(item.metric)
+                      ? "text-3xl font-semibold tracking-tight text-ink tabular-nums"
+                      : "text-lg font-semibold text-ink"
+                  }
+                >
+                  {item.metric}
+                </dd>
+                <dd aria-hidden="true" className="mt-1.5 text-sm text-body">
+                  {item.label}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      {feature.sections.map((section, index) => {
+        const flip = index % 2 === 1;
+        return (
+          <section key={section.title} className="px-4 py-20 sm:px-6 sm:py-28">
+            {section.shot ? (
+              <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-16">
+                <div className={`reveal lg:col-span-5 ${flip ? "lg:order-2" : ""}`}>
+                  <h2 className={sectionTitleClass}>{section.title}</h2>
+                  <p className={`mt-5 ${leadClass}`}>{section.copy}</p>
+                  <Bullets items={section.bullets} />
+                </div>
+                <div className={`reveal lg:col-span-7 ${flip ? "lg:order-1" : ""}`}>
+                  <ProductShot
+                    name={section.shot}
+                    alt={section.shotAlt ?? section.title}
+                    sizes="(min-width: 1024px) 680px, 100vw"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="mx-auto grid max-w-6xl gap-10 lg:grid-cols-12 lg:gap-16">
+                <h2 className={`reveal lg:col-span-5 ${sectionTitleClass}`}>{section.title}</h2>
+                <div className="reveal lg:col-span-7">
+                  <p className={leadClass}>{section.copy}</p>
+                  <Bullets items={section.bullets} />
+                </div>
+              </div>
+            )}
+          </section>
+        );
+      })}
+
+      <section className="border-t border-hairline px-4 py-20 sm:px-6 sm:py-24">
+        <div className="mx-auto max-w-6xl">
+          <h2 className="text-lg font-medium text-ink">More of Papertrend</h2>
+          <ul className="mt-6 grid gap-x-10 gap-y-2 md:grid-cols-3">
+            {others.map((item) => (
+              <li key={item.slug}>
+                <Link
+                  href={`/features/${item.slug}`}
+                  className="group block border-t border-hairline py-5 transition-colors"
+                >
+                  <span className="flex items-center justify-between gap-3 text-[15px] font-medium text-ink">
+                    {item.navLabel}
+                    <ArrowRightIcon className="h-4 w-4 text-mute transition-transform duration-200 group-hover:translate-x-0.5 group-hover:text-ink" />
+                  </span>
+                  <span className="mt-1.5 block text-sm leading-6 text-body">{item.homeSummary}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-12 flex flex-wrap items-center gap-6">
+            <MarketingCTA size="lg" />
+            <Link href="/" className={arrowLinkClass}>
+              Back to the overview
+              <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
+            </Link>
+          </div>
+        </div>
+      </section>
+    </MarketingShell>
+  );
 }

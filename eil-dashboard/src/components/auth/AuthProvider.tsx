@@ -22,6 +22,8 @@ import {
   signInWithFirebasePassword,
   signInWithFirebaseProvider,
   signOutFirebase,
+  reloadFirebaseUser,
+  sendFirebaseVerificationEmail,
   signUpWithFirebasePassword,
   subscribeToFirebaseTokens,
   updateFirebaseUserProfile,
@@ -121,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfileRecord | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authErrorCode, setAuthErrorCode] = useState<AuthContextValue["authErrorCode"]>(null);
   const firebaseProfileRequestRef = useRef<{
     key: string;
     promise: Promise<void>;
@@ -245,9 +248,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               });
               const payload = (await response.json().catch(() => ({}))) as {
                 error?: string;
+                code?: AuthContextValue["authErrorCode"];
                 ownerUserId?: string;
                 profile?: UserProfileRecord | null;
               };
+              setAuthErrorCode(response.ok ? null : payload.code ?? "not_linked");
               if (!response.ok || !payload.ownerUserId) {
                 throw new Error(
                   payload.error ??
@@ -507,6 +512,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       profile,
       isAdmin: profile?.role === "admin",
       authError,
+      authErrorCode,
+      resendVerificationEmail: async () => {
+        const firebaseAuth = await getFirebaseAuth();
+        if (!firebaseAuth) throw new Error("Sign-in is not available right now.");
+        await sendFirebaseVerificationEmail(firebaseAuth);
+      },
+      confirmEmailVerified: async () => {
+        const firebaseAuth = await getFirebaseAuth();
+        if (!firebaseAuth) return false;
+        // A fresh token re-runs the profile check through the token listener.
+        firebaseProfileAttemptRef.current = null;
+        return reloadFirebaseUser(firebaseAuth);
+      },
       signInWithProvider: async (provider) => {
         if (configuredAuthProvider === "firebase") {
           const firebaseAuth = await getFirebaseAuth();
@@ -651,6 +669,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [
       hydrated,
       authError,
+      authErrorCode,
       profile,
       refreshProfile,
       saveUserProfile,

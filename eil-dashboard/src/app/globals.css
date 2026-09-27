@@ -7,22 +7,64 @@
      form controls, the flash of background before CSS arrives. Without it the
      native parts stay light while the page is dark. */
   color-scheme: light;
-  --bg-plot: #fafbfd;
+  --bg-plot: #fafafa;
   --radius-control: 8px;
   --radius-panel: 12px;
   --motion-fast: 140ms;
   --motion-ui: 220ms;
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
   --semantic-cluster-bg: rgba(255, 255, 255, 0.9);
-  --semantic-cluster-text: #334155;
-  --semantic-edge: #64748b;
+  --semantic-cluster-text: #3f3f3f;
+  --semantic-edge: #707070;
   --semantic-edge-active: #b45309;
+
+  /* Semantic colours, as RGB channels so Tailwind's opacity modifiers work.
+     tailwind.config exposes them as bg-canvas, text-ink, border-hairline... */
+  --canvas: 250 250 250;
+  --surface: 255 255 255;
+  --subtle: 244 244 244;
+  --hairline: 232 232 232;
+  --hairline-strong: 212 212 212;
+  --ink: 23 23 23;
+  --body: 82 82 82;
+  --mute: 112 112 112;
+  --accent: 37 99 235;
+  --accent-soft: 239 246 255;
+  --accent-ink: 29 78 216;
+  --focus: 37 99 235;
+
+  /* Stacked, offset shadows - a near layer and a far one - that sit under a
+     1px hairline border rather than replacing it. */
+  --shadow-raise: 0 1px 1px rgb(0 0 0 / 0.02), 0 1px 3px rgb(0 0 0 / 0.04);
+  --shadow-float: 0 2px 4px rgb(0 0 0 / 0.04), 0 8px 16px -4px rgb(0 0 0 / 0.08), 0 20px 40px -12px rgb(0 0 0 / 0.1);
+  --shadow-overlay: 0 4px 8px rgb(0 0 0 / 0.04), 0 16px 32px -8px rgb(0 0 0 / 0.1), 0 32px 64px -16px rgb(0 0 0 / 0.16);
+}
+
+.dark {
+  --canvas: 0 0 0;
+  --surface: 10 10 10;
+  --subtle: 20 20 20;
+  --hairline: 31 31 31;
+  --hairline-strong: 46 46 46;
+  --ink: 237 237 237;
+  --body: 161 161 161;
+  --mute: 143 143 143;
+  --accent: 96 165 250;
+  --accent-soft: 23 37 84;
+  --accent-ink: 147 197 253;
+  --focus: 96 165 250;
+
+  /* A shadow is invisible on black, so depth in dark comes from a lit top
+     edge; the far layer only separates a floating panel from the page. */
+  --shadow-raise: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  --shadow-float: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 16px 40px -8px rgb(0 0 0 / 0.75);
+  --shadow-overlay: inset 0 1px 0 rgb(255 255 255 / 0.05), 0 24px 64px -12px rgb(0 0 0 / 0.85);
 }
 
 .semantic-map-flow {
   --xy-controls-button-background-color-default: rgba(255, 255, 255, 0.96);
-  --xy-controls-button-color-default: #334155;
-  --xy-controls-button-border-color-default: #e2e8f0;
+  --xy-controls-button-color-default: #3f3f3f;
+  --xy-controls-button-border-color-default: #e8e8e8;
   --xy-minimap-background-color-default: rgba(255, 255, 255, 0.94);
 }
 
@@ -71,8 +113,15 @@ body {
   overflow-x: clip;
 }
 
+html {
+  scroll-padding-top: 6rem;
+  -webkit-text-size-adjust: 100%;
+  text-rendering: optimizeLegibility;
+}
+
 body {
-  @apply bg-slate-50 text-slate-900 antialiased;
+  @apply bg-slate-50 font-sans text-slate-900 antialiased;
+  font-feature-settings: "liga" 1, "calt" 1;
   transition:
     background-color var(--motion-ui) ease,
     color var(--motion-ui) ease;
@@ -84,59 +133,132 @@ body {
 
 .dark body {
   background-color: #000000;
-  color: #f2f2f2;
+  color: #ededed;
+}
+
+/* Headings wrap to balanced lines; paragraphs avoid a one-word last line. */
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p,
+li,
+dd {
+  text-wrap: pretty;
 }
 
 ::selection {
-  background: #171717;
-  color: #ffffff;
-}
-
-.dark ::selection {
-  background: #f2f2f2;
-  color: #000000;
+  background: rgb(var(--accent) / 0.2);
+  color: inherit;
 }
 
 /* Includes tabindex elements: the citation marker and the fold are reached
    that way, and were controls a keyboard user could not see. */
 :where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline: 2px solid #171717;
+  outline: 2px solid rgb(var(--focus));
   outline-offset: 2px;
 }
 
 .dark :where(button, a, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
-  outline-color: #f2f2f2;
+  outline-color: rgb(var(--focus));
 }
 
-/* Custom scrollbar */
+input,
+textarea {
+  caret-color: rgb(var(--accent));
+}
+
+/* Scrollbars: thin, on a clear track, in the theme's hairline colour. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--hairline-strong)) transparent;
+}
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  @apply bg-slate-100;
-}
-
-.dark ::-webkit-scrollbar-track {
-  background-color: #050505;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  @apply rounded-full bg-slate-300;
+  border: 2px solid transparent;
+  border-radius: 9999px;
+  background-clip: padding-box;
+  background-color: rgb(var(--hairline-strong));
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(var(--mute) / 0.6);
 }
 
-.dark ::-webkit-scrollbar-thumb {
-  background-color: #2a2a2a;
+/* A loading placeholder that shimmers once the page has settled. */
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--subtle)) 0%,
+    rgb(var(--hairline)) 50%,
+    rgb(var(--subtle)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 
-/* Smooth tab transitions */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* Underlined view tabs. Both states carry the same 2px border, so a tab
+   never changes size when it becomes the active one. */
 .tab-btn {
-  @apply rounded-full border px-4 py-2 text-sm font-medium transition-colors duration-150;
+  @apply relative -mb-px flex-none whitespace-nowrap border-b-2 px-3 pb-3 pt-2 text-sm font-medium transition-colors duration-150;
 }
 .tab-btn-active {
-  @apply border-slate-900 bg-slate-900 text-white dark:border-[#e8e8e8] dark:bg-[#e8e8e8] dark:text-[#171717];
+  @apply border-ink text-ink;
 }
 .tab-btn-inactive {
-  @apply border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b5b5b5] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a] dark:hover:text-[#f0f0f0];
+  @apply border-transparent text-mute hover:border-hairline-strong hover:text-ink;
+}
+
+/* One sliding underline (src/components/ui/TabIndicator.tsx) takes over from
+   the selected tab's own once it has measured. */
+.tabs-sliding .tab-btn-active {
+  border-color: transparent;
+}
+
+.tab-indicator {
+  position: absolute;
+  left: 0;
+  height: 2px;
+  width: 1px;
+  background: rgb(var(--ink));
+  transform-origin: left center;
+  transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: none;
+}
+
+/*
+ * A figure that has just changed (src/components/MetricCard.tsx): each
+ * character rises into place in turn, so a new number reads as new.
+ */
+.digit-pop {
+  display: inline-block;
+  animation: digit-pop 460ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes digit-pop {
+  from {
+    opacity: 0;
+    transform: translateY(0.3em);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
 }
 
 /* Recharts tooltip */
@@ -144,97 +266,133 @@ body {
   @apply !outline-none;
 }
 
+/*
+ * Every chart's tooltip and hover band from the theme tokens. Recharts draws
+ * its default tooltip with inline white styles and a #ccc cursor, so most
+ * tooltips were white boxes with near-white labels in dark mode, and hovering
+ * a bar lit a bright band behind it. The inline styles need !important to be
+ * overridden; the cursor's fill is a presentation attribute and yields to CSS.
+ */
+.recharts-default-tooltip {
+  background-color: rgb(var(--surface)) !important;
+  border: 1px solid rgb(var(--hairline)) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08);
+  color: rgb(var(--ink)) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.recharts-default-tooltip .recharts-tooltip-label {
+  color: rgb(var(--ink)) !important;
+  font-weight: 500;
+}
+
+.recharts-tooltip-cursor {
+  fill: rgb(var(--ink) / 0.05);
+}
+
 .app-surface {
-  @apply rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505];
+  @apply rounded-xl border border-hairline bg-surface shadow-raise;
 }
 
 .app-card {
-  @apply rounded-lg border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505];
+  @apply rounded-lg border border-hairline bg-surface;
 }
 
-.marketing-grid {
-  background-image:
-    linear-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.08) 1px, transparent 1px);
-  background-position: 0 0, 0 0;
-  background-size: 48px 48px;
-  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.92), transparent 78%);
-  animation: marketing-grid-drift 18s linear infinite;
+/*
+ * Marketing reveals. Content is visible by default: where the browser supports
+ * scroll-driven animation and the reader has not asked for less motion, a
+ * block rises into place as it enters the viewport. Nothing waits on
+ * JavaScript, so a slow script or an older browser still shows everything.
+ */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal {
+      animation: reveal-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 0% entry 45%;
+    }
+  }
 }
 
-.dark .marketing-grid {
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+@media print {
+  .reveal,
+  .word-rise,
+  .hero-rise {
+    animation: none !important;
+  }
 }
 
-.marketing-shell {
-  background-color: #ffffff;
-  color: #020617;
+@keyframes reveal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(32px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-.dark .marketing-shell {
-  background-color: #000000;
-  color: #ffffff;
+/* In-page links glide rather than jump. Only while something on the page has
+   focus, so the browser's find-in-page still jumps straight to a match. */
+html:focus-within {
+  scroll-behavior: smooth;
 }
 
-:root:not(.dark) .marketing-shell :where(.bg-black),
-:root:not(.dark) .marketing-shell :where(.bg-\[\#030303\]) {
-  background-color: #f8fafc;
+/* A question opens with its answer sliding down, where the browser can
+   animate to an auto height; elsewhere it simply opens. */
+@supports (interpolate-size: allow-keywords) {
+  details.faq {
+    interpolate-size: allow-keywords;
+  }
+  details.faq::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size 320ms var(--ease-out-expo),
+      content-visibility 320ms allow-discrete;
+  }
+  details.faq[open]::details-content {
+    block-size: auto;
+  }
 }
 
-:root:not(.dark) .marketing-shell :where(.bg-\[\#050505\]) {
-  background-color: #ffffff;
+/* The front page headline, word by word (per-word crossfade from
+   pixel-point/animate-text: a short rise out of transparency, 60ms apart). */
+.word-rise {
+  display: inline-block;
+  animation: word-rise 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-:root:not(.dark) .marketing-shell :where(.bg-\[\#0a0a0a\]),
-:root:not(.dark) .marketing-shell :where(.bg-\[\#111111\]) {
-  background-color: #f1f5f9;
+@keyframes word-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.18em);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-:root:not(.dark) .marketing-shell :where(.bg-\[\#1f1f1f\]) {
-  background-color: #e2e8f0;
+/* The one authored entrance on the front page: the product rises into view. */
+.hero-rise {
+  animation: hero-rise 1000ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-:root:not(.dark) .marketing-shell :where(.bg-\[\#120f05\]) {
-  background-color: #fffbeb;
-}
-
-:root:not(.dark) .marketing-shell :where(.border-\[\#1f1f1f\]),
-:root:not(.dark) .marketing-shell :where(.border-\[\#2a2a2a\]),
-:root:not(.dark) .marketing-shell :where(.border-\[\#3a3a3a\]) {
-  border-color: #e2e8f0;
-}
-
-:root:not(.dark) .marketing-shell :where(.text-white),
-:root:not(.dark) .marketing-shell :where(.text-\[\#ececec\]),
-:root:not(.dark) .marketing-shell :where(.text-\[\#f3f3f3\]) {
-  color: #020617;
-}
-
-:root:not(.dark) .marketing-shell :where(.text-\[\#d0d0d0\]) {
-  color: #334155;
-}
-
-:root:not(.dark) .marketing-shell :where(.text-\[\#a3a3a3\]),
-:root:not(.dark) .marketing-shell :where(.text-\[\#9c9c9c\]) {
-  color: #475569;
-}
-
-:root:not(.dark) .marketing-shell :where(.text-\[\#8f8f8f\]),
-:root:not(.dark) .marketing-shell :where(.text-\[\#6f6f6f\]) {
-  /* slate-500 measured 4.34:1 against the slate-100 panels these labels sit on.
-     slate-600 clears AA on both that and plain white. */
-  color: #475569;
-}
-
-:root:not(.dark) .marketing-shell :where(.bg-gradient-to-br.text-white),
-:root:not(.dark) .marketing-shell :where(.bg-gradient-to-r.text-white),
-:root:not(.dark) .marketing-shell :where(.bg-gradient-to-t.text-white),
-:root:not(.dark) .marketing-shell :where(.bg-slate-950.text-white),
-:root:not(.dark) .marketing-shell :where(.bg-slate-900.text-white),
-:root:not(.dark) .marketing-shell :where(.text-white[class*="from-"]) {
-  color: #ffffff;
+@keyframes hero-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(0.97);
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .modal-backdrop {
@@ -276,17 +434,138 @@ body {
   }
 }
 
-@keyframes marketing-grid-drift {
+/*
+ * Evidence marked on a PDF page (src/components/workspace/PdfViewer.tsx): a
+ * warm marker colour that multiplies into the page, so the printed words stay
+ * readable through it, arriving with one short pulse.
+ */
+.pdf-evidence-mark {
+  background: rgb(250 204 21 / 0.42);
+  mix-blend-mode: multiply;
+  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.35);
+  animation: pdf-evidence-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pdf-evidence-in {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.6);
+    transform-origin: left center;
+  }
+  60% {
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgb(234 179 8 / 0.25);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * A status line that changes while work is under way (chat's "Searching your
+ * papers" becoming "Writing the answer"). The new words rise a few pixels out
+ * of a slight blur, so the change registers without the line jumping.
+ */
+.status-swap {
+  animation: status-swap 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes status-swap {
   from {
-    background-position: 0 0, 0 0;
+    opacity: 0;
+    transform: translateY(6px);
+    filter: blur(2px);
   }
   to {
-    background-position: 48px 48px, 48px 48px;
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+/*
+ * The mascot (src/components/ui/Mascot.tsx). Each state moves in one small
+ * way. The transform written on each rule is the resting pose, which is all a
+ * reader who asks for less motion sees, so it has to read on its own: eyes
+ * looking up while thinking, down while reading.
+ */
+.mascot-gaze,
+.mascot-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.mascot-idle .mascot-gaze {
+  animation: mascot-gaze 9s ease-in-out infinite;
+}
+
+.mascot-idle .mascot-blink,
+.mascot-thinking .mascot-blink {
+  animation: mascot-blink 5.5s ease-in-out infinite;
+}
+
+.mascot-thinking .mascot-gaze {
+  transform: translate(0, -6px);
+  animation: mascot-ponder 3.6s ease-in-out infinite;
+}
+
+.mascot-reading .mascot-gaze {
+  transform: translate(0, 4px);
+  animation: mascot-read 1.8s ease-in-out infinite;
+}
+
+@keyframes mascot-blink {
+  0%,
+  92%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.12);
+  }
+}
+
+@keyframes mascot-gaze {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  28% {
+    transform: translate(-2px, 1px);
+  }
+  50% {
+    transform: translate(0, 0);
+  }
+  72% {
+    transform: translate(2.5px, -1px);
+  }
+}
+
+@keyframes mascot-ponder {
+  0%,
+  100% {
+    transform: translate(-3px, -6px);
+  }
+  40%,
+  58% {
+    transform: translate(3px, -6px);
+  }
+}
+
+@keyframes mascot-read {
+  0% {
+    transform: translate(-5px, 4px);
+  }
+  78% {
+    transform: translate(5px, 4px);
+  }
+  100% {
+    transform: translate(-5px, 4px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .marketing-grid,
   .modal-backdrop,
   .modal-panel,
   .workspace-content-enter {
@@ -316,6 +595,7 @@ body {
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+    animation-delay: 0ms !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }

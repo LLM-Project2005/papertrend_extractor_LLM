@@ -362,9 +362,12 @@ async function resolveScopedRunIds(
 
   if (getDatabaseProvider() === "cloud-sql") {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      // A paper in Trash leaves the charts too. Chat, the semantic map,
+      // reclassification and re-analysis already skipped trashed papers; the
+      // dashboard and Home's counts were the one place they still counted.
       const result = await client.query<{ id: string }>(
         `SELECT id FROM public.ingestion_runs
-         WHERE owner_user_id = $1 AND folder_id = ANY($2::uuid[])`,
+         WHERE owner_user_id = $1 AND folder_id = ANY($2::uuid[]) AND trashed_at IS NULL`,
         [ownerUserId, scopedFolderIds ?? []]
       );
       return result.rows.map((row) => row.id);
@@ -376,7 +379,8 @@ async function resolveScopedRunIds(
     .from("ingestion_runs")
     .select("id")
     .eq("owner_user_id", ownerUserId)
-    .in("folder_id", scopedFolderIds ?? []);
+    .in("folder_id", scopedFolderIds ?? [])
+    .is("trashed_at", null);
 
   if (error) {
     throw new Error(error.message);

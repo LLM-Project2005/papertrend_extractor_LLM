@@ -25,7 +25,7 @@ import {
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
@@ -309,13 +309,13 @@ export default function TrackAnalysis({
           <div className="mt-4 h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stackedData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" />
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendLabel(ct)} />
                 {stackedChartCategories.map((category) => (
-                  <Bar
+                  <Bar isAnimationActive={chartAnimationActive()}
                     key={category.key}
                     dataKey={category.key}
                     name={category.label}
@@ -377,7 +377,14 @@ export default function TrackAnalysis({
               return (
                 <div key={track}>
                   <p className="mb-3 text-sm font-medium text-slate-900 dark:text-white">
-                    <span style={{ color: category.color }}>{category.label}</span>
+                    {/* The colour goes in a swatch: as text, the lighter
+                        category colours fell under 4.5:1 on white. */}
+                    <span
+                      aria-hidden="true"
+                      className="mr-2 inline-block h-2.5 w-2.5 rounded-full align-middle"
+                      style={{ backgroundColor: category.color }}
+                    />
+                    <span>{category.label}</span>
                     {category.description ? (
                       <span className="ml-2 text-slate-500 dark:text-slate-400">
                         {category.description}
@@ -397,7 +404,7 @@ export default function TrackAnalysis({
                             stroke={ct.axisLine}
                           />
                           <Tooltip />
-                          <Bar
+                          <Bar isAnimationActive={chartAnimationActive()}
                             dataKey="papers"
                             fill={category.color}
                             radius={[0, 6, 6, 0]}

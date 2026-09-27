@@ -101,6 +101,19 @@ export function getGcsUploadBucket(): string {
   return process.env.GCS_UPLOAD_BUCKET ?? "";
 }
 
+/**
+ * The upload buckets a stored gs:// path may name: this deployment's own and
+ * any listed in GCS_KNOWN_UPLOAD_BUCKETS (comma-separated). The pilot shares
+ * production's database, so its papers can sit in production's bucket.
+ */
+export function getKnownUploadBuckets(): string[] {
+  const listed = String(process.env.GCS_KNOWN_UPLOAD_BUCKETS ?? "")
+    .split(",")
+    .map((bucket) => bucket.trim())
+    .filter(Boolean);
+  return [...new Set([getGcsUploadBucket().trim(), ...listed].filter(Boolean))];
+}
+
 export function getCloudSqlInstanceConnectionName(): string {
   return process.env.CLOUD_SQL_INSTANCE_CONNECTION_NAME ?? "";
 }
@@ -118,6 +131,17 @@ export function getAdminImportSecret(): string {
   );
 }
 
+/**
+ * Models the web app uses for a task when nothing is configured for it, on the
+ * OpenRouter gateway production runs on. Reclassification must judge papers
+ * with the same model the analysis worker classifies with (nodes/model_router.py,
+ * budget-structured preset), or a paper could change category just by being
+ * reclassified.
+ */
+const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
+  TRACK_CLASSIFICATION: "google/gemini-2.5-flash-lite",
+};
+
 export function getOpenAIConfig(taskName?: string): {
   apiKey: string;
   baseUrl: string;
@@ -134,13 +158,14 @@ export function getOpenAIConfig(taskName?: string): {
       ? process.env[`MODEL_TASK_${normalizedTaskName}`]
       : undefined;
 
+  const baseUrl = (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(/\/$/, "");
+  const taskDefault =
+    normalizedTaskName && baseUrl.includes("openrouter.ai") ? OPENROUTER_TASK_DEFAULTS[normalizedTaskName] : undefined;
+
   return {
     apiKey,
-    baseUrl: (process.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1").replace(
-      /\/$/,
-      ""
-    ),
-    model: taskModel ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
+    baseUrl,
+    model: taskModel ?? taskDefault ?? process.env.OPENAI_MODEL ?? "gpt-4.1-mini",
   };
 }
 

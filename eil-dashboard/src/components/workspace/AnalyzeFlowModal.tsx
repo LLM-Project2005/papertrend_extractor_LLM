@@ -11,12 +11,15 @@ import {
   ArrowRightIcon,
   CheckCircleIcon,
   CloseIcon,
+  DriveIcon,
   FileIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
+import { buttonClass } from "@/components/ui/controls";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
 import { putFileWithRetry } from "@/lib/upload-retry";
+import { DrivePickerCancelled, pickPdfsFromDrive, type DrivePickerConfig } from "@/lib/google-drive-picker";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 
 const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
@@ -88,9 +91,64 @@ export default function AnalyzeFlowModal({
   const [files, setFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
   const [uploading, setUploading] = useState(false);
+  // The files are sent from this tab: leaving it mid-upload drops the rest,
+  // so the browser asks first.
+  useEffect(() => {
+    if (!uploading) return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [uploading]);
   const [uploadStage, setUploadStage] = useState("");
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Google Drive is offered only when the service has its Picker settings.
+  const [driveConfig, setDriveConfig] = useState<DrivePickerConfig | null>(null);
+  const [driveProgress, setDriveProgress] = useState<{ done: number; total: number } | null>(null);
+  useEffect(() => {
+    if (!open || !session?.access_token) return;
+    let cancelled = false;
+    void fetch("/api/integrations/google-drive/picker-config", {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: ({ enabled?: boolean } & Partial<DrivePickerConfig>) | null) => {
+        if (cancelled) return;
+        setDriveConfig(
+          payload?.enabled && payload.clientId && payload.apiKey && payload.appId
+            ? { clientId: payload.clientId, apiKey: payload.apiKey, appId: payload.appId }
+            : null
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, session?.access_token]);
+
+  async function chooseFromDrive() {
+    if (!driveConfig) return;
+    setError(null);
+    try {
+      const { files: picked, tooLarge } = await pickPdfsFromDrive(driveConfig, {
+        maxItems: Math.max(1, MAX_UPLOAD_FILES - files.length),
+        onProgress: (done, total) => setDriveProgress({ done, total }),
+      });
+      if (picked.length) selectPdfFiles(picked);
+      if (tooLarge.length) {
+        setError(`${tooLarge.length === 1 ? `"${tooLarge[0]}" is` : `${tooLarge.length} files are`} over 10 MB, so ${tooLarge.length === 1 ? "it was" : "they were"} left out.`);
+      }
+    } catch (driveError) {
+      if (!(driveError instanceof DrivePickerCancelled)) {
+        setError(driveError instanceof Error ? driveError.message : "Google Drive could not be opened.");
+      }
+    } finally {
+      setDriveProgress(null);
+    }
+  }
   const [queuedSummary, setQueuedSummary] = useState<QueuedSummary | null>(null);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [profileDraft, setProfileDraft] = useState<ProjectAnalysisProfile>(createGeneralAnalysisProfile);
@@ -479,7 +537,7 @@ export default function AnalyzeFlowModal({
               setDragActive(false);
               if (!uploading) selectPdfFiles(Array.from(event.dataTransfer.files));
             }}
-            className={`block cursor-pointer rounded-lg border border-dashed px-5 py-7 text-center transition-colors focus-within:ring-2 focus-within:ring-slate-900/20 dark:focus-within:ring-white/20 ${
+            className={`block cursor-pointer rounded-lg border border-dashed px-5 py-7 text-center transition-colors has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-[rgb(var(--focus))] has-[:focus-visible]:ring-offset-2 has-[:focus-visible]:ring-offset-surface ${
               dragActive
                 ? "border-slate-900 bg-slate-100 dark:border-white dark:bg-[#111111]"
                 : "border-slate-300 bg-slate-50 hover:border-slate-500 dark:border-[#3a3a3a] dark:bg-[#080808] dark:hover:border-[#666]"
@@ -507,6 +565,23 @@ export default function AnalyzeFlowModal({
               Up to {MAX_UPLOAD_FILES} PDFs at a time, 10 MB each. A paper already analyzed in this account is caught before it uploads.
             </span>
           </label>
+
+          {driveConfig ? (
+            <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-mute">
+              <span aria-hidden="true">or</span>
+              <button
+                type="button"
+                onClick={() => void chooseFromDrive()}
+                disabled={uploading || Boolean(driveProgress)}
+                className={buttonClass("secondary", "sm")}
+              >
+                <DriveIcon className="h-4 w-4" />
+                {driveProgress
+                  ? `Downloading from Drive\u2026 ${driveProgress.done} of ${driveProgress.total}`
+                  : "Choose from Google Drive"}
+              </button>
+            </div>
+          ) : null}
 
           {files.length > 0 ? (
             <section>
@@ -578,7 +653,11 @@ export default function AnalyzeFlowModal({
                 <div className="min-w-0">
                   <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Analysis profile</p>
                   <p className="mt-1 text-sm font-medium leading-6 text-slate-900 dark:text-white">{profileSummary(activeAnalysisProfile)}</p>
-                  <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-[#999]">Every paper in this upload is classified with it.</p>
+                  <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-[#999]">
+                    {activeAnalysisProfile.classificationEnabled
+                      ? "Every paper in this upload is classified with it."
+                      : "Papers are analyzed without being sorted into categories."}
+                  </p>
                   {previousProfileCount > 0 ? (
                     <p className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-300">
                       {plural(previousProfileCount, "existing paper")} still use an earlier profile. New papers use this one.
@@ -627,7 +706,7 @@ export default function AnalyzeFlowModal({
                       }}
                       className="rounded-lg bg-slate-950 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50 dark:bg-white dark:text-black"
                     >
-                      {savingProfile ? "Saving..." : "Save for repository"}
+                      {savingProfile ? "Saving…" : "Save for repository"}
                     </button>
                   </div>
                 </div>
@@ -692,7 +771,7 @@ export default function AnalyzeFlowModal({
               className={primaryButtonClass}
             >
               {uploading
-                ? "Uploading..."
+                ? "Uploading…"
                 : files.length > 0
                   ? `Analyze ${plural(files.length, "paper")}`
                   : "Analyze papers"}

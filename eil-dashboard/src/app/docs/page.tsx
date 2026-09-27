@@ -3,7 +3,7 @@ import { DocsHome } from "@/components/docs/DocsFrame";
 import { MarketingShell } from "@/components/marketing/MarketingLayout";
 
 export const metadata: Metadata = {
-  title: "Papertrend Docs | Product guides and troubleshooting",
+  title: "Docs",
   description:
     "Learn Papertrend workspaces, uploads, paper analysis, dashboards, AI chat, deep research, cloud queue behavior, evaluation, and troubleshooting.",
   alternates: {

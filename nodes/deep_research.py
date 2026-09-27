@@ -452,16 +452,23 @@ def _apply_director_to_source_policy(
     )
     next_policy["includeCurrentScope"] = True
     next_policy["includeAttached"] = True
-    next_policy["allowCharts"] = bool(next_policy.get("allowCharts", True)) or bool(director.get("use_charts"))
+    # The director decides which tools the research uses. The caller's policy
+    # only grants permission and the budget: allowWeb=True means "web search
+    # may be used, within maxWebSearches", not "use it".
+    next_policy["allowCharts"] = bool(next_policy.get("allowCharts", True)) and bool(director.get("use_charts"))
     next_policy["agentDirected"] = True
 
     budget = dict(next_policy.get("budget") or {})
-    if not bool(next_policy.get("allowWeb")) and bool(director.get("use_web")):
-        # Web remains permission-gated. The director can recommend it, but not spend web budget silently.
-        budget["webRecommended"] = True
+    web_permitted = bool(next_policy.get("allowWeb"))
+    web_wanted = bool(director.get("use_web"))
+    if web_permitted and web_wanted:
+        next_policy["allowWeb"] = True
+        budget["maxWebSearches"] = max(1, min(int(budget.get("maxWebSearches") or 5), 5))
+    else:
+        next_policy["allowWeb"] = False
         budget["maxWebSearches"] = 0
-    elif bool(next_policy.get("allowWeb")):
-        budget["maxWebSearches"] = max(1, int(budget.get("maxWebSearches") or 5))
+        if web_wanted:
+            budget["webRecommended"] = True
     next_policy["budget"] = budget
     return next_policy
 

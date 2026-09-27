@@ -11,6 +11,7 @@ import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import Modal from "@/components/ui/Modal";
+import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
 import { ChartIcon, CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
@@ -123,13 +124,18 @@ function matchesTrack(row: TrackRow | undefined, track: TrackKey | null): boolea
   return Number(row[field] ?? 0) > 0;
 }
 
-function buildDashboardDrilldownTitle(target: DashboardDrilldownTarget | null): string {
+function buildDashboardDrilldownTitle(
+  target: DashboardDrilldownTarget | null,
+  categoryLabel: (key: string) => string
+): string {
   if (!target) {
     return "Associated papers";
   }
 
+  // The category is named as the reader knows it ("English Language
+  // Instruction"), not by its internal key ("eli").
   const parts = [
-    target.track ? `Category: ${target.track}` : "",
+    target.track ? `Category: ${categoryLabel(target.track)}` : "",
     target.year ? `Year: ${target.year}` : "",
     target.keyword ? `Keyword: ${target.keyword}` : target.topic ? `Topic: ${target.topic}` : "",
   ].filter(Boolean);
@@ -221,13 +227,28 @@ export default function DashboardClient({
     () => (classificationEnabled ? buildCategoryOptions(data, profile, categoryLabels) : []),
     [categoryLabels, classificationEnabled, data, profile]
   );
-  const activeCategoryCount = useMemo(() => {
-    const keys = new Set(categoryOptions.map((category) => category.key));
-    const chosen = selectedTracks.map((track) => normalizeCategoryKey(track)).filter((key) => keys.has(key));
-    return chosen.length > 0 ? chosen.length : keys.size;
+  // The saved selection starts as the four legacy slots (EL, ELI, LAE,
+  // Other). In a repository with its own categories only "Other" matched, so
+  // the category charts showed nothing and the chip read "1 category". Until
+  // the reader chooses, the selection means every category of this repository.
+  const effectiveSelectedTracks = useMemo(() => {
+    const keys = categoryOptions.map((category) => category.key);
+    if (keys.length === 0) return selectedTracks;
+    const untouched = TRACK_COLS.every((track) => selectedTracks.includes(track));
+    const chosen = selectedTracks.map((track) => normalizeCategoryKey(track)).filter((key) => keys.includes(key));
+    return untouched || chosen.length === 0 ? keys : chosen;
   }, [categoryOptions, selectedTracks]);
+  const activeCategoryCount = effectiveSelectedTracks.length;
   const themeStatus = data?.topicThemes ?? null;
   const [filterOpen, setFilterOpen] = useState(false);
+  useEffect(() => {
+    if (!filterOpen) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setFilterOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filterOpen]);
   const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
   const [planState, setPlanState] = useState<{
     plan: VisualizationPlan;
@@ -294,6 +315,8 @@ export default function DashboardClient({
   const currentTabKey = optimisticTabKey;
   const isAdaptiveTab = currentTabKey === "adaptive";
   const isSemanticMapTab = currentTabKey === "semantic_map";
+  const [tabNav, setTabNav] = useState<HTMLElement | null>(null);
+  const tabBox = useTabIndicator(tabNav, currentTabKey);
   const requestHeaders = useMemo<Record<string, string>>(
     (): Record<string, string> => session?.access_token
       ? { Authorization: `Bearer ${session.access_token}` }
@@ -722,20 +745,27 @@ export default function DashboardClient({
 
   if (loading && !data) {
     return (
-      <div className="app-surface flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-500 border-t-transparent dark:border-[#8e8e8e]" />
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Loading dashboard data...
-          </p>
+      <div className="mx-auto max-w-[1500px] space-y-6 pt-2 sm:pt-4" role="status" aria-label="Loading dashboard data">
+        <div className="space-y-3">
+          <span className="skeleton block h-9 w-48" />
+          <span className="skeleton block h-4 w-96 max-w-full" />
         </div>
+        <span className="skeleton block h-10 w-full max-w-2xl" />
+        <div className="flex gap-4 border-b border-hairline pb-3">
+          {[0, 1, 2, 3, 4, 5].map((index) => (
+            <span key={index} className="skeleton block h-4 w-24" />
+          ))}
+        </div>
+        <span className="skeleton block h-28 w-full" />
+        <span className="skeleton block h-80 w-full" />
+        <p className="sr-only">Loading dashboard data…</p>
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-[1500px] space-y-5">
-      <div className="space-y-4">
+    <div className="mx-auto max-w-[1500px] space-y-6 pt-2 sm:pt-4">
+      <div className="space-y-5">
         {/*
           This page had no h1 at all - it opened straight onto a search field.
           Every other workspace page names itself, so this was the one place a
@@ -743,28 +773,29 @@ export default function DashboardClient({
           one page a screen reader announced with no title.
         */}
         <div>
-          <h1 className="text-2xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
+          <h1 className="text-3xl font-semibold tracking-tight text-ink">
             Dashboard
           </h1>
-          <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
+          <p className="mt-2 text-[15px] leading-7 text-body">
             Trends, topics, and coverage across the analyzed papers in this repository.
           </p>
         </div>
 
         {!isSemanticMapTab ? <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <label className="relative block w-full max-w-2xl">
-            <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#8e8e8e]" />
+            <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
             <input
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Search papers, topics, keywords, or years"
-              className="w-full rounded-xl border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#727272] dark:focus:border-white dark:focus:ring-[#242424]"
+              placeholder="Search papers, topics, keywords, or years…"
+              aria-label="Search the dashboard"
+              className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
             />
           </label>
 
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
+            <span className="rounded-full bg-subtle px-3 py-1.5 text-xs text-body">
               {selectedYears.length === 0 || selectedYears.length === allYears.length
                 ? "All years"
                 : `${selectedYears.length} year${selectedYears.length === 1 ? "" : "s"}`}
@@ -774,7 +805,7 @@ export default function DashboardClient({
               switched off - a count of filter checkboxes, not of anything in the
               data.
             */}
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
+            <span className="rounded-full bg-subtle px-3 py-1.5 text-xs text-body">
               {classificationEnabled
                 ? `${activeCategoryCount} categor${activeCategoryCount === 1 ? "y" : "ies"}`
                 : "Categories off"}
@@ -784,14 +815,14 @@ export default function DashboardClient({
               onClick={() => {
                 void refresh();
               }}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
-              {refreshing ? "Refreshing..." : "Refresh"}
+              {refreshing ? "Refreshing…" : "Refresh"}
             </button>
             <button
               type="button"
               onClick={() => setFilterOpen(true)}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <FilterIcon className="h-4 w-4" />
               <span>Filters</span>
@@ -877,7 +908,7 @@ export default function DashboardClient({
               >
                 <ChartIcon className="h-4 w-4" />
                 {adaptiveGenerating
-                  ? "Building charts..."
+                  ? "Building charts…"
                   : planState
                     ? adaptiveFiltersChanged || adaptiveDataChanged
                       ? "Update charts"
@@ -889,13 +920,17 @@ export default function DashboardClient({
         </section> : null}
 
         <nav
-          className="flex gap-2 overflow-x-auto pb-1"
+          ref={setTabNav}
+          className={`relative flex gap-1 overflow-x-auto border-b border-hairline ${tabBox ? "tabs-sliding" : ""}`}
           aria-label="Tabs"
           aria-busy={isRoutePending}
         >
+          <TabIndicator box={tabBox} />
           {TAB_DEFINITIONS.map((tab) => (
             <button
               key={tab.key}
+              type="button"
+              aria-current={currentTabKey === tab.key ? "page" : undefined}
               onClick={() => updateRouteForTab(tab.key)}
               className={`tab-btn ${
                 currentTabKey === tab.key ? "tab-btn-active" : "tab-btn-inactive"
@@ -915,7 +950,15 @@ export default function DashboardClient({
 
       <div className="min-w-0">
         {!isSemanticMapTab && filterOpen && (
-          <div className="fixed inset-0 z-40 bg-black/55 xl:hidden">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Analytics filters"
+            className="fixed inset-0 z-40 bg-black/55 xl:hidden"
+            onClick={(event) => {
+              if (event.target === event.currentTarget) setFilterOpen(false);
+            }}
+          >
             <div className="ml-auto h-full w-full max-w-sm border-l border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] xl:max-w-md">
               <div className="flex items-center justify-between border-b border-slate-200 px-4 py-4 dark:border-[#1f1f1f] sm:px-5">
                 <p className="text-sm font-medium text-slate-900 dark:text-[#ececec]">
@@ -930,12 +973,12 @@ export default function DashboardClient({
                   <CloseIcon className="h-4 w-4" />
                 </button>
               </div>
-              <div className="h-[calc(100%-65px)] overflow-y-auto p-3 sm:p-4">
+              <div className="h-[calc(100%-65px)] overflow-y-auto overscroll-contain p-3 sm:p-4">
                 <FilterPanel
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
-                  selectedTracks={selectedTracks}
+                  selectedTracks={effectiveSelectedTracks}
                   onTracksChange={setSelectedTracks}
                   categoryOptions={categoryOptions}
                   useMock={false}
@@ -964,7 +1007,14 @@ export default function DashboardClient({
                       Dashboard drilldown
                     </p>
                     <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                      {buildDashboardDrilldownTitle(drilldownTarget)}
+                      {buildDashboardDrilldownTitle(drilldownTarget, (key) => {
+                        const normalized = normalizeDrilldownCategoryKey(key);
+                        return (
+                          categoryOptions.find((category) => category.key === normalized)?.label ??
+                          categoryLabels[key.toLowerCase() as TrackKey] ??
+                          key
+                        );
+                      })}
                     </h2>
                     <p className="mt-2 text-sm text-slate-500 dark:text-[#a3a3a3]">
                       {drilldownPapers.length} associated paper{drilldownPapers.length === 1 ? "" : "s"} in the current dashboard scope.
@@ -1095,8 +1145,10 @@ export default function DashboardClient({
         {!isSemanticMapTab ? <div className="hidden xl:block">
           <div
             className={`fixed right-6 top-[124px] z-40 hidden w-full max-w-sm xl:block ${
-              filterOpen ? "" : "pointer-events-none opacity-0"
-            } transition-all`}
+              // invisible, not only transparent: a closed panel leaves the tab
+              // order and the accessibility tree.
+              filterOpen ? "" : "pointer-events-none invisible -translate-y-1 opacity-0"
+            } transition-[opacity,transform,visibility] duration-150 ease-out-expo`}
           >
             <div className="rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505]">
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 dark:border-[#1f1f1f]">
@@ -1117,7 +1169,7 @@ export default function DashboardClient({
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
-                  selectedTracks={selectedTracks}
+                  selectedTracks={effectiveSelectedTracks}
                   onTracksChange={setSelectedTracks}
                   categoryOptions={categoryOptions}
                   useMock={false}
@@ -1137,7 +1189,7 @@ export default function DashboardClient({
               tracksMulti={filteredData.tracksMulti}
               categoryAssignments={filteredData.categoryAssignments}
               categoryOptions={categoryOptions}
-              selectedTracks={selectedTracks}
+              selectedTracks={effectiveSelectedTracks}
               categoryLabels={categoryLabels}
               classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
@@ -1156,7 +1208,7 @@ export default function DashboardClient({
               tracksMulti={filteredData.tracksMulti}
               categoryAssignments={filteredData.categoryAssignments}
               categoryOptions={categoryOptions}
-              selectedTracks={selectedTracks}
+              selectedTracks={effectiveSelectedTracks}
               categoryLabels={categoryLabels}
               classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
@@ -1169,7 +1221,7 @@ export default function DashboardClient({
               folderIds={selectedFolderIds}
               projectId={selectedProjectId ?? undefined}
               selectedYears={selectedYears}
-              selectedTracks={selectedTracks}
+              selectedTracks={effectiveSelectedTracks}
               onDrilldown={openPaperDrilldown}
             />
           ) : null}
@@ -1206,7 +1258,7 @@ export default function DashboardClient({
                   className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
                 >
                   <ChartIcon className="h-4 w-4" />
-                  {adaptiveGenerating ? "Building charts..." : "Generate charts"}
+                  {adaptiveGenerating ? "Building charts…" : "Generate charts"}
                 </button>
               </section>
             )

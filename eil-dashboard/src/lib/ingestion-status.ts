@@ -165,9 +165,25 @@ const WRITTEN_FOR_A_STACK_TRACE =
  * still print it underneath, because someone diagnosing a run wants the
  * original. This is only the sentence that leads.
  */
+/**
+ * Worker messages that are terse or name internals (a run id standing in for
+ * the file name, "Critical extraction failure"), with the sentence a reader
+ * needs instead. The worker's own plain sentences are not in this list and
+ * pass through untouched.
+ */
+const PLAIN_FAILURES: Array<[RegExp, string]> = [
+  [/^Canceled by user\.?$/i, "You canceled this analysis. Use Try again in the Library to run it."],
+  [/^Extraction produced no usable text/i, "No readable text could be found in this PDF. If it is a scan, check the pages are legible; otherwise the file may be damaged."],
+  [/^Critical extraction failure/i, "The PDF could not be read. It may be damaged or password-protected; save it again as a PDF and add the new copy."],
+  [/^Upload did not produce a storage path/i, "The upload did not finish, so there was no file to analyze. Add the PDF again."],
+  [/^Direct upload failed before queueing/i, "The file did not reach storage. Add the PDF again when the connection is steady."],
+];
+
 export function describeRunFailure(raw: string | null | undefined): string {
   const message = String(raw ?? "").trim();
   if (!message) return "The worker stopped before this file could finish.";
+  const plain = PLAIN_FAILURES.find(([pattern]) => pattern.test(message));
+  if (plain) return plain[1];
   if (!WRITTEN_FOR_A_STACK_TRACE.test(message)) return message;
   if (/timeout|timed out|max retries/i.test(message)) {
     return "This file took too long to download, so the run timed out. Trying it again usually works.";
@@ -180,7 +196,11 @@ export function getRunStageCaption(run: RunLike): string {
     return describeRunFailure(run.error_message);
   }
 
-  const detail = readInputPayloadString(run, "progress_detail");
+  // Progress details can end with the extraction method's internal name
+  // ("Method: fitz_text."), which means nothing to a reader.
+  const detail = readInputPayloadString(run, "progress_detail")
+    .replace(/\s*Method:\s*[a-z_+]+\.?/gi, "")
+    .trim();
   if (detail) {
     return detail;
   }

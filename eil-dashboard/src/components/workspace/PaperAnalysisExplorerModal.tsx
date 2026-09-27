@@ -1,18 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import PdfViewer, { prefetchPdf } from "@/components/workspace/PdfViewer";
 import Modal from "@/components/ui/Modal";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
   ChartIcon,
   CloseIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   PencilSquareIcon,
   StarIcon,
 } from "@/components/ui/Icons";
 import type { IngestionRunRow, RunAnalysisDetail, RunAnalysisExtracted } from "@/types/database";
 
-type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
+export type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
+
+export const PAPER_EXPLORER_TABS: PaperExplorerTab[] = ["overview", "keywords", "evidence", "topics", "preview"];
 
 type Props = {
   run: IngestionRunRow;
@@ -29,6 +33,10 @@ type Props = {
   onOpenDashboard: () => void;
   /** Save a corrected title or year; kept when the paper is analysed again. */
   onCorrect?: (correction: { title?: string; year?: string }) => Promise<void>;
+  /** The tab to open on, from the address (?tab=evidence). */
+  initialTab?: PaperExplorerTab;
+  /** Told when the reader changes tab, so the address can follow. */
+  onTabChange?: (tab: PaperExplorerTab) => void;
 };
 
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
@@ -220,19 +228,6 @@ function buildKeywordEvidenceRows(detail: RunAnalysisDetail | null) {
   });
 }
 
-function buildPdfEvidenceUrl(
-  url: string,
-  evidence: { keyword: string; evidence: string; context: string }
-): string {
-  const baseUrl = url.split("#", 1)[0];
-  const searchText = cleanDisplayText(
-    evidence.evidence || evidence.context || evidence.keyword
-  ).slice(0, 120);
-  return searchText
-    ? `${baseUrl}#zoom=page-width&search=${encodeURIComponent(searchText)}`
-    : `${baseUrl}#zoom=page-width`;
-}
-
 function titleOf(run: IngestionRunRow) {
   return run.display_name || run.source_filename || run.id;
 }
@@ -384,9 +379,28 @@ export default function PaperAnalysisExplorerModal({
   onRename,
   onOpenDashboard,
   onCorrect,
+  initialTab,
+  onTabChange,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<PaperExplorerTab>("overview");
+  const [activeTab, setActiveTab] = useState<PaperExplorerTab>(initialTab ?? "overview");
+  const onTabChangeRef = useRef(onTabChange);
+  onTabChangeRef.current = onTabChange;
+  useEffect(() => {
+    onTabChangeRef.current?.(activeTab);
+  }, [activeTab]);
   const [correcting, setCorrecting] = useState(false);
+  // The button that opened the form disappears while it is open, so focus is
+  // put back on it when the form closes instead of falling to the page.
+  const correctButtonRef = useRef<HTMLButtonElement>(null);
+  const wasCorrecting = useRef(false);
+  useEffect(() => {
+    if (correcting) {
+      wasCorrecting.current = true;
+    } else if (wasCorrecting.current) {
+      wasCorrecting.current = false;
+      correctButtonRef.current?.focus();
+    }
+  }, [correcting]);
   const [titleDraft, setTitleDraft] = useState("");
   const [yearDraft, setYearDraft] = useState("");
   const [correctionError, setCorrectionError] = useState<string | null>(null);
@@ -422,7 +436,7 @@ export default function PaperAnalysisExplorerModal({
     }
   }
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedEvidenceIndex, setSelectedEvidenceIndex] = useState(0);
   const trackBadges = useMemo(() => buildTrackBadges(detail), [detail]);
@@ -440,36 +454,30 @@ export default function PaperAnalysisExplorerModal({
     [keywordEvidenceRows]
   );
   const selectedEvidence = keywordEvidenceRows[selectedEvidenceIndex] ?? null;
-  const locatedPreviewUrl = useMemo(
-    () =>
-      previewUrl && selectedEvidence
-        ? buildPdfEvidenceUrl(previewUrl, selectedEvidence)
-        : previewUrl,
-    [previewUrl, selectedEvidence]
-  );
 
+  // A different paper opens on the tab it was asked for (a link's ?tab=, or
+  // Overview). Resetting to Overview here, on mount too, threw away the tab of
+  // every deep link.
+  const initialTabRef = useRef(initialTab);
+  initialTabRef.current = initialTab;
   useEffect(() => {
-    setActiveTab("overview");
-    setPreviewUrl(null);
-    setPreviewError(null);
-    setPreviewLoading(false);
+    setActiveTab(initialTabRef.current ?? "overview");
     setSelectedEvidenceIndex(0);
   }, [run.id]);
 
+  // The address is resolved once per paper, and again only when asked. The
+  // resolver is read through a ref: the parent passes a new function on every
+  // render, and re-running on it cancelled the request still in flight, which
+  // left the viewer on "Loading the PDF…" for good.
+  const resolvePreviewRef = useRef(onResolvePreviewUrl);
+  resolvePreviewRef.current = onResolvePreviewUrl;
   useEffect(() => {
-    if (
-      (activeTab !== "preview" && activeTab !== "evidence") ||
-      previewUrl ||
-      previewLoading
-    ) {
-      return;
-    }
-
     let cancelled = false;
-    setPreviewLoading(true);
+    setPreviewUrl(null);
     setPreviewError(null);
 
-    void onResolvePreviewUrl()
+    void resolvePreviewRef
+      .current()
       .then((url) => {
         if (cancelled) {
           return;
@@ -489,27 +497,19 @@ export default function PaperAnalysisExplorerModal({
             ? previewLoadError.message
             : "Failed to load the file preview."
         );
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setPreviewLoading(false);
-        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeTab, onResolvePreviewUrl, previewLoading, previewUrl]);
+  }, [run.id, previewAttempt]);
 
   return (
     <Modal onClose={onClose}>
-      <div className="flex max-h-[92vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
-        <div className="flex-none border-b border-slate-200 px-5 py-5 dark:border-[#1f1f1f] sm:px-6">
+      <div className="flex max-h-[92vh] w-[min(1180px,94vw)] flex-col overflow-hidden rounded-2xl border border-hairline bg-surface shadow-overlay">
+        <div className="flex-none border-b border-hairline px-5 pb-4 pt-5 sm:px-7 sm:pt-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
-                Paper Explorer
-              </p>
               {correcting ? (
                 <form
                   className="mt-2 grid gap-2 sm:grid-cols-[1fr_7rem_auto]"
@@ -521,20 +521,27 @@ export default function PaperAnalysisExplorerModal({
                   <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
                     Title
                     <input
+                      autoFocus
+                      name="title"
+                      autoComplete="off"
                       value={titleDraft}
                       onChange={(event) => setTitleDraft(event.target.value)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                      aria-describedby={correctionError ? "correction-error" : undefined}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white sm:text-sm"
                     />
                   </label>
                   <label className="text-xs text-slate-500 dark:text-[#8e8e8e]">
                     Year
                     <input
+                      name="year"
+                      autoComplete="off"
                       value={yearDraft}
                       onChange={(event) => setYearDraft(event.target.value)}
+                      aria-describedby={correctionError ? "correction-error" : undefined}
                       placeholder="Unknown"
                       inputMode="numeric"
                       maxLength={4}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white"
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-base text-slate-900 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-white sm:text-sm"
                     />
                   </label>
                   <div className="flex items-end gap-2">
@@ -543,7 +550,7 @@ export default function PaperAnalysisExplorerModal({
                       disabled={correctionSaving}
                       className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-60 dark:bg-white dark:text-black"
                     >
-                      {correctionSaving ? "Saving" : "Save"}
+                      {correctionSaving ? "Saving…" : "Save"}
                     </button>
                     <button
                       type="button"
@@ -557,29 +564,30 @@ export default function PaperAnalysisExplorerModal({
                     Your correction is kept when the paper is analysed again. Leave the year empty if the paper has none.
                   </p>
                   {correctionError ? (
-                    <p className="text-xs text-red-600 dark:text-red-300 sm:col-span-3">{correctionError}</p>
+                    <p id="correction-error" role="alert" className="text-xs text-red-600 dark:text-red-300 sm:col-span-3">{correctionError}</p>
                   ) : null}
                 </form>
               ) : (
-                <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                <h2 className="text-xl font-semibold leading-snug tracking-tight text-ink sm:text-2xl">
                   {detail?.title || titleOf(run)}
                 </h2>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
+                <span className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body tabular-nums">
                   {detail?.year || "Year unavailable"}
                 </span>
                 {onCorrect && !correcting && run.status === "succeeded" ? (
                   <button
                     type="button"
+                    ref={correctButtonRef}
                     onClick={startCorrection}
-                    className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+                    className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-body ring-1 ring-inset ring-hairline transition-colors hover:bg-subtle hover:text-ink"
                   >
                     <PencilSquareIcon className="h-3.5 w-3.5" />
                     <span>Correct title or year</span>
                   </button>
                 ) : null}
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 dark:bg-[#050505] dark:text-[#d0d0d0]">
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
                   {run.status === "succeeded" ? "Analysis ready" : getRunStatusLabel(run)}
                 </span>
                 {/* Where the rows came from matters only when it is not the
@@ -597,7 +605,7 @@ export default function PaperAnalysisExplorerModal({
                   {trackBadges.map((track) => (
                     <span
                       key={track}
-                      className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d7d7d7]"
+                      className="rounded-full bg-subtle px-2.5 py-1 text-xs font-medium text-body"
                     >
                       {track}
                     </span>
@@ -609,7 +617,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-slate-200 bg-white p-2 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
+              className="inline-flex h-9 w-9 flex-none items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
               aria-label="Close paper explorer"
             >
               <CloseIcon className="h-4 w-4" />
@@ -618,11 +626,11 @@ export default function PaperAnalysisExplorerModal({
 
           {/* Wraps rather than scrolling: on a phone a sideways-scrolling row
               looked like two buttons with a third cut off. */}
-          <div className="mt-5 flex flex-wrap items-center gap-2">
+          <div className="mt-5 flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={onDownloadReport}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download report</span>
@@ -630,7 +638,7 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onDownload}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <DownloadIcon className="h-4 w-4" />
               <span>Download PDF</span>
@@ -638,15 +646,15 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onToggleFavorite}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
-              <StarIcon className="h-4 w-4" />
+              <StarIcon className="h-4 w-4" weight={run.is_favorite ? "fill" : "regular"} />
               <span>{run.is_favorite ? "Favorited" : "Favorite"}</span>
             </button>
             <button
               type="button"
               onClick={onRename}
-              className="inline-flex flex-none items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <PencilSquareIcon className="h-4 w-4" />
               <span>Rename</span>
@@ -654,37 +662,41 @@ export default function PaperAnalysisExplorerModal({
             <button
               type="button"
               onClick={onOpenDashboard}
-              className="flex-none whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
+              <ChartIcon className="h-4 w-4" />
               Open dashboard charts
             </button>
             <button
               type="button"
               onClick={() => void onOpenInNewTab()}
-              className="flex-none whitespace-nowrap rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]"
+              className="inline-flex h-8 flex-none items-center gap-2 whitespace-nowrap rounded-lg border border-hairline bg-surface px-3 text-[13px] font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
+              <ExternalLinkIcon className="h-4 w-4" />
               Open in new tab
             </button>
           </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-6 sm:pb-6">
-          <nav className="sticky top-0 z-20 -mx-5 mb-5 flex flex-nowrap gap-2 overflow-x-auto border-b border-slate-200 bg-white px-5 py-3 dark:border-[#1f1f1f] dark:bg-[#030303] sm:-mx-6 sm:px-6" aria-label="Paper explorer tabs">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 sm:px-7 sm:pb-7">
+          <nav className="sticky top-0 z-20 -mx-5 mb-6 flex flex-nowrap gap-1 overflow-x-auto border-b border-hairline bg-surface/90 px-5 pt-2 backdrop-blur-md sm:-mx-7 sm:px-7" aria-label="Paper explorer tabs">
             {TAB_LABELS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
+                onPointerEnter={() => {
+                  if ((tab.id === "evidence" || tab.id === "preview") && previewUrl) prefetchPdf(run.id, previewUrl);
+                }}
+                onFocus={() => {
+                  if ((tab.id === "evidence" || tab.id === "preview") && previewUrl) prefetchPdf(run.id, previewUrl);
+                }}
+                aria-current={activeTab === tab.id ? "page" : undefined}
                 // The border lives in the base class, not on one branch. It used
-                // to sit only on the inactive pills, and under border-box sizing
-                // with auto width that made every inactive pill 2px wider and
-                // taller than the active one - so clicking a tab reflowed the
-                // whole nowrap row sideways under the pointer.
-                className={`flex-none rounded-full border px-4 py-2 text-sm font-medium transition-colors ${
-                  activeTab === tab.id
-                    ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-[#171717]"
-                    : "border-slate-200 bg-white text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0]"
-                }`}
+                // to sit only on the inactive tabs, and under border-box sizing
+                // that made every inactive tab 2px larger than the active one -
+                // so clicking a tab reflowed the whole nowrap row sideways.
+                className={`tab-btn ${activeTab === tab.id ? "tab-btn-active" : "tab-btn-inactive"}`}
               >
                 {tab.label}
               </button>
@@ -692,11 +704,10 @@ export default function PaperAnalysisExplorerModal({
           </nav>
 
           {loading ? (
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-              <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
-              <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                Loading the pipeline analysis for this paper...
-              </p>
+            <div className="space-y-4" role="status">
+              <span className="skeleton block h-40 w-full rounded-xl" />
+              <span className="skeleton block h-56 w-full rounded-xl" />
+              <p className="text-center text-sm text-mute">Loading this paper&apos;s analysis…</p>
             </div>
           ) : null}
 
@@ -1039,22 +1050,22 @@ export default function PaperAnalysisExplorerModal({
                           </div>
                         ) : null}
 
-                        {previewLoading ? (
-                          <div className="flex h-[420px] items-center justify-center text-sm text-slate-500 dark:text-[#999999]">
-                            Loading source PDF...
-                          </div>
-                        ) : previewError ? (
+                        {previewError ? (
                           <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                             {previewError}
                           </div>
-                        ) : locatedPreviewUrl ? (
-                          <iframe
-                            key={locatedPreviewUrl}
-                            src={locatedPreviewUrl}
-                            title={`Source PDF for ${selectedEvidence?.keyword || titleOf(run)}`}
-                            className="h-[440px] w-full bg-white lg:h-[480px]"
-                          />
-                        ) : null}
+                        ) : (
+                          <div className="p-3">
+                            <PdfViewer
+                              cacheKey={run.id}
+                              url={previewUrl}
+                              title={`Source PDF for ${selectedEvidence?.keyword || titleOf(run)}`}
+                              highlight={selectedEvidence ? [selectedEvidence.evidence, selectedEvidence.context] : null}
+                              highlightKey={String(selectedEvidenceIndex)}
+                              heightClass="h-[440px] lg:h-[520px]"
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -1141,11 +1152,7 @@ export default function PaperAnalysisExplorerModal({
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setPreviewUrl(null);
-                        setPreviewError(null);
-                        setPreviewLoading(false);
-                      }}
+                      onClick={() => setPreviewAttempt((attempt) => attempt + 1)}
                       className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                     >
                       Refresh preview
@@ -1159,29 +1166,14 @@ export default function PaperAnalysisExplorerModal({
                     </button>
                   </div>
 
-                  {previewLoading ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
-                      <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                        Loading the paper preview...
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {!previewLoading && previewError ? (
+                  {previewError ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                       {previewError}
                     </div>
                   ) : null}
 
-                  {!previewLoading && !previewError && previewUrl ? (
-                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <iframe
-                        src={previewUrl}
-                        title={detail?.title || titleOf(run)}
-                        className="h-[68vh] w-full bg-white"
-                      />
-                    </div>
+                  {!previewError ? (
+                    <PdfViewer cacheKey={run.id} url={previewUrl} title={detail?.title || titleOf(run)} heightClass="h-[68vh]" />
                   ) : null}
                 </section>
               ) : null}

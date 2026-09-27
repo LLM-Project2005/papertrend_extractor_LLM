@@ -32,7 +32,7 @@ import {
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { VisualizationChartKey } from "@/types/visualization";
 import { isDatedYear } from "@/lib/dated-year";
-import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 
 interface Props {
@@ -179,9 +179,9 @@ export default function Overview({
     : {
         contentStyle: {
           backgroundColor: "#ffffff",
-          border: "1px solid #e2e8f0",
+          border: "1px solid #e8e8e8",
           borderRadius: "16px",
-          color: "#0f172a",
+          color: "#171717",
         },
         cursor: { fill: "rgba(15,23,42,0.04)" },
       };
@@ -206,7 +206,7 @@ export default function Overview({
             <div className="mt-4 h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
-                  <Pie
+                  <Pie isAnimationActive={chartAnimationActive()}
                     data={items}
                     dataKey="value"
                     nameKey="name"
@@ -300,7 +300,7 @@ export default function Overview({
                 stroke={ct.axisLine}
               />
               <Tooltip {...tooltipTheme} />
-              <Bar
+              <Bar isAnimationActive={chartAnimationActive()}
                 dataKey="papers"
                 name="Papers"
                 fill={ct.barFill}
@@ -370,7 +370,7 @@ export default function Overview({
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip {...tooltipTheme} />
-                <Bar
+                <Bar isAnimationActive={chartAnimationActive()}
                   dataKey="papers"
                   name="Papers"
                   fill={ct.barFill}

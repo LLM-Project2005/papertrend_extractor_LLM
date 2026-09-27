@@ -111,7 +111,14 @@ export async function PATCH(request: Request) {
       name: body.name.trim(),
     };
     if (body.description !== undefined) {
-      patch.description = body.description;
+      if (body.description !== null && typeof body.description !== "string") {
+        return NextResponse.json({ error: "A description must be text." }, { status: 400 });
+      }
+      const description = body.description?.trim() ?? "";
+      if (description.length > 1000) {
+        return NextResponse.json({ error: "Keep the description under 1,000 characters." }, { status: 400 });
+      }
+      patch.description = description || null;
     }
     const profilesEnabled = projectAnalysisProfilesEnabled() && getDatabaseProvider() === "cloud-sql";
     let analysisProfile: ProjectAnalysisProfile | undefined;

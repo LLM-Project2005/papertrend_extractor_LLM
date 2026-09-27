@@ -20,7 +20,7 @@ import { TOPIC_PALETTE, TRACK_COLORS, TRACK_NAMES, type TrackKey } from "@/lib/c
 import type { DashboardData, PaperId, TrendRow, TrackRow } from "@/types/database";
 import type { NormalizedAnalyticsPayload, VisualizationPlanSection } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { chartTheme, tickStyle } from "@/lib/chart-theme";
+import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
 
@@ -64,7 +64,7 @@ export default function AdaptiveDashboardTab({
   adaptiveSection,
   trackLabels,
 }: {
-  data: Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies">;
+  data: Pick<DashboardData, "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies" | "categoryAssignments">;
   analytics: NormalizedAnalyticsPayload;
   adaptiveSection: VisualizationPlanSection;
   /** The repository's own category names for the stored el/eli/lae/other slots. */
@@ -87,6 +87,24 @@ export default function AdaptiveDashboardTab({
   // Topic charts describe what was studied; method themes are not topics.
   const subjects = subjectRows(data.trends);
   const singleTrackByPaper = new Map(data.tracksSingle.map((row) => [row.paper_id, row]));
+  // The repository's own categories, from each paper's primary assignment.
+  // The stored el/eli/lae/other slots hold at most three categories plus
+  // Other, so a profile with more categories used to show the rest as Other.
+  // The slots remain the fallback for data classified before assignments.
+  const primaryCategoryByPaper = new Map<PaperId, string>();
+  const categoryPapers = new Map<string, { label: string; papers: Set<PaperId> }>();
+  (data.categoryAssignments ?? []).forEach((row) => {
+    if (row.assignment_type !== "single" || primaryCategoryByPaper.has(row.paper_id)) return;
+    primaryCategoryByPaper.set(row.paper_id, row.category_key);
+    const entry = categoryPapers.get(row.category_key) ?? { label: row.category_label, papers: new Set<PaperId>() };
+    entry.papers.add(row.paper_id);
+    categoryPapers.set(row.category_key, entry);
+  });
+  const categoryList = [...categoryPapers.entries()]
+    .map(([key, entry], index) => ({ key, label: entry.label, papers: entry.papers.size, color: TOPIC_PALETTE[index % TOPIC_PALETTE.length] }))
+    .sort((left, right) => right.papers - left.papers)
+    .map((category, index) => ({ ...category, color: TOPIC_PALETTE[index % TOPIC_PALETTE.length] }));
+  const useCategories = categoryList.length > 0;
   const totalPapers = analytics.overview.paper_count;
   const totalKeywords = analytics.overview.keyword_count;
   // Years with a dated paper: "Unknown" is not a year.
@@ -131,7 +149,7 @@ export default function AdaptiveDashboardTab({
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -164,7 +182,7 @@ export default function AdaptiveDashboardTab({
                 <XAxis type="number" allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis type="category" dataKey="topic" width={categoryLabels.width} tick={tickStyle(ct, 11)} tickFormatter={(value) => truncateLabel(String(value), categoryLabels.chars)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[0, 6, 6, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" name="Papers" fill={ct.barFill} radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -173,13 +191,14 @@ export default function AdaptiveDashboardTab({
     }
 
     if (chart.chart_key === "adaptive_track_distribution") {
-      const chartData = analytics.track_totals.single
-        .map((row) => ({
-          track: row.track,
-          label: trackLabel(row.track),
-          papers: row.value,
-        }))
-        .filter((row) => row.papers > 0);
+      const chartData = useCategories
+        ? categoryList.map((category) => ({ label: category.label, papers: category.papers }))
+        : analytics.track_totals.single
+            .map((row) => ({
+              label: trackLabel(row.track),
+              papers: row.value,
+            }))
+            .filter((row) => row.papers > 0);
       if (chartData.length < 2) return null;
       return (
         <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
@@ -187,10 +206,15 @@ export default function AdaptiveDashboardTab({
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={chartData}>
                 <CartesianGrid vertical={false} stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <XAxis
+                  dataKey="label"
+                  tick={tickStyle(ct, 12)}
+                  tickFormatter={(value) => truncateLabel(String(value))}
+                  stroke={ct.axisLine}
+                />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <Tooltip />
-                <Bar dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" name="Papers" fill={ct.barFill} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -261,7 +285,7 @@ export default function AdaptiveDashboardTab({
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {topTopics.map((topic, index) => (
-                  <Line
+                  <Line isAnimationActive={chartAnimationActive()}
                     key={topic}
                     type="linear"
                     dataKey={topic}
@@ -323,8 +347,8 @@ export default function AdaptiveDashboardTab({
                       : `${shifts.periods?.lateLabel ?? "Later"} (share of papers)`
                   )}
                 />
-                <Bar dataKey="earlier" fill={ct.barFillMuted} radius={[0, 4, 4, 0]} />
-                <Bar dataKey="later" fill={ct.barFill} radius={[0, 4, 4, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="earlier" fill={ct.barFillMuted} radius={[0, 4, 4, 0]} />
+                <Bar isAnimationActive={chartAnimationActive()} dataKey="later" fill={ct.barFill} radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -360,6 +384,72 @@ export default function AdaptiveDashboardTab({
             values={values}
             colorScale={ct.heatScale}
           />
+        </ChartShell>
+      );
+    }
+
+    if (chart.chart_key === "adaptive_track_topic_comparison" && useCategories) {
+      const topicLimit = chart.config?.top_n ?? 6;
+      const compared = categoryList.slice(0, 4);
+      if (compared.length < 2) return null;
+      const topTopics = Object.entries(
+        data.trends.reduce<Record<string, Set<PaperId>>>((accumulator, row) => {
+          if (!eligibleTopics.has(row.topic)) return accumulator;
+          (accumulator[row.topic] ??= new Set()).add(row.paper_id);
+          return accumulator;
+        }, {})
+      )
+        .sort((left, right) => right[1].size - left[1].size)
+        .slice(0, topicLimit)
+        .map(([topic]) => topic);
+      const chartData = topTopics
+        .map((topic) => {
+          const entry: Record<string, string | number> = { topic };
+          let totalSupport = 0;
+          let nonZero = 0;
+          compared.forEach((category) => {
+            const value = new Set(
+              data.trends
+                .filter((row) => row.topic === topic && primaryCategoryByPaper.get(row.paper_id) === category.key)
+                .map((row) => row.paper_id)
+            ).size;
+            totalSupport += value;
+            if (value > 0) nonZero += 1;
+            entry[category.key] = value;
+          });
+          return totalSupport >= minTopicTrackSupport && nonZero >= 2 ? entry : null;
+        })
+        .filter((entry): entry is Record<string, string | number> => Boolean(entry));
+      if (chartData.length < 2) return null;
+      const drawn = compared.filter((category) => chartData.some((entry) => Number(entry[category.key] ?? 0) > 0));
+      if (drawn.length < 2) return null;
+      return (
+        <ChartShell key={chart.chart_key} title={chart.title} reason={chart.reason}>
+          <div className="h-[360px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
+                <XAxis
+                  dataKey="topic"
+                  tick={tickStyle(ct, 11)}
+                  tickFormatter={(value) => truncateLabel(String(value))}
+                  stroke={ct.axisLine}
+                />
+                <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
+                <Tooltip />
+                <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
+                {drawn.map((category) => (
+                  <Bar isAnimationActive={chartAnimationActive()}
+                    key={category.key}
+                    dataKey={category.key}
+                    fill={category.color}
+                    name={category.label}
+                    radius={[6, 6, 0, 0]}
+                  />
+                ))}
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </ChartShell>
       );
     }
@@ -441,7 +531,7 @@ export default function AdaptiveDashboardTab({
                 <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {drawnTracks.map((track) => (
-                  <Bar
+                  <Bar isAnimationActive={chartAnimationActive()}
                     key={track}
                     dataKey={track}
                     fill={TRACK_COLORS[track]}

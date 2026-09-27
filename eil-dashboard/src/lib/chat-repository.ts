@@ -67,8 +67,16 @@ export interface ReplaceDeepResearchPlanInput {
   }>;
 }
 
+export interface ThreadPage {
+  /** Only rows older than this (updated_at for threads, created_at for messages). */
+  before?: string | null;
+  limit?: number;
+}
+
 export interface ChatRepository {
-  listThreads(ownerUserId: string): Promise<WorkspaceThreadSummary[]>;
+  listThreads(ownerUserId: string, page?: ThreadPage): Promise<WorkspaceThreadSummary[]>;
+  /** Threads whose title, summary or any message contains the text, with the matching messages. */
+  searchThreads(ownerUserId: string, query: string, limit?: number): Promise<ChatThreadDetail[]>;
   createThread(input: CreateThreadInput): Promise<WorkspaceThreadSummary>;
   updateThread(
     ownerUserId: string,
@@ -90,14 +98,34 @@ export interface ChatRepository {
     sessionId: string,
     patch: Partial<DeepResearchSessionRecord>
   ): Promise<void>;
-  getThreadDetail(ownerUserId: string, threadId: string): Promise<ChatThreadDetail>;
+  getThreadDetail(ownerUserId: string, threadId: string, page?: ThreadPage): Promise<ChatThreadDetail>;
+}
+
+/** The text of a search as a literal ILIKE pattern: %, _ and the escape itself are matched as typed. */
+function likePattern(query: string): string {
+  return `%${query.replace(/[!%_]/g, (character) => `!${character}`)}%`;
 }
 
 class SupabaseChatRepository implements ChatRepository {
   constructor(private readonly client: SupabaseClient = getSupabaseAdmin()) {}
 
-  listThreads(ownerUserId: string) {
-    return listWorkspaceThreads(this.client, ownerUserId);
+  listThreads(ownerUserId: string, page?: ThreadPage) {
+    return listWorkspaceThreads(this.client, ownerUserId, page);
+  }
+
+  async searchThreads(ownerUserId: string, query: string, limit = 40): Promise<ChatThreadDetail[]> {
+    // PostgREST reads commas, brackets and dots in an or() filter as syntax, so
+    // they are dropped from the search text rather than passed through.
+    const pattern = `*${query.trim().replace(/[,().*%_!]/g, " ")}*`;
+    const { data, error } = await this.client
+      .from("workspace_threads")
+      .select("*")
+      .eq("owner_user_id", ownerUserId)
+      .or(`title.ilike.${pattern},summary.ilike.${pattern}`)
+      .order("updated_at", { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(error.message);
+    return ((data ?? []) as WorkspaceThreadSummary[]).map((thread) => ({ thread, messages: [] }));
   }
 
   createThread(input: CreateThreadInput) {
@@ -255,19 +283,66 @@ class CloudSqlChatRepository implements ChatRepository {
     return deepResearchSessionRow(session.rows[0], steps.rows.map(deepResearchStepRow));
   }
 
-  listThreads(ownerUserId: string): Promise<WorkspaceThreadSummary[]> {
+  listThreads(ownerUserId: string, page?: ThreadPage): Promise<WorkspaceThreadSummary[]> {
+    const limit = Math.min(Math.max(page?.limit ?? 100, 1), 200);
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const result = await client.query<Record<string, unknown>>(
         `
           SELECT t.*
           FROM public.workspace_threads t
           WHERE t.owner_user_id = $1
+            AND ($2::timestamptz IS NULL OR t.updated_at < $2::timestamptz)
           ORDER BY t.updated_at DESC
-          LIMIT 100
+          LIMIT $3
         `,
-        [ownerUserId]
+        [ownerUserId, page?.before ?? null, limit]
       );
       return result.rows.map(threadRow);
+    });
+  }
+
+  searchThreads(ownerUserId: string, query: string, limit = 40): Promise<ChatThreadDetail[]> {
+    const pattern = likePattern(query.trim());
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      // Every conversation is searched, not only the ones the sidebar holds,
+      // and each result carries up to three of its matching messages.
+      const threads = await client.query<Record<string, unknown>>(
+        `
+          SELECT t.*
+          FROM public.workspace_threads t
+          WHERE t.owner_user_id = $1
+            AND (
+              t.title ILIKE $2 ESCAPE '!'
+              OR t.summary ILIKE $2 ESCAPE '!'
+              OR EXISTS (
+                SELECT 1 FROM public.workspace_messages m
+                WHERE m.thread_id = t.id AND m.owner_user_id = $1 AND m.content ILIKE $2 ESCAPE '!'
+              )
+            )
+          ORDER BY t.updated_at DESC
+          LIMIT $3
+        `,
+        [ownerUserId, pattern, Math.min(Math.max(limit, 1), 100)]
+      );
+      if (threads.rows.length === 0) return [];
+      const ids = threads.rows.map((row) => String(row.id));
+      const messages = await client.query<Record<string, unknown>>(
+        `
+          SELECT * FROM (
+            SELECT m.*, row_number() OVER (PARTITION BY m.thread_id ORDER BY m.created_at DESC) AS match_rank
+            FROM public.workspace_messages m
+            WHERE m.owner_user_id = $1 AND m.thread_id = ANY($2::uuid[]) AND m.content ILIKE $3 ESCAPE '!'
+          ) ranked
+          WHERE ranked.match_rank <= 3
+        `,
+        [ownerUserId, ids, pattern]
+      );
+      const byThread = new Map<string, WorkspaceMessageRecord[]>();
+      messages.rows.forEach((row) => {
+        const threadId = String(row.thread_id);
+        byThread.set(threadId, [...(byThread.get(threadId) ?? []), messageRow(row)]);
+      });
+      return threads.rows.map((row) => ({ thread: threadRow(row), messages: byThread.get(String(row.id)) ?? [] }));
     });
   }
 
@@ -492,22 +567,29 @@ class CloudSqlChatRepository implements ChatRepository {
     });
   }
 
-  getThreadDetail(ownerUserId: string, threadId: string): Promise<ChatThreadDetail> {
+  getThreadDetail(ownerUserId: string, threadId: string, page?: ThreadPage): Promise<ChatThreadDetail> {
+    const limit = Math.min(Math.max(page?.limit ?? 200, 1), 500);
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const thread = await client.query<Record<string, unknown>>(
         `SELECT * FROM public.workspace_threads WHERE id = $1 AND owner_user_id = $2 LIMIT 1`,
         [threadId, ownerUserId]
       );
       if (!thread.rows[0]) throw new Error("Chat thread not found.");
+      // The newest page, read in reverse and put back in order. It used to be
+      // the first 200 messages, so in a long conversation every new message
+      // was the one left out.
       const messages = await client.query<Record<string, unknown>>(
         `
           SELECT * FROM public.workspace_messages
           WHERE thread_id = $1 AND owner_user_id = $2
-          ORDER BY created_at ASC
-          LIMIT 200
+            AND ($3::timestamptz IS NULL OR created_at < $3::timestamptz)
+          ORDER BY created_at DESC
+          LIMIT $4
         `,
-        [threadId, ownerUserId]
+        [threadId, ownerUserId, page?.before ?? null, limit + 1]
       );
+      const hasEarlierMessages = messages.rows.length > limit;
+      const newestPage = messages.rows.slice(0, limit).reverse();
       const sessions = await client.query<Record<string, unknown>>(
         `SELECT * FROM public.deep_research_sessions
          WHERE thread_id=$1 AND owner_user_id=$2 ORDER BY created_at DESC LIMIT 1`,
@@ -518,7 +600,8 @@ class CloudSqlChatRepository implements ChatRepository {
         : null;
       return {
         thread: threadRow(thread.rows[0]),
-        messages: messages.rows.map(messageRow),
+        messages: newestPage.map(messageRow),
+        hasEarlierMessages,
         deepResearchSession,
       };
     });

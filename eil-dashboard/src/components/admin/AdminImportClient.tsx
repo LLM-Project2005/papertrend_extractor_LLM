@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { createPortal } from "react-dom";
@@ -13,7 +14,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
-import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
+import PaperAnalysisExplorerModal, {
+  PAPER_EXPLORER_TABS,
+  type PaperExplorerTab,
+} from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import Modal from "@/components/ui/Modal";
@@ -24,9 +28,9 @@ import {
   ChevronDownIcon,
   CloseIcon,
   DownloadIcon,
+  BooksIcon,
   DriveIcon,
   FileIcon,
-  FolderIcon,
   GridViewIcon,
   ImageIcon,
   ListViewIcon,
@@ -49,6 +53,8 @@ import {
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
+import { buttonClass, fieldClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
+import Mascot from "@/components/ui/Mascot";
 
 type ViewMode = "list" | "grid";
 type TypeFilter = "all" | "pdf" | "image" | "document" | "other";
@@ -56,6 +62,18 @@ type ModifiedFilter = "all" | "7d" | "30d" | "year" | "older";
 type SourceFilter = "all" | "upload" | "google-drive";
 type SortKey = "name" | "modified" | "size";
 type SortDirection = "asc" | "desc";
+
+const VIEW_MODES: ViewMode[] = ["list", "grid"];
+const TYPE_FILTERS: TypeFilter[] = ["all", "pdf", "image", "document", "other"];
+const MODIFIED_FILTERS: ModifiedFilter[] = ["all", "7d", "30d", "year", "older"];
+const SOURCE_FILTERS: SourceFilter[] = ["all", "upload", "google-drive"];
+const SORT_KEYS: SortKey[] = ["name", "modified", "size"];
+const SORT_DIRECTIONS: SortDirection[] = ["asc", "desc"];
+
+/** A value from the address, if it is one of the allowed ones. */
+function readChoice<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
+  return value && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
 type ToolbarPopoverKind = "new" | "type" | "modified" | "source" | "sort";
 
 type ToolbarPopoverState = {
@@ -240,16 +258,12 @@ function glyphForEntry(item: LibraryEntry) {
 }
 
 function badgeToneForEntry(item: LibraryEntry) {
-  if (item.typeFilter === "pdf") {
-    return "bg-red-100 text-red-600 dark:bg-red-950/30 dark:text-red-300";
+  // One quiet tone for every file: the glyph already says what it is, and a
+  // red square beside each PDF read as an error on every row.
+  if (item.run?.status === "failed") {
+    return "bg-red-50 text-red-700 ring-1 ring-inset ring-red-200 dark:bg-red-950/30 dark:text-red-300 dark:ring-red-900/60";
   }
-  if (item.typeFilter === "image") {
-    return "bg-blue-100 text-blue-700 dark:bg-blue-950/30 dark:text-blue-300";
-  }
-  if (item.sourceFilter === "google-drive") {
-    return "bg-sky-100 text-sky-600 dark:bg-sky-950/30 dark:text-sky-300";
-  }
-  return "bg-slate-200 text-slate-700 dark:bg-[#050505] dark:text-[#d6d6d6]";
+  return "bg-subtle text-body ring-1 ring-inset ring-hairline";
 }
 
 function defaultDirectionForSort(sortKey: SortKey): SortDirection {
@@ -297,20 +311,55 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
     `- Paper ID: ${detail.paper_id || "Unavailable"}`,
     `- Status: ${run.status}`,
     `- Analysis source: ${detail.diagnostics?.dataSource || (detail.available ? "pipeline" : "unavailable")}`,
-    "",
-    "## Track Classification",
   ];
 
-  if (detail.tracksSingle.length > 0) {
-    lines.push(...detail.tracksSingle.map((track) => `- Primary track: ${track}`));
-  } else {
-    lines.push("- Primary track: Not stored");
+  // The year, and where it was read, so a reader can judge it.
+  const extracted = detail.extracted;
+  if (extracted?.year) {
+    lines.push(`- Year source: ${extracted.year.source}`);
+    if (cleanReportText(extracted.year.evidence)) {
+      lines.push(`- Year evidence: "${cleanReportText(extracted.year.evidence)}"`);
+    }
+  }
+  if (extracted?.typology) {
+    lines.push(
+      `- Research type: ${extracted.typology.primary}${extracted.typology.secondary ? ` (also ${extracted.typology.secondary})` : ""}`
+    );
+  }
+  if (extracted?.duplicateOf) {
+    lines.push(`- Possible copy of: "${extracted.duplicateOf.title}"`);
   }
 
-  if (detail.tracksMulti.length > 0) {
-    lines.push(...detail.tracksMulti.map((track) => `- Cross-track: ${track}`));
+  lines.push("", "## Category");
+  if (detail.classification) {
+    const classification = detail.classification;
+    lines.push(`- Profile: ${classification.taxonomyName}`);
+    lines.push(`- Primary category: ${classification.primaryCategory}`);
+    if (classification.additionalCategories.length > 0) {
+      lines.push(`- Also: ${classification.additionalCategories.join(", ")}`);
+    }
+    if (classification.status === "previous_profile") {
+      lines.push("- Classified under an earlier profile; reclassify to bring it up to date.");
+    }
+    if (cleanReportText(classification.rationale)) {
+      lines.push("- Why:", quoteMarkdown(classification.rationale));
+    }
+  } else if (detail.tracksSingle.length > 0) {
+    lines.push(...detail.tracksSingle.map((track) => `- Primary category: ${track}`));
+    lines.push(...detail.tracksMulti.map((track) => `- Also: ${track}`));
   } else {
-    lines.push("- Cross-track: None stored");
+    lines.push("- Classification is not enabled for this repository.");
+  }
+
+  lines.push("", "## The Paper's Own Keywords");
+  lines.push(
+    extracted?.authorKeywords.length
+      ? `- ${extracted.authorKeywords.join(", ")}`
+      : "- The paper does not print a keyword list."
+  );
+
+  if (extracted?.methodTopics.length) {
+    lines.push("", "## Methods", ...extracted.methodTopics.map((topic) => `- ${topic}`));
   }
 
   lines.push("", "## Topics");
@@ -320,7 +369,7 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
     lines.push("- No topic labels were stored.");
   }
 
-  lines.push("", "## Canonical Concepts");
+  lines.push("", "## Topics and Their Keywords");
   if (detail.concepts.length > 0) {
     for (const concept of detail.concepts) {
       lines.push(`### ${concept.label}`);
@@ -336,7 +385,7 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
       lines.push("");
     }
   } else {
-    lines.push("- No canonical concepts were stored.");
+    lines.push("- No topic groups were stored.");
   }
 
   lines.push("## Analytical Facets");
@@ -370,6 +419,10 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
     ["Extracted Conclusion", detail.conclusion],
   ] as const) {
     lines.push("", `## ${label}`, "", cleanReportText(value) || "_No extracted text was available for this section._");
+  }
+
+  if (extracted?.analysisNotes.length) {
+    lines.push("", "## Analysis Notes", ...extracted.analysisNotes.map((note) => `- ${note}`));
   }
 
   if (detail.warnings && detail.warnings.length > 0) {
@@ -414,17 +467,28 @@ export default function AdminImportClient() {
     startAnalysisSession,
   } = useWorkspaceProfile();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
-  const [libraryProjectId, setLibraryProjectId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [modifiedFilter, setModifiedFilter] = useState<ModifiedFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [showTrash, setShowTrash] = useState(false);
+  // Whether the list has arrived at least once, so a link to a paper that is
+  // not in it can be given up on instead of waited for.
+  const [runsLoaded, setRunsLoaded] = useState(false);
+  const [libraryProjectId, setLibraryProjectId] = useState<string | null>(() => searchParams.get("repo"));
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => readChoice(searchParams.get("view"), VIEW_MODES, "list"));
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => readChoice(searchParams.get("type"), TYPE_FILTERS, "all"));
+  const [modifiedFilter, setModifiedFilter] = useState<ModifiedFilter>(() =>
+    readChoice(searchParams.get("modified"), MODIFIED_FILTERS, "all")
+  );
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => readChoice(searchParams.get("source"), SOURCE_FILTERS, "all"));
+  const [sortKey, setSortKey] = useState<SortKey>(() => readChoice(searchParams.get("sort"), SORT_KEYS, "name"));
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => readChoice(searchParams.get("dir"), SORT_DIRECTIONS, "asc"));
+  const [showTrash, setShowTrash] = useState(() => searchParams.get("trash") === "1");
   const [toolbarPopover, setToolbarPopover] = useState<ToolbarPopoverState | null>(null);
   const [itemMenuState, setItemMenuState] = useState<ItemMenuState | null>(null);
+  // The menus open in a portal at the end of the page, so focus is carried
+  // into them and back by hand: the first item takes focus when one opens,
+  // arrows move through it, and Escape or Tab closes it and returns focus to
+  // the button that opened it.
+  const menuTriggerRef = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [renameTarget, setRenameTarget] = useState<RenameTarget | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [renaming, setRenaming] = useState(false);
@@ -433,6 +497,11 @@ export default function AdminImportClient() {
   const [previewTitle, setPreviewTitle] = useState("");
   const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
   const [analysisRun, setAnalysisRun] = useState<IngestionRunRow | null>(null);
+  const [analysisTab, setAnalysisTab] = useState<PaperExplorerTab>("overview");
+  // Permanent deletion from Trash: one paper, or everything in Trash.
+  const [deleteTarget, setDeleteTarget] = useState<{ runs: IngestionRunRow[]; all: boolean } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [analysisDetail, setAnalysisDetail] = useState<RunAnalysisDetail | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -442,7 +511,8 @@ export default function AdminImportClient() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const autoOpenedUploadActionRef = useRef(false);
-  const requestedRunId = searchParams.get("runId");
+  // ?paper= is the explorer's own address; ?runId= is the older form links still use.
+  const requestedRunId = searchParams.get("paper") ?? searchParams.get("runId");
   const requestedPaperId = normalizePaperId(searchParams.get("paperId"));
 
   const requestHeaders = useMemo<Record<string, string>>(() => {
@@ -524,6 +594,7 @@ export default function AdminImportClient() {
         throw new Error(payload.error ?? "Failed to load library files.");
       }
       setRuns(payload.runs ?? []);
+      setRunsLoaded(true);
       setError(null);
     } catch (loadError) {
       setError(
@@ -603,7 +674,8 @@ export default function AdminImportClient() {
 
   useEffect(() => {
     if (!toolbarPopover && !itemMenuState) return;
-    const closeMenus = () => {
+    const closeMenus = (event?: Event) => {
+      if (event?.target instanceof Node && menuRef.current?.contains(event.target)) return;
       setToolbarPopover(null);
       setItemMenuState(null);
     };
@@ -614,6 +686,36 @@ export default function AdminImportClient() {
       window.removeEventListener("scroll", closeMenus, true);
     };
   }, [itemMenuState, toolbarPopover]);
+
+  useEffect(() => {
+    if (!toolbarPopover && !itemMenuState) return;
+    const frame = window.requestAnimationFrame(() => {
+      menuRef.current
+        ?.querySelector<HTMLElement>("button:not([disabled]), [href]")
+        ?.focus({ preventScroll: true });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [itemMenuState, toolbarPopover]);
+
+  function handleMenuKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), [href]") ?? []
+    );
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "Escape" || event.key === "Tab") {
+      event.preventDefault();
+      setToolbarPopover(null);
+      setItemMenuState(null);
+      menuTriggerRef.current?.focus({ preventScroll: true });
+    } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      items[(index + step + items.length) % items.length]?.focus({ preventScroll: true });
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1]?.focus({ preventScroll: true });
+    }
+  }
 
   async function patchRun(runId: string, body: Record<string, unknown>) {
     const response = await fetch(`/api/workspace/library/${runId}`, {
@@ -665,7 +767,9 @@ export default function AdminImportClient() {
     }
   }
 
-  async function handleViewAnalysis(run: IngestionRunRow) {
+  async function handleViewAnalysis(run: IngestionRunRow, tab: PaperExplorerTab = "overview") {
+    autoOpenedRunIdRef.current = `run:${run.id}`;
+    setAnalysisTab(tab);
     setAnalysisRun(run);
     setAnalysisDetail(null);
     setAnalysisError(null);
@@ -709,9 +813,9 @@ export default function AdminImportClient() {
     );
   }
 
-  async function handleOpenPrimaryFileAction(run: IngestionRunRow) {
+  async function handleOpenPrimaryFileAction(run: IngestionRunRow, tab: PaperExplorerTab = "overview") {
     if (run.status === "succeeded") {
-      await handleViewAnalysis(run).catch(() => undefined);
+      await handleViewAnalysis(run, tab).catch(() => undefined);
       return;
     }
 
@@ -738,19 +842,116 @@ export default function AdminImportClient() {
       ? runs.find((run) => run.id === requestedRunId)
       : runs.find((run) => paperIdOfRun(run) === requestedPaperId);
     if (!matchingRun) {
+      // The list has loaded and the paper is not in it: stop waiting, so the
+      // address can be tidied instead of pointing at nothing.
+      if (runsLoaded) autoOpenedRunIdRef.current = requestedKey;
       return;
     }
 
     autoOpenedRunIdRef.current = requestedKey;
-    void handleOpenPrimaryFileAction(matchingRun).finally(() => {
-      router.replace("/workspace/library", { scroll: false });
-    });
-  }, [requestedPaperId, requestedRunId, router, runs]);
+    void handleOpenPrimaryFileAction(matchingRun, readChoice(searchParams.get("tab"), PAPER_EXPLORER_TABS, "overview"));
+  }, [requestedPaperId, requestedRunId, runs, runsLoaded, searchParams]);
+
+  // ------------------------------------------------------------- the address
+  // What the reader is looking at lives in the address: the open repository,
+  // Trash, the search, filters, sort and view, and the paper open in the
+  // explorer with its tab. Reload, Back and a copied link return to the same
+  // place. Opening a repository, Trash or a paper adds a history entry, so Back
+  // steps out of it; typing and filtering replace the entry instead.
+  const pushedPaperRef = useRef(false);
+  const navigationKeyRef = useRef<string | null>(null);
+  const analysisRunRef = useRef<IngestionRunRow | null>(null);
+  analysisRunRef.current = analysisRun;
+  const runsRef = useRef<IngestionRunRow[]>([]);
+  runsRef.current = runs;
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (libraryProjectId) params.set("repo", libraryProjectId);
+    if (showTrash) params.set("trash", "1");
+    if (query.trim()) params.set("q", query);
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (modifiedFilter !== "all") params.set("modified", modifiedFilter);
+    if (sourceFilter !== "all") params.set("source", sourceFilter);
+    if (sortKey !== "name") params.set("sort", sortKey);
+    if (sortDirection !== "asc") params.set("dir", sortDirection);
+    if (viewMode !== "list") params.set("view", viewMode);
+    if (analysisRun) {
+      params.set("paper", analysisRun.id);
+      if (analysisTab !== "overview") params.set("tab", analysisTab);
+    }
+    // A link to a paper that has not opened yet (the list is still loading)
+    // must survive, or the address would lose it before it could open.
+    const currentParams = new URLSearchParams(window.location.search);
+    const linked = currentParams.get("paper") ?? currentParams.get("runId");
+    const linkedPaper = currentParams.get("paperId");
+    const pendingKey = linked ? `run:${linked}` : linkedPaper ? `paper:${normalizePaperId(linkedPaper)}` : "";
+    if (!analysisRun && pendingKey && autoOpenedRunIdRef.current !== pendingKey) return;
+
+    const search = params.toString();
+    const next = `${window.location.pathname}${search ? `?${search}` : ""}`;
+    const current = `${window.location.pathname}${window.location.search}`;
+    const navigationKey = `${libraryProjectId ?? ""}|${showTrash ? 1 : 0}|${analysisRun?.id ?? ""}`;
+    const firstRun = navigationKeyRef.current === null;
+    const navigated = !firstRun && navigationKey !== navigationKeyRef.current;
+    navigationKeyRef.current = navigationKey;
+    if (next === current) return;
+
+    // Closing a paper that was opened here goes back to the entry before it,
+    // so Back afterwards does not reopen it.
+    if (!analysisRun && pushedPaperRef.current) {
+      pushedPaperRef.current = false;
+      window.history.back();
+      return;
+    }
+    const legacyLink = /[?&](runId|paperId)=/.test(window.location.search);
+    if (navigated && !legacyLink) {
+      window.history.pushState(null, "", next);
+      if (analysisRun) pushedPaperRef.current = true;
+    } else {
+      window.history.replaceState(null, "", next);
+    }
+  }, [analysisRun, analysisTab, libraryProjectId, modifiedFilter, query, showTrash, sortDirection, sortKey, sourceFilter, typeFilter, viewMode]);
+
+  // Back and Forward bring the view with them.
+  useEffect(() => {
+    function onPopState() {
+      const params = new URLSearchParams(window.location.search);
+      const paper = params.get("paper");
+      navigationKeyRef.current = `${params.get("repo") ?? ""}|${params.get("trash") === "1" ? 1 : 0}|${paper ?? ""}`;
+      setLibraryProjectId(params.get("repo"));
+      setShowTrash(params.get("trash") === "1");
+      setQuery(params.get("q") ?? "");
+      setTypeFilter(readChoice(params.get("type"), TYPE_FILTERS, "all"));
+      setModifiedFilter(readChoice(params.get("modified"), MODIFIED_FILTERS, "all"));
+      setSourceFilter(readChoice(params.get("source"), SOURCE_FILTERS, "all"));
+      setSortKey(readChoice(params.get("sort"), SORT_KEYS, "name"));
+      setSortDirection(readChoice(params.get("dir"), SORT_DIRECTIONS, "asc"));
+      setViewMode(readChoice(params.get("view"), VIEW_MODES, "list"));
+      if (!paper) {
+        pushedPaperRef.current = false;
+        setAnalysisRun(null);
+        setAnalysisDetail(null);
+        setAnalysisError(null);
+      } else if (paper !== analysisRunRef.current?.id) {
+        const run = runsRef.current.find((item) => item.id === paper);
+        if (run) void handleViewAnalysis(run, readChoice(params.get("tab"), PAPER_EXPLORER_TABS, "overview")).catch(() => undefined);
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+    // handleViewAnalysis reads only refs and setters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleOpenRunInNewTab(run: IngestionRunRow) {
+    const opened = window.open("", "_blank");
     const url = await getRunOpenUrl(run);
-    if (url) {
-      window.open(url, "_blank", "noopener,noreferrer");
+    if (opened && url) {
+      opened.opener = null;
+      opened.location.href = url;
+    } else {
+      opened?.close();
     }
   }
 
@@ -835,13 +1036,28 @@ export default function AdminImportClient() {
       headers: jsonRequestHeaders,
       body: JSON.stringify(selection),
     });
-    const payload = (await response.json().catch(() => ({}))) as { queuedCount?: number; error?: string };
+    const payload = (await response.json().catch(() => ({}))) as {
+      queuedCount?: number;
+      queuedRunIds?: string[];
+      error?: string;
+    };
     if (!response.ok) {
       throw new Error(payload.error ?? "The papers could not be queued.");
     }
+    // Follow the re-queued papers in the progress tray, exactly as an upload
+    // is followed. The message used to promise progress "on Home", where
+    // nothing about a re-analysis ever appeared.
+    const queuedIds = new Set(payload.queuedRunIds ?? []);
+    const queuedRuns = runs.filter((run) => queuedIds.has(run.id));
+    if (queuedRuns.length > 0) {
+      startAnalysisSession(queuedRuns, {
+        sourceKind: "reanalysis",
+        folder: libraryProject?.name ?? "Repository",
+      });
+    }
     setMessage(
       `${payload.queuedCount ?? 0} paper${payload.queuedCount === 1 ? "" : "s"} queued to be analyzed again. ` +
-        "Progress shows on Home."
+        "The progress tray follows each one."
     );
     await loadRuns();
   }
@@ -854,6 +1070,34 @@ export default function AdminImportClient() {
   async function handleRestoreRun(run: IngestionRunRow) {
     await patchRun(run.id, { action: "restore" });
     setMessage(`Restored "${titleOf(run)}" to its repository.`);
+  }
+
+  async function handlePermanentDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/workspace/library/trash", {
+        method: "DELETE",
+        headers: jsonRequestHeaders,
+        body: JSON.stringify(deleteTarget.all ? { all: true } : { runIds: deleteTarget.runs.map((run) => run.id) }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { deleted?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The papers could not be deleted.");
+      const count = payload.deleted ?? 0;
+      setMessage(
+        deleteTarget.all
+          ? `Emptied Trash: ${count} paper${count === 1 ? "" : "s"} deleted for good.`
+          : `Deleted "${titleOf(deleteTarget.runs[0])}" for good.`
+      );
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      await loadRuns();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "The papers could not be deleted.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
@@ -904,6 +1148,7 @@ export default function AdminImportClient() {
       setToolbarPopover(null);
       return;
     }
+    menuTriggerRef.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     const position = getPopoverPosition(rect, width, kind === "sort" ? 360 : 280);
     setToolbarPopover({
@@ -919,6 +1164,7 @@ export default function AdminImportClient() {
     event: ReactMouseEvent<HTMLButtonElement>,
     item: LibraryEntry
   ) {
+    menuTriggerRef.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     const position = getPopoverPosition(rect, 224, 390);
     setItemMenuState({
@@ -1076,10 +1322,8 @@ export default function AdminImportClient() {
   function renderToolbarPopover() {
     if (!toolbarPopover) return null;
 
-    const sectionClass =
-      "rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]";
-    const itemClass =
-      "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
+    const sectionClass = `z-50 origin-top ${menuPanelClass}`;
+    const itemClass = menuItemClass(false, "justify-between");
 
     if (toolbarPopover.kind === "new") {
       return (
@@ -1264,15 +1508,14 @@ export default function AdminImportClient() {
   function renderItemMenu() {
     if (!itemMenuState) return null;
 
-    const itemClass =
-      "flex w-full rounded-xl px-3 py-2.5 text-left text-sm text-slate-700 transition hover:bg-slate-50 dark:text-[#d0d0d0] dark:hover:bg-[#0a0a0a]";
+    const itemClass = menuItemClass();
     const menuItem = itemMenuState.item;
 
     if (!activeMenuRun) return null;
 
     return (
       <div
-        className="fixed rounded-[22px] border border-slate-200 bg-white p-2 shadow-[0_24px_60px_rgba(15,23,42,0.18)] dark:border-[#1f1f1f] dark:bg-[#050505]"
+        className="fixed z-50 origin-top rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
         style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
       >
         {activeMenuRun.status === "succeeded" ? (
@@ -1472,6 +1715,18 @@ export default function AdminImportClient() {
           >
             Restore to repository
           </button>
+        ) : null}
+        {activeMenuRun.trashed_at ? (
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteTarget({ runs: [activeMenuRun], all: false });
+              setItemMenuState(null);
+            }}
+            className="flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-red-700 transition-colors duration-150 hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none dark:text-red-300 dark:hover:bg-red-950/30 dark:focus-visible:bg-red-950/30"
+          >
+            Delete permanently…
+          </button>
         ) : (
           <button
             type="button"
@@ -1486,7 +1741,7 @@ export default function AdminImportClient() {
                 setItemMenuState(null);
               }
             }}
-            className="flex w-full rounded-xl px-3 py-2.5 text-left text-sm text-red-600 transition hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/20"
+            className="flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-red-700 transition-colors duration-150 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-950/30"
           >
             Move to trash
           </button>
@@ -1503,10 +1758,10 @@ export default function AdminImportClient() {
       <button
         type="button"
         onClick={(event) => openToolbarMenu(event, kind, 220)}
-        className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+        className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
       >
         <span>{label}</span>
-        <ChevronDownIcon className="h-4 w-4" />
+        <ChevronDownIcon className="h-3.5 w-3.5 text-mute" />
       </button>
     );
   }
@@ -1540,30 +1795,32 @@ export default function AdminImportClient() {
 
         <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
-              {showTrash ? (
-                <span>Trash</span>
-              ) : libraryProject ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
+            {/* A way back up, only where there is somewhere to go back to: at
+                the root it would just repeat the heading. */}
+            {showTrash || libraryProject ? (
+              <div className="mb-3 flex flex-wrap items-center gap-2 text-sm text-slate-500 dark:text-[#8f8f8f]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (showTrash) {
+                      setShowTrash(false);
+                    } else {
                       setLibraryProjectId(null);
                       setSelectedFolderId("all");
-                    }}
-                    className="rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                  >
-                    Repositories
-                  </button>
-                  <span>/</span>
-                  <span className="font-medium text-slate-900 dark:text-white">{libraryProject.name}</span>
-                </>
-              ) : (
-                <span>Repositories</span>
-              )}
-            </div>
-            <h1 className="mt-3 text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
-              {showTrash ? "Trash" : libraryProject?.name ?? "Repositories"}
+                    }
+                  }}
+                  className="-mx-2 rounded-full px-2 py-1 transition hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                >
+                  Library
+                </button>
+                <span aria-hidden="true">/</span>
+                <span className="font-medium text-slate-900 dark:text-white">
+                  {showTrash ? "Trash" : libraryProject?.name}
+                </span>
+              </div>
+            ) : null}
+            <h1 className="text-3xl font-semibold tracking-normal text-slate-900 dark:text-[#f2f2f2]">
+              {showTrash ? "Trash" : libraryProject?.name ?? "Library"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500 dark:text-[#a3a3a3]">
               {showTrash
@@ -1591,7 +1848,7 @@ export default function AdminImportClient() {
                 }
                 openToolbarMenu(event, "new", 240);
               }}
-              className="inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border border-slate-300 bg-[#e8f0fe] px-5 text-sm font-semibold text-slate-900 shadow-[0_8px_24px_rgba(15,23,42,0.08)] transition hover:border-slate-400 dark:border-[#1f1f1f] dark:bg-white dark:text-[#171717] dark:hover:border-[#3a3a3a] dark:hover:bg-[#f2f2f2]"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-medium text-canvas shadow-raise transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
             >
               <PlusIcon className="h-4 w-4" />
               <span>New</span>
@@ -1604,24 +1861,24 @@ export default function AdminImportClient() {
                 setSelectedFolderId("all");
                 setQuery("");
               }}
-              className={`inline-flex h-14 items-center justify-center gap-2 rounded-[20px] border px-5 text-sm font-semibold transition ${
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-medium shadow-raise transition-[background-color,border-color,transform] duration-150 active:scale-[0.98] ${
                 showTrash
-                  ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black"
-                  : "border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                  ? "border-ink bg-ink text-canvas"
+                  : "border-hairline bg-surface text-ink hover:border-hairline-strong hover:bg-subtle"
               }`}
             >
               <TrashIcon className="h-4 w-4" />
-              <span>{showTrash ? "Back to repositories" : "Trash"}</span>
+              <span>{showTrash ? "Back to library" : "Trash"}</span>
             </button>
 
             <label className="relative col-span-2 block min-w-0 flex-1">
-              <SearchIcon className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-[#808080]" />
+              <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
               <input
                 type="search"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder={libraryProject ? `Search in ${libraryProject.name}` : "Search repositories"}
-                className="h-14 w-full rounded-[20px] border border-slate-300 bg-white py-3 pl-11 pr-4 text-sm text-slate-900 outline-none transition focus:border-slate-500 focus:ring-4 focus:ring-slate-900/5 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a] dark:focus:ring-[#242424]"
+                className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
               />
             </label>
           </div>
@@ -1644,7 +1901,7 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={(event) => openToolbarMenu(event, "sort", 260)}
-              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <SortIcon className="h-4 w-4" />
               <span>Sort</span>
@@ -1652,18 +1909,18 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={() => void loadRuns()}
-              className="inline-flex items-center gap-2 rounded-[16px] border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+              className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
-              {loading ? "Refreshing..." : "Refresh"}
+              {loading ? "Refreshing…" : "Refresh"}
             </button>
-            <div className="inline-flex rounded-full border border-slate-300 bg-white p-1 dark:border-[#1f1f1f] dark:bg-[#050505]">
+            <div className="inline-flex rounded-lg border border-hairline bg-surface p-0.5 shadow-raise">
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
                   viewMode === "list"
-                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
-                    : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
+                    ? "bg-subtle text-ink"
+                    : "text-mute hover:text-ink"
                 }`}
                 aria-label="List layout"
               >
@@ -1672,10 +1929,10 @@ export default function AdminImportClient() {
               <button
                 type="button"
                 onClick={() => setViewMode("grid")}
-                className={`inline-flex h-10 w-10 items-center justify-center rounded-full transition ${
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
                   viewMode === "grid"
-                    ? "bg-[#d7ebff] text-slate-900 dark:bg-[#171717] dark:text-white"
-                    : "text-slate-500 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:text-white"
+                    ? "bg-subtle text-ink"
+                    : "text-mute hover:text-ink"
                 }`}
                 aria-label="Grid layout"
               >
@@ -1687,12 +1944,12 @@ export default function AdminImportClient() {
       </div>
 
       {message ? (
-        <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
+        <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-700 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200">
           {message}
         </div>
       ) : null}
       {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
           {error}
         </div>
       ) : null}
@@ -1707,19 +1964,30 @@ export default function AdminImportClient() {
               </p>
               <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
                 {showTrash
-                  ? "Showing files currently in Trash."
+                  ? "Papers in Trash still count toward your account's 50. Delete them permanently to free the space."
                   : "Every paper in this repository. Open one to see what the analysis found."}
               </p>
             </div>
+            {showTrash && visibleEntries.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setDeleteTarget({ runs: [], all: true })}
+                className={buttonClass("danger", "sm")}
+              >
+                Empty Trash…
+              </button>
+            ) : null}
           </div>
         </div>
 
         {visibleEntries.length === 0 ? (
           <div className="flex min-h-[360px] items-center justify-center px-6 py-12 text-center">
             <div>
-              <span className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-500 dark:bg-[#050505] dark:text-[#9c9c9c]">
-                <FolderIcon className="h-7 w-7" />
-              </span>
+              <Mascot
+                state={showTrash ? "sleeping" : fileEntries.length === 0 ? "idle" : "surprised"}
+                size={52}
+                className="mx-auto text-ink"
+              />
               {fileEntries.length === 0 && !showTrash ? (
                 <>
                   <p className="mt-5 text-lg font-medium text-slate-900 dark:text-[#f2f2f2]">
@@ -1761,7 +2029,7 @@ export default function AdminImportClient() {
               >
                 <span>Name</span>
                 {sortKey === "name" ? (
-                  <span className="text-xs text-sky-600 dark:text-sky-300">
+                  <span className="text-xs text-ink">
                     {sortDirection === "asc" ? "\u2191" : "\u2193"}
                   </span>
                 ) : null}
@@ -1774,7 +2042,7 @@ export default function AdminImportClient() {
               >
                 <span>Date modified</span>
                 {sortKey === "modified" ? (
-                  <span className="text-xs text-sky-600 dark:text-sky-300">
+                  <span className="text-xs text-ink">
                     {sortDirection === "asc" ? "\u2191" : "\u2193"}
                   </span>
                 ) : null}
@@ -1786,7 +2054,7 @@ export default function AdminImportClient() {
               >
                 <span>File size</span>
                 {sortKey === "size" ? (
-                  <span className="text-xs text-sky-600 dark:text-sky-300">
+                  <span className="text-xs text-ink">
                     {sortDirection === "asc" ? "\u2191" : "\u2193"}
                   </span>
                 ) : null}
@@ -1805,7 +2073,7 @@ export default function AdminImportClient() {
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
                         <span
-                          className={`mt-0.5 flex h-12 w-12 flex-none items-center justify-center rounded-[18px] ${badgeToneForEntry(item)}`}
+                          className={`mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-lg ${badgeToneForEntry(item)}`}
                         >
                           <Glyph className="h-5 w-5" />
                         </span>
@@ -1815,7 +2083,7 @@ export default function AdminImportClient() {
                               type="button"
                               onClick={() => void handleOpenPrimaryFileAction(item.run)}
                               title={item.name}
-                              className="line-clamp-2 min-w-0 text-left text-sm font-semibold text-slate-900 transition hover:text-sky-700 dark:text-[#f2f2f2] dark:hover:text-sky-300"
+                              className="line-clamp-2 min-w-0 text-left text-sm font-medium text-ink underline-offset-2 hover:underline"
                             >
                               {item.name}
                             </button>
@@ -1854,20 +2122,20 @@ export default function AdminImportClient() {
                     </div>
 
                     <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-[#b6b6b6]">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-xs font-semibold text-white">
+                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-subtle text-[11px] font-semibold text-ink ring-1 ring-inset ring-hairline">
                         {ownerInitial}
                       </span>
                       <span>{item.ownerLabel}</span>
                     </div>
 
                     <div
-                      className="text-sm text-slate-600 dark:text-[#b6b6b6]"
+                      className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]"
                       title={formatDetailedDate(item.modifiedAt)}
                     >
                       {formatShortDate(item.modifiedAt)}
                     </div>
 
-                    <div className="text-sm text-slate-600 dark:text-[#b6b6b6]">
+                    <div className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]">
                       {item.sizeLabel}
                     </div>
 
@@ -1886,7 +2154,7 @@ export default function AdminImportClient() {
                                 );
                               }
                             }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                             aria-label={`Download ${item.name}`}
                           >
                             <DownloadIcon className="h-4 w-4" />
@@ -1904,7 +2172,7 @@ export default function AdminImportClient() {
                                 );
                               }
                             }}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                             aria-label={`Rename ${item.name}`}
                           >
                             <PencilSquareIcon className="h-4 w-4" />
@@ -1931,13 +2199,13 @@ export default function AdminImportClient() {
                               item.favorite ? "from" : "to"
                             } favorites`}
                           >
-                            <StarIcon className="h-4 w-4" />
+                            <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
                           </button>
                       </>
                       <button
                         type="button"
                         onClick={(event) => openItemMenu(event, item)}
-                        className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                         aria-label={`Open actions for ${item.name}`}
                       >
                         <MoreHorizontalIcon className="h-4 w-4" />
@@ -1972,7 +2240,7 @@ export default function AdminImportClient() {
                         >
                           <div className="relative flex h-44 items-center justify-center overflow-hidden bg-slate-100 dark:bg-[#050505]">
                             <span
-                              className={`flex h-16 w-16 items-center justify-center rounded-[20px] ${badgeToneForEntry(item)}`}
+                              className={`flex h-14 w-14 items-center justify-center rounded-xl ${badgeToneForEntry(item)}`}
                             >
                               <Glyph className="h-7 w-7" />
                             </span>
@@ -1981,7 +2249,7 @@ export default function AdminImportClient() {
                             </span>
                             {item.favorite ? (
                               <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-600 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
-                                <StarIcon className="h-4 w-4" />
+                                <StarIcon className="h-4 w-4" weight="fill" />
                               </span>
                             ) : null}
                           </div>
@@ -2001,7 +2269,7 @@ export default function AdminImportClient() {
                                 {item.subtitle}
                               </p>
                             </div>
-                            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-[#9c9c9c]">
+                            <div className="flex items-center justify-between text-xs tabular-nums text-slate-500 dark:text-[#9c9c9c]">
                               <span>{formatShortDate(item.modifiedAt)}</span>
                               <span>{item.sizeLabel}</span>
                             </div>
@@ -2022,7 +2290,7 @@ export default function AdminImportClient() {
                                   );
                                 }
                               }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                               aria-label={`Download ${item.name}`}
                             >
                               <DownloadIcon className="h-4 w-4" />
@@ -2040,7 +2308,7 @@ export default function AdminImportClient() {
                                   );
                                 }
                               }}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                               aria-label={`Rename ${item.name}`}
                             >
                               <PencilSquareIcon className="h-4 w-4" />
@@ -2067,13 +2335,13 @@ export default function AdminImportClient() {
                                 item.favorite ? "from" : "to"
                               } favorites`}
                             >
-                              <StarIcon className="h-4 w-4" />
+                              <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
                             </button>
                           </div>
                           <button
                             type="button"
                             onClick={(event) => openItemMenu(event, item)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                             aria-label={`Open actions for ${item.name}`}
                           >
                             <MoreHorizontalIcon className="h-4 w-4" />
@@ -2123,7 +2391,7 @@ export default function AdminImportClient() {
                       className="group flex min-h-32 items-start gap-4 rounded-lg border border-slate-200 bg-white p-5 text-left transition-colors hover:border-slate-400 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                     >
                       <span className="flex h-11 w-11 flex-none items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-[#111111] dark:text-[#d0d0d0]">
-                        <DriveIcon className="h-5 w-5" />
+                        <BooksIcon className="h-5 w-5" />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-base font-semibold text-slate-900 dark:text-[#f2f2f2]">{project.name}</span>
@@ -2176,7 +2444,7 @@ export default function AdminImportClient() {
         fieldLabel="File name"
         fieldPlaceholder="File name"
         submitLabel="Save name"
-        busyLabel="Saving..."
+        busyLabel="Saving…"
         busy={renaming}
         error={renameError}
         onValueChange={setRenameDraft}
@@ -2188,6 +2456,66 @@ export default function AdminImportClient() {
         }}
         onSubmit={handleRenameSubmit}
       />
+
+      {deleteTarget ? (
+        <Modal
+          onClose={() => {
+            if (deleting) return;
+            setDeleteTarget(null);
+            setDeleteConfirmText("");
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handlePermanentDelete();
+            }}
+            className="w-[min(480px,92vw)] rounded-xl border border-hairline bg-surface p-6 shadow-overlay"
+          >
+            <h2 className="text-lg font-semibold tracking-tight text-ink">
+              {deleteTarget.all ? "Empty Trash?" : "Delete this paper permanently?"}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-body">
+              {deleteTarget.all
+                ? "Every paper in Trash is deleted for good: the PDFs and everything the analysis found. This cannot be undone."
+                : `"${titleOf(deleteTarget.runs[0])}" is deleted for good: the PDF and everything the analysis found. This cannot be undone.`}
+            </p>
+            {deleteTarget.all ? (
+              <label className="mt-4 block text-sm text-body">
+                Type <span className="font-mono font-medium text-ink">delete</span> to confirm
+                <input
+                  value={deleteConfirmText}
+                  onChange={(event) => setDeleteConfirmText(event.target.value)}
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={`${fieldClass} mt-1.5`}
+                />
+              </label>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteConfirmText("");
+                }}
+                className={buttonClass("secondary", "md")}
+              >
+                Keep
+              </button>
+              <button
+                type="submit"
+                disabled={deleting || (deleteTarget.all && deleteConfirmText.trim().toLowerCase() !== "delete")}
+                className={buttonClass("danger", "md")}
+              >
+                {deleting ? "Deleting…" : deleteTarget.all ? "Empty Trash" : "Delete permanently"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
 
       {(toolbarPopover || itemMenuState) && typeof document !== "undefined"
         ? createPortal(
@@ -2201,8 +2529,10 @@ export default function AdminImportClient() {
                 role="presentation"
               />
               <div
+                ref={menuRef}
                 className="fixed z-50"
                 onClick={(event) => event.stopPropagation()}
+                onKeyDown={handleMenuKeyDown}
                 role="presentation"
               >
                 {renderToolbarPopover()}
@@ -2239,7 +2569,10 @@ export default function AdminImportClient() {
 
       {analysisRun ? (
         <PaperAnalysisExplorerModal
+          key={analysisRun.id}
           run={analysisRun}
+          initialTab={analysisTab}
+          onTabChange={setAnalysisTab}
           detail={analysisDetail}
           loading={analysisLoading}
           error={analysisError}
@@ -2717,9 +3050,19 @@ export default function AdminImportClient() {
       {infoRun ? (
         <Modal onClose={() => setInfoRun(null)}>
           <div className="w-[min(560px,92vw)] rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-2xl dark:border-[#1f1f1f] dark:bg-[#030303]">
-            <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-              File information
-            </h2>
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+                File information
+              </h2>
+              <button
+                type="button"
+                onClick={() => setInfoRun(null)}
+                aria-label="Close"
+                className="-mr-2 -mt-1 inline-flex h-9 w-9 items-center justify-center rounded-lg text-mute transition-colors hover:bg-subtle hover:text-ink"
+              >
+                <CloseIcon className="h-4 w-4" />
+              </button>
+            </div>
             <dl className="mt-5 space-y-4 text-sm">
               <div className="flex items-start justify-between gap-4">
                 <dt className="text-slate-500 dark:text-[#9c9c9c]">Name</dt>

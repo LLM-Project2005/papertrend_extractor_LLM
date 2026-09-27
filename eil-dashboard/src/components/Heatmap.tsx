@@ -35,7 +35,7 @@ function interpolate(low: string, high: string, t: number): string {
 function textOn(rgb: string): string {
   const [r, g, b] = (rgb.match(/\d+/g) ?? ["0", "0", "0"]).map(Number);
   const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return luminance > 0.55 ? "#1f2937" : "#f8fafc";
+  return luminance > 0.55 ? "#1f2937" : "#fafafa";
 }
 
 export default function Heatmap({

@@ -10,7 +10,7 @@ import {
   triggerWorkerQueueWithRetries,
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
-import { getDatabaseProvider } from "@/lib/server-env";
+import { getDatabaseProvider, getGcsUploadBucket } from "@/lib/server-env";
 import { gcsObjectExists } from "@/lib/gcs-signed-urls";
 
 export const runtime = "nodejs";
@@ -23,6 +23,11 @@ type UploadFinalizeItem = {
 };
 
 function isSafePendingStoragePath(storagePath: string, runId: string): boolean {
+  // The browser uploads to the URL /prepare signed, which is always in this
+  // deployment's bucket; a path naming any other bucket did not come from it.
+  if (storagePath.startsWith("gs://") && !storagePath.startsWith(`gs://${getGcsUploadBucket()}/`)) {
+    return false;
+  }
   const normalizedPath = storagePath.startsWith("gs://")
     ? storagePath.replace(/^gs:\/\/[^/]+\//, "")
     : storagePath;

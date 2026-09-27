@@ -34,6 +34,9 @@ interface Props {
   edges: SemanticMapEdge[];
   colors: Record<string, string>;
   dimmedPaperIds: Set<string>;
+  /** Papers outside the selection, drawn faintly so the selection stands out. */
+  recededPaperIds?: Set<string>;
+  focusedPaperId?: string | null;
   selectedPaperIds: Set<string>;
   selectedEdgeId: string | null;
   running: boolean;
@@ -63,6 +66,8 @@ export default function ForceDirectedSemanticGraph({
   edges,
   colors,
   dimmedPaperIds,
+  recededPaperIds,
+  focusedPaperId,
   selectedPaperIds,
   selectedEdgeId,
   running,
@@ -340,10 +345,14 @@ export default function ForceDirectedSemanticGraph({
           })}
         </g>
         <g aria-label="Papers">
-          {points.map((point) => {
+          {/* SVG paints in document order, so selected papers go last and sit on top. */}
+          {[...points]
+            .sort((left, right) => Number(selectedPaperIds.has(left.paperId) || left.paperId === focusedPaperId) - Number(selectedPaperIds.has(right.paperId) || right.paperId === focusedPaperId))
+            .map((point) => {
             const position = positions[point.paperId] ?? point;
             const selected = selectedPaperIds.has(point.paperId);
             const dimmed = dimmedPaperIds.has(point.paperId);
+            const receded = Boolean(recededPaperIds?.has(point.paperId));
             // Flip above the node near the bottom edge so the label is not clipped.
             const labelY = position.y > 700 ? -56 : 18;
             return (
@@ -351,13 +360,13 @@ export default function ForceDirectedSemanticGraph({
                 key={point.paperId}
                 data-paper-id={point.paperId}
                 transform={`translate(${position.x} ${position.y})`}
-                className={`cursor-grab active:cursor-grabbing ${dimmed ? "opacity-15" : "opacity-100"}`}
+                className={`cursor-grab transition-opacity duration-200 active:cursor-grabbing ${dimmed ? "opacity-15" : receded ? "opacity-25" : "opacity-100"}`}
                 onPointerDown={(event) => beginNodeDrag(event, point.paperId)}
                 onPointerMove={moveNode}
                 onPointerUp={endNodeDrag}
                 onPointerCancel={endNodeDrag}
               >
-                <circle r={selected ? 15 : 11} fill={colors[point.paperId] ?? "#64748b"} stroke={selected ? "white" : colors[point.paperId] ?? "#64748b"} strokeWidth={selected ? 4 : 3} vectorEffect="non-scaling-stroke" />
+                <circle r={selected ? 15 : 11} fill={colors[point.paperId] ?? "#707070"} stroke={selected ? "white" : colors[point.paperId] ?? "#707070"} strokeWidth={selected ? 4 : 3} vectorEffect="non-scaling-stroke" />
                 {showLabels ? (
                   <foreignObject x={-84} y={labelY} width={168} height={48} pointerEvents="none" overflow="visible">
                     <div className="mx-auto w-fit max-w-[180px] rounded-md bg-white/92 px-2 py-1 text-center text-[10px] font-semibold leading-[14px] text-slate-800 shadow-sm backdrop-blur-sm dark:bg-black/92 dark:text-[#eee]">
@@ -376,6 +385,9 @@ export default function ForceDirectedSemanticGraph({
         <button type="button" title="Zoom out" aria-label="Zoom out" onClick={() => zoomAt(1.2)} className="flex h-9 w-9 items-center justify-center border-r border-slate-200 text-lg font-medium text-slate-700 hover:bg-slate-50 dark:border-[#292929] dark:text-white dark:hover:bg-[#151515]">-</button>
         <button type="button" title="Reset view" onClick={() => setViewBox(DEFAULT_VIEW)} className="h-9 px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:text-white dark:hover:bg-[#151515]">Fit</button>
       </div>
+      <p className="pointer-events-none absolute bottom-3 left-3 max-w-xs rounded-lg border border-hairline bg-surface/90 px-3 py-2 text-xs leading-5 text-body shadow-raise backdrop-blur">
+        <span className="font-medium text-ink">Free graph.</span> Positions come from the links and your dragging, so distance does not show similarity. Switch to Fixed projection to compare content.
+      </p>
       <p className="pointer-events-none absolute bottom-3 right-3 rounded-md bg-white/85 px-2 py-1 text-[10px] text-slate-500 backdrop-blur dark:bg-black/85 dark:text-[#999]">Drag nodes / drag canvas / scroll to zoom</p>
     </div>
   );

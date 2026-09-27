@@ -70,6 +70,9 @@ export function firebaseUserToPapertrendUser(
       provider: "firebase",
       providers: ["firebase"],
       firebase_uid: firebaseUser.uid,
+      // How this person actually signs in ("password", "google.com"...), so
+      // Settings can offer a password reset only to a password account.
+      sign_in_methods: firebaseUser.providerData.map((entry) => entry.providerId),
     },
     user_metadata: {
       full_name: firebaseUser.displayName ?? null,
@@ -133,6 +136,38 @@ export async function signUpWithFirebasePassword(
   if (fullName?.trim()) {
     await updateProfile(result.user, { displayName: fullName.trim() });
   }
+  // The account is created once the address is confirmed (account-linking.ts),
+  // so the confirmation link goes out straight away.
+  await sendFirebaseVerificationEmail(auth);
+}
+
+/** Emails a confirmation link to the signed-in user; it returns to the sign-in page. */
+export async function sendFirebaseVerificationEmail(auth: Auth): Promise<void> {
+  const { sendEmailVerification } = await import("firebase/auth");
+  if (!auth.currentUser) throw new Error("Sign in again, then ask for a new confirmation email.");
+  try {
+    await sendEmailVerification(auth.currentUser, {
+      url: `${window.location.origin}/login?confirmed=1`,
+    });
+  } catch (error) {
+    // A site whose domain Firebase has not authorised cannot be the link's
+    // destination; the email still goes out, ending on Firebase's own page.
+    const code = (error as { code?: string }).code ?? "";
+    if (!/continue-uri/.test(code)) throw error;
+    await sendEmailVerification(auth.currentUser);
+  }
+}
+
+/**
+ * Re-reads the signed-in user after they confirmed their address in another
+ * tab, and refreshes their token so the server sees the confirmation.
+ */
+export async function reloadFirebaseUser(auth: Auth): Promise<boolean> {
+  const user = auth.currentUser;
+  if (!user) return false;
+  await user.reload();
+  await user.getIdToken(true);
+  return user.emailVerified;
 }
 
 export async function sendFirebasePasswordReset(auth: Auth, email: string): Promise<void> {

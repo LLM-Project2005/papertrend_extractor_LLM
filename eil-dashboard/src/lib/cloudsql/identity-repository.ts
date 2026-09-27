@@ -1,3 +1,4 @@
+import { isEmailVerified, mayCreateUnverifiedAccount } from "@/lib/auth/account-linking";
 import { withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
 import type { AuthIdentity } from "@/lib/auth/adapter";
 
@@ -28,7 +29,10 @@ export async function provisionCloudSqlIdentityOwner(
   identity: AuthIdentity
 ): Promise<{ ownerUserId: string; email: string } | null> {
   const email = identity.email?.trim().toLowerCase() ?? "";
-  if (identity.provider !== "firebase" || !email || identity.claims.email_verified !== true) {
+  const verified = isEmailVerified(identity.claims);
+  // See account-linking.ts: only a verified email may join an existing
+  // account; Facebook, which Firebase never marks verified, may only start one.
+  if (identity.provider !== "firebase" || !email || (!verified && !mayCreateUnverifiedAccount(identity.claims))) {
     return null;
   }
 
@@ -56,6 +60,9 @@ export async function provisionCloudSqlIdentityOwner(
       [email]
     );
     let ownerUserId = existingProfile.rows[0]?.id;
+    if (ownerUserId && !verified) {
+      return null;
+    }
     if (!ownerUserId) {
       const displayName =
         typeof identity.claims.name === "string" && identity.claims.name.trim()
