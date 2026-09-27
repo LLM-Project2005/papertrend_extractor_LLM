@@ -38,6 +38,14 @@ async function pointAt(page: Page, target: Locator, steps = 28) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps });
 }
 
+/** A wheel scroll in small steps, so the recording shows it glide. */
+async function scrollBy(page: Page, deltaY: number, steps = 14) {
+  for (let i = 0; i < steps; i += 1) {
+    await page.mouse.wheel(0, deltaY / steps);
+    await wait(page, 28);
+  }
+}
+
 async function clickOn(page: Page, target: Locator) {
   await pointAt(page, target);
   await wait(page, 180);
@@ -126,11 +134,17 @@ const SCENES: Scene[] = [
       await wait(page, 500);
       await page.keyboard.press("Enter");
       await page.locator('button[aria-label^="Source:"]').first().waitFor({ timeout: 20000 }).catch(() => undefined);
-      await wait(page, 1800);
+      await wait(page, 1400);
+      // The thread lands on the end of the answer. Scroll back so its opening
+      // and first source sit mid-screen, where the source card has room.
       const citation = page.locator('button[aria-label^="Source:"]').first();
-      if (await citation.count()) {
+      const box = await citation.boundingBox();
+      if (box) {
+        await page.mouse.move(box.x + 120, box.y + 140, { steps: 20 });
+        await scrollBy(page, box.y - 470);
+        await wait(page, 700);
         await clickOn(page, citation);
-        await wait(page, 2800);
+        await wait(page, 3000);
       }
     },
   },

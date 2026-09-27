@@ -436,7 +436,7 @@ export default function PaperAnalysisExplorerModal({
     }
   }
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [selectedEvidenceIndex, setSelectedEvidenceIndex] = useState(0);
   const trackBadges = useMemo(() => buildTrackBadges(detail), [detail]);
@@ -457,22 +457,22 @@ export default function PaperAnalysisExplorerModal({
 
   useEffect(() => {
     setActiveTab("overview");
-    setPreviewUrl(null);
-    setPreviewError(null);
-    setPreviewLoading(false);
     setSelectedEvidenceIndex(0);
   }, [run.id]);
 
+  // The address is resolved once per paper, and again only when asked. The
+  // resolver is read through a ref: the parent passes a new function on every
+  // render, and re-running on it cancelled the request still in flight, which
+  // left the viewer on "Loading the PDF…" for good.
+  const resolvePreviewRef = useRef(onResolvePreviewUrl);
+  resolvePreviewRef.current = onResolvePreviewUrl;
   useEffect(() => {
-    if (previewUrl || previewLoading || previewError) {
-      return;
-    }
-
     let cancelled = false;
-    setPreviewLoading(true);
+    setPreviewUrl(null);
     setPreviewError(null);
 
-    void onResolvePreviewUrl()
+    void resolvePreviewRef
+      .current()
       .then((url) => {
         if (cancelled) {
           return;
@@ -492,17 +492,12 @@ export default function PaperAnalysisExplorerModal({
             ? previewLoadError.message
             : "Failed to load the file preview."
         );
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setPreviewLoading(false);
-        }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [onResolvePreviewUrl, previewError, previewLoading, previewUrl]);
+  }, [run.id, previewAttempt]);
 
   return (
     <Modal onClose={onClose}>
@@ -1152,11 +1147,7 @@ export default function PaperAnalysisExplorerModal({
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setPreviewUrl(null);
-                        setPreviewError(null);
-                        setPreviewLoading(false);
-                      }}
+                      onClick={() => setPreviewAttempt((attempt) => attempt + 1)}
                       className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 dark:border-[#1f1f1f] dark:text-[#d0d0d0]"
                     >
                       Refresh preview
