@@ -8,6 +8,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import ProductShot from "@/components/marketing/ProductShot";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import { getStoredWorkspaceRoute } from "@/lib/workspace-session";
+import { safeReturnPath } from "@/lib/safe-return-path";
 import { LogoMarkIcon } from "@/components/ui/Icons";
 
 function LoginPageContent() {
@@ -17,12 +18,9 @@ function LoginPageContent() {
 
   useEffect(() => {
     if (hydrated && user) {
-      const returnTo = searchParams.get("returnTo");
-      const safeReturnTo =
-        returnTo && returnTo.startsWith("/") && !returnTo.startsWith("//")
-          ? returnTo
-          : getStoredWorkspaceRoute() ?? "/workspaces";
-      router.replace(safeReturnTo);
+      router.replace(
+        safeReturnPath(searchParams.get("returnTo"), getStoredWorkspaceRoute() ?? "/workspaces")
+      );
     }
   }, [hydrated, router, searchParams, user]);
 

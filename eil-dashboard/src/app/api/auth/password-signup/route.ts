@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
-import { getSupabaseAnonKey, getSupabaseUrl } from "@/lib/server-env";
+import { getAuthProvider, getSupabaseAnonKey, getSupabaseUrl } from "@/lib/server-env";
 import {
   GuardError,
   assertLoginRateLimit,
@@ -19,6 +19,12 @@ const PasswordSignupSchema = z.object({
 });
 
 export async function POST(request: Request) {
+  // These serve the retired Supabase sign-in only. Under Firebase they answer
+  // at once, before touching the database, so they cannot be used to fill the
+  // rate-limit table or hold connections.
+  if (getAuthProvider() !== "supabase") {
+    return NextResponse.json({ error: "This sign-in route is retired." }, { status: 410 });
+  }
   try {
     const parsed = PasswordSignupSchema.safeParse(await request.json().catch(() => ({})));
     if (!parsed.success) {

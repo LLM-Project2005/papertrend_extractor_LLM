@@ -37,7 +37,6 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "src/app/api/auth/password-signup/route.ts": "account creation",
   "src/app/api/auth/password-reset/route.ts": "reset requested while locked out",
   "src/app/api/auth/firebase/link/route.ts": "links a Firebase identity to an owner record",
-  "src/app/api/integrations/google-drive/callback/route.ts": "OAuth redirect from Google",
 };
 
 /** A route that verifies a machine caller rather than a person. */
@@ -55,6 +54,19 @@ test("every API route authenticates somebody, or says why it does not", () => {
     unguarded.push(normalized);
   }
   assert.deepEqual(unguarded, [], "these routes verify nobody and are not on the public list");
+});
+
+test("the retired server-side Drive OAuth flow stays gone", () => {
+  // Its OAuth state was not tied to the browser that started it, its return
+  // address was not checked, and it kept Drive refresh tokens on the server.
+  // The Picker replaced it: the browser holds a short drive.file token.
+  for (const route of ["connect", "callback", "files", "queue"]) {
+    assert.equal(
+      API_ROUTES.some((r) => r.replace(/\\/g, "/") === `src/app/api/integrations/google-drive/${route}/route.ts`),
+      false,
+      `google-drive/${route} is back`
+    );
+  }
 });
 
 test("the public list has not grown stale", () => {
@@ -226,7 +238,9 @@ test("a redirect target cannot be pointed off-site", () => {
   const fn = guards.slice(guards.indexOf("export function validateSafeReturnTo"));
   assert.match(fn, /raw\.startsWith\("\/\/"\)/, "a protocol-relative URL leaves the site");
   assert.match(fn, /url\.origin === new URL\(configured\)\.origin/);
-  assert.match(fn, /return raw\.startsWith\("\/"\) \? raw : fallback;/);
+  // A leading slash is not enough (a backslash or a tab after it leaves the
+  // site in a browser), so every path goes through the shared check.
+  assert.match(fn, /return safeReturnPath\(raw, fallback\);/);
 });
 
 test("uploads are checked by content, not only by name", () => {

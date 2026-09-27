@@ -30,6 +30,7 @@ import {
 } from "@/lib/firebase-client";
 import type { AuthContextValue, AuthSession, UserProfileRecord } from "@/types/auth";
 import type { WorkspaceProfile } from "@/types/workspace";
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const configuredAuthProvider = getClientAuthProvider();
@@ -62,13 +63,8 @@ function getRedirectTo(): string | undefined {
   }
 
   const currentUrl = new URL(window.location.href);
-  const returnTo = currentUrl.searchParams.get("returnTo");
-  if (
-    currentUrl.pathname === "/login" &&
-    returnTo &&
-    returnTo.startsWith("/") &&
-    !returnTo.startsWith("//")
-  ) {
+  const returnTo = safeReturnPath(currentUrl.searchParams.get("returnTo"), "");
+  if (currentUrl.pathname === "/login" && returnTo) {
     return `${window.location.origin}/login?returnTo=${encodeURIComponent(returnTo)}`;
   }
 
