@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 interface ModalProps {
@@ -18,6 +18,10 @@ interface ModalProps {
  */
 const openModals: string[] = [];
 
+// Layout timing on the client (the copy must be taken before the DOM goes);
+// the plain effect on the server, where layout effects only warn.
+const useClientLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 export default function Modal({
   children,
   onClose,
@@ -26,6 +30,7 @@ export default function Modal({
 }: ModalProps) {
   const modalId = useId();
   const containerRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const [mounted, setMounted] = useState(false);
   onCloseRef.current = onClose;
@@ -111,12 +116,54 @@ export default function Modal({
     };
   }, [mounted, modalId, label]);
 
+  // Closing animates too. The parent removes a dialog outright, so as it goes
+  // a still copy is left in its place for a moment and faded out: inert,
+  // hidden from assistive technology, with its frames and videos blanked so
+  // nothing reloads. Under reduced motion the dialog just disappears.
+  useClientLayoutEffect(() => {
+    if (!mounted) return;
+    const node = backdropRef.current;
+    return () => {
+      if (!node || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const ghost = node.cloneNode(true) as HTMLElement;
+      const originals = node.querySelectorAll<HTMLElement>("iframe, video");
+      ghost.querySelectorAll<HTMLElement>("iframe, video").forEach((element, index) => {
+        const blank = document.createElement("div");
+        const source = originals[index];
+        blank.style.width = `${source?.offsetWidth ?? 0}px`;
+        blank.style.height = `${source?.offsetHeight ?? 0}px`;
+        blank.style.background = "rgb(var(--subtle))";
+        element.replaceWith(blank);
+      });
+      ghost.querySelectorAll("[id]").forEach((element) => element.removeAttribute("id"));
+      ghost.classList.remove("modal-backdrop");
+      ghost.setAttribute("aria-hidden", "true");
+      ghost.setAttribute("inert", "");
+      ghost.style.pointerEvents = "none";
+      const panel = ghost.querySelector<HTMLElement>(".modal-panel");
+      panel?.classList.remove("modal-panel");
+      document.body.appendChild(ghost);
+      ghost.scrollTop = node.scrollTop;
+      const fade = ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 170, easing: "cubic-bezier(0.7, 0, 0.84, 0)" });
+      panel?.animate(
+        [
+          { transform: "none" },
+          { transform: "translateY(8px) scale(0.985)" },
+        ],
+        { duration: 170, easing: "cubic-bezier(0.7, 0, 0.84, 0)" }
+      );
+      fade.onfinish = () => ghost.remove();
+      fade.oncancel = () => ghost.remove();
+    };
+  }, [mounted]);
+
   if (!mounted) {
     return null;
   }
 
   return createPortal(
     <div
+      ref={backdropRef}
       className={`modal-backdrop fixed inset-0 ${zIndexClassName} overflow-y-auto overscroll-contain bg-black/65 backdrop-blur-[2px]`}
       onClick={onClose}
       role="presentation"

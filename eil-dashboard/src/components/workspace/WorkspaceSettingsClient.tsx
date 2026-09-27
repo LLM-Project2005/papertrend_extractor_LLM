@@ -248,7 +248,7 @@ function Avatar({ name, email, url, size = 56 }: { name: string; email: string; 
 
 /* ------------------------------------------------------------- the sections */
 
-function ProfileSection() {
+function ProfileSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { user, profile, isAdmin, saveUserProfile } = useAuth();
   const savedName = profile?.full_name ?? "";
   const savedAvatar = profile?.avatar_url ?? "";
@@ -263,6 +263,7 @@ function ProfileSection() {
   useEffect(() => setAvatar(savedAvatar), [savedAvatar]);
 
   const dirty = name.trim() !== savedName.trim() || avatar.trim() !== savedAvatar.trim();
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const avatarInvalid = Boolean(avatar.trim()) && !/^https:\/\/\S+$/i.test(avatar.trim());
 
   async function save() {
@@ -568,7 +569,7 @@ function AppearanceSection() {
   );
 }
 
-function RepositorySection() {
+function RepositorySection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) {
   const { currentProject, renameProject } = useWorkspaceProfile();
   const savedName = currentProject?.name ?? "";
   const savedDescription = currentProject?.description ?? "";
@@ -583,6 +584,7 @@ function RepositorySection() {
   useEffect(() => setDescription(savedDescription), [savedDescription]);
 
   const dirty = name.trim() !== savedName.trim() || description.trim() !== savedDescription.trim();
+  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
   const nameMissing = !name.trim();
 
   async function save() {
@@ -992,22 +994,30 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
 
 /* ---------------------------------------------------------------- the page */
 
+function discardQuestion(section: SectionId): string {
+  const label =
+    section === "profile" ? "your profile" : section === "repository" ? "this repository" : "the analysis profile";
+  return `Discard your unsaved changes to ${label}?`;
+}
+
 export default function WorkspaceSettingsClient() {
   const searchParams = useSearchParams();
   const { currentProject } = useWorkspaceProfile();
   const [activeSection, setActiveSection] = useState<SectionId>(() => resolveSection(searchParams.get("section")));
-  const [analysisDirty, setAnalysisDirty] = useState(false);
+  // Whichever section is open reports whether it holds unsaved edits, and
+  // leaving it (another section, a link, closing the tab) asks first.
+  const [sectionDirty, setSectionDirty] = useState(false);
 
   useEffect(() => {
     setActiveSection(resolveSection(searchParams.get("section")));
   }, [searchParams]);
 
   useEffect(() => {
-    if (!analysisDirty) return;
+    if (!sectionDirty) return;
     const warn = (event: BeforeUnloadEvent) => event.preventDefault();
     const warnLinkNavigation = (event: MouseEvent) => {
       const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (target && !window.confirm("Discard unsaved analysis profile changes?")) {
+      if (target && !window.confirm(discardQuestion(activeSection))) {
         event.preventDefault();
         event.stopPropagation();
       }
@@ -1018,15 +1028,15 @@ export default function WorkspaceSettingsClient() {
       window.removeEventListener("beforeunload", warn);
       document.removeEventListener("click", warnLinkNavigation, true);
     };
-  }, [analysisDirty]);
+  }, [activeSection, sectionDirty]);
 
   function selectSection(id: SectionId) {
     if (id === activeSection) return;
-    if (activeSection === "analysis" && analysisDirty && !window.confirm("Discard unsaved analysis profile changes?")) {
+    if (sectionDirty && !window.confirm(discardQuestion(activeSection))) {
       return;
     }
     setActiveSection(id);
-    setAnalysisDirty(false);
+    setSectionDirty(false);
     const params = new URLSearchParams(window.location.search);
     params.set("section", id);
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
@@ -1120,12 +1130,12 @@ export default function WorkspaceSettingsClient() {
 
         <div key={active.id} className="min-w-0 motion-safe:animate-rise-in">
           <p className="mb-4 text-[13px] text-mute lg:hidden">{active.description}</p>
-          {active.id === "profile" ? <ProfileSection /> : null}
+          {active.id === "profile" ? <ProfileSection onDirtyChange={setSectionDirty} /> : null}
           {active.id === "security" ? <SecuritySection /> : null}
           {active.id === "appearance" ? <AppearanceSection /> : null}
-          {active.id === "repository" ? <RepositorySection /> : null}
+          {active.id === "repository" ? <RepositorySection onDirtyChange={setSectionDirty} /> : null}
           {active.id === "analysis" && PROJECT_ANALYSIS_PROFILES_ENABLED ? (
-            <AnalysisSection onDirtyChange={setAnalysisDirty} />
+            <AnalysisSection onDirtyChange={setSectionDirty} />
           ) : null}
         </div>
       </div>

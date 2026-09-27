@@ -139,7 +139,8 @@ export const dashboardPage: DocsPageBase = {
           title: "What you can do",
           bullets: [
             "Search to dim papers that do not match; color by neighborhood, category, year or track.",
-            "Hide papers from view without rebuilding the map, or switch to the **Force graph** layout and drag papers around.",
+            "Hide papers from view without rebuilding the map, or switch from **Fixed projection** to **Free graph** and drag papers around. In the free graph, positions come from the links and your dragging, so distance no longer shows similarity.",
+            "Selecting a paper brings it to the front and fades the rest, so its neighbourhood is easy to read.",
             "Select a paper to open its analysis, or select two or more and choose **Compare** or **Ask about papers** to continue in Chat with them attached.",
           ],
           body: [],

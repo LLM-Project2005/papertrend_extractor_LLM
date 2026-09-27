@@ -14,7 +14,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import CreateEntityModal from "@/components/workspace/CreateEntityModal";
-import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
+import PaperAnalysisExplorerModal, {
+  PAPER_EXPLORER_TABS,
+  type PaperExplorerTab,
+} from "@/components/workspace/PaperAnalysisExplorerModal";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import Modal from "@/components/ui/Modal";
@@ -50,6 +53,7 @@ import {
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
+import { menuItemClass, menuPanelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 
 type ViewMode = "list" | "grid";
@@ -58,6 +62,18 @@ type ModifiedFilter = "all" | "7d" | "30d" | "year" | "older";
 type SourceFilter = "all" | "upload" | "google-drive";
 type SortKey = "name" | "modified" | "size";
 type SortDirection = "asc" | "desc";
+
+const VIEW_MODES: ViewMode[] = ["list", "grid"];
+const TYPE_FILTERS: TypeFilter[] = ["all", "pdf", "image", "document", "other"];
+const MODIFIED_FILTERS: ModifiedFilter[] = ["all", "7d", "30d", "year", "older"];
+const SOURCE_FILTERS: SourceFilter[] = ["all", "upload", "google-drive"];
+const SORT_KEYS: SortKey[] = ["name", "modified", "size"];
+const SORT_DIRECTIONS: SortDirection[] = ["asc", "desc"];
+
+/** A value from the address, if it is one of the allowed ones. */
+function readChoice<T extends string>(value: string | null, allowed: readonly T[], fallback: T): T {
+  return value && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
 type ToolbarPopoverKind = "new" | "type" | "modified" | "source" | "sort";
 
 type ToolbarPopoverState = {
@@ -412,15 +428,17 @@ export default function AdminImportClient() {
     startAnalysisSession,
   } = useWorkspaceProfile();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
-  const [libraryProjectId, setLibraryProjectId] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("list");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [modifiedFilter, setModifiedFilter] = useState<ModifiedFilter>("all");
-  const [sourceFilter, setSourceFilter] = useState<SourceFilter>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
-  const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [showTrash, setShowTrash] = useState(false);
+  const [libraryProjectId, setLibraryProjectId] = useState<string | null>(() => searchParams.get("repo"));
+  const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => readChoice(searchParams.get("view"), VIEW_MODES, "list"));
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>(() => readChoice(searchParams.get("type"), TYPE_FILTERS, "all"));
+  const [modifiedFilter, setModifiedFilter] = useState<ModifiedFilter>(() =>
+    readChoice(searchParams.get("modified"), MODIFIED_FILTERS, "all")
+  );
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>(() => readChoice(searchParams.get("source"), SOURCE_FILTERS, "all"));
+  const [sortKey, setSortKey] = useState<SortKey>(() => readChoice(searchParams.get("sort"), SORT_KEYS, "name"));
+  const [sortDirection, setSortDirection] = useState<SortDirection>(() => readChoice(searchParams.get("dir"), SORT_DIRECTIONS, "asc"));
+  const [showTrash, setShowTrash] = useState(() => searchParams.get("trash") === "1");
   const [toolbarPopover, setToolbarPopover] = useState<ToolbarPopoverState | null>(null);
   const [itemMenuState, setItemMenuState] = useState<ItemMenuState | null>(null);
   // The menus open in a portal at the end of the page, so focus is carried
@@ -437,6 +455,7 @@ export default function AdminImportClient() {
   const [previewTitle, setPreviewTitle] = useState("");
   const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
   const [analysisRun, setAnalysisRun] = useState<IngestionRunRow | null>(null);
+  const [analysisTab, setAnalysisTab] = useState<PaperExplorerTab>("overview");
   const [analysisDetail, setAnalysisDetail] = useState<RunAnalysisDetail | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -446,7 +465,8 @@ export default function AdminImportClient() {
   const [showUploadModal, setShowUploadModal] = useState(false);
   const autoOpenedRunIdRef = useRef<string | null>(null);
   const autoOpenedUploadActionRef = useRef(false);
-  const requestedRunId = searchParams.get("runId");
+  // ?paper= is the explorer's own address; ?runId= is the older form links still use.
+  const requestedRunId = searchParams.get("paper") ?? searchParams.get("runId");
   const requestedPaperId = normalizePaperId(searchParams.get("paperId"));
 
   const requestHeaders = useMemo<Record<string, string>>(() => {
@@ -700,7 +720,9 @@ export default function AdminImportClient() {
     }
   }
 
-  async function handleViewAnalysis(run: IngestionRunRow) {
+  async function handleViewAnalysis(run: IngestionRunRow, tab: PaperExplorerTab = "overview") {
+    autoOpenedRunIdRef.current = `run:${run.id}`;
+    setAnalysisTab(tab);
     setAnalysisRun(run);
     setAnalysisDetail(null);
     setAnalysisError(null);
@@ -744,9 +766,9 @@ export default function AdminImportClient() {
     );
   }
 
-  async function handleOpenPrimaryFileAction(run: IngestionRunRow) {
+  async function handleOpenPrimaryFileAction(run: IngestionRunRow, tab: PaperExplorerTab = "overview") {
     if (run.status === "succeeded") {
-      await handleViewAnalysis(run).catch(() => undefined);
+      await handleViewAnalysis(run, tab).catch(() => undefined);
       return;
     }
 
@@ -777,10 +799,92 @@ export default function AdminImportClient() {
     }
 
     autoOpenedRunIdRef.current = requestedKey;
-    void handleOpenPrimaryFileAction(matchingRun).finally(() => {
-      router.replace("/workspace/library", { scroll: false });
-    });
-  }, [requestedPaperId, requestedRunId, router, runs]);
+    void handleOpenPrimaryFileAction(matchingRun, readChoice(searchParams.get("tab"), PAPER_EXPLORER_TABS, "overview"));
+  }, [requestedPaperId, requestedRunId, runs, searchParams]);
+
+  // ------------------------------------------------------------- the address
+  // What the reader is looking at lives in the address: the open repository,
+  // Trash, the search, filters, sort and view, and the paper open in the
+  // explorer with its tab. Reload, Back and a copied link return to the same
+  // place. Opening a repository, Trash or a paper adds a history entry, so Back
+  // steps out of it; typing and filtering replace the entry instead.
+  const pushedPaperRef = useRef(false);
+  const navigationKeyRef = useRef<string | null>(null);
+  const analysisRunRef = useRef<IngestionRunRow | null>(null);
+  analysisRunRef.current = analysisRun;
+  const runsRef = useRef<IngestionRunRow[]>([]);
+  runsRef.current = runs;
+
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (libraryProjectId) params.set("repo", libraryProjectId);
+    if (showTrash) params.set("trash", "1");
+    if (query.trim()) params.set("q", query);
+    if (typeFilter !== "all") params.set("type", typeFilter);
+    if (modifiedFilter !== "all") params.set("modified", modifiedFilter);
+    if (sourceFilter !== "all") params.set("source", sourceFilter);
+    if (sortKey !== "name") params.set("sort", sortKey);
+    if (sortDirection !== "asc") params.set("dir", sortDirection);
+    if (viewMode !== "list") params.set("view", viewMode);
+    if (analysisRun) {
+      params.set("paper", analysisRun.id);
+      if (analysisTab !== "overview") params.set("tab", analysisTab);
+    }
+    const search = params.toString();
+    const next = `${window.location.pathname}${search ? `?${search}` : ""}`;
+    const current = `${window.location.pathname}${window.location.search}`;
+    const navigationKey = `${libraryProjectId ?? ""}|${showTrash ? 1 : 0}|${analysisRun?.id ?? ""}`;
+    const firstRun = navigationKeyRef.current === null;
+    const navigated = !firstRun && navigationKey !== navigationKeyRef.current;
+    navigationKeyRef.current = navigationKey;
+    if (next === current) return;
+
+    // Closing a paper that was opened here goes back to the entry before it,
+    // so Back afterwards does not reopen it.
+    if (!analysisRun && pushedPaperRef.current) {
+      pushedPaperRef.current = false;
+      window.history.back();
+      return;
+    }
+    const legacyLink = /[?&](runId|paperId)=/.test(window.location.search);
+    if (navigated && !legacyLink) {
+      window.history.pushState(null, "", next);
+      if (analysisRun) pushedPaperRef.current = true;
+    } else {
+      window.history.replaceState(null, "", next);
+    }
+  }, [analysisRun, analysisTab, libraryProjectId, modifiedFilter, query, showTrash, sortDirection, sortKey, sourceFilter, typeFilter, viewMode]);
+
+  // Back and Forward bring the view with them.
+  useEffect(() => {
+    function onPopState() {
+      const params = new URLSearchParams(window.location.search);
+      const paper = params.get("paper");
+      navigationKeyRef.current = `${params.get("repo") ?? ""}|${params.get("trash") === "1" ? 1 : 0}|${paper ?? ""}`;
+      setLibraryProjectId(params.get("repo"));
+      setShowTrash(params.get("trash") === "1");
+      setQuery(params.get("q") ?? "");
+      setTypeFilter(readChoice(params.get("type"), TYPE_FILTERS, "all"));
+      setModifiedFilter(readChoice(params.get("modified"), MODIFIED_FILTERS, "all"));
+      setSourceFilter(readChoice(params.get("source"), SOURCE_FILTERS, "all"));
+      setSortKey(readChoice(params.get("sort"), SORT_KEYS, "name"));
+      setSortDirection(readChoice(params.get("dir"), SORT_DIRECTIONS, "asc"));
+      setViewMode(readChoice(params.get("view"), VIEW_MODES, "list"));
+      if (!paper) {
+        pushedPaperRef.current = false;
+        setAnalysisRun(null);
+        setAnalysisDetail(null);
+        setAnalysisError(null);
+      } else if (paper !== analysisRunRef.current?.id) {
+        const run = runsRef.current.find((item) => item.id === paper);
+        if (run) void handleViewAnalysis(run, readChoice(params.get("tab"), PAPER_EXPLORER_TABS, "overview")).catch(() => undefined);
+      }
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+    // handleViewAnalysis reads only refs and setters here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleOpenRunInNewTab(run: IngestionRunRow) {
     const opened = window.open("", "_blank");
@@ -1132,10 +1236,8 @@ export default function AdminImportClient() {
   function renderToolbarPopover() {
     if (!toolbarPopover) return null;
 
-    const sectionClass =
-      "z-50 origin-top rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in";
-    const itemClass =
-      "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
+    const sectionClass = `z-50 origin-top ${menuPanelClass}`;
+    const itemClass = menuItemClass(false, "justify-between");
 
     if (toolbarPopover.kind === "new") {
       return (
@@ -1320,8 +1422,7 @@ export default function AdminImportClient() {
   function renderItemMenu() {
     if (!itemMenuState) return null;
 
-    const itemClass =
-      "flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-body transition-colors duration-150 hover:bg-subtle hover:text-ink";
+    const itemClass = menuItemClass();
     const menuItem = itemMenuState.item;
 
     if (!activeMenuRun) return null;
@@ -2301,7 +2402,10 @@ export default function AdminImportClient() {
 
       {analysisRun ? (
         <PaperAnalysisExplorerModal
+          key={analysisRun.id}
           run={analysisRun}
+          initialTab={analysisTab}
+          onTabChange={setAnalysisTab}
           detail={analysisDetail}
           loading={analysisLoading}
           error={analysisError}

@@ -54,6 +54,24 @@ export const panelClass = "rounded-xl border border-hairline bg-surface shadow-r
 /** A surface that floats above the page: popovers, the analysis tray. */
 export const floatingPanelClass = "rounded-xl border border-hairline bg-surface shadow-float";
 
+/*
+ * Menus and dropdown lists, in the style of the chat + menu: a rounded panel
+ * that scales in from where it opens, and items that highlight as a soft
+ * rounded pill. Keyboard focus inside a menu shows as that same pill with a
+ * hairline ring, instead of the page's focus outline boxing each row.
+ */
+export const menuPanelClass =
+  "rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in";
+
+export function menuItemClass(active = false, extra = ""): string {
+  return `flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:bg-subtle focus-visible:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong ${
+    active ? "bg-subtle text-ink" : "text-body hover:bg-subtle hover:text-ink"
+  }${extra ? ` ${extra}` : ""}`;
+}
+
+/** A small heading over a group of menu items. */
+export const menuLabelClass = "px-2.5 pb-1 pt-2 text-xs font-medium text-mute";
+
 /** A quiet well inside a panel. */
 export const wellClass = "rounded-lg bg-subtle";
 
