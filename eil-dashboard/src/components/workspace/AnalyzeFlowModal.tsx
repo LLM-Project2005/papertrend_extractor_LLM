@@ -11,12 +11,15 @@ import {
   ArrowRightIcon,
   CheckCircleIcon,
   CloseIcon,
+  DriveIcon,
   FileIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
+import { buttonClass } from "@/components/ui/controls";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
 import { putFileWithRetry } from "@/lib/upload-retry";
+import { DrivePickerCancelled, pickPdfsFromDrive, type DrivePickerConfig } from "@/lib/google-drive-picker";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 
 const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
@@ -102,6 +105,50 @@ export default function AnalyzeFlowModal({
   const [uploadStage, setUploadStage] = useState("");
   const [uploadProgress, setUploadProgress] = useState<{ done: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Google Drive is offered only when the service has its Picker settings.
+  const [driveConfig, setDriveConfig] = useState<DrivePickerConfig | null>(null);
+  const [driveProgress, setDriveProgress] = useState<{ done: number; total: number } | null>(null);
+  useEffect(() => {
+    if (!open || !session?.access_token) return;
+    let cancelled = false;
+    void fetch("/api/integrations/google-drive/picker-config", {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: ({ enabled?: boolean } & Partial<DrivePickerConfig>) | null) => {
+        if (cancelled) return;
+        setDriveConfig(
+          payload?.enabled && payload.clientId && payload.apiKey && payload.appId
+            ? { clientId: payload.clientId, apiKey: payload.apiKey, appId: payload.appId }
+            : null
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, session?.access_token]);
+
+  async function chooseFromDrive() {
+    if (!driveConfig) return;
+    setError(null);
+    try {
+      const { files: picked, tooLarge } = await pickPdfsFromDrive(driveConfig, {
+        maxItems: Math.max(1, MAX_UPLOAD_FILES - files.length),
+        onProgress: (done, total) => setDriveProgress({ done, total }),
+      });
+      if (picked.length) selectPdfFiles(picked);
+      if (tooLarge.length) {
+        setError(`${tooLarge.length === 1 ? `"${tooLarge[0]}" is` : `${tooLarge.length} files are`} over 10 MB, so ${tooLarge.length === 1 ? "it was" : "they were"} left out.`);
+      }
+    } catch (driveError) {
+      if (!(driveError instanceof DrivePickerCancelled)) {
+        setError(driveError instanceof Error ? driveError.message : "Google Drive could not be opened.");
+      }
+    } finally {
+      setDriveProgress(null);
+    }
+  }
   const [queuedSummary, setQueuedSummary] = useState<QueuedSummary | null>(null);
   const [showProfileEditor, setShowProfileEditor] = useState(false);
   const [profileDraft, setProfileDraft] = useState<ProjectAnalysisProfile>(createGeneralAnalysisProfile);
@@ -518,6 +565,23 @@ export default function AnalyzeFlowModal({
               Up to {MAX_UPLOAD_FILES} PDFs at a time, 10 MB each. A paper already analyzed in this account is caught before it uploads.
             </span>
           </label>
+
+          {driveConfig ? (
+            <div className="flex flex-wrap items-center justify-center gap-3 text-sm text-mute">
+              <span aria-hidden="true">or</span>
+              <button
+                type="button"
+                onClick={() => void chooseFromDrive()}
+                disabled={uploading || Boolean(driveProgress)}
+                className={buttonClass("secondary", "sm")}
+              >
+                <DriveIcon className="h-4 w-4" />
+                {driveProgress
+                  ? `Downloading from Drive\u2026 ${driveProgress.done} of ${driveProgress.total}`
+                  : "Choose from Google Drive"}
+              </button>
+            </div>
+          ) : null}
 
           {files.length > 0 ? (
             <section>

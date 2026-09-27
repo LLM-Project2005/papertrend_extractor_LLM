@@ -127,7 +127,9 @@ test("the upload dialog fits its window and keeps its button in view", () => {
 
 test("the upload dialog offers only what works, and says what happens next", () => {
   const modal = read("src/components/workspace/AnalyzeFlowModal.tsx");
-  assert.doesNotMatch(modal, /connector is planned|Coming soon|google-drive|Shared admin secret|x-admin-secret/);
+  assert.doesNotMatch(modal, /connector is planned|Coming soon|google-drive\/queue|Shared admin secret|x-admin-secret/);
+  // Google Drive is offered only once the service has its Picker settings.
+  assert.match(modal, /\{driveConfig \? \(/);
   assert.match(modal, /What happens next/);
   assert.match(modal, /Keep this tab open until the upload finishes/);
   assert.match(modal, /Add papers to \$\{targetProject\.name\}/);

@@ -227,11 +227,18 @@ export default function DashboardClient({
     () => (classificationEnabled ? buildCategoryOptions(data, profile, categoryLabels) : []),
     [categoryLabels, classificationEnabled, data, profile]
   );
-  const activeCategoryCount = useMemo(() => {
-    const keys = new Set(categoryOptions.map((category) => category.key));
-    const chosen = selectedTracks.map((track) => normalizeCategoryKey(track)).filter((key) => keys.has(key));
-    return chosen.length > 0 ? chosen.length : keys.size;
+  // The saved selection starts as the four legacy slots (EL, ELI, LAE,
+  // Other). In a repository with its own categories only "Other" matched, so
+  // the category charts showed nothing and the chip read "1 category". Until
+  // the reader chooses, the selection means every category of this repository.
+  const effectiveSelectedTracks = useMemo(() => {
+    const keys = categoryOptions.map((category) => category.key);
+    if (keys.length === 0) return selectedTracks;
+    const untouched = TRACK_COLS.every((track) => selectedTracks.includes(track));
+    const chosen = selectedTracks.map((track) => normalizeCategoryKey(track)).filter((key) => keys.includes(key));
+    return untouched || chosen.length === 0 ? keys : chosen;
   }, [categoryOptions, selectedTracks]);
+  const activeCategoryCount = effectiveSelectedTracks.length;
   const themeStatus = data?.topicThemes ?? null;
   const [filterOpen, setFilterOpen] = useState(false);
   useEffect(() => {
@@ -971,7 +978,7 @@ export default function DashboardClient({
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
-                  selectedTracks={selectedTracks}
+                  selectedTracks={effectiveSelectedTracks}
                   onTracksChange={setSelectedTracks}
                   categoryOptions={categoryOptions}
                   useMock={false}
@@ -1162,7 +1169,7 @@ export default function DashboardClient({
                   allYears={allYears}
                   selectedYears={selectedYears}
                   onYearsChange={setSelectedYears}
-                  selectedTracks={selectedTracks}
+                  selectedTracks={effectiveSelectedTracks}
                   onTracksChange={setSelectedTracks}
                   categoryOptions={categoryOptions}
                   useMock={false}
@@ -1182,7 +1189,7 @@ export default function DashboardClient({
               tracksMulti={filteredData.tracksMulti}
               categoryAssignments={filteredData.categoryAssignments}
               categoryOptions={categoryOptions}
-              selectedTracks={selectedTracks}
+              selectedTracks={effectiveSelectedTracks}
               categoryLabels={categoryLabels}
               classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
@@ -1201,7 +1208,7 @@ export default function DashboardClient({
               tracksMulti={filteredData.tracksMulti}
               categoryAssignments={filteredData.categoryAssignments}
               categoryOptions={categoryOptions}
-              selectedTracks={selectedTracks}
+              selectedTracks={effectiveSelectedTracks}
               categoryLabels={categoryLabels}
               classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
@@ -1214,7 +1221,7 @@ export default function DashboardClient({
               folderIds={selectedFolderIds}
               projectId={selectedProjectId ?? undefined}
               selectedYears={selectedYears}
-              selectedTracks={selectedTracks}
+              selectedTracks={effectiveSelectedTracks}
               onDrilldown={openPaperDrilldown}
             />
           ) : null}
