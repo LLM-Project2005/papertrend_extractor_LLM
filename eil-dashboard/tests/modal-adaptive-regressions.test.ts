@@ -43,6 +43,13 @@ test("the paper window resolves its PDF address once, without cancelling itself"
   assert.doesNotMatch(paperModalSource, /previewLoading/);
 });
 
+test("a link to a paper's tab opens on that tab", () => {
+  // The window reset itself to Overview whenever the paper changed - on mount
+  // too - so /workspace/library?paper=...&tab=evidence opened on Overview.
+  assert.match(paperModalSource, /setActiveTab\(initialTabRef\.current \?\? "overview"\);/);
+  assert.doesNotMatch(paperModalSource, /setActiveTab\("overview"\);/);
+});
+
 test("adaptive charts are generated explicitly and preserve a filter snapshot", () => {
   assert.doesNotMatch(
     dashboardSource,
