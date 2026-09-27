@@ -66,6 +66,8 @@ import {
   LockIcon as PhLock,
   MagnifyingGlassIcon,
   MinusIcon as PhMinus,
+  PauseIcon as PhPause,
+  PlayIcon as PhPlay,
   MonitorIcon as PhMonitor,
   MoonIcon as PhMoon,
   PaletteIcon as PhPalette,
@@ -136,6 +138,8 @@ export const ArrowUpRightIcon = glyph(PhArrowUpRight, "ArrowUpRightIcon");
 export const ExternalLinkIcon = glyph(ArrowSquareOutIcon, "ExternalLinkIcon");
 export const PlusIcon = glyph(PhPlus, "PlusIcon");
 export const MinusIcon = glyph(PhMinus, "MinusIcon");
+export const PauseIcon = glyph(PhPause, "PauseIcon");
+export const PlayIcon = glyph(PhPlay, "PlayIcon");
 export const SendIcon = glyph(PaperPlaneRightIcon, "SendIcon");
 export const CloseIcon = glyph(XIcon, "CloseIcon");
 export const CopyIcon = glyph(PhCopy, "CopyIcon");

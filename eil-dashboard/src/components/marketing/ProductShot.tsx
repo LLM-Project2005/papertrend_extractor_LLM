@@ -1,13 +1,18 @@
 import Image from "next/image";
 import { SHOT_SIZES } from "@/components/marketing/shot-manifest";
+import ProductClip from "@/components/marketing/ProductClip";
+
+/** Shots that also have a recorded clip in public/marketing/video (light and dark). */
+const CLIPS = new Set(["dashboard-trends", "paper", "chat"]);
 
 /*
  * A real screenshot of the product, never a drawing of one.
  *
- * Each shot exists twice in public/marketing - captured from the live app in
- * light and in dark by scripts/capture-marketing-shots.ts - and the page's own
- * theme decides which is shown, so the picture always matches the page around
- * it. Width and height come from the manifest, so the box is reserved before
+ * Each shot exists twice in public/marketing - taken from the real app in light
+ * and in dark by scripts/marketing-mock/record-clips.ts, with an invented
+ * research collection so no one's papers appear - and the page's own theme
+ * decides which is shown, so the picture always matches the page around it.
+ * Shots listed in CLIPS also play a short recorded loop over the still. Width and height come from the manifest, so the box is reserved before
  * the image arrives and nothing below it jumps.
  *
  * The frame is two nested surfaces - a tinted tray and the screen inside it,
@@ -45,9 +50,10 @@ export default function ProductShot({
         fade ? "[mask-image:linear-gradient(to_bottom,black_78%,transparent)]" : "shadow-float"
       } ${className}`}
     >
-      <div className="overflow-hidden rounded-xl border border-hairline bg-surface">
+      <div className="group/clip relative overflow-hidden rounded-xl border border-hairline bg-surface">
         <Image {...shared} src={`/marketing/${name}-light.webp`} alt={alt} className="block h-auto w-full dark:hidden" />
         <Image {...shared} src={`/marketing/${name}-dark.webp`} alt={alt} className="hidden h-auto w-full dark:block" />
+        {CLIPS.has(name) ? <ProductClip name={name} label={alt} controlsAt={fade ? "top" : "bottom"} /> : null}
       </div>
     </figure>
   );

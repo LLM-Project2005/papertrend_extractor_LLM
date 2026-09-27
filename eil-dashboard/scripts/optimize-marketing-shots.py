@@ -1,4 +1,4 @@
-"""Turns the PNGs from capture-marketing-shots.ts into the WebP files the
+"""Turns the PNGs from marketing-mock/record-clips.ts (UI_MODE=shots) into the WebP files the
 marketing pages show, and writes their sizes to a manifest so every image
 reserves its box before it loads (no layout shift).
 
