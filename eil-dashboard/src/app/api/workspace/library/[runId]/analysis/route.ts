@@ -89,13 +89,19 @@ function coerceJsonStringList(value: unknown): string[] {
   return [];
 }
 
+// Stored text is attacker-controlled (it comes from the uploaded PDF) and can
+// be large, so the input is capped and every pass is linear. The old
+// `\s`-based patterns were superlinear on runs of unusual whitespace (a PDF's
+// text can carry NBSP or a byte-order mark), which could pin the event loop.
+const MAX_SECTION_TEXT = 200_000;
+
 function cleanSectionText(value: unknown): string {
   return String(value ?? "")
-    .replace(/\r\n/g, "\n")
-    .replace(/[ \t]+\n/g, "\n")
+    .slice(0, MAX_SECTION_TEXT)
+    .replace(/[^\S\n]+/g, " ")
+    .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/ ([,.;:!?])/g, "$1")
     .trim();
 }
 
@@ -128,20 +134,24 @@ function segmentByHeadings(text: string): Record<string, string> {
     ["conclusion", ["conclusion", "conclusions", "implications", "closing remarks"]],
   ];
 
-  const matches: Array<{ start: number; end: number; key: string }> = [];
+  // A line scan instead of four multiline regexes over the whole text: a
+  // heading is a short line that, once its "#" and spaces are stripped, equals
+  // one of the labels. This is linear in the text length.
+  const labelToKey = new Map<string, string>();
   for (const [key, labels] of sectionPatterns) {
-    const pattern = new RegExp(
-      `^\\s*(?:#+\\s*)?(?:${labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\s*$`,
-      "gim"
-    );
-    const match = pattern.exec(text);
-    if (match) {
-      matches.push({
-        start: match.index,
-        end: match.index + match[0].length,
-        key,
-      });
+    for (const label of labels) labelToKey.set(label, key);
+  }
+  const matches: Array<{ start: number; end: number; key: string }> = [];
+  const seen = new Set<string>();
+  let offset = 0;
+  for (const line of text.split("\n")) {
+    const normalized = line.replace(/^#+/, "").trim().toLowerCase();
+    const key = labelToKey.get(normalized);
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      matches.push({ start: offset, end: offset + line.length, key });
     }
+    offset += line.length + 1;
   }
 
   matches.sort((left, right) => left.start - right.start);

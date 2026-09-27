@@ -22,6 +22,11 @@ test("anything that would leave the site falls back", () => {
     "/\n/example.com",
     "/\r/example.com",
     "//example.com",
+    // Dot segments collapse into "//example.com" once resolved.
+    "/.//example.com",
+    "/a/..//example.com",
+    "/%2e//example.com",
+    "/././/example.com",
     "https://example.com",
     "javascript:alert(1)",
     "example.com",
@@ -48,4 +53,28 @@ test("the image optimizer and the framework banner are off", () => {
   const config = readFileSync(new URL("../next.config.mjs", import.meta.url), "utf8");
   assert.match(config, /images: \{ unoptimized: true \}/);
   assert.match(config, /poweredByHeader: false/);
+});
+
+test("no generated path that is accepted leads off the site", () => {
+  // Every combination of these pieces, four deep, after a leading slash. An
+  // accepted result is followed the way a browser follows it, from a nested
+  // page, and must stay on the same origin.
+  const parts = ["/", ".", "..", "%2e", "%2E", "%2f", "a", "//", "evil.example", "@", "?", "#", ":", "%5c", "%09", " "];
+  const escapes: string[] = [];
+  let checked = 0;
+  const visit = (prefix: string, depth: number) => {
+    if (depth === 0) return;
+    for (const part of parts) {
+      const value = prefix + part;
+      checked += 1;
+      const out = safeReturnPath(value, FALLBACK);
+      if (out !== FALLBACK && new URL(out, "https://site.example/deep/page").origin !== "https://site.example") {
+        escapes.push(`${value} -> ${out}`);
+      }
+      visit(value, depth - 1);
+    }
+  };
+  visit("/", 4);
+  assert.ok(checked > 60_000, "the search covered the space");
+  assert.deepEqual(escapes.slice(0, 5), []);
 });
