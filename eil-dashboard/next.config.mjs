@@ -26,6 +26,11 @@ const movedDocs = {
 };
 
 const nextConfig = {
+  // Nothing here uses the image optimizer (every image is served as stored),
+  // so its endpoint, /_next/image, is switched off rather than left reachable.
+  images: { unoptimized: true },
+  // The framework is not announced in every response.
+  poweredByHeader: false,
   async redirects() {
     return Object.entries(movedDocs).map(([from, to]) => ({
       source: `/docs/${from}`,
