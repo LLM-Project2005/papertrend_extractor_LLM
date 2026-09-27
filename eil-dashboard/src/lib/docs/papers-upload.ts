@@ -121,11 +121,23 @@ export const uploadingPapersPage: DocsPageBase = {
       },
     },
     {
+      id: "google-drive",
+      title: "From Google Drive",
+      body: [
+        "In the upload window, **Choose from Google Drive** opens Google's own file picker. The first time, Google asks you to sign in and to let Papertrend see the files you choose. Select one or more PDFs, from My Drive or a shared drive, and press **Select**.",
+        "Papertrend can open only the files you pick, never the rest of your Drive. The chosen PDFs are downloaded into the upload list (the button counts them as they arrive) and then go through the same checks and analysis as files from your computer.",
+      ],
+      bullets: [
+        "Only PDFs are offered, and one upload holds at most 50 files, counting any already in the list.",
+        "A file over 10 MB is left out, and the upload window names it.",
+        "Closing the picker without choosing adds nothing.",
+      ],
+    },
+    {
       id: "not-available",
       title: "Not available",
       body: [],
       bullets: [
-        "Google Drive import is switched off. Download the PDFs and upload them from your computer.",
         "Word documents, images and other formats cannot be analyzed, even though the Library's **Type** filter lists them.",
       ],
     },
