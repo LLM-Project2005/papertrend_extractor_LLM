@@ -10,10 +10,13 @@ import {
   triggerWorkerQueueWithRetries,
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
-import { getDatabaseProvider, getGcsUploadBucket } from "@/lib/server-env";
-import { gcsObjectExists } from "@/lib/gcs-signed-urls";
+import { getDatabaseProvider, getGcsUploadBucket, getMaxUploadBytes } from "@/lib/server-env";
+import { gcsObjectExists, gcsObjectInfo } from "@/lib/gcs-signed-urls";
 
 export const runtime = "nodejs";
+
+/** The content types the signed upload URL is allowed to bind. */
+const ACCEPTED_UPLOAD_TYPES = new Set(["application/pdf", "application/octet-stream"]);
 
 type UploadFinalizeItem = {
   runId: string;
@@ -156,7 +159,32 @@ export async function POST(request: Request) {
       }
     }
 
-    const queueableUploadedItems = [...validUploadedItems, ...recoveredUploadedItems];
+    // What the browser says about a file it uploaded straight to storage is not
+    // evidence. Storage is asked itself before anything is queued: the signed
+    // PUT binds the content type but not the length, so without this a person
+    // could store a file of any size and hand it to the shared worker.
+    const maxUploadBytes = getMaxUploadBytes();
+    const queueableUploadedItems: UploadFinalizeItem[] = [];
+    for (const item of [...validUploadedItems, ...recoveredUploadedItems]) {
+      const storagePath = String(item.storagePath ?? "");
+      const info = await gcsObjectInfo(storagePath);
+      if (!info) {
+        remainingFailedItems.push({ ...item, errorMessage: "The uploaded file could not be read from storage." });
+        continue;
+      }
+      if (info.sizeBytes > maxUploadBytes) {
+        remainingFailedItems.push({
+          ...item,
+          errorMessage: `The uploaded file is larger than the ${Math.round(maxUploadBytes / (1024 * 1024))} MB limit.`,
+        });
+        continue;
+      }
+      if (info.contentType && !ACCEPTED_UPLOAD_TYPES.has(info.contentType.split(";")[0].trim().toLowerCase())) {
+        remainingFailedItems.push({ ...item, errorMessage: "Only PDF files can be analyzed." });
+        continue;
+      }
+      queueableUploadedItems.push(item);
+    }
 
     if (databaseProvider === "cloud-sql") {
       const finalized = await cloudSqlIngestionRepository.finalizeBatch({

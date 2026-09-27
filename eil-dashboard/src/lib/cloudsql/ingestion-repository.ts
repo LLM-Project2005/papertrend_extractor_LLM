@@ -233,11 +233,21 @@ export class CloudSqlIngestionRepository {
     });
   }
 
+  /**
+   * The runs of an upload batch that are still waiting to be finalized.
+   *
+   * A run is only awaiting finalization while prepare left it: 'processing'
+   * with no stored path. Without that condition, finalize could be replayed
+   * over any run at any time, which re-queued finished work and let one
+   * account analyse far more papers than its quota allows. Replaying now
+   * matches nothing, so a browser retry stays harmless.
+   */
   async loadOwnedBatch(ownerUserId: string, folderJobId: string, runIds: string[]) {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const result = await client.query<IngestionRunRow>(
         `SELECT * FROM public.ingestion_runs
-         WHERE owner_user_id = $1 AND folder_analysis_job_id = $2 AND id = ANY($3::uuid[])`,
+         WHERE owner_user_id = $1 AND folder_analysis_job_id = $2 AND id = ANY($3::uuid[])
+           AND status = 'processing' AND source_path IS NULL`,
         [ownerUserId, folderJobId, runIds]
       );
       return result.rows;
@@ -258,7 +268,8 @@ export class CloudSqlIngestionRepository {
            SET status = 'queued', source_path = $4, error_message = NULL,
                completed_at = NULL, updated_at = $5,
                input_payload = COALESCE(input_payload, '{}'::jsonb) || $6::jsonb
-           WHERE id = $1 AND owner_user_id = $2 AND folder_analysis_job_id = $3`,
+           WHERE id = $1 AND owner_user_id = $2 AND folder_analysis_job_id = $3
+             AND status = 'processing' AND source_path IS NULL`,
           [item.runId, input.ownerUserId, input.folderJobId, item.storagePath, timestamp,
             JSON.stringify({ progress_stage: "queued", progress_message: "Queued", progress_detail: "Upload complete. Waiting for worker to claim this file.", uploaded_at: timestamp })]
         );

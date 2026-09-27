@@ -256,6 +256,21 @@ test("the analysis route cleans stored text in linear time", () => {
   assert.doesNotMatch(route, /\^\\\\s\*\(\?:#\+/, "the multiline heading regex is gone");
 });
 
+test("an upload is finalized once, and its real size is checked", () => {
+  // Finalize used to re-queue any run at any time, so the paper quota and the
+  // model cost it stands for could be replayed without limit. And the size
+  // came from the browser, which uploads straight to storage.
+  const repo = read("src/lib/cloudsql/ingestion-repository.ts");
+  const load = repo.slice(repo.indexOf("async loadOwnedBatch"), repo.indexOf("async finalizeBatch"));
+  assert.match(load, /status = 'processing' AND source_path IS NULL/, "only un-finalized runs load");
+  assert.match(repo, /AND status = 'processing' AND source_path IS NULL`,/, "the update is one-shot too");
+
+  const finalize = read("src/app/api/admin/import/finalize/route.ts");
+  assert.match(finalize, /await gcsObjectInfo\(storagePath\)/, "storage is asked for the real size");
+  assert.match(finalize, /info\.sizeBytes > maxUploadBytes/);
+  assert.match(finalize, /ACCEPTED_UPLOAD_TYPES\.has/);
+});
+
 test("uploads are checked by content, not only by name", () => {
   const safety = read("src/lib/upload-safety.ts");
   assert.match(safety, /subarray\(0, 5\)\.toString\("ascii"\) === "%PDF-"/);
