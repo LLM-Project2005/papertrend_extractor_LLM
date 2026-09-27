@@ -14,7 +14,8 @@ test("chat history is account-wide while message scope is repository or selected
     "utf8"
   );
 
-  assert.match(client, /fetch\("\/api\/chat\/threads"/);
+  // A page of the account's conversations: paged, never filtered by repository.
+  assert.match(client, /fetch\("\/api\/chat\/threads(\?limit=\d+)?"/);
   assert.doesNotMatch(client, /api\/chat\/threads\?projectId=/);
   assert.match(client, /allProjects\.map/);
   assert.doesNotMatch(client, /projectFolders/);

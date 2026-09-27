@@ -44,7 +44,7 @@ export const startCategory: DocsCategoryBase = {
           callout: {
             tone: "warning",
             title: "The 50-paper limit counts Trash too",
-            body: "A standard account can hold 50 papers in total, and a paper in Trash still counts, because nothing can be deleted permanently. Plan which papers matter before a large upload. Admin accounts have no limit.",
+            body: "A standard account can hold 50 papers in total, and a paper in Trash still counts until you delete it permanently from Trash. Admin accounts have no limit.",
           },
         },
         {
@@ -248,8 +248,9 @@ export const startCategory: DocsCategoryBase = {
           ],
           bullets: [
             "Trash is shared by all your repositories.",
-            "There is no permanent delete and no **Empty trash**. A paper in Trash stays stored.",
-            "A paper in Trash still counts toward the 50-paper allowance.",
+            "In Trash, a paper's **...** menu has **Delete permanently...**, and **Empty Trash...** deletes everything in it. Both remove the PDF and everything the analysis found, and cannot be undone; emptying Trash asks you to type `delete` first.",
+            "A paper in Trash still counts toward the 50-paper allowance until it is deleted permanently.",
+            "A copy made with **Make a copy** shares its original's analysis: deleting the copy leaves the original untouched.",
             "Uploading the same PDF again is refused while a copy is in Trash; restore the existing one instead.",
           ],
         },

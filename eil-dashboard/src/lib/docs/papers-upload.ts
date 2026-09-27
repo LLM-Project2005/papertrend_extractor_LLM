@@ -27,14 +27,14 @@ export const uploadingPapersPage: DocsPageBase = {
           ["File type", "PDF only", "`<n> file(s) were skipped. Only PDFs of 10 MB or less can be added.`"],
           ["File size", "10 MB per PDF", "The same message, or `Each PDF must be 10 MB or smaller`"],
           ["Per upload", "50 PDFs", "`Only the first 50 PDFs were kept. Add the rest in another upload.`"],
-          ["Per account", "50 papers (standard accounts)", "`This account can store up to 50 papers. <n> are already active, so only <m> more can be uploaded.`"],
+          ["Per account", "50 papers (standard accounts)", "`This account can store up to 50 papers. <n> are already stored, including any in Trash...`"],
           ["Empty files", "Refused", "`The PDF appears to be empty: <name>`"],
         ],
       },
       callout: {
         tone: "warning",
         title: "The account limit includes Trash",
-        body: "The 50-paper allowance counts every paper the account holds, in every repository, including papers in Trash and papers still being analyzed. Papers cannot be deleted permanently, so the allowance cannot be freed. Admin accounts are not limited.",
+        body: "The 50-paper allowance counts every paper the account holds, in every repository, including papers in Trash and papers still being analyzed. To free space, delete papers permanently from Trash. Admin accounts are not limited.",
       },
     },
     {
@@ -247,12 +247,12 @@ export const readingAPaperPage: DocsPageBase = {
       id: "reports",
       title: "The downloadable report",
       body: [
-        "**Download report** builds a Markdown (.md) file named after the paper: its metadata, topics, concept groups, facets, keywords with evidence, and the extracted abstract, methods, results and conclusion.",
+        "**Download report** builds a Markdown (.md) file named after the paper: its metadata, the year with where it was read, the research type, the category and the reason for it, the paper's own keywords, its methods, topics and their keywords, facets, keywords with evidence, the extracted abstract, methods, results and conclusion, and any analysis notes or duplicate note.",
       ],
       callout: {
         tone: "info",
         title: "What the report leaves out",
-        body: "The report does not yet include the repository category and its reason, the year's source, the research type, the paper's own keywords or the duplicate note shown on the Overview tab. There is no PDF or Word export, and no export of a whole repository.",
+        body: "There is no PDF or Word export yet, and no export of a whole repository.",
       },
     },
     {

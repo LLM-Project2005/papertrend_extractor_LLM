@@ -31,6 +31,12 @@ export interface AuthContextValue {
   profile: UserProfileRecord | null;
   isAdmin: boolean;
   authError: string | null;
+  /** Why the sign-in has no account yet, when the server said. */
+  authErrorCode: "email_unverified" | "email_in_use" | "not_linked" | null;
+  /** Sends the email-confirmation link again. */
+  resendVerificationEmail: () => Promise<void>;
+  /** Checks again after the reader confirmed their email; true once confirmed. */
+  confirmEmailVerified: () => Promise<boolean>;
   signInWithProvider: (
     provider: "google" | "facebook"
   ) => Promise<void>;

@@ -25,7 +25,8 @@ export const accountCategory: DocsCategoryBase = {
             {
               title: "Creating an account",
               body: [
-                "Signing in with Google creates your account the first time. For email and password, choose **Create password account**, add your name, and **Create account**. If an account with the same email already exists, the new sign-in method is attached to it rather than creating a second account.",
+                "Signing in with Google creates your account the first time. For email and password, choose **Create password account**, add your name, and **Create account**; a confirmation link is emailed to you, and your account is created once you open it and choose **I’ve confirmed it** (or come back through the link). **Send the link again** sends a new one.",
+                "If an account with the same email already exists, a verified sign-in (Google, or a confirmed email) is attached to it rather than creating a second account. Facebook does not confirm email addresses to Papertrend, so a Facebook sign-in starts a new account only when no account uses that email; otherwise sign in with Google or your email and password.",
                 "If Papertrend then shows `This Firebase account is not linked to a Papertrend owner account yet`, the new account has not been approved for a workspace yet; see [Troubleshooting](/docs/troubleshooting#signing-in).",
               ],
             },
@@ -185,8 +186,8 @@ export const accountCategory: DocsCategoryBase = {
             columns: ["Action", "Possible?", "How"],
             rows: [
               ["Move a paper to Trash, or restore it", "Yes", "The paper's **...** menu in the Library"],
-              ["Delete a paper or its PDF permanently", "No", "Papers in Trash stay stored"],
-              ["Empty Trash", "No", ""],
+              ["Delete a paper or its PDF permanently", "Yes", "In Trash, the paper's **...** menu, **Delete permanently...**"],
+              ["Empty Trash", "Yes", "**Empty Trash...** in Trash; type `delete` to confirm"],
               ["Delete a repository", "No", ""],
               ["Delete a chat conversation", "Yes", "In Chat (see [Research chat](/docs/chat))"],
               ["Remove your name or picture", "Yes", "Clear the fields in **Settings > Profile**"],

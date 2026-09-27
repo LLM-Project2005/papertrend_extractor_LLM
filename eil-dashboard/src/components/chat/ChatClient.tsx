@@ -1342,6 +1342,13 @@ export default function ChatClient() {
   });
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
+  // Conversations arrive a page at a time; older ones load on request.
+  const [threadsHasMore, setThreadsHasMore] = useState(false);
+  const [olderThreadsLoading, setOlderThreadsLoading] = useState(false);
+  // A long conversation opens on its newest messages; earlier ones load on request.
+  const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
+  const [earlierLoading, setEarlierLoading] = useState(false);
+  const oldestMessageAtRef = useRef<string | null>(null);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [activeThread, setActiveThread] = useState<WorkspaceThreadSummary | null>(null);
   const [messages, setMessages] = useState<MessageView[]>([]);
@@ -1736,6 +1743,8 @@ export default function ChatClient() {
       setActiveThread(null);
       loadedThreadIdRef.current = null;
       setMessages([]);
+      setHasEarlierMessages(false);
+      oldestMessageAtRef.current = null;
       setDeepSession(null);
       setSelectedLibraryRuns([]);
       setError(null);
@@ -1781,11 +1790,12 @@ export default function ChatClient() {
       }
       setThreadsLoading(true);
       try {
-        const response = await fetch("/api/chat/threads", {
+        const response = await fetch("/api/chat/threads?limit=50", {
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
         const payload = (await response.json()) as {
           threads?: WorkspaceThreadSummary[];
+          hasMore?: boolean;
           error?: string;
         };
         if (!response.ok) {
@@ -1793,6 +1803,7 @@ export default function ChatClient() {
         }
         const nextThreads = payload.threads ?? [];
         setThreads(nextThreads);
+        setThreadsHasMore(Boolean(payload.hasMore));
         setActiveThreadId((current) =>
           preferredThreadId ??
           (current && nextThreads.some((item) => item.id === current) ? current : null)
@@ -1838,6 +1849,8 @@ export default function ChatClient() {
         }
         setActiveThread(payload.thread);
         setDeepResearchEnabled(payload.thread.mode === "deep_research");
+        setHasEarlierMessages(Boolean(payload.hasEarlierMessages));
+        oldestMessageAtRef.current = payload.messages?.[0]?.created_at ?? null;
         setMessages(
           (payload.messages ?? [])
             .filter((message) => message.message_kind !== "deep_research_plan")
@@ -1858,40 +1871,86 @@ export default function ChatClient() {
     [canPersist, session?.access_token]
   );
 
-  const loadChatSearchDetails = useCallback(async () => {
-    if (!canPersist || !session?.access_token) {
-      setChatSearchDetails([]);
-      return;
-    }
+  const loadChatSearchDetails = useCallback(
+    async (query: string) => {
+      if (!canPersist || !session?.access_token) {
+        setChatSearchDetails([]);
+        return;
+      }
+      const trimmed = query.trim();
+      if (!trimmed) {
+        setChatSearchError(null);
+        setChatSearchDetails(sortedThreads.map((thread) => ({ thread, messages: [] })));
+        return;
+      }
+      setChatSearchLoading(true);
+      setChatSearchError(null);
+      try {
+        const response = await fetch(`/api/chat/threads?q=${encodeURIComponent(trimmed)}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        const payload = (await response.json()) as { results?: ChatThreadDetail[]; error?: string };
+        if (!response.ok) throw new Error(payload.error ?? "Failed to search chat history.");
+        setChatSearchDetails(payload.results ?? []);
+      } catch (nextError) {
+        setChatSearchError(nextError instanceof Error ? nextError.message : "Failed to search chat history.");
+      } finally {
+        setChatSearchLoading(false);
+      }
+    },
+    [canPersist, session?.access_token, sortedThreads]
+  );
 
-    setChatSearchLoading(true);
-    setChatSearchError(null);
+  const loadOlderThreads = useCallback(async () => {
+    const oldest = threads[threads.length - 1];
+    if (!oldest?.updated_at || !session?.access_token) return;
+    setOlderThreadsLoading(true);
     try {
-      const details = await Promise.all(
-        sortedThreads.map(async (thread) => {
-          const response = await fetch(`/api/chat/threads/${thread.id}`, {
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-          const payload = (await response.json()) as ChatThreadDetail & {
-            error?: string;
-          };
-          if (!response.ok) {
-            throw new Error(payload.error ?? "Failed to load chat thread.");
-          }
-          return payload;
-        })
+      const response = await fetch(
+        `/api/chat/threads?limit=50&before=${encodeURIComponent(oldest.updated_at)}`,
+        { headers: { Authorization: `Bearer ${session.access_token}` } }
       );
-      setChatSearchDetails(details);
+      const payload = (await response.json()) as { threads?: WorkspaceThreadSummary[]; hasMore?: boolean; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load older chats.");
+      setThreads((current) => {
+        const known = new Set(current.map((thread) => thread.id));
+        return [...current, ...(payload.threads ?? []).filter((thread) => !known.has(thread.id))];
+      });
+      setThreadsHasMore(Boolean(payload.hasMore));
     } catch (nextError) {
-      setChatSearchError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Failed to search chat history."
-      );
+      setError(nextError instanceof Error ? nextError.message : "Failed to load older chats.");
     } finally {
-      setChatSearchLoading(false);
+      setOlderThreadsLoading(false);
     }
-  }, [canPersist, session?.access_token, sortedThreads]);
+  }, [session?.access_token, threads]);
+
+  const loadEarlierMessages = useCallback(async () => {
+    const threadId = activeThreadId;
+    const before = oldestMessageAtRef.current;
+    if (!threadId || !before || !session?.access_token) return;
+    setEarlierLoading(true);
+    try {
+      const response = await fetch(`/api/chat/threads/${threadId}?before=${encodeURIComponent(before)}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const payload = (await response.json()) as ChatThreadDetail & { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load earlier messages.");
+      if (loadedThreadIdRef.current !== threadId) return;
+      oldestMessageAtRef.current = payload.messages?.[0]?.created_at ?? before;
+      setHasEarlierMessages(Boolean(payload.hasEarlierMessages));
+      const earlier = (payload.messages ?? [])
+        .filter((message) => message.message_kind !== "deep_research_plan")
+        .map(mapMessage);
+      setMessages((current) => {
+        const known = new Set(current.map((message) => message.id));
+        return [...earlier.filter((message) => !known.has(message.id)), ...current];
+      });
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Failed to load earlier messages.");
+    } finally {
+      setEarlierLoading(false);
+    }
+  }, [activeThreadId, session?.access_token]);
 
   const loadLibraryRuns = useCallback(async () => {
     if (!canPersist) {
@@ -2001,8 +2060,10 @@ export default function ChatClient() {
 
   useEffect(() => {
     if (!searchModalOpen) return;
-    void loadChatSearchDetails();
-  }, [loadChatSearchDetails, searchModalOpen]);
+    // Typing waits a moment before searching, so each key is not a request.
+    const timer = window.setTimeout(() => void loadChatSearchDetails(chatSearchQuery), chatSearchQuery.trim() ? 250 : 0);
+    return () => window.clearTimeout(timer);
+  }, [chatSearchQuery, loadChatSearchDetails, searchModalOpen]);
 
   useEffect(() => {
     if (!copiedMessageId) return;
@@ -2853,6 +2914,16 @@ export default function ChatClient() {
                   </div>
                 );
               })}
+              {threadsHasMore ? (
+                <button
+                  type="button"
+                  onClick={() => void loadOlderThreads()}
+                  disabled={olderThreadsLoading}
+                  className="mt-1 w-full rounded-lg px-3 py-2 text-left text-sm text-mute transition-colors hover:bg-subtle hover:text-ink disabled:opacity-60"
+                >
+                  {olderThreadsLoading ? "Loading older chats\u2026" : "Show older chats"}
+                </button>
+              ) : null}
             </div>
           </div>
           ) : null}
@@ -3312,6 +3383,16 @@ export default function ChatClient() {
               />
             ) : (
               <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
+                {hasEarlierMessages ? (
+                  <button
+                    type="button"
+                    onClick={() => void loadEarlierMessages()}
+                    disabled={earlierLoading}
+                    className="mx-auto rounded-full border border-hairline bg-surface px-4 py-1.5 text-xs font-medium text-body transition-colors hover:border-hairline-strong hover:text-ink disabled:opacity-60"
+                  >
+                    {earlierLoading ? "Loading earlier messages\u2026" : "Load earlier messages"}
+                  </button>
+                ) : null}
                 {visibleMessages.map((message) => {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);

@@ -65,3 +65,15 @@ export async function gcsObjectExists(storagePath: string): Promise<boolean> {
   const [exists] = await storage.bucket(bucket).file(objectName).exists();
   return exists;
 }
+
+/** Removes a stored object by its gs:// path; a missing object is not an error. */
+export async function deleteGcsObject(storagePath: string): Promise<void> {
+  if (!storagePath.startsWith("gs://")) return;
+  const withoutScheme = storagePath.slice(5);
+  const slashIndex = withoutScheme.indexOf("/");
+  if (slashIndex <= 0) return;
+  const bucket = withoutScheme.slice(0, slashIndex);
+  const objectName = withoutScheme.slice(slashIndex + 1);
+  if (!objectName || objectName.includes("..")) return;
+  await storage.bucket(bucket).file(objectName).delete({ ignoreNotFound: true });
+}

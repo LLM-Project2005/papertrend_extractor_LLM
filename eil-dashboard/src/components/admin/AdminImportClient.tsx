@@ -53,7 +53,7 @@ import {
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
-import { menuItemClass, menuPanelClass } from "@/components/ui/controls";
+import { buttonClass, fieldClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 
 type ViewMode = "list" | "grid";
@@ -311,20 +311,55 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
     `- Paper ID: ${detail.paper_id || "Unavailable"}`,
     `- Status: ${run.status}`,
     `- Analysis source: ${detail.diagnostics?.dataSource || (detail.available ? "pipeline" : "unavailable")}`,
-    "",
-    "## Track Classification",
   ];
 
-  if (detail.tracksSingle.length > 0) {
-    lines.push(...detail.tracksSingle.map((track) => `- Primary track: ${track}`));
-  } else {
-    lines.push("- Primary track: Not stored");
+  // The year, and where it was read, so a reader can judge it.
+  const extracted = detail.extracted;
+  if (extracted?.year) {
+    lines.push(`- Year source: ${extracted.year.source}`);
+    if (cleanReportText(extracted.year.evidence)) {
+      lines.push(`- Year evidence: "${cleanReportText(extracted.year.evidence)}"`);
+    }
+  }
+  if (extracted?.typology) {
+    lines.push(
+      `- Research type: ${extracted.typology.primary}${extracted.typology.secondary ? ` (also ${extracted.typology.secondary})` : ""}`
+    );
+  }
+  if (extracted?.duplicateOf) {
+    lines.push(`- Possible copy of: "${extracted.duplicateOf.title}"`);
   }
 
-  if (detail.tracksMulti.length > 0) {
-    lines.push(...detail.tracksMulti.map((track) => `- Cross-track: ${track}`));
+  lines.push("", "## Category");
+  if (detail.classification) {
+    const classification = detail.classification;
+    lines.push(`- Profile: ${classification.taxonomyName}`);
+    lines.push(`- Primary category: ${classification.primaryCategory}`);
+    if (classification.additionalCategories.length > 0) {
+      lines.push(`- Also: ${classification.additionalCategories.join(", ")}`);
+    }
+    if (classification.status === "previous_profile") {
+      lines.push("- Classified under an earlier profile; reclassify to bring it up to date.");
+    }
+    if (cleanReportText(classification.rationale)) {
+      lines.push("- Why:", quoteMarkdown(classification.rationale));
+    }
+  } else if (detail.tracksSingle.length > 0) {
+    lines.push(...detail.tracksSingle.map((track) => `- Primary category: ${track}`));
+    lines.push(...detail.tracksMulti.map((track) => `- Also: ${track}`));
   } else {
-    lines.push("- Cross-track: None stored");
+    lines.push("- Classification is not enabled for this repository.");
+  }
+
+  lines.push("", "## The Paper's Own Keywords");
+  lines.push(
+    extracted?.authorKeywords.length
+      ? `- ${extracted.authorKeywords.join(", ")}`
+      : "- The paper does not print a keyword list."
+  );
+
+  if (extracted?.methodTopics.length) {
+    lines.push("", "## Methods", ...extracted.methodTopics.map((topic) => `- ${topic}`));
   }
 
   lines.push("", "## Topics");
@@ -334,7 +369,7 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
     lines.push("- No topic labels were stored.");
   }
 
-  lines.push("", "## Canonical Concepts");
+  lines.push("", "## Topics and Their Keywords");
   if (detail.concepts.length > 0) {
     for (const concept of detail.concepts) {
       lines.push(`### ${concept.label}`);
@@ -350,7 +385,7 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
       lines.push("");
     }
   } else {
-    lines.push("- No canonical concepts were stored.");
+    lines.push("- No topic groups were stored.");
   }
 
   lines.push("## Analytical Facets");
@@ -384,6 +419,10 @@ function buildAnalysisMarkdown(run: IngestionRunRow, detail: RunAnalysisDetail) 
     ["Extracted Conclusion", detail.conclusion],
   ] as const) {
     lines.push("", `## ${label}`, "", cleanReportText(value) || "_No extracted text was available for this section._");
+  }
+
+  if (extracted?.analysisNotes.length) {
+    lines.push("", "## Analysis Notes", ...extracted.analysisNotes.map((note) => `- ${note}`));
   }
 
   if (detail.warnings && detail.warnings.length > 0) {
@@ -428,6 +467,9 @@ export default function AdminImportClient() {
     startAnalysisSession,
   } = useWorkspaceProfile();
   const [runs, setRuns] = useState<IngestionRunRow[]>([]);
+  // Whether the list has arrived at least once, so a link to a paper that is
+  // not in it can be given up on instead of waited for.
+  const [runsLoaded, setRunsLoaded] = useState(false);
   const [libraryProjectId, setLibraryProjectId] = useState<string | null>(() => searchParams.get("repo"));
   const [query, setQuery] = useState(() => searchParams.get("q") ?? "");
   const [viewMode, setViewMode] = useState<ViewMode>(() => readChoice(searchParams.get("view"), VIEW_MODES, "list"));
@@ -456,6 +498,10 @@ export default function AdminImportClient() {
   const [infoRun, setInfoRun] = useState<IngestionRunRow | null>(null);
   const [analysisRun, setAnalysisRun] = useState<IngestionRunRow | null>(null);
   const [analysisTab, setAnalysisTab] = useState<PaperExplorerTab>("overview");
+  // Permanent deletion from Trash: one paper, or everything in Trash.
+  const [deleteTarget, setDeleteTarget] = useState<{ runs: IngestionRunRow[]; all: boolean } | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const [analysisDetail, setAnalysisDetail] = useState<RunAnalysisDetail | null>(null);
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
@@ -548,6 +594,7 @@ export default function AdminImportClient() {
         throw new Error(payload.error ?? "Failed to load library files.");
       }
       setRuns(payload.runs ?? []);
+      setRunsLoaded(true);
       setError(null);
     } catch (loadError) {
       setError(
@@ -795,12 +842,15 @@ export default function AdminImportClient() {
       ? runs.find((run) => run.id === requestedRunId)
       : runs.find((run) => paperIdOfRun(run) === requestedPaperId);
     if (!matchingRun) {
+      // The list has loaded and the paper is not in it: stop waiting, so the
+      // address can be tidied instead of pointing at nothing.
+      if (runsLoaded) autoOpenedRunIdRef.current = requestedKey;
       return;
     }
 
     autoOpenedRunIdRef.current = requestedKey;
     void handleOpenPrimaryFileAction(matchingRun, readChoice(searchParams.get("tab"), PAPER_EXPLORER_TABS, "overview"));
-  }, [requestedPaperId, requestedRunId, runs, searchParams]);
+  }, [requestedPaperId, requestedRunId, runs, runsLoaded, searchParams]);
 
   // ------------------------------------------------------------- the address
   // What the reader is looking at lives in the address: the open repository,
@@ -830,6 +880,14 @@ export default function AdminImportClient() {
       params.set("paper", analysisRun.id);
       if (analysisTab !== "overview") params.set("tab", analysisTab);
     }
+    // A link to a paper that has not opened yet (the list is still loading)
+    // must survive, or the address would lose it before it could open.
+    const currentParams = new URLSearchParams(window.location.search);
+    const linked = currentParams.get("paper") ?? currentParams.get("runId");
+    const linkedPaper = currentParams.get("paperId");
+    const pendingKey = linked ? `run:${linked}` : linkedPaper ? `paper:${normalizePaperId(linkedPaper)}` : "";
+    if (!analysisRun && pendingKey && autoOpenedRunIdRef.current !== pendingKey) return;
+
     const search = params.toString();
     const next = `${window.location.pathname}${search ? `?${search}` : ""}`;
     const current = `${window.location.pathname}${window.location.search}`;
@@ -1012,6 +1070,34 @@ export default function AdminImportClient() {
   async function handleRestoreRun(run: IngestionRunRow) {
     await patchRun(run.id, { action: "restore" });
     setMessage(`Restored "${titleOf(run)}" to its repository.`);
+  }
+
+  async function handlePermanentDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/workspace/library/trash", {
+        method: "DELETE",
+        headers: jsonRequestHeaders,
+        body: JSON.stringify(deleteTarget.all ? { all: true } : { runIds: deleteTarget.runs.map((run) => run.id) }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { deleted?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The papers could not be deleted.");
+      const count = payload.deleted ?? 0;
+      setMessage(
+        deleteTarget.all
+          ? `Emptied Trash: ${count} paper${count === 1 ? "" : "s"} deleted for good.`
+          : `Deleted "${titleOf(deleteTarget.runs[0])}" for good.`
+      );
+      setDeleteTarget(null);
+      setDeleteConfirmText("");
+      await loadRuns();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "The papers could not be deleted.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function handleRenameSubmit(event: FormEvent<HTMLFormElement>) {
@@ -1629,6 +1715,18 @@ export default function AdminImportClient() {
           >
             Restore to repository
           </button>
+        ) : null}
+        {activeMenuRun.trashed_at ? (
+          <button
+            type="button"
+            onClick={() => {
+              setDeleteTarget({ runs: [activeMenuRun], all: false });
+              setItemMenuState(null);
+            }}
+            className="flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-red-700 transition-colors duration-150 hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none dark:text-red-300 dark:hover:bg-red-950/30 dark:focus-visible:bg-red-950/30"
+          >
+            Delete permanently…
+          </button>
         ) : (
           <button
             type="button"
@@ -1866,10 +1964,19 @@ export default function AdminImportClient() {
               </p>
               <p className="mt-1 text-sm text-slate-500 dark:text-[#9c9c9c]">
                 {showTrash
-                  ? "Showing files currently in Trash."
+                  ? "Papers in Trash still count toward your account's 50. Delete them permanently to free the space."
                   : "Every paper in this repository. Open one to see what the analysis found."}
               </p>
             </div>
+            {showTrash && visibleEntries.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setDeleteTarget({ runs: [], all: true })}
+                className={buttonClass("danger", "sm")}
+              >
+                Empty Trash…
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -2349,6 +2456,66 @@ export default function AdminImportClient() {
         }}
         onSubmit={handleRenameSubmit}
       />
+
+      {deleteTarget ? (
+        <Modal
+          onClose={() => {
+            if (deleting) return;
+            setDeleteTarget(null);
+            setDeleteConfirmText("");
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handlePermanentDelete();
+            }}
+            className="w-[min(480px,92vw)] rounded-xl border border-hairline bg-surface p-6 shadow-overlay"
+          >
+            <h2 className="text-lg font-semibold tracking-tight text-ink">
+              {deleteTarget.all ? "Empty Trash?" : "Delete this paper permanently?"}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-body">
+              {deleteTarget.all
+                ? "Every paper in Trash is deleted for good: the PDFs and everything the analysis found. This cannot be undone."
+                : `"${titleOf(deleteTarget.runs[0])}" is deleted for good: the PDF and everything the analysis found. This cannot be undone.`}
+            </p>
+            {deleteTarget.all ? (
+              <label className="mt-4 block text-sm text-body">
+                Type <span className="font-mono font-medium text-ink">delete</span> to confirm
+                <input
+                  value={deleteConfirmText}
+                  onChange={(event) => setDeleteConfirmText(event.target.value)}
+                  autoFocus
+                  autoComplete="off"
+                  spellCheck={false}
+                  className={`${fieldClass} mt-1.5`}
+                />
+              </label>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleteTarget(null);
+                  setDeleteConfirmText("");
+                }}
+                className={buttonClass("secondary", "md")}
+              >
+                Keep
+              </button>
+              <button
+                type="submit"
+                disabled={deleting || (deleteTarget.all && deleteConfirmText.trim().toLowerCase() !== "delete")}
+                className={buttonClass("danger", "md")}
+              >
+                {deleting ? "Deleting…" : deleteTarget.all ? "Empty Trash" : "Delete permanently"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
 
       {(toolbarPopover || itemMenuState) && typeof document !== "undefined"
         ? createPortal(

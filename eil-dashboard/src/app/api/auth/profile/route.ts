@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthenticatedIdentityFromRequest, identityToLegacyUser } from "@/lib/auth/adapter";
 import { getProfileRepository } from "@/lib/profile-repository";
+import { unlinkedReason } from "@/lib/auth/account-linking";
 
 export const runtime = "nodejs";
 
@@ -42,11 +43,8 @@ async function getOwner(request: Request) {
 
   const user = identityToLegacyUser(identity);
   if (!user) {
-    return {
-      user: null,
-      error: "This Firebase account is not linked to a Papertrend owner account yet.",
-      status: 403,
-    };
+    const reason = unlinkedReason(identity.claims, identity.email);
+    return { user: null, error: reason.message, code: reason.code, status: 403 };
   }
 
   return { user, error: null, status: 200 };
@@ -56,7 +54,10 @@ export async function GET(request: Request) {
   const owner = await getOwner(request);
   const user = owner.user;
   if (!user) {
-    return NextResponse.json({ error: owner.error }, { status: owner.status });
+    return NextResponse.json(
+      { error: owner.error, ...("code" in owner && owner.code ? { code: owner.code } : {}) },
+      { status: owner.status }
+    );
   }
 
   let result;

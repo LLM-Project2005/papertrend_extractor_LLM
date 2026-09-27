@@ -241,5 +241,7 @@ export interface DeepResearchSessionRecord {
 export interface ChatThreadDetail {
   thread: WorkspaceThreadSummary;
   messages: WorkspaceMessageRecord[];
+  /** True when older messages exist than the ones returned (load them with ?before=). */
+  hasEarlierMessages?: boolean;
   deepResearchSession?: DeepResearchSessionRecord | null;
 }

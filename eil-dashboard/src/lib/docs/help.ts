@@ -32,7 +32,9 @@ export const helpCategory: DocsCategoryBase = {
           table: {
             columns: ["You see", "What to do"],
             rows: [
-              ["This Firebase account is not linked to a Papertrend owner account yet.", "Papertrend could not set up the account, most often because the email address has not been verified. Sign in with Google, which verifies it, or contact the operators."],
+              ["Confirm your email address", "Open the confirmation link we emailed you (check spam too), then choose **I’ve confirmed it**. **Send the link again** if it has not arrived."],
+              ["A Papertrend account already uses this email address.", "You signed in with Facebook, and an account already has that email. Sign in with Google, or with your email and password, instead."],
+              ["Too many attempts for now.", "Sign-in attempts are limited after several failures. Wait a few minutes, or reset your password to sign in straight away."],
               ["Sign-in timed out while contacting the authentication service.", "The Google or Facebook window did not finish in time. Allow pop-ups for the site and try again."],
               ["Wrong password, pop-up closed or blocked, too many requests", "Check the password or use **Reset password**, allow pop-ups, or wait a few minutes if there were many attempts."],
               ["Enter your email first, then request a reset link.", "Type your email address, then choose **Reset password**."],
@@ -50,7 +52,7 @@ export const helpCategory: DocsCategoryBase = {
             rows: [
               ["N files were skipped. Only PDFs of 10 MB or less can be added.", "Convert the file to PDF, or compress or split it below 10 MB."],
               ["Only the first 50 PDFs were kept.", "Add the rest in a second upload."],
-              ["This account can store up to 50 papers.", "The account is full. Papers in Trash still count and cannot yet be deleted permanently; contact the operators for more room."],
+              ["This account can store up to 50 papers.", "The account is full, and papers in Trash count too. Delete papers permanently from Trash to make room."],
               ["Already analyzed in this account: <names>.", "The same PDF is already in one of your repositories, or in Trash. Remove it from this upload, or restore it from Trash. A PDF can belong to one repository."],
               ["The same PDF was selected more than once.", "Remove the second copy from the selection."],
               ["The upload could not be prepared (status <code>).", "Try again in a moment; if it repeats, note the status code for the operators."],
