@@ -34,6 +34,15 @@ test("paper explorer tabs use an opaque sticky surface without content gaps", ()
   assert.doesNotMatch(paperModalSource, /dark:bg-\[\#030303\]\/95/);
 });
 
+test("the paper window resolves its PDF address once, without cancelling itself", () => {
+  // The effect depended on its own loading flag and on a resolver the parent
+  // recreates every render. Setting the flag re-ran it, the cleanup cancelled
+  // the request in flight, and the viewer stayed on "Loading the PDF…".
+  assert.match(paperModalSource, /resolvePreviewRef\.current = onResolvePreviewUrl;/);
+  assert.match(paperModalSource, /\}, \[run\.id, previewAttempt\]\);/);
+  assert.doesNotMatch(paperModalSource, /previewLoading/);
+});
+
 test("adaptive charts are generated explicitly and preserve a filter snapshot", () => {
   assert.doesNotMatch(
     dashboardSource,
