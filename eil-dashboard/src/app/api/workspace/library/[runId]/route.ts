@@ -3,7 +3,7 @@ import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { cloudSqlLibraryRepository } from "@/lib/cloudsql/library-repository";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
-import { createGcsSignedReadUrl } from "@/lib/gcs-signed-urls";
+import { createGcsSignedReadUrl, resolveStoredObject } from "@/lib/gcs-signed-urls";
 import { cloudSqlAnalysisJobRepository } from "@/lib/cloudsql/analysis-job-repository";
 import { paperIdFromRunId } from "@/lib/paper-id";
 import { validatePaperCorrection } from "@/lib/reanalysis";
@@ -194,13 +194,19 @@ export async function POST(
       if (!sourcePath) {
         throw new Error("File path is unavailable for this item.");
       }
-      const objectName = sourcePath.startsWith("gs://")
-        ? sourcePath.slice(5).split("/").slice(1).join("/")
-        : sourcePath.replace(/^\/+/, "");
-      if (!objectName) {
+      // The file is read from the bucket its path names when that is a known
+      // upload bucket: the pilot shares production's database, and signing
+      // every path against this deployment's own bucket sent a 404 for each
+      // paper uploaded through the other one.
+      const stored = resolveStoredObject(sourcePath);
+      if (!stored) {
         throw new Error("The stored cloud object path is invalid.");
       }
-      const signedUrl = await createGcsSignedReadUrl({ objectName, expiresMinutes: 60 });
+      const signedUrl = await createGcsSignedReadUrl({
+        objectName: stored.objectName,
+        bucketName: stored.known ? stored.bucket : undefined,
+        expiresMinutes: 60,
+      });
       return NextResponse.json({ url: signedUrl });
     }
 

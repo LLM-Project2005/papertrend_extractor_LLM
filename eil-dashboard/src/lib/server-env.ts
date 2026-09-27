@@ -101,6 +101,19 @@ export function getGcsUploadBucket(): string {
   return process.env.GCS_UPLOAD_BUCKET ?? "";
 }
 
+/**
+ * The upload buckets a stored gs:// path may name: this deployment's own and
+ * any listed in GCS_KNOWN_UPLOAD_BUCKETS (comma-separated). The pilot shares
+ * production's database, so its papers can sit in production's bucket.
+ */
+export function getKnownUploadBuckets(): string[] {
+  const listed = String(process.env.GCS_KNOWN_UPLOAD_BUCKETS ?? "")
+    .split(",")
+    .map((bucket) => bucket.trim())
+    .filter(Boolean);
+  return [...new Set([getGcsUploadBucket().trim(), ...listed].filter(Boolean))];
+}
+
 export function getCloudSqlInstanceConnectionName(): string {
   return process.env.CLOUD_SQL_INSTANCE_CONNECTION_NAME ?? "";
 }
