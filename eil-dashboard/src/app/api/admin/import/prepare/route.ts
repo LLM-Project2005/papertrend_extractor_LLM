@@ -4,11 +4,7 @@ import {
   isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
-import {
-  getGcsUploadBucket,
-  getDatabaseProvider,
-  getStorageProvider,
-} from "@/lib/server-env";
+import { getDatabaseProvider, getGcsUploadBucket, getMaxUploadBytes, getStorageProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import {
@@ -69,7 +65,17 @@ async function createGcsSignedUploadUrl({
     bucketName: bucket,
     objectName: storagePath,
     contentType,
-    expiresMinutes: 30,
+    // Short enough that a URL left lying around is of little use, long enough
+    // for a slow connection to finish a batch.
+    expiresMinutes: 15,
+    // The signed URL can also bind the body size, which is the stronger check,
+    // but the browser must then send x-goog-content-length-range and storage
+    // only permits request headers the bucket's CORS rule lists. Until that
+    // rule includes it, sending it would fail every upload's preflight, so the
+    // size is enforced at finalize instead (storage is asked for the object's
+    // real size before anything is queued). Set GCS_SIGN_UPLOAD_SIZE=true once
+    // the bucket allows the header.
+    maxBytes: process.env.GCS_SIGN_UPLOAD_SIZE === "true" ? getMaxUploadBytes() : undefined,
   });
 }
 
