@@ -12,8 +12,10 @@ keyword_grouping_llm = get_task_llm(ModelTask.KEYWORD_GROUPING)
 NORMALIZATION_STOPWORDS = {
     "a", "an", "and", "as", "at", "by", "for", "from", "in", "of", "on", "the", "to", "with",
 }
+# Each word is length-bounded so a single very long token cannot cause
+# catastrophic backtracking (the text comes from an uploaded PDF).
 _ACRONYM_DEFINITION = re.compile(
-    r"((?:[^\W\d_][\w'\u2019-]*\s+){0,8}[^\W\d_][\w'\u2019-]*)\s*\(\s*([A-Z][A-Za-z0-9-]{1,11})\s*\)"
+    r"((?:[^\W\d_][\w'\u2019-]{0,40}[ \t]{1,3}){0,8}[^\W\d_][\w'\u2019-]{0,40})[ \t]*\(\s*([A-Z][A-Za-z0-9-]{1,11})\s*\)"
 )
 _EIL_NOTE = (
     "- This is an English as an International Language project: do not put a theory or framework, a "

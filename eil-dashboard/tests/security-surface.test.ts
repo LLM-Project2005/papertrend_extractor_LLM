@@ -243,6 +243,19 @@ test("a redirect target cannot be pointed off-site", () => {
   assert.match(fn, /return safeReturnPath\(raw, fallback\);/);
 });
 
+test("the analysis route cleans stored text in linear time", () => {
+  // raw_text comes from an uploaded PDF and can be large. The old \\s-based
+  // patterns were superlinear on runs of unusual whitespace (NBSP, a byte-order
+  // mark), which could pin the event loop and stall every tenant on the
+  // instance. The input is now capped and heading detection is a line scan.
+  const route = read("src/app/api/workspace/library/[runId]/analysis/route.ts");
+  assert.match(route, /const MAX_SECTION_TEXT = 200_000;/);
+  assert.match(route, /\.slice\(0, MAX_SECTION_TEXT\)/);
+  assert.match(route, /for \(const line of text\.split\("\\n"\)\)/, "headings are found by a line scan");
+  assert.doesNotMatch(route, /\\\\s\+\(\[,\.;:!\?\]\)/, "the superlinear punctuation pattern is gone");
+  assert.doesNotMatch(route, /\^\\\\s\*\(\?:#\+/, "the multiline heading regex is gone");
+});
+
 test("uploads are checked by content, not only by name", () => {
   const safety = read("src/lib/upload-safety.ts");
   assert.match(safety, /subarray\(0, 5\)\.toString\("ascii"\) === "%PDF-"/);

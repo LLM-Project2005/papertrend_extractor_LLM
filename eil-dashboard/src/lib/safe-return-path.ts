@@ -15,7 +15,10 @@ export function safeReturnPath(raw: unknown, fallback: string): string {
   try {
     const url = new URL(value, base);
     if (url.origin !== base) return fallback;
-    return `${url.pathname}${url.search}${url.hash}`;
+    // Resolving collapses dot segments, so "/.//host" comes back as "//host",
+    // which a browser reads as another site. The result is checked again.
+    const path = `${url.pathname}${url.search}${url.hash}`;
+    return path.startsWith("//") ? fallback : path;
   } catch {
     return fallback;
   }
