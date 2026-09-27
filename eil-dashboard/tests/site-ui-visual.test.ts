@@ -113,7 +113,7 @@ test("the public pages show the product, not a drawing of it", () => {
   // The front page used to carry div-built imitations of the product - an
   // "example workspace" with invented stages and percentages that read as
   // accuracy figures nothing measures. The pages now show screenshots of the
-  // real app, captured in both themes by scripts/capture-marketing-shots.ts.
+  // real app, taken in both themes by scripts/marketing-mock/record-clips.ts.
   for (const gone of ["FeatureShowcases.tsx", "MarketingMotion.tsx", "FeatureBand.tsx"]) {
     assert.equal(exists(`src/components/marketing/${gone}`), false, `${gone} was a drawing of the product`);
   }
@@ -132,6 +132,29 @@ test("the public pages show the product, not a drawing of it", () => {
     }
     assert.match(manifest, new RegExp(`"${name}":`), `${name} has no recorded size, so its box cannot be reserved`);
   }
+});
+
+test("the product clips play only what they should, with the invented collection", () => {
+  // The landing page loops short recordings of the product over its stills.
+  // They are recorded against the mock API, which refuses anything it does not
+  // know, so a real account's papers cannot reach a public video.
+  const shot = read("src/components/marketing/ProductShot.tsx");
+  const clips = [...(shot.match(/const CLIPS = new Set\(\[([^\]]*)\]\)/)?.[1] ?? "").matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
+  assert.ok(clips.length >= 3, "the front page has clips");
+  for (const name of clips) {
+    for (const theme of ["light", "dark"]) {
+      assert.ok(exists(`public/marketing/video/${name}-${theme}.mp4`), `${name}-${theme}.mp4 is missing`);
+    }
+  }
+  const clip = read("src/components/marketing/ProductClip.tsx");
+  assert.match(clip, /prefers-reduced-motion: reduce/, "no autoplay for readers who asked for less motion");
+  assert.match(clip, /muted/);
+  assert.match(clip, /playsInline/);
+  assert.match(clip, /IntersectionObserver/, "a clip off screen does not play");
+  assert.match(clip, /Pause the product video/, "moving content beside text can be stopped");
+  const harness = read("scripts/marketing-mock/harness.ts");
+  assert.match(harness, /Not available in the demo recording\./, "unknown requests are refused, never passed through");
+  assert.equal(exists("scripts/capture-marketing-shots.ts"), false, "the real-data capture script is gone");
 });
 
 test("a published number can be traced to the thing it counts", () => {

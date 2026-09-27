@@ -38,6 +38,30 @@ async function pointAt(page: Page, target: Locator, steps = 28) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps });
 }
 
+/**
+ * The centres of the chart's tallest stacked columns, left to right. Passed
+ * as a string: tsx would wrap named functions in a helper the page lacks.
+ */
+async function tallestColumns(page: Page, count: number): Promise<Array<{ x: number; y: number }>> {
+  return page.evaluate(`(() => {
+    const columns = new Map();
+    for (const bar of document.querySelectorAll(".recharts-bar-rectangle")) {
+      const r = bar.getBoundingClientRect();
+      if (r.height < 2 || r.width < 2) continue;
+      const key = Math.round(r.x + r.width / 2);
+      const column = columns.get(key) || { x: key, top: r.top, bottom: r.bottom };
+      column.top = Math.min(column.top, r.top);
+      column.bottom = Math.max(column.bottom, r.bottom);
+      columns.set(key, column);
+    }
+    return [...columns.values()]
+      .sort((a, b) => (b.bottom - b.top) - (a.bottom - a.top))
+      .slice(0, ${count})
+      .sort((a, b) => a.x - b.x)
+      .map((c) => ({ x: c.x, y: (c.top + c.bottom) / 2 }));
+  })()`);
+}
+
 /** A wheel scroll in small steps, so the recording shows it glide. */
 async function scrollBy(page: Page, deltaY: number, steps = 14) {
   for (let i = 0; i < steps; i += 1) {
@@ -65,8 +89,52 @@ type Scene = {
   settleMs?: number;
   /** For stills: what to do before the photograph. For clips: the scene itself. */
   prepare?: (page: Page) => Promise<void>;
+  /** For clips: what happens before recording starts. */
+  setup?: (page: Page) => Promise<void>;
   play?: (page: Page) => Promise<void>;
+  /** For clips: the part of the 1440x900 page to keep, in CSS pixels. */
+  crop?: { x: number; y: number; width: number; height: number };
 };
+
+const PARKED = { x: 1250, y: 250 };
+
+/** The paper dialog: 1180 wide, centred, 92vh tall (the still crops the same). */
+const PAPER_DIALOG = { x: 130, y: 36, width: 1180, height: 828 };
+
+async function openStarPaper(page: Page) {
+  await openRepository(page);
+  await page.locator("main button", { hasText: STAR_TITLE }).first().click();
+  await wait(page, 4000);
+}
+
+/**
+ * Scrolls the dialog's own body, smoothly, by deltaY - or, with "viewer",
+ * until the PDF viewer's top sits `margin` pixels below the body's top.
+ * Returns the distance moved. A wheel over the PDF would scroll the viewer
+ * inside it instead, so the body is found and scrolled directly.
+ */
+async function scrollDialog(page: Page, deltaY: number | "viewer", margin = 64): Promise<number> {
+  const moved = await page.evaluate(`(() => {
+    const canvas = document.querySelector('[role="dialog"] canvas');
+    const scrollers = [];
+    for (let el = canvas && canvas.parentElement; el; el = el.parentElement) {
+      const style = getComputedStyle(el);
+      if (/(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight + 4) scrollers.push(el);
+    }
+    const viewer = scrollers[0];
+    const body = scrollers[1];
+    if (!viewer || !body) return 0;
+    const wanted = ${JSON.stringify(deltaY)};
+    const delta = wanted === "viewer"
+      ? Math.round(viewer.getBoundingClientRect().top - body.getBoundingClientRect().top - ${margin})
+      : wanted;
+    const before = body.scrollTop;
+    body.scrollBy({ top: delta, behavior: "smooth" });
+    return Math.max(0, Math.min(body.scrollHeight - body.clientHeight, before + delta)) - before;
+  })()`);
+  await wait(page, 800);
+  return Number(moved) || 0;
+}
 
 const SCENES: Scene[] = [
   {
@@ -74,11 +142,13 @@ const SCENES: Scene[] = [
     route: "/workspace/dashboard?tab=trend_analysis",
     settleMs: 7000,
     play: async (page) => {
-      await page.mouse.move(900, 700);
-      const bars = page.locator(".recharts-bar-rectangle");
-      for (const index of [6, 14, 22]) {
-        if ((await bars.count()) > index) await pointAt(page, bars.nth(index), 24);
-        await wait(page, 900);
+      // The pointer starts and ends over the summary text, off the chart, so
+      // no tooltip is open where the loop joins.
+      await page.mouse.move(PARKED.x, PARKED.y);
+      // The tallest years, left to right: an empty year's tooltip is all zeros.
+      for (const column of await tallestColumns(page, 3)) {
+        await page.mouse.move(column.x, column.y, { steps: 24 });
+        await wait(page, 1100);
       }
       await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Overview" }));
       await wait(page, 2600);
@@ -88,33 +158,52 @@ const SCENES: Scene[] = [
       await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Category Analysis" }));
       await wait(page, 2600);
       await clickOn(page, page.locator('nav[aria-label="Tabs"] button', { hasText: "Trend Analysis" }));
-      await wait(page, 1800);
+      // Long enough for the bars to finish growing, so the loop's last frame
+      // is its first.
+      await page.mouse.move(PARKED.x, PARKED.y, { steps: 20 });
+      await wait(page, 2800);
     },
   },
   {
     name: "paper",
     route: "/workspace/library",
     settleMs: 3000,
-    prepare: async (page) => {
-      await openRepository(page);
-      await page.locator("main button", { hasText: STAR_TITLE }).first().click();
-      await wait(page, 4000);
+    // The still shows the dialog alone (optimize-marketing-shots.py crops it),
+    // so the clip opens on the dialog and is cropped to the same box.
+    crop: PAPER_DIALOG,
+    prepare: openStarPaper,
+    setup: async (page) => {
+      await openStarPaper(page);
+      await page.mouse.move(PARKED.x - 200, PARKED.y + 60);
     },
     play: async (page) => {
-      await openRepository(page);
-      await page.mouse.move(720, 460);
-      await clickOn(page, page.locator("main button", { hasText: STAR_TITLE }).first());
-      await wait(page, 2600);
+      await wait(page, 1000);
       await clickOn(page, page.locator('[role="dialog"] button', { hasText: "Keywords" }).first());
       await wait(page, 2200);
       await clickOn(page, page.locator('[role="dialog"] button', { hasText: "Evidence" }).first());
       await page.locator(".pdf-evidence-mark").first().waitFor({ timeout: 20000 }).catch(() => undefined);
-      await wait(page, 2600);
-      const second = page.locator('[role="dialog"] button[aria-pressed]', { hasText: "seawall" }).first();
-      if (await second.count()) {
-        await clickOn(page, second);
+      await wait(page, 1200);
+      // The PDF sits under the claim's text; bring it up, keeping the claim
+      // list beside it in view (a click on a hidden row would jump the page).
+      const lift = await scrollDialog(page, "viewer", 250);
+      await wait(page, 2400);
+      // A claim from another page (Methods, on page 1): the viewer turns back
+      // to it and marks it.
+      const next = page.locator('[role="dialog"] button[aria-pressed]', { hasText: "household survey" }).first();
+      if (await next.count()) {
+        await clickOn(page, next);
+        await wait(page, 600);
+        await page.locator(".pdf-evidence-mark").first().waitFor({ timeout: 15000 }).catch(() => undefined);
         await wait(page, 3000);
       }
+      // Back to where the loop starts: the top of the Overview.
+      if (lift) {
+        await scrollDialog(page, -lift);
+        await wait(page, 400);
+      }
+      await clickOn(page, page.locator('[role="dialog"] button', { hasText: "Overview" }).first());
+      await page.mouse.move(PARKED.x - 200, PARKED.y + 60, { steps: 20 });
+      await wait(page, 1600);
     },
   },
   {
@@ -124,6 +213,11 @@ const SCENES: Scene[] = [
     prepare: async (page) => {
       await page.locator("button", { hasText: QUESTION }).first().click();
       await wait(page, 3500);
+      // The thread opens on its last line; the still shows the question and
+      // the answer's opening.
+      await page.mouse.move(820, 420);
+      await page.mouse.wheel(0, -4000);
+      await wait(page, 800);
     },
     play: async (page) => {
       const composer = page.locator('textarea[aria-label="Message"]');
@@ -169,6 +263,13 @@ async function signIn(page: Page) {
   for (let i = 0; i < 40 && page.url().includes("/login"); i += 1) await wait(page, 1000);
 }
 
+/** The scene's crop as a filter, in fractions so any frame size works. */
+function cropFilter(scene: Scene): string {
+  if (!scene.crop) return "";
+  const { x, y, width, height } = scene.crop;
+  return `crop=iw*${width / 1440}:ih*${height / 900}:iw*${x / 1440}:ih*${y / 900},`;
+}
+
 async function recordClip(context: BrowserContext, page: Page, scene: Scene, theme: string) {
   const frameDir = join(OUT, `frames-${scene.name}-${theme}`);
   rmSync(frameDir, { recursive: true, force: true });
@@ -181,6 +282,7 @@ async function recordClip(context: BrowserContext, page: Page, scene: Scene, the
     frames.push({ file, at: frame.metadata.timestamp });
     await cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }).catch(() => undefined);
   });
+  if (scene.setup) await scene.setup(page);
   await cdp.send("Page.startScreencast", { format: "jpeg", quality: 90, maxWidth: 1920, maxHeight: 1200, everyNthFrame: 1 });
   await wait(page, 500);
   await scene.play!(page);
@@ -202,7 +304,7 @@ async function recordClip(context: BrowserContext, page: Page, scene: Scene, the
   const output = join(OUT, `${scene.name}-${theme}.mp4`);
   const result = spawnSync(
     FFMPEG,
-    ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-vf", "fps=30,scale=1920:-2:flags=lanczos,format=yuv420p", "-c:v", "libx264", "-preset", "slow", "-crf", "27", "-movflags", "+faststart", "-an", output],
+    ["-y", "-f", "concat", "-safe", "0", "-i", listFile, "-vf", `fps=30,${cropFilter(scene)}scale=1920:-2:flags=lanczos,format=yuv420p`, "-c:v", "libx264", "-preset", "slow", "-crf", "27", "-movflags", "+faststart", "-an", output],
     { stdio: "pipe" }
   );
   if (result.status !== 0) throw new Error(`ffmpeg failed for ${scene.name}: ${result.stderr.toString().slice(-600)}`);
