@@ -15,7 +15,11 @@ export async function GET(
 
   try {
     const { threadId } = context.params;
-    const detail = await getChatRepository().getThreadDetail(user.id, threadId);
+    // ?before= loads the messages older than the ones already shown.
+    const before = new URL(request.url).searchParams.get("before");
+    const detail = await getChatRepository().getThreadDetail(user.id, threadId, {
+      before: before && !Number.isNaN(Date.parse(before)) ? before : null,
+    });
     return NextResponse.json(detail);
   } catch (error) {
     return NextResponse.json(

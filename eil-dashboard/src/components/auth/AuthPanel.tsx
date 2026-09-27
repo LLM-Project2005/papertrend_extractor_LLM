@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyAuthError } from "@/lib/auth/auth-errors";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { GoogleIcon, FacebookIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
@@ -38,6 +39,9 @@ export default function AuthPanel({
     resetPassword,
     signOut,
     authError,
+    authErrorCode,
+    resendVerificationEmail,
+    confirmEmailVerified,
   } = useAuth();
   const [busy, setBusy] = useState(false);
   // Back from the Google or Facebook consent screen can restore this page from
@@ -65,7 +69,19 @@ export default function AuthPanel({
       "Signed in"
     );
   }, [profile?.full_name, user?.email, user?.user_metadata]);
-  const visibleError = error ?? authError;
+  // An address waiting for confirmation is a step, not an error: it gets its
+  // own panel instead of the red box.
+  const awaitingConfirmation = authErrorCode === "email_unverified";
+  const visibleError = error ?? (awaitingConfirmation ? null : authError);
+  const [confirmState, setConfirmState] = useState<"idle" | "checking" | "not-yet" | "sent" | "sending">("idle");
+
+  // The confirmation link returns here with ?confirmed=1: check straight away.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("confirmed") === "1") {
+      void confirmEmailVerified().catch(() => undefined);
+    }
+  }, [confirmEmailVerified]);
 
   async function handleProviderSignIn(
     provider: (typeof OAUTH_OPTIONS)[number]["provider"]
@@ -80,8 +96,8 @@ export default function AuthPanel({
         signInError instanceof Error ? signInError.message : "Sign-in failed.";
       setError(
         /timed out/i.test(message)
-          ? "Sign-in timed out while contacting the authentication service. Please retry. If this continues, check the provider and redirect configuration."
-          : message
+          ? "Sign-in took too long to reach the sign-in service. Try again in a moment."
+          : friendlyAuthError(signInError, "Sign-in failed. Try again.")
       );
       setBusy(false);
     }
@@ -107,12 +123,12 @@ export default function AuthPanel({
     try {
       if (passwordMode === "signup") {
         await signUpWithPassword(email, password, { full_name: fullName });
-        setNotice("Check your email if confirmation is required, or continue if your session opened.");
+        setNotice(`We sent a confirmation link to ${email}. Open it to finish creating your account.`);
       } else {
         await signInWithPassword(email, password);
       }
     } catch (passwordError) {
-      setError(passwordError instanceof Error ? passwordError.message : "Password authentication failed.");
+      setError(friendlyAuthError(passwordError, "Password sign-in failed. Try again."));
     } finally {
       setBusy(false);
     }
@@ -130,7 +146,7 @@ export default function AuthPanel({
       await resetPassword(email);
       setNotice("If that email can receive reset mail, a reset link is on the way.");
     } catch (resetError) {
-      setError(resetError instanceof Error ? resetError.message : "Password reset failed.");
+      setError(friendlyAuthError(resetError, "The reset email could not be sent. Try again in a minute."));
     } finally {
       setBusy(false);
     }
@@ -138,6 +154,50 @@ export default function AuthPanel({
 
   const messages = (
     <>
+      {awaitingConfirmation ? (
+        <div className="mt-5 rounded-lg border border-hairline bg-subtle px-3.5 py-3.5 text-sm leading-6 text-body">
+          <p className="font-medium text-ink">Confirm your email address</p>
+          <p className="mt-1">{authError}</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={confirmState === "checking"}
+              onClick={() => {
+                setConfirmState("checking");
+                void confirmEmailVerified()
+                  .then((confirmed) => setConfirmState(confirmed ? "idle" : "not-yet"))
+                  .catch(() => setConfirmState("not-yet"));
+              }}
+              className={buttonClass("primary", "sm")}
+            >
+              {confirmState === "checking" ? "Checking…" : "I’ve confirmed it"}
+            </button>
+            <button
+              type="button"
+              disabled={confirmState === "sending"}
+              onClick={() => {
+                setConfirmState("sending");
+                void resendVerificationEmail()
+                  .then(() => setConfirmState("sent"))
+                  .catch((sendError) => {
+                    setConfirmState("idle");
+                    setError(friendlyAuthError(sendError, "The email could not be sent. Try again in a minute."));
+                  });
+              }}
+              className={buttonClass("secondary", "sm")}
+            >
+              {confirmState === "sending" ? "Sending…" : "Send the link again"}
+            </button>
+          </div>
+          <p className="mt-2 min-h-5 text-[13px] text-mute" role="status">
+            {confirmState === "not-yet"
+              ? "Not confirmed yet. Open the link in the email (check spam too), then try again."
+              : confirmState === "sent"
+                ? "A new link is on its way."
+                : ""}
+          </p>
+        </div>
+      ) : null}
       <div role="alert">
         {visibleError ? (
           <div className="mt-5 rounded-lg border border-red-200 bg-red-50 px-3.5 py-3 text-sm leading-6 text-red-800 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">

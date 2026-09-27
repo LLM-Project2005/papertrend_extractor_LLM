@@ -61,7 +61,7 @@ export class CloudSqlIngestionRepository {
       if (!isQuotaExemptRole(profile.rows[0]?.role) && activePaperCount + input.files.length > MAX_PAPERS_PER_ACCOUNT) {
         const remaining = Math.max(0, MAX_PAPERS_PER_ACCOUNT - activePaperCount);
         throw new UploadPolicyError(
-          `This account can store up to ${MAX_PAPERS_PER_ACCOUNT} papers. ${activePaperCount} are already active, so only ${remaining} more can be uploaded.`,
+          `This account can store up to ${MAX_PAPERS_PER_ACCOUNT} papers. ${activePaperCount} are already stored, including any in Trash, so only ${remaining} more can be uploaded. Delete papers permanently from Trash to make room.`,
           429
         );
       }

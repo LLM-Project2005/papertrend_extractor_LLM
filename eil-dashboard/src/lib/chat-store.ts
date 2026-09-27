@@ -21,14 +21,17 @@ export function buildThreadTitle(prompt: string): string {
 
 export async function listWorkspaceThreads(
   supabase: SupabaseClient,
-  ownerUserId: string
+  ownerUserId: string,
+  page?: { before?: string | null; limit?: number }
 ): Promise<WorkspaceThreadSummary[]> {
-  const { data, error } = await supabase
+  let request = supabase
     .from("workspace_threads")
     .select("*")
-    .eq("owner_user_id", ownerUserId)
+    .eq("owner_user_id", ownerUserId);
+  if (page?.before) request = request.lt("updated_at", page.before);
+  const { data, error } = await request
     .order("updated_at", { ascending: false })
-    .limit(100);
+    .limit(Math.min(Math.max(page?.limit ?? 100, 1), 200));
   if (error) {
     throw new Error(error.message);
   }
