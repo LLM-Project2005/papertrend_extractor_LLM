@@ -455,8 +455,13 @@ export default function PaperAnalysisExplorerModal({
   );
   const selectedEvidence = keywordEvidenceRows[selectedEvidenceIndex] ?? null;
 
+  // A different paper opens on the tab it was asked for (a link's ?tab=, or
+  // Overview). Resetting to Overview here, on mount too, threw away the tab of
+  // every deep link.
+  const initialTabRef = useRef(initialTab);
+  initialTabRef.current = initialTab;
   useEffect(() => {
-    setActiveTab("overview");
+    setActiveTab(initialTabRef.current ?? "overview");
     setSelectedEvidenceIndex(0);
   }, [run.id]);
 
