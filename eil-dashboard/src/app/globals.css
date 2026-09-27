@@ -435,6 +435,34 @@ html:focus-within {
 }
 
 /*
+ * Evidence marked on a PDF page (src/components/workspace/PdfViewer.tsx): a
+ * warm marker colour that multiplies into the page, so the printed words stay
+ * readable through it, arriving with one short pulse.
+ */
+.pdf-evidence-mark {
+  background: rgb(250 204 21 / 0.42);
+  mix-blend-mode: multiply;
+  box-shadow: 0 0 0 1px rgb(234 179 8 / 0.35);
+  animation: pdf-evidence-in 700ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes pdf-evidence-in {
+  0% {
+    opacity: 0;
+    transform: scaleX(0.6);
+    transform-origin: left center;
+  }
+  60% {
+    opacity: 1;
+    box-shadow: 0 0 0 4px rgb(234 179 8 / 0.25);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
  * A status line that changes while work is under way (chat's "Searching your
  * papers" becoming "Writing the answer"). The new words rise a few pixels out
  * of a slight blur, so the change registers without the line jumping.

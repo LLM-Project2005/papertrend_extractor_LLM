@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import PdfViewer, { prefetchPdf } from "@/components/workspace/PdfViewer";
 import Modal from "@/components/ui/Modal";
 import { getRunStatusLabel } from "@/lib/ingestion-status";
 import {
@@ -13,7 +14,9 @@ import {
 } from "@/components/ui/Icons";
 import type { IngestionRunRow, RunAnalysisDetail, RunAnalysisExtracted } from "@/types/database";
 
-type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
+export type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
+
+export const PAPER_EXPLORER_TABS: PaperExplorerTab[] = ["overview", "keywords", "evidence", "topics", "preview"];
 
 type Props = {
   run: IngestionRunRow;
@@ -30,6 +33,10 @@ type Props = {
   onOpenDashboard: () => void;
   /** Save a corrected title or year; kept when the paper is analysed again. */
   onCorrect?: (correction: { title?: string; year?: string }) => Promise<void>;
+  /** The tab to open on, from the address (?tab=evidence). */
+  initialTab?: PaperExplorerTab;
+  /** Told when the reader changes tab, so the address can follow. */
+  onTabChange?: (tab: PaperExplorerTab) => void;
 };
 
 const TAB_LABELS: Array<{ id: PaperExplorerTab; label: string }> = [
@@ -221,19 +228,6 @@ function buildKeywordEvidenceRows(detail: RunAnalysisDetail | null) {
   });
 }
 
-function buildPdfEvidenceUrl(
-  url: string,
-  evidence: { keyword: string; evidence: string; context: string }
-): string {
-  const baseUrl = url.split("#", 1)[0];
-  const searchText = cleanDisplayText(
-    evidence.evidence || evidence.context || evidence.keyword
-  ).slice(0, 120);
-  return searchText
-    ? `${baseUrl}#zoom=page-width&search=${encodeURIComponent(searchText)}`
-    : `${baseUrl}#zoom=page-width`;
-}
-
 function titleOf(run: IngestionRunRow) {
   return run.display_name || run.source_filename || run.id;
 }
@@ -385,8 +379,15 @@ export default function PaperAnalysisExplorerModal({
   onRename,
   onOpenDashboard,
   onCorrect,
+  initialTab,
+  onTabChange,
 }: Props) {
-  const [activeTab, setActiveTab] = useState<PaperExplorerTab>("overview");
+  const [activeTab, setActiveTab] = useState<PaperExplorerTab>(initialTab ?? "overview");
+  const onTabChangeRef = useRef(onTabChange);
+  onTabChangeRef.current = onTabChange;
+  useEffect(() => {
+    onTabChangeRef.current?.(activeTab);
+  }, [activeTab]);
   const [correcting, setCorrecting] = useState(false);
   // The button that opened the form disappears while it is open, so focus is
   // put back on it when the form closes instead of falling to the page.
@@ -453,13 +454,6 @@ export default function PaperAnalysisExplorerModal({
     [keywordEvidenceRows]
   );
   const selectedEvidence = keywordEvidenceRows[selectedEvidenceIndex] ?? null;
-  const locatedPreviewUrl = useMemo(
-    () =>
-      previewUrl && selectedEvidence
-        ? buildPdfEvidenceUrl(previewUrl, selectedEvidence)
-        : previewUrl,
-    [previewUrl, selectedEvidence]
-  );
 
   useEffect(() => {
     setActiveTab("overview");
@@ -470,11 +464,7 @@ export default function PaperAnalysisExplorerModal({
   }, [run.id]);
 
   useEffect(() => {
-    if (
-      (activeTab !== "preview" && activeTab !== "evidence") ||
-      previewUrl ||
-      previewLoading
-    ) {
+    if (previewUrl || previewLoading || previewError) {
       return;
     }
 
@@ -512,7 +502,7 @@ export default function PaperAnalysisExplorerModal({
     return () => {
       cancelled = true;
     };
-  }, [activeTab, onResolvePreviewUrl, previewLoading, previewUrl]);
+  }, [onResolvePreviewUrl, previewError, previewLoading, previewUrl]);
 
   return (
     <Modal onClose={onClose}>
@@ -695,6 +685,12 @@ export default function PaperAnalysisExplorerModal({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
+                onPointerEnter={() => {
+                  if ((tab.id === "evidence" || tab.id === "preview") && previewUrl) prefetchPdf(run.id, previewUrl);
+                }}
+                onFocus={() => {
+                  if ((tab.id === "evidence" || tab.id === "preview") && previewUrl) prefetchPdf(run.id, previewUrl);
+                }}
                 aria-current={activeTab === tab.id ? "page" : undefined}
                 // The border lives in the base class, not on one branch. It used
                 // to sit only on the inactive tabs, and under border-box sizing
@@ -1054,22 +1050,22 @@ export default function PaperAnalysisExplorerModal({
                           </div>
                         ) : null}
 
-                        {previewLoading ? (
-                          <div className="flex h-[420px] items-center justify-center text-sm text-slate-500 dark:text-[#999999]">
-                            Loading source PDF...
-                          </div>
-                        ) : previewError ? (
+                        {previewError ? (
                           <div className="m-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                             {previewError}
                           </div>
-                        ) : locatedPreviewUrl ? (
-                          <iframe
-                            key={locatedPreviewUrl}
-                            src={locatedPreviewUrl}
-                            title={`Source PDF for ${selectedEvidence?.keyword || titleOf(run)}`}
-                            className="h-[440px] w-full bg-white lg:h-[480px]"
-                          />
-                        ) : null}
+                        ) : (
+                          <div className="p-3">
+                            <PdfViewer
+                              cacheKey={run.id}
+                              url={previewUrl}
+                              title={`Source PDF for ${selectedEvidence?.keyword || titleOf(run)}`}
+                              highlight={selectedEvidence ? [selectedEvidence.evidence, selectedEvidence.context] : null}
+                              highlightKey={String(selectedEvidenceIndex)}
+                              heightClass="h-[440px] lg:h-[520px]"
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -1174,29 +1170,14 @@ export default function PaperAnalysisExplorerModal({
                     </button>
                   </div>
 
-                  {previewLoading ? (
-                    <div className="rounded-xl border border-slate-200 bg-slate-50 px-5 py-8 text-center dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <div className="mx-auto mb-3 h-10 w-10 animate-spin rounded-full border-4 border-slate-400 border-t-transparent dark:border-[#8e8e8e]" />
-                      <p className="text-sm text-slate-500 dark:text-[#a3a3a3]">
-                        Loading the paper preview...
-                      </p>
-                    </div>
-                  ) : null}
-
-                  {!previewLoading && previewError ? (
+                  {previewError ? (
                     <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                       {previewError}
                     </div>
                   ) : null}
 
-                  {!previewLoading && !previewError && previewUrl ? (
-                    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]">
-                      <iframe
-                        src={previewUrl}
-                        title={detail?.title || titleOf(run)}
-                        className="h-[68vh] w-full bg-white"
-                      />
-                    </div>
+                  {!previewError ? (
+                    <PdfViewer cacheKey={run.id} url={previewUrl} title={detail?.title || titleOf(run)} heightClass="h-[68vh]" />
                   ) : null}
                 </section>
               ) : null}
