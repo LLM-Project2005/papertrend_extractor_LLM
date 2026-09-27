@@ -1,7 +1,8 @@
 import "server-only";
 
 import { Storage } from "@google-cloud/storage";
-import { getGcsUploadBucket } from "@/lib/server-env";
+import { getGcsUploadBucket, getKnownUploadBuckets } from "@/lib/server-env";
+import { parseStoredObject } from "@/lib/storage-path";
 
 const storage = new Storage();
 
@@ -54,26 +55,26 @@ export async function createGcsSignedReadUrl({
   return signedUrl;
 }
 
+/** See parseStoredObject; the buckets are this deployment's. */
+export function resolveStoredObject(storagePath: string) {
+  return parseStoredObject(storagePath, getGcsUploadBucket().trim(), getKnownUploadBuckets());
+}
+
 export async function gcsObjectExists(storagePath: string): Promise<boolean> {
   if (!storagePath.startsWith("gs://")) return false;
-  const withoutScheme = storagePath.slice(5);
-  const slashIndex = withoutScheme.indexOf("/");
-  if (slashIndex <= 0) return false;
-  const bucket = withoutScheme.slice(0, slashIndex);
-  const objectName = withoutScheme.slice(slashIndex + 1);
-  if (!objectName || objectName.includes("..") || objectName.includes("\\")) return false;
-  const [exists] = await storage.bucket(bucket).file(objectName).exists();
+  const stored = resolveStoredObject(storagePath);
+  if (!stored?.known) return false;
+  const [exists] = await storage.bucket(stored.bucket).file(stored.objectName).exists();
   return exists;
 }
 
-/** Removes a stored object by its gs:// path; a missing object is not an error. */
+/**
+ * Removes a stored object by its gs:// path; a missing object is not an error.
+ * Only an object in a known upload bucket is ever deleted.
+ */
 export async function deleteGcsObject(storagePath: string): Promise<void> {
   if (!storagePath.startsWith("gs://")) return;
-  const withoutScheme = storagePath.slice(5);
-  const slashIndex = withoutScheme.indexOf("/");
-  if (slashIndex <= 0) return;
-  const bucket = withoutScheme.slice(0, slashIndex);
-  const objectName = withoutScheme.slice(slashIndex + 1);
-  if (!objectName || objectName.includes("..")) return;
-  await storage.bucket(bucket).file(objectName).delete({ ignoreNotFound: true });
+  const stored = resolveStoredObject(storagePath);
+  if (!stored?.known) return;
+  await storage.bucket(stored.bucket).file(stored.objectName).delete({ ignoreNotFound: true });
 }
