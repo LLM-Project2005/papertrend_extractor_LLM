@@ -37,7 +37,6 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "src/app/api/auth/password-signup/route.ts": "account creation",
   "src/app/api/auth/password-reset/route.ts": "reset requested while locked out",
   "src/app/api/auth/firebase/link/route.ts": "links a Firebase identity to an owner record",
-  "src/app/api/integrations/google-drive/callback/route.ts": "OAuth redirect from Google",
 };
 
 /** A route that verifies a machine caller rather than a person. */
@@ -55,6 +54,19 @@ test("every API route authenticates somebody, or says why it does not", () => {
     unguarded.push(normalized);
   }
   assert.deepEqual(unguarded, [], "these routes verify nobody and are not on the public list");
+});
+
+test("the retired server-side Drive OAuth flow stays gone", () => {
+  // Its OAuth state was not tied to the browser that started it, its return
+  // address was not checked, and it kept Drive refresh tokens on the server.
+  // The Picker replaced it: the browser holds a short drive.file token.
+  for (const route of ["connect", "callback", "files", "queue"]) {
+    assert.equal(
+      API_ROUTES.some((r) => r.replace(/\\/g, "/") === `src/app/api/integrations/google-drive/${route}/route.ts`),
+      false,
+      `google-drive/${route} is back`
+    );
+  }
 });
 
 test("the public list has not grown stale", () => {
@@ -226,7 +238,37 @@ test("a redirect target cannot be pointed off-site", () => {
   const fn = guards.slice(guards.indexOf("export function validateSafeReturnTo"));
   assert.match(fn, /raw\.startsWith\("\/\/"\)/, "a protocol-relative URL leaves the site");
   assert.match(fn, /url\.origin === new URL\(configured\)\.origin/);
-  assert.match(fn, /return raw\.startsWith\("\/"\) \? raw : fallback;/);
+  // A leading slash is not enough (a backslash or a tab after it leaves the
+  // site in a browser), so every path goes through the shared check.
+  assert.match(fn, /return safeReturnPath\(raw, fallback\);/);
+});
+
+test("the analysis route cleans stored text in linear time", () => {
+  // raw_text comes from an uploaded PDF and can be large. The old \\s-based
+  // patterns were superlinear on runs of unusual whitespace (NBSP, a byte-order
+  // mark), which could pin the event loop and stall every tenant on the
+  // instance. The input is now capped and heading detection is a line scan.
+  const route = read("src/app/api/workspace/library/[runId]/analysis/route.ts");
+  assert.match(route, /const MAX_SECTION_TEXT = 200_000;/);
+  assert.match(route, /\.slice\(0, MAX_SECTION_TEXT\)/);
+  assert.match(route, /for \(const line of text\.split\("\\n"\)\)/, "headings are found by a line scan");
+  assert.doesNotMatch(route, /\\\\s\+\(\[,\.;:!\?\]\)/, "the superlinear punctuation pattern is gone");
+  assert.doesNotMatch(route, /\^\\\\s\*\(\?:#\+/, "the multiline heading regex is gone");
+});
+
+test("an upload is finalized once, and its real size is checked", () => {
+  // Finalize used to re-queue any run at any time, so the paper quota and the
+  // model cost it stands for could be replayed without limit. And the size
+  // came from the browser, which uploads straight to storage.
+  const repo = read("src/lib/cloudsql/ingestion-repository.ts");
+  const load = repo.slice(repo.indexOf("async loadOwnedBatch"), repo.indexOf("async finalizeBatch"));
+  assert.match(load, /status = 'processing' AND source_path IS NULL/, "only un-finalized runs load");
+  assert.match(repo, /AND status = 'processing' AND source_path IS NULL`,/, "the update is one-shot too");
+
+  const finalize = read("src/app/api/admin/import/finalize/route.ts");
+  assert.match(finalize, /await gcsObjectInfo\(storagePath\)/, "storage is asked for the real size");
+  assert.match(finalize, /info\.sizeBytes > maxUploadBytes/);
+  assert.match(finalize, /ACCEPTED_UPLOAD_TYPES\.has/);
 });
 
 test("uploads are checked by content, not only by name", () => {

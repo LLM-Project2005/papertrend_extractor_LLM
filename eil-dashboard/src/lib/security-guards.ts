@@ -11,6 +11,7 @@ import {
 } from "@/lib/server-env";
 import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
 import { isQuotaExemptRole } from "@/lib/quota-policy";
+import { safeReturnPath } from "@/lib/safe-return-path";
 
 export class GuardError extends Error {
   status: number;
@@ -52,14 +53,14 @@ export function validateSafeReturnTo(value: unknown, fallback = "/workspaces"): 
       const url = new URL(raw);
       const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
       if (configured && url.origin === new URL(configured).origin) {
-        return `${url.pathname}${url.search}${url.hash}`;
+        return safeReturnPath(`${url.pathname}${url.search}${url.hash}`, fallback);
       }
     } catch {
       return fallback;
     }
     return fallback;
   }
-  return raw.startsWith("/") ? raw : fallback;
+  return safeReturnPath(raw, fallback);
 }
 
 /* -------------------------------------------- the fallback when the DB is down */

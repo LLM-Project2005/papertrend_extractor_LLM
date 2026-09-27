@@ -4425,6 +4425,9 @@ async function handlePost(request: Request) {
     const body = parseChatRequestBody(await request.json().catch(() => ({})));
     const user = await getAuthenticatedUserFromRequest(request);
     const ownerUserId = user?.id ?? null;
+    if (!ownerUserId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
     const chatMode = body.chatMode ?? "normal";
     const action = body.action ?? (chatMode === "deep_research" ? "plan" : "message");
 
@@ -4633,18 +4636,22 @@ export async function OPTIONS(request: Request) {
 
 export async function POST(request: Request) {
   const user = await getAuthenticatedUserFromRequest(request);
-  if (user?.id) {
-    try {
-      await assertAiTokenBudget(user.id);
-    } catch (error) {
-      if (error instanceof GuardError) {
-        return withChatCors(
-          NextResponse.json({ error: error.message }, { status: error.status }),
-          request
-        );
-      }
-      throw error;
+  // Every answer spends model credit, so only a signed-in person may ask. An
+  // anonymous caller used to fall through to a general answer from the paid
+  // model, with web search available and no budget counted.
+  if (!user?.id) {
+    return withChatCors(NextResponse.json({ error: "Unauthorized" }, { status: 401 }), request);
+  }
+  try {
+    await assertAiTokenBudget(user.id);
+  } catch (error) {
+    if (error instanceof GuardError) {
+      return withChatCors(
+        NextResponse.json({ error: error.message }, { status: error.status }),
+        request
+      );
     }
+    throw error;
   }
 
   const wantsStream = (request.headers.get("accept") ?? "").includes("text/event-stream");

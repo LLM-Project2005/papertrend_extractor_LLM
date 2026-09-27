@@ -173,3 +173,17 @@ test("a cancelled answer leaves no partial assistant message behind", () => {
   // pressing Stop: the thread shows what they asked, with no half answer.
   assert.match(route, /persistedUserMessage = await chatRepository\.appendMessage/);
 });
+
+test("the chat route refuses an unauthenticated caller before spending anything", () => {
+  // It used to answer anonymous callers from the paid model, with web search
+  // and no budget. The guard must come before the budget check and the model.
+  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
+  const post = route.slice(route.indexOf("export async function POST(request: Request) {"));
+  const guard = post.indexOf("if (!user?.id)");
+  assert.ok(guard > 0, "POST has no unauthenticated guard");
+  assert.match(post.slice(guard, guard + 200), /status: 401/);
+  assert.ok(guard < post.indexOf("assertAiTokenBudget(user.id)"), "the guard comes first");
+  assert.ok(guard < post.indexOf("handlePost(request)"), "the guard comes before any answer");
+  const handle = route.slice(route.indexOf("async function handlePost(request: Request) {"));
+  assert.ok(handle.indexOf("if (!ownerUserId)") < handle.indexOf("normalChat("), "handlePost checks too");
+});
