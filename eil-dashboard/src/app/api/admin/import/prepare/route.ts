@@ -17,7 +17,7 @@ import {
   sanitizeProjectAnalysisProfile,
   toIngestionAnalysisProfile,
 } from "@/lib/project-analysis-profile";
-import { createGcsSignedUploadUrl as signGcsUpload } from "@/lib/gcs-signed-urls";
+import { createGcsSignedUploadUrl as signGcsUpload, deleteRunUploads } from "@/lib/gcs-signed-urls";
 import {
   MAX_FILES_PER_BATCH,
   sanitizeStorageFileName,
@@ -153,6 +153,12 @@ export async function POST(request: Request) {
     let folderJob: Record<string, unknown> & { id: string };
     let preparedRuns: Array<Record<string, unknown>> = [];
     if (databaseProvider === "cloud-sql") {
+      // This person's uploads that were prepared but never finished are
+      // closed and their files deleted first, so they neither linger in the
+      // bucket nor count against the paper limit below. Best effort: a
+      // cleanup failure never blocks the new upload.
+      const abandoned = await cloudSqlIngestionRepository.failAbandonedUploads(user!.id).catch(() => [] as string[]);
+      await Promise.all(abandoned.map((runId) => deleteRunUploads(runId).catch(() => 0)));
       const batch = await cloudSqlIngestionRepository.createUploadBatch({
         ownerUserId: user!.id,
         projectId,

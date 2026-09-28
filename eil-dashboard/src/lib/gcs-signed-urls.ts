@@ -110,3 +110,16 @@ export async function deleteGcsObject(storagePath: string): Promise<void> {
   if (!stored?.known) return;
   await storage.bucket(stored.bucket).file(stored.objectName).delete({ ignoreNotFound: true });
 }
+
+/**
+ * Deletes every object uploaded for one run, in this deployment's bucket.
+ * Upload paths are pending/<folder>/<runId>/<file>, so a glob on the run id
+ * finds them without knowing the folder. Used for uploads that were refused or
+ * never finished, whose run has no stored path to delete by.
+ */
+export async function deleteRunUploads(runId: string): Promise<number> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(runId)) return 0;
+  const [files] = await storage.bucket(resolveBucket()).getFiles({ matchGlob: `pending/**/${runId}/**` });
+  await Promise.all(files.map((file) => file.delete({ ignoreNotFound: true })));
+  return files.length;
+}

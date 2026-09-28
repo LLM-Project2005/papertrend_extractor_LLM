@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isRepositoryJobSecretValid } from "@/lib/repository-chat-jobs";
+import { isVerifiedTaskCaller } from "@/lib/cloud-tasks-oidc";
 import { processProjectReclassificationJob } from "@/lib/project-reclassification-service";
 import { getDatabaseProvider, projectAnalysisProfilesEnabled } from "@/lib/server-env";
 
@@ -9,7 +9,8 @@ export const maxDuration = 600;
 const Body = z.object({ jobId: z.string().uuid(), ownerUserId: z.string().uuid() });
 
 export async function POST(request: Request) {
-  if (!isRepositoryJobSecretValid(request.headers.get("x-worker-secret") ?? "")) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Only this service's own Cloud Tasks, by Google-signed identity token.
+  if (!(await isVerifiedTaskCaller(request))) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!projectAnalysisProfilesEnabled() || getDatabaseProvider() !== "cloud-sql") return NextResponse.json({ error: "Repository profiles are not enabled." }, { status: 404 });
   const parsed = Body.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "Invalid job request." }, { status: 400 });

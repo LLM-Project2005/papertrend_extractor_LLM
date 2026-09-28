@@ -68,3 +68,53 @@ test("a new password needs ten characters; an existing one still signs in", () =
   assert.match(errors, /export const MIN_NEW_PASSWORD_LENGTH = 10;/);
   assert.match(errors, /"auth\/password-does-not-meet-requirements"/);
 });
+
+test("refused and abandoned uploads do not stay in the bucket", () => {
+  const finalize = read("src/app/api/admin/import/finalize/route.ts");
+  const refusals = finalize.slice(finalize.indexOf("const maxUploadBytes"), finalize.indexOf("queueableUploadedItems.push(item);"));
+  assert.equal((refusals.match(/await deleteGcsObject\(storagePath\)/g) ?? []).length, 2, "an oversized or non-PDF file is deleted");
+
+  const repo = read("src/lib/cloudsql/ingestion-repository.ts");
+  const sweep = repo.slice(repo.indexOf("async failAbandonedUploads"), repo.indexOf("async loadOwnedBatch"));
+  assert.match(sweep, /WHERE owner_user_id = \$1 AND source_type = 'upload'/, "only the caller's own uploads");
+  assert.match(sweep, /status = 'processing' AND source_path IS NULL/, "only uploads never finalized");
+  assert.match(sweep, /make_interval\(mins => \$2::int\)/);
+
+  const prepare = read("src/app/api/admin/import/prepare/route.ts");
+  assert.ok(
+    prepare.indexOf("failAbandonedUploads(user!.id)") < prepare.indexOf("createUploadBatch({"),
+    "the sweep runs before the quota is counted"
+  );
+  const gcs = read("src/lib/gcs-signed-urls.ts");
+  assert.match(gcs, /matchGlob: `pending\/\*\*\/\$\{runId\}\/\*\*`/);
+  assert.match(gcs, /\[0-9a-f\]\{8\}-/, "the run id is checked before it goes into a glob");
+});
+
+test("background-job callbacks accept only a Google-signed token for this service", () => {
+  // They used to accept the shared worker secret, carried in every task's
+  // headers and held by several services.
+  for (const route of [
+    "src/app/api/chat/jobs/process/route.ts",
+    "src/app/api/workspace/semantic-map/jobs/process/route.ts",
+    "src/app/api/workspace/projects/reclassify/process/route.ts",
+  ]) {
+    const src = read(route);
+    assert.match(src, /if \(!\(await isVerifiedTaskCaller\(request\)\)\)/, `${route} verifies the token`);
+    assert.doesNotMatch(src, /x-worker-secret/, `${route} no longer reads the secret`);
+  }
+  for (const creator of [
+    "src/lib/repository-chat-jobs.ts",
+    "src/lib/semantic-map-jobs.ts",
+    "src/lib/project-reclassification-jobs.ts",
+  ]) {
+    const src = read(creator);
+    assert.match(src, /const oidcToken = await taskOidcToken\(\);/, `${creator} mints a token`);
+    assert.match(src, /\n\s+oidcToken,\n/, `${creator} attaches it to the task`);
+    assert.doesNotMatch(src, /"x-worker-secret"/, `${creator} no longer puts the secret in the task`);
+  }
+  const oidc = read("src/lib/cloud-tasks-oidc.ts");
+  assert.match(oidc, /verifier\.verifyIdToken\(\{ idToken: match\[1\], audience \}\)/, "signature and audience are checked");
+  assert.match(oidc, /payload\.email_verified === true/);
+  assert.match(oidc, /payload\.email\?\.toLowerCase\(\) === expectedEmail\.toLowerCase\(\)/, "only this service's own account");
+  assert.match(read("package.json"), /"google-auth-library": "\^10\.9\.0"/, "a direct dependency, not a transitive one");
+});

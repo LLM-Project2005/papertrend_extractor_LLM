@@ -234,6 +234,31 @@ export class CloudSqlIngestionRepository {
   }
 
   /**
+   * Marks this owner's uploads that were prepared but never finalized, and are
+   * older than `olderThanMinutes`, as failed, and returns their ids so their
+   * stored files can be deleted. A signed upload URL lives 15 minutes, so a run
+   * still waiting after an hour can no longer be finished. Owner-scoped: it
+   * only ever touches the caller's own runs.
+   */
+  async failAbandonedUploads(ownerUserId: string, olderThanMinutes = 60): Promise<string[]> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const result = await client.query<{ id: string }>(
+        `UPDATE public.ingestion_runs
+         SET status = 'failed', error_message = 'The upload was never completed.',
+             completed_at = now(), updated_at = now(),
+             input_payload = COALESCE(input_payload, '{}'::jsonb)
+               || jsonb_build_object('progress_stage', 'failed', 'progress_message', 'Upload never completed')
+         WHERE owner_user_id = $1 AND source_type = 'upload'
+           AND status = 'processing' AND source_path IS NULL
+           AND created_at < now() - make_interval(mins => $2::int)
+         RETURNING id`,
+        [ownerUserId, olderThanMinutes]
+      );
+      return result.rows.map((row) => String(row.id));
+    });
+  }
+
+  /**
    * The runs of an upload batch that are still waiting to be finalized.
    *
    * A run is only awaiting finalization while prepare left it: 'processing'
