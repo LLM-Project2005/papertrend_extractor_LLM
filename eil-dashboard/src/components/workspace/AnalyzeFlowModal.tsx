@@ -145,7 +145,7 @@ export default function AnalyzeFlowModal({
       if (driveError instanceof DrivePickerCancelled) {
         if (driveError.closedByPage) {
           setError(
-            "No file came through from Google Drive. If Google asked you to sign in again, or choosing a file did nothing, your browser is blocking Google's cookies inside this page. Allow third-party cookies for [*.]google.com and try again, or add the PDF from your computer."
+            "No file came through from Google Drive. If Google asked you to sign in again, or choosing a file did nothing, your browser is blocking Google's cookies inside this page. Allow third-party cookies for this site in your browser's settings and try again, or add the PDF from your computer."
           );
         }
       } else {
