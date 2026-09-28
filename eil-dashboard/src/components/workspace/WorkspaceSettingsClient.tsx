@@ -16,7 +16,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme, type ThemePreference } from "@/components/theme/ThemeProvider";
 import AnalysisProfileEditor from "@/components/workspace/AnalysisProfileEditor";
