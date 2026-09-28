@@ -118,3 +118,19 @@ test("background-job callbacks accept only a Google-signed token for this servic
   assert.match(oidc, /payload\.email\?\.toLowerCase\(\) === expectedEmail\.toLowerCase\(\)/, "only this service's own account");
   assert.match(read("package.json"), /"google-auth-library": "\^10\.9\.0"/, "a direct dependency, not a transitive one");
 });
+
+test("every response carries an enforced Content-Security-Policy", () => {
+  const config = read("next.config.mjs");
+  assert.match(config, /const CSP_HEADER = "Content-Security-Policy";/, "enforced, not report-only");
+  assert.match(config, /\{ key: CSP_HEADER, value: contentSecurityPolicy \}/);
+  for (const directive of [
+    "default-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ]) {
+    assert.ok(config.includes(`"${directive}"`), `missing ${directive}`);
+  }
+  assert.match(config, /\["connect-src 'self'", directApiOrigin,/, "data may go only to named hosts");
+});
