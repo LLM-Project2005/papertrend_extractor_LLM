@@ -10,10 +10,12 @@ export function getPublicRequestOrigin(request: Request): string {
   const configured = process.env.APP_PUBLIC_URL?.trim() || process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (configured) return validConfiguredOrigin(configured);
 
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  if (process.env.K_SERVICE && forwardedHost?.endsWith(".run.app") && forwardedProto === "https") {
-    return "https://" + forwardedHost;
+  // This origin is where job callbacks are sent, and they carry the worker
+  // secret, so it is never taken from request headers: a forwarded host is
+  // whatever the caller wrote, and anyone can own a *.run.app name. On Cloud
+  // Run the configured address is required.
+  if (process.env.K_SERVICE) {
+    throw new Error("APP_PUBLIC_URL is required for asynchronous jobs.");
   }
 
   const origin = new URL(request.url).origin;

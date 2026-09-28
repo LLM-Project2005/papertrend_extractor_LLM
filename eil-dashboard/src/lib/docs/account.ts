@@ -37,7 +37,7 @@ export const accountCategory: DocsCategoryBase = {
           title: "Passwords",
           body: [
             "To reset a forgotten password, type your email on the sign-in page and choose **Reset password**; if that address has an account, a reset link is emailed to it. When you are signed in, **Settings > Sign-in & security > Email me a reset link** does the same.",
-            "Passwords need at least 8 characters. There is no form to change a password or your sign-in email inside the app; a reset link is how you choose a new password. Accounts that sign in with Google or Facebook have no Papertrend password.",
+            "A new password needs at least 10 characters (an existing, shorter one still signs in until you change it). There is no form to change a password or your sign-in email inside the app; a reset link is how you choose a new password. Accounts that sign in with Google or Facebook have no Papertrend password.",
           ],
         },
         {

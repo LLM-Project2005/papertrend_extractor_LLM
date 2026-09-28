@@ -1,5 +1,8 @@
 import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
 
+/** How often one paper may be analysed again in a day. */
+export const MAX_REANALYSES_PER_PAPER_PER_DAY = 3;
+
 type Row = Record<string, unknown>;
 
 export class CloudSqlAnalysisJobRepository {
@@ -85,6 +88,10 @@ export class CloudSqlAnalysisJobRepository {
       }
       values.push(limit);
       const timestamp = new Date().toISOString();
+      // Each analysis spends model credit, so a paper is analysed again at most
+      // MAX_REANALYSES_PER_PAPER_PER_DAY times a (UTC) day. The count lives in
+      // the run's own payload, so no table change is needed.
+      const today = timestamp.slice(0, 10);
       const profileJson = context.analysisProfile ? JSON.stringify(context.analysisProfile) : null;
       const payloadProjectId = context.projectId || null;
       const result = await client.query<{ id: string }>(
@@ -94,6 +101,9 @@ export class CloudSqlAnalysisJobRepository {
              || jsonb_build_object(
                   'reanalysis_count', COALESCE((ir.input_payload->>'reanalysis_count')::int, 0) + 1,
                   'reanalysis_requested_at', $${values.length + 1}::text,
+                  'reanalysis_day', $${values.length + 4}::text,
+                  'reanalysis_day_count', CASE WHEN ir.input_payload->>'reanalysis_day' = $${values.length + 4}::text
+                    THEN COALESCE((ir.input_payload->>'reanalysis_day_count')::int, 0) + 1 ELSE 1 END,
                   'progress_stage', 'queued',
                   'progress_message', 'Queued to be analysed again',
                   'progress_detail', 'This paper will be analysed again with the current pipeline.',
@@ -106,9 +116,11 @@ export class CloudSqlAnalysisJobRepository {
            SELECT ir.id FROM public.ingestion_runs ir
            WHERE ir.owner_user_id = $1 AND ir.trashed_at IS NULL
              AND COALESCE(ir.source_path, '') <> '' AND ${scope}
+             AND NOT (COALESCE(ir.input_payload->>'reanalysis_day', '') = $${values.length + 4}::text
+                      AND COALESCE((ir.input_payload->>'reanalysis_day_count')::int, 0) >= $${values.length + 5}::int)
            ORDER BY ir.created_at ASC LIMIT $${values.length})
          RETURNING ir.id`,
-        [...values, timestamp, profileJson, payloadProjectId]
+        [...values, timestamp, profileJson, payloadProjectId, today, MAX_REANALYSES_PER_PAPER_PER_DAY]
       );
       return result.rows.map((row) => String(row.id));
     });
