@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 
 export async function GET(
   request: Request,
-  context: { params: { threadId: string } }
+  context: { params: Promise<{ threadId: string }> }
 ) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) {
@@ -14,7 +14,7 @@ export async function GET(
   }
 
   try {
-    const { threadId } = context.params;
+    const { threadId } = await context.params;
     // ?before= loads the messages older than the ones already shown.
     const before = new URL(request.url).searchParams.get("before");
     const detail = await getChatRepository().getThreadDetail(user.id, threadId, {
@@ -34,7 +34,7 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  context: { params: { threadId: string } }
+  context: { params: Promise<{ threadId: string }> }
 ) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) {
@@ -42,7 +42,7 @@ export async function PATCH(
   }
 
   try {
-    const { threadId } = context.params;
+    const { threadId } = await context.params;
     const body = (await request.json()) as { title?: string; summary?: string | null };
     const title = body.title?.trim();
     if (!title) {
@@ -69,7 +69,7 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  context: { params: { threadId: string } }
+  context: { params: Promise<{ threadId: string }> }
 ) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) {
@@ -77,7 +77,7 @@ export async function DELETE(
   }
 
   try {
-    const { threadId } = context.params;
+    const { threadId } = await context.params;
     await getChatRepository().deleteThread(user.id, threadId);
     return NextResponse.json({ ok: true });
   } catch (error) {

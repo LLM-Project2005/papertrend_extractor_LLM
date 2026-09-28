@@ -15,9 +15,9 @@ import {
 import { ArrowRightIcon, CheckIcon } from "@/components/ui/Icons";
 
 interface FeaturePageProps {
-  params: {
+  params: Promise<{
     slug: string;
-  };
+  }>;
 }
 
 export const dynamic = "force-static";
@@ -41,8 +41,8 @@ export function generateStaticParams() {
   }));
 }
 
-export function generateMetadata({ params }: FeaturePageProps): Metadata {
-  const feature = findFeature(params.slug);
+export async function generateMetadata({ params }: FeaturePageProps): Promise<Metadata> {
+  const feature = findFeature((await params).slug);
 
   if (!feature) {
     return {
@@ -79,8 +79,8 @@ function Bullets({ items }: { items: string[] }) {
   );
 }
 
-export default function FeaturePage({ params }: FeaturePageProps) {
-  const feature = findFeature(params.slug);
+export default async function FeaturePage({ params }: FeaturePageProps) {
+  const feature = findFeature((await params).slug);
   if (!feature) {
     notFound();
   }

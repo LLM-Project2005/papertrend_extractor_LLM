@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type JSX } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import ThemeToggle from "@/components/theme/ThemeToggle";
 import {
