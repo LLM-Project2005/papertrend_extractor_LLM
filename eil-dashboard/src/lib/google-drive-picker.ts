@@ -146,15 +146,20 @@ function addPageCloseControl(onClose: () => void): () => void {
   button.className = "drive-picker-close";
   button.textContent = "Close Google Drive";
   button.setAttribute("aria-label", "Close Google Drive");
+  // Escape closes only the Picker: it is caught first (window, capture phase)
+  // and stopped, so the upload window underneath does not close with it.
   const onKey = (event: KeyboardEvent) => {
-    if (event.key === "Escape") onClose();
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
   };
   button.addEventListener("click", onClose);
-  document.addEventListener("keydown", onKey, true);
+  window.addEventListener("keydown", onKey, true);
   document.body.appendChild(button);
   return () => {
     button.removeEventListener("click", onClose);
-    document.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("keydown", onKey, true);
     button.remove();
   };
 }
