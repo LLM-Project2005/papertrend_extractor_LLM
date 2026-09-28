@@ -44,12 +44,30 @@ function times(value: number): string {
  * and "Academic Writing" - are usually a part and its whole, so their meeting
  * says little.
  */
+const ABBREVIATIONS: Record<string, string> = {
+  l1: "first language",
+  l2: "second language",
+  efl: "english foreign language",
+  esl: "english second language",
+  eil: "english international language",
+  elt: "english language teaching",
+  sla: "second language acquisition",
+  clil: "content language integrated learning",
+};
+
 function sharesDistinctiveWord(a: string, b: string, allNames: string[]): boolean {
   const words = (value: string) =>
-    new Set(value.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((word) => word.length >= 4));
+    new Set(
+      value
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]+/u)
+        .flatMap((word) => (ABBREVIATIONS[word] ?? word).split(" "))
+        .filter((word) => word.length >= 4)
+    );
   const frequency = new Map<string, number>();
   for (const name of allNames) for (const word of words(name)) frequency.set(word, (frequency.get(word) ?? 0) + 1);
-  const common = Math.max(2, Math.ceil(allNames.length * 0.2));
+  // Common: used by at least 3 names, or a fifth of them in a long list.
+  const common = Math.max(3, Math.ceil(allNames.length * 0.2));
   const bWords = words(b);
   return [...words(a)].some((word) => bWords.has(word) && (frequency.get(word) ?? 0) < common);
 }
@@ -79,7 +97,11 @@ export function themePairs(corpus: InsightCorpus): Insight | null {
       // The smaller theme first, so "x% of the papers on A also cover B" is the striking share.
       const [a, aIds, b, bIds] = idsI.size <= idsJ.size ? [nameI, idsI, nameJ, idsJ] : [nameJ, idsJ, nameI, idsI];
       const nested = together === aIds.size;
-      pairs.push({ a, b, together, lift: l, aPapers: aIds.size, bPapers: bIds.size, paperIds: intersection(aIds, bIds), related: nested || sharesDistinctiveWord(a, b, names) });
+      const sameFamily = sharesDistinctiveWord(a, b, names);
+      // A part and its whole: every paper on the narrower theme is on the
+      // broader one, and the names say they are the same subject.
+      if (nested && sameFamily) continue;
+      pairs.push({ a, b, together, lift: l, aPapers: aIds.size, bPapers: bIds.size, paperIds: intersection(aIds, bIds), related: nested || sameFamily });
     }
   }
   if (pairs.length === 0) return null;

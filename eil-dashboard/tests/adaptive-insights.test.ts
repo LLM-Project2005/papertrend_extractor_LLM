@@ -218,17 +218,33 @@ test("no claim of significance or cause survives", () => {
   assert.deepEqual(plan.checks?.map((check) => check.reason), ["claims a cause"]);
 });
 
-test("a theme wholly inside another is flagged, not sold as a pairing", () => {
+test("a theme wholly inside a related one is not sold as a pairing", () => {
   const input = fixture();
-  // Every "Genre writing" paper is also a "Writing" paper.
+  // Every "Genre writing" paper is also a "Writing" paper: a part and its whole.
   for (const paper of [2, 5, 8]) {
     input.trends.push({ ...input.trends.find((row) => row.paper_id === String(paper))!, topic: "Genre writing", keyword: "genre" });
   }
+  // Every "Peer review" paper is on "Feedback" too, but the names are different subjects.
+  for (const paper of [5, 8, 11]) {
+    input.trends.push({ ...input.trends.find((row) => row.paper_id === String(paper))!, topic: "Peer review", keyword: "peer review" });
+  }
   const pairs = report(input).insights.find((entry) => entry.id === "theme_pairs")!;
-  const genre = pairs.chart.kind === "pairs" ? pairs.chart.rows.find((row) => row.a === "Genre writing") : undefined;
-  assert.ok(genre, "the nested pair is still listed");
-  assert.notEqual(pairs.chart.kind === "pairs" ? pairs.chart.rows[0].a : "", "Genre writing", "but it does not lead");
-  assert.ok(pairs.score <= 1);
+  const rows = pairs.chart.kind === "pairs" ? pairs.chart.rows : [];
+  assert.equal(rows.some((row) => row.a === "Genre writing" && row.b === "Writing"), false, "the part and its whole is dropped");
+  assert.ok(rows.some((row) => row.a === "Peer review"), "a nested pair of different subjects stays");
+});
+
+test("abbreviations count as the words they stand for", () => {
+  const input = fixture();
+  for (const paper of [2, 5, 8]) {
+    input.trends.push({ ...input.trends.find((row) => row.paper_id === String(paper))!, topic: "L2 Writing Process", keyword: "l2" });
+  }
+  for (const paper of [2, 5, 8, 11, 14]) {
+    input.trends.push({ ...input.trends.find((row) => row.paper_id === String(paper))!, topic: "Second Language Writing", keyword: "slw" });
+  }
+  const pairs = report(input).insights.find((entry) => entry.id === "theme_pairs");
+  const rows = pairs && pairs.chart.kind === "pairs" ? pairs.chart.rows : [];
+  assert.equal(rows.some((row) => row.a === "L2 Writing Process" && row.b === "Second Language Writing"), false);
 });
 
 test("a plan with no usable card is the computed plan", () => {
@@ -277,4 +293,51 @@ test("the old planner and its hidden Library call are gone", () => {
   for (const path of ["src/lib/visualization-planner.ts", "src/lib/visualization-plan.ts", "src/app/api/visualization-plan/route.ts"]) {
     assert.throws(() => read(path), `${path} still exists`);
   }
+});
+
+/* ------------------------------------------------------ asking a question */
+
+test("a question becomes a computed view; the model's words never reach the page", async () => {
+  const { runAskQuery, parseAskQuery, askVocabulary } = await import("../src/lib/insights/ask");
+  const corpus = buildInsightCorpus(fixture());
+  const vocabulary = askVocabulary(corpus);
+  assert.ok(vocabulary.method.includes("Mixed methods") && vocabulary.theme.includes("Writing"));
+
+  // Methods by theme: a cross, with the strongest pairing computed.
+  const cross = runAskQuery(corpus, { answerable: true, title: "IGNORED 99 words from a model", measure: "papers", rows: "theme", columns: "method" });
+  assert.ok("insight" in cross);
+  if ("insight" in cross) {
+    assert.equal(cross.insight.chart.kind, "matrix");
+    assert.equal(cross.insight.question, "Themes by method", "the title is built in code");
+    assert.doesNotMatch(JSON.stringify(cross.insight), /IGNORED|99 words/);
+  }
+
+  // Narrowed to one theme, forgiving case: 6 papers on Writing.
+  const focused = runAskQuery(corpus, { answerable: true, title: "", measure: "papers", rows: "category", focus: { dimension: "theme", values: ["writing"] } });
+  assert.ok("insight" in focused && focused.insight.facts.find((fact) => fact.id === "scope")?.value === 6);
+
+  // Change: mixed methods arrives in the later half.
+  const change = runAskQuery(corpus, { answerable: true, title: "", measure: "change", rows: "method" });
+  assert.ok("insight" in change);
+  if ("insight" in change && change.insight.chart.kind === "compare") {
+    assert.equal(change.insight.chart.rows.find((row) => row.label === "Mixed methods")?.tag, "gaining");
+  }
+
+  // Refusals are sentences, not guesses.
+  const refused = runAskQuery(corpus, { answerable: false, reason: "Authors are not recorded.", title: "", measure: "papers", rows: "theme" });
+  assert.deepEqual(refused, { unanswerable: "Authors are not recorded." });
+  assert.ok("unanswerable" in runAskQuery(corpus, { answerable: true, title: "", measure: "papers", rows: "theme", focus: { dimension: "theme", values: ["Astrophysics"] } }));
+
+  // Parsing forgives the model's shape and never trusts an unknown dimension.
+  assert.equal(parseAskQuery({ answerable: true, rows: "authors", measure: "papers", title: "x" }), null);
+  assert.equal(parseAskQuery({ answerable: true, rows: "theme", columns: "none", measure: "papers", title: "x" })?.columns, null);
+});
+
+test("asking is metered like writing up, and returns only computed output", () => {
+  const route = read("src/app/api/workspace/insights/ask/route.ts");
+  assert.ok(route.indexOf("assertAiTokenBudget(user.id)") < route.indexOf("createChatCompletionResult("));
+  assert.match(route, /assertAndRecordAiUsage\(user\.id, "chart", \{ route: "insights-ask" \}\)/);
+  assert.match(route, /persistAiTokenUsage\(user\.id, usage\)/);
+  assert.match(route, /const answer = runAskQuery\(built\.corpus, query\);\s*return NextResponse\.json\(answer/);
+  assert.match(route, /question: z\.string\(\)\.trim\(\)\.min\(3\)\.max\(300\)/);
 });
