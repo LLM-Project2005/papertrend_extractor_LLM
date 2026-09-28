@@ -160,6 +160,43 @@ export async function assertLoginRateLimit(request: Request, email: string): Pro
   }
 }
 
+const TOO_MANY_INVITE_TRIES = "Too many invite code attempts. Wait an hour and try again.";
+
+/**
+ * Limits invite-code tries: 5 an hour for one signed-in account, and 20 an hour
+ * from one address. The account bucket is the one that holds - the address
+ * comes from a header the caller can write - and an account needs a real,
+ * confirmed email or a Google or Facebook sign-in, so a fresh budget is not
+ * free. Against a 79-bit code even thousands of accounts would get nowhere.
+ */
+export async function assertInviteRedeemRateLimit(request: Request, accountSubject: string): Promise<void> {
+  const windowSeconds = 3_600;
+  const ipHash = hashSubject(getClientIp(request));
+  const since = new Date(Date.now() - windowSeconds * 1000).toISOString();
+  const buckets = [
+    { hash: hashSubject(`invite-account:${accountSubject}`), limit: 5 },
+    { hash: hashSubject(`invite-ip:${ipHash}`), limit: 20 },
+  ];
+
+  try {
+    const blocked = await countPersistedAttempts(buckets, ipHash, since, "invite_redeem");
+    if (blocked) throw new GuardError(TOO_MANY_INVITE_TRIES, 429);
+    return;
+  } catch (error) {
+    if (error instanceof GuardError) throw error;
+    console.warn("[security] invite rate limit store unavailable; counting in memory", {
+      message: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
+
+  const now = Date.now();
+  for (const bucket of buckets) {
+    if (countInMemory(bucket.hash, windowSeconds * 1000, now) > bucket.limit) {
+      throw new GuardError(TOO_MANY_INVITE_TRIES, 429);
+    }
+  }
+}
+
 /**
  * Records one attempt against every bucket and reports whether any was already
  * at its limit.
@@ -171,7 +208,8 @@ export async function assertLoginRateLimit(request: Request, email: string): Pro
 async function countPersistedAttempts(
   buckets: Array<{ hash: string; limit: number }>,
   ipHash: string,
-  since: string
+  since: string,
+  bucketName = "password_auth"
 ): Promise<boolean> {
   if (getDatabaseProvider() === "cloud-sql") {
     return withCloudSqlServiceTransaction(async (client) => {
@@ -179,16 +217,16 @@ async function countPersistedAttempts(
       for (const bucket of buckets) {
         const result = await client.query<{ count: string }>(
           `SELECT count(*)::text AS count FROM public.security_rate_limit_events
-           WHERE bucket='password_auth' AND subject_hash=$1 AND created_at >= $2`,
-          [bucket.hash, since]
+           WHERE bucket=$3 AND subject_hash=$1 AND created_at >= $2`,
+          [bucket.hash, since, bucketName]
         );
         if (Number(result.rows[0]?.count ?? 0) >= bucket.limit) blocked = true;
       }
       for (const bucket of buckets) {
         await client.query(
           `INSERT INTO public.security_rate_limit_events(bucket,subject_hash,ip_hash,action,allowed)
-           VALUES('password_auth',$1,$2,$3,$4)`,
-          [bucket.hash, ipHash, blocked ? "blocked" : "attempt", !blocked]
+           VALUES($5,$1,$2,$3,$4)`,
+          [bucket.hash, ipHash, blocked ? "blocked" : "attempt", !blocked, bucketName]
         );
       }
       return blocked;
@@ -201,7 +239,7 @@ async function countPersistedAttempts(
     const { count, error } = await supabase
       .from("security_rate_limit_events")
       .select("id", { count: "exact", head: true })
-      .eq("bucket", "password_auth")
+      .eq("bucket", bucketName)
       .eq("subject_hash", bucket.hash)
       .gte("created_at", since);
     if (error) throw error;
@@ -209,7 +247,7 @@ async function countPersistedAttempts(
   }
   const { error: insertError } = await supabase.from("security_rate_limit_events").insert(
     buckets.map((bucket) => ({
-      bucket: "password_auth",
+      bucket: bucketName,
       subject_hash: bucket.hash,
       ip_hash: ipHash,
       action: blocked ? "blocked" : "attempt",

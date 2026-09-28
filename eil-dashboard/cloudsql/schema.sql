@@ -827,6 +827,33 @@ CREATE TABLE IF NOT EXISTS security_rate_limit_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Invite codes (cloudsql/20260929_invite_codes.sql): a new account needs one
+-- while the site is closed. Only each code's SHA-256 hash is stored.
+CREATE TABLE IF NOT EXISTS invite_codes (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code_hash     TEXT NOT NULL UNIQUE CHECK (code_hash ~ '^[0-9a-f]{64}$'),
+  label         TEXT NOT NULL DEFAULT '' CHECK (char_length(label) <= 80),
+  bound_email   TEXT CHECK (bound_email IS NULL OR (bound_email = lower(bound_email) AND char_length(bound_email) <= 254)),
+  max_uses      INTEGER NOT NULL DEFAULT 1 CHECK (max_uses BETWEEN 1 AND 50),
+  use_count     INTEGER NOT NULL DEFAULT 0 CHECK (use_count >= 0 AND use_count <= max_uses),
+  created_by    UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at    TIMESTAMPTZ NOT NULL,
+  revoked_at    TIMESTAMPTZ,
+  last_used_at  TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS invite_code_redemptions (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  invite_code_id  UUID NOT NULL REFERENCES invite_codes(id),
+  owner_user_id   UUID NOT NULL UNIQUE REFERENCES user_profiles(id) ON DELETE CASCADE,
+  email           TEXT,
+  redeemed_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_invite_code_redemptions_code
+  ON invite_code_redemptions(invite_code_id);
+
 CREATE TABLE IF NOT EXISTS ai_usage_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL,

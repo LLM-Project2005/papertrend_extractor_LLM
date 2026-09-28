@@ -43,7 +43,9 @@ async function getOwner(request: Request) {
 
   const user = identityToLegacyUser(identity);
   if (!user) {
-    const reason = unlinkedReason(identity.claims, identity.email);
+    const reason = unlinkedReason(identity.claims, identity.email, {
+      inviteRequired: identity.mappingStatus === "invite_required",
+    });
     return { user: null, error: reason.message, code: reason.code, status: 403 };
   }
 

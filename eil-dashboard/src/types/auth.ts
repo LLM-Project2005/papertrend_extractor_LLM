@@ -32,7 +32,9 @@ export interface AuthContextValue {
   isAdmin: boolean;
   authError: string | null;
   /** Why the sign-in has no account yet, when the server said. */
-  authErrorCode: "email_unverified" | "email_in_use" | "not_linked" | null;
+  authErrorCode: "email_unverified" | "email_in_use" | "invite_required" | "not_linked" | null;
+  /** Creates the account with an invite code; the profile check then runs again. */
+  redeemInviteCode: (code: string) => Promise<void>;
   /** Sends the email-confirmation link again. */
   resendVerificationEmail: () => Promise<void>;
   /** Checks again after the reader confirmed their email; true once confirmed. */

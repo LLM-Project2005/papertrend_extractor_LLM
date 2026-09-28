@@ -3,6 +3,7 @@ import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import {
   getDatabaseProvider,
   getFirebaseAutoProvisionVerifiedUsers,
+  getInviteCodeRequired,
 } from "@/lib/server-env";
 import {
   provisionCloudSqlIdentityOwner,
@@ -52,7 +53,15 @@ export async function resolveExternalIdentityOwner(
         identity.subject
       );
       if (!data?.ownerUserId && getFirebaseAutoProvisionVerifiedUsers()) {
-        data = await provisionCloudSqlIdentityOwner(identity);
+        // An existing account is still linked by verified email; a new one
+        // is only created by redeeming an invite code (/api/auth/invite).
+        const provisioned = await provisionCloudSqlIdentityOwner(identity, {
+          inviteRequired: getInviteCodeRequired(),
+        });
+        if (provisioned.status === "invite_required") {
+          return { ...identity, mappingStatus: "invite_required" };
+        }
+        data = provisioned.status === "linked" ? provisioned : null;
       }
       if (!data?.ownerUserId) {
         return identity;
