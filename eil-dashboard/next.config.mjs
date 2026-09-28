@@ -54,9 +54,11 @@ const contentSecurityPolicy = [
   "upgrade-insecure-requests",
 ].join("; ");
 
-// Report-only first: browsers log what the policy would block without blocking
-// it. It is switched to enforcing once every feature runs without a report.
-const CSP_HEADER = "Content-Security-Policy-Report-Only";
+// Enforced. It ran report-only on the pilot first, while every feature was
+// exercised (landing videos, Google sign-in, the PDF viewer and its fallback
+// frame, dashboards, streaming chat, uploads, the Drive Picker), and nothing
+// was reported.
+const CSP_HEADER = "Content-Security-Policy";
 
 const securityHeaders = [
   { key: CSP_HEADER, value: contentSecurityPolicy },
