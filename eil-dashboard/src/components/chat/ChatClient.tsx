@@ -96,6 +96,7 @@ import {
   TrashIcon,
 } from "@/components/ui/Icons";
 import Modal from "@/components/ui/Modal";
+import { safeCitationHref } from "@/lib/safe-citation-href";
 import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
@@ -359,19 +360,6 @@ const localMessage = (
   kind: "chat",
   metadata: metadata ?? null,
 });
-
-function safeCitationHref(href: string): string {
-  const value = String(href || "").trim();
-  if (value.startsWith("/workspace/") || value.startsWith("/docs/")) {
-    return value;
-  }
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : "#";
-  } catch {
-    return "#";
-  }
-}
 
 function CitationLink({ citation, compact = false }: { citation: Citation; compact?: boolean }) {
   return (
@@ -977,7 +965,7 @@ function ResearchSources({ sources }: { sources: CitationSource[] }) {
             <span className="min-w-[1.5rem] flex-none font-semibold text-slate-600 dark:text-[#8e8e8e]">{source.number}.</span>
             <span className="min-w-0">
               {source.href ? (
-                <Link href={source.href} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950 dark:decoration-[#444] dark:hover:text-white">
+                <Link href={safeCitationHref(source.href)} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950 dark:decoration-[#444] dark:hover:text-white">
                   {source.title}
                 </Link>
               ) : (

@@ -12,6 +12,7 @@
 // transform the test runner uses; Next compiles it away.
 import React, { useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { safeCitationHref } from "@/lib/safe-citation-href";
 import {
   foldPoint,
   citationPaperId,
@@ -114,8 +115,9 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
 
 /** A paper's link, opened on its Evidence tab. */
 export function evidenceHref(href: string): string {
-  if (!href.startsWith("/workspace/library")) return href;
-  return `${href}${href.includes("?") ? "&" : "?"}tab=evidence`;
+  const safe = safeCitationHref(href);
+  if (!safe.startsWith("/workspace/library")) return safe;
+  return `${safe}${safe.includes("?") ? "&" : "?"}tab=evidence`;
 }
 
 export function renderInlineMarkdown(

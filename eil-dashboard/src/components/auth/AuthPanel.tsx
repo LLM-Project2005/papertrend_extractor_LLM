@@ -1,6 +1,6 @@
 "use client";
 
-import { friendlyAuthError } from "@/lib/auth/auth-errors";
+import { MIN_NEW_PASSWORD_LENGTH, friendlyAuthError } from "@/lib/auth/auth-errors";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { GoogleIcon, FacebookIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
@@ -344,11 +344,13 @@ export default function AuthPanel({
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             autoComplete={passwordMode === "signup" ? "new-password" : "current-password"}
-            minLength={8}
+            // The length rule applies to new passwords only; an existing, shorter
+            // one still signs in until it is changed.
+            minLength={passwordMode === "signup" ? MIN_NEW_PASSWORD_LENGTH : undefined}
             maxLength={256}
             required
             className={`${fieldClass} mt-1.5 h-11`}
-            placeholder="At least 8 characters"
+            placeholder={passwordMode === "signup" ? `At least ${MIN_NEW_PASSWORD_LENGTH} characters` : "Your password"}
           />
         </div>
 

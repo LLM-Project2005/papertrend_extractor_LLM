@@ -11,6 +11,9 @@
  * the reader learns that they have hit that limit.
  */
 
+/** The shortest password a new account may choose (also enforced by Firebase). */
+export const MIN_NEW_PASSWORD_LENGTH = 10;
+
 const MESSAGES: Record<string, string> = {
   "auth/invalid-credential": "That email and password do not match. Try again, or reset your password.",
   "auth/wrong-password": "That email and password do not match. Try again, or reset your password.",
@@ -19,7 +22,8 @@ const MESSAGES: Record<string, string> = {
   "auth/too-many-requests":
     "Too many attempts for now. Wait a few minutes before trying again, or reset your password to sign in straight away.",
   "auth/email-already-in-use": "An account already uses this email address. Sign in instead, or reset your password.",
-  "auth/weak-password": "Choose a longer password: at least 8 characters.",
+  "auth/weak-password": `Choose a longer password: at least ${MIN_NEW_PASSWORD_LENGTH} characters.`,
+  "auth/password-does-not-meet-requirements": `Choose a longer password: at least ${MIN_NEW_PASSWORD_LENGTH} characters.`,
   "auth/invalid-email": "That email address does not look right. Check it and try again.",
   "auth/missing-password": "Enter your password.",
   "auth/popup-closed-by-user": "The sign-in window closed before it finished. Try again.",

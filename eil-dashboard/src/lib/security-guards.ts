@@ -322,6 +322,12 @@ export async function assertAndRecordAiUsage(
   if (getDatabaseProvider() === "cloud-sql") {
     try {
       await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+        // Count and insert under one lock per person and kind. Without it,
+        // parallel requests all read the same count, all pass, and the daily
+        // limit is exceeded by however many were sent at once.
+        await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+          `ai-usage:${ownerUserId}:${kind}`,
+        ]);
         const profile = await client.query<{ role: string | null }>(
           `SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`,
           [ownerUserId]
@@ -343,8 +349,11 @@ export async function assertAndRecordAiUsage(
       return;
     } catch (error) {
       if (error instanceof GuardError) throw error;
-      console.warn("[security] Cloud SQL AI usage guard unavailable; allowing request", { kind, message: error instanceof Error ? error.message : "unknown_error" });
-      return;
+      // Every kind here spends model credit, so an unreadable limit refuses
+      // the request rather than waving it through; a database that cannot be
+      // reached would fail the request moments later anyway.
+      console.warn("[security] Cloud SQL AI usage guard unavailable; refusing request", { kind, message: error instanceof Error ? error.message : "unknown_error" });
+      throw new GuardError("Usage could not be checked just now. Try again in a moment.", 503);
     }
   }
   const supabase = getSupabaseAdmin();

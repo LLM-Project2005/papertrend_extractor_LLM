@@ -49,12 +49,15 @@ test("allowed origins support gcloud-safe semicolon delimiters", () => {
   });
 });
 
-test("Cloud Run accepts only its HTTPS forwarded run.app host as an origin fallback", () => {
+test("Cloud Run never takes the callback origin from request headers", () => {
+  // Job callbacks carry the worker secret. A forwarded host is whatever the
+  // caller wrote, and anyone can own a *.run.app name, so without a configured
+  // address the job is refused rather than sent there.
   withEnvironment({ APP_PUBLIC_URL: undefined, NEXT_PUBLIC_SITE_URL: undefined, K_SERVICE: "papertrend-web" }, () => {
     const request = new Request("https://localhost:8080/api/chat", {
-      headers: { "x-forwarded-host": "papertrend-web-123.asia-southeast1.run.app", "x-forwarded-proto": "https" },
+      headers: { "x-forwarded-host": "attacker-123.asia-southeast1.run.app", "x-forwarded-proto": "https" },
     });
-    assert.equal(getPublicRequestOrigin(request), "https://papertrend-web-123.asia-southeast1.run.app");
+    assert.throws(() => getPublicRequestOrigin(request), /APP_PUBLIC_URL/);
   });
 });
 

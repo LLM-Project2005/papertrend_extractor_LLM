@@ -4513,7 +4513,29 @@ async function recordAnswerSpend(request: Request, usage: AiTokenUsageTotals): P
   }
 }
 
-function streamPostWithProgress(request: Request): Response {
+/*
+ * At most this many answers run at once for one person, per instance. The
+ * token budget is read before an answer and recorded after it, so without a
+ * cap, many requests sent together all pass the budget check and overshoot it.
+ */
+const MAX_CONCURRENT_ANSWERS_PER_USER = 2;
+const answersInFlight = new Map<string, number>();
+
+function claimAnswerSlot(userId: string): (() => void) | null {
+  const current = answersInFlight.get(userId) ?? 0;
+  if (current >= MAX_CONCURRENT_ANSWERS_PER_USER) return null;
+  answersInFlight.set(userId, current + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = (answersInFlight.get(userId) ?? 1) - 1;
+    if (next <= 0) answersInFlight.delete(userId);
+    else answersInFlight.set(userId, next);
+  };
+}
+
+function streamPostWithProgress(request: Request, releaseSlot: () => void = () => undefined): Response {
   // The work happens inside start(), after this function has already returned,
   // so the cancellation and latency scopes must be installed in there.
   const encoder = new TextEncoder();
@@ -4605,6 +4627,7 @@ function streamPostWithProgress(request: Request): Response {
       } finally {
         closed = true;
         unregister?.();
+        releaseSlot();
         try {
           controller.close();
         } catch {
@@ -4656,9 +4679,25 @@ export async function POST(request: Request) {
 
   const wantsStream = (request.headers.get("accept") ?? "").includes("text/event-stream");
 
+  const releaseSlot = claimAnswerSlot(user.id);
+  if (!releaseSlot) {
+    return withChatCors(
+      NextResponse.json(
+        { error: "Two answers are already being written for you. Wait for one to finish, then ask again." },
+        { status: 429 }
+      ),
+      request
+    );
+  }
+
   return withAiTokenUsageTracking(async (usage) => {
+    let streaming = false;
     try {
-      if (wantsStream) return withChatCors(streamPostWithProgress(request), request);
+      if (wantsStream) {
+        // The stream releases the slot itself, when its work ends.
+        streaming = true;
+        return withChatCors(streamPostWithProgress(request, releaseSlot), request);
+      }
       const { value: response, timings } = await runWithModelLatency(() =>
         runWithCancellation(request.signal, () => handlePost(request))
       );
@@ -4676,6 +4715,7 @@ export async function POST(request: Request) {
       // The streaming branch records its own spend inside the stream, where the
       // work actually happens; this covers the JSON path.
       if (!wantsStream) await recordAnswerSpend(request, usage);
+      if (!streaming) releaseSlot();
     }
   });
 }
