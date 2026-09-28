@@ -9,9 +9,9 @@
  * "Write up with AI" makes one short model call that picks, orders and words
  * the insights; a checker holds every number it writes to the computed facts.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import InsightChart, { type OpenPapers } from "@/components/dashboard/InsightChart";
-import { ChartIcon, SparkIcon, SpinnerIcon, InfoIcon } from "@/components/ui/Icons";
+import { ChartIcon, CloseIcon, SearchIcon, SparkIcon, SpinnerIcon, InfoIcon } from "@/components/ui/Icons";
 import type { Insight, InsightNotice, InsightPlan, InsightReport } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
 
@@ -60,11 +60,13 @@ function InsightCard({
   index: number;
 }) {
   return (
-    <section className="app-surface px-4 py-5 sm:px-6" aria-labelledby={`insight-${insight.id}`} data-insight={insight.id}>
-      <p className="text-xs font-medium text-slate-500 dark:text-[#8f8f8f]">
-        {index + 1} · {insight.question}
-      </p>
-      <h3 id={`insight-${insight.id}`} className="mt-1.5 text-base font-semibold leading-6 text-slate-900 dark:text-white">
+    <section className="app-surface px-4 py-5 sm:px-6" aria-labelledby={`insight-${insight.id}-${index}`} data-insight={insight.id}>
+      {index >= 0 ? (
+        <p className="text-xs font-medium text-slate-500 dark:text-[#8f8f8f]">
+          {index + 1} · {insight.question}
+        </p>
+      ) : null}
+      <h3 id={`insight-${insight.id}-${index}`} className={`${index >= 0 ? "mt-1.5 " : ""}text-base font-semibold leading-6 text-slate-900 dark:text-white`}>
         {title}
       </h3>
       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]" data-takeaway>
@@ -92,6 +94,19 @@ function InsightCard({
     </section>
   );
 }
+
+interface AskEntry {
+  id: number;
+  question: string;
+  insight?: Insight;
+  unanswerable?: string;
+}
+
+const ASK_EXAMPLES = [
+  "Which methods are used for which themes?",
+  "How have the kinds of contribution changed?",
+  "What do the papers on assessment set out to produce?",
+];
 
 function Notices({ notices }: { notices: Array<Pick<InsightNotice, "id" | "text">> }) {
   if (notices.length === 0) return null;
@@ -121,7 +136,12 @@ export default function InsightsTab({
   const [writing, setWriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(false);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<AskEntry[]>([]);
   const requestId = useRef(0);
+  const askId = useRef(0);
 
   const body = useMemo(
     () => ({ projectId, selectedYears, selectedTracks, searchQuery: searchQuery.trim() }),
@@ -169,6 +189,37 @@ export default function InsightsTab({
     },
     [accessToken, body, projectId]
   );
+
+  useEffect(() => {
+    setAnswers([]);
+    setAskError(null);
+  }, [body]);
+
+  async function ask(event?: FormEvent<HTMLFormElement>, text = question) {
+    event?.preventDefault();
+    const trimmed = text.trim();
+    if (!projectId || !accessToken || trimmed.length < 3 || asking) return;
+    setAsking(true);
+    setAskError(null);
+    try {
+      const response = await fetch("/api/workspace/insights/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ ...body, question: trimmed }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { insight?: Insight; unanswerable?: string; error?: string };
+      if (!response.ok || (!payload.insight && !payload.unanswerable)) {
+        throw new Error(payload.error || "The question could not be answered just now.");
+      }
+      const id = (askId.current += 1);
+      setAnswers((current) => [{ id, question: trimmed, insight: payload.insight, unanswerable: payload.unanswerable }, ...current].slice(0, 3));
+      setQuestion("");
+    } catch (askFailure) {
+      setAskError(askFailure instanceof Error ? askFailure.message : "The question could not be answered just now.");
+    } finally {
+      setAsking(false);
+    }
+  }
 
   // New filters or new data: recompute (free), after the filters settle.
   useEffect(() => {
@@ -274,6 +325,83 @@ export default function InsightsTab({
           </div>
         ) : null}
       </section>
+
+      {report.summary.papers >= 3 ? (
+        <section className="app-surface px-4 py-4 sm:px-6" aria-label="Ask about these papers">
+          <form onSubmit={(event) => void ask(event)} className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <label htmlFor="insights-ask" className="sr-only">
+              Ask about these papers
+            </label>
+            <div className="relative min-w-0 flex-1">
+              <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400 dark:text-[#737373]" />
+              <input
+                id="insights-ask"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                maxLength={300}
+                placeholder="Ask about these papers, e.g. which methods are used for which themes?"
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-900 placeholder:text-slate-500 focus:border-slate-400 focus:outline-none dark:border-[#262626] dark:bg-[#050505] dark:text-[#f2f2f2] dark:placeholder:text-[#8f8f8f] dark:focus:border-[#4a4a4a]"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={asking || question.trim().length < 3}
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 px-4 text-sm font-medium text-slate-800 transition-colors hover:border-slate-300 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#2a2a2a] dark:text-[#e5e5e5] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+            >
+              {asking ? <SpinnerIcon className="h-4 w-4" /> : null}
+              {asking ? "Working it out…" : "Ask"}
+            </button>
+          </form>
+          <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
+            One short AI call turns the question into a view; the numbers are computed from the papers.{" "}
+            {answers.length === 0 ? (
+              <>
+                Try:{" "}
+                {ASK_EXAMPLES.map((example, index) => (
+                  <span key={example}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuestion(example);
+                        void ask(undefined, example);
+                      }}
+                      disabled={asking}
+                      className="rounded text-slate-700 underline underline-offset-2 hover:text-slate-950 dark:text-[#d4d4d4] dark:hover:text-white"
+                    >
+                      {example}
+                    </button>
+                    {index < ASK_EXAMPLES.length - 1 ? " · " : ""}
+                  </span>
+                ))}
+              </>
+            ) : null}
+          </p>
+          {askError ? <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300" role="alert">{askError}</p> : null}
+        </section>
+      ) : null}
+
+      {answers.map((answer) => (
+        <div key={answer.id} className="relative">
+          <p className="mb-2 flex items-center justify-between gap-3 px-1 text-sm text-slate-600 dark:text-[#b3b3b3]">
+            <span>
+              You asked: <span className="font-medium text-slate-900 dark:text-white">{answer.question}</span>
+            </span>
+            <button
+              type="button"
+              onClick={() => setAnswers((current) => current.filter((entry) => entry.id !== answer.id))}
+              aria-label="Remove this answer"
+              className="rounded-md p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#141414] dark:hover:text-white"
+            >
+              <CloseIcon className="h-4 w-4" />
+            </button>
+          </p>
+          {answer.insight ? (
+            <InsightCard insight={answer.insight} title={answer.insight.question} takeaway={answer.insight.takeaway} onOpen={openPapers} index={-1} />
+          ) : (
+            <section className="app-surface px-4 py-4 text-sm leading-6 text-slate-700 dark:text-[#d4d4d4] sm:px-6">{answer.unanswerable}</section>
+          )}
+        </div>
+      ))}
 
       {cards.length === 0 ? (
         <section className="app-surface flex flex-col items-center px-6 py-12 text-center">
