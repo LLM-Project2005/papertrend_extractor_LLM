@@ -146,7 +146,15 @@ export function MarketingFooter() {
       </div>
       <div className="border-t border-hairline">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-[13px] text-mute sm:px-6">
-          <p>© {new Date().getFullYear()} Papertrend</p>
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span>© {new Date().getFullYear()} Papertrend</span>
+            <Link href="/privacy" className="-mx-1 rounded px-1 py-1 transition-colors hover:text-ink">
+              Privacy
+            </Link>
+            <Link href="/terms" className="-mx-1 rounded px-1 py-1 transition-colors hover:text-ink">
+              Terms
+            </Link>
+          </p>
           <p>Made for researchers who want to check the answer.</p>
         </div>
       </div>

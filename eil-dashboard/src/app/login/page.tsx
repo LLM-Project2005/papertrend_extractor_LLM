@@ -38,6 +38,17 @@ function LoginPageContent() {
         <div className="flex flex-1 items-center justify-center py-12">
           <div className="w-full max-w-[380px] motion-safe:animate-rise-in">
             <AuthPanel title="Sign in to Papertrend" />
+            <p className="mt-6 text-center text-[13px] leading-5 text-mute">
+              By continuing, you agree to the{" "}
+              <Link href="/terms" className="underline underline-offset-2 transition-colors hover:text-ink">
+                Terms of Service
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" className="underline underline-offset-2 transition-colors hover:text-ink">
+                Privacy Policy
+              </Link>
+              .
+            </p>
           </div>
         </div>
 
