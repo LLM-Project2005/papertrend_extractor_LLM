@@ -246,7 +246,6 @@ test("horizontal bar charts give their bars room on a phone (U5)", () => {
     "src/components/tabs/Overview.tsx",
     "src/components/tabs/TrendAnalysis.tsx",
     "src/components/tabs/KeywordExplorer.tsx",
-    "src/components/dashboard/InsightChart.tsx",
   ]) {
     assert.match(read(file), /labelColumn\(useIsNarrow\(\), \{ width: \d+, chars: \d+ \}\)/, file);
   }

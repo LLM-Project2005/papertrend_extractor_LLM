@@ -166,7 +166,7 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
       insight: {
         ...base,
         family: "change",
-        chart: { kind: "compare", leftLabel: split.earlyLabel, rightLabel: split.lateLabel, unit: "percent", rows },
+        chart: { kind: "compare", leftLabel: split.earlyLabel, rightLabel: split.lateLabel, unit: "percent", sequence: "time", rows },
         facts,
         takeaway: `Among ${scope}, ${lead.label === asked ? "" : "the biggest change is "}${lead.label}${lead.label === asked ? " went" : ""}: ${lead.left}% of papers in ${split.earlyLabel}, ${lead.right}% in ${split.lateLabel} - ${verdict}.${moved.length > 1 ? ` ${moved.length} ${DIMENSION_NOUN[query.rows]}s pass the shift rules.` : ""}`,
         paperIds: uniqueIds(rows.flatMap((row) => row.paperIds)),

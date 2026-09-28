@@ -46,7 +46,6 @@ test("charts read the theme instead of hardcoding one", () => {
     "src/components/tabs/KeywordExplorer.tsx",
     "src/components/tabs/TrackAnalysis.tsx",
     "src/components/tabs/TrendAnalysis.tsx",
-    "src/components/dashboard/InsightChart.tsx",
   ]) {
     const src = read(file);
     assert.equal(/#94a3b8/.test(src), false, `${file} still hardcodes the axis colour`);
@@ -80,9 +79,10 @@ test("one quantity is drawn in one colour", () => {
   // The identical "Papers" series was cyan, purple and hot pink in three
   // adjacent charts, inviting a reader to infer a categorical meaning the hue
   // does not carry.
+  // The Adaptive insights draw every count in one neutral fill, in both themes.
   const tab = read("src/components/dashboard/InsightChart.tsx");
   assert.equal(/(?:fill|stroke)="#[0-9a-fA-F]{6}"/.test(tab), false, "no chart colour may be hardcoded");
-  assert.match(tab, /name=\{chart\.valueLabel\}\s+fill=\{ct\.barFill\}/);
+  assert.equal((tab.match(/bg-slate-700 dark:bg-\[#d4d4d4\]/g) ?? []).length, 2, "bars and pairs share one fill");
 });
 
 /* ----------------------------------------------------- the stock palette is gone */

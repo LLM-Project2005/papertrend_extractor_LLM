@@ -70,7 +70,8 @@ export type InsightChart =
       marks: Array<[number, number, "strong" | "absent"]>;
       paperIds: PaperId[][][];
     }
-  | { kind: "compare"; leftLabel: string; rightLabel: string; unit: "percent"; rows: CompareRow[] }
+  /** "time": the left value came before the right; "contrast": two groups side by side. */
+  | { kind: "compare"; leftLabel: string; rightLabel: string; unit: "percent"; sequence: "time" | "contrast"; rows: CompareRow[] }
   | { kind: "lifecycles"; years: string[]; rows: LifecycleRow[] }
   | { kind: "list"; rows: ListRow[] };
 
