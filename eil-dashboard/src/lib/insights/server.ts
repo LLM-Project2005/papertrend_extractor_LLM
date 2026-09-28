@@ -129,7 +129,7 @@ export interface BuiltInsights {
   corpus: InsightCorpus;
   /** Changes whenever the selected papers or anything computed from them does. */
   dataHash: string;
-  /** Changes with the filters alone. */
+  /** Changes with the set of papers selected. */
   filterHash: string;
 }
 
@@ -176,8 +176,11 @@ export async function buildInsightsForRequest(request: InsightRequest): Promise<
     .update(JSON.stringify(context))
     .digest("hex")
     .slice(0, 32);
+  // Keyed by the papers selected, not by how the filters were spelled: the
+  // dashboard's default category selection and no selection pick the same
+  // papers, and must find the same write-up.
   const filterHash = createHash("sha256")
-    .update(JSON.stringify({ y: [...request.selectedYears].sort(), t: [...request.selectedTracks].sort(), q: request.searchQuery.trim().toLowerCase() }))
+    .update(JSON.stringify(corpus.papers.map((paper) => String(paper.id)).sort()))
     .digest("hex")
     .slice(0, 24);
   return { report, context, corpus, dataHash, filterHash };
