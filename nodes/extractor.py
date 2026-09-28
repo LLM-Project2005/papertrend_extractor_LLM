@@ -9,6 +9,42 @@ from state import IngestionState
 
 logger = logging.getLogger("papertrend.extractor")
 
+# The PDF is uploaded by a user, so every limit below guards a worker that is
+# shared by everyone's queue.
+#
+# Pages whose text is read. Far above any real thesis; a crafted file with a
+# million pages would otherwise be walked page by page.
+MAX_EXTRACT_PAGES = int(os.getenv("MAX_EXTRACT_PAGES", "400") or 400)
+# The largest image a page is rendered to for OCR. At the usual 2.5x zoom a
+# normal page is about 5 MP; a page given a giant size would otherwise ask
+# for gigabytes.
+MAX_RENDER_PIXELS = 25_000_000
+RENDER_ZOOM = 2.5
+
+
+def _is_pdf_file(pdf_path: str) -> bool:
+    """A PDF header within the first kilobyte, as the format allows. MuPDF also
+    opens EPUB, XPS, SVG, HTML and images, so the file is checked before it is
+    handed over, and then opened as a PDF only."""
+
+    try:
+        with open(pdf_path, "rb") as handle:
+            return b"%PDF-" in handle.read(1024)
+    except OSError:
+        return False
+
+
+def _render_matrix(page: Any) -> Any:
+    """The render zoom for a page, reduced so the image stays within
+    MAX_RENDER_PIXELS however large the page claims to be."""
+
+    import fitz
+
+    rect = page.rect
+    area = max(float(rect.width) * float(rect.height), 1.0)
+    zoom = min(RENDER_ZOOM, (MAX_RENDER_PIXELS / area) ** 0.5)
+    return fitz.Matrix(zoom, zoom)
+
 
 def _looks_like_garbage(text: str) -> bool:
     source = text or ""
@@ -52,7 +88,8 @@ def _select_vision_page_indices(page_count: int, page_limit: int) -> list[int]:
 
 
 def _page_texts(document: Any) -> list[str]:
-    return [str(page.get_text("text") or "").strip() for page in document]
+    limit = min(len(document), MAX_EXTRACT_PAGES)
+    return [str(document.load_page(index).get_text("text") or "").strip() for index in range(limit)]
 
 
 def _extract_with_fitz(document: Any) -> str:
@@ -92,7 +129,7 @@ def _ocr_pages(document: Any, pdf_path: str, page_indices: list[int]) -> Dict[in
     results: Dict[int, str] = {}
     for page_num in page_indices:
         page = document.load_page(page_num)
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
+        pixmap = page.get_pixmap(matrix=_render_matrix(page))
         image_b64 = base64.b64encode(pixmap.tobytes("png")).decode("utf-8")
         message = HumanMessage(
             content=[
@@ -131,7 +168,7 @@ def _extract_with_vision(document: Any, pdf_path: str) -> str:
     page_indices = _select_vision_page_indices(document_pages, page_limit)
     for page_num in page_indices:
         page = document.load_page(page_num)
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5))
+        pixmap = page.get_pixmap(matrix=_render_matrix(page))
         image_b64 = base64.b64encode(pixmap.tobytes("png")).decode("utf-8")
         message = HumanMessage(
             content=[
@@ -171,9 +208,12 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
     extraction_method = "fitz_text"
     warnings: list[str] = []
 
+    if not _is_pdf_file(pdf_path):
+        return {"errors": ["The uploaded file is not a PDF."], "status": "failed"}
+
     try:
         logger.info("starting extraction", extra={"pdf_path": pdf_path})
-        document = fitz.open(pdf_path)
+        document = fitz.open(pdf_path, filetype="pdf")
         document_metadata = getattr(document, "metadata", {}) or {}
         pdf_metadata = dict(document_metadata) if isinstance(document_metadata, dict) else {}
         try:
@@ -210,6 +250,10 @@ def extract_pdf_node(state: IngestionState) -> Dict[str, Any]:
             max_pages = int(os.getenv("MAX_PDF_PAGES", "0") or 0)
             if max_pages and page_count > max_pages:
                 warnings.append(f"extraction: the PDF has {page_count} pages, more than the {max_pages}-page limit")
+            if page_count > MAX_EXTRACT_PAGES:
+                warnings.append(
+                    f"extraction: only the first {MAX_EXTRACT_PAGES} of the PDF's {page_count} pages were read"
+                )
         finally:
             document.close()
 

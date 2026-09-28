@@ -11,7 +11,7 @@ import {
   type WorkerQueueStartResult,
 } from "@/lib/worker-queue-start";
 import { getDatabaseProvider, getGcsUploadBucket, getMaxUploadBytes } from "@/lib/server-env";
-import { gcsObjectExists, gcsObjectInfo } from "@/lib/gcs-signed-urls";
+import { deleteGcsObject, gcsObjectExists, gcsObjectInfo } from "@/lib/gcs-signed-urls";
 
 export const runtime = "nodejs";
 
@@ -173,6 +173,8 @@ export async function POST(request: Request) {
         continue;
       }
       if (info.sizeBytes > maxUploadBytes) {
+        // A refused file is deleted at once rather than left in the bucket.
+        await deleteGcsObject(storagePath).catch(() => undefined);
         remainingFailedItems.push({
           ...item,
           errorMessage: `The uploaded file is larger than the ${Math.round(maxUploadBytes / (1024 * 1024))} MB limit.`,
@@ -180,6 +182,7 @@ export async function POST(request: Request) {
         continue;
       }
       if (info.contentType && !ACCEPTED_UPLOAD_TYPES.has(info.contentType.split(";")[0].trim().toLowerCase())) {
+        await deleteGcsObject(storagePath).catch(() => undefined);
         remainingFailedItems.push({ ...item, errorMessage: "Only PDF files can be analyzed." });
         continue;
       }
