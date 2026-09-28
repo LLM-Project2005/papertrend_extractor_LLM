@@ -10,13 +10,13 @@ import { redirect } from "next/navigation";
  * invented. The links now address /workspace/library directly; this keeps older
  * links and bookmarks working by carrying their parameters across.
  */
-export default function WorkspacePapersPage({
+export default async function WorkspacePapersPage({
   searchParams,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const query = new URLSearchParams();
-  for (const [key, value] of Object.entries(searchParams ?? {})) {
+  for (const [key, value] of Object.entries((await searchParams) ?? {})) {
     if (typeof value === "string") query.set(key, value);
     else if (Array.isArray(value) && value.length > 0) query.set(key, value[0]);
   }

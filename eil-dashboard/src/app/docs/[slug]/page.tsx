@@ -12,12 +12,12 @@ export function generateStaticParams() {
   }));
 }
 
-export function generateMetadata({
+export async function generateMetadata({
   params,
 }: {
-  params: { slug: string };
-}): Metadata {
-  const page = getDocsPage(params.slug);
+  params: Promise<{ slug: string }>;
+}): Promise<Metadata> {
+  const page = getDocsPage((await params).slug);
 
   if (!page) {
     return {
@@ -34,12 +34,12 @@ export function generateMetadata({
   };
 }
 
-export default function DocsArticlePage({
+export default async function DocsArticlePage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
-  const page = getDocsPage(params.slug);
+  const page = getDocsPage((await params).slug);
 
   if (!page) {
     notFound();
