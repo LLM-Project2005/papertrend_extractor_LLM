@@ -51,21 +51,31 @@ export async function isAuthorizedAdminRequest(request: Request): Promise<boolea
     return true;
   }
 
+  return Boolean(await getAdminUserFromRequest(request));
+}
+
+/**
+ * The signed-in user, when their profile has the admin role; otherwise null.
+ * Unlike isAuthorizedAdminRequest this never accepts the shared import secret,
+ * for actions that must be traced to a person, such as making invite codes.
+ */
+export async function getAdminUserFromRequest(request: Request): Promise<User | null> {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) {
-    return false;
+    return null;
   }
 
   if (getDatabaseProvider() === "cloud-sql") {
     try {
-      return await withCloudSqlOwnerTransaction(user.id, async (client) => {
+      const isAdmin = await withCloudSqlOwnerTransaction(user.id, async (client) => {
         const result = await client.query<{ role: string | null }>(
           `SELECT role FROM public.user_profiles WHERE id=$1`, [user.id]
         );
         return result.rows[0]?.role === "admin";
       });
+      return isAdmin ? user : null;
     } catch {
-      return false;
+      return null;
     }
   }
 
@@ -77,10 +87,10 @@ export async function isAuthorizedAdminRequest(request: Request): Promise<boolea
     .maybeSingle();
 
   if (error) {
-    return false;
+    return null;
   }
 
-  return data?.role === "admin";
+  return data?.role === "admin" ? user : null;
 }
 
 export async function isAuthorizedUserOrAdminRequest(request: Request): Promise<boolean> {

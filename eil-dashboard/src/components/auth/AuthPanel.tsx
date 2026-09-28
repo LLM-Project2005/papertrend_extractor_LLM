@@ -19,6 +19,10 @@ const OAUTH_OPTIONS = [
   },
 ] as const;
 
+/** Matches the server's INVITE_CODE_REQUIRED: on unless turned off. */
+const INVITE_ONLY = process.env.NEXT_PUBLIC_INVITE_ONLY !== "false";
+const PENDING_INVITE_KEY = "papertrend.pendingInvite";
+
 interface AuthPanelProps {
   title?: string;
   description?: string;
@@ -42,6 +46,7 @@ export default function AuthPanel({
     authErrorCode,
     resendVerificationEmail,
     confirmEmailVerified,
+    redeemInviteCode,
   } = useAuth();
   const [busy, setBusy] = useState(false);
   // Back from the Google or Facebook consent screen can restore this page from
@@ -60,6 +65,29 @@ export default function AuthPanel({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+
+  // An invite link carries its code after "#", which never reaches a server
+  // or its logs. Keep it for this tab, through a Google or Facebook sign-in,
+  // and take it off the address bar.
+  useEffect(() => {
+    const match = window.location.hash.match(/^#invite=([A-Za-z0-9-]{1,40})$/);
+    if (match) {
+      try {
+        window.sessionStorage.setItem(PENDING_INVITE_KEY, match[1]);
+      } catch {
+        // Storage can be unavailable; the code is still used for this page.
+      }
+      window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
+      setInviteCode(match[1]);
+      return;
+    }
+    try {
+      setInviteCode(window.sessionStorage.getItem(PENDING_INVITE_KEY) ?? "");
+    } catch {
+      // No stored invite.
+    }
+  }, []);
 
   const displayName = useMemo(() => {
     return (
@@ -72,7 +100,8 @@ export default function AuthPanel({
   // An address waiting for confirmation is a step, not an error: it gets its
   // own panel instead of the red box.
   const awaitingConfirmation = authErrorCode === "email_unverified";
-  const visibleError = error ?? (awaitingConfirmation ? null : authError);
+  const inviteRequired = authErrorCode === "invite_required";
+  const visibleError = error ?? (awaitingConfirmation || inviteRequired ? null : authError);
   const [confirmState, setConfirmState] = useState<"idle" | "checking" | "not-yet" | "sent" | "sending">("idle");
 
   // The confirmation link returns here with ?confirmed=1: check straight away.
@@ -130,6 +159,24 @@ export default function AuthPanel({
     } catch (passwordError) {
       setError(friendlyAuthError(passwordError, "Password sign-in failed. Try again."));
     } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleInviteSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await redeemInviteCode(inviteCode);
+      try {
+        window.sessionStorage.removeItem(PENDING_INVITE_KEY);
+      } catch {
+        // Nothing stored.
+      }
+      // The profile check runs again and signs the reader in; stay busy until then.
+    } catch (inviteError) {
+      setError(inviteError instanceof Error ? inviteError.message : "The invite code couldn't be checked.");
       setBusy(false);
     }
   }
@@ -249,6 +296,53 @@ export default function AuthPanel({
         >
           Sign out
         </button>
+        {messages}
+      </section>
+    );
+  }
+
+  if (inviteRequired) {
+    return (
+      <section>
+        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight text-ink">Enter your invite code</h1>
+        <p className="mt-2 text-[15px] leading-7 text-body">{authError}</p>
+        <form className="mt-8 space-y-4" onSubmit={handleInviteSubmit}>
+          <div>
+            <label htmlFor="invite-code" className={labelClass}>
+              Invite code
+            </label>
+            <input
+              id="invite-code"
+              name="invite-code"
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value)}
+              autoComplete="off"
+              autoCapitalize="characters"
+              spellCheck={false}
+              maxLength={40}
+              required
+              className={`${fieldClass} mt-1.5 h-11 font-mono uppercase tracking-wider`}
+              placeholder="XXXX-XXXX-XXXX-XXXX"
+            />
+          </div>
+          <button type="submit" disabled={busy} className={buttonClass("primary", "lg", "w-full")}>
+            {busy ? <SpinnerIcon className="h-4 w-4" /> : null}
+            {busy ? "Checking…" : "Join Papertrend"}
+          </button>
+        </form>
+        <p className="mt-6 text-center text-sm text-body">
+          Signed in with the wrong account?{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              void signOut().catch(() => undefined);
+            }}
+            className="-my-2 rounded px-1 py-2 font-medium text-ink underline-offset-4 hover:underline"
+          >
+            Sign out
+          </button>
+        </p>
         {messages}
       </section>
     );
@@ -374,6 +468,13 @@ export default function AuthPanel({
           {passwordMode === "signup" ? "Sign in" : "Create password account"}
         </button>
       </p>
+      {INVITE_ONLY ? (
+        <p className="mt-3 text-center text-[13px] leading-5 text-mute">
+          {inviteCode
+            ? "You have an invite. Sign in or create an account, and the code will be filled in for you."
+            : "Papertrend is invite-only for now. A new account asks for an invite code after you sign in."}
+        </p>
+      ) : null}
 
       {messages}
     </section>

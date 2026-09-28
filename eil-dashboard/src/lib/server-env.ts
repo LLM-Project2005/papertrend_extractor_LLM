@@ -64,6 +64,14 @@ export function getFirebaseAutoProvisionVerifiedUsers(): boolean {
   ).toLowerCase() === "true";
 }
 
+/**
+ * Whether a new account needs an invite code. On unless explicitly set to
+ * "false", so a deploy that forgets the setting stays closed rather than open.
+ */
+export function getInviteCodeRequired(): boolean {
+  return normalizeConfiguredValue(process.env.INVITE_CODE_REQUIRED).toLowerCase() !== "false";
+}
+
 export type DatabaseProvider = "supabase" | "cloud-sql";
 export type StorageProvider = "supabase" | "gcs";
 

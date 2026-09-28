@@ -521,6 +521,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         firebaseProfileAttemptRef.current = null;
         return reloadFirebaseUser(firebaseAuth);
       },
+      redeemInviteCode: async (code) => {
+        const firebaseAuth = await getFirebaseAuth();
+        const firebaseUser = firebaseAuth?.currentUser;
+        if (!firebaseUser) throw new Error("Sign in first, then enter your invite code.");
+        const response = await fetch("/api/auth/invite", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${await firebaseUser.getIdToken()}`,
+          },
+          body: JSON.stringify({ code }),
+        });
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        if (!response.ok) {
+          throw new Error(payload.error ?? "The invite code couldn't be checked. Try again in a moment.");
+        }
+        // The account exists now; a fresh token re-runs the profile check.
+        firebaseProfileAttemptRef.current = null;
+        await firebaseUser.getIdToken(true);
+      },
       signInWithProvider: async (provider) => {
         if (configuredAuthProvider === "firebase") {
           const firebaseAuth = await getFirebaseAuth();

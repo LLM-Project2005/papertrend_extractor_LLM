@@ -42,7 +42,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
 /** A route that verifies a machine caller rather than a person. */
 const MACHINE_AUTH = /isVerifiedTaskCaller|isValidBearerSecret|isAuthorizedAdminRequest|getCronSecret/;
 /** A route that verifies a signed-in person. */
-const USER_AUTH = /getAuthenticatedUserFromRequest|getAuthenticatedIdentityFromRequest|isAuthorizedUserOrAdminRequest|isAuthorizedAdminRequest/;
+const USER_AUTH = /getAuthenticatedUserFromRequest|getAuthenticatedIdentityFromRequest|isAuthorizedUserOrAdminRequest|isAuthorizedAdminRequest|getAdminUserFromRequest/;
 
 test("every API route authenticates somebody, or says why it does not", () => {
   const unguarded: string[] = [];

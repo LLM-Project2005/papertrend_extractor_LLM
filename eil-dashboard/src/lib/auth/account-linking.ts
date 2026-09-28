@@ -31,10 +31,14 @@ export function mayCreateUnverifiedAccount(claims: Record<string, unknown>): boo
   return signInProviderOf(claims) === "facebook.com";
 }
 
-export type UnlinkedReason = "email_unverified" | "email_in_use" | "not_linked";
+export type UnlinkedReason = "email_unverified" | "email_in_use" | "invite_required" | "not_linked";
 
 /** Why a signed-in identity has no account, in words the sign-in page can show. */
-export function unlinkedReason(claims: Record<string, unknown>, email: string | null): {
+export function unlinkedReason(
+  claims: Record<string, unknown>,
+  email: string | null,
+  options: { inviteRequired?: boolean } = {}
+): {
   code: UnlinkedReason;
   message: string;
 } {
@@ -43,6 +47,12 @@ export function unlinkedReason(claims: Record<string, unknown>, email: string | 
     return {
       code: "email_unverified",
       message: `Confirm your email address first. We sent a link to ${email ?? "your address"}; open it, then choose “I’ve confirmed it”.`,
+    };
+  }
+  if (options.inviteRequired) {
+    return {
+      code: "invite_required",
+      message: `Papertrend is invite-only for now. Enter the invite code you were given to finish setting up ${email ?? "your account"}.`,
     };
   }
   if (!isEmailVerified(claims) && mayCreateUnverifiedAccount(claims)) {
