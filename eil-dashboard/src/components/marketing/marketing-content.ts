@@ -109,7 +109,7 @@ export const marketingFeatures: MarketingFeature[] = [
         bullets: [
           "Overview, Trend Analysis and Category Analysis",
           "Keyword Explorer and Semantic Map",
-          "Adaptive: charts planned for this repository",
+          "Adaptive: patterns no other view shows, with the numbers behind them",
         ],
         shot: "dashboard-categories",
         shotAlt: "The Category Analysis tab: papers per category per year, stacked by English Language Instruction, Linguistics and Assessment.",
