@@ -134,3 +134,13 @@ test("every response carries an enforced Content-Security-Policy", () => {
   }
   assert.match(config, /\["connect-src 'self'", directApiOrigin,/, "data may go only to named hosts");
 });
+
+test("the Drive Picker opens in view, above the upload window", () => {
+  // Google places the Picker from the page's scroll position; inside the
+  // scrolling upload modal it opened above the screen.
+  const css = read("src/app/globals.css");
+  const dialog = css.slice(css.indexOf(".picker-dialog {"));
+  assert.match(dialog, /position: fixed !important;/);
+  assert.match(dialog, /transform: translate\(-50%, -50%\) !important;/);
+  assert.match(css, /\.picker-dialog-bg \{\s*position: fixed !important;/);
+});
