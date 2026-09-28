@@ -24,7 +24,14 @@ export interface PickedDriveFile {
 }
 
 export class DrivePickerCancelled extends Error {
-  constructor() {
+  /**
+   * True when the reader closed the Picker with this page's own Close button
+   * (or Escape) rather than Google's. That is the way out when the Picker is
+   * stuck, which happens when the browser blocks Google's cookies inside the
+   * page: the Picker asks to sign in again, and a file chosen in its sign-in
+   * window never reaches the page.
+   */
+  constructor(readonly closedByPage = false) {
     super("No files were chosen.");
   }
 }
@@ -69,7 +76,7 @@ type PickerBuilder = {
   setTitle: (title: string) => PickerBuilder;
   setMaxItems: (count: number) => PickerBuilder;
   setCallback: (callback: (data: Record<string, unknown>) => void) => PickerBuilder;
-  build: () => { setVisible: (visible: boolean) => void };
+  build: () => { setVisible: (visible: boolean) => void; dispose?: () => void };
 };
 
 declare global {
@@ -127,8 +134,53 @@ interface PickedDocument {
   sizeBytes: number;
 }
 
+/**
+ * A Close button of this page's own, over Google's Picker, and Escape.
+ * Google's close control lives inside its frame; when the Picker is stuck
+ * (see DrivePickerCancelled) that frame may show only a sign-in prompt, and
+ * there was no way out of the dialog.
+ */
+function addPageCloseControl(onClose: () => void): () => void {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "drive-picker-close";
+  button.textContent = "Close Google Drive";
+  button.setAttribute("aria-label", "Close Google Drive");
+  // Escape closes only the Picker: it is caught first (window, capture phase)
+  // and stopped, so the upload window underneath does not close with it.
+  const onKey = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    onClose();
+  };
+  button.addEventListener("click", onClose);
+  window.addEventListener("keydown", onKey, true);
+  document.body.appendChild(button);
+  return () => {
+    button.removeEventListener("click", onClose);
+    window.removeEventListener("keydown", onKey, true);
+    button.remove();
+  };
+}
+
 function showPicker(google: GoogleGlobal, config: DrivePickerConfig, token: string, maxItems: number): Promise<PickedDocument[]> {
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let removeCloseControl: () => void = () => undefined;
+    let pickerHandle: { setVisible: (visible: boolean) => void; dispose?: () => void } | null = null;
+    const finish = (outcome: () => void) => {
+      if (settled) return;
+      settled = true;
+      removeCloseControl();
+      try {
+        pickerHandle?.setVisible(false);
+        pickerHandle?.dispose?.();
+      } catch {
+        // The Picker may already have closed itself.
+      }
+      outcome();
+    };
     const view = new google.picker.DocsView(google.picker.ViewId.DOCS)
       .setMimeTypes("application/pdf")
       .setIncludeFolders(true)
@@ -144,18 +196,22 @@ function showPicker(google: GoogleGlobal, config: DrivePickerConfig, token: stri
       .setMaxItems(maxItems)
       .setCallback((data) => {
         const action = data[google.picker.Response.ACTION];
-        if (action === google.picker.Action.CANCEL) reject(new DrivePickerCancelled());
+        if (action === google.picker.Action.CANCEL) finish(() => reject(new DrivePickerCancelled()));
         if (action !== google.picker.Action.PICKED) return;
         const documents = (data[google.picker.Response.DOCUMENTS] as Array<Record<string, unknown>>) ?? [];
-        resolve(
-          documents.map((document) => ({
-            id: String(document[google.picker.Document.ID]),
-            name: String(document[google.picker.Document.NAME] ?? "Drive file.pdf"),
-            sizeBytes: Number(document[google.picker.Document.SIZE_BYTES] ?? 0),
-          }))
+        finish(() =>
+          resolve(
+            documents.map((document) => ({
+              id: String(document[google.picker.Document.ID]),
+              name: String(document[google.picker.Document.NAME] ?? "Drive file.pdf"),
+              sizeBytes: Number(document[google.picker.Document.SIZE_BYTES] ?? 0),
+            }))
+          )
         );
       })
       .build();
+    pickerHandle = picker;
+    removeCloseControl = addPageCloseControl(() => finish(() => reject(new DrivePickerCancelled(true))));
     picker.setVisible(true);
   });
 }

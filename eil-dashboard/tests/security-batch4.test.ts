@@ -144,3 +144,20 @@ test("the Drive Picker opens in view, above the upload window", () => {
   assert.match(dialog, /transform: translate\(-50%, -50%\) !important;/);
   assert.match(css, /\.picker-dialog-bg \{\s*position: fixed !important;/);
 });
+
+test("a stuck Drive Picker can always be closed, and the reader is told why", () => {
+  // With Google's cookies blocked in the page, the Picker asks to sign in
+  // again and a file chosen in its window never arrives; its own close control
+  // may not show, which left the dialog with no way out.
+  const picker = read("src/lib/google-drive-picker.ts");
+  assert.match(picker, /function addPageCloseControl\(onClose: \(\) => void\)/);
+  assert.match(picker, /event\.key !== "Escape"/);
+  assert.match(picker, /window\.addEventListener\("keydown", onKey, true\)/, "caught before the upload window's handler");
+  assert.match(picker, /event\.stopPropagation\(\);\s+onClose\(\);/, "and not passed on to it");
+  assert.match(picker, /removeCloseControl = addPageCloseControl\(\(\) => finish\(\(\) => reject\(new DrivePickerCancelled\(true\)\)\)\);/);
+  assert.match(picker, /pickerHandle\?\.dispose\?\.\(\)/, "the Picker is torn down when it closes");
+  const modal = read("src/components/workspace/AnalyzeFlowModal.tsx");
+  assert.match(modal, /if \(driveError\.closedByPage\)/);
+  assert.match(modal, /Allow third-party cookies for this site in your browser's settings/);
+  assert.match(read("src/app/globals.css"), /\.drive-picker-close \{[\s\S]*?z-index: 2147483002;/);
+});

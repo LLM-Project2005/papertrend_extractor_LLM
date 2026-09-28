@@ -142,7 +142,13 @@ export default function AnalyzeFlowModal({
         setError(`${tooLarge.length === 1 ? `"${tooLarge[0]}" is` : `${tooLarge.length} files are`} over 10 MB, so ${tooLarge.length === 1 ? "it was" : "they were"} left out.`);
       }
     } catch (driveError) {
-      if (!(driveError instanceof DrivePickerCancelled)) {
+      if (driveError instanceof DrivePickerCancelled) {
+        if (driveError.closedByPage) {
+          setError(
+            "No file came through from Google Drive. If Google asked you to sign in again, or choosing a file did nothing, your browser is blocking Google's cookies inside this page. Allow third-party cookies for this site in your browser's settings and try again, or add the PDF from your computer."
+          );
+        }
+      } else {
         setError(driveError instanceof Error ? driveError.message : "Google Drive could not be opened.");
       }
     } finally {
