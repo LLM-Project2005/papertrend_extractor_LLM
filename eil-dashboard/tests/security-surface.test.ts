@@ -40,7 +40,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
 };
 
 /** A route that verifies a machine caller rather than a person. */
-const MACHINE_AUTH = /isRepositoryJobSecretValid|isValidBearerSecret|isAuthorizedAdminRequest|getCronSecret/;
+const MACHINE_AUTH = /isVerifiedTaskCaller|isValidBearerSecret|isAuthorizedAdminRequest|getCronSecret/;
 /** A route that verifies a signed-in person. */
 const USER_AUTH = /getAuthenticatedUserFromRequest|getAuthenticatedIdentityFromRequest|isAuthorizedUserOrAdminRequest|isAuthorizedAdminRequest/;
 
@@ -104,9 +104,11 @@ test("secrets are compared in constant time and fail closed when unset", () => {
   assert.match(auth, /if \(leftBuffer\.length !== rightBuffer\.length\) \{\s*\n\s*return false;/);
   assert.match(auth, /if \(!expectedSecret\) return false;/);
 
+  // The background-job callbacks no longer take a shared secret at all: each
+  // task carries a Google-signed identity token (see cloud-tasks-oidc.ts).
   const jobs = read("src/lib/repository-chat-jobs.ts");
-  assert.match(jobs, /if \(!expected \|\| !value\) return false;/);
-  assert.match(jobs, /left\.length === right\.length && timingSafeEqual\(left, right\)/);
+  assert.doesNotMatch(jobs, /isRepositoryJobSecretValid/);
+  assert.match(read("src/lib/cloud-tasks-oidc.ts"), /verifier\.verifyIdToken/);
 
   for (const cron of [
     "src/app/api/cron/process-queue/route.ts",

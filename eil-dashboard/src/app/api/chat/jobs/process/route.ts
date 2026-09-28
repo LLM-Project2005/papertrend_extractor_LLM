@@ -6,17 +6,18 @@ import {
   completeRepositoryChatJob,
   failRepositoryChatJob,
   heartbeatRepositoryChatJob,
-  isRepositoryJobSecretValid,
 } from "@/lib/repository-chat-jobs";
 import { augmentRepositoryAnswerWithWeb } from "@/lib/repository-chat-web";
 import type { RepositoryExecutionPlan } from "@/lib/repository-chat";
+import { isVerifiedTaskCaller } from "@/lib/cloud-tasks-oidc";
 
 export const maxDuration = 1800;
 
 const BodySchema = z.object({ jobId: z.string().uuid(), ownerUserId: z.string().uuid() });
 
 export async function POST(request: Request) {
-  if (!isRepositoryJobSecretValid(request.headers.get("x-worker-secret") ?? "")) {
+  // Only this service's own Cloud Tasks, by Google-signed identity token.
+  if (!(await isVerifiedTaskCaller(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const parsed = BodySchema.safeParse(await request.json().catch(() => null));

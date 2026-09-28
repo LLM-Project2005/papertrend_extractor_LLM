@@ -89,3 +89,32 @@ test("refused and abandoned uploads do not stay in the bucket", () => {
   assert.match(gcs, /matchGlob: `pending\/\*\*\/\$\{runId\}\/\*\*`/);
   assert.match(gcs, /\[0-9a-f\]\{8\}-/, "the run id is checked before it goes into a glob");
 });
+
+test("background-job callbacks accept only a Google-signed token for this service", () => {
+  // They used to accept the shared worker secret, carried in every task's
+  // headers and held by several services.
+  for (const route of [
+    "src/app/api/chat/jobs/process/route.ts",
+    "src/app/api/workspace/semantic-map/jobs/process/route.ts",
+    "src/app/api/workspace/projects/reclassify/process/route.ts",
+  ]) {
+    const src = read(route);
+    assert.match(src, /if \(!\(await isVerifiedTaskCaller\(request\)\)\)/, `${route} verifies the token`);
+    assert.doesNotMatch(src, /x-worker-secret/, `${route} no longer reads the secret`);
+  }
+  for (const creator of [
+    "src/lib/repository-chat-jobs.ts",
+    "src/lib/semantic-map-jobs.ts",
+    "src/lib/project-reclassification-jobs.ts",
+  ]) {
+    const src = read(creator);
+    assert.match(src, /const oidcToken = await taskOidcToken\(\);/, `${creator} mints a token`);
+    assert.match(src, /\n\s+oidcToken,\n/, `${creator} attaches it to the task`);
+    assert.doesNotMatch(src, /"x-worker-secret"/, `${creator} no longer puts the secret in the task`);
+  }
+  const oidc = read("src/lib/cloud-tasks-oidc.ts");
+  assert.match(oidc, /verifier\.verifyIdToken\(\{ idToken: match\[1\], audience \}\)/, "signature and audience are checked");
+  assert.match(oidc, /payload\.email_verified === true/);
+  assert.match(oidc, /payload\.email\?\.toLowerCase\(\) === expectedEmail\.toLowerCase\(\)/, "only this service's own account");
+  assert.match(read("package.json"), /"google-auth-library": "\^10\.9\.0"/, "a direct dependency, not a transitive one");
+});

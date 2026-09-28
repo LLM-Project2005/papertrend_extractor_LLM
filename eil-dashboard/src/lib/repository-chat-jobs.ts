@@ -1,7 +1,8 @@
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
-import { getGoogleCloudProjectId, getGoogleCloudRegion, getWorkerWebhookSecret } from "@/lib/server-env";
+import { getGoogleCloudProjectId, getGoogleCloudRegion } from "@/lib/server-env";
 import type { RepositoryChatInput, RepositoryChatResult, RepositoryExecutionPlan } from "@/lib/repository-chat";
+import { taskOidcToken } from "@/lib/cloud-tasks-oidc";
 
 export interface RepositoryChatJob {
   id: string;
@@ -239,18 +240,13 @@ export async function cancelRepositoryChatJobsAfter(
   ).then(() => undefined));
 }
 
-export function isRepositoryJobSecretValid(value: string): boolean {
-  const expected = getWorkerWebhookSecret();
-  if (!expected || !value) return false;
-  const left = Buffer.from(value); const right = Buffer.from(expected);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
-
 export async function enqueueRepositoryChatJob(id: string, ownerUserId: string, callbackBaseUrl: string): Promise<boolean> {
   const project = getGoogleCloudProjectId();
   const location = process.env.CLOUD_TASKS_LOCATION ?? getGoogleCloudRegion();
   const queue = process.env.REPOSITORY_CHAT_TASKS_QUEUE ?? process.env.CLOUD_TASKS_QUEUE ?? "";
   if (!project || !queue || !callbackBaseUrl) return false;
+  const oidcToken = await taskOidcToken();
+  if (!oidcToken) return false;
   const tokenResponse = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", {
     headers: { "Metadata-Flavor": "Google" },
   });
@@ -265,7 +261,8 @@ export async function enqueueRepositoryChatJob(id: string, ownerUserId: string, 
       httpRequest: {
       httpMethod: "POST",
       url: `${callbackBaseUrl.replace(/\/$/, "")}/api/chat/jobs/process`,
-      headers: { "Content-Type": "application/json", "x-worker-secret": getWorkerWebhookSecret() },
+      headers: { "Content-Type": "application/json" },
+      oidcToken,
       body: Buffer.from(JSON.stringify({ jobId: id, ownerUserId })).toString("base64"),
     },
       dispatchDeadline: "1800s",

@@ -1,10 +1,13 @@
-import { getGoogleCloudProjectId, getGoogleCloudRegion, getWorkerWebhookSecret } from "@/lib/server-env";
+import { taskOidcToken } from "@/lib/cloud-tasks-oidc";
+import { getGoogleCloudProjectId, getGoogleCloudRegion } from "@/lib/server-env";
 
 export async function enqueueProjectReclassificationJob(jobId: string, ownerUserId: string, callbackBaseUrl: string): Promise<boolean> {
   const project = getGoogleCloudProjectId();
   const location = process.env.CLOUD_TASKS_LOCATION ?? getGoogleCloudRegion();
   const queue = process.env.RECLASSIFICATION_TASKS_QUEUE ?? process.env.REPOSITORY_CHAT_TASKS_QUEUE ?? process.env.CLOUD_TASKS_QUEUE ?? "";
   if (!project || !queue || !callbackBaseUrl) return false;
+  const oidcToken = await taskOidcToken();
+  if (!oidcToken) return false;
   const tokenResponse = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", { headers: { "Metadata-Flavor": "Google" } });
   if (!tokenResponse.ok) return false;
   const token = await tokenResponse.json() as { access_token?: string };
@@ -15,7 +18,8 @@ export async function enqueueProjectReclassificationJob(jobId: string, ownerUser
     body: JSON.stringify({ task: { httpRequest: {
       httpMethod: "POST",
       url: `${callbackBaseUrl.replace(/\/$/, "")}/api/workspace/projects/reclassify/process`,
-      headers: { "Content-Type": "application/json", "x-worker-secret": getWorkerWebhookSecret() },
+      headers: { "Content-Type": "application/json" },
+      oidcToken,
       body: Buffer.from(JSON.stringify({ jobId, ownerUserId })).toString("base64"),
     } } }),
   });

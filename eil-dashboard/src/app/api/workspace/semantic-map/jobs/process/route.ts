@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { isRepositoryJobSecretValid } from "@/lib/repository-chat-jobs";
+import { isVerifiedTaskCaller } from "@/lib/cloud-tasks-oidc";
 import { processSemanticMapJob } from "@/lib/semantic-map-service";
 
 export const runtime = "nodejs";
@@ -9,7 +9,8 @@ export const maxDuration = 600;
 const BodySchema = z.object({ mapId: z.string().uuid(), ownerUserId: z.string().uuid() });
 
 export async function POST(request: Request) {
-  if (!isRepositoryJobSecretValid(request.headers.get("x-worker-secret") ?? "")) {
+  // Only this service's own Cloud Tasks, by Google-signed identity token.
+  if (!(await isVerifiedTaskCaller(request))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const parsed = BodySchema.safeParse(await request.json().catch(() => null));
