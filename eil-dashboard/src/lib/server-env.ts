@@ -148,6 +148,10 @@ export function getAdminImportSecret(): string {
  */
 const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
   TRACK_CLASSIFICATION: "google/gemini-2.5-flash-lite",
+  // The Adaptive tab's editor (docs/30): it picks and words computed insights
+  // and a checker holds its numbers to the facts, so the cheapest capable
+  // model is enough. MODEL_TASK_ADAPTIVE_INSIGHTS switches it without a deploy.
+  ADAPTIVE_INSIGHTS: "google/gemini-3.1-flash-lite",
 };
 
 export function getOpenAIConfig(taskName?: string): {

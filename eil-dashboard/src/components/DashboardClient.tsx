@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import AdaptiveDashboardTab from "@/components/dashboard/AdaptiveDashboardTab";
+import InsightsTab from "@/components/dashboard/InsightsTab";
 import RepositorySemanticMapView from "@/components/workspace/RepositorySemanticMap";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
@@ -12,15 +12,14 @@ import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import Modal from "@/components/ui/Modal";
 import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
-import { ChartIcon, CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
+import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { readCategoryLabelMap } from "@/lib/analysis-profile";
 import { buildCategoryOptions, normalizeCategoryKey } from "@/lib/category-options";
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
-import type { DashboardData, PaperId, TrackRow, TrendRow } from "@/types/database";
-import type { NormalizedAnalyticsPayload, VisualizationPlan } from "@/types/visualization";
+import type { PaperId, TrackRow, TrendRow } from "@/types/database";
 
 const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
@@ -31,8 +30,6 @@ const TAB_DEFINITIONS = [
   { key: "adaptive", label: "Adaptive" },
 ] as const;
 
-const ADAPTIVE_SIGNATURE_SAMPLE_SIZE = 1200;
-const ADAPTIVE_RENDER_ROW_LIMIT = 10000;
 const EMPTY_FOLDER_FILTER: string[] = [];
 
 type DashboardDrilldownTarget = {
@@ -41,6 +38,8 @@ type DashboardDrilldownTarget = {
   topic?: string;
   keyword?: string;
   paperIds?: string[];
+  /** Names the list when it is the papers behind an insight. */
+  label?: string;
 };
 
 type DashboardDrilldownPaper = {
@@ -53,24 +52,6 @@ type DashboardDrilldownPaper = {
   tracks: string[];
   evidence: string;
 };
-
-type AdaptiveDashboardSnapshot = Pick<
-  DashboardData,
-  "trends" | "tracksSingle" | "tracksMulti" | "topicFamilies"
->;
-
-function stableSerialize(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    return `{${Object.entries(value as Record<string, unknown>)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => `${JSON.stringify(key)}:${stableSerialize(entry)}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value);
-}
 
 function normalizeTabKey(value: string | null): string | null {
   if (!value) {
@@ -130,6 +111,9 @@ function buildDashboardDrilldownTitle(
 ): string {
   if (!target) {
     return "Associated papers";
+  }
+  if (target.label) {
+    return target.label;
   }
 
   // The category is named as the reader knows it ("English Language
@@ -250,16 +234,6 @@ export default function DashboardClient({
     return () => window.removeEventListener("keydown", onKey);
   }, [filterOpen]);
   const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
-  const [planState, setPlanState] = useState<{
-    plan: VisualizationPlan;
-    source: "agent" | "fallback";
-  } | null>(null);
-  const [adaptiveSnapshot, setAdaptiveSnapshot] = useState<AdaptiveDashboardSnapshot | null>(null);
-  const [adaptiveAnalytics, setAdaptiveAnalytics] = useState<NormalizedAnalyticsPayload | null>(null);
-  const [generatedAdaptiveSignature, setGeneratedAdaptiveSignature] = useState<string | null>(null);
-  const [generatedAdaptiveFilterSignature, setGeneratedAdaptiveFilterSignature] = useState<string | null>(null);
-  const [adaptiveGenerating, setAdaptiveGenerating] = useState(false);
-  const [adaptiveError, setAdaptiveError] = useState<string | null>(null);
   const previousAllYearsRef = useRef<string[]>([]);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
 
@@ -313,7 +287,6 @@ export default function DashboardClient({
   }, [searchParams]);
   const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
   const currentTabKey = optimisticTabKey;
-  const isAdaptiveTab = currentTabKey === "adaptive";
   const isSemanticMapTab = currentTabKey === "semantic_map";
   const [tabNav, setTabNav] = useState<HTMLElement | null>(null);
   const tabBox = useTabIndicator(tabNav, currentTabKey);
@@ -385,6 +358,8 @@ export default function DashboardClient({
       categoryOptions.map((category) => category.key)
     );
   }, [categoryOptions, data, searchQuery, selectedTracks, selectedYears]);
+
+  const adaptiveDataVersion = `${data?.trends.length ?? 0}:${data?.categoryAssignments?.length ?? 0}:${data?.topicThemes?.status ?? ""}:${data?.topicThemes?.ungroupedTopics ?? 0}:${refreshing ? 1 : 0}`;
 
   const drilldownPapers = useMemo<DashboardDrilldownPaper[]>(() => {
     if (!drilldownTarget) {
@@ -533,200 +508,6 @@ export default function DashboardClient({
     filteredData,
   ]);
 
-  const adaptivePlanSignature = useMemo(() => {
-    if (!data || !isAdaptiveTab) {
-      return null;
-    }
-
-    const sampledTrends = filteredData.trends.slice(0, ADAPTIVE_SIGNATURE_SAMPLE_SIZE);
-    const sampledTracksSingle = filteredData.tracksSingle.slice(
-      0,
-      ADAPTIVE_SIGNATURE_SAMPLE_SIZE
-    );
-    const sampledCategoryAssignments = (filteredData.categoryAssignments ?? []).slice(
-      0,
-      ADAPTIVE_SIGNATURE_SAMPLE_SIZE
-    );
-    const sampledTopicFamilies = (filteredData.topicFamilies ?? []).slice(0, 200);
-
-    return stableSerialize({
-      projectId: selectedProjectId ?? "all",
-      mode: data.useMock ? "mock" : "live",
-      diagnostics: data.diagnostics?.dataSource ?? null,
-      folders: [...selectedFolderIds].sort(),
-      selectedYears: [...selectedYears].sort(),
-      selectedTracks: [...selectedTracks].sort(),
-      searchQuery: searchQuery.trim(),
-      trendRowCount: filteredData.trends.length,
-      tracksSingleRowCount: filteredData.tracksSingle.length,
-      categoryAssignmentRowCount: filteredData.categoryAssignments?.length ?? 0,
-      topicFamilyCount: filteredData.topicFamilies?.length ?? 0,
-      trendRows: sampledTrends.map((row) => ({
-        paper_id: row.paper_id,
-        folder_id: row.folder_id ?? null,
-        year: row.year,
-        topic: row.topic,
-        keyword: row.keyword,
-        keyword_frequency: row.keyword_frequency,
-      })),
-      topicFamilies: sampledTopicFamilies.map((family) => ({
-        id: family.id,
-        canonicalTopic: family.canonicalTopic,
-        aliases: [...family.aliases].sort(),
-        totalKeywordFrequency: family.totalKeywordFrequency,
-        paperIds: [...family.paperIds].sort(),
-      })),
-      tracksSingle: sampledTracksSingle.map((row) => ({
-        paper_id: row.paper_id,
-        year: row.year,
-        el: row.el,
-        eli: row.eli,
-        lae: row.lae,
-        other: row.other,
-      })),
-      categoryAssignments: sampledCategoryAssignments.map((row) => ({
-        paper_id: row.paper_id,
-        year: row.year,
-        category_key: row.category_key,
-        category_label: row.category_label,
-        assignment_type: row.assignment_type,
-      })),
-    });
-  }, [
-    data,
-    filteredData.categoryAssignments,
-    filteredData.topicFamilies,
-    filteredData.tracksSingle,
-    filteredData.trends,
-    searchQuery,
-    isAdaptiveTab,
-    selectedFolderIds,
-    selectedProjectId,
-    selectedTracks,
-    selectedYears,
-  ]);
-
-  const adaptiveRenderData = useMemo(
-    () => ({
-      trends: filteredData.trends.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
-      tracksSingle: filteredData.tracksSingle.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
-      tracksMulti: filteredData.tracksMulti.slice(0, ADAPTIVE_RENDER_ROW_LIMIT),
-      topicFamilies: (filteredData.topicFamilies ?? []).slice(0, 300),
-    }),
-    [
-      filteredData.topicFamilies,
-      filteredData.tracksMulti,
-      filteredData.tracksSingle,
-      filteredData.trends,
-    ]
-  );
-  // The filters alone. The full signature above also moves when the data does -
-  // after Refresh, or when new topics are grouped into themes - and that used to
-  // be announced as "Filters changed" although no filter had been touched.
-  const adaptiveFilterSignature = useMemo(
-    () =>
-      stableSerialize({
-        projectId: selectedProjectId ?? "all",
-        folders: [...selectedFolderIds].sort(),
-        selectedYears: [...selectedYears].sort(),
-        selectedTracks: [...selectedTracks].sort(),
-        searchQuery: searchQuery.trim(),
-      }),
-    [searchQuery, selectedFolderIds, selectedProjectId, selectedTracks, selectedYears]
-  );
-
-  // Charts planned for one repository are not about the next one.
-  const adaptiveProjectRef = useRef(selectedProjectId);
-  useEffect(() => {
-    if (adaptiveProjectRef.current === selectedProjectId) return;
-    adaptiveProjectRef.current = selectedProjectId;
-    setPlanState(null);
-    setAdaptiveSnapshot(null);
-    setAdaptiveAnalytics(null);
-    setGeneratedAdaptiveSignature(null);
-    setGeneratedAdaptiveFilterSignature(null);
-    setAdaptiveError(null);
-  }, [selectedProjectId]);
-
-  const adaptiveSection =
-    planState?.plan.sections.find(
-      (section) => section.section_key === "adaptive"
-    ) ?? null;
-  const adaptiveFiltersChanged = Boolean(
-    generatedAdaptiveFilterSignature && adaptiveFilterSignature !== generatedAdaptiveFilterSignature
-  );
-  const adaptiveDataChanged = Boolean(
-    !adaptiveFiltersChanged &&
-      generatedAdaptiveSignature &&
-      adaptivePlanSignature &&
-      adaptivePlanSignature !== generatedAdaptiveSignature
-  );
-
-  async function generateAdaptiveCharts() {
-    if (!data || !adaptivePlanSignature || adaptiveGenerating) return;
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 30_000);
-    setAdaptiveGenerating(true);
-    setAdaptiveError(null);
-    try {
-      const response = await fetch("/api/visualization-plan", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "Content-Type": "application/json",
-          ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
-        },
-        body: JSON.stringify({
-          selectedYears,
-          selectedTracks,
-          searchQuery,
-          folderIds: selectedFolderIds,
-          projectId: selectedProjectId,
-          context: {
-            goal: "Build the clearest non-redundant charts for this exact filtered research corpus. Prefer robust comparisons and disclose sparse evidence.",
-          },
-        }),
-      });
-      const payload = (await response.json().catch(() => ({}))) as {
-        plan?: VisualizationPlan;
-        source?: "agent" | "fallback";
-        analytics?: NormalizedAnalyticsPayload;
-        error?: string;
-      };
-      if (!response.ok || !payload.plan || !payload.analytics) {
-        throw new Error(payload.error || "The visualization agent could not build a chart plan.");
-      }
-      setPlanState({ plan: payload.plan, source: payload.source ?? "fallback" });
-      setAdaptiveAnalytics(payload.analytics);
-      setAdaptiveSnapshot({
-        trends: adaptiveRenderData.trends.map((row) => ({ ...row })),
-        tracksSingle: adaptiveRenderData.tracksSingle.map((row) => ({ ...row })),
-        tracksMulti: adaptiveRenderData.tracksMulti.map((row) => ({ ...row })),
-        topicFamilies: adaptiveRenderData.topicFamilies.map((row) => ({
-          ...row,
-          aliases: [...row.aliases],
-          matchedTerms: [...row.matchedTerms],
-          relatedKeywords: [...row.relatedKeywords],
-          representativeKeywords: [...row.representativeKeywords],
-          paperIds: [...row.paperIds],
-        })),
-      });
-      setGeneratedAdaptiveSignature(adaptivePlanSignature);
-      setGeneratedAdaptiveFilterSignature(adaptiveFilterSignature);
-    } catch (error) {
-      setAdaptiveError(
-        error instanceof DOMException && error.name === "AbortError"
-          ? "Chart generation timed out. Please try again."
-          : error instanceof Error
-            ? error.message
-            : "Chart generation failed."
-      );
-    } finally {
-      window.clearTimeout(timeout);
-      setAdaptiveGenerating(false);
-    }
-  }
-
   // With no repository chosen the data hook never starts, so its loading flag
   // stayed true and the page spun forever.
   if (!selectedProjectId && !workspaceLoading) {
@@ -852,72 +633,6 @@ export default function DashboardClient({
               : `${themeStatus.ungroupedTopics} topic${themeStatus.ungroupedTopics === 1 ? " is" : "s are"} shown under ${themeStatus.ungroupedTopics === 1 ? "its paper's" : "their papers'"} own label${themeStatus.ungroupedTopics === 1 ? "" : "s"}, because grouping could not run just now. It will be tried again later.`}
           </div>
         ) : null}
-
-        {/*
-          The planner belongs to the Adaptive tab. It used to sit above every
-          fixed tab as well, with a "Live data" pill that told a reader nothing -
-          all data here is the repository's own.
-        */}
-        {isAdaptiveTab ? <section className="app-surface px-4 py-4 sm:px-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
-                Visualization planner
-              </p>
-              <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-[#f2f2f2]">
-                {planState?.plan.dashboard_title ?? "Generate adaptive charts"}
-              </h2>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500 dark:text-[#a3a3a3]">
-                {planState?.plan.summary ??
-                  "The visualization agent will inspect the current filters and choose only charts supported by that exact data snapshot."}
-              </p>
-              {adaptiveFiltersChanged ? (
-                <p className="mt-2 text-sm font-medium text-amber-700 dark:text-amber-300">
-                  Filters changed. Existing charts still show the previous snapshot until you update them.
-                </p>
-              ) : adaptiveDataChanged ? (
-                <p className="mt-2 text-sm text-slate-600 dark:text-[#b8b8b8]">
-                  The repository&apos;s data has changed since these charts were made. Update them to include it.
-                </p>
-              ) : null}
-              {adaptiveError ? (
-                <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300">{adaptiveError}</p>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {refreshing ? (
-                <span className="rounded-full bg-sky-100 px-3 py-1.5 text-xs text-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
-                  Refreshing in background
-                </span>
-              ) : null}
-              {data?.diagnostics?.recoveredFromLegacyScope ? (
-                <span className="rounded-full bg-amber-100 px-3 py-1.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
-                  Showing recovered legacy analyses
-                </span>
-              ) : null}
-              {planState ? (
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-600 dark:bg-[#050505] dark:text-[#a3a3a3]">
-                  {planState.source === "agent" ? "Agent plan" : "Safe fallback"}
-                </span>
-              ) : null}
-              <button
-                type="button"
-                onClick={() => void generateAdaptiveCharts()}
-                disabled={adaptiveGenerating || !data}
-                className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
-              >
-                <ChartIcon className="h-4 w-4" />
-                {adaptiveGenerating
-                  ? "Building charts…"
-                  : planState
-                    ? adaptiveFiltersChanged || adaptiveDataChanged
-                      ? "Update charts"
-                      : "Regenerate"
-                    : "Generate charts"}
-              </button>
-            </div>
-          </div>
-        </section> : null}
 
         <nav
           ref={setTabNav}
@@ -1233,35 +948,15 @@ export default function DashboardClient({
             />
           ) : null}
           {currentTabKey === "adaptive" ? (
-            adaptiveSection && adaptiveSnapshot && adaptiveAnalytics ? (
-              <AdaptiveDashboardTab
-                data={adaptiveSnapshot}
-                analytics={adaptiveAnalytics}
-                adaptiveSection={adaptiveSection}
-                trackLabels={categoryLabels}
-              />
-            ) : (
-              <section className="app-surface flex min-h-[360px] flex-col items-center justify-center px-6 py-12 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 text-slate-600 dark:border-[#2a2a2a] dark:text-[#d4d4d4]">
-                  <ChartIcon className="h-5 w-5" />
-                </span>
-                <h2 className="mt-5 text-xl font-semibold text-slate-900 dark:text-white">
-                  Build charts for this research scope
-                </h2>
-                <p className="mt-2 max-w-xl text-sm leading-6 text-slate-500 dark:text-slate-400">
-                  The agent will inspect the selected repository, years, categories, and search query, then call the chart builder with only statistically usable views.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void generateAdaptiveCharts()}
-                  disabled={adaptiveGenerating || !data}
-                  className="mt-6 inline-flex min-h-11 items-center gap-2 rounded-lg bg-slate-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-black dark:hover:bg-[#e8e8e8]"
-                >
-                  <ChartIcon className="h-4 w-4" />
-                  {adaptiveGenerating ? "Building charts…" : "Generate charts"}
-                </button>
-              </section>
-            )
+            <InsightsTab
+              projectId={selectedProjectId ?? null}
+              accessToken={session?.access_token ?? null}
+              selectedYears={selectedYears}
+              selectedTracks={selectedTracks}
+              searchQuery={searchQuery}
+              dataVersion={adaptiveDataVersion}
+              onOpenPapers={(paperIds, label) => openPaperDrilldown({ paperIds: paperIds.map(String), label })}
+            />
           ) : null}
         </section>
       </div>

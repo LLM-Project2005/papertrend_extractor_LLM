@@ -539,15 +539,6 @@ export default function AdminImportClient() {
     () => allProjects.find((project) => project.id === libraryProjectId) ?? null,
     [allProjects, libraryProjectId]
   );
-  const succeededRunIds = useMemo(
-    () =>
-      runs
-        .filter((run) => run.status === "succeeded")
-        .map((run) => run.id)
-        .sort(),
-    [runs]
-  );
-  const visualizationWarmKeyRef = useRef("");
 
   const ownerInitial = (session?.user?.email?.charAt(0) ?? "M").toUpperCase();
   const projectStats = useMemo(() => {
@@ -639,38 +630,6 @@ export default function AdminImportClient() {
     setLibraryProjectId(currentProject.id);
     setShowUploadModal(true);
   }, [currentProject?.id, searchParams, session?.access_token]);
-
-  useEffect(() => {
-    if (!currentProject?.id || !session?.access_token || succeededRunIds.length === 0) {
-      return;
-    }
-
-    const scopeKey = `${currentProject.id}:${succeededRunIds.join(",")}`;
-    if (visualizationWarmKeyRef.current === scopeKey) {
-      return;
-    }
-    visualizationWarmKeyRef.current = scopeKey;
-
-    void fetch("/api/visualization-plan", {
-      method: "POST",
-      headers: jsonRequestHeaders,
-      body: JSON.stringify({
-        folderId: "all",
-        projectId: currentProject.id,
-        context: {
-          workspaceName: currentProject.name,
-        },
-      }),
-    }).catch(() => {
-      visualizationWarmKeyRef.current = "";
-    });
-  }, [
-    currentProject?.id,
-    currentProject?.name,
-    jsonRequestHeaders,
-    session?.access_token,
-    succeededRunIds,
-  ]);
 
   useEffect(() => {
     if (!toolbarPopover && !itemMenuState) return;

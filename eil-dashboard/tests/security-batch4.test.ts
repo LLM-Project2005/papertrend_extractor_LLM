@@ -25,13 +25,14 @@ test("every citation renderer uses the scheme check", () => {
   assert.doesNotMatch(chat, /<Link href=\{source\.href\}/);
 });
 
-test("the chart planner's prompt context is bounded", () => {
-  // It passed through unchecked, so one request could put megabytes of text
-  // into a paid model call outside the token budget.
-  const route = read("src/app/api/visualization-plan/route.ts");
+test("the Adaptive insights request is bounded and carries no free text to the model", () => {
+  // The old chart planner took a "context" object straight into a paid prompt.
+  // The insights route takes only filters; the model sees computed facts.
+  const route = read("src/app/api/workspace/insights/route.ts");
   assert.doesNotMatch(route, /\.passthrough\(\)/);
-  assert.match(route, /goal: z\.string\(\)\.max\(2_000\)\.optional\(\)/);
-  assert.match(route, /workspaceName: z\.string\(\)\.max\(120\)\.optional\(\)/);
+  assert.match(route, /projectId: z\.string\(\)\.uuid\(\)/);
+  assert.match(route, /searchQuery: z\.string\(\)\.max\(500\)/);
+  assert.doesNotMatch(route, /context:/);
 });
 
 test("the daily usage limit holds under parallel requests and fails closed", () => {

@@ -140,8 +140,10 @@ test("with classification off, categories neither chart nor filter anything (D8)
 test("the server does not serve category rows for a repository that does not classify", () => {
   const server = read("src/lib/dashboard-data-server.ts");
   assert.match(server, /classificationEnabled \? loaded : \{ \.\.\.loaded, categoryAssignments: \[\] \}/);
-  const planner = read("src/lib/visualization-planner.ts");
-  assert.match(planner, /\(classificationEnabled \? TRACK_COLS : \[\]\)/, "no track chart can be planned");
+  // Nor do the Adaptive insights read categories then.
+  const analyses = read("src/lib/insights/analyses.ts");
+  assert.equal((analyses.match(/if \(!corpus\.classificationEnabled\) return null;/g) ?? []).length, 2, "no category insight");
+  assert.match(read("src/lib/insights/corpus.ts"), /if \(classificationEnabled\) \{/);
 });
 
 test("a paper moved to Trash leaves the dashboard and Home's counts", () => {
@@ -156,9 +158,10 @@ test("a paper moved to Trash leaves the dashboard and Home's counts", () => {
 
 /* ---------------------------------------------------------- the interface */
 
-test("the planner panel belongs to the Adaptive tab, and no data pill remains (U2)", () => {
+test("the Adaptive tab carries its own header, and no data pill remains (U2)", () => {
   const client = read("src/components/DashboardClient.tsx");
-  assert.match(client, /\{isAdaptiveTab \? <section className="app-surface px-4 py-4 sm:px-5">/);
+  assert.match(client, /\{currentTabKey === "adaptive" \? \(\s*<InsightsTab/);
+  assert.doesNotMatch(client, /Visualization planner/, "no planner panel above the tabs");
   assert.equal(/"Live data"|Preview data/.test(client.replace(/\/\*[\s\S]*?\*\//g, "")), false);
 });
 
@@ -186,19 +189,19 @@ test("each fixed tab opens with a takeaway computed from its own numbers (U4)", 
 test("no heatmap draws a row of zeros (C4)", () => {
   const explorer = read("src/components/tabs/KeywordExplorer.tsx");
   assert.match(explorer, /\.filter\(\(row\) => row\.values\.some\(\(value\) => value > 0\)\)/);
-  const adaptive = read("src/components/dashboard/AdaptiveDashboardTab.tsx");
-  assert.match(adaptive, /\.filter\(\(row\) => row\.values\.some\(\(value\) => value > 0\)\)/);
-  const planner = read("src/lib/visualization-planner.ts");
-  assert.match(planner, /\.filter\(\(row\) => row\.totals_by_year\.some\(\(value\) => value > 0\)\)/);
+  // The Adaptive methods grid keeps only themes that meet one of its methods.
+  const analyses = read("src/lib/insights/analyses.ts");
+  assert.match(analyses, /\.filter\(\(\[, ids\]\) => methods\.some\(\(\[, methodIds\]\) => intersectionSize\(ids, methodIds\) > 0\)\)/);
 });
 
-test("the planner does not re-file rows the server already grouped (C5)", () => {
-  // Its alias map includes every theme's keywords, and later themes overwrite
-  // earlier ones - a "Dynamic Assessment" row could be re-filed under any theme
-  // listing "dynamic assessment" as a keyword.
-  const planner = read("src/lib/visualization-planner.ts");
-  const canonicalize = planner.slice(planner.indexOf("function canonicalizeTrendTopics"), planner.indexOf("export async function buildNormalizedAnalyticsPayload"));
-  assert.match(canonicalize, /if \(data\.trends\.some\(\(row\) => row\.raw_topic !== undefined\)\) \{\s*return data\.trends;/);
+test("the Adaptive insights use the themes the server grouped, never re-filing a row (C5)", () => {
+  // The old planner re-filed rows through an alias map, so a "Dynamic
+  // Assessment" row could land under any theme listing that keyword.
+  const corpus = read("src/lib/insights/corpus.ts");
+  assert.match(corpus, /const topic = clean\(row\.topic\);/);
+  assert.doesNotMatch(corpus, /alias/i);
+  const server = read("src/lib/insights/server.ts");
+  assert.match(server, /loadDashboardDataServer\(request\.ownerUserId, \[\], request\.projectId, "live"/, "the same themed rows as every tab");
 });
 
 test("a study uploaded twice is reported, not silently counted twice", () => {
@@ -221,7 +224,6 @@ test("legend text is drawn in the readable label colour, not the series colour (
     "src/components/tabs/TrendAnalysis.tsx",
     "src/components/tabs/KeywordExplorer.tsx",
     "src/components/tabs/TrackAnalysis.tsx",
-    "src/components/dashboard/AdaptiveDashboardTab.tsx",
   ]) {
     const source = read(file);
     const legends = source.match(/<Legend[\s\S]*?\/>/g) ?? [];
@@ -244,7 +246,6 @@ test("horizontal bar charts give their bars room on a phone (U5)", () => {
     "src/components/tabs/Overview.tsx",
     "src/components/tabs/TrendAnalysis.tsx",
     "src/components/tabs/KeywordExplorer.tsx",
-    "src/components/dashboard/AdaptiveDashboardTab.tsx",
   ]) {
     assert.match(read(file), /labelColumn\(useIsNarrow\(\), \{ width: \d+, chars: \d+ \}\)/, file);
   }
