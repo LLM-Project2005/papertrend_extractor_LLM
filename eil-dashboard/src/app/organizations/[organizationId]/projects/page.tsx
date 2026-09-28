@@ -1,9 +1,9 @@
 import { redirect } from "next/navigation";
 
-export default function OrganizationProjectsRedirectPage({
+export default async function OrganizationProjectsRedirectPage({
   params,
 }: {
-  params: { organizationId: string };
+  params: Promise<{ organizationId: string }>;
 }) {
-  redirect(`/workspaces/${params.organizationId}/projects`);
+  redirect(`/workspaces/${(await params).organizationId}/projects`);
 }

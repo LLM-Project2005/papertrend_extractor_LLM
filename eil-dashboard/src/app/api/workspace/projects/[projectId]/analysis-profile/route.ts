@@ -11,11 +11,11 @@ import type { ProjectAnalysisProfile } from "@/types/workspace";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request, context: { params: { projectId: string } }) {
+export async function GET(request: Request, context: { params: Promise<{ projectId: string }> }) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!projectAnalysisProfilesEnabled() || getDatabaseProvider() !== "cloud-sql") return NextResponse.json({ error: "Repository profiles are not enabled." }, { status: 404 });
-  const project = await getWorkspaceRepository().getProject(user.id, context.params.projectId);
+  const project = await getWorkspaceRepository().getProject(user.id, (await context.params).projectId);
   if (!project) return NextResponse.json({ error: "Repository not found." }, { status: 404 });
   const profile = project.analysis_profile
     ? sanitizeProjectAnalysisProfile(project.analysis_profile)
@@ -24,7 +24,7 @@ export async function GET(request: Request, context: { params: { projectId: stri
   return NextResponse.json({ profile, projectId: project.id, coverage });
 }
 
-export async function PUT(request: Request, context: { params: { projectId: string } }) {
+export async function PUT(request: Request, context: { params: Promise<{ projectId: string }> }) {
   const user = await getAuthenticatedUserFromRequest(request);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!projectAnalysisProfilesEnabled() || getDatabaseProvider() !== "cloud-sql") return NextResponse.json({ error: "Repository profiles are not enabled." }, { status: 404 });
@@ -40,7 +40,7 @@ export async function PUT(request: Request, context: { params: { projectId: stri
   }
   try {
     const repository = getWorkspaceRepository();
-    const current = await repository.getProject(user.id, context.params.projectId);
+    const current = await repository.getProject(user.id, (await context.params).projectId);
     if (!current) return NextResponse.json({ error: "Repository not found." }, { status: 404 });
     const project = await repository.updateProject(user.id, current.id, {
       name: current.name,
