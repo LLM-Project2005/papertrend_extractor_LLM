@@ -280,6 +280,7 @@ test("opening the tab never calls a model; writing up is metered and cached", ()
   const server = read("src/lib/insights/server.ts");
   assert.match(server, /return `\$\{INSIGHTS_PROMPT_VERSION\}:\$\{dataHash\}`;/, "a cached plan is for exactly these papers and this prompt");
   assert.match(server, /scope_type = 'custom' AND scope_key = \$2 AND version_hash = \$3/);
+  assert.match(server, /\.update\(JSON\.stringify\(corpus\.papers\.map\(\(paper\) => String\(paper\.id\)\)\.sort\(\)\)\)/, "keyed by the papers selected, not the spelling of the filters");
 });
 
 test("the editor runs on Gemini 3.1 Flash-Lite unless configured otherwise", () => {
