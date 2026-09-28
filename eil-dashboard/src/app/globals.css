@@ -602,3 +602,26 @@ html:focus-within {
 }
 
 
+
+/*
+ * Google Drive Picker. Google positions its dialog from the page's scroll
+ * position, but the upload window is a fixed overlay that scrolls on its own,
+ * so on a scrolled page the Picker opened above the screen (measured: its top
+ * 426px above the viewport) and had to be scrolled up to. Pinned to the
+ * centre of the viewport instead, above every modal.
+ */
+.picker-dialog-bg {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483000 !important;
+}
+
+.picker-dialog {
+  position: fixed !important;
+  top: 50% !important;
+  left: 50% !important;
+  transform: translate(-50%, -50%) !important;
+  max-width: calc(100vw - 32px) !important;
+  max-height: calc(100dvh - 32px) !important;
+  z-index: 2147483001 !important;
+}
