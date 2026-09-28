@@ -3,14 +3,10 @@
 /*
  * Draws one insight. Every value comes from the insight object itself - the
  * same object the model was shown - so the chart and its words cannot drift
- * apart. Only bars use Recharts; the rest are plain elements, which read
- * better than a chart library at the sizes these are drawn and stay legible at
- * phone width.
+ * apart. They are plain elements rather than a chart library: every label is
+ * shown in full and wraps at phone width, where a chart's axis would cut it.
  */
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useTheme } from "@/components/theme/ThemeProvider";
-import { chartAnimationActive, chartTheme, tickStyle } from "@/lib/chart-theme";
-import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import type { Insight, LifecycleRow } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
 
@@ -35,45 +31,31 @@ function PapersButton({ ids, label, onOpen, children }: { ids: PaperId[]; label:
 
 function BarsChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }) {
   const chart = insight.chart;
-  const { theme, hydrated } = useTheme();
-  const ct = chartTheme(hydrated && theme === "dark");
-  const labels = labelColumn(useIsNarrow(), { width: 220, chars: 30 });
   if (chart.kind !== "bars") return null;
-  const height = Math.max(160, chart.rows.length * 44 + 40);
+  const max = Math.max(...chart.rows.map((row) => row.value), 1);
   return (
-    <div style={{ height }}>
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chart.rows} layout="vertical" margin={{ left: 8, right: 24, top: 4, bottom: 4 }}>
-          <CartesianGrid horizontal={false} stroke={ct.grid} strokeDasharray="3 3" />
-          <XAxis type="number" allowDecimals={chart.unit === "themes"} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-          <YAxis
-            type="category"
-            dataKey="label"
-            width={labels.width}
-            tick={tickStyle(ct, 12)}
-            tickFormatter={(value) => truncate(String(value), labels.chars)}
-            stroke={ct.axisLine}
-          />
-          <Tooltip
-            formatter={(value: number) => [value, chart.valueLabel]}
-            labelFormatter={(label: string) => {
-              const row = chart.rows.find((entry) => entry.label === label);
-              return row?.detail ? `${label} · ${row.detail}` : label;
-            }}
-          />
-          <Bar
-            isAnimationActive={chartAnimationActive()}
-            dataKey="value"
-            name={chart.valueLabel}
-            fill={ct.barFill}
-            radius={[0, 6, 6, 0]}
-            cursor="pointer"
-            onClick={(entry: { payload?: { paperIds?: PaperId[]; label?: string } }) => {
-              if (entry?.payload?.paperIds?.length) onOpen(entry.payload.paperIds, String(entry.payload.label ?? ""));
-            }}
-          />
-        </BarChart>
-      </ResponsiveContainer>
+    <div>
+      <p className="mb-2 text-xs text-slate-500 dark:text-[#8f8f8f]">{chart.valueLabel}</p>
+      <ul className="space-y-2.5">
+        {chart.rows.map((row) => (
+          <li key={row.label} className="grid gap-1 sm:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] sm:items-center sm:gap-4">
+            <div className="min-w-0">
+              <p className="text-sm leading-5 text-slate-800 dark:text-[#e5e5e5]">
+                <PapersButton ids={row.paperIds} label={row.label} onOpen={onOpen}>
+                  {row.label}
+                </PapersButton>
+              </p>
+              {row.detail ? <p className="text-xs leading-4 text-slate-500 dark:text-[#8f8f8f]">{row.detail}</p> : null}
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1a1a1a]" aria-hidden>
+                <span className="block h-full rounded-full bg-slate-700 dark:bg-[#d4d4d4]" style={{ width: `${(row.value / max) * 100}%` }} />
+              </span>
+              <span className="w-10 flex-none text-right text-xs tabular-nums text-slate-700 dark:text-[#d4d4d4]">{row.value}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -255,7 +237,7 @@ function CompareChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPaper
                         />
                       </div>
                       <span className="w-20 flex-none text-right text-xs tabular-nums text-slate-600 dark:text-[#a3a3a3]">
-                        {row.left}% → {row.right}%
+                        {row.left}% {chart.sequence === "time" ? "→" : "vs"} {row.right}%
                       </span>
                     </div>
                   </li>

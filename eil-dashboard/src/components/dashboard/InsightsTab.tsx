@@ -46,6 +46,13 @@ function timeAgo(iso: string): string {
   return `${days} days ago`;
 }
 
+const FAMILY: Record<Insight["family"], string> = {
+  relationship: "What goes together",
+  change: "What is changing",
+  composition: "What the papers are",
+  gap: "What stands apart",
+};
+
 function InsightCard({
   insight,
   title,
@@ -63,7 +70,7 @@ function InsightCard({
     <section className="app-surface px-4 py-5 sm:px-6" aria-labelledby={`insight-${insight.id}-${index}`} data-insight={insight.id}>
       {index >= 0 ? (
         <p className="text-xs font-medium text-slate-500 dark:text-[#8f8f8f]">
-          {index + 1} · {insight.question}
+          {index + 1} · {title === insight.question ? FAMILY[insight.family] : insight.question}
         </p>
       ) : null}
       <h3 id={`insight-${insight.id}-${index}`} className={`${index >= 0 ? "mt-1.5 " : ""}text-base font-semibold leading-6 text-slate-900 dark:text-white`}>
