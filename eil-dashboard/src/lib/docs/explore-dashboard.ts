@@ -4,7 +4,7 @@ export const dashboardPage: DocsPageBase = {
   slug: "dashboard",
   title: "The dashboard",
   description:
-    "Six views of one repository: what each chart shows, how themes are formed, how filters and Refresh work, the semantic map and the AI-planned Adaptive charts.",
+    "Six views of one repository: what each chart shows, how themes are formed, how filters and Refresh work, the semantic map and the Adaptive insights.",
   tags: ["dashboard", "charts", "themes", "filters", "semantic map", "adaptive", "trends"],
   popular: true,
   related: ["analysis-pipeline", "analysis-profiles", "chat"],
@@ -29,7 +29,7 @@ export const dashboardPage: DocsPageBase = {
       ],
       bullets: [
         "While every year is selected, clicking one year selects only that year; later clicks add or remove years. Removing the last one returns to all years. **Show all** resets.",
-        "Filters apply to Overview, Trend Analysis, Category Analysis and Keyword Explorer, and to the Adaptive tab when you generate charts. The Semantic Map always shows the whole repository.",
+        "Filters apply to Overview, Trend Analysis, Category Analysis, Keyword Explorer and Adaptive, which works its insights out again for every change. The Semantic Map always shows the whole repository.",
         "Your filters are remembered in this browser for each repository separately, and restored when you come back.",
         "Papers without a readable year appear under an **Unknown** year chip.",
       ],
@@ -151,12 +151,14 @@ export const dashboardPage: DocsPageBase = {
       id: "adaptive",
       title: "Adaptive",
       body: [
-        "An AI planner picks up to five charts that the current data can honestly support, from seven kinds (publication volume, top topics, papers by category, topics that changed, largest shifts, when keyword families appear, and how categories differ by topic), and writes a reason for each. **Generate charts** builds them for your current filters; after a filter change, **Update charts**.",
+        "Patterns in the selected papers that no other tab shows, each with the numbers behind it: which themes are studied together, which methods are used for which themes, which methods and categories are gaining or losing ground, what sets each category apart, which themes are new or have faded, whether the range of topics is broadening, what the studies set out to produce and what kinds of study they are.",
+        "A pattern is shown only when at least 3 papers are behind it and it holds with any one of them removed. A paper uploaded twice is counted once. The tab works this out as soon as it opens, for your current filters, without AI.",
       ],
       bullets: [
-        "If the planner fails or picks nothing the data supports, a conservative **Safe fallback** set is shown instead.",
-        "Adaptive charts are not saved: they stay while you switch tabs, and are gone when you leave the page.",
-        "Each generation counts toward a daily limit of 100 chart plans.",
+        "**Write up with AI** has a model choose the strongest insights, order them and word them. It can only use the numbers computed here: any sentence with a number that does not match is replaced by the computed one. The write-up is kept for these filters until the papers change; **Rewrite with AI** makes a new one.",
+        "**Ask about these papers** turns a question such as \"Which methods are used for which themes?\" into a view of the data. The answer's numbers and sentence are computed, not written by the model; questions the data cannot answer, such as about authors or citations, are declined.",
+        "Each write-up and each question counts toward the daily limit of 100.",
+        "**The papers behind this** under any insight lists them; so does clicking a bar, a cell or a name.",
       ],
     },
     {

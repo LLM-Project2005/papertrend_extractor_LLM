@@ -26,6 +26,8 @@ export interface AskQuery {
   columns?: AskDimension | null;
   /** Keep only papers with any of these values of one dimension. */
   focus?: { dimension: AskDimension; values: string[] } | null;
+  /** Values of `rows` the question is about ("mixed methods" in "is mixed methods more common…"). */
+  about?: string[];
 }
 
 const DIMENSION_NOUN: Record<AskDimension, string> = {
@@ -148,7 +150,8 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
       tag: tags.get(label),
       paperIds: [...ids],
     }));
-    const lead = [...rows].sort((a, b) => Math.abs(b.right - b.left) - Math.abs(a.right - a.left))[0];
+    const asked = resolveValues(corpus, query.rows, query.about ?? [])[0];
+    const lead = rows.find((row) => row.label === asked) ?? [...rows].sort((a, b) => Math.abs(b.right - b.left) - Math.abs(a.right - a.left))[0];
     const moved = rows.filter((row) => row.tag);
     const facts = [
       fact("early_papers", split.early.length, "papers", `papers from ${split.earlyLabel}`),
@@ -165,7 +168,7 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
         family: "change",
         chart: { kind: "compare", leftLabel: split.earlyLabel, rightLabel: split.lateLabel, unit: "percent", rows },
         facts,
-        takeaway: `Among ${scope}, the biggest change is ${lead.label}: ${lead.left}% of papers in ${split.earlyLabel}, ${lead.right}% in ${split.lateLabel} - ${verdict}.${moved.length > 1 ? ` ${moved.length} ${DIMENSION_NOUN[query.rows]}s pass the shift rules.` : ""}`,
+        takeaway: `Among ${scope}, ${lead.label === asked ? "" : "the biggest change is "}${lead.label}${lead.label === asked ? " went" : ""}: ${lead.left}% of papers in ${split.earlyLabel}, ${lead.right}% in ${split.lateLabel} - ${verdict}.${moved.length > 1 ? ` ${moved.length} ${DIMENSION_NOUN[query.rows]}s pass the shift rules.` : ""}`,
         paperIds: uniqueIds(rows.flatMap((row) => row.paperIds)),
         basis: `The ${N} papers split where they best halve (${split.early.length} and ${split.late.length}). "Gaining" and "losing" follow the Trend tab's rules: at least ${MIN_PAPERS} papers, and a change that survives removing any one.`,
       },
@@ -240,12 +243,39 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
     };
   }
 
-  // One dimension: how the papers divide.
+  // One dimension: how the papers divide - against all selected papers when narrowed.
+  const overall = indexBy(corpus.papers, (paper) => valuesOf(paper, query.rows));
+  const total = corpus.papers.length;
   const index = [...indexBy(papers, (paper) => valuesOf(paper, query.rows)).entries()]
     .sort((a, b) => (query.rows === "year" ? a[0].localeCompare(b[0]) : b[1].size - a[1].size || a[0].localeCompare(b[0])))
     .slice(0, query.rows === "year" ? 40 : 12);
-  if (index.length === 0) return { unanswerable: `None of ${scope} has a ${DIMENSION_NOUN[query.rows]} recorded.` };
-  const top = [...index].sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))[0];
+  const about = resolveValues(corpus, query.rows, query.about ?? [])[0] ?? null;
+  const facts: InsightFact[] = [fact("scope", N, "papers", scope), fact("total", total, "papers", "papers selected")];
+  const shareHere = (value: string) => percent(index.find(([label]) => label === value)?.[1].size ?? 0, N);
+  const shareOverall = (value: string) => percent(overall.get(value)?.size ?? 0, total);
+  let takeaway: string;
+  if (about) {
+    const count = index.find(([label]) => label === about)?.[1].size ?? 0;
+    facts.push(
+      fact("about_count", count, "papers", `${scope} with ${about}`),
+      fact("about_share", shareHere(about), "percent", `share of ${scope} with ${about}`),
+      fact("about_overall", shareOverall(about), "percent", `share of all selected papers with ${about}`)
+    );
+    takeaway = focusText
+      ? count === 0
+        ? `None of ${scope} has ${about}, against ${shareOverall(about)}% of all ${total} papers selected.`
+        : `${about} appears in ${count} of ${scope} (${shareHere(about)}%), against ${shareOverall(about)}% of all ${total} papers selected.`
+      : `${about} appears in ${count} of ${scope} (${shareHere(about)}%).`;
+  } else {
+    if (index.length === 0) return { unanswerable: `None of ${scope} has a ${DIMENSION_NOUN[query.rows]} recorded.` };
+    const top = [...index].sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))[0];
+    facts.push(
+      fact("top", top[1].size, "papers", `papers with ${top[0]}`),
+      fact("top_share", shareHere(top[0]), "percent", `share of ${scope} with ${top[0]}`),
+      fact("top_overall", shareOverall(top[0]), "percent", `share of all selected papers with ${top[0]}`)
+    );
+    takeaway = `Among ${scope}, the most common ${DIMENSION_NOUN[query.rows]} is ${top[0]}, in ${top[1].size} (${shareHere(top[0])}%)${focusText ? `, against ${shareOverall(top[0])}% of all ${total} papers selected` : ""}.`;
+  }
   return {
     insight: {
       ...base,
@@ -253,17 +283,17 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
         kind: "bars",
         valueLabel: "Papers",
         unit: "papers",
-        rows: index.map(([label, ids]) => ({ label, value: ids.size, detail: `${percent(ids.size, N)}% of ${scope}`, paperIds: [...ids] as PaperId[] })),
+        rows: index.map(([label, ids]) => ({
+          label,
+          value: ids.size,
+          detail: focusText ? `${percent(ids.size, N)}% here · ${shareOverall(label)}% of all papers` : `${percent(ids.size, N)}% of papers`,
+          paperIds: [...ids] as PaperId[],
+        })),
       },
-      facts: [
-        fact("scope", N, "papers", scope),
-        fact("top", top[1].size, "papers", `papers with ${top[0]}`),
-        fact("top_share", percent(top[1].size, N), "percent", `share of ${scope} with ${top[0]}`),
-        fact("values", index.length, "count", `different values of ${DIMENSION_NOUN[query.rows]}`),
-      ],
-      takeaway: `Among ${scope}, the most common ${DIMENSION_NOUN[query.rows]} is ${top[0]}, in ${top[1].size} (${percent(top[1].size, N)}%).`,
+      facts,
+      takeaway,
       paperIds: uniqueIds(index.flatMap(([, ids]) => [...ids])),
-      basis: `Papers per ${DIMENSION_NOUN[query.rows]} among ${scope}; a paper can count under more than one.`,
+      basis: `Papers per ${DIMENSION_NOUN[query.rows]} among ${scope}${focusText ? `, beside the share among all ${total} papers selected` : ""}; a paper can count under more than one.`,
     },
   };
 }
@@ -286,17 +316,11 @@ export function askTool() {
           measure: { type: "string", enum: ["papers", "change"], description: "papers: how the papers divide; change: how shares moved between the earlier and later papers." },
           rows: { type: "string", enum: [...ASK_DIMENSIONS] },
           columns: { type: "string", enum: [...ASK_DIMENSIONS, "none"], description: "A second dimension to cross with rows, or none." },
-          focus: {
-            type: "object",
-            description: "Only when the question names particular values; leave out otherwise.",
-            properties: {
-              dimension: { type: "string", enum: [...ASK_DIMENSIONS] },
-              values: { type: "array", items: { type: "string" }, maxItems: 6, description: "Values exactly as listed in the prompt." },
-            },
-            required: ["dimension", "values"],
-          },
+          focus_dimension: { type: "string", enum: [...ASK_DIMENSIONS, "none"], description: "The dimension of the papers the question narrows to, or none." },
+          focus_values: { type: "array", items: { type: "string" }, maxItems: 8, description: "Values of focus_dimension, exactly as listed; every listed value that matches the subject named." },
+          about_values: { type: "array", items: { type: "string" }, maxItems: 3, description: "Values of rows the question asks about, exactly as listed, or empty." },
         },
-        required: ["answerable", "title", "measure", "rows"],
+        required: ["answerable", "title", "measure", "rows", "columns", "focus_dimension", "focus_values", "about_values"],
       },
     },
   };
@@ -314,7 +338,12 @@ export function askMessages(question: string, vocabulary: Record<AskDimension, s
       role: "user" as const,
       content: [
         "Dimensions: theme (what a paper studies), method (how it was done), category, contribution (what it produces), study_type, aim (its objective verb), year.",
-        "Use measure 'change' for questions about growth, decline or trends; 'papers' otherwise. Use columns to cross two dimensions ('which methods for which themes'). Use focus to narrow to named values the question mentions, choosing only from the values listed.",
+        "Use measure 'change' for questions about growth, decline or trends; 'papers' otherwise. Use columns to cross two dimensions. When the question names a subject ('writing papers', 'assessment research'), narrow to it: focus_dimension is where the subject is listed, and focus_values is every listed value that matches it. When it asks about one value of rows ('is mixed methods more common…'), put that value in about_values.",
+        "Examples:",
+        "- 'Which methods are used for which themes?' -> rows theme, columns method, focus_dimension none.",
+        "- 'Is mixed-methods research more common in writing papers?' -> rows method, focus_dimension theme, focus_values [every theme naming writing], about_values [the mixed-methods method].",
+        "- 'What do the papers on assessment set out to produce?' -> rows contribution, focus_dimension theme, focus_values [every theme naming assessment or testing].",
+        "- 'How has the use of interviews changed?' -> measure change, rows method, about_values [the interview method].",
         "If the question needs anything else - authors, citations, countries, findings, sample sizes, quality - set answerable to false and say why.",
         `Selection: ${selection}.`,
         `Values present: ${JSON.stringify(vocabulary)}`,
@@ -331,8 +360,11 @@ export function parseAskQuery(raw: unknown): AskQuery | null {
     typeof entry === "string" && (ASK_DIMENSIONS as readonly string[]).includes(entry) ? (entry as AskDimension) : null;
   const rows = dimension(value.rows);
   if (value.answerable !== false && !rows) return null;
-  const focusRaw = value.focus && typeof value.focus === "object" ? (value.focus as Record<string, unknown>) : null;
-  const focusDimension = focusRaw ? dimension(focusRaw.dimension) : null;
+  const focusRaw = value.focus && typeof value.focus === "object"
+    ? (value.focus as Record<string, unknown>)
+    : { dimension: value.focus_dimension, values: value.focus_values };
+  const focusDimension = dimension(focusRaw.dimension);
+  const strings = (entry: unknown) => (Array.isArray(entry) ? entry.filter((item): item is string => typeof item === "string") : []);
   return {
     answerable: value.answerable !== false,
     reason: typeof value.reason === "string" ? value.reason : undefined,
@@ -340,9 +372,7 @@ export function parseAskQuery(raw: unknown): AskQuery | null {
     measure: value.measure === "change" ? "change" : "papers",
     rows: rows ?? "theme",
     columns: dimension(value.columns),
-    focus:
-      focusRaw && focusDimension && Array.isArray(focusRaw.values)
-        ? { dimension: focusDimension, values: focusRaw.values.filter((entry): entry is string => typeof entry === "string").slice(0, 6) }
-        : null,
+    focus: focusDimension && strings(focusRaw.values).length ? { dimension: focusDimension, values: strings(focusRaw.values).slice(0, 8) } : null,
+    about: strings(value.about_values).slice(0, 3),
   };
 }

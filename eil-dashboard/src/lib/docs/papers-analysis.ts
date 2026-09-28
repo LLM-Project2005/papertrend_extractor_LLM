@@ -327,7 +327,7 @@ export const analysisProfilesPage: DocsPageBase = {
       callout: {
         tone: "info",
         title: "A few views still use the original EIL codes",
-        body: "The concept search's **Track spread** chart, the semantic map's **Color: track**, and the Adaptive tab's track charts still show the original EL, ELI and LAE slots. With a custom taxonomy, use the category views instead.",
+        body: "The concept search's **Track spread** chart and the semantic map's **Color: track** still show the original EL, ELI and LAE slots. With a custom taxonomy, use the category views and the Adaptive tab, which use your own categories.",
       },
     },
   ],

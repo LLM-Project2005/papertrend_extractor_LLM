@@ -341,3 +341,22 @@ test("asking is metered like writing up, and returns only computed output", () =
   assert.match(route, /const answer = runAskQuery\(built\.corpus, query\);\s*return NextResponse\.json\(answer/);
   assert.match(route, /question: z\.string\(\)\.trim\(\)\.min\(3\)\.max\(300\)/);
 });
+
+test("a narrowed question is answered against all papers, about the value asked", async () => {
+  const { runAskQuery, parseAskQuery } = await import("../src/lib/insights/ask");
+  const corpus = buildInsightCorpus(fixture());
+  // "Is mixed methods more common in writing papers?" None of the 6 Writing papers uses it; 6 of all 30 do.
+  const query = parseAskQuery({ answerable: true, title: "t", measure: "papers", rows: "method", columns: "none", focus_dimension: "theme", focus_values: ["Writing"], about_values: ["Mixed methods"] });
+  assert.ok(query && query.focus?.values[0] === "Writing" && query.about?.[0] === "Mixed methods");
+  const answer = runAskQuery(corpus, query!);
+  assert.ok("insight" in answer);
+  if ("insight" in answer) {
+    assert.equal(answer.insight.takeaway, "None of the 6 papers on Writing has Mixed methods, against 20% of all 30 papers selected.");
+    assert.equal(answer.insight.facts.find((fact) => fact.id === "about_overall")?.value, 20);
+  }
+  const feedback = runAskQuery(corpus, { ...query!, rows: "theme", about: ["feedback"] });
+  assert.ok("insight" in feedback);
+  if ("insight" in feedback) {
+    assert.equal(feedback.insight.takeaway, "Feedback appears in 5 of the 6 papers on Writing (83%), against 20% of all 30 papers selected.");
+  }
+});
