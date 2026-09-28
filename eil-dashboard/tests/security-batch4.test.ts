@@ -151,7 +151,9 @@ test("a stuck Drive Picker can always be closed, and the reader is told why", ()
   // may not show, which left the dialog with no way out.
   const picker = read("src/lib/google-drive-picker.ts");
   assert.match(picker, /function addPageCloseControl\(onClose: \(\) => void\)/);
-  assert.match(picker, /event\.key === "Escape"/);
+  assert.match(picker, /event\.key !== "Escape"/);
+  assert.match(picker, /window\.addEventListener\("keydown", onKey, true\)/, "caught before the upload window's handler");
+  assert.match(picker, /event\.stopPropagation\(\);\s+onClose\(\);/, "and not passed on to it");
   assert.match(picker, /removeCloseControl = addPageCloseControl\(\(\) => finish\(\(\) => reject\(new DrivePickerCancelled\(true\)\)\)\);/);
   assert.match(picker, /pickerHandle\?\.dispose\?\.\(\)/, "the Picker is torn down when it closes");
   const modal = read("src/components/workspace/AnalyzeFlowModal.tsx");
