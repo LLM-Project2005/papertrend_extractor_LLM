@@ -360,3 +360,12 @@ test("a narrowed question is answered against all papers, about the value asked"
     assert.equal(feedback.insight.takeaway, "Feedback appears in 5 of the 6 papers on Writing (83%), against 20% of all 30 papers selected.");
   }
 });
+
+test("values tied at the top are named together", async () => {
+  const { runAskQuery } = await import("../src/lib/insights/ask");
+  const corpus = buildInsightCorpus(fixture());
+  // Reading, Vocabulary and Speaking each have 10 of the 30 papers.
+  const answer = runAskQuery(corpus, { answerable: true, title: "", measure: "papers", rows: "theme" });
+  assert.ok("insight" in answer);
+  if ("insight" in answer) assert.match(answer.insight.takeaway, /the most common themes are Reading, Speaking and Vocabulary, in 10 each \(33%\)\./);
+});

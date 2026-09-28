@@ -274,7 +274,12 @@ export function runAskQuery(corpus: InsightCorpus, query: AskQuery): AskResult {
       fact("top_share", shareHere(top[0]), "percent", `share of ${scope} with ${top[0]}`),
       fact("top_overall", shareOverall(top[0]), "percent", `share of all selected papers with ${top[0]}`)
     );
-    takeaway = `Among ${scope}, the most common ${DIMENSION_NOUN[query.rows]} is ${top[0]}, in ${top[1].size} (${shareHere(top[0])}%)${focusText ? `, against ${shareOverall(top[0])}% of all ${total} papers selected` : ""}.`;
+    // Values tied at the top are named together rather than one picked by spelling.
+    const tied = index.filter(([, ids]) => ids.size === top[1].size).map(([label]) => label);
+    takeaway =
+      tied.length > 1
+        ? `Among ${scope}, the most common ${DIMENSION_NOUN[query.rows]}s are ${tied.slice(0, -1).join(", ")} and ${tied[tied.length - 1]}, in ${top[1].size} each (${shareHere(top[0])}%).`
+        : `Among ${scope}, the most common ${DIMENSION_NOUN[query.rows]} is ${top[0]}, in ${top[1].size} (${shareHere(top[0])}%)${focusText ? `, against ${shareOverall(top[0])}% of all ${total} papers selected` : ""}.`;
   }
   return {
     insight: {
