@@ -17,6 +17,9 @@
 const PRICES: Record<string, { prompt: number; completion: number }> = {
   "openai/gpt-5.6-luna-20260709": { prompt: 2.5, completion: 10 },
   "google/gemini-3.7-flash": { prompt: 0.075, completion: 0.3 },
+  // Taken 2026-09-29, for the Adaptive insights editor and its alternative.
+  "google/gemini-3.1-flash-lite": { prompt: 0.25, completion: 1.5 },
+  "openai/gpt-5.6-luna": { prompt: 0.2, completion: 1.2 },
   "openai/gpt-4o": { prompt: 2.5, completion: 10 },
   "openai/text-embedding-3-small": { prompt: 0.02, completion: 0 },
 };
