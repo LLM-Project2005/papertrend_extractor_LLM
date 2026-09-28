@@ -158,6 +158,6 @@ test("a stuck Drive Picker can always be closed, and the reader is told why", ()
   assert.match(picker, /pickerHandle\?\.dispose\?\.\(\)/, "the Picker is torn down when it closes");
   const modal = read("src/components/workspace/AnalyzeFlowModal.tsx");
   assert.match(modal, /if \(driveError\.closedByPage\)/);
-  assert.match(modal, /Allow third-party cookies for \[\*\.\]google\.com/);
+  assert.match(modal, /Allow third-party cookies for this site in your browser's settings/);
   assert.match(read("src/app/globals.css"), /\.drive-picker-close \{[\s\S]*?z-index: 2147483002;/);
 });
