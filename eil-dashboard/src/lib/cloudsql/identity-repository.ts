@@ -84,8 +84,9 @@ export async function redeemInviteForIdentity(
   );
 }
 
-async function provisionInTransaction(
-  client: PoolClient,
+/** Exported so the SQL can be exercised against a real Postgres in tests. */
+export async function provisionInTransaction(
+  client: Pick<PoolClient, "query">,
   identity: AuthIdentity,
   { email, verified }: { email: string; verified: boolean },
   newAccount: NewAccountRule
