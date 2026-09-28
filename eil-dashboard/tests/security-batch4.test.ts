@@ -68,3 +68,24 @@ test("a new password needs ten characters; an existing one still signs in", () =
   assert.match(errors, /export const MIN_NEW_PASSWORD_LENGTH = 10;/);
   assert.match(errors, /"auth\/password-does-not-meet-requirements"/);
 });
+
+test("refused and abandoned uploads do not stay in the bucket", () => {
+  const finalize = read("src/app/api/admin/import/finalize/route.ts");
+  const refusals = finalize.slice(finalize.indexOf("const maxUploadBytes"), finalize.indexOf("queueableUploadedItems.push(item);"));
+  assert.equal((refusals.match(/await deleteGcsObject\(storagePath\)/g) ?? []).length, 2, "an oversized or non-PDF file is deleted");
+
+  const repo = read("src/lib/cloudsql/ingestion-repository.ts");
+  const sweep = repo.slice(repo.indexOf("async failAbandonedUploads"), repo.indexOf("async loadOwnedBatch"));
+  assert.match(sweep, /WHERE owner_user_id = \$1 AND source_type = 'upload'/, "only the caller's own uploads");
+  assert.match(sweep, /status = 'processing' AND source_path IS NULL/, "only uploads never finalized");
+  assert.match(sweep, /make_interval\(mins => \$2::int\)/);
+
+  const prepare = read("src/app/api/admin/import/prepare/route.ts");
+  assert.ok(
+    prepare.indexOf("failAbandonedUploads(user!.id)") < prepare.indexOf("createUploadBatch({"),
+    "the sweep runs before the quota is counted"
+  );
+  const gcs = read("src/lib/gcs-signed-urls.ts");
+  assert.match(gcs, /matchGlob: `pending\/\*\*\/\$\{runId\}\/\*\*`/);
+  assert.match(gcs, /\[0-9a-f\]\{8\}-/, "the run id is checked before it goes into a glob");
+});
