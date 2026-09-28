@@ -1,5 +1,67 @@
 /** @type {import('next').NextConfig} */
+
+function originOf(value) {
+  try {
+    return value ? new URL(value).origin : "";
+  } catch {
+    return "";
+  }
+}
+
+/*
+ * Content-Security-Policy: where this site may load scripts, frames and
+ * images from, and which hosts its pages may send data to. It limits what an
+ * injected script could do - chiefly, it cannot send a signed-in session's
+ * tokens to a host of its choosing.
+ *
+ * Script tags still allow 'unsafe-inline' because the framework writes its
+ * hydration data inline; the policy's weight is in connect-src, frame-src,
+ * object-src, base-uri, form-action and frame-ancestors.
+ *
+ * External origins, and why:
+ *   apis.google.com, accounts.google.com  Google sign-in (Firebase) and the
+ *                                         Drive Picker's scripts
+ *   <auth domain>                         Firebase's sign-in iframe
+ *   *.googleapis.com                      Firebase Auth, Drive downloads, and
+ *                                         signed storage links (uploads, PDFs)
+ *   docs.google.com, drive.google.com     the Drive Picker's frame
+ *   storage.googleapis.com (frame)        the PDF viewer's fallback frame
+ *   <direct API origin>                   chat streams straight from Cloud Run
+ */
+const directApiOrigin = originOf(process.env.NEXT_PUBLIC_DIRECT_API_URL);
+const authDomain = (process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN ?? "").trim();
+const authDomainOrigin = authDomain ? `https://${authDomain}` : "";
+
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://apis.google.com https://accounts.google.com https://www.gstatic.com",
+  "style-src 'self' 'unsafe-inline' https://accounts.google.com",
+  // Avatars may be any https image, so images are not narrowed further.
+  "img-src 'self' data: blob: https:",
+  "font-src 'self' data:",
+  ["connect-src 'self'", directApiOrigin, "https://*.googleapis.com https://accounts.google.com https://apis.google.com"]
+    .filter(Boolean)
+    .join(" "),
+  ["frame-src 'self'", authDomainOrigin, "https://accounts.google.com https://docs.google.com https://drive.google.com https://storage.googleapis.com"]
+    .filter(Boolean)
+    .join(" "),
+  "worker-src 'self' blob:",
+  "media-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+  "upgrade-insecure-requests",
+].join("; ");
+
+// Enforced. It ran report-only on the pilot first, while every feature was
+// exercised (landing videos, Google sign-in, the PDF viewer and its fallback
+// frame, dashboards, streaming chat, uploads, the Drive Picker), and nothing
+// was reported.
+const CSP_HEADER = "Content-Security-Policy";
+
 const securityHeaders = [
+  { key: CSP_HEADER, value: contentSecurityPolicy },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Frame-Options", value: "DENY" },
