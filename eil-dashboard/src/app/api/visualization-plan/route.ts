@@ -16,8 +16,19 @@ const VisualizationPlanSchema = z
     selectedYears: z.array(z.string().max(20)).max(80).optional(),
     selectedTracks: z.array(z.string().max(80)).max(20).optional(),
     searchQuery: z.string().max(1_000).optional(),
-  })
-  .passthrough();
+    folderId: z.string().max(80).optional(),
+    // `context` goes into the model prompt, so it is bounded field by field.
+    // It used to pass through unchecked, which let one request put megabytes
+    // of text into a paid model call outside the token budget.
+    context: z
+      .object({
+        workspaceName: z.string().max(120).optional(),
+        domain: z.string().max(200).optional(),
+        goal: z.string().max(2_000).optional(),
+      })
+      .optional(),
+  });
+// Unknown keys are dropped (zod's default), not passed on to the planner.
 
 export async function POST(request: Request) {
   try {

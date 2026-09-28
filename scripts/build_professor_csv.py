@@ -346,13 +346,33 @@ def read_ordered_csv(path: Path) -> Tuple[List[str], List[Dict[str, str]]]:
     return fieldnames, rows
 
 
+_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def safe_csv_cell(value: Any) -> Any:
+    """A cell a spreadsheet will show as text, not run as a formula.
+
+    Titles, keywords and evidence come from uploaded PDFs and model output, so
+    a value such as "=HYPERLINK(...)" must not be executed when the file is
+    opened in Excel. Numbers, including negative ones, are left as they are.
+    """
+
+    if not isinstance(value, str) or not value.startswith(_FORMULA_PREFIXES):
+        return value
+    try:
+        float(value)
+        return value
+    except ValueError:
+        return "'" + value
+
+
 def write_csv(path: Path, fieldnames: Sequence[str], rows: Sequence[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(fieldnames), extrasaction="ignore")
         writer.writeheader()
         for row in rows:
-            writer.writerow({field: row.get(field, "") for field in fieldnames})
+            writer.writerow({field: safe_csv_cell(row.get(field, "")) for field in fieldnames})
 
 
 def relabel_rows(
