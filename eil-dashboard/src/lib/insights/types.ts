@@ -98,6 +98,8 @@ export interface Insight {
   paperIds: PaperId[];
   /** "Based on …" line under the chart. */
   basis: string;
+  /** A limit of this finding a reader should know, shown with it. */
+  caution?: string;
 }
 
 export interface InsightNotice {
@@ -137,4 +139,6 @@ export interface InsightPlan {
   generatedAt: string;
   /** Takeaways the checker replaced because a number did not match a fact. */
   corrected?: number;
+  /** What was replaced and why, for the server log; not sent to the page. */
+  checks?: Array<{ field: string; insightId?: string; reason: string }>;
 }

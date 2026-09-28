@@ -84,6 +84,31 @@ function claimMatches(claim: NumberClaim, facts: InsightFact[]): boolean {
   });
 }
 
+/**
+ * "Significant" claims a statistical test nobody ran; it is taken out, which
+ * leaves the sentence intact ("a significant decline" reads "a decline").
+ */
+export function scrubLoadedWords(text: string): string {
+  return text
+    .replace(/\s*\bstatistically\s+significant(ly)?\b/gi, "")
+    .replace(/\s*\bsignificant(ly)?\b/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,;:])/g, "$1")
+    .trim();
+}
+
+/** Words that claim a cause; associations in a paper collection show none. */
+const CAUSAL = /\b(causes?|caused|causing|leads? to|led to|drives?|driven by|drove|because of|due to|results? in|resulted in)\b/i;
+
+/** Whether the text claims a cause, outside the names it quotes. */
+export function claimsCause(text: string, labels: string[] = []): boolean {
+  let rest = text;
+  for (const label of [...new Set(labels)].sort((a, b) => b.length - a.length)) {
+    if (label) rest = rest.replace(new RegExp(escapeRegExp(label), "gi"), " ");
+  }
+  return CAUSAL.test(rest.replace(/[“"‘][^”"’]*[”"’]/g, " "));
+}
+
 /** The numbers in `text` that no fact backs; empty when the text is sound. */
 export function unbackedClaims(text: string, facts: InsightFact[], labels: string[]): NumberClaim[] {
   return extractClaims(text, labels).filter((claim) => !claimMatches(claim, facts));

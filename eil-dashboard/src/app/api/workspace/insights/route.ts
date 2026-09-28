@@ -118,18 +118,19 @@ export async function POST(request: Request) {
     }
   });
 
+  const { checks, ...shownPlan } = plan;
   if (usage.totalTokens > 0) {
     const spend = summarizeSpend(usage.byModel);
-    console.info("insights_spend", JSON.stringify({ usd: spend.usd, totalTokens: usage.totalTokens, calls: usage.calls, byModel: spend.byModel, corrected: plan.corrected ?? 0 }));
+    console.info("insights_spend", JSON.stringify({ usd: spend.usd, totalTokens: usage.totalTokens, calls: usage.calls, byModel: spend.byModel, corrected: plan.corrected ?? 0, checks: checks ?? [] }));
     await persistAiTokenUsage(user.id, usage).catch((error) => {
       console.error("insights_token_usage_persist_failed", { message: error instanceof Error ? error.message : "unknown_error" });
     });
   }
-  if (plan.source === "model") {
-    await writeCachedPlan(user.id, built, body.projectId, plan).catch((error) => {
+  if (shownPlan.source === "model") {
+    await writeCachedPlan(user.id, built, body.projectId, shownPlan).catch((error) => {
       console.warn("insights_cache_write_failed", { message: error instanceof Error ? error.message : "unknown_error" });
     });
-    return respond(plan);
+    return respond(shownPlan);
   }
-  return respond(plan, { notice: "The write-up could not be made just now, so the computed insights are shown." });
+  return respond(shownPlan, { notice: "The write-up could not be made just now, so the computed insights are shown." });
 }

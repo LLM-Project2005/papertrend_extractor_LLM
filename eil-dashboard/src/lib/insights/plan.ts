@@ -9,11 +9,11 @@
  */
 import type { ChatMessage } from "@/lib/openai";
 import { fixedViewSummary } from "@/lib/insights/fixed-views";
-import { allowedFacts, corpusFacts, insightLabels, unbackedClaims } from "@/lib/insights/check";
+import { allowedFacts, claimsCause, corpusFacts, insightLabels, scrubLoadedWords, unbackedClaims } from "@/lib/insights/check";
 import type { Insight, InsightPlan, InsightPlanCard, InsightReport } from "@/lib/insights/types";
 
 /** Bumped whenever the prompt or the checks change, so cached plans are rewritten. */
-export const INSIGHTS_PROMPT_VERSION = "insights-v1";
+export const INSIGHTS_PROMPT_VERSION = "insights-v2";
 export const MAX_CARDS = 5;
 const TITLE_MAX = 90;
 const TAKEAWAY_MAX = 280;
@@ -68,6 +68,7 @@ function candidateForPrompt(insight: Insight) {
     basis: insight.basis,
     facts: Object.fromEntries(insight.facts.map((fact) => [fact.id, `${fact.value}${fact.unit === "percent" ? "%" : fact.unit === "ratio" ? "x" : ""} = ${fact.text}`])),
     draft: insight.takeaway,
+    caution: insight.caution,
   };
 }
 
@@ -104,10 +105,11 @@ export function buildInsightMessages(report: InsightReport, context: InsightCont
         "- Lead with the most surprising finding that has solid support. Prefer findings about how the research is changing or what connects to what.",
         "- Do not pick two candidates that make the same point. Fewer strong cards beat padding; if only 1 or 2 are worth showing, show only those.",
         "- A title states the finding in plain words (at most 12 words), not a question and not a chart name.",
-        "- A takeaway is 1 or 2 sentences (at most 45 words): what the numbers show, then why it matters to someone studying this field. Use the draft's facts; you may reorder and rephrase.",
+        "- A takeaway is 1 or 2 sentences (at most 45 words): what the numbers show, then why it matters to someone studying this field. Use the draft's facts; you may reorder and rephrase. Any interpretation must stay within what the facts show.",
+        "- A candidate with a caution is weaker than it looks; prefer others, and if you show it, say what the caution says.",
         "- Write numbers as digits, only from that candidate's facts (or the selection's paper count and years). No other numbers, no 'twice' or 'half' unless a ratio fact says so.",
-        "- Say 'papers', not 'studies', when counting. Associations are not causes: write 'appear together', not 'drives' or 'leads to'.",
-        "- The headline (at most 12 words) names the single most important finding. The summary (1 or 2 sentences) says what the page shows overall.",
+        "- Say 'papers', not 'studies', when counting. Associations are not causes: never write 'causes', 'drives', 'leads to', 'because of' or 'due to'. Never write 'significant': no statistical test was run.",
+        "- The headline (at most 12 words) states the single most important finding, with its key number. The summary (1 or 2 sentences) says what the page shows overall.",
         "- Caveats: at most 2 short notes on real limits of this data, e.g. a small selection, or duplicate uploads counted once. Omit if none.",
         "",
         JSON.stringify(payload),
@@ -168,6 +170,14 @@ export function checkPlan(raw: unknown, report: InsightReport, model: string, no
   const value = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   const byId = new Map(report.insights.map((insight) => [insight.id, insight]));
   let corrected = 0;
+  const checks: NonNullable<InsightPlan["checks"]> = [];
+  const failure = (text: string, max: number, facts: ReturnType<typeof allowedFacts>, labels: string[]): string | null => {
+    if (!text) return "empty";
+    if (text.length > max) return `longer than ${max}`;
+    if (claimsCause(text, labels)) return "claims a cause";
+    const unbacked = unbackedClaims(text, facts, labels);
+    return unbacked.length ? `unbacked ${unbacked.map((claim) => claim.raw).join(", ")}` : null;
+  };
   const cards: InsightPlanCard[] = [];
   const seen = new Set<string>();
   for (const entry of Array.isArray(value.cards) ? value.cards : []) {
@@ -177,13 +187,17 @@ export function checkPlan(raw: unknown, report: InsightReport, model: string, no
     seen.add(insight.id);
     const facts = allowedFacts(insight, report);
     const labels = insightLabels(insight);
-    let title = clean(card.title);
-    let takeaway = clean(card.takeaway);
-    if (!title || title.length > TITLE_MAX || unbackedClaims(title, facts, labels).length > 0) {
+    let title = scrubLoadedWords(clean(card.title));
+    let takeaway = scrubLoadedWords(clean(card.takeaway));
+    const titleProblem = failure(title, TITLE_MAX, facts, labels);
+    if (titleProblem) {
+      checks.push({ field: "title", insightId: insight.id, reason: titleProblem });
       title = insight.question;
       corrected += 1;
     }
-    if (!takeaway || takeaway.length > TAKEAWAY_MAX || unbackedClaims(takeaway, facts, labels).length > 0) {
+    const takeawayProblem = failure(takeaway, TAKEAWAY_MAX, facts, labels);
+    if (takeawayProblem) {
+      checks.push({ field: "takeaway", insightId: insight.id, reason: takeawayProblem });
       takeaway = insight.takeaway;
       corrected += 1;
     }
@@ -195,19 +209,23 @@ export function checkPlan(raw: unknown, report: InsightReport, model: string, no
   const shown = cards.map((card) => byId.get(card.insightId)!);
   const pageFacts = [...shown.flatMap((insight) => allowedFacts(insight, report)), ...corpusFacts(report)];
   const pageLabels = shown.flatMap(insightLabels);
-  let headline = clean(value.headline);
-  if (!headline || headline.length > HEADLINE_MAX || unbackedClaims(headline, pageFacts, pageLabels).length > 0) {
+  let headline = scrubLoadedWords(clean(value.headline));
+  const headlineProblem = failure(headline, HEADLINE_MAX, pageFacts, pageLabels);
+  if (headlineProblem) {
+    checks.push({ field: "headline", reason: headlineProblem });
     headline = fallback.headline;
     corrected += 1;
   }
-  let summary = clean(value.summary);
-  if (!summary || summary.length > SUMMARY_MAX || unbackedClaims(summary, pageFacts, pageLabels).length > 0) {
+  let summary = scrubLoadedWords(clean(value.summary));
+  const summaryProblem = failure(summary, SUMMARY_MAX, pageFacts, pageLabels);
+  if (summaryProblem) {
+    checks.push({ field: "summary", reason: summaryProblem });
     summary = fallback.summary;
     corrected += 1;
   }
   const caveats = (Array.isArray(value.caveats) ? value.caveats : [])
-    .map(clean)
-    .filter((caveat) => caveat && caveat.length <= CAVEAT_MAX && unbackedClaims(caveat, pageFacts, pageLabels).length === 0)
+    .map((caveat) => scrubLoadedWords(clean(caveat)))
+    .filter((caveat) => caveat && !failure(caveat, CAVEAT_MAX, pageFacts, pageLabels))
     .slice(0, 2);
-  return { headline, summary, cards, caveats, source: "model", model, generatedAt: now.toISOString(), corrected };
+  return { headline, summary, cards, caveats, source: "model", model, generatedAt: now.toISOString(), corrected, checks };
 }
