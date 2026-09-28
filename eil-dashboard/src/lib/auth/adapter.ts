@@ -38,7 +38,7 @@ export interface AuthIdentity {
    * deliberately not put here until an explicit Cloud SQL mapping exists.
    */
   ownerUserId: string | null;
-  mappingStatus?: "not_required" | "unresolved" | "mapped" | "lookup_failed";
+  mappingStatus?: "not_required" | "unresolved" | "mapped" | "lookup_failed" | "invite_required";
   supabaseUser?: User;
 }
 

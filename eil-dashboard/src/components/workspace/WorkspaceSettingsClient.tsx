@@ -16,7 +16,7 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type JSX, type ReactNode } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useTheme, type ThemePreference } from "@/components/theme/ThemeProvider";
 import AnalysisProfileEditor from "@/components/workspace/AnalysisProfileEditor";
@@ -29,6 +29,7 @@ import {
   CopyIcon,
   EqualizerIcon,
   FolderIcon,
+  KeyIcon,
   LogoutIcon,
   MonitorIcon,
   MoonIcon,
@@ -44,15 +45,16 @@ import {
   hintClass,
   labelClass,
   panelClass,
+  type ChipTone,
 } from "@/components/ui/controls";
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 
-type SectionId = "profile" | "security" | "appearance" | "repository" | "analysis";
+type SectionId = "profile" | "security" | "appearance" | "repository" | "analysis" | "invites";
 
 type SectionDef = {
   id: SectionId;
-  group: "Account" | "Repository";
+  group: "Account" | "Repository" | "Admin";
   label: string;
   description: string;
   icon: (props: { className?: string }) => JSX.Element;
@@ -96,6 +98,13 @@ const SECTIONS: SectionDef[] = [
     label: "Analysis & classification",
     description: "How the papers in this repository are categorized.",
     icon: EqualizerIcon,
+  },
+  {
+    id: "invites",
+    group: "Admin",
+    label: "Invite codes",
+    description: "Who may create an account while Papertrend is invite-only.",
+    icon: KeyIcon,
   },
 ];
 
@@ -994,6 +1003,283 @@ function AnalysisSection({ onDirtyChange }: { onDirtyChange: (dirty: boolean) =>
 
 /* ---------------------------------------------------------------- the page */
 
+/* ---------------------------------------------------------- invite codes */
+
+type InviteSummary = {
+  id: string;
+  label: string;
+  boundEmail: string | null;
+  maxUses: number;
+  useCount: number;
+  createdAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  status: "active" | "used" | "expired" | "revoked";
+  redeemedBy: string[];
+};
+
+const INVITE_STATUS: Record<InviteSummary["status"], { tone: ChipTone; label: string }> = {
+  active: { tone: "success", label: "Active" },
+  used: { tone: "neutral", label: "Used" },
+  expired: { tone: "warning", label: "Expired" },
+  revoked: { tone: "danger", label: "Revoked" },
+};
+
+const INVITE_EXPIRY_CHOICES = [1, 3, 7, 14, 30, 60, 90];
+
+/**
+ * Admins only (the server checks the role on every request; this section is
+ * merely hidden from others). A new code is shown once: the server keeps only
+ * its hash, so it cannot be listed again.
+ */
+function InviteCodesSection() {
+  const { session } = useAuth();
+  const token = session?.access_token;
+  const [invites, setInvites] = useState<InviteSummary[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [label, setLabel] = useState("");
+  const [email, setEmail] = useState("");
+  const [maxUses, setMaxUses] = useState(1);
+  const [expiresInDays, setExpiresInDays] = useState(14);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [newCode, setNewCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState<"code" | "link" | null>(null);
+  const [revoking, setRevoking] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setLoadError(null);
+    try {
+      const response = await fetch("/api/admin/invites", { headers: { Authorization: `Bearer ${token}` } });
+      const payload = (await response.json().catch(() => ({}))) as { invites?: InviteSummary[]; error?: string };
+      if (!response.ok || !payload.invites) throw new Error(payload.error ?? "Invite codes can't be loaded right now.");
+      setInvites(payload.invites);
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "Invite codes can't be loaded right now.");
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function create(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token) return;
+    setCreating(true);
+    setCreateError(null);
+    setNewCode(null);
+    setCopied(null);
+    try {
+      const response = await fetch("/api/admin/invites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ label, email, maxUses, expiresInDays }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { code?: string; invite?: InviteSummary; error?: string };
+      if (!response.ok || !payload.code || !payload.invite) {
+        throw new Error(payload.error ?? "The invite code couldn't be made right now.");
+      }
+      const created = payload.invite;
+      setNewCode(payload.code);
+      setInvites((current) => [created, ...(current ?? [])]);
+      setLabel("");
+      setEmail("");
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "The invite code couldn't be made right now.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function revoke(invite: InviteSummary) {
+    if (!token) return;
+    const name = invite.label ? `“${invite.label}”` : "this invite code";
+    if (!window.confirm(`Revoke ${name}? It stops working at once. Accounts it already created keep working.`)) return;
+    setRevoking(invite.id);
+    try {
+      const response = await fetch(`/api/admin/invites/${encodeURIComponent(invite.id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json().catch(() => ({}))) as { invite?: InviteSummary; error?: string };
+      if (!response.ok || !payload.invite) throw new Error(payload.error ?? "The invite code couldn't be revoked.");
+      const revoked = payload.invite;
+      setInvites((current) => (current ?? []).map((item) => (item.id === invite.id ? revoked : item)));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "The invite code couldn't be revoked.");
+    } finally {
+      setRevoking(null);
+    }
+  }
+
+  async function copy(kind: "code" | "link") {
+    if (!newCode) return;
+    // The link carries the code after "#", which browsers never send to a server.
+    const text = kind === "code" ? newCode : `${window.location.origin}/login#invite=${newCode}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+    } catch {
+      setCopied(null);
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <Section
+        title="Invite codes"
+        description="Papertrend is invite-only: a new account needs one of these codes. People who already have an account are not affected."
+      >
+        <form onSubmit={(event) => void create(event)}>
+          <Row label="Note" hint="For you: who the code is for, or where you shared it." htmlFor="invite-label">
+            <input
+              id="invite-label"
+              value={label}
+              onChange={(event) => setLabel(event.target.value)}
+              maxLength={80}
+              className={`${fieldClass} h-10`}
+              placeholder="e.g. Thesis group, October"
+            />
+          </Row>
+          <Row
+            label="Only for this email"
+            hint="Optional. The code then works only for someone signed in with this address, once it is verified."
+            htmlFor="invite-email"
+          >
+            <input
+              id="invite-email"
+              type="email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              maxLength={254}
+              autoComplete="off"
+              spellCheck={false}
+              className={`${fieldClass} h-10`}
+              placeholder="Anyone with the code"
+            />
+          </Row>
+          <Row label="Uses" hint="How many new accounts the code can create, 1 to 50." htmlFor="invite-uses">
+            <input
+              id="invite-uses"
+              type="number"
+              min={1}
+              max={50}
+              value={maxUses}
+              onChange={(event) => setMaxUses(Math.min(50, Math.max(1, Number(event.target.value) || 1)))}
+              className={`${fieldClass} h-10 w-28`}
+            />
+          </Row>
+          <Row label="Expires after" hint="An unused code stops working after this." htmlFor="invite-expiry">
+            <select
+              id="invite-expiry"
+              value={expiresInDays}
+              onChange={(event) => setExpiresInDays(Number(event.target.value))}
+              className={`${fieldClass} h-10 w-40`}
+            >
+              {INVITE_EXPIRY_CHOICES.map((days) => (
+                <option key={days} value={days}>
+                  {days === 1 ? "1 day" : `${days} days`}
+                </option>
+              ))}
+            </select>
+          </Row>
+          <div className="flex flex-wrap items-center gap-3 border-t border-hairline pt-5">
+            <button type="submit" disabled={creating || !token} className={buttonClass("primary", "sm")}>
+              {creating ? "Creating…" : "Create invite code"}
+            </button>
+            {createError ? (
+              <span className="text-[13px] text-red-700 dark:text-red-300" role="alert">
+                {createError}
+              </span>
+            ) : null}
+          </div>
+        </form>
+        {newCode ? (
+          <div className="mt-5 rounded-lg border border-hairline bg-subtle px-4 py-4" role="status">
+            <p className="text-sm font-medium text-ink">New invite code</p>
+            <p className="mt-2 select-all break-all font-mono text-lg tracking-wider text-ink">{newCode}</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-body">
+              Copy it now and send it privately. Papertrend keeps only a scrambled form of it, so it can&apos;t be
+              shown again.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button type="button" onClick={() => void copy("code")} className={buttonClass("secondary", "sm")}>
+                <CopyIcon className="h-4 w-4" />
+                {copied === "code" ? "Copied" : "Copy code"}
+              </button>
+              <button type="button" onClick={() => void copy("link")} className={buttonClass("secondary", "sm")}>
+                <CopyIcon className="h-4 w-4" />
+                {copied === "link" ? "Copied" : "Copy invite link"}
+              </button>
+              <button type="button" onClick={() => setNewCode(null)} className={buttonClass("ghost", "sm")}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Section>
+
+      <Section
+        title="Codes you have made"
+        description="Newest first. Revoking a code stops it working; accounts it created keep working."
+      >
+        {loadError ? (
+          <p className="text-[13px] text-red-700 dark:text-red-300" role="alert">
+            {loadError}
+          </p>
+        ) : null}
+        {invites === null && !loadError ? (
+          <div className="space-y-2" role="status" aria-label="Loading invite codes">
+            <span className="skeleton block h-14 w-full rounded-lg" />
+            <span className="skeleton block h-14 w-full rounded-lg" />
+          </div>
+        ) : null}
+        {invites && invites.length === 0 ? <p className="text-sm text-body">No invite codes yet.</p> : null}
+        {invites && invites.length > 0 ? (
+          <ul className="divide-y divide-hairline">
+            {invites.map((invite) => {
+              const status = INVITE_STATUS[invite.status];
+              return (
+                <li key={invite.id} className="flex flex-wrap items-start justify-between gap-3 py-3.5 first:pt-0">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
+                      <span className="truncate">{invite.label || "No note"}</span>
+                      <span className={chipClass(status.tone)}>{status.label}</span>
+                    </p>
+                    <p className="mt-1 text-[13px] leading-5 text-body">
+                      Used {invite.useCount} of {invite.maxUses}
+                      {invite.boundEmail ? ` · only for ${invite.boundEmail}` : ""}
+                      {` · made ${formatDate(invite.createdAt)}`}
+                      {invite.status === "active" ? ` · expires ${formatDate(invite.expiresAt)}` : ""}
+                    </p>
+                    {invite.redeemedBy.length ? (
+                      <p className="mt-0.5 break-all text-[13px] leading-5 text-mute">
+                        Joined: {invite.redeemedBy.join(", ")}
+                      </p>
+                    ) : null}
+                  </div>
+                  {invite.status === "active" ? (
+                    <button
+                      type="button"
+                      disabled={revoking === invite.id}
+                      onClick={() => void revoke(invite)}
+                      className={buttonClass("secondary", "sm")}
+                    >
+                      {revoking === invite.id ? "Revoking…" : "Revoke"}
+                    </button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </Section>
+    </div>
+  );
+}
+
 function discardQuestion(section: SectionId): string {
   const label =
     section === "profile" ? "your profile" : section === "repository" ? "this repository" : "the analysis profile";
@@ -1003,6 +1289,11 @@ function discardQuestion(section: SectionId): string {
 export default function WorkspaceSettingsClient() {
   const searchParams = useSearchParams();
   const { currentProject } = useWorkspaceProfile();
+  const { isAdmin } = useAuth();
+  const sections = useMemo(
+    () => (isAdmin ? VISIBLE_SECTIONS : VISIBLE_SECTIONS.filter((section) => section.group !== "Admin")),
+    [isAdmin]
+  );
   const [activeSection, setActiveSection] = useState<SectionId>(() => resolveSection(searchParams.get("section")));
   // Whichever section is open reports whether it holds unsaved edits, and
   // leaving it (another section, a link, closing the tab) asks first.
@@ -1042,11 +1333,13 @@ export default function WorkspaceSettingsClient() {
     window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
   }
 
-  const groups = (["Account", "Repository"] as const).map((group) => ({
-    group,
-    items: VISIBLE_SECTIONS.filter((section) => section.group === group),
-  }));
-  const active = VISIBLE_SECTIONS.find((section) => section.id === activeSection) ?? VISIBLE_SECTIONS[0];
+  const groups = (["Account", "Repository", "Admin"] as const)
+    .map((group) => ({
+      group,
+      items: sections.filter((section) => section.group === group),
+    }))
+    .filter(({ items }) => items.length > 0);
+  const active = sections.find((section) => section.id === activeSection) ?? sections[0];
 
   return (
     <div className="mx-auto max-w-[1080px] pb-16 pt-2 sm:pt-4">
@@ -1067,8 +1360,8 @@ export default function WorkspaceSettingsClient() {
         <nav aria-label="Settings sections" className="min-w-0 lg:sticky lg:top-24 lg:self-start">
           {/* A phone gets one scrolling row; a desktop gets the grouped list. */}
           <div className="-mx-4 flex gap-1 overflow-x-auto px-4 pb-1 lg:hidden">
-            {VISIBLE_SECTIONS.map((section) => {
-              const selected = section.id === activeSection;
+            {sections.map((section) => {
+              const selected = section.id === active.id;
               return (
                 <button
                   key={section.id}
@@ -1097,7 +1390,7 @@ export default function WorkspaceSettingsClient() {
                 </p>
                 <ul className="mt-2 space-y-0.5">
                   {items.map((section) => {
-                    const selected = section.id === activeSection;
+                    const selected = section.id === active.id;
                     const Icon = section.icon;
                     return (
                       <li key={section.id}>
@@ -1137,6 +1430,7 @@ export default function WorkspaceSettingsClient() {
           {active.id === "analysis" && PROJECT_ANALYSIS_PROFILES_ENABLED ? (
             <AnalysisSection onDirtyChange={setSectionDirty} />
           ) : null}
+          {active.id === "invites" && isAdmin ? <InviteCodesSection /> : null}
         </div>
       </div>
     </div>
