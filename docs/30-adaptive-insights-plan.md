@@ -1,8 +1,8 @@
 # 30 — Adaptive tab: from chart picker to insight finder
 
-Status: **built** (2026-09-29).
-- Phases 1–4 are on the pilot: PRs #201–#203, plus the help pages.
-- Production promotion follows once the pilot checks below pass.
+Status: **in production** (2026-09-29).
+- PRs #201–#207 were promoted in #208.
+- Rollback: web `papertrend-web-production-00058-gl9`.
 
 ## The question this answers
 
@@ -171,10 +171,33 @@ repository, 2022–2025, 2011–2021, one category, a search, and Test 2), with 
 
 Gemini's quality met the bar, so GPT-5.6 Luna was not needed.
 
-**Spend on this work:**
-- about $0.007 for the old planner's baseline;
-- 6 write-ups at about $0.0016 each;
-- the ask trial.
+**Ask trial** (five questions, one of them unanswerable by design):
+- **First round:** three answered well. Two ignored the subject they named ("…papers on
+  assessment", "…in writing papers").
+- **The fix:** flat focus and about fields, worked examples in the prompt, and narrowed answers
+  compared with all papers.
+- **Second round:** all five correct. For example: "Mixed-Methods Research Designs appears in 1
+  of the 5 papers on writing (20%), against 17% of all 36 papers selected". The authors and
+  citations question was declined.
+- **Cost:** about 1.2k tokens per question.
+
+**Through the page:**
+- "Write up with AI" and a typed question both work.
+- A reload shows "Saved 1 minute ago" with no model call.
+- Both themes, at desktop and 390 px, have no page overflow and no console errors.
+- The screenshots led to three fixes:
+  - full wrapping labels instead of chart axes;
+  - "vs" instead of "→" for contrasts;
+  - no repeated question on computed cards.
+- The cache is keyed by the papers selected, not by how the filters are spelled.
+
+**Spend on this work (OpenRouter), about $0.024 in total:**
+- **$0.0169** from the server logs, over 21 write-ups and questions, with 2 corrections and 0 failures;
+- about $0.007 for the old planner's baseline call.
+
+**Production:** web `papertrend-web-production-00059-pjq` and worker `00053-6sx`. Checked there:
+- the write-up, a question and the saved-plan reload, through the page;
+- every dashboard tab and the Library, with no console errors.
 
 ## Not done, on purpose
 
