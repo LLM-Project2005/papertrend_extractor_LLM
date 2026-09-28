@@ -189,19 +189,19 @@ test("the provider restores filters with the repository they belong to", () => {
 
 /* ------------------------------------------------------ adaptive charts */
 
-test("Refresh is not announced as a filter change", () => {
+test("the Adaptive insights follow the filters and the data, and never go stale", () => {
+  // The old tab kept a snapshot and asked the reader to press "Update charts"
+  // after every filter change. Insights are computed for free, so the tab
+  // recomputes whenever the filters, the repository or its data change; a
+  // slower earlier answer cannot overwrite a newer one.
+  const tab = read("src/components/dashboard/InsightsTab.tsx");
+  assert.match(tab, /\(\) => \(\{ projectId, selectedYears, selectedTracks, searchQuery: searchQuery\.trim\(\) \}\)/);
+  assert.match(tab, /const timer = window\.setTimeout\(\(\) => void load\("auto"\), 350\);/);
+  assert.match(tab, /\}, \[load, dataVersion\]\);/);
+  assert.match(tab, /if \(id !== requestId\.current\) return;/);
   const dashboard = read("src/components/DashboardClient.tsx");
-  const filterSignature = dashboard.slice(
-    dashboard.indexOf("const adaptiveFilterSignature = useMemo("),
-    dashboard.indexOf("// Charts planned for one repository")
-  );
-  // Only filters go into the signature that decides "Filters changed".
-  assert.match(filterSignature, /selectedYears/);
-  assert.doesNotMatch(filterSignature, /trendRows|topicFamilies|diagnostics/);
-  assert.match(dashboard, /generatedAdaptiveFilterSignature && adaptiveFilterSignature !== generatedAdaptiveFilterSignature/);
-  assert.match(dashboard, /The repository&apos;s data has changed since these charts were made/);
-  // A plan made for one repository is dropped when another is opened.
-  assert.match(dashboard, /adaptiveProjectRef\.current = selectedProjectId;\s*setPlanState\(null\);/);
+  assert.match(dashboard, /dataVersion=\{adaptiveDataVersion\}/);
+  assert.doesNotMatch(dashboard, /Filters changed\. Existing charts/);
 });
 
 test("progress under a paper describes the paper, not the queue machinery", () => {
