@@ -70,6 +70,12 @@ function InsightCard({
       <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-700 dark:text-[#d4d4d4]" data-takeaway>
         {takeaway}
       </p>
+      {insight.caution ? (
+        <p className="mt-2 flex max-w-3xl gap-2 text-[13px] leading-5 text-amber-900 dark:text-amber-200">
+          <InfoIcon className="mt-0.5 h-4 w-4 flex-none" />
+          <span>{insight.caution}</span>
+        </p>
+      ) : null}
       <div className="mt-5">
         <InsightChart insight={insight} onOpen={onOpen} />
       </div>

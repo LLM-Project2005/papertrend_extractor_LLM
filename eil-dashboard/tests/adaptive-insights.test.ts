@@ -4,7 +4,7 @@ import test from "node:test";
 import { buildInsightCorpus } from "../src/lib/insights/corpus";
 import { buildInsightReport } from "../src/lib/insights/engine";
 import { FIXED_VIEWS, sameView } from "../src/lib/insights/fixed-views";
-import { allowedFacts, extractClaims, insightLabels, unbackedClaims } from "../src/lib/insights/check";
+import { allowedFacts, claimsCause, extractClaims, insightLabels, scrubLoadedWords, unbackedClaims } from "../src/lib/insights/check";
 import { checkPlan, computedPlan, buildInsightMessages } from "../src/lib/insights/plan";
 import { expectedDistinct, lift, liftWithOneFewer } from "../src/lib/insights/stats";
 import type { CategoryAssignmentRow, TrendRow } from "../src/types/database";
@@ -199,6 +199,38 @@ test("a model's wrong number goes back to the computed sentence", () => {
   assert.equal(plan.corrected, 2, "the pairs card's title and takeaway");
 });
 
+test("no claim of significance or cause survives", () => {
+  assert.equal(scrubLoadedWords("This suggests a significant decline."), "This suggests a decline.");
+  assert.equal(scrubLoadedWords("It declined significantly, then rose."), "It declined, then rose.");
+  assert.equal(scrubLoadedWords("A statistically significant rise."), "A rise.");
+  assert.equal(claimsCause("Mixed methods leads to better designs."), true);
+  assert.equal(claimsCause("The fall is due to fewer grants."), true);
+  assert.equal(claimsCause("Writing and Feedback appear together."), false);
+  assert.equal(claimsCause("Drives of Motivation rose.", ["Drives of Motivation"]), false, "a name is not a claim");
+  const built = report();
+  const plan = checkPlan(
+    { headline: "Mixed methods arrived", summary: "Patterns in 30 papers.", cards: [{ insight_id: "method_shifts", title: "Mixed methods arrived", takeaway: "Mixed methods rose from 0 to 6 papers, which led to better designs." }] },
+    built,
+    "m"
+  );
+  const insight = built.insights.find((entry) => entry.id === "method_shifts")!;
+  assert.equal(plan.cards[0].takeaway, insight.takeaway, "a causal takeaway goes back to the computed sentence");
+  assert.deepEqual(plan.checks?.map((check) => check.reason), ["claims a cause"]);
+});
+
+test("a theme wholly inside another is flagged, not sold as a pairing", () => {
+  const input = fixture();
+  // Every "Genre writing" paper is also a "Writing" paper.
+  for (const paper of [2, 5, 8]) {
+    input.trends.push({ ...input.trends.find((row) => row.paper_id === String(paper))!, topic: "Genre writing", keyword: "genre" });
+  }
+  const pairs = report(input).insights.find((entry) => entry.id === "theme_pairs")!;
+  const genre = pairs.chart.kind === "pairs" ? pairs.chart.rows.find((row) => row.a === "Genre writing") : undefined;
+  assert.ok(genre, "the nested pair is still listed");
+  assert.notEqual(pairs.chart.kind === "pairs" ? pairs.chart.rows[0].a : "", "Genre writing", "but it does not lead");
+  assert.ok(pairs.score <= 1);
+});
+
 test("a plan with no usable card is the computed plan", () => {
   const built = report();
   const plan = checkPlan({ headline: "x", summary: "y", cards: [{ insight_id: "nope", title: "a", takeaway: "b" }] }, built, "m");
@@ -227,7 +259,8 @@ test("opening the tab never calls a model; writing up is metered and cached", ()
   assert.match(route, /withAiTokenUsageTracking\(/);
   assert.match(route, /persistAiTokenUsage\(user\.id, usage\)/, "tokens count toward the daily budget");
   assert.match(route, /timeoutMs: 25_000/);
-  assert.match(route, /writeCachedPlan\(user\.id, built, body\.projectId, plan\)/);
+  assert.match(route, /writeCachedPlan\(user\.id, built, body\.projectId, shownPlan\)/);
+  assert.match(route, /const \{ checks, \.\.\.shownPlan \} = plan;/, "the checker's notes stay in the log");
   const server = read("src/lib/insights/server.ts");
   assert.match(server, /return `\$\{INSIGHTS_PROMPT_VERSION\}:\$\{dataHash\}`;/, "a cached plan is for exactly these papers and this prompt");
   assert.match(server, /scope_type = 'custom' AND scope_key = \$2 AND version_hash = \$3/);

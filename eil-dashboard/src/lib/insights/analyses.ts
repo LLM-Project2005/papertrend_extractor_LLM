@@ -98,6 +98,7 @@ export function themePairs(corpus: InsightCorpus): Insight | null {
     );
   });
   const top = shown[0];
+  const nested = top.together === top.aPapers;
   const effect = clamp01(Math.log2(top.lift) / 2.5) * (pairs[0].related ? 0.5 : 1);
   const support = clamp01(top.together / 6);
   return {
@@ -108,9 +109,12 @@ export function themePairs(corpus: InsightCorpus): Insight | null {
     chart: { kind: "pairs", rows: shown },
     facts,
     takeaway: `${top.a} and ${top.b} meet in ${top.together} papers, ${times(top.lift)} as often as their sizes predict: ${percent(top.together, top.aPapers)}% of the ${top.aPapers} papers on ${top.a} also cover ${top.b}.`,
-    score: 0.3 + 0.4 * effect + 0.3 * support,
+    score: Math.min(pairs[0].related ? 0.45 : 1, 0.3 + 0.4 * effect + 0.3 * support),
     paperIds: uniqueIds(shown.flatMap((pair) => pair.paperIds)),
-    basis: `Pairs of themes that share at least ${MIN_PAPERS} papers and meet at least 1.5 times as often as chance, even with any one paper removed.`,
+    basis: `Pairs of themes that share at least ${MIN_PAPERS} papers and meet at least 1.5 times as often as chance, even with one fewer shared paper.`,
+    caution: nested
+      ? `Every paper on ${top.a} is also on ${top.b}, so ${top.a} may simply be a part of ${top.b} rather than a separate subject studied alongside it.`
+      : undefined,
   };
 }
 
