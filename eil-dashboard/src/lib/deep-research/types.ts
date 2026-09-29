@@ -19,6 +19,8 @@ export const LIMITS = {
   subQuestions: 5,
   queriesPerQuestion: 4,
   candidatesPerQuestion: 16,
+  /** The search's passages plus the abstracts of the papers they come from. */
+  candidatesShown: 24,
   passagesPerQuestion: 8,
   webSearches: 4,
   passageChars: 1_100,

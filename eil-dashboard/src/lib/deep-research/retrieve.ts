@@ -44,6 +44,8 @@ interface IndexedPassage extends Passage {
 
 export interface PassageIndex {
   passages: IndexedPassage[];
+  /** Each paper's abstract passages: where a paper states what it found. */
+  abstracts: Map<string, Passage[]>;
   documentFrequency: Map<string, number>;
   averageLength: number;
   /** Title, topics and keywords per paper, for a small paper-level boost. */
@@ -91,10 +93,21 @@ export function trimPassage(text: string, max: number = LIMITS.passageChars): st
   return end > max * 0.6 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(" ") > 0 ? cut.lastIndexOf(" ") : max)}…`;
 }
 
+/** The same study uploaded twice has the same title and year. */
+function studyKey(paper: Pick<PaperText, "title" | "year">): string {
+  return `${normalizeRepositoryText(paper.title).replace(/[^\p{L}\p{N}]+/gu, " ").trim()}|${paper.year}`;
+}
+
 export function buildPassageIndex(papers: PaperText[]): PassageIndex {
   const passages: IndexedPassage[] = [];
   const profiles = new Map<string, Set<string>>();
+  const abstracts = new Map<string, Passage[]>();
+  const studies = new Set<string>();
   for (const paper of papers) {
+    // A duplicate upload would be cited as a second source for the same study.
+    const study = studyKey(paper);
+    if (studies.has(study)) continue;
+    studies.add(study);
     profiles.set(paper.paperId, new Set(termsOf([paper.title, ...paper.topics, ...paper.keywords].join(" "))));
     const seen = new Set<string>();
     const sections: Array<[string, string, number]> = [
@@ -107,11 +120,14 @@ export function buildPassageIndex(papers: PaperText[]): PassageIndex {
     ];
     for (const [section, raw, maxPassages] of sections) {
       if (!raw?.trim()) continue;
-      for (const piece of splitTextPassages(raw, { targetLength: 900, maxPassages, minLength: 120 })) {
+      // A short abstract or conclusion still states the result; a short body fragment is usually a caption.
+      const minimum = section === "abstract" || section === "conclusion" ? 60 : 120;
+      for (const piece of splitTextPassages(raw, { targetLength: 900, maxPassages, minLength: minimum })) {
         const text = piece.replace(/\s+/g, " ").trim();
         const key = normalizeRepositoryText(text.slice(0, 180));
-        if (text.length < 120 || seen.has(key) || looksLikeReferences(text)) continue;
+        if (text.length < minimum || seen.has(key) || looksLikeReferences(text)) continue;
         seen.add(key);
+        if (section === "abstract") abstracts.set(paper.paperId, [...(abstracts.get(paper.paperId) ?? []), { paperId: paper.paperId, title: paper.title, year: paper.year, section, text }]);
         const tokens = termsOf(text);
         passages.push({
           paperId: paper.paperId,
@@ -129,7 +145,7 @@ export function buildPassageIndex(papers: PaperText[]): PassageIndex {
   const documentFrequency = new Map<string, number>();
   for (const passage of passages) for (const term of passage.terms.keys()) documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1);
   const averageLength = passages.length ? passages.reduce((sum, passage) => sum + passage.length, 0) / passages.length : 1;
-  return { passages, documentFrequency, averageLength, profiles, papers: papers.length };
+  return { passages, abstracts, documentFrequency, averageLength, profiles, papers: studies.size };
 }
 
 const K1 = 1.2;
@@ -150,6 +166,24 @@ function bm25(index: PassageIndex, passage: IndexedPassage, terms: string[]): nu
 
 export interface PassageHit extends Passage {
   score: number;
+}
+
+/**
+ * Adds the abstract of each paper the search found, when none of its hits is
+ * from the abstract. The passages that match a question's words best are
+ * often an introduction's; the abstract is where the paper states its
+ * results, and without it a report could only say what a study set out to do.
+ */
+export function withAbstracts(index: PassageIndex, hits: PassageHit[], papers = 8): PassageHit[] {
+  const out = [...hits];
+  const order: string[] = [];
+  for (const hit of hits) if (!order.includes(hit.paperId)) order.push(hit.paperId);
+  for (const paperId of order.slice(0, papers)) {
+    if (hits.some((hit) => hit.paperId === paperId && hit.section === "abstract")) continue;
+    const abstract = index.abstracts.get(paperId)?.[0];
+    if (abstract) out.push({ ...abstract, text: trimPassage(abstract.text), score: 0 });
+  }
+  return out;
 }
 
 /**

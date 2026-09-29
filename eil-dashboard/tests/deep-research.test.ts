@@ -56,6 +56,39 @@ test("reference lists are not evidence", () => {
   );
 });
 
+test("a paper's abstract joins its hits, and a duplicate upload is one study", async () => {
+  const { withAbstracts } = await import("../src/lib/deep-research/retrieve");
+  const withAbstract = [
+    ...PAPERS,
+    { ...PAPERS[0], paperId: "1b" },
+    paper("5", "Group Mediation in Writing", `${filler}Group mediation of writing tasks was described in detail. ${filler}`, {
+      abstract: "Results showed that learners' writing scores improved significantly after group dynamic assessment, from 55 to 71.",
+    }),
+  ];
+  const index = buildPassageIndex(withAbstract);
+  assert.equal(index.papers, 5, "the second upload of paper 1 is left out");
+  const hits = searchPassages(index, ["group mediation writing"], { limit: 4 });
+  const expanded = withAbstracts(index, hits);
+  assert.ok(expanded.some((hit) => hit.paperId === "5" && hit.section === "abstract" && /improved significantly/.test(hit.text)), "the abstract, where the result is, is added");
+});
+
+test("garbled web titles are repaired; counts are used only for questions about them", async () => {
+  const { repairMojibake } = await import("../src/lib/repository-chat-web");
+  const { asksAboutDistribution } = await import("../src/lib/deep-research/run");
+  assert.equal(repairMojibake("Exploring ChatGPTâ€™s Application"), "Exploring ChatGPT’s Application");
+  assert.equal(repairMojibake("Café culture"), "Café culture");
+  assert.equal(asksAboutDistribution("How has research on feedback changed over time?"), true);
+  assert.equal(asksAboutDistribution("How does Thailand's policy compare with classroom practice?"), false);
+});
+
+test("the opening answer is checked, and web pages are never 'the papers'", () => {
+  const run = read("src/lib/deep-research/run.ts");
+  assert.match(run, /unit\.cites\.length > 0 \|\| \(unit\.section < lastSection && substantive\(unit\)\)/);
+  assert.match(read("src/lib/deep-research/verify.ts"), /if only Web pages support it, it is unsupported/);
+  assert.match(read("src/lib/deep-research/write.ts"), /Keep the reader's papers and web pages apart/);
+  assert.match(read("src/lib/deep-research/plan.ts"), /use the papers alone, even if they may not cover it/);
+});
+
 test("Thai text is searched as words", () => {
   const index = buildPassageIndex([paper("9", "การประเมินแบบพลวัต", `${"ผู้เรียนภาษาอังกฤษได้รับการช่วยเหลือจากครูระหว่างการเขียน ".repeat(4)}การประเมินแบบพลวัตช่วยให้ผู้เรียนพัฒนาการเขียน`)]);
   const hits = searchPassages(index, ["การประเมินแบบพลวัต"], { limit: 3 });

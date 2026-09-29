@@ -2797,6 +2797,17 @@ async function repositoryQaResult(
   };
 }
 
+/**
+ * Chart mode answers with a chart. The planner used to add a corpus report,
+ * an evidence search or a per-paper analysis beside it - live, 8 of 15 chart
+ * questions went to a background report and one printed a table with no
+ * chart. Only exact term counts keep their own step, because that chart is
+ * drawn from them.
+ */
+export function chartModeOperations(operations: RepositoryOperation[], hasTerms: boolean): RepositoryOperation[] {
+  return operations.includes("analyze_text") && hasTerms ? ["analyze_text", "visualize"] : ["visualize"];
+}
+
 export function fallbackExecutionPlan(
   prompt: string,
   forceChart = false,
@@ -2831,13 +2842,17 @@ export function fallbackExecutionPlan(
     operation = "visualize";
     scopeMode = "complete";
   }
-  const operations: RepositoryOperation[] = [operation];
+  let operations: RepositoryOperation[] = [operation];
   if (chart && !operations.includes("visualize")) operations.push("visualize");
   if (
     operation === "list_documents" &&
     /\b(explain|summari[sz]e|classify|compare|analy[sz]e)\b/i.test(prompt)
   ) {
     operations.push("analyze_each_document");
+  }
+  if (forceChart) {
+    operations = chartModeOperations(operations, quoted.length > 0);
+    operation = operations[0];
   }
   return {
     operation,
@@ -2970,6 +2985,9 @@ export async function planRepositoryExecution(
     // small talk must draw the chart, not chat.
     if (operations.length > 1 && operations.includes("converse")) {
       operations = operations.filter((operation) => operation !== "converse");
+    }
+    if (input.forceChart) {
+      operations = chartModeOperations(operations, parsed.data.terms.length > 0);
     }
     return {
       ...parsed.data,

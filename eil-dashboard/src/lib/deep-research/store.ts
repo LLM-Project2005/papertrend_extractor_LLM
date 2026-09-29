@@ -303,6 +303,22 @@ export async function completeSession(input: {
   });
 }
 
+/**
+ * Claims the right to re-queue a stalled run: the lease is left just expired
+ * (so the new task can take it) and the run stops looking stale for a minute,
+ * so a page polling every few seconds queues it once, not every time.
+ */
+export async function markRequeued(ownerUserId: string, sessionId: string): Promise<boolean> {
+  const result = await withCloudSqlOwnerTransaction(ownerUserId, (client) =>
+    client.query(
+      `UPDATE public.deep_research_sessions SET updated_at=now() - make_interval(secs => $3)
+       WHERE id=$1 AND owner_user_id=$2 AND status='processing' AND updated_at < now() - make_interval(secs => $4)`,
+      [sessionId, ownerUserId, LEASE_SECONDS + 1, LEASE_SECONDS + 60]
+    )
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
 /** A run whose worker has gone quiet: processing, and the lease long expired. */
 export function isStale(session: Pick<DeepResearchSessionRecord, "status" | "updated_at">, now = Date.now()): boolean {
   if (session.status !== "processing") return false;

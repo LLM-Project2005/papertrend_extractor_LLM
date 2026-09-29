@@ -10,10 +10,16 @@ import { getGoogleCloudProjectId, getGoogleCloudRegion } from "@/lib/server-env"
 
 export const RESEARCH_PROCESS_PATH = "/api/chat/research/process";
 
+export function researchQueue(): string {
+  return process.env.DEEP_RESEARCH_TASKS_QUEUE || process.env.REPOSITORY_CHAT_TASKS_QUEUE || process.env.CLOUD_TASKS_QUEUE || "";
+}
+
 export async function enqueueResearchRun(sessionId: string, ownerUserId: string, callbackBaseUrl: string): Promise<boolean> {
   const project = getGoogleCloudProjectId();
   const location = process.env.CLOUD_TASKS_LOCATION ?? getGoogleCloudRegion();
-  const queue = process.env.REPOSITORY_CHAT_TASKS_QUEUE ?? process.env.CLOUD_TASKS_QUEUE ?? "";
+  // Its own queue: the shared one runs one task at a time, so a run waited
+  // behind a paper being analysed or a long chat report - 7 minutes, live.
+  const queue = researchQueue();
   if (!project || !queue || !callbackBaseUrl) return false;
   const oidcToken = await taskOidcToken();
   if (!oidcToken) return false;
