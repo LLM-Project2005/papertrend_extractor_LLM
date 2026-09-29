@@ -208,6 +208,9 @@ test("code holds numbers and ids to the evidence", () => {
   assert.deepEqual(codeCheck({ text: "Scores rose from 12 to 25 [E1].", cites: ["E1"] }, EVIDENCE_MAP, "").badNumbers, ["25"]);
   assert.deepEqual(codeCheck({ text: "It helped [E7].", cites: ["E7"] }, EVIDENCE_MAP, "").unknown, ["E7"]);
   assert.equal(dropUnknownCitations("It helped [E1, E7].", EVIDENCE_MAP), "It helped [E1].");
+  // A passage that spells a number out supports the digits.
+  const spelled = new Map([["E9", { ...EVIDENCE[0], id: "E9", text: "Seventy advanced learners and twenty-four teachers took part." }]]);
+  assert.deepEqual(codeCheck({ text: "The study had 70 learners and 24 teachers [E9].", cites: ["E9"] }, spelled, "").badNumbers, []);
   assert.equal(dropUnknownCitations("It helped [E7].", EVIDENCE_MAP), "It helped.");
 });
 

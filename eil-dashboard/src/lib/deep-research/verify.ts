@@ -110,6 +110,27 @@ export function rebuild(parsed: ParsedReport, replacements: Map<string, string>)
   return cleaned.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
+const UNITS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90 };
+
+/**
+ * Numbers a passage spells out: "Seventy advanced learners" supports "70".
+ * Without this, a correct sample size was stripped from a report as a number
+ * its evidence did not contain.
+ */
+export function spelledNumbers(text: string): string[] {
+  const out: string[] = [];
+  const pattern = /\b(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[- ](one|two|three|four|five|six|seven|eight|nine))?\b|\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen)\b/gi;
+  for (const match of text.matchAll(pattern)) {
+    if (match[1]) out.push(String(TENS[match[1].toLowerCase()] + (match[2] ? UNITS[match[2].toLowerCase()] : 0)));
+    else if (match[3]) out.push(String(UNITS[match[3].toLowerCase()]));
+  }
+  return out;
+}
+
 function numbersIn(text: string): string[] {
   return (text.replace(CITE_GROUP, " ").match(/\d+(?:[.,]\d+)*%?/g) ?? []).map((value) => value.replace(/%$/, "").replace(/,(?=\d{3}\b)/g, ""));
 }
@@ -127,7 +148,8 @@ const ABOUT_THE_PAPERS = /\b(?:the|these|your) (?:papers|studies|collection|arti
 export function codeCheck(unit: Pick<ReportUnit, "text" | "cites">, evidence: Map<string, Evidence>, factText: string): CodeCheck {
   const unknown = unit.cites.filter((id) => !evidence.has(id));
   const cited = unit.cites.map((id) => evidence.get(id)).filter((item): item is Evidence => Boolean(item));
-  const allowed = new Set(numbersIn(`${cited.map((item) => `${item.title} ${item.year} ${item.text}`).join(" ")} ${factText}`));
+  const citedText = `${cited.map((item) => `${item.title} ${item.year} ${item.text}`).join(" ")} ${factText}`;
+  const allowed = new Set([...numbersIn(citedText), ...spelledNumbers(citedText)]);
   const distinctSources = new Set(cited.map((item) => item.sourceId)).size;
   const badNumbers = numbersIn(unit.text).filter((number) => {
     if (allowed.has(number)) return false;
