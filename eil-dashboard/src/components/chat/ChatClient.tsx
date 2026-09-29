@@ -1,5 +1,6 @@
 "use client";
 
+import { useDismiss } from "@/hooks/useDismiss";
 import { chartAnimationActive } from "@/lib/chart-theme";
 import Link from "next/link";
 import PaperLink from "@/components/workspace/PaperLink";
@@ -1415,6 +1416,13 @@ export default function ChatClient() {
     new Map<string, { controller: AbortController; threadId: string }>()
   );
   const parameterMenuRef = useRef<HTMLDivElement | null>(null);
+  // Every menu here closes on a press anywhere outside it, not only on its own button.
+  const toolMenuRef = useRef<HTMLDivElement | null>(null);
+  const conversationMenuRef = useRef<HTMLDivElement | null>(null);
+  const threadMenuRef = useRef<HTMLDivElement | null>(null);
+  useDismiss(menuOpen, () => setMenuOpen(false), toolMenuRef);
+  useDismiss(conversationMenuOpen, () => setConversationMenuOpen(false), conversationMenuRef);
+  useDismiss(Boolean(threadMenuId), () => setThreadMenuId(null), threadMenuRef);
   const editComposerRef = useRef<HTMLTextAreaElement | null>(null);
   const scopeTransferHandledRef = useRef(false);
 
@@ -2834,6 +2842,7 @@ export default function ChatClient() {
                 return (
                   <div
                     key={thread.id}
+                    ref={threadMenuId === thread.id ? threadMenuRef : undefined}
                     className={`group relative rounded-xl px-2 ${
                       active
                         ? "bg-slate-200 dark:bg-[#050505]"
@@ -2964,7 +2973,7 @@ export default function ChatClient() {
               </p>
             </div>
 
-            <div className="relative flex items-center gap-2">
+            <div className="relative flex items-center gap-2" ref={conversationMenuRef}>
               {deepSession ? (
                 <span className="inline-flex h-9 items-center rounded-full border border-slate-200 bg-white px-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
                   {sessionLabel(deepSession) ?? "Saved"}
@@ -3711,7 +3720,7 @@ export default function ChatClient() {
 
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                   <div className="flex min-w-0 flex-wrap items-center gap-2">
-                    <div className="relative">
+                    <div className="relative" ref={toolMenuRef}>
                       <button
                         type="button"
                         onClick={() => {
