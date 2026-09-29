@@ -14,9 +14,10 @@ import {
 } from "@/components/ui/Icons";
 import type { IngestionRunRow, RunAnalysisDetail, RunAnalysisExtracted } from "@/types/database";
 
-export type PaperExplorerTab = "overview" | "keywords" | "evidence" | "topics" | "preview";
+import { PAPER_EXPLORER_TABS, type PaperExplorerTab } from "@/lib/paper-address";
 
-export const PAPER_EXPLORER_TABS: PaperExplorerTab[] = ["overview", "keywords", "evidence", "topics", "preview"];
+export { PAPER_EXPLORER_TABS, type PaperExplorerTab };
+
 
 type Props = {
   run: IngestionRunRow;

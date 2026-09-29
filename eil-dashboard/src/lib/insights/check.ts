@@ -97,6 +97,34 @@ export function scrubLoadedWords(text: string): string {
     .trim();
 }
 
+/*
+ * A closing sentence that restates the numbers as a "shift" or a "focus" adds
+ * nothing a reader did not just read. It opens with "This"/"These"/"It",
+ * carries a reporting verb, names nothing and counts nothing - so it goes, as
+ * does a trailing ", indicating a growing preference" clause.
+ */
+const FILLER_OPENING = /^(this|these|that|it|such|overall|together|taken together)\b/i;
+const FILLER_VERB = /\b(indicat\w*|suggest\w*|highlight\w*|reflect\w*|show\w*|point\w* to|signal\w*|demonstrat\w*|underscor\w*|emphasi[sz]\w*|illustrat\w*|reveal\w*|mark\w*|represent\w*)\b/i;
+const TRAILING_CLAUSE = /,\s*(indicating|suggesting|highlighting|reflecting|showing|signalling|signaling|underscoring|pointing to|demonstrating|revealing)\b[^.;]*(?=[.;]?$)/i;
+
+export function dropFiller(text: string, labels: string[] = []): string {
+  // A sentence ends at a stop followed by a space and a capital, so "4.2 times"
+  // and "e.g." stay inside their sentence.
+  const sentences = text.split(/(?<=[.!?])\s+(?=[A-Z"“(])/).map((sentence) => sentence.trim()).filter(Boolean);
+  const names = labels.filter(Boolean).map((label) => label.toLowerCase());
+  const kept = sentences.filter((sentence, index) => {
+    if (index === 0) return true;
+    const lower = sentence.toLowerCase();
+    const namesSomething = names.some((name) => lower.includes(name));
+    return !(FILLER_OPENING.test(sentence) && FILLER_VERB.test(sentence) && !/\d/.test(sentence) && !namesSomething);
+  });
+  return kept
+    .map((sentence) => sentence.replace(TRAILING_CLAUSE, "").replace(/\s+([.;])$/, "$1").replace(/([^.!?])$/, "$1."))
+    .join(" ")
+    .replace(/\.\.+/g, ".")
+    .trim();
+}
+
 /** Words that claim a cause; associations in a paper collection show none. */
 const CAUSAL = /\b(causes?|caused|causing|leads? to|led to|drives?|driven by|drove|because of|due to|results? in|resulted in)\b/i;
 

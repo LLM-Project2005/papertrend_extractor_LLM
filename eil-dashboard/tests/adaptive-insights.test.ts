@@ -4,7 +4,7 @@ import test from "node:test";
 import { buildInsightCorpus } from "../src/lib/insights/corpus";
 import { buildInsightReport } from "../src/lib/insights/engine";
 import { FIXED_VIEWS, sameView } from "../src/lib/insights/fixed-views";
-import { allowedFacts, claimsCause, extractClaims, insightLabels, scrubLoadedWords, unbackedClaims } from "../src/lib/insights/check";
+import { allowedFacts, claimsCause, dropFiller, extractClaims, insightLabels, scrubLoadedWords, unbackedClaims } from "../src/lib/insights/check";
 import { checkPlan, computedPlan, buildInsightMessages } from "../src/lib/insights/plan";
 import { expectedDistinct, lift, liftWithOneFewer } from "../src/lib/insights/stats";
 import type { CategoryAssignmentRow, TrendRow } from "../src/types/database";
@@ -369,4 +369,48 @@ test("values tied at the top are named together", async () => {
   const answer = runAskQuery(corpus, { answerable: true, title: "", measure: "papers", rows: "theme" });
   assert.ok("insight" in answer);
   if ("insight" in answer) assert.match(answer.insight.takeaway, /the most common themes are Reading, Speaking and Vocabulary, in 10 each \(33%\)\./);
+});
+
+test("a closing sentence that only restates the numbers is dropped", () => {
+  // Seen in real write-ups on the pilot.
+  assert.equal(
+    dropFiller("Language Assessment & Evaluation fell from 24% to 5%. This shift highlights a changing focus within the field over time."),
+    "Language Assessment & Evaluation fell from 24% to 5%."
+  );
+  assert.equal(
+    dropFiller("They appear together in 3 papers. This suggests these topics are closely linked in the literature."),
+    "They appear together in 3 papers."
+  );
+  assert.equal(
+    dropFiller("Mixed methods is used in 100% of papers on reading, indicating a strong methodological preference for this theme."),
+    "Mixed methods is used in 100% of papers on reading."
+  );
+  // A second sentence that names something, or carries a number, stays.
+  const labels = ["Second Language Acquisition Theory"];
+  const kept = "Dynamic assessment is new in 2024. Second Language Acquisition Theory remains a consistent focus across 6 different years.";
+  assert.equal(dropFiller(kept, labels), kept);
+  assert.equal(dropFiller("Rose to 32%. This coincides with the rise shown on card 2."), "Rose to 32%. This coincides with the rise shown on card 2.");
+});
+
+test("the model's filler is removed before the page shows it", () => {
+  const built = report();
+  const plan = checkPlan(
+    { headline: "Mixed methods arrived", summary: "Patterns in 30 papers.", cards: [{ insight_id: "method_shifts", title: "Mixed methods arrived", takeaway: "Mixed methods rose from 0 to 6 papers. This shift reflects a growing preference in the field." }] },
+    built,
+    "m"
+  );
+  assert.equal(plan.cards[0].takeaway, "Mixed methods rose from 0 to 6 papers.");
+});
+
+test("a sub-topic wholly inside a theme that shares a word with it is not a pairing", () => {
+  const input = fixture();
+  // "L2 Feedback Processing" sits wholly inside "Second Language Feedback"-style
+  // themes; here: every paper on "Written Feedback" is on "Feedback".
+  for (const paper of [2, 5, 8]) {
+    input.trends.push({ ...input.trends.find((row) => row.paper_id === String(paper))!, topic: "Written Feedback Studies", keyword: "written" });
+  }
+  const pairs = report(input).insights.find((entry) => entry.id === "theme_pairs");
+  const rows = pairs && pairs.chart.kind === "pairs" ? pairs.chart.rows : [];
+  assert.equal(rows.some((row) => row.a === "Written Feedback Studies" && row.b === "Feedback"), false, "a part of Feedback, by name");
+  assert.equal(dropFiller("They meet in 5 papers, 4.2 times as often as chance."), "They meet in 5 papers, 4.2 times as often as chance.", "a decimal is not a sentence end");
 });

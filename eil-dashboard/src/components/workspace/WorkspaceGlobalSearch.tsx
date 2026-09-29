@@ -1,5 +1,6 @@
 "use client";
 
+import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
 import {
   useDeferredValue,
   useEffect,
@@ -239,6 +240,7 @@ export default function WorkspaceGlobalSearch({
   pageItems: SearchPageItem[];
 }) {
   const router = useRouter();
+  const paperViewer = usePaperViewer();
   const { session } = useAuth();
   const {
     allProjects,
@@ -387,6 +389,10 @@ export default function WorkspaceGlobalSearch({
           "paper library analysis file pdf detail",
         ].join(" "),
         onSelect: () => {
+          if (run.status === "succeeded" && paperViewer) {
+            paperViewer.openPaper({ runId: run.id });
+            return;
+          }
           setSelectedFolderId("all");
           router.push(`/workspace/library?runId=${encodeURIComponent(run.id)}`);
         },
@@ -422,6 +428,7 @@ export default function WorkspaceGlobalSearch({
     allProjects,
     currentProject?.id,
     libraryRuns,
+    paperViewer,
     pageItems,
     projectIcon,
     router,

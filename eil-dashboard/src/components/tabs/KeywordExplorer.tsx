@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import PaperLink from "@/components/workspace/PaperLink";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -399,12 +400,12 @@ export default function KeywordExplorer({
                         </span>
                       ))}
                     </div>
-                    <Link
-                      href={`/workspace/library?paperId=${conceptResult.firstAppearance.paperId}`}
+                    <PaperLink
+                      paper={{ paperId: String(conceptResult.firstAppearance.paperId) }}
                       className="mt-4 inline-flex text-sm font-medium text-slate-900 underline dark:text-white"
                     >
                       Open paper
-                    </Link>
+                    </PaperLink>
                   </article>
 
                   {conceptResult.objectiveVerbs.length > 0 ? (
@@ -590,12 +591,12 @@ export default function KeywordExplorer({
                               {paper.year}
                             </p>
                           </div>
-                          <Link
-                            href={`/workspace/library?paperId=${paper.paperId}`}
+                          <PaperLink
+                            paper={{ paperId: String(paper.paperId) }}
                             className="text-sm font-medium text-slate-900 underline dark:text-white"
                           >
                             Open
-                          </Link>
+                          </PaperLink>
                         </div>
 
                         <div className="mt-3 flex flex-wrap gap-2">

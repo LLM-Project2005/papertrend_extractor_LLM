@@ -55,15 +55,27 @@ const ABBREVIATIONS: Record<string, string> = {
   clil: "content language integrated learning",
 };
 
+/** Content words of a theme name, with abbreviations spelled out. */
+function nameWords(value: string): Set<string> {
+  return new Set(
+    value
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .flatMap((word) => (ABBREVIATIONS[word] ?? word).split(" "))
+      .filter((word) => word.length >= 4 && !NAME_STOP_WORDS.has(word))
+  );
+}
+
+const NAME_STOP_WORDS = new Set(["with", "from", "into", "through", "among", "between", "their", "using", "based"]);
+
+/** Whether two names share any content word at all. */
+function sharesAnyWord(a: string, b: string): boolean {
+  const bWords = nameWords(b);
+  return [...nameWords(a)].some((word) => bWords.has(word));
+}
+
 function sharesDistinctiveWord(a: string, b: string, allNames: string[]): boolean {
-  const words = (value: string) =>
-    new Set(
-      value
-        .toLowerCase()
-        .split(/[^\p{L}\p{N}]+/u)
-        .flatMap((word) => (ABBREVIATIONS[word] ?? word).split(" "))
-        .filter((word) => word.length >= 4)
-    );
+  const words = nameWords;
   const frequency = new Map<string, number>();
   for (const name of allNames) for (const word of words(name)) frequency.set(word, (frequency.get(word) ?? 0) + 1);
   // Common: used by at least 3 names, or a fifth of them in a long list.
@@ -99,8 +111,11 @@ export function themePairs(corpus: InsightCorpus): Insight | null {
       const nested = together === aIds.size;
       const sameFamily = sharesDistinctiveWord(a, b, names);
       // A part and its whole: every paper on the narrower theme is on the
-      // broader one, and the names say they are the same subject.
-      if (nested && sameFamily) continue;
+      // broader one, and the names share a word - "L2 Sentence Processing"
+      // inside "Second Language Acquisition", "Genre-Based Writing" inside
+      // "Academic Writing". Even a word most names use counts here, because
+      // the full nesting already says the two are one subject.
+      if (nested && (sameFamily || sharesAnyWord(a, b))) continue;
       pairs.push({ a, b, together, lift: l, aPapers: aIds.size, bPapers: bIds.size, paperIds: intersection(aIds, bIds), related: nested || sameFamily });
     }
   }

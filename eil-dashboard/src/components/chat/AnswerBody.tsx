@@ -12,6 +12,7 @@
 // transform the test runner uses; Next compiles it away.
 import React, { useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import PaperLink from "@/components/workspace/PaperLink";
 import { safeCitationHref } from "@/lib/safe-citation-href";
 import {
   foldPoint,
@@ -99,12 +100,12 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
               {source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
             </span>
             {pinned && source.href ? (
-              <a
-                href={evidenceHref(source.href)}
+              <PaperLink
+                paper={evidenceHref(source.href)}
                 className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-sky-700 underline-offset-2 hover:underline dark:text-sky-300"
               >
                 Open the evidence
-              </a>
+              </PaperLink>
             ) : null}
           </span>
         ))}

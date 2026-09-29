@@ -21,8 +21,10 @@ test("every citation renderer uses the scheme check", () => {
   assert.match(answer, /const safe = safeCitationHref\(href\);/, "evidenceHref checks first");
   const chat = read("src/components/chat/ChatClient.tsx");
   assert.match(chat, /href=\{safeCitationHref\(citation\.href\)\}/);
-  assert.match(chat, /<Link href=\{safeCitationHref\(source\.href\)\}/, "research sources are checked");
-  assert.doesNotMatch(chat, /<Link href=\{source\.href\}/);
+  assert.match(chat, /<SourceLink href=\{safeCitationHref\(source\.href\)\}/, "research sources are checked");
+  assert.doesNotMatch(chat, /<(Source)?Link href=\{source\.href\}/);
+  // Checked first; only then does a paper open in place.
+  assert.match(chat, /function SourceLink\(\{ href, className, children \}[^)]*\) \{\s*return parsePaperHref\(href\) \?/);
 });
 
 test("the Adaptive insights request is bounded and carries no free text to the model", () => {
