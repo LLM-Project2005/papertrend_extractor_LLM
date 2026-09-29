@@ -230,7 +230,13 @@ export async function checkReport(input: {
   let verdicts = new Map<string, import("@/lib/deep-research/verify").Verdict>();
   let auditRan = false;
   if (toAudit.length > 0) {
-    const raw = await callTool(auditMessages(toAudit, input.evidence), auditTool(), "DEEP_RESEARCH_AUDIT", { maxTokens: 3_000, timeoutMs: 75_000 });
+    // A verdict per sentence, and the model thinks before it writes them: a
+    // 3,000-token cap ran out on a long report before any verdict, twice.
+    // If the checker still fails, the lighter one checks instead of nobody.
+    const messages = auditMessages(toAudit, input.evidence);
+    const raw =
+      (await callTool(messages, auditTool(), "DEEP_RESEARCH_AUDIT", { maxTokens: 10_000, timeoutMs: 100_000, reasoningEffort: "low", attempts: 1 })) ??
+      (await callTool(messages, auditTool(), "DEEP_RESEARCH_AUDIT", { model: "google/gemini-3.1-flash-lite", maxTokens: 8_000, timeoutMs: 75_000, attempts: 1 }));
     if (raw) {
       auditRan = true;
       verdicts = parseAudit(raw, new Set(toAudit.map((unit) => unit.id)));
