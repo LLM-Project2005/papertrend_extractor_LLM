@@ -133,6 +133,16 @@ test("a cached answer is handed out as a copy", () => {
   assert.match(source, /citations: structuredClone\(result\.citations\),/);
 });
 
+test("with web search on, only small talk goes unsearched", async () => {
+  const { isSmallTalk, plainLimitation } = await import("../src/lib/repository-chat");
+  assert.equal(isSmallTalk("hello, thanks for your help!"), true);
+  assert.equal(isSmallTalk("What does recent research outside these papers say about dynamic assessment?"), false);
+  const planner = read("src/lib/repository-chat.ts");
+  assert.match(planner, /if \(input\.allowWeb && operations\.length === 1 && operations\[0\] === "converse" && !isSmallTalk\(input\.prompt\)\) \{\s*operations = \["search_evidence"\];/);
+  // Limitation lines speak of the papers, not of this pipeline's inputs.
+  assert.equal(plainLimitation("The supplied excerpts do not identify an official target."), "the papers searched do not identify an official target.");
+});
+
 /* ------------------------------------------------------------- the planner */
 
 test("a small-talk plan is a valid plan", () => {

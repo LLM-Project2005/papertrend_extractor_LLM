@@ -2748,7 +2748,7 @@ async function repositoryQaResult(
     if (checked.incomplete) {
       auditLimitations.push(
         checked.reason
-          ? `This answer may not cover the full request: ${checked.reason}`
+          ? `This answer may not cover the full request: ${plainLimitation(checked.reason)}`
           : "This answer may not cover every part of the request."
       );
     }
@@ -2804,6 +2804,17 @@ async function repositoryQaResult(
  * chart. Only exact term counts keep their own step, because that chart is
  * drawn from them.
  */
+export function isSmallTalk(prompt: string): boolean {
+  return /^\s*(?:hi|hello|hey|thanks?|thank you|good (?:morning|afternoon|evening)|what can you do|who are you|สวัสดี|ขอบคุณ)\b/i.test(prompt) && prompt.trim().length < 80;
+}
+
+/** A limitation line about the papers, not about this pipeline's inputs. */
+export function plainLimitation(reason: string): string {
+  return reason
+    .replace(/\b(?:the )?(?:supplied|provided|retrieved|available|given) (?:excerpts?|passages?|evidence|sources?|context)\b/gi, "the papers searched")
+    .replace(/\bexcerpts?\b/gi, "papers searched");
+}
+
 export function chartModeOperations(operations: RepositoryOperation[], hasTerms: boolean): RepositoryOperation[] {
   return operations.includes("analyze_text") && hasTerms ? ["analyze_text", "visualize"] : ["visualize"];
 }
@@ -2988,6 +2999,12 @@ export async function planRepositoryExecution(
     }
     if (input.forceChart) {
       operations = chartModeOperations(operations, parsed.data.terms.length > 0);
+    }
+    // With web search on, only small talk goes unsearched: live, "what does
+    // recent research outside these papers say" was answered as conversation,
+    // with no search, saying no outside sources were available.
+    if (input.allowWeb && operations.length === 1 && operations[0] === "converse" && !isSmallTalk(input.prompt)) {
+      operations = ["search_evidence"];
     }
     return {
       ...parsed.data,
@@ -3548,7 +3565,7 @@ export function decideFromAudit(review: {
     limitations: review.incomplete
       ? [
           review.reason
-            ? `This synthesis may not cover the full request: ${review.reason}`
+            ? `This synthesis may not cover the full request: ${plainLimitation(review.reason)}`
             : "This synthesis may not cover every part of the request.",
         ]
       : [],
