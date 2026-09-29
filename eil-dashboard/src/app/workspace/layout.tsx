@@ -1,9 +1,15 @@
 import WorkspaceShell from "@/components/workspace/WorkspaceShell";
+import { PaperViewerProvider } from "@/components/workspace/PaperViewerProvider";
 
 export default function WorkspaceLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return <WorkspaceShell>{children}</WorkspaceShell>;
+  // The paper window opens over any workspace page, the shell's search included.
+  return (
+    <PaperViewerProvider>
+      <WorkspaceShell>{children}</WorkspaceShell>
+    </PaperViewerProvider>
+  );
 }

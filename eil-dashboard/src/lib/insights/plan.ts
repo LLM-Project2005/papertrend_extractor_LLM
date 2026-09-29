@@ -9,11 +9,11 @@
  */
 import type { ChatMessage } from "@/lib/openai";
 import { fixedViewSummary } from "@/lib/insights/fixed-views";
-import { allowedFacts, claimsCause, corpusFacts, insightLabels, scrubLoadedWords, unbackedClaims } from "@/lib/insights/check";
+import { allowedFacts, claimsCause, corpusFacts, dropFiller, insightLabels, scrubLoadedWords, unbackedClaims } from "@/lib/insights/check";
 import type { Insight, InsightPlan, InsightPlanCard, InsightReport } from "@/lib/insights/types";
 
 /** Bumped whenever the prompt or the checks change, so cached plans are rewritten. */
-export const INSIGHTS_PROMPT_VERSION = "insights-v3";
+export const INSIGHTS_PROMPT_VERSION = "insights-v4";
 export const MAX_CARDS = 5;
 const TITLE_MAX = 90;
 const TAKEAWAY_MAX = 280;
@@ -105,7 +105,8 @@ export function buildInsightMessages(report: InsightReport, context: InsightCont
         "- Lead with the most surprising finding that has solid support. Prefer findings about how the research is changing or what connects to what.",
         "- Do not pick two candidates that make the same point. Fewer strong cards beat padding; if only 1 or 2 are worth showing, show only those.",
         "- A title states the finding in plain words (at most 12 words), not a question and not a chart name.",
-        "- A takeaway is 1 or 2 sentences (at most 45 words): what the numbers show, then why it matters to someone studying this field. Use the draft's facts; you may reorder and rephrase. Any interpretation must stay within what the facts show. If you have nothing specific to add, stop after the numbers: no filler such as 'this reflects a shift in focus'.",
+        "- A takeaway states what the numbers show, in 1 sentence (at most 35 words), using the draft's facts; you may reorder and rephrase.",
+        "- Add a second sentence only if it tells the reader something the numbers do not: what a named method or theme involves, or how this finding connects to another card on the page. Never restate the numbers as a 'shift', 'trend', 'focus' or 'preference', and never end with a clause such as ', indicating a growing interest'.",
         "- A candidate with a caution is weaker than it looks; prefer others, and if you show it, say what the caution says.",
         "- Write numbers as digits, only from that candidate's facts (or the selection's paper count and years). No other numbers, no 'twice' or 'half' unless a ratio fact says so.",
         "- Say 'papers', not 'studies', when counting. Associations are not causes: never write 'causes', 'drives', 'leads to', 'because of' or 'due to'. Never write 'significant': no statistical test was run.",
@@ -188,7 +189,7 @@ export function checkPlan(raw: unknown, report: InsightReport, model: string, no
     const facts = allowedFacts(insight, report);
     const labels = insightLabels(insight);
     let title = scrubLoadedWords(clean(card.title));
-    let takeaway = scrubLoadedWords(clean(card.takeaway));
+    let takeaway = dropFiller(scrubLoadedWords(clean(card.takeaway)), labels);
     const titleProblem = failure(title, TITLE_MAX, facts, labels);
     if (titleProblem) {
       checks.push({ field: "title", insightId: insight.id, reason: titleProblem });

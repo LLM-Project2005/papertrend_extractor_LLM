@@ -294,14 +294,13 @@ test("a citation leads to the paper it cites", () => {
   // discarded. Every research-chat citation and every "Open paper" link pointed
   // there, and the destination reads paperId perfectly well - the parameter just
   // never arrived. A citation that opens nothing reads as a fabricated citation.
-  for (const file of [
-    "src/lib/repository-chat.ts",
-    "src/components/tabs/KeywordExplorer.tsx",
-  ]) {
-    const src = read(file);
-    assert.equal(/\/workspace\/papers\?paperId=/.test(src), false, `${file} still links to the redirect`);
-    assert.match(src, /\/workspace\/library\?paperId=/);
-  }
+  const chat = read("src/lib/repository-chat.ts");
+  assert.equal(/\/workspace\/papers\?paperId=/.test(chat), false, "chat still links to the redirect");
+  assert.match(chat, /\/workspace\/library\?paperId=/);
+  // Keyword Explorer names the paper; the link's address comes from one place.
+  assert.match(read("src/components/tabs/KeywordExplorer.tsx"), /<PaperLink\s+paper=\{\{ paperId: String\(paper\.paperId\) \}\}/);
+  assert.match(read("src/lib/paper-address.ts"), /params\.set\("paperId", target\.paperId\)/);
+  assert.match(read("src/lib/paper-address.ts"), /return `\/workspace\/library\?\$\{params\.toString\(\)\}`;/);
   assert.match(
     read("src/components/admin/AdminImportClient.tsx"),
     /searchParams\.get\("paperId"\)/,
