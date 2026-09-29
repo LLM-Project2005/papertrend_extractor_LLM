@@ -84,6 +84,46 @@ function counts(tokens: string[]): Map<string, number> {
   return map;
 }
 
+/**
+ * Passages of whole sentences, about `target` characters each, overlapping by
+ * one sentence.
+ *
+ * The shared splitter cuts English text into single sentences, so "Results
+ * showed a significant effect" stood alone, without the words that tie it to
+ * a question, and a report could cite a study's aim but not its result. A few
+ * sentences together keep a finding with what it is about. Thai text has no
+ * sentence punctuation to split on and keeps the shared clause windows.
+ */
+export function sentenceWindows(text: string, target: number, maxPassages: number): string[] {
+  const windows: string[] = [];
+  let current: string[] = [];
+  let length = 0;
+  const flush = () => {
+    if (current.length === 0) return;
+    windows.push(current.join(" "));
+    // The last sentence starts the next window, so a finding split across the
+    // boundary is whole in one of them.
+    const last = current[current.length - 1];
+    current = last.length < target / 2 ? [last] : [];
+    length = current.reduce((sum, sentence) => sum + sentence.length + 1, 0);
+  };
+  for (const paragraph of String(text ?? "").split(/\n{2,}/)) {
+    const block = paragraph.replace(/\s+/g, " ").trim();
+    if (!block) continue;
+    const sentences = /[ก-๛]/.test(block)
+      ? splitTextPassages(block, { targetLength: target, minLength: 1 })
+      : block.split(/(?<=[.!?])\s+(?=[\p{Lu}\d(“"])/u);
+    for (const sentence of sentences) {
+      if (length + sentence.length > target && length > 0) flush();
+      current.push(sentence);
+      length += sentence.length + 1;
+      if (windows.length >= maxPassages) return windows;
+    }
+  }
+  if (current.length && (windows.length === 0 || current.join(" ") !== windows[windows.length - 1])) windows.push(current.join(" "));
+  return windows.slice(0, maxPassages);
+}
+
 /** An abstract is kept whole up to this length: its result is usually its last sentences. */
 export const ABSTRACT_CHARS = 2_200;
 
@@ -141,7 +181,7 @@ export function buildPassageIndex(papers: PaperText[]): PassageIndex {
       // A short abstract or conclusion still states the result; a short body fragment is usually a caption.
       const minimum = section === "abstract" || section === "conclusion" ? 60 : 120;
       const target = section === "abstract" ? ABSTRACT_CHARS : 900;
-      for (const piece of splitTextPassages(raw, { targetLength: target, maxPassages, minLength: minimum })) {
+      for (const piece of sentenceWindows(raw, target, maxPassages)) {
         const text = withoutFrontMatter(piece.replace(/\s+/g, " ").trim());
         const key = normalizeRepositoryText(text.slice(0, 180));
         if (text.length < minimum || seen.has(key) || looksLikeReferences(text)) continue;

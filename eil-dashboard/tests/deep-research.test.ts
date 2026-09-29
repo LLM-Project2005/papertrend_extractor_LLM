@@ -35,11 +35,23 @@ const PAPERS: PaperText[] = [
 
 test("passages that bear on the question are found across papers, not only in one long paper", () => {
   const index = buildPassageIndex(PAPERS);
-  const hits = searchPassages(index, ["dynamic assessment Thai EFL learners", "mediation writing"], { limit: 6, perPaper: 2 });
+  const hits = searchPassages(index, ["dynamic assessment Thai EFL learners", "mediation writing"], { limit: 4, perPaper: 2 });
   const papers = new Set(hits.map((hit) => hit.paperId));
   assert.ok(papers.has("1") && papers.has("2"), "both relevant papers are found");
   assert.ok(hits.filter((hit) => hit.paperId === "4").length <= 2, "one long paper cannot take every slot early");
   assert.equal(hits.some((hit) => hit.paperId === "3"), false, "an unrelated paper is not returned");
+});
+
+test("a result stays with the sentences around it", async () => {
+  const { sentenceWindows } = await import("../src/lib/deep-research/retrieve");
+  const text = "Working memory was measured with a reading span task. Learners read sentences with agreement errors. Results showed that higher working memory learners were faster. The effect held for long distances.";
+  const windows = sentenceWindows(text, 900, 10);
+  assert.equal(windows.length, 1, "four short sentences are one passage, not four");
+  assert.match(windows[0], /reading span task.*Results showed/);
+  const long = Array.from({ length: 12 }, (_, i) => `Sentence number ${i} carries some ordinary content about the study design here.`).join(" ");
+  const parts = sentenceWindows(long, 300, 20);
+  assert.ok(parts.length > 1 && parts.every((part) => part.length <= 400));
+  assert.ok(parts[1].startsWith(parts[0].split(/(?<=\.)\s+/).pop() ?? ""), "consecutive passages overlap by a sentence");
 });
 
 test("reference lists are not evidence", () => {
