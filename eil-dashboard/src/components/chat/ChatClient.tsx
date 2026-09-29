@@ -2,6 +2,8 @@
 
 import { chartAnimationActive } from "@/lib/chart-theme";
 import Link from "next/link";
+import PaperLink from "@/components/workspace/PaperLink";
+import { parsePaperHref } from "@/lib/paper-address";
 import {
   FormEvent,
   KeyboardEvent,
@@ -363,7 +365,7 @@ const localMessage = (
 
 function CitationLink({ citation, compact = false }: { citation: Citation; compact?: boolean }) {
   return (
-    <Link
+    <SourceLink
       href={safeCitationHref(citation.href)}
       className={`flex items-start gap-2.5 border border-slate-200 bg-white text-sm transition-colors hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:bg-[#0a0a0a] ${
         compact ? "rounded-lg px-3 py-2" : "rounded-xl px-3.5 py-3"
@@ -387,6 +389,19 @@ function CitationLink({ citation, compact = false }: { citation: Citation; compa
           </span>
         ) : null}
       </span>
+    </SourceLink>
+  );
+}
+
+/** A cited source: a paper opens in place (after the scheme check), anything else is a plain link. */
+function SourceLink({ href, className, children }: { href: string; className?: string; children: ReactNode }) {
+  return parsePaperHref(href) ? (
+    <PaperLink paper={href} className={className}>
+      {children}
+    </PaperLink>
+  ) : (
+    <Link href={href} className={className}>
+      {children}
     </Link>
   );
 }
@@ -965,9 +980,9 @@ function ResearchSources({ sources }: { sources: CitationSource[] }) {
             <span className="min-w-[1.5rem] flex-none font-semibold text-slate-600 dark:text-[#8e8e8e]">{source.number}.</span>
             <span className="min-w-0">
               {source.href ? (
-                <Link href={safeCitationHref(source.href)} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950 dark:decoration-[#444] dark:hover:text-white">
+                <SourceLink href={safeCitationHref(source.href)} className="underline decoration-slate-300 underline-offset-2 hover:text-slate-950 dark:decoration-[#444] dark:hover:text-white">
                   {source.title}
-                </Link>
+                </SourceLink>
               ) : (
                 source.title
               )}

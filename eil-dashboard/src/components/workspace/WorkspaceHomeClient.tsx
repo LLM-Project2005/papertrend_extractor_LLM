@@ -11,6 +11,7 @@
  */
 
 import Link from "next/link";
+import PaperLink from "@/components/workspace/PaperLink";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -224,8 +225,8 @@ function RecentPaperRow({ run }: { run: IngestionRunRow }) {
           : getRunStageMessage(run);
   return (
     <li>
-      <Link
-        href={`/workspace/library?runId=${encodeURIComponent(run.id)}`}
+      <PaperLink
+        paper={run.status === "succeeded" ? { runId: run.id } : `/workspace/library?runId=${encodeURIComponent(run.id)}`}
         className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-150 hover:bg-subtle"
       >
         <RunStatusIcon run={run} />
@@ -249,7 +250,7 @@ function RecentPaperRow({ run }: { run: IngestionRunRow }) {
           </span>
         ) : null}
         <ChevronRightIcon className="h-4 w-4 flex-none text-mute opacity-0 transition-[opacity,transform] duration-150 group-hover:translate-x-0.5 group-hover:opacity-100" />
-      </Link>
+      </PaperLink>
     </li>
   );
 }

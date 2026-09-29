@@ -13,6 +13,7 @@ import {
   Cell,
 } from "recharts";
 import Link from "next/link";
+import PaperLink from "@/components/workspace/PaperLink";
 import MetricCard from "@/components/MetricCard";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -475,12 +476,12 @@ export default function Overview({
                   <span className="font-medium">{duplicate.title}</span>
                   {duplicate.title === duplicate.originalTitle ? " (same title as another upload)" : ` \u2014 matches "${duplicate.originalTitle}"`}
                 </span>
-                <Link
-                  href={`/workspace/library?paperId=${duplicate.paperId}`}
+                <PaperLink
+                  paper={{ paperId: String(duplicate.paperId) }}
                   className="inline-flex min-h-9 flex-none items-center text-sm font-medium text-slate-900 underline underline-offset-4 dark:text-white"
                 >
-                  Open in Library
-                </Link>
+                  Open paper
+                </PaperLink>
               </li>
             ))}
           </ul>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
 import { useRouter } from "next/navigation";
 import {
   BaseEdge,
@@ -162,6 +163,7 @@ function relationshipHandles(source: SemanticMapPoint, target: SemanticMapPoint)
 
 export default function RepositorySemanticMapView({ projectId, projectName, requestHeaders }: Props) {
   const router = useRouter();
+  const paperViewer = usePaperViewer();
   const flowInstanceRef = useRef<ReactFlowInstance<Node<PaperNodeData>, Edge> | null>(null);
   const [map, setMap] = useState<RepositorySemanticMap | null>(null);
   const [eligiblePapers, setEligiblePapers] = useState(0);
@@ -442,7 +444,9 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     if (mode === "projection") window.setTimeout(() => void flowInstanceRef.current?.fitView({ padding: 0.06, minZoom: 0.45, maxZoom: 1.45, duration: 300 }), 80);
   }
   function openFocusedPaper() {
-    if (focusedPoint?.runId) router.push(`/workspace/library?runId=${encodeURIComponent(focusedPoint.runId)}`);
+    if (!focusedPoint?.runId) return;
+    if (paperViewer) paperViewer.openPaper({ runId: focusedPoint.runId });
+    else router.push(`/workspace/library?runId=${encodeURIComponent(focusedPoint.runId)}`);
   }
   function transferToChat(prompt?: string) {
     const runIds = map?.points.filter((point) => selectedPaperIds.includes(point.paperId)).map((point) => point.runId).filter((id): id is string => Boolean(id)) ?? [];

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import InsightsTab from "@/components/dashboard/InsightsTab";
+import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
 import RepositorySemanticMapView from "@/components/workspace/RepositorySemanticMap";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
@@ -187,6 +188,7 @@ export default function DashboardClient({
     setSearchQuery,
   } = useWorkspaceProfile();
   const { session } = useAuth();
+  const paperViewer = usePaperViewer();
   const categoryLabels = useMemo(() => readCategoryLabelMap(profile), [profile]);
 
   const scopedFolderIds = useMemo(() => folders.map((folder) => folder.id), [folders]);
@@ -765,6 +767,11 @@ export default function DashboardClient({
                         <button
                           type="button"
                           onClick={() => {
+                            // Opens over this list, which is still here when the paper closes.
+                            if (paperViewer) {
+                              paperViewer.openPaper({ paperId: String(paper.paperId) });
+                              return;
+                            }
                             setDrilldownTarget(null);
                             router.push(`/workspace/library?paperId=${paper.paperId}`);
                           }}
