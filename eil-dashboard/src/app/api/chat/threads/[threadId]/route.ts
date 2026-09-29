@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
 import { getChatRepository } from "@/lib/chat-repository";
+import { resumeIfStale } from "@/lib/deep-research/actions";
+import { getPublicRequestOrigin } from "@/lib/public-request-origin";
 
 export const runtime = "nodejs";
 
@@ -20,6 +22,9 @@ export async function GET(
     const detail = await getChatRepository().getThreadDetail(user.id, threadId, {
       before: before && !Number.isNaN(Date.parse(before)) ? before : null,
     });
+    // A research run whose worker went quiet is queued again by whoever opens
+    // it; the run's lease keeps it to one worker.
+    await resumeIfStale(user.id, detail.deepResearchSession ?? null, getPublicRequestOrigin(request)).catch(() => false);
     return NextResponse.json(detail);
   } catch (error) {
     return NextResponse.json(
