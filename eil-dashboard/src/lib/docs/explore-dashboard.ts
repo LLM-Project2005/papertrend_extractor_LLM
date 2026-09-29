@@ -118,7 +118,7 @@ export const dashboardPage: DocsPageBase = {
       id: "drilldown",
       title: "The drilldown",
       body: [
-        "Clicking a chart element opens a window listing the papers behind it, within your current filters: each with its year, categories, its own topic labels (and the theme each was grouped under), keywords and the matching evidence. **Open paper** opens it in the Library. Heatmaps and the Adaptive charts cannot be clicked.",
+        "Clicking a chart element opens a window listing the papers behind it, within your current filters: each with its year, categories, its own topic labels (and the theme each was grouped under), keywords and the matching evidence. **Open paper** opens the paper over this list, so closing it brings you back here. Heatmaps cannot be clicked; in the Adaptive tab, a bar, a cell or a name lists the papers behind it.",
       ],
     },
     {
