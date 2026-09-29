@@ -117,7 +117,11 @@ function numbersIn(text: string): string[] {
 export interface CodeCheck {
   unknown: string[];
   badNumbers: string[];
+  /** It speaks of "the papers" but cites only web pages. */
+  webAsPapers: boolean;
 }
+
+const ABOUT_THE_PAPERS = /\b(?:the|these|your) (?:papers|studies|collection|articles|theses)\b|\bthe collection's\b|\bthe papers'|งานวิจัยในชุดนี้|งานวิจัยเหล่านี้|ในคลัง/i;
 
 /** What code alone can say is wrong with a sentence. */
 export function codeCheck(unit: Pick<ReportUnit, "text" | "cites">, evidence: Map<string, Evidence>, factText: string): CodeCheck {
@@ -131,7 +135,8 @@ export function codeCheck(unit: Pick<ReportUnit, "text" | "cites">, evidence: Ma
     const value = Number(number);
     return !(Number.isInteger(value) && value >= 1 && value <= distinctSources);
   });
-  return { unknown, badNumbers };
+  const webAsPapers = cited.length > 0 && cited.every((item) => item.kind === "web") && ABOUT_THE_PAPERS.test(unit.text) && !/outside the collection|นอกคลัง|นอกชุด/i.test(unit.text);
+  return { unknown, badNumbers, webAsPapers };
 }
 
 /** Removes citation ids that do not exist in this run. */

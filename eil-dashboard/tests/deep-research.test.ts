@@ -106,7 +106,7 @@ test("a plan is capped, keeps searches searchable and limits the web", () => {
       outline: ["How it is used", "What it finds"],
       questions: Array.from({ length: 7 }, (_, i) => ({ question: `Sub-question number ${i}?`, purpose: "p", sources: "both", queries: ["How is dynamic assessment used?", "mediation"] })),
     },
-    { question: "q", webAvailable: true }
+    { question: "How does current policy compare with these papers?", webAvailable: true }
   );
   assert.ok(plan);
   assert.equal(plan!.questions.length, LIMITS.subQuestions);
@@ -114,6 +114,15 @@ test("a plan is capped, keeps searches searchable and limits the web", () => {
   assert.equal(plan!.questions[0].queries[0], "dynamic assessment used");
   assert.deepEqual(plan!.questions.map((question) => question.id), ["Q1", "Q2", "Q3", "Q4", "Q5"]);
   assert.equal(searchable("What is mediation?"), "mediation");
+});
+
+test("the web is used only when the question asks for what papers cannot hold", async () => {
+  const { questionNeedsWeb } = await import("../src/lib/deep-research/plan");
+  assert.equal(questionNeedsWeb("What do these papers say about using ChatGPT for feedback in writing classes?"), false);
+  assert.equal(questionNeedsWeb("How does Thailand's current national policy on English assessment compare with these papers?"), true);
+  assert.equal(questionNeedsWeb("นโยบายการสอนภาษาอังกฤษของไทยในปัจจุบันเป็นอย่างไร"), true);
+  const plan = parsePlan({ title: "t", language: "English", analytics: false, outline: [], questions: [{ question: "What does current research say about ChatGPT?", purpose: "", sources: "web", queries: ["chatgpt feedback"] }] }, { question: "What do these papers say about ChatGPT?", webAvailable: true });
+  assert.equal(plan?.questions[0].sources, "papers");
 });
 
 test("with the web unavailable every sub-question uses the papers; a failed plan falls back", () => {
@@ -170,7 +179,9 @@ const EVIDENCE: Evidence[] = [
 const EVIDENCE_MAP = new Map(EVIDENCE.map((item) => [item.id, item]));
 
 test("code holds numbers and ids to the evidence", () => {
-  assert.deepEqual(codeCheck({ text: "Scores rose from 12 to 18 [E1].", cites: ["E1"] }, EVIDENCE_MAP, ""), { unknown: [], badNumbers: [] });
+  assert.deepEqual(codeCheck({ text: "Scores rose from 12 to 18 [E1].", cites: ["E1"] }, EVIDENCE_MAP, ""), { unknown: [], badNumbers: [], webAsPapers: false });
+  assert.equal(codeCheck({ text: "The papers report that guidance was issued [E2].", cites: ["E2"] }, EVIDENCE_MAP, "").webAsPapers, true, "a web page is not the papers");
+  assert.equal(codeCheck({ text: "Outside the collection, the ministry issued guidance [E2].", cites: ["E2"] }, EVIDENCE_MAP, "").webAsPapers, false);
   assert.deepEqual(codeCheck({ text: "Scores rose from 12 to 25 [E1].", cites: ["E1"] }, EVIDENCE_MAP, "").badNumbers, ["25"]);
   assert.deepEqual(codeCheck({ text: "It helped [E7].", cites: ["E7"] }, EVIDENCE_MAP, "").unknown, ["E7"]);
   assert.equal(dropUnknownCitations("It helped [E1, E7].", EVIDENCE_MAP), "It helped [E1].");
@@ -261,7 +272,7 @@ test("prompts treat paper and web text as data, and report gaps narrowly", () =>
   const write = read("src/lib/deep-research/write.ts");
   assert.match(write, /Never call it a gap in the literature/);
   assert.match(write, /Cite only those ids; never write any other identifier/);
-  assert.match(read("src/lib/server-env.ts"), /DEEP_RESEARCH_AUDIT: "google\/gemini-3\.1-flash-lite"/, "a different model family checks the writer");
+  assert.match(read("src/lib/server-env.ts"), /DEEP_RESEARCH_AUDIT: "google\/gemini-3\.7-flash"/, "a different model family checks the writer");
 });
 
 test("the page draws a v2 run: report as a message with Copy and Download, quiet polling", () => {

@@ -81,7 +81,20 @@ export async function gatherQuestion(input: {
   // A web-only sub-question still sees the papers' best few passages.
   const passages = question.sources === "web" ? hits.slice(0, 6) : hits;
   const candidates = labelCandidates(passages, pages);
-  const base = { questionId: question.id, question: question.question, searchedPapers: input.index.papers, webSearched, webFailed };
+  const base = {
+    questionId: question.id,
+    question: question.question,
+    searchedPapers: input.index.papers,
+    webSearched,
+    webFailed,
+    shown: candidates.map((candidate, position) => ({
+      label: candidate.label,
+      source: candidate.kind === "web" ? pages[Number(candidate.label.slice(1)) - 1]?.url ?? "" : passages[Number(candidate.label.slice(1)) - 1]?.paperId ?? "",
+      title: candidate.title.slice(0, 120),
+      ...(candidate.section ? { section: candidate.section } : {}),
+      position,
+    })).map(({ position: _position, ...rest }) => rest),
+  };
   if (candidates.length === 0) {
     return { ...base, evidence: [], findings: [], coverage: "not_found", missing: "No passage in the papers searched matched this sub-question." };
   }
@@ -240,7 +253,10 @@ export async function checkReport(input: {
         continue;
       }
     }
-    const numberProblem = code.badNumbers.length ? `the number${code.badNumbers.length > 1 ? "s" : ""} ${code.badNumbers.join(", ")} ${code.badNumbers.length > 1 ? "are" : "is"} not in its evidence` : "";
+    const numberProblem = [
+      code.badNumbers.length ? `the number${code.badNumbers.length > 1 ? "s" : ""} ${code.badNumbers.join(", ")} ${code.badNumbers.length > 1 ? "are" : "is"} not in its evidence` : "",
+      code.webAsPapers ? "it credits the reader's papers with what only web pages say; say it comes from outside the collection" : "",
+    ].filter(Boolean).join("; ");
     if ((verdict && (verdict.verdict === "partly" || verdict.verdict === "unsupported")) || numberProblem) {
       flagged.push({
         unit,
@@ -267,8 +283,9 @@ export async function checkReport(input: {
       const cites = citesIn(text);
       const allowed = new Set(item.evidenceIds);
       const check = codeCheck({ text, cites }, evidence, factText);
-      // Kept only when it now cites evidence it was given and every number is in it.
-      const ok = text && cites.length > 0 && cites.every((id) => allowed.has(id)) && check.badNumbers.length === 0;
+      // Kept only when it now cites evidence it was given, every number is in
+      // it, and web pages are not passed off as the reader's papers.
+      const ok = text && cites.length > 0 && cites.every((id) => allowed.has(id)) && check.badNumbers.length === 0 && !check.webAsPapers;
       if (ok) {
         replacements.set(item.unit.id, text);
         audit.rewritten += 1;
