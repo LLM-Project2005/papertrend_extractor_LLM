@@ -98,13 +98,13 @@ function MatrixChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers
   const mark = new Map(chart.marks.map(([row, col, kind]) => [`${row}:${col}`, kind]));
   return (
     <div className="-mx-1 overflow-x-auto px-1">
-      <table className="w-full min-w-[34rem] border-separate border-spacing-1 text-xs">
+      <table className="w-full min-w-[26rem] border-separate border-spacing-1 text-xs sm:min-w-[34rem]">
         <caption className="sr-only">
           Papers per {chart.rowLabel.toLowerCase()} and {chart.colLabel.toLowerCase()}. Outlined cells are strong pairings; dashed cells are notable absences.
         </caption>
         <thead>
           <tr>
-            <th scope="col" className="w-48 text-left font-medium text-slate-500 dark:text-[#8f8f8f]">
+            <th scope="col" className="w-28 text-left font-medium text-slate-500 sm:w-48 dark:text-[#8f8f8f]">
               {chart.rowLabel} by {chart.colLabel.toLowerCase()}
             </th>
             {chart.cols.map((col) => (
@@ -158,8 +158,8 @@ function MatrixChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers
           ))}
         </tbody>
       </table>
-      {chart.cols.length > 3 ? (
-        // On a phone only about three columns fit; say that the rest are there.
+      {chart.cols.length > 1 ? (
+        // The grid is wider than a phone; say that the rest is there.
         <p className="mt-2 text-xs text-slate-600 sm:hidden dark:text-[#a3a3a3]">
           Swipe sideways to see all {chart.cols.length} columns.
         </p>
