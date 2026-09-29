@@ -199,6 +199,31 @@ Gemini's quality met the bar, so GPT-5.6 Luna was not needed.
 - the write-up, a question and the saved-plan reload, through the page;
 - every dashboard tab and the Library, with no console errors.
 
+## Second round (2026-09-29, PRs #211–#212)
+
+**Fixed:**
+- **Filler after the numbers.** A closing sentence that opens with "This/These/It", uses a
+  reporting verb, and names and counts nothing ("This shift highlights a changing focus…") is
+  removed. So is a trailing ", indicating …" clause (`dropFiller`). The prompt allows a second
+  sentence only when it adds something (prompt v4).
+- **Sub-topic pairs.** A theme wholly inside another whose name shares any content word with it
+  ("L2 Sentence and Online Processing" inside "Second Language Acquisition Theory", with L2 read as
+  "second language") is no longer offered as a pairing.
+
+**Acceptance criteria**, on the pilot, then production:
+
+| # | Result |
+| --- | --- |
+| A1 | No insight repeats a fixed-tab view, in any of 6 scenarios |
+| A2 | Every number in 3 fresh write-ups is a computed fact; 0 corrections |
+| A3 | No claim below 3 papers; the 7-paper and 5-paper selections show a notice and no charts |
+| A4 | Every card is an insight the page draws from the same object |
+| A5 | Every write-up beats the old planner on the rubric |
+| A6 | 1.7k–3.0k input tokens per write-up; revisits are served from the cache; the Library page makes no call |
+| A7 | Tokens are persisted after each call, with no persistence failures logged |
+| A8 | With no write-up (model off), the page shows 5 computed insights |
+| A9 | 786 tests green, build clean; both themes at desktop and 390 px, with no overflow and no errors |
+
 ## Not done, on purpose
 
 - **The Python `nodes/visualization.py`** is still used by the chat and deep-research graphs, so
