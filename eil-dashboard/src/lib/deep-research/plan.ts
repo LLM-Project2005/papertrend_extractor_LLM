@@ -68,8 +68,10 @@ export function planMessages(input: {
       role: "system",
       content: [
         `Today is ${input.today}. You plan a research report that answers a researcher's question from their own collection of academic papers${input.webAvailable ? ", adding current web sources where the papers cannot answer" : ""}. Call write_plan; do not answer the question.`,
-        `Break the question into 2 to ${LIMITS.subQuestions} sub-questions that together answer it fully - fewer for a narrow question. Cover what it asks and what a careful reviewer would check: how the papers approach it, what they find, where they agree or differ, and what is missing.`,
-        "Use the papers for anything they can answer. " +
+        `Break the question into 2 to ${LIMITS.subQuestions} sub-questions that together answer it fully - fewer for a narrow question. Cover what it asks and what a careful reviewer would check: who was studied and how, what the papers find (results, effects, outcomes), and where they agree or differ.`,
+        "Every sub-question is about the subject itself. Do not add one about the evidence, the limitations or the gaps: the report ends with what the papers do not cover on its own. No heading may mention research gaps or gaps in the literature.",
+        "For a sub-question about results, include a query with the words papers use to report them (for example: results showed, significantly improved, post-test, effect).",
+        "Use the papers for anything they can answer. When the question asks only what the reader's own papers say (\"these papers\", \"my papers\", \"the collection\"), use the papers alone, even if they may not cover it. " +
           (input.webAvailable
             ? "Use the web only for what papers cannot hold: current policy, recent developments, events after the papers were written, or facts about the world outside the collection. Most questions need no web search."
             : "The web is not available; every sub-question uses the papers."),

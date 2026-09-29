@@ -21,10 +21,11 @@ import {
   isV2Session,
   latestPlannedSession,
   loadSession,
+  markRequeued,
   savePlan,
   startSession,
 } from "@/lib/deep-research/store";
-import { enqueueResearchRun } from "@/lib/deep-research/tasks";
+import { enqueueResearchRun, researchQueue } from "@/lib/deep-research/tasks";
 
 export interface ResearchRequest {
   message?: string;
@@ -135,7 +136,7 @@ export async function planResearch(body: ResearchRequest, ownerUserId: string): 
 async function dispatch(ownerUserId: string, sessionId: string, origin: string): Promise<void> {
   const queued = await enqueueResearchRun(sessionId, ownerUserId, origin);
   if (queued) return;
-  if (!process.env.REPOSITORY_CHAT_TASKS_QUEUE && !process.env.CLOUD_TASKS_QUEUE) {
+  if (!researchQueue()) {
     await runResearchSession({ ownerUserId, sessionId, retryCount: 2 });
     return;
   }
@@ -167,5 +168,7 @@ export async function cancelResearch(body: ResearchRequest, ownerUserId: string)
 /** Opening a thread whose run has gone quiet queues it again; the lease keeps it to one worker. */
 export async function resumeIfStale(ownerUserId: string, session: DeepResearchSessionRecord | null, origin: string): Promise<boolean> {
   if (!session || !isV2Session(session) || !isStale(session)) return false;
+  // Only the poll that marks it re-queues it; the others see it fresh again.
+  if (!(await markRequeued(ownerUserId, session.id))) return false;
   return enqueueResearchRun(session.id, ownerUserId, origin);
 }

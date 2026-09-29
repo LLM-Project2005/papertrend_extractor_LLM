@@ -17,7 +17,7 @@ import type { DeepResearchStepRecord } from "@/types/research";
 import { findingsMessages, findingsTool, labelCandidates, parseFindings, type ParsedFindings } from "@/lib/deep-research/findings";
 import { finalizeReport } from "@/lib/deep-research/finalize";
 import { callTool } from "@/lib/deep-research/model";
-import { buildPassageIndex, searchPassages, type PassageIndex } from "@/lib/deep-research/retrieve";
+import { buildPassageIndex, searchPassages, withAbstracts, type PassageIndex } from "@/lib/deep-research/retrieve";
 import {
   claimSession,
   completeSession,
@@ -66,7 +66,10 @@ export async function gatherQuestion(input: {
   language: string;
 }): Promise<GatherResult> {
   const { question } = input;
-  const hits = searchPassages(input.index, [...question.queries, question.question], { limit: LIMITS.candidatesPerQuestion, perPaper: 2 });
+  const hits = withAbstracts(
+    input.index,
+    searchPassages(input.index, [...question.queries, question.question], { limit: LIMITS.candidatesPerQuestion, perPaper: 2 })
+  );
   let pages: Array<{ url: string; title: string; text: string }> = [];
   let webFailed = false;
   const webSearched = question.sources !== "papers";
@@ -163,11 +166,22 @@ export function numberEvidence(gathered: GatherResult[]): { evidence: Evidence[]
   return { evidence, results };
 }
 
+export function asksAboutDistribution(question: string): boolean {
+  return /\b(?:trends?|changed?|changing|over time|over the years|grow(?:n|ing|th)?|decline|most common|how many|how often|proportion|share|distribution|popular|frequen\w*)\b|แนวโน้ม|เปลี่ยน|จำนวน|บ่อย|สัดส่วน/i.test(question);
+}
+
 function wordCount(text: string): number {
   return /[ก-๛]/.test(text) ? Math.round(text.replace(/\s+/g, "").length / 6) : text.split(/\s+/).filter(Boolean).length;
 }
 
 /** Holds the report to its evidence: code checks, an independent audit, one revision. */
+export interface CheckedSentence {
+  text: string;
+  problem: string;
+  outcome: "rewritten" | "removed";
+  revised?: string;
+}
+
 export async function checkReport(input: {
   draft: string;
   evidence: Evidence[];
@@ -175,12 +189,13 @@ export async function checkReport(input: {
   question: string;
   language: string;
   model?: string;
-}): Promise<{ report: string; audit: AuditResult; auditRan: boolean }> {
+}): Promise<{ report: string; audit: AuditResult; auditRan: boolean; changes: CheckedSentence[] }> {
   const evidence = new Map(input.evidence.map((item) => [item.id, item]));
   const factText = `${input.facts.map((fact) => fact.text).join(" ")} ${input.question}`;
   const parsed = parseReport(input.draft);
   const audit = emptyAudit();
   const replacements = new Map<string, string>();
+  const changes: CheckedSentence[] = [];
   const units = parsed.units.filter((unit) => !unit.heading);
   const lastSection = parsed.sections - 1;
 
@@ -193,10 +208,11 @@ export async function checkReport(input: {
     if (text !== unit.text) replacements.set(unit.id, text);
     current.set(unit.id, { ...unit, text, cites: citesIn(text) });
   }
-  // The opening answer and the closing limits may summarise without citing;
-  // a body sentence that states something needs a source.
-  const substantive = (unit: ReportUnit) => wordCount(unit.text) >= 8;
-  const toAudit = [...current.values()].filter((unit) => unit.cites.length > 0 || (unit.section > 0 && unit.section < lastSection && substantive(unit)));
+  // The closing limits may state what is missing without citing. Every other
+  // sentence that states something is checked, the opening answer included:
+  // it summarises, and a summary can claim what no source says.
+  const substantive = (unit: ReportUnit) => wordCount(unit.text) >= 4;
+  const toAudit = [...current.values()].filter((unit) => unit.cites.length > 0 || (unit.section < lastSection && substantive(unit)));
 
   let verdicts = new Map<string, import("@/lib/deep-research/verify").Verdict>();
   let auditRan = false;
@@ -216,7 +232,7 @@ export async function checkReport(input: {
     if (code.badNumbers.length) audit.numberMismatches += 1;
     if (verdict?.verdict === "supported" && unit.cites.length === 0) {
       const sources = verdict.sources.filter((id) => evidence.has(id));
-      if (sources.length) {
+      if (sources.length && unit.section > 0) {
         // Supported but uncited: the audit named its source, so cite it.
         const cited = unit.text.replace(/([.!?])?$/, (end) => ` [${sources.join(", ")}]${end || "."}`);
         replacements.set(unit.id, cited);
@@ -256,13 +272,15 @@ export async function checkReport(input: {
       if (ok) {
         replacements.set(item.unit.id, text);
         audit.rewritten += 1;
+        changes.push({ text: item.unit.text, problem: item.problem, outcome: "rewritten", revised: text });
       } else {
         replacements.set(item.unit.id, "");
         audit.removed += 1;
+        changes.push({ text: item.unit.text, problem: item.problem, outcome: "removed", ...(revised ? { revised } : {}) });
       }
     }
   }
-  return { report: rebuild(parsed, replacements), audit, auditRan };
+  return { report: rebuild(parsed, replacements), audit, auditRan, changes };
 }
 
 /* ----------------------------------------------------------------- the run */
@@ -319,11 +337,6 @@ async function computedFacts(ownerUserId: string, context: RepositoryContext): P
     const corpus = await loadChatInsightCorpus(ownerUserId, projectIds, new Set(context.papers.map((paper) => String(paper.paperId))));
     const report = buildInsightReport(corpus);
     const facts: ComputedFact[] = [];
-    if (report.summary.papers > 0) {
-      facts.push({
-        text: `The collection has ${report.summary.papers} distinct analysed papers${report.summary.firstYear ? `, published ${report.summary.firstYear} to ${report.summary.lastYear}` : ""}.`,
-      });
-    }
     for (const insight of report.insights.slice(0, 4)) facts.push({ text: insight.takeaway });
     return facts;
   } catch (error) {
@@ -395,7 +408,9 @@ export async function runResearchSession(input: {
       await saveStep(ownerUserId, writeStep.id, "processing", { summary: thai ? "กำลังเขียนรายงาน" : "Writing the report." });
       const numbered = numberEvidence(gathered);
       evidence = numbered.evidence;
-      facts = plan.analytics ? await computedFacts(ownerUserId, context) : [];
+      // Counts across the collection help only a question about how it divides
+      // or changes; live, a policy question got a paragraph of unrelated trends.
+      facts = plan.analytics && asksAboutDistribution(readerQuestion) ? await computedFacts(ownerUserId, context) : [];
       const completion = await createChatCompletionResult(
         reportMessages({
           question: readerQuestion,
@@ -404,7 +419,8 @@ export async function runResearchSession(input: {
           evidence,
           facts,
           scopeLabel: context.scopeLabel,
-          paperCount: context.papers.length,
+          // Distinct studies: a duplicate upload is one paper here.
+          paperCount: index.papers,
           pendingPapers: (context.runStats.queued ?? 0) + (context.runStats.processing ?? 0),
           today: today(),
         }),
@@ -432,6 +448,7 @@ export async function runResearchSession(input: {
     await saveStep(ownerUserId, checkStep.id, "completed", {
       audit,
       auditRan: checked.auditRan,
+      changes: checked.changes.slice(0, 40),
       summary: checked.auditRan
         ? thai
           ? `ตรวจ ${audit.checked} ข้อความ: แก้ ${audit.rewritten} นำออก ${audit.removed}`

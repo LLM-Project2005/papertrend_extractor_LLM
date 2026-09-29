@@ -112,7 +112,7 @@ export function labelCandidates(
   pages: Array<{ title: string; text: string }>
 ): Candidate[] {
   return [
-    ...passages.slice(0, LIMITS.candidatesPerQuestion).map((passage, index) => ({
+    ...passages.slice(0, LIMITS.candidatesShown).map((passage, index) => ({
       label: `P${index + 1}`,
       kind: "paper" as const,
       title: passage.title,

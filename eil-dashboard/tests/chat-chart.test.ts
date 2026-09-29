@@ -121,6 +121,19 @@ test("chat's chart step is the question engine, not the fixed charts", () => {
   assert.match(source, /After the chart is added: a chart request that the planner also read as\s*\/\/ small talk must draw the chart, not chat\./);
 });
 
+test("Chart mode answers with the chart alone", async () => {
+  const { chartModeOperations, fallbackExecutionPlan } = await import("../src/lib/repository-chat");
+  // Live: the planner added a corpus report beside the chart and 8 of 15 went to a background job.
+  assert.deepEqual(chartModeOperations(["aggregate_corpus", "visualize"], false), ["visualize"]);
+  assert.deepEqual(chartModeOperations(["inspect_scope", "visualize"], false), ["visualize"]);
+  assert.deepEqual(chartModeOperations(["analyze_text", "visualize"], true), ["analyze_text", "visualize"], "a term-count chart keeps its counts");
+  const fallback = fallbackExecutionPlan("How many papers were published each year?", true);
+  assert.deepEqual(fallback.operations, ["visualize"]);
+  assert.equal(fallback.operation, "visualize");
+  const source = read("src/lib/repository-chat.ts");
+  assert.match(source, /if \(input\.forceChart\) \{\s*operations = chartModeOperations\(operations, parsed\.data\.terms\.length > 0\);/);
+});
+
 test("the page draws a computed chart with the Adaptive tab's renderer", () => {
   const client = read("src/components/chat/ChatClient.tsx");
   assert.match(client, /chart\.chartType === "insight" && chart\.insight \? \(\s*<ChatInsightCard/);
