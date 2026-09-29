@@ -1,6 +1,6 @@
 # 31 — Deep research, chart mode and web search: make them trustworthy
 
-Status: **in progress** (started 2026-09-29).
+Status: **built, awaiting the live acceptance evaluation** (started 2026-09-29). See [Progress](#progress).
 
 ## The question this answers
 
@@ -226,3 +226,15 @@ Each phase goes development → test (pilot) → main, as before, and ships only
 | WB3 | A cached answer is never mutated (test) |
 | WB4 | Spend recorded with the search fee; web searches have their own daily limit |
 | ALL | Test suites green, build clean, verified on the pilot and then in production |
+
+## Progress
+
+| Phase | State |
+| --- | --- |
+| 0 | Built and on the pilot (#217). Includes: small-talk plan valid; `web_search` no longer offered as an operation; chart, table and metric patterns narrowed; cached answer copied; prices from OpenRouter's list; the provider's charged cost recorded |
+| 1 | Built and on the pilot (#217). Engine checked offline on the 39-paper snapshot for 13 gold views. Fixes from that check: empty years drawn; a subject's own values left out; a value too rare to show a change is said to be; "Categorys"; single-valued dimensions |
+| 2 | Built and on the pilot (#217). Includes: web plugin always searches; uncited or number-mismatched points dropped; failure keeps the answer; own daily limit; background answers metered |
+| 3–4 | Built and on the pilot (#218, #219) |
+| 5 | Gold sets and scripts ready: 15 chart questions, 8 web questions, 9 research questions including a Thai one, a web one and a negative control. Not run yet: the live runs need the test account's credentials |
+
+Offline checks: 830 tests pass (18 of them for deep research), and `next build` is clean.

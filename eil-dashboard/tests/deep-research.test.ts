@@ -49,6 +49,11 @@ test("reference lists are not evidence", () => {
   );
   assert.equal(looksLikeReferences("References\nAnderson, J. (2010). Title."), true);
   assert.equal(looksLikeReferences(PAPERS[0].content), false);
+  // A literature review cites many works in passing; it is the paper's argument, not its bibliography.
+  assert.equal(
+    looksLikeReferences("Poehner (2008) argued that mediation reveals potential, as Lantolf and Poehner (2011) and Davin (2013) later showed; similar results appear elsewhere (Ableeva, 2010; Shrestha, 2020). Kozulin and Garb (2002) applied it to reading."),
+    false
+  );
 });
 
 test("Thai text is searched as words", () => {

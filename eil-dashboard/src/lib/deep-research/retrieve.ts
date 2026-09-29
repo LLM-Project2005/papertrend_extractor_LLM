@@ -61,11 +61,15 @@ const STOPWORDS = new Set([
 /** A reference list, or a passage that is mostly one. */
 export function looksLikeReferences(text: string): boolean {
   if (/^\s*(?:references|bibliography|works cited|บรรณานุกรม|เอกสารอ้างอิง)\b/i.test(text)) return true;
-  const citations = (text.match(/\((?:19|20)\d{2}[a-z]?\)|\b(?:19|20)\d{2}[a-z]?\)\.|,\s(?:19|20)\d{2}[a-z]?\.\s/g) ?? []).length;
+  // Entry shapes, not citations in passing: "Poehner, M. E. (2008). Title" and
+  // "Poehner, 2008. Title". A literature review's "Poehner (2008) argued" or
+  // "(Lantolf, 2000)." is the paper's own argument and stays.
+  const apa = (text.match(/\((?:19|20)\d{2}[a-z]?\)\./g) ?? []).length;
+  const harvard = (text.match(/[,.]\s(?:19|20)\d{2}[a-z]?\.\s+[A-Z]/g) ?? []).length;
   const dois = (text.match(/\bdoi(?:\.org)?[:/]/gi) ?? []).length;
-  const etAl = (text.match(/\bet al\.,?\s*\(?(?:19|20)\d{2}/g) ?? []).length;
-  // A body paragraph cites a few works in passing; a reference list is little else.
-  return dois >= 2 || citations >= 5 || citations + dois >= 4 || (citations >= 3 && etAl >= 3 && text.length < 1_400);
+  const pages = (text.match(/\bpp?\.\s?\d+/g) ?? []).length;
+  const volumes = (text.match(/\b\d+\(\d+\),\s*\d+\s*[–-]\s*\d+/g) ?? []).length;
+  return dois >= 2 || apa >= 3 || harvard >= 3 || apa + harvard + pages + volumes >= 4;
 }
 
 function termsOf(text: string): string[] {
@@ -98,7 +102,8 @@ export function buildPassageIndex(papers: PaperText[]): PassageIndex {
       ["methods", paper.methods, 20],
       ["results", paper.results, 20],
       ["conclusion", paper.conclusion, 10],
-      ["text", paper.content, 160],
+      // Enough for a long thesis's closing chapters, where its results are.
+      ["text", paper.content, 450],
     ];
     for (const [section, raw, maxPassages] of sections) {
       if (!raw?.trim()) continue;
