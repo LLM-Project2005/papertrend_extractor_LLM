@@ -156,7 +156,7 @@ export const readingAPaperPage: DocsPageBase = {
       id: "opening",
       title: "Opening the paper explorer",
       body: [
-        "Click a finished paper's name in the Library, choose **View analysis** in its **...** menu, or follow a citation from Chat. The explorer opens over the Library, always on the **Overview** tab.",
+        "Click a finished paper's name in the Library, choose **View analysis** in its **...** menu, or open a paper anywhere else in the workspace - a citation in Chat, **Open paper** on the dashboard, a search result, a recent paper on Home. The explorer opens over the page you are on, on the **Overview** tab (a citation's **Open the evidence** opens it on **Evidence**). **Back**, **Escape** or the close button returns you to where you were, and the paper's address can be copied to open it again. A middle-click or Ctrl-click opens it in the Library in a new tab instead.",
       ],
       figure: {
         shot: "paper",
