@@ -104,6 +104,15 @@ export function searchable(query: string): string {
   return cleanText(query, 120).replace(QUESTION_WORDS, "").replace(/[?!.]+$/g, "").trim();
 }
 
+/**
+ * Whether the question asks for something outside the reader's papers:
+ * current policy, recent developments, or sources beyond the collection. A
+ * question about what "these papers" say, with none of that, stays with them.
+ */
+export function questionNeedsWeb(question: string): boolean {
+  return /\b(?:current(?:ly)?|latest|recent(?:ly)?|today|nowadays|now|this year|news|polic(?:y|ies)|regulations?|outside|beyond|elsewhere|web|internet|online|other research|wider literature)\b|ปัจจุบัน|ล่าสุด|นโยบาย|นอกเหนือ/i.test(question);
+}
+
 /** The model's plan, checked and capped; null when unusable. */
 export function parsePlan(raw: unknown, input: { question: string; webAvailable: boolean }): ResearchPlan | null {
   if (!raw || typeof raw !== "object") return null;
@@ -116,7 +125,7 @@ export function parsePlan(raw: unknown, input: { question: string; webAvailable:
       const question = cleanText(item.question, 400);
       if (question.length < 8) return null;
       let sources: SourceChoice = item.sources === "web" || item.sources === "both" ? (item.sources as SourceChoice) : "papers";
-      if (!input.webAvailable) sources = "papers";
+      if (!input.webAvailable || !questionNeedsWeb(input.question)) sources = "papers";
       const queries = [...new Set((Array.isArray(item.queries) ? item.queries : []).map((query) => searchable(String(query))).filter((query) => query.length >= 3))]
         .slice(0, LIMITS.queriesPerQuestion);
       return {

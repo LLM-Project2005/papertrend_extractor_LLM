@@ -434,6 +434,7 @@ export function askMessages(question: string, vocabulary: Record<AskDimension, s
         "- 'What do the papers on assessment set out to produce?' -> rows contribution, focus_dimension theme, focus_values [every theme naming assessment or testing].",
         "- 'How has the use of interviews changed?' -> measure change, rows method, about_values [the interview method].",
         "- 'How many papers were published each year?' -> rows year.",
+        "- 'How have the themes changed over time?' -> measure change, rows theme.",
         "- 'How many papers study writing compared with reading?' -> rows theme, about_values [the writing theme, the reading theme].",
         "- 'Compare the methods used in writing papers and reading papers' -> rows method, columns theme, focus_dimension theme, focus_values [every theme naming writing or reading].",
         "- 'Which themes appear alongside assessment?' -> rows theme, focus_dimension theme, focus_values [every theme naming assessment].",

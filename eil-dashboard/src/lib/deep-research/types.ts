@@ -84,6 +84,8 @@ export interface GatherResult {
   searchedPapers: number;
   webSearched: boolean;
   webFailed?: boolean;
+  /** What the findings step was shown: label, source and title. */
+  shown?: Array<{ label: string; source: string; title: string; section?: string }>;
 }
 
 export interface AuditResult {

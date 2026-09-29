@@ -163,7 +163,7 @@ const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
   DEEP_RESEARCH_WEB: "openai/gpt-5.6-luna",
   DEEP_RESEARCH_REPORT: "openai/gpt-5.6-luna",
   DEEP_RESEARCH_REVISE: "openai/gpt-5.6-luna",
-  DEEP_RESEARCH_AUDIT: "google/gemini-3.1-flash-lite",
+  DEEP_RESEARCH_AUDIT: "google/gemini-3.7-flash",
 };
 
 export function getOpenAIConfig(taskName?: string): {
