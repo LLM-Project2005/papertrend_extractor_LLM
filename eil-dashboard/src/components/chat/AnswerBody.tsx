@@ -569,10 +569,13 @@ export function AssistantAnswer({
   content,
   messageId,
   citations,
+  unfolded = false,
 }: {
   content: string;
   messageId: string;
   citations?: AnswerCitation[] | null;
+  /** A report is read whole; only a chat answer folds. */
+  unfolded?: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -592,7 +595,7 @@ export function AssistantAnswer({
     [content, citations]
   );
 
-  const cut = useMemo(() => foldPoint(text), [text]);
+  const cut = useMemo(() => (unfolded ? null : foldPoint(text)), [text, unfolded]);
   const visible = cut !== null && !expanded ? text.slice(0, cut) : text;
   const hiddenChars = cut !== null && !expanded ? text.length - cut : 0;
 

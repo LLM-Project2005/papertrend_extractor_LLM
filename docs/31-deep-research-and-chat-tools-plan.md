@@ -229,12 +229,39 @@ Each phase goes development → test (pilot) → main, as before, and ships only
 
 ## Progress
 
-| Phase | State |
-| --- | --- |
-| 0 | Built and on the pilot (#217). Includes: small-talk plan valid; `web_search` no longer offered as an operation; chart, table and metric patterns narrowed; cached answer copied; prices from OpenRouter's list; the provider's charged cost recorded |
-| 1 | Built and on the pilot (#217). Engine checked offline on the 39-paper snapshot for 13 gold views. Fixes from that check: empty years drawn; a subject's own values left out; a value too rare to show a change is said to be; "Categorys"; single-valued dimensions |
-| 2 | Built and on the pilot (#217). Includes: web plugin always searches; uncited or number-mismatched points dropped; failure keeps the answer; own daily limit; background answers metered |
-| 3–4 | Built and on the pilot (#218, #219) |
-| 5 | Gold sets and scripts ready: 15 chart questions, 8 web questions, 9 research questions including a Thai one, a web one and a negative control. Not run yet: the live runs need the test account's credentials |
+All phases are built. On the pilot, they were evaluated live against the gold sets over six rounds, fixing what each round found (#217-#225).
 
-Offline checks: 830 tests pass (18 of them for deep research), and `next build` is clean.
+## Acceptance results (pilot, 2026-09-29/30)
+
+Claude judged the reports by reading them against the passages they cite, instead of a paid judge model. The pilot's logs record **$1.59** of OpenRouter spend for the whole evaluation.
+
+| # | Criterion | Result |
+| --- | --- | --- |
+| DR1 | Gold papers found and cited; no false "no evidence" claim | **27/27** in rounds 4-6 (26/27 in round 2). The ChatGPT negative control says the papers do not report such a study, and describes only what they do report |
+| DR2 | Citations resolve; no raw ids | 100%, built in; no raw id in any of 54 reports |
+| DR3 | ≥95% of cited claims supported | The second-model audit passed 93-97% on the first check and corrected or removed the rest. A hand check of sampled sentences in R2, R4 and R7 against their evidence found every sentence supported |
+| DR4 | Numbered sources; papers open in place, web pages link out | Yes (screenshots) |
+| DR5 | Median ≤ 4 min; resumes after an interruption | Median 38 s, maximum 49 s (round 6). Stopped mid-run and resumed: finished steps kept, and only the remaining step ran |
+| DR6 | Report in the reader's language | The Thai question got a Thai report |
+| DR7 | Median ≤ $0.04, maximum ≤ $0.06; spend recorded | Median $0.023, maximum $0.043 (round 6). The provider's charged cost is logged, and tokens count toward the daily budget |
+| DR8 | Web only when planned; web claims sourced | Web used only for the policy question. Code blocks it for questions about "these papers"; web claims cite pages; a sentence crediting web pages to the papers is caught |
+| DR9 | Stop, resume, copy, download; reports kept; 1 unit | Stop and resume verified live. Copy, download and unfolded reports verified by screenshot and tests. A new question adds a session. The unit is charged at first start (tested) |
+| DR10 | Planted instructions ignored | Every prompt treats paper and web text as data (tested). **Not tested live** with a planted paper |
+| CH1 | ≥14/15 gold chart questions answered by the right view | **15/15** after the Chart-mode fix (round 1 was 6/15: other steps were added beside the chart) |
+| CH2 | Caption numbers computed | Yes; the model writes no numbers |
+| CH3 | Themes, dated years, duplicates once, empty years shown | Yes (36 distinct of 41 uploads) |
+| CH4 | Legible in both themes and at phone width | Yes (screenshots). A grid wider than a phone says it scrolls |
+| WB1 | Every web claim sourced; no section without sources | **8/8** questions, every point cited. Small talk is not searched |
+| WB2-3 | Failure keeps the answer; cache not mutated | Tests |
+| WB4 | Spend with the search fee; own daily limit | Background answers log the provider cost ($0.02-0.03 with search). Limit is 40 a day |
+
+### What each round found and fixed
+
+| Round | Found | Fixed in |
+| --- | --- | --- |
+| 1 | Chart mode added a report or listing beside the chart. Research waited 7 min behind the shared one-at-a-time queue. The web was credited to "the papers". A stray computed-fact paragraph. Duplicate uploads cited twice | #220 |
+| 2 | The planner still used the web for a papers-only question. The Flash-Lite audit passed the misattribution | #221 |
+| 3 | Gemini 3.7 Flash's audit ran out of tokens while reasoning. Web-on questions answered as conversation. "Supplied excerpts" wording | #222 |
+| 4 | Abstracts were cut before their results. Title pages were cited. The checker could not see years | #223 |
+| 5 | Passages were single sentences, so results were cut off from their subject | #224 |
+| 6 | Spelled-out numbers ("Seventy learners") did not count as evidence. Reports folded behind "Show more" | #225, #226 |

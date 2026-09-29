@@ -307,6 +307,7 @@ test("the page draws a v2 run: report as a message with Copy and Download, quiet
   const client = read("src/components/chat/ChatClient.tsx");
   assert.match(client, /if \(researchV2\) return "";/);
   assert.match(client, /<ReportActions/);
+  assert.match(client, /unfolded=\{message\.kind === "deep_research_report"\}/, "a report is read whole, not folded");
   assert.match(client, /void loadThreadDetail\(activeThreadId, \{ background: true \}\);/);
   assert.match(client, /onClick=\{\(\) => void handleCancelResearch\(\)\}/);
   assert.match(client, /\{deepSession\.status === "failed" \? "Retry" : "Resume"\}/);

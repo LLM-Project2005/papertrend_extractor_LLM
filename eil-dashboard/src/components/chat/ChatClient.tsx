@@ -3620,7 +3620,12 @@ export default function ChatClient() {
                             <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Deep research report</p>
                           ) : null}
                           <div data-testid="assistant-message">
-                            <AssistantAnswer content={message.content} messageId={message.id} citations={message.citations} />
+                            <AssistantAnswer
+                              content={message.content}
+                              messageId={message.id}
+                              citations={message.citations}
+                              unfolded={message.kind === "deep_research_report"}
+                            />
                           </div>
                           {message.kind === "deep_research_report" ? (
                             <ReportActions
