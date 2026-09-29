@@ -93,13 +93,24 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
           pinned ? "block" : "pointer-events-none hidden group-focus-within:block group-hover:block"
         }`}
       >
-        {referenced.map((source) => (
+        {referenced.map((source) => {
+          const webPage = isWebSource(source);
+          return (
           <span key={source.paperId} className="block [&+&]:mt-2 [&+&]:border-t [&+&]:border-slate-200 [&+&]:pt-2 dark:[&+&]:border-[#2a2a2a]">
             <span className="block font-semibold text-slate-900 dark:text-white">{source.title}</span>
             <span className="block text-slate-600 dark:text-[#8e8e8e]">
-              {source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
+              {webPage ? `Web page · ${webHost(source.href)}` : source.year && source.year !== "Unknown" ? source.year : "Year not recorded"}
             </span>
-            {pinned && source.href ? (
+            {pinned && webPage ? (
+              <a
+                href={safeCitationHref(source.href)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-sky-700 underline-offset-2 hover:underline dark:text-sky-300"
+              >
+                Open the page
+              </a>
+            ) : pinned && source.href ? (
               <PaperLink
                 paper={evidenceHref(source.href)}
                 className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-sky-700 underline-offset-2 hover:underline dark:text-sky-300"
@@ -108,10 +119,24 @@ export function CitationMarker({ numbers, sources }: { numbers: number[]; source
               </PaperLink>
             ) : null}
           </span>
-        ))}
+          );
+        })}
       </span>
     </span>
   );
+}
+
+/** A source the web search found: its link leaves the app rather than opening a paper. */
+export function isWebSource(source: { href: string; year?: string }): boolean {
+  return /^https?:\/\//i.test(source.href) && (source.year === "Web" || !source.href.includes("/workspace/"));
+}
+
+function webHost(href: string): string {
+  try {
+    return new URL(href).hostname.replace(/^www\./, "");
+  } catch {
+    return "web";
+  }
 }
 
 /** A paper's link, opened on its Evidence tab. */

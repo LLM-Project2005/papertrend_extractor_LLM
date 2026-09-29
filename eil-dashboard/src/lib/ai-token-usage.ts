@@ -13,6 +13,14 @@ export interface AiTokenUsageTotals {
    * pipeline uses both in the same answer.
    */
   byModel: Array<{ model: string; promptTokens: number; completionTokens: number }>;
+  /**
+   * What the provider says it charged, in US dollars, summed over the calls
+   * that reported it. OpenRouter reports `usage.cost` on every call, and it
+   * includes what tokens alone cannot show: a web search's fee.
+   */
+  reportedUsd?: number;
+  /** Calls that reported a cost, so a partial sum is not read as the whole. */
+  reportedCalls?: number;
 }
 
 const usageStore = new AsyncLocalStorage<AiTokenUsageTotals>();
@@ -33,6 +41,11 @@ export function recordAiTokenUsage(usage: unknown, model?: string): void {
   totals.completionTokens += completionTokens;
   totals.totalTokens += reportedTotal || promptTokens + completionTokens;
   totals.calls += 1;
+  const cost = Number(value.cost);
+  if (Number.isFinite(cost) && cost >= 0) {
+    totals.reportedUsd = (totals.reportedUsd ?? 0) + cost;
+    totals.reportedCalls = (totals.reportedCalls ?? 0) + 1;
+  }
 
   const name = model?.trim() || "unknown";
   const row = totals.byModel.find((entry) => entry.model === name);
@@ -53,6 +66,8 @@ export function withAiTokenUsageTracking<T>(
     totalTokens: 0,
     calls: 0,
     byModel: [],
+    reportedUsd: 0,
+    reportedCalls: 0,
   };
   return usageStore.run(totals, () => callback(totals));
 }
