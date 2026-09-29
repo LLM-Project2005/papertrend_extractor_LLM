@@ -72,6 +72,17 @@ test("a paper's abstract joins its hits, and a duplicate upload is one study", a
   assert.ok(expanded.some((hit) => hit.paperId === "5" && hit.section === "abstract" && /improved significantly/.test(hit.text)), "the abstract, where the result is, is added");
 });
 
+test("a title page is not evidence, and an abstract is kept whole", async () => {
+  const { withoutFrontMatter, ABSTRACT_CHARS, trimPassage } = await import("../src/lib/deep-research/retrieve");
+  const page = "Effects of Structure on L2 Processing Supakit Thiamtawan and Nattama Pongpairoj* Chulalongkorn University, Bangkok *Corresponding author: someone@example.com Abstract This study examined working memory. Results showed that salience had a significant effect.";
+  assert.equal(withoutFrontMatter(page), "This study examined working memory. Results showed that salience had a significant effect.");
+  assert.equal(withoutFrontMatter("Title of Paper. Jane Doe, University of Somewhere. *Corresponding author: jane@example.com"), "", "a title block alone goes");
+  assert.equal(withoutFrontMatter("Teachers at the university used portfolios in class."), "Teachers at the university used portfolios in class.");
+  const abstract = `${"This study examined how learners processed agreement. ".repeat(30)}Results showed a significant effect of distance.`;
+  assert.match(trimPassage(abstract, ABSTRACT_CHARS), /This study/);
+  assert.ok(ABSTRACT_CHARS >= 2_000, "long enough for the result at an abstract's end");
+});
+
 test("garbled web titles are repaired; counts are used only for questions about them", async () => {
   const { repairMojibake } = await import("../src/lib/repository-chat-web");
   const { asksAboutDistribution } = await import("../src/lib/deep-research/run");
