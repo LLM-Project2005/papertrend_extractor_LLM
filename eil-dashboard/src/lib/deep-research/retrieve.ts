@@ -84,6 +84,24 @@ function counts(tokens: string[]): Map<string, number> {
   return map;
 }
 
+/** An abstract is kept whole up to this length: its result is usually its last sentences. */
+export const ABSTRACT_CHARS = 2_200;
+
+/**
+ * A paper's first page runs title, authors, emails and affiliations into the
+ * abstract. That block matches a question's words (it holds the title) and
+ * says nothing, so it is cut at "Abstract"; a passage that is only a title
+ * block is dropped (it then has too few words left to pass the minimum).
+ */
+export function withoutFrontMatter(text: string): string {
+  const head = text.slice(0, 900);
+  const frontMatter = /@|corresponding author|\buniversity\b|\bfaculty of\b|\borcid\b|received:|accepted:/i.test(head);
+  const abstractAt = head.search(/\bAbstract\b[:.\s-]/i);
+  if (frontMatter && abstractAt > 0) return text.slice(abstractAt).replace(/^Abstract\b[:.\s-]*/i, "").trim();
+  if (frontMatter && /@|corresponding author/i.test(head) && text.length < 700) return "";
+  return text;
+}
+
 /** Trims a passage to a length a reader can check, at a sentence end where one is near. */
 export function trimPassage(text: string, max: number = LIMITS.passageChars): string {
   const clean = text.replace(/\s+/g, " ").trim();
@@ -122,8 +140,9 @@ export function buildPassageIndex(papers: PaperText[]): PassageIndex {
       if (!raw?.trim()) continue;
       // A short abstract or conclusion still states the result; a short body fragment is usually a caption.
       const minimum = section === "abstract" || section === "conclusion" ? 60 : 120;
-      for (const piece of splitTextPassages(raw, { targetLength: 900, maxPassages, minLength: minimum })) {
-        const text = piece.replace(/\s+/g, " ").trim();
+      const target = section === "abstract" ? ABSTRACT_CHARS : 900;
+      for (const piece of splitTextPassages(raw, { targetLength: target, maxPassages, minLength: minimum })) {
+        const text = withoutFrontMatter(piece.replace(/\s+/g, " ").trim());
         const key = normalizeRepositoryText(text.slice(0, 180));
         if (text.length < minimum || seen.has(key) || looksLikeReferences(text)) continue;
         seen.add(key);
@@ -181,7 +200,7 @@ export function withAbstracts(index: PassageIndex, hits: PassageHit[], papers = 
   for (const paperId of order.slice(0, papers)) {
     if (hits.some((hit) => hit.paperId === paperId && hit.section === "abstract")) continue;
     const abstract = index.abstracts.get(paperId)?.[0];
-    if (abstract) out.push({ ...abstract, text: trimPassage(abstract.text), score: 0 });
+    if (abstract) out.push({ ...abstract, text: trimPassage(abstract.text, ABSTRACT_CHARS), score: 0 });
   }
   return out;
 }
@@ -240,7 +259,7 @@ export function searchPassages(
     title: passage.title,
     year: passage.year,
     section: passage.section,
-    text: trimPassage(passage.text),
+    text: trimPassage(passage.text, passage.section === "abstract" ? ABSTRACT_CHARS : LIMITS.passageChars),
     score: Math.round((fused.get(passage) ?? 0) * 100_000) / 100_000,
   }));
 }

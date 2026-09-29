@@ -194,6 +194,7 @@ export function auditMessages(units: ReportUnit[], evidence: Evidence[]): ChatMe
       role: "system",
       content: [
         "You check a research report sentence by sentence against its evidence. Call check_claims with a verdict for every sentence id.",
+        "A paper's title and publication year, given with its evidence, count as evidence too.",
         "Judge only against the evidence text given, strictly: a claim that generalises from one study to many, adds a detail, or states a cause the evidence does not state is partly supported at best.",
         "Each evidence item is a Paper (from the reader's collection) or a Web page. A sentence about what \"the papers\", \"the collection\" or \"the studies\" say must rest on Paper evidence: if only Web pages support it, it is unsupported.",
         "A sentence in the opening answer may summarise several findings without citing; judge it against all the evidence, and mark it unsupported if it goes beyond it.",
@@ -205,7 +206,7 @@ export function auditMessages(units: ReportUnit[], evidence: Evidence[]): ChatMe
       role: "user",
       content: [
         "Evidence:",
-        evidence.map((item) => `[${item.id}] ${item.kind === "web" ? "Web page" : "Paper"}: ${item.title}\n${item.text}`).join("\n\n"),
+        evidence.map((item) => `[${item.id}] ${item.kind === "web" ? "Web page" : "Paper"}: ${item.title}${item.kind === "paper" && item.year && item.year !== "Unknown" ? ` (published ${item.year})` : ""}\n${item.text}`).join("\n\n"),
         "",
         "Sentences (cited ids in brackets):",
         units.map((unit) => `${unit.id}: ${unit.text}`).join("\n"),
@@ -293,7 +294,7 @@ export function reviseMessages(
           [
             `${unit.id}: ${unit.text}`,
             `Problem: ${problem}`,
-            ...evidenceIds.map((id) => evidence.get(id)).filter((item): item is Evidence => Boolean(item)).map((item) => `[${item.id}] ${item.title}: ${item.text}`),
+            ...evidenceIds.map((id) => evidence.get(id)).filter((item): item is Evidence => Boolean(item)).map((item) => `[${item.id}] ${item.title}${item.kind === "paper" && item.year && item.year !== "Unknown" ? ` (published ${item.year})` : ""}: ${item.text}`),
           ].join("\n")
         )
         .join("\n\n"),
