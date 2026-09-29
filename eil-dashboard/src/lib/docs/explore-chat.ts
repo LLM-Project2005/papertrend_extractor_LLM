@@ -89,17 +89,21 @@ export const chatPage: DocsPageBase = {
       id: "chart-mode",
       title: "Chart mode",
       body: [
-        "Open **+** and turn on **Chart mode** to get a chart built from the repository's data. Describe the chart, or send an empty box for the most useful one. Typing chart words in a normal message (in English, or กราฟ and แผนภูมิ in Thai) offers **Use Chart mode**.",
+        "Open **+** and turn on **Chart mode** to get a chart built from the repository's data. Describe the chart you want in your own words, or send an empty box for the strongest pattern in the papers. Typing chart words in a normal message (in English, or กราฟ and แผนภูมิ in Thai) offers **Use Chart mode**.",
+        "The chart is worked out from your question and drawn from the same themes, methods and categories as the dashboard, with a likely duplicate upload counted once. Its title, numbers and caption are computed, not written by a model. Press a bar or cell to list the papers behind it; each opens in place.",
       ],
       table: {
-        columns: ["Chart", "Shows"],
+        columns: ["You can ask for", "For example"],
         rows: [
-          ["Top repository topics", "The ten largest topics, as bars, a pie or a table"],
-          ["Repository topic coverage by year", "The five largest topics as lines over the years"],
-          ["Words per paper, or a term's occurrences by paper", "Exact counts from each paper's text"],
+          ["How the papers divide by theme, method, category, contribution, kind of study, aim or year", "\"Papers per year\", \"Which methods are used most?\""],
+          ["Any two of those crossed", "\"Which methods are used for which themes?\""],
+          ["Narrowed to a subject, or two values compared", "\"What do the writing papers set out to produce?\", \"Writing compared with reading\""],
+          ["How shares changed from the earlier papers to the later", "\"Is qualitative research becoming more common?\""],
+          ["Words per paper, or a term's occurrences by paper", "\"How often does 'feedback' appear in each paper?\""],
         ],
       },
       bullets: [
+        "A question the papers' data cannot answer, such as authors, citations or sample sizes, gets a reason and what can be charted instead, not a chart of something else.",
         "Charts cannot be downloaded. For more views, use the [dashboard](/docs/dashboard).",
         "Chart mode and Deep research cannot be on together; turning one on turns the other off.",
         "Web search does not apply to charts.",
@@ -109,10 +113,12 @@ export const chatPage: DocsPageBase = {
       id: "web-search",
       title: "Web search",
       body: [
-        "Turn on **Web search** from the **+** menu to add current sources from outside your repository. The answer is written from your papers first; a section headed **Web context** follows, with web pages as source cards marked **Web source**.",
+        "Turn on **Web search** from the **+** menu to add current sources from outside your repository. The answer is written from your papers first; a section headed **Web context** follows, with web pages as numbered sources marked **Web source** that open the page.",
+        "Every point in that section cites a page the search returned. A point that cites nothing, or gives a number the page does not contain, is left out; when nothing is left, the section is not added and the answer says why. The search runs on the date you ask.",
       ],
       bullets: [
         "Web search runs only while the toggle is on. Writing \"latest\" or \"search online\" in a question does not turn it on.",
+        "Small talk is not searched. If the web step fails, you still get the answer from your papers, with a note.",
         "A question with web search on usually runs in the background (see below).",
         "Web pages are chosen by the search provider, not by Papertrend; judge them as you would any search result.",
       ],
@@ -175,13 +181,14 @@ export const chatPage: DocsPageBase = {
         columns: ["Limit", "Amount", "Resets"],
         rows: [
           ["Chat tokens", "1,000,000 tokens a day, counted from the answers you receive", "00:00 UTC (07:00 in Thailand)"],
+          ["Web searches", "40 a day; each answer with web search on uses one", "Midnight UTC"],
           ["Deep research", "10 requests a day; a plan and its start count as one each", "Midnight UTC"],
           ["Message length", "12,000 characters; longer messages are shortened in the middle", "Not applicable"],
         ],
       },
       bullets: [
         "When the token limit is reached, Chat says `Daily chat token limit reached (1,000,000 tokens). Please try again tomorrow.` The answer that crosses the limit still completes.",
-        "Background answers are not counted toward the token limit.",
+        "Background answers count toward the token limit like any other.",
         "Remaining allowance is not shown anywhere yet.",
       ],
     },

@@ -9,6 +9,8 @@ test("bibliometric questions are recognised as unanswerable here", () => {
   assert.equal(detectUnavailableMetric("What is the h-index of these authors?"), "author_metrics");
   assert.equal(detectUnavailableMetric("What is the impact factor of the journal?"), "venue_metrics");
   assert.equal(detectUnavailableMetric("How many downloads does it have?"), "usage_metrics");
+  assert.equal(detectUnavailableMetric("How often has this paper been cited?"), "citation_counts");
+  assert.equal(detectUnavailableMetric("What are the page views of these papers?"), "usage_metrics");
 });
 
 test("future predictions are recognised", () => {
@@ -33,6 +35,11 @@ test("questions the repository can answer are not intercepted", () => {
     "What methodology did they use?",
     "List the references cited in this paper.",
     "What years were these published?",
+    // Ordinary words the old patterns read as metrics.
+    "What are the students' views on written feedback?",
+    "Which framework is cited by the authors of the reading study?",
+    "Can I download the dynamic assessment paper?",
+    "How does a learner who reads aloud improve?",
   ]) {
     assert.equal(detectUnavailableMetric(prompt), null, `must not intercept: ${prompt}`);
   }

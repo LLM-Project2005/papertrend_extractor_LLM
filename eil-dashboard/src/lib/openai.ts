@@ -33,6 +33,11 @@ export interface ChatCompletionParameters {
   reasoningEffort?: "low" | "medium" | "high";
   /** Asks for a JSON object back, for steps whose reply is parsed by code. */
   jsonObject?: boolean;
+  /**
+   * OpenRouter plugins, such as `{ id: "web" }`, which always searches before
+   * the model answers (the web-search tool lets the model skip it).
+   */
+  plugins?: unknown[];
 }
 
 export interface ChatCompletionAnnotation {
@@ -158,6 +163,9 @@ export async function createChatCompletionResult(
   }
   if (parameters.jsonObject) {
     requestBody.response_format = { type: "json_object" };
+  }
+  if (usesOpenRouter && parameters.plugins && parameters.plugins.length > 0) {
+    requestBody.plugins = parameters.plugins;
   }
 
   // Latency per call was never recorded, so a slow answer could not be

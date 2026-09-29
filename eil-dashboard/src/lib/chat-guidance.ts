@@ -172,12 +172,15 @@ export type UnavailableMetric =
  */
 const UNAVAILABLE_METRIC_PATTERNS: Array<[UnavailableMetric, RegExp]> = [
   // "how many citations", "times cited" - not "the citations in this paper",
-  // which means its reference list.
-  ["citation_counts", /\b(?:how many|number of|count of|total)\s+citations\b|\bcitation count\b|\btimes cited\b|\bcited by\b/i],
+  // which means its reference list, nor "the framework cited by the authors",
+  // which the papers themselves can answer.
+  ["citation_counts", /\b(?:how many|number of|count of|total)\s+citations\b|\bcitation counts?\b|\btimes cited\b|\bhow (?:often|many times) (?:has|have|is|was|were|are)\b[^.?!]{0,60}\bcited\b/i],
   ["author_metrics", /\bh-?index\b|\bi10-?index\b|\bauthor (?:ranking|impact|metrics)\b/i],
   ["venue_metrics", /\bimpact factor\b|\bjournal (?:rank|ranking|quartile)\b|\bscimago\b|\bq[1-4] journal\b/i],
   ["future_prediction", /\b(?:will|going to|expect(?:ed)?|predict|forecast|projection)\b[^.?!]{0,60}\b(?:cite|citations|impact|popular|influence)\b/i],
-  ["usage_metrics", /\b(?:downloads?|altmetric|readership|views|reads)\b\s*(?:count|number|statistics|stats)?\b/i],
+  // Counts of downloads or views - not "the students' views on feedback" or
+  // "can I download the paper", which are ordinary questions.
+  ["usage_metrics", /\b(?:how many|number of|count of|total)\s+(?:downloads|views|reads|readers)\b|\b(?:download|view|read) (?:counts?|numbers|statistics|stats)\b|\baltmetrics?\b|\breadership (?:numbers|statistics|stats|figures)\b|\bpage ?views\b/i],
 ];
 
 export function detectUnavailableMetric(prompt: string): UnavailableMetric | null {

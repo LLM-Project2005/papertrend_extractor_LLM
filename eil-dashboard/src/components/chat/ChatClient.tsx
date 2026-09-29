@@ -99,6 +99,8 @@ import {
   TrashIcon,
 } from "@/components/ui/Icons";
 import Modal from "@/components/ui/Modal";
+import ChatInsightCard from "@/components/chat/ChatInsightCard";
+import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
 import type {
   FolderAnalysisJobRow,
@@ -137,10 +139,13 @@ type ChartMetric =
   | "track_trend";
 
 interface ChatChartPayload {
-  chartType: Exclude<ChartType, "auto">;
+  /** "insight": a computed view drawn by the Adaptive tab's renderer (docs/31). */
+  chartType: Exclude<ChartType, "auto"> | "insight";
   title: string;
   scopeLabel: string;
-  metric: ChartMetric;
+  metric: ChartMetric | "insight";
+  insight?: Insight;
+  papers?: Array<{ id: string; title: string; year: string }>;
   xKey: "label";
   yKeys: string[];
   data: Array<Record<string, string | number>>;
@@ -451,7 +456,6 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
           </h3>
           <p className="mt-1 text-xs text-slate-600 dark:text-[#a3a3a3]">
             {chart.scopeLabel}
-            {chart.planner?.reason ? ` - ${chart.planner.reason}` : ""}
           </p>
         </div>
         <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d8d8d8]">
@@ -490,13 +494,13 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
           </table>
         </div>
       ) : (
-        <div className="h-[320px] px-3 py-4">
+        <div className="h-[320px] px-3 py-4 text-slate-600 dark:text-[#a3a3a3]">
           <ResponsiveContainer width="100%" height="100%">
             {chart.chartType === "line" ? (
               <LineChart data={chartData} margin={{ left: 6, right: 18, top: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
-                <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fill: "#9ca3af", fontSize: 12 }} />
+                <XAxis dataKey="label" tick={{ fill: "currentColor", fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fill: "currentColor", fontSize: 12 }} />
                 <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, index) => (
                   <Line isAnimationActive={chartAnimationActive()}
@@ -538,7 +542,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                 <XAxis
                   type={chartData.length > 6 ? "number" : "category"}
                   dataKey={chartData.length > 6 ? undefined : "label"}
-                  tick={{ fill: "#9ca3af", fontSize: 12 }}
+                  tick={{ fill: "currentColor", fontSize: 12 }}
                   domain={chartData.length > 6 ? [0, Math.ceil(maxValue)] : undefined}
                 />
                 <YAxis
@@ -546,7 +550,7 @@ function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
                   dataKey={chartData.length > 6 ? "label" : undefined}
                   width={chartData.length > 6 ? 120 : undefined}
                   allowDecimals={false}
-                  tick={{ fill: "#9ca3af", fontSize: 12 }}
+                  tick={{ fill: "currentColor", fontSize: 12 }}
                 />
                 <Tooltip {...chatChartTooltipTheme} />
                 {yKeys.map((key, keyIndex) => (
@@ -3508,12 +3512,19 @@ export default function ChatClient() {
                               Repository context not used
                             </div>
                           ) : null}
-                          {charts.map((chart, chartIndex) => (
-                            <ChatChartCard
-                              key={`${message.id}-chart-${chartIndex}-${chart.title}`}
-                              chart={chart}
-                            />
-                          ))}
+                          {charts.map((chart, chartIndex) =>
+                            chart.chartType === "insight" && chart.insight ? (
+                              <ChatInsightCard
+                                key={`${message.id}-chart-${chartIndex}-${chart.title}`}
+                                chart={{ title: chart.title, scopeLabel: chart.scopeLabel, insight: chart.insight, papers: chart.papers }}
+                              />
+                            ) : (
+                              <ChatChartCard
+                                key={`${message.id}-chart-${chartIndex}-${chart.title}`}
+                                chart={chart}
+                              />
+                            )
+                          )}
                           <AnswerCaveats metadata={message.metadata} />
                           {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading ? (
                             <FollowUpSuggestions

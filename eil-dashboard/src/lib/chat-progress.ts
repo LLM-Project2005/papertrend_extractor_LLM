@@ -13,6 +13,7 @@ export const CHAT_PROGRESS_STAGES = [
   "synthesizing",
   "checking",
   "formatting",
+  "charting",
   "queued",
 ] as const;
 
@@ -35,6 +36,7 @@ const STAGE_LABELS: Record<ChatProgressStage, string> = {
   synthesizing: "Writing the answer",
   checking: "Checking it against the evidence",
   formatting: "Formatting citations",
+  charting: "Working out the chart",
   queued: "Handing off to a background job",
 };
 

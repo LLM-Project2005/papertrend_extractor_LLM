@@ -13,16 +13,42 @@
  * produces a wrong estimate rather than a wrong answer.
  */
 
-/** Prices taken from OpenRouter on 2026-09-22, per million tokens, USD. */
+/**
+ * Prices taken from OpenRouter's model list on 2026-09-29, per million tokens,
+ * USD. The two chat models were wrong until then - Gemini 3.7 Flash ten times
+ * too low, Luna twelve times too high - so every recorded estimate was off.
+ */
 const PRICES: Record<string, { prompt: number; completion: number }> = {
-  "openai/gpt-5.6-luna-20260709": { prompt: 2.5, completion: 10 },
-  "google/gemini-3.7-flash": { prompt: 0.075, completion: 0.3 },
-  // Taken 2026-09-29, for the Adaptive insights editor and its alternative.
-  "google/gemini-3.1-flash-lite": { prompt: 0.25, completion: 1.5 },
+  "openai/gpt-5.6-luna-20260709": { prompt: 0.2, completion: 1.2 },
   "openai/gpt-5.6-luna": { prompt: 0.2, completion: 1.2 },
+  "google/gemini-3.7-flash": { prompt: 0.75, completion: 3.75 },
+  "google/gemini-3.1-flash-lite": { prompt: 0.25, completion: 1.5 },
+  "google/gemini-2.5-flash-lite": { prompt: 0.1, completion: 0.4 },
   "openai/gpt-4o": { prompt: 2.5, completion: 10 },
   "openai/text-embedding-3-small": { prompt: 0.02, completion: 0 },
 };
+
+/**
+ * One web search through OpenRouter's web plugin on the Exa engine, which
+ * includes up to ten results. Tokens do not show it, so it is added per search
+ * when the provider's own figure is missing.
+ */
+export const WEB_SEARCH_FEE_USD = 0.007;
+
+/**
+ * The provider's figure when every call reported one; otherwise the estimate
+ * from tokens, plus any search fees the tokens cannot show.
+ */
+export function spendUsd(
+  usage: { calls: number; byModel: Array<{ model: string; promptTokens: number; completionTokens: number }>; reportedUsd?: number; reportedCalls?: number },
+  webSearches = 0
+): { usd: number; source: "provider" | "estimate" } {
+  if (usage.calls > 0 && usage.reportedCalls === usage.calls && typeof usage.reportedUsd === "number") {
+    return { usd: Math.round(usage.reportedUsd * 1_000_000) / 1_000_000, source: "provider" };
+  }
+  const estimate = summarizeSpend(usage.byModel).usd + webSearches * WEB_SEARCH_FEE_USD;
+  return { usd: Math.round(estimate * 1_000_000) / 1_000_000, source: "estimate" };
+}
 
 /**
  * Used when a model is not in the table above.

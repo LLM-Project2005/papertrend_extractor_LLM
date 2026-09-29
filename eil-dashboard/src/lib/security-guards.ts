@@ -4,6 +4,7 @@ import {
   getAiDailyDeepResearchLimit,
   getAiDailyMessageLimit,
   getAiDailyTokenLimit,
+  getAiDailyWebSearchLimit,
   getLoginEmailRateLimitAttempts,
   getLoginRateLimitAttempts,
   getLoginRateLimitWindowSeconds,
@@ -353,7 +354,11 @@ export async function assertAndRecordAiUsage(
   metadata?: Record<string, unknown>
 ): Promise<void> {
   const limit =
-    kind === "deep_research" ? getAiDailyDeepResearchLimit() : getAiDailyMessageLimit();
+    kind === "deep_research"
+      ? getAiDailyDeepResearchLimit()
+      : kind === "web_search"
+        ? getAiDailyWebSearchLimit()
+        : getAiDailyMessageLimit();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const since = today.toISOString();
