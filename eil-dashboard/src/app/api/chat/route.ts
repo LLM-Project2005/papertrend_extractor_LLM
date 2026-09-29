@@ -22,6 +22,7 @@ import {
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
 import { addWebContext, webStepApplies } from "@/lib/repository-chat-web";
+import { cancelResearch, planResearch, startResearch } from "@/lib/deep-research/actions";
 import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
 import { runWithCancellation } from "@/lib/chat-cancellation";
 import { isValidRequestId, registerCancellable } from "@/lib/chat-cancel-registry";
@@ -227,7 +228,7 @@ interface ChatRequestBody {
     budget?: Partial<DeepResearchBudgetPolicy>;
   };
   chatMode?: "normal" | "deep_research";
-  action?: "message" | "plan" | "continue";
+  action?: "message" | "plan" | "continue" | "cancel";
   sessionId?: string;
 }
 
@@ -294,7 +295,7 @@ const ChatRequestBodySchema = z
     webSearchEnabled: z.boolean().optional(),
     researchSourcePolicy: z.record(z.string(), z.unknown()).optional(),
     chatMode: z.enum(["normal", "deep_research"]).optional(),
-    action: z.enum(["message", "plan", "continue"]).optional(),
+    action: z.enum(["message", "plan", "continue", "cancel"]).optional(),
     sessionId: z.string().max(80).optional(),
   })
   .passthrough();
@@ -4421,6 +4422,37 @@ async function handlePost(request: Request) {
     }
     const chatMode = body.chatMode ?? "normal";
     const action = body.action ?? (chatMode === "deep_research" ? "plan" : "message");
+
+    // Deep research v2 (docs/31) on Cloud SQL: a plan is one small call,
+    // counted toward the token budget; starting a run costs one unit.
+    if (chatMode === "deep_research" && getDatabaseProvider() === "cloud-sql") {
+      const research = {
+        message: body.message,
+        threadId: body.threadId,
+        sessionId: body.sessionId,
+        projectId: body.projectId,
+        folderId: body.folderId,
+        selectedRunIds: body.selectedRunIds,
+        knowledgeScope: body.knowledgeScope,
+        attachments: body.attachments,
+      };
+      const detail =
+        action === "cancel"
+          ? await cancelResearch(research, ownerUserId)
+          : action === "continue"
+            ? await startResearch(research, ownerUserId, getPublicRequestOrigin(request))
+            : await planResearch(research, ownerUserId);
+      if (detail) {
+        return NextResponse.json({
+          mode: "deep_research",
+          action,
+          thread: detail.thread,
+          messages: detail.messages,
+          deepResearchSession: detail.deepResearchSession,
+        });
+      }
+      // A session planned before v2 continues on the old path.
+    }
 
     if (ownerUserId && chatMode === "deep_research") {
       await assertAndRecordAiUsage(ownerUserId, usageKindForRequest(body), {

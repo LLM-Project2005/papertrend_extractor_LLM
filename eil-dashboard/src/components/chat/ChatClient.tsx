@@ -52,6 +52,7 @@ import {
 } from "@/lib/answer-typography";
 import { AssistantAnswer, renderRichMessage } from "@/components/chat/AnswerBody";
 import { citationPaperId, markCitations, type CitationSource } from "@/lib/answer-citations";
+import { isV2Session } from "@/lib/deep-research/types";
 import { ChatIntro, FollowUpSuggestions } from "@/components/chat/ChatIntro";
 import ThinkingOrb, { orbStateForStage } from "@/components/ui/ThinkingOrb";
 import Select from "@/components/ui/Select";
@@ -100,6 +101,7 @@ import {
 } from "@/components/ui/Icons";
 import Modal from "@/components/ui/Modal";
 import ChatInsightCard from "@/components/chat/ChatInsightCard";
+import ReportActions from "@/components/chat/ReportActions";
 import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
 import type {
@@ -947,10 +949,12 @@ function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null
 function renderLoadingLabel(
   deepResearchEnabled: boolean,
   chartModeEnabled: boolean,
-  activeSession?: DeepResearchSessionRecord | null
+  activeSession?: DeepResearchSessionRecord | null,
+  starting = false
 ) {
   if (chartModeEnabled) return "Building chart…";
   if (!deepResearchEnabled) return "Generating answer…";
+  if (starting) return "Starting deep research…";
   if (activeSession?.status === "planned") return "Planning deep research…";
   if (activeSession?.status === "waiting_on_analysis") return "Waiting for folder analysis…";
   return "Running deep research…";
@@ -1030,6 +1034,44 @@ function ResearchChoices({ session }: { session: DeepResearchSessionRecord }) {
           key={choice.label}
           className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-3 py-1 text-xs"
         >
+          <dt className="text-mute">{choice.label}</dt>
+          <dd className="font-medium text-ink">{choice.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * What a v2 run looks in and how it went (docs/31): the sub-questions are the
+ * steps below, so this says only where it searches and, once finished, what
+ * the claim check did.
+ */
+function ResearchV2Summary({ session, scopeLabel }: { session: DeepResearchSessionRecord; scopeLabel: string }) {
+  const gathers = (session.steps ?? []).filter((step) => step.tool_name === "dr2_gather");
+  const web = gathers.filter((step) => {
+    const sources = (step.input_payload as { question?: { sources?: string } } | undefined)?.question?.sources;
+    return sources === "web" || sources === "both";
+  }).length;
+  const check = (session.steps ?? []).find((step) => step.tool_name === "dr2_check");
+  const audit = (check?.output_payload as { audit?: { checked: number; rewritten: number; removed: number }; auditRan?: boolean } | undefined) ?? {};
+  const choices = [
+    { label: "Looks in", value: scopeLabel },
+    { label: "Parts", value: `${gathers.length}` },
+    { label: "Web", value: web > 0 ? `For ${web} of ${gathers.length}` : "Not needed" },
+    ...(session.status === "completed" && audit.audit
+      ? [{
+          label: "Checked",
+          value: audit.auditRan
+            ? `${audit.audit.checked} claims, ${audit.audit.rewritten} corrected, ${audit.audit.removed} removed`
+            : "Citations and numbers",
+        }]
+      : []),
+  ];
+  return (
+    <dl className="mt-4 flex flex-wrap gap-2">
+      {choices.map((choice) => (
+        <div key={choice.label} className="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-3 py-1 text-xs">
           <dt className="text-mute">{choice.label}</dt>
           <dd className="font-medium text-ink">{choice.value}</dd>
         </div>
@@ -1518,8 +1560,22 @@ export default function ChatClient() {
     () => buildResearchTitle(activeThread, deepSession),
     [activeThread, deepSession]
   );
+  // A v2 run's report is a message in the conversation, drawn like an answer
+  // with its sources, and each new question keeps the reports before it.
+  const researchV2 = useMemo(() => isV2Session(deepSession), [deepSession]);
+  const [researchStarting, setResearchStarting] = useState(false);
+  const researchScopeLabel = useMemo(() => {
+    const write = deepSession?.steps?.find((step) => step.tool_name === "dr2_write");
+    const scope = (write?.input_payload as { scope?: { kind?: string; folderId?: string | null; runIds?: string[] } } | undefined)?.scope;
+    if (!scope) return "This repository";
+    if (scope.kind === "selected_papers") return `${scope.runIds?.length ?? 0} attached paper${scope.runIds?.length === 1 ? "" : "s"}`;
+    if (scope.kind === "folder" && scope.folderId) return buildFolderLabel(scope.folderId, folders);
+    if (scope.kind === "all_projects") return "All your repositories";
+    return "This repository";
+  }, [deepSession, folders]);
   const researchReport = useMemo(
     () => {
+      if (researchV2) return "";
       const sessionReport = deepSession?.final_report?.trim();
       if (sessionReport) {
         return sessionReport;
@@ -1534,7 +1590,7 @@ export default function ChatClient() {
           ?.content?.trim() || ""
       );
     },
-    [deepSession, messages]
+    [deepSession, messages, researchV2]
   );
   // The report is markdown with "(Title, year)" citations, drawn the way chat
   // answers are: headings and lists as such, citations as numbered footnotes.
@@ -1837,7 +1893,7 @@ export default function ChatClient() {
   );
 
   const loadThreadDetail = useCallback(
-    async (threadId: string) => {
+    async (threadId: string, options: { background?: boolean } = {}) => {
       if (!canPersist || !session?.access_token) return;
       // Clicking a conversation marks it active in the sidebar immediately, but
       // the transcript was only replaced once the fetch returned - so for the
@@ -1851,7 +1907,9 @@ export default function ChatClient() {
         setMessages([]);
         setDeepSession(null);
       }
-      setDetailLoading(true);
+      // A progress poll refreshes quietly: it used to flash the loading
+      // spinner and jump the page to the bottom every five seconds.
+      if (!options.background) setDetailLoading(true);
       try {
         const response = await fetch(`/api/chat/threads/${threadId}`, {
           headers: { Authorization: `Bearer ${session.access_token}` },
@@ -1880,7 +1938,7 @@ export default function ChatClient() {
           nextError instanceof Error ? nextError.message : "Failed to load chat thread."
         );
       } finally {
-        setDetailLoading(false);
+        if (!options.background) setDetailLoading(false);
       }
     },
     [canPersist, session?.access_token]
@@ -2017,7 +2075,7 @@ export default function ChatClient() {
   useEffect(() => {
     if (!canPersist || !activeThreadId || !sessionActive(deepSession)) return;
     const timer = window.setInterval(() => {
-      void loadThreadDetail(activeThreadId);
+      void loadThreadDetail(activeThreadId, { background: true });
     }, 5000);
     return () => window.clearInterval(timer);
   }, [activeThreadId, canPersist, deepSession, loadThreadDetail]);
@@ -2585,6 +2643,7 @@ export default function ChatClient() {
   async function handleContinueResearch() {
     if (!canPersist || !activeThread || !deepSession) return;
     setLoading(true);
+    setResearchStarting(true);
     setError(null);
     try {
       const payload = await sendRequest({
@@ -2610,12 +2669,33 @@ export default function ChatClient() {
     } finally {
       abortControllerRef.current = null;
       setLoading(false);
+      setResearchStarting(false);
     }
   }
 
   function handleEditResearchPlan() {
     setDeepResearchEnabled(true);
     focusComposerWithDraft(deepSession?.prompt ?? "");
+  }
+
+  /** Stops a run (or drops a plan) on the server, not only on this page. */
+  async function handleCancelResearch() {
+    if (!canPersist || !activeThread || !deepSession) return;
+    setError(null);
+    try {
+      const payload = await sendRequest({
+        threadId: activeThread.id,
+        sessionId: deepSession.id,
+        chatMode: "deep_research",
+        action: "cancel",
+      });
+      applyPayload(payload);
+    } catch (nextError) {
+      if (nextError instanceof Error && nextError.name === "AbortError") return;
+      setError(nextError instanceof Error ? nextError.message : "The research could not be canceled.");
+    } finally {
+      abortControllerRef.current = null;
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -3118,12 +3198,18 @@ export default function ChatClient() {
                             </span>
                           ) : null}
                         </div>
-                        {deepSession.plan_summary ? (
-                          <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
-                            {deepSession.plan_summary}
-                          </p>
-                        ) : null}
-                        <ResearchChoices session={deepSession} />
+                        {researchV2 ? (
+                          <ResearchV2Summary session={deepSession} scopeLabel={researchScopeLabel} />
+                        ) : (
+                          <>
+                            {deepSession.plan_summary ? (
+                              <p className={`mt-3 max-w-3xl ${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
+                                {deepSession.plan_summary}
+                              </p>
+                            ) : null}
+                            <ResearchChoices session={deepSession} />
+                          </>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2">
@@ -3138,7 +3224,7 @@ export default function ChatClient() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => resetChat("deep_research")}
+                              onClick={() => (researchV2 ? void handleCancelResearch() : resetChat("deep_research"))}
                               className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             >
                               Cancel
@@ -3152,7 +3238,33 @@ export default function ChatClient() {
                               Start
                             </button>
                           </>
-                        ) : (
+                        ) : researchV2 && deepSession.status === "processing" ? (
+                          <button
+                            type="button"
+                            onClick={() => void handleCancelResearch()}
+                            className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                          >
+                            Stop research
+                          </button>
+                        ) : researchV2 && (deepSession.status === "failed" || deepSession.status === "canceled") ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={handleEditResearchPlan}
+                              className="inline-flex h-11 items-center rounded-full border border-slate-200 px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleContinueResearch()}
+                              disabled={loading}
+                              className="inline-flex h-11 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                            >
+                              {deepSession.status === "failed" ? "Retry" : "Resume"}
+                            </button>
+                          </>
+                        ) : researchV2 && deepSession.status === "completed" ? null : (
                           <button
                             type="button"
                             onClick={handleEditResearchPlan}
@@ -3165,7 +3277,7 @@ export default function ChatClient() {
                     </div>
 
                     <div className="mt-6 space-y-4">
-                      <ResearchEvidenceSummary summary={researchEvidenceSummary} />
+                      {researchV2 ? null : <ResearchEvidenceSummary summary={researchEvidenceSummary} />}
 
                       {researchProgress.steps.map((step) => {
                         const isObsolete = step.output_payload?.result_kind === "obsolete";
@@ -3504,9 +3616,19 @@ export default function ChatClient() {
                         <div className="space-y-4">
                           {/* A stable hook for the layout-shift measurement, which has to
                               tell an answer arriving from the intro disappearing. */}
+                          {message.kind === "deep_research_report" ? (
+                            <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Deep research report</p>
+                          ) : null}
                           <div data-testid="assistant-message">
                             <AssistantAnswer content={message.content} messageId={message.id} citations={message.citations} />
                           </div>
+                          {message.kind === "deep_research_report" ? (
+                            <ReportActions
+                              content={message.content}
+                              citations={message.citations.map((citation) => ({ ...citation, paperId: String(citation.paperId) }))}
+                              title={researchTitle}
+                            />
+                          ) : null}
                           {groundingMode === "general" ? (
                             <div className="text-xs text-slate-600 dark:text-[#8e8e8e]">
                               Repository context not used
@@ -3589,7 +3711,8 @@ export default function ChatClient() {
                               renderLoadingLabel(
                                 deepResearchEnabled,
                                 chartModeEnabled,
-                                deepSession
+                                deepSession,
+                                researchStarting
                               )}
                           </span>
                         </span>
@@ -3693,9 +3816,9 @@ export default function ChatClient() {
                   <p className="mb-2 flex items-start gap-2 text-xs leading-5 text-mute">
                     <SparkIcon className="mt-0.5 h-3.5 w-3.5 flex-none" />
                     <span>
-                      Deep research plans its own scope and sources, and shows its plan before it starts. Up to{" "}
-                      {STRICT_RESEARCH_BUDGET.maxLibraryPapers} papers, {STRICT_RESEARCH_BUDGET.maxWebSearches} web
-                      searches and {STRICT_RESEARCH_BUDGET.maxSources} sources.
+                      Deep research breaks your question into up to 5 parts, reads the full text of every paper in scope,
+                      searches the web only where the papers cannot answer, and checks every claim against its source.
+                      You see the plan before it starts.
                     </span>
                   </p>
                 ) : null}
