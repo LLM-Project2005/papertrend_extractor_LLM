@@ -118,7 +118,7 @@ function MatrixChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers
           {chart.rows.map((row, r) => (
             <tr key={row}>
               <th scope="row" className="pr-2 text-left font-normal leading-4 text-slate-700 dark:text-[#d4d4d4]">
-                <span className="line-clamp-2" title={row}>{row}</span>
+                <span className="line-clamp-3 sm:line-clamp-2" title={row}>{row}</span>
               </th>
               {chart.cols.map((col, c) => {
                 const value = chart.values[r][c];
@@ -158,6 +158,12 @@ function MatrixChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers
           ))}
         </tbody>
       </table>
+      {chart.cols.length > 3 ? (
+        // On a phone only about three columns fit; say that the rest are there.
+        <p className="mt-2 text-xs text-slate-600 sm:hidden dark:text-[#a3a3a3]">
+          Swipe sideways to see all {chart.cols.length} columns.
+        </p>
+      ) : null}
       {chart.marks.length > 0 ? (
         <p className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-600 dark:text-[#a3a3a3]">
           {chart.marks.some(([, , kind]) => kind === "strong") ? (

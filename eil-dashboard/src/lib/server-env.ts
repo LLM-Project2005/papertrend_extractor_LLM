@@ -152,6 +152,18 @@ const OPENROUTER_TASK_DEFAULTS: Record<string, string> = {
   // and a checker holds its numbers to the facts, so the cheapest capable
   // model is enough. MODEL_TASK_ADAPTIVE_INSIGHTS switches it without a deploy.
   ADAPTIVE_INSIGHTS: "google/gemini-3.1-flash-lite",
+  // Chat's chart step (docs/31) uses the same engine and the same small call:
+  // it picks a view from a fixed menu and code draws it.
+  CHAT_CHART_QUERY: "google/gemini-3.1-flash-lite",
+  // Deep research v2 (docs/31). The steps that read, write and correct run on
+  // Luna; the audit runs on a different model family, so the model that wrote
+  // a sentence is not the one that judges it. MODEL_TASK_<NAME> overrides any.
+  DEEP_RESEARCH_PLAN: "openai/gpt-5.6-luna",
+  DEEP_RESEARCH_FINDINGS: "openai/gpt-5.6-luna",
+  DEEP_RESEARCH_WEB: "openai/gpt-5.6-luna",
+  DEEP_RESEARCH_REPORT: "openai/gpt-5.6-luna",
+  DEEP_RESEARCH_REVISE: "openai/gpt-5.6-luna",
+  DEEP_RESEARCH_AUDIT: "google/gemini-3.7-flash",
 };
 
 export function getOpenAIConfig(taskName?: string): {
@@ -280,6 +292,11 @@ export function getAiDailyMessageLimit(): number {
 
 export function getAiDailyDeepResearchLimit(): number {
   return parseBoundedIntEnv("AI_DAILY_DEEP_RESEARCH_LIMIT", 10, 1, 1_000);
+}
+
+/** Web searches a day per person: each costs a search fee on top of tokens. */
+export function getAiDailyWebSearchLimit(): number {
+  return parseBoundedIntEnv("AI_DAILY_WEB_SEARCH_LIMIT", 40, 1, 1_000);
 }
 
 export function getMaxUploadBytes(): number {

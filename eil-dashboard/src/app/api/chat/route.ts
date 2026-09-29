@@ -21,6 +21,8 @@ import {
 } from "@/lib/chart-agent";
 import { callPythonNodeService } from "@/lib/python-node-service";
 import { runRepositoryChat } from "@/lib/repository-chat";
+import { addWebContext, webStepApplies } from "@/lib/repository-chat-web";
+import { cancelResearch, planResearch, startResearch } from "@/lib/deep-research/actions";
 import { chatCorsPreflight, withChatCors } from "@/lib/chat-cors";
 import { runWithCancellation } from "@/lib/chat-cancellation";
 import { isValidRequestId, registerCancellable } from "@/lib/chat-cancel-registry";
@@ -59,7 +61,7 @@ import {
   withAiTokenUsageTracking,
   type AiTokenUsageTotals,
 } from "@/lib/ai-token-usage";
-import { summarizeSpend } from "@/lib/answer-cost";
+import { spendUsd, summarizeSpend } from "@/lib/answer-cost";
 import { adviseOnFailure } from "@/lib/model-failure";
 import { ModelCallError } from "@/lib/openai";
 import { getPublicRequestOrigin } from "@/lib/public-request-origin";
@@ -226,7 +228,7 @@ interface ChatRequestBody {
     budget?: Partial<DeepResearchBudgetPolicy>;
   };
   chatMode?: "normal" | "deep_research";
-  action?: "message" | "plan" | "continue";
+  action?: "message" | "plan" | "continue" | "cancel";
   sessionId?: string;
 }
 
@@ -293,7 +295,7 @@ const ChatRequestBodySchema = z
     webSearchEnabled: z.boolean().optional(),
     researchSourcePolicy: z.record(z.string(), z.unknown()).optional(),
     chatMode: z.enum(["normal", "deep_research"]).optional(),
-    action: z.enum(["message", "plan", "continue"]).optional(),
+    action: z.enum(["message", "plan", "continue", "cancel"]).optional(),
     sessionId: z.string().max(80).optional(),
   })
   .passthrough();
@@ -4051,43 +4053,33 @@ async function normalChat(
         }
         let repositoryAnswer = repositoryResult.answer;
         const repositoryCharts = repositoryResult.charts as ChatChartPayload[];
-        const repositoryCitations = repositoryResult.citations as Citation[];
+        // A copy: the result may be a cached answer's, which must not gain web sources.
+        const repositoryCitations = [...(repositoryResult.citations as Citation[])];
+        const repositoryLimitations = [...(repositoryResult.limitations ?? [])];
         const toolResults: ChatToolResult[] = repositoryCharts.length > 0
           ? [{ type: "chart", status: "succeeded", data: { charts: repositoryCharts } }]
           : [];
-        const webSearchRequested = requestedToolMode === "web_search" || Boolean(body.webSearchEnabled);
+        const webSearchRequested =
+          (requestedToolMode === "web_search" || Boolean(body.webSearchEnabled)) &&
+          webStepApplies(repositoryResult.execution?.operation);
         if (webSearchRequested) {
-          try {
-            const webCompletion = await createChatCompletionResult(
-              [
-                {
-                  role: "system",
-                  content: buildPapertrendSystemPrompt("grounded_answer", [
-                    "Find concise, current external context that complements the supplied repository-grounded answer. Do not repeat or contradict repository evidence without clearly labeling the disagreement. Return only the web-context section and do not invent paper citations.",
-                  ]),
-                },
-                {
-                  role: "user",
-                  content: `Question: ${currentMessage}\n\nRepository-grounded answer:\n${repositoryAnswer}`,
-                },
-              ],
-              0.2,
-              selectedModel,
-              "CHAT_WEB_AUGMENT",
-              {
-                maxTokens: 1_200,
-                tools: [{ type: "openrouter:web_search", parameters: { max_results: 5, max_total_results: 8, search_context_size: "medium" } }],
-                toolChoice: "auto",
-              }
-            );
-            const webAnswer = webCompletion?.content?.trim();
-            const webCitations = extractWebCitations(webCompletion?.annotations ?? []);
-            if (webAnswer) repositoryAnswer = `${repositoryAnswer}\n\n## Web context\n\n${webAnswer}`;
-            repositoryCitations.push(...webCitations);
-            toolResults.push({ type: "web_search", status: webCitations.length > 0 ? "succeeded" : "skipped", citations: webCitations });
-          } catch (webError) {
-            toolResults.push({ type: "web_search", status: "failed", error: webError instanceof Error ? webError.message : "Web search failed." });
-          }
+          const web = await addWebContext({
+            ownerUserId,
+            question: currentMessage,
+            searchQuery: repositoryResult.execution?.refinedQuestion,
+            answer: repositoryAnswer,
+            answerLanguage: repositoryResult.execution?.answerLanguage,
+            model: selectedModel,
+          });
+          repositoryAnswer = web.answer;
+          repositoryCitations.push(...(web.citations as Citation[]));
+          if (web.note) repositoryLimitations.push(web.note);
+          toolResults.push({
+            type: "web_search",
+            status: web.status,
+            citations: web.citations as Citation[],
+            ...(web.status === "failed" ? { error: web.note } : {}),
+          });
         }
         if (persistedUserMessage) {
           await chatRepository.updateMessageMetadata(ownerUserId, thread.id, persistedUserMessage.id, {
@@ -4112,7 +4104,7 @@ async function normalChat(
         });
         const metadata = {
           mode: "grounded",
-          groundingMode: webSearchRequested ? "repository_web" : repositoryResult.execution?.operation === "converse" ? "general" : "repository",
+          groundingMode: webSearchRequested && repositoryCitations.some((citation) => citation.sourceType === "web") ? "repository_web" : repositoryResult.execution?.operation === "converse" ? "general" : "repository",
           scopeSnapshot: repositoryResult.scopeSnapshot,
           requestId,
           model: selectedModel,
@@ -4122,7 +4114,7 @@ async function normalChat(
           repositoryPlan: repositoryResult.plan,
           repositoryExecution: repositoryResult.execution ?? null,
           repositoryCoverage: repositoryResult.coverage ?? null,
-          repositoryLimitations: repositoryResult.limitations ?? [],
+          repositoryLimitations,
           repositoryDiagnostics: repositoryResult.diagnostics,
         };
 
@@ -4154,7 +4146,7 @@ async function normalChat(
           charts: repositoryCharts,
           execution: repositoryResult.execution ?? null,
           coverage: repositoryResult.coverage ?? null,
-          limitations: repositoryResult.limitations ?? [],
+          limitations: repositoryLimitations,
           // Says so when the answer came from the cache rather than the models.
           // An answer that arrives in a second is either cached or wrong, and a
           // reader should not have to guess which.
@@ -4431,6 +4423,37 @@ async function handlePost(request: Request) {
     const chatMode = body.chatMode ?? "normal";
     const action = body.action ?? (chatMode === "deep_research" ? "plan" : "message");
 
+    // Deep research v2 (docs/31) on Cloud SQL: a plan is one small call,
+    // counted toward the token budget; starting a run costs one unit.
+    if (chatMode === "deep_research" && getDatabaseProvider() === "cloud-sql") {
+      const research = {
+        message: body.message,
+        threadId: body.threadId,
+        sessionId: body.sessionId,
+        projectId: body.projectId,
+        folderId: body.folderId,
+        selectedRunIds: body.selectedRunIds,
+        knowledgeScope: body.knowledgeScope,
+        attachments: body.attachments,
+      };
+      const detail =
+        action === "cancel"
+          ? await cancelResearch(research, ownerUserId)
+          : action === "continue"
+            ? await startResearch(research, ownerUserId, getPublicRequestOrigin(request))
+            : await planResearch(research, ownerUserId);
+      if (detail) {
+        return NextResponse.json({
+          mode: "deep_research",
+          action,
+          thread: detail.thread,
+          messages: detail.messages,
+          deepResearchSession: detail.deepResearchSession,
+        });
+      }
+      // A session planned before v2 continues on the old path.
+    }
+
     if (ownerUserId && chatMode === "deep_research") {
       await assertAndRecordAiUsage(ownerUserId, usageKindForRequest(body), {
         chatMode,
@@ -4496,8 +4519,13 @@ function cancellationId(request: Request): string | null {
 async function recordAnswerSpend(request: Request, usage: AiTokenUsageTotals): Promise<void> {
   if (usage.totalTokens <= 0) return;
   const spend = summarizeSpend(usage.byModel);
+  // The provider's own figure when every call reported one: it includes web
+  // search fees, which the token estimate cannot see.
+  const charged = spendUsd(usage);
   console.info("chat_answer_spend", JSON.stringify({
-    usd: spend.usd,
+    usd: charged.usd,
+    usdSource: charged.source,
+    estimatedUsd: spend.usd,
     totalTokens: usage.totalTokens,
     calls: usage.calls,
     byModel: spend.byModel,

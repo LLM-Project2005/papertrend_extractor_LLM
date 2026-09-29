@@ -93,13 +93,16 @@ test("trusted account roles bypass application quotas without disabling metering
 
 test("token accounting aggregates every model call in one request context", async () => {
   await withAiTokenUsageTracking(async (usage) => {
-    recordAiTokenUsage({ prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 }, "model-a");
+    recordAiTokenUsage({ prompt_tokens: 120, completion_tokens: 30, total_tokens: 150, cost: 0.0004 }, "model-a");
     recordAiTokenUsage({ input_tokens: 50, output_tokens: 20 }, "model-b");
     assert.deepEqual(usage, {
       promptTokens: 170,
       completionTokens: 50,
       totalTokens: 220,
       calls: 2,
+      // What the provider charged, where it said; one of the two calls did.
+      reportedUsd: 0.0004,
+      reportedCalls: 1,
       // Kept per model as well as in total, because a cost cannot be derived
       // from a total that mixes a cheap model with an expensive one.
       byModel: [

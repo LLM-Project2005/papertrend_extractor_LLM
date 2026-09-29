@@ -28,6 +28,7 @@ import {
   renderingIssues,
 } from "@/lib/answer-rendering";
 import { hybridRepositorySearch } from "@/lib/repository-memory";
+import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
   ANSWER_FORMAT_RULES,
@@ -65,7 +66,8 @@ export interface RepositoryCitation {
   sourceType: "paper" | "web";
 }
 
-export interface RepositoryChartPayload {
+/** A chart of stored values (word counts); drawn with the chat's own chart. */
+export interface RepositoryDataChart {
   chartType: "bar" | "line" | "pie" | "table";
   title: string;
   scopeLabel: string;
@@ -80,6 +82,8 @@ export interface RepositoryChartPayload {
     warnings: string[];
   };
 }
+
+export type RepositoryChartPayload = RepositoryDataChart | ChatInsightChart;
 
 /** Which text the word index was built from, so counts can be reported honestly. */
 export type PaperContentSource = "full_text" | "extracted_sections" | "empty";
@@ -209,7 +213,7 @@ export interface RepositoryChatResult {
     retrievalRounds?: number;
     sufficiencyChecked?: boolean;
     missingEvidenceNeeds?: string[];
-    webAugmentation?: "succeeded" | "skipped";
+    webAugmentation?: "succeeded" | "skipped" | "failed";
     /** True when this answer came from the cache rather than the models. */
     cached?: boolean;
   };
@@ -423,6 +427,12 @@ const ExecutionPlanSchema = z.object({
   confidence: z.enum(["high", "medium", "low"]).default("medium"),
 });
 
+/** The planner's JSON, checked against the schema; null when it does not fit. */
+export function parseExecutionPlanCandidate(value: Record<string, unknown> | null) {
+  const parsed = ExecutionPlanSchema.safeParse(normalizeExecutionPlanCandidate(value));
+  return parsed.success ? parsed.data : null;
+}
+
 function normalizeExecutionPlanCandidate(value: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!value) return null;
   const operation = String(value.operation ?? "");
@@ -440,8 +450,10 @@ function normalizeExecutionPlanCandidate(value: Record<string, unknown> | null):
     : operation === "visualize" ? "table" : "prose";
   const requestedChart = String(value.chartType ?? "").toLowerCase();
   const chartType = ["bar", "line", "pie", "table"].includes(requestedChart) ? requestedChart : "bar";
+  // "converse" was missing here, so a small-talk plan lost its only operation,
+  // failed the schema, cost a repair call and fell back to a repository search.
   const validOperations = new Set<RepositoryOperation>([
-    "inspect_scope", "list_documents", "analyze_each_document", "aggregate_corpus",
+    "converse", "inspect_scope", "list_documents", "analyze_each_document", "aggregate_corpus",
     "search_evidence", "analyze_text", "visualize",
   ]);
   const operations = [
@@ -571,8 +583,18 @@ const REPOSITORY_CACHE_MAX_ROWS_PER_OWNER = 24;
 const REPOSITORY_CACHE_MAX_AGE_DAYS = 30;
 const DOCUMENT_ANALYSIS_BATCH_SIZE = 6;
 
-function promptRequestsChart(prompt: string, forceChart = false): boolean {
-  return forceChart || /\b(chart|charts|graph|graphs|plot|plots|visuali[sz]e|bar chart|line chart|pie chart|table)\b|กราฟ|แผนภูมิ/i.test(prompt);
+/**
+ * Whether the reader asked for a chart.
+ *
+ * Deliberately narrow: "table" asks for a table in the answer, not a chart;
+ * "knowledge graph" and "the plot of the novel" are subjects, not requests.
+ * Each of those used to add a chart nobody asked for.
+ */
+export function promptRequestsChart(prompt: string, forceChart = false): boolean {
+  return (
+    forceChart ||
+    /\b(?:charts?|visuali[sz](?:e|ation)|diagram|histogram)\b|\b(?<!knowledge |citation |concept )graphs?\b|\b(?<!the |story |novel's )plot(?:s|ted|ting)?\b(?!\s+(?:twist|summary|line)s?\b)|กราฟ|แผนภูมิ/i.test(prompt)
+  );
 }
 
 function hashText(value: string): string {
@@ -2726,7 +2748,7 @@ async function repositoryQaResult(
     if (checked.incomplete) {
       auditLimitations.push(
         checked.reason
-          ? `This answer may not cover the full request: ${checked.reason}`
+          ? `This answer may not cover the full request: ${plainLimitation(checked.reason)}`
           : "This answer may not cover every part of the request."
       );
     }
@@ -2775,6 +2797,28 @@ async function repositoryQaResult(
   };
 }
 
+/**
+ * Chart mode answers with a chart. The planner used to add a corpus report,
+ * an evidence search or a per-paper analysis beside it - live, 8 of 15 chart
+ * questions went to a background report and one printed a table with no
+ * chart. Only exact term counts keep their own step, because that chart is
+ * drawn from them.
+ */
+export function isSmallTalk(prompt: string): boolean {
+  return /^\s*(?:hi|hello|hey|thanks?|thank you|good (?:morning|afternoon|evening)|what can you do|who are you|สวัสดี|ขอบคุณ)\b/i.test(prompt) && prompt.trim().length < 80;
+}
+
+/** A limitation line about the papers, not about this pipeline's inputs. */
+export function plainLimitation(reason: string): string {
+  return reason
+    .replace(/\b(?:the )?(?:supplied|provided|retrieved|available|given) (?:excerpts?|passages?|evidence|sources?|context)\b/gi, "the papers searched")
+    .replace(/\bexcerpts?\b/gi, "papers searched");
+}
+
+export function chartModeOperations(operations: RepositoryOperation[], hasTerms: boolean): RepositoryOperation[] {
+  return operations.includes("analyze_text") && hasTerms ? ["analyze_text", "visualize"] : ["visualize"];
+}
+
 export function fallbackExecutionPlan(
   prompt: string,
   forceChart = false,
@@ -2809,13 +2853,17 @@ export function fallbackExecutionPlan(
     operation = "visualize";
     scopeMode = "complete";
   }
-  const operations: RepositoryOperation[] = [operation];
+  let operations: RepositoryOperation[] = [operation];
   if (chart && !operations.includes("visualize")) operations.push("visualize");
   if (
     operation === "list_documents" &&
     /\b(explain|summari[sz]e|classify|compare|analy[sz]e)\b/i.test(prompt)
   ) {
     operations.push("analyze_each_document");
+  }
+  if (forceChart) {
+    operations = chartModeOperations(operations, quoted.length > 0);
+    operation = operations[0];
   }
   return {
     operation,
@@ -2905,11 +2953,13 @@ export async function planRepositoryExecution(
           runStats: context.runStats,
         },
         eligiblePapers: context.papers.length,
+        // Web search is not an operation: when the reader turned it on, it runs
+        // after the answer. Listing it here invited a plan the schema rejects.
         availableTools: [
           "inspect_scope", "list_documents", "analyze_each_document", "aggregate_corpus",
           "search_evidence", "analyze_text", "visualize", "converse",
-          ...(input.allowWeb ? ["web_search"] : []),
         ],
+        webSearchAfterAnswer: Boolean(input.allowWeb),
         recentConversation: (input.history ?? []).slice(-6),
       }),
     },
@@ -2938,12 +2988,23 @@ export async function planRepositoryExecution(
       ? inferConversationAnswerLanguage(input.prompt, input.history)
       : plannedLanguage;
     let operations = [...(parsed.data.operations ?? [parsed.data.operation])];
-    if (operations.length > 1 && operations.includes("converse")) {
-      operations = operations.filter((operation) => operation !== "converse");
-    }
     if (promptRequestsChart(input.prompt, input.forceChart) && !operations.includes("visualize")) {
       if (operations.length >= 4) operations[operations.length - 1] = "visualize";
       else operations.push("visualize");
+    }
+    // After the chart is added: a chart request that the planner also read as
+    // small talk must draw the chart, not chat.
+    if (operations.length > 1 && operations.includes("converse")) {
+      operations = operations.filter((operation) => operation !== "converse");
+    }
+    if (input.forceChart) {
+      operations = chartModeOperations(operations, parsed.data.terms.length > 0);
+    }
+    // With web search on, only small talk goes unsearched: live, "what does
+    // recent research outside these papers say" was answered as conversation,
+    // with no search, saying no outside sources were available.
+    if (input.allowWeb && operations.length === 1 && operations[0] === "converse" && !isSmallTalk(input.prompt)) {
+      operations = ["search_evidence"];
     }
     return {
       ...parsed.data,
@@ -3007,6 +3068,54 @@ const OPERATION_LABELS: Record<RepositoryOperation, string> = {
   visualize: "Visualization",
 };
 
+/**
+ * A chart that answers the question asked (docs/31, phase 1).
+ *
+ * Drawn by the Adaptive tab's question engine over the same themed,
+ * deduplicated papers the dashboard shows, cut to the chat's scope. It used to
+ * be one of three fixed charts - top raw topics, raw topics by year, or word
+ * counts - whatever the question was.
+ */
+async function visualizeResult(
+  input: RepositoryChatInput,
+  context: RepositoryContext,
+  execution: RepositoryExecutionPlan
+): Promise<Pick<RepositoryChatResult, "answer" | "citations" | "charts" | "coverage" | "limitations">> {
+  reportChatProgress("charting");
+  const projectIds = context.projectId ? [context.projectId] : context.projects.map((project) => project.id);
+  const paperIds = new Set(context.papers.map((paper) => String(paper.paperId)));
+  try {
+    const corpus = await loadChatInsightCorpus(context.ownerUserId, projectIds, paperIds);
+    const outcome = await chatChartResult({
+      corpus,
+      question: input.prompt,
+      restated: execution.refinedQuestion,
+      scopeLabel: context.scopeLabel,
+      answerLanguage: execution.answerLanguage,
+    });
+    const limitations: string[] = [];
+    if (corpus.duplicates.length > 0) {
+      limitations.push(`${corpus.duplicates.length === 1 ? "One paper looks like" : `${corpus.duplicates.length} papers look like`} a second upload of another and ${corpus.duplicates.length === 1 ? "is" : "are"} counted once in the chart.`);
+    }
+    return {
+      answer: outcome.answer,
+      citations: [],
+      charts: outcome.chart ? [outcome.chart] : [],
+      coverage: completeCoverage(context, corpus.papers.length),
+      limitations,
+    };
+  } catch (error) {
+    console.warn("chat_chart_failed", { message: error instanceof Error ? error.message : "unknown_error" });
+    return {
+      answer: "The chart could not be drawn just now: the papers' themes could not be read. Try again in a moment.",
+      citations: [],
+      charts: [],
+      coverage: completeCoverage(context, 0),
+      limitations: ["The chart step failed before drawing anything."],
+    };
+  }
+}
+
 async function runMultiCapabilityPlan(input: RepositoryChatInput, context: RepositoryContext, execution: RepositoryExecutionPlan) {
   const sections: string[] = [];
   const citations = new Map<string, RepositoryCitation>();
@@ -3040,29 +3149,14 @@ async function runMultiCapabilityPlan(input: RepositoryChatInput, context: Repos
     };
     else if (operation === "visualize") {
       const visualizesTextAnalysis = execution.operations.includes("analyze_text") && stepPlan.terms.length > 0;
-      // A chart of publication years must not be described as a topic summary.
-      const visualFacts = detectRepositoryFacts(input.prompt);
-      const visualResult = visualizesTextAnalysis
-        ? wordCountResult(context, { ...stepPlan, intent: "word_count", needsChart: true })
-        : visualFacts.years || visualFacts.yearExtremes || visualFacts.lengthExtremes
+      result = visualizesTextAnalysis
         ? {
-            ...topicResult(context, stepPlan),
-            answer: buildRepositoryFactsAnswer(
-              context.papers,
-              context.scopeLabel,
-              input.prompt,
-              context.runStats
-            ),
+            ...wordCountResult(context, { ...stepPlan, intent: "word_count", needsChart: true }),
+            answer: "The chart uses the exact complete-scope term counts reported above.",
+            coverage: completeCoverage(context, context.papers.length),
+            limitations: [],
           }
-        : topicResult(context, stepPlan);
-      result = {
-        ...visualResult,
-        answer: visualizesTextAnalysis
-          ? "The chart uses the exact complete-scope term counts reported above."
-          : visualResult.answer,
-        coverage: completeCoverage(context, context.papers.length),
-        limitations: [],
-      };
+        : await visualizeResult(input, context, stepExecution);
     }
     else {
       const qa = await repositoryQaResult(input, context, stepPlan);
@@ -3471,7 +3565,7 @@ export function decideFromAudit(review: {
     limitations: review.incomplete
       ? [
           review.reason
-            ? `This synthesis may not cover the full request: ${review.reason}`
+            ? `This synthesis may not cover the full request: ${plainLimitation(review.reason)}`
             : "This synthesis may not cover every part of the request.",
         ]
       : [],
@@ -3658,13 +3752,15 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
     const hit = readAnswerCache(keyParts);
     if (hit) {
       console.info("chat_cache_hit", JSON.stringify({ versionHash: context.versionHash, papers: context.papers.length }));
+      // Copies: a caller that adds web sources to the answer it was given must
+      // not add them to the stored one, where the next reader would see them.
       return {
         handled: true,
         answer: hit.answer,
-        citations: hit.citations as RepositoryCitation[],
-        charts: hit.charts as RepositoryChartPayload[],
+        citations: structuredClone(hit.citations) as RepositoryCitation[],
+        charts: structuredClone(hit.charts) as RepositoryChartPayload[],
         plan: fallbackPromptPlan(input.prompt, false),
-        limitations: hit.limitations,
+        limitations: [...hit.limitations],
         scopeSnapshot: context.scopeSnapshot,
         diagnostics: {
           projectId: context.projectId,
@@ -3683,9 +3779,9 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
   if (cacheable && result.handled && !result.jobId && result.answer.trim()) {
     writeAnswerCache(keyParts, {
       answer: result.answer,
-      citations: result.citations,
-      charts: result.charts,
-      limitations: result.limitations ?? [],
+      citations: structuredClone(result.citations),
+      charts: structuredClone(result.charts),
+      limitations: [...(result.limitations ?? [])],
     });
   }
   return result;
@@ -3897,6 +3993,10 @@ async function runRepositoryChatWithContext(
       scopeSnapshot: context.scopeSnapshot,
       diagnostics: { ...diagnostics, ...result.quality },
     };
+  }
+  if (execution?.operation === "visualize" && plan.intent !== "word_count") {
+    const result = await visualizeResult(input, context, execution);
+    return { handled: true, ...result, plan, execution, scopeSnapshot: context.scopeSnapshot, diagnostics };
   }
   // A visualization answer previously always described topics, so "a chart of
   // papers by publication year" arrived under the heading "Repository topics".

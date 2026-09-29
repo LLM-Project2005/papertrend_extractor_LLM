@@ -18,7 +18,7 @@ import {
   isTransient,
   type FailureKind,
 } from "../src/lib/model-failure";
-import { costOfCall, formatUsd, isPricedModel, summarizeSpend } from "../src/lib/answer-cost";
+import { costOfCall, formatUsd, isPricedModel, spendUsd, summarizeSpend, WEB_SEARCH_FEE_USD } from "../src/lib/answer-cost";
 
 function server(file: string): string {
   return readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
@@ -133,13 +133,25 @@ test("a failed call still carries its advice to the route", () => {
 
 /* ----------------------------------------------------------------- the cost */
 
-test("a token count becomes a cost, per model", () => {
-  // The same 20,000 tokens is a fraction of a cent on the fast model and
-  // several cents on the reader-facing one, and an answer uses both.
-  const expensive = costOfCall("openai/gpt-5.6-luna-20260709", 10_000, 2_000);
-  const cheap = costOfCall("google/gemini-3.7-flash", 10_000, 2_000);
-  assert.ok(expensive > cheap * 10, `${expensive} vs ${cheap}`);
+test("a token count becomes a cost, per model, at OpenRouter's listed prices", () => {
+  // Taken from OpenRouter's model list on 2026-09-29. The table had Gemini 3.7
+  // Flash ten times too cheap and Luna twelve times too dear.
+  assert.equal(costOfCall("openai/gpt-5.6-luna-20260709", 1_000_000, 0), 0.2);
+  assert.equal(costOfCall("openai/gpt-5.6-luna-20260709", 0, 1_000_000), 1.2);
+  assert.equal(costOfCall("google/gemini-3.7-flash", 1_000_000, 0), 0.75);
+  assert.equal(costOfCall("google/gemini-3.7-flash", 0, 1_000_000), 3.75);
+  assert.equal(costOfCall("google/gemini-3.1-flash-lite", 1_000_000, 1_000_000), 1.75);
   assert.equal(costOfCall("google/gemini-3.7-flash", 0, 0), 0);
+});
+
+test("the provider's charged figure is preferred, and a search fee is not forgotten", () => {
+  const byModel = [{ model: "openai/gpt-5.6-luna-20260709", promptTokens: 10_000, completionTokens: 1_000 }];
+  // Every call reported what it cost, web search fee included: that figure stands.
+  assert.deepEqual(spendUsd({ calls: 2, byModel, reportedUsd: 0.0123, reportedCalls: 2 }), { usd: 0.0123, source: "provider" });
+  // One call did not: the estimate from tokens, plus the searches' fees.
+  const estimate = spendUsd({ calls: 2, byModel, reportedUsd: 0.01, reportedCalls: 1 }, 1);
+  assert.equal(estimate.source, "estimate");
+  assert.equal(estimate.usd, Math.round((0.002 + 0.0012 + WEB_SEARCH_FEE_USD) * 1_000_000) / 1_000_000);
 });
 
 test("an unknown model is priced high rather than free", () => {
@@ -156,7 +168,7 @@ test("a whole answer's spend is broken down by the models that served it", () =>
   ]);
   assert.equal(spend.byModel.length, 2);
   // Most expensive first, so a log line leads with what to tune.
-  assert.equal(spend.byModel[0].model, "openai/gpt-5.6-luna-20260709");
+  assert.equal(spend.byModel[0].model, "google/gemini-3.7-flash");
   assert.ok(spend.usd > 0);
   assert.deepEqual(spend.unpricedModels, []);
 });
