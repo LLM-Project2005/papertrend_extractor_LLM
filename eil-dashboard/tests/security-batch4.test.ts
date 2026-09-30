@@ -61,7 +61,7 @@ test("a paper is analysed again at most three times a day", () => {
   assert.match(repo, /export const MAX_REANALYSES_PER_PAPER_PER_DAY = 3;/);
   assert.match(repo, /'reanalysis_day_count', CASE WHEN/);
   assert.match(repo, /AND NOT \(COALESCE\(ir\.input_payload->>'reanalysis_day', ''\)/);
-  assert.match(repo, /today, MAX_REANALYSES_PER_PAPER_PER_DAY\]/, "the cap is a parameter, not SQL text");
+  assert.match(repo, /today, MAX_REANALYSES_PER_PAPER_PER_DAY, deploymentEnv\(\)\]/, "the cap is a parameter, not SQL text");
 });
 
 test("a new password needs ten characters; an existing one still signs in", () => {

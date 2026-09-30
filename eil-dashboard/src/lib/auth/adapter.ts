@@ -10,6 +10,7 @@ import {
 } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { resolveExternalIdentityOwner } from "@/lib/auth/identity-mapping";
+import { deploymentAdmits, deploymentEnv } from "@/lib/deployment";
 
 export class RequestAuthTimeoutError extends Error {
   constructor(message = "Authentication provider timed out.") {
@@ -38,7 +39,7 @@ export interface AuthIdentity {
    * deliberately not put here until an explicit Cloud SQL mapping exists.
    */
   ownerUserId: string | null;
-  mappingStatus?: "not_required" | "unresolved" | "mapped" | "lookup_failed" | "invite_required";
+  mappingStatus?: "not_required" | "unresolved" | "mapped" | "lookup_failed" | "invite_required" | "pilot_restricted";
   supabaseUser?: User;
 }
 
@@ -190,6 +191,39 @@ function getConfiguredAdapter(): AuthAdapter {
   return getAuthProvider() === "firebase" ? firebaseAdapter : supabaseAdapter;
 }
 
+/** Role per owner for the pilot's admission check, briefly cached: the pilot is low traffic. */
+const pilotRoleCache = new Map<string, { role: string | null; at: number }>();
+
+async function ownerRole(ownerUserId: string): Promise<string | null> {
+  const cached = pilotRoleCache.get(ownerUserId);
+  if (cached && Date.now() - cached.at < 5 * 60_000) return cached.role;
+  const { withCloudSqlOwnerTransaction } = await import("@/lib/cloudsql/client");
+  const result = await withCloudSqlOwnerTransaction(ownerUserId, (client) =>
+    client.query<{ role: string | null }>(`SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`, [ownerUserId])
+  );
+  const role = result.rows[0]?.role ?? null;
+  pilotRoleCache.set(ownerUserId, { role, at: Date.now() });
+  return role;
+}
+
+/**
+ * The pilot runs untested code against the production database, so it admits
+ * only the owner's accounts (docs/32, 1.1). Anyone else is signed in to
+ * nothing: their identity carries no owner, and every route refuses them.
+ */
+export async function applyDeploymentGate(identity: AuthIdentity): Promise<AuthIdentity> {
+  if (deploymentEnv() === "production" || !identity.ownerUserId) return identity;
+  let role: string | null = null;
+  try {
+    role = await ownerRole(identity.ownerUserId);
+  } catch {
+    role = null;
+  }
+  if (deploymentAdmits({ email: identity.email, role })) return identity;
+  console.warn("pilot_access_refused", { provider: identity.provider });
+  return { ...identity, ownerUserId: null, mappingStatus: "pilot_restricted" };
+}
+
 export async function getAuthenticatedIdentityFromRequest(
   request: Request,
   options?: VerifyTokenOptions
@@ -203,7 +237,8 @@ export async function getAuthenticatedIdentityFromRequest(
     const identity = await getConfiguredAdapter().verifyBackendToken(token, options);
     // Await the mapping lookup so Supabase/configuration failures stay inside
     // this authentication boundary instead of becoming an unhandled promise.
-    return identity ? await resolveExternalIdentityOwner(identity) : null;
+    const resolved = identity ? await resolveExternalIdentityOwner(identity) : null;
+    return resolved ? await applyDeploymentGate(resolved) : null;
   } catch (error) {
     let provider = "unknown";
     try {
