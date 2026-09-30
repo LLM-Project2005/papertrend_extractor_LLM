@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
-import { useIngestionRuns } from "@/hooks/useIngestionRuns";
+import { useAnalysisRuns } from "@/components/workspace/AnalysisRunsContext";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
@@ -334,11 +334,7 @@ export default function WorkspaceHomeClient() {
     retryActiveProcessing,
     startQueuedProcessing,
     refresh,
-  } = useIngestionRuns({
-    enabled: Boolean(analysisSession?.runIds.length),
-    folderJobId: analysisSession?.folderJobId ?? undefined,
-    pollIntervalMs: 3000,
-  });
+  } = useAnalysisRuns();
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);

@@ -11,7 +11,8 @@ import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
-import Modal from "@/components/ui/Modal";
+import Modal, { useDialogLayer } from "@/components/ui/Modal";
+import { useIsNarrow } from "@/lib/use-narrow";
 import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
@@ -21,6 +22,7 @@ import { buildCategoryOptions, normalizeCategoryKey } from "@/lib/category-optio
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { PaperId, TrackRow, TrendRow } from "@/types/database";
+import { explicitDrilldownIds } from "@/lib/dashboard-drilldown";
 
 const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
@@ -227,14 +229,10 @@ export default function DashboardClient({
   const activeCategoryCount = effectiveSelectedTracks.length;
   const themeStatus = data?.topicThemes ?? null;
   const [filterOpen, setFilterOpen] = useState(false);
-  useEffect(() => {
-    if (!filterOpen) return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setFilterOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [filterOpen]);
+  const filterSheetRef = useRef<HTMLDivElement>(null);
+  // Below xl the filters open as a sheet over the page, a dialog layer; from
+  // xl they are a side panel and the sheet is hidden, so it takes nothing.
+  const filterSheetIsOverlay = useIsNarrow(1280);
   const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
   const previousAllYearsRef = useRef<string[]>([]);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
@@ -290,6 +288,7 @@ export default function DashboardClient({
   const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
   const currentTabKey = optimisticTabKey;
   const isSemanticMapTab = currentTabKey === "semantic_map";
+  useDialogLayer(filterOpen && filterSheetIsOverlay && !isSemanticMapTab, filterSheetRef, () => setFilterOpen(false));
   const [tabNav, setTabNav] = useState<HTMLElement | null>(null);
   const tabBox = useTabIndicator(tabNav, currentTabKey);
   const requestHeaders = useMemo<Record<string, string>>(
@@ -368,8 +367,16 @@ export default function DashboardClient({
       return [];
     }
 
-    const explicitPaperIds = new Set((drilldownTarget.paperIds ?? []).filter(Boolean));
-    const hasExplicitPaperIds = explicitPaperIds.size > 0;
+    const inView = new Set<string>([
+      ...filteredData.trends.map((row) => row.paper_id),
+      ...filteredData.tracksSingle.map((row) => row.paper_id),
+      ...filteredData.tracksMulti.map((row) => row.paper_id),
+      ...(filteredData.categoryAssignments ?? []).map((row) => row.paper_id),
+    ]);
+    // The chart said which papers it counted: exactly those are listed, with
+    // no rule of the list's own on top (docs/32, 2.8).
+    const explicitPaperIds = explicitDrilldownIds(drilldownTarget, inView);
+    const hasExplicitPaperIds = explicitPaperIds !== null;
     const track = normalizeTrackKey(drilldownTarget.track);
     const categoryKey = normalizeDrilldownCategoryKey(drilldownTarget.track);
     const categoryLabelByKey = new Map(
@@ -401,7 +408,7 @@ export default function DashboardClient({
 
     return [...paperIds]
       .flatMap((paperId) => {
-        if (hasExplicitPaperIds && !explicitPaperIds.has(paperId)) {
+        if (explicitPaperIds && !explicitPaperIds.has(paperId)) {
           return [];
         }
 
@@ -413,7 +420,7 @@ export default function DashboardClient({
           return [];
         }
 
-        if (drilldownTarget.year && representative.year !== drilldownTarget.year) {
+        if (!hasExplicitPaperIds && drilldownTarget.year && representative.year !== drilldownTarget.year) {
           return [];
         }
 
@@ -422,10 +429,11 @@ export default function DashboardClient({
           !categoryKey ||
           categoryRows.some((row) => normalizeCategoryKey(row.category_key) === categoryKey);
 
-        if (categoryKey && hasDynamicCategories && !matchesDynamicCategory) {
+        if (!hasExplicitPaperIds && categoryKey && hasDynamicCategories && !matchesDynamicCategory) {
           return [];
         }
         if (
+          !hasExplicitPaperIds &&
           track &&
           !hasDynamicCategories &&
           !matchesTrack(singleTrack, track) &&
@@ -668,6 +676,7 @@ export default function DashboardClient({
       <div className="min-w-0">
         {!isSemanticMapTab && filterOpen && (
           <div
+            ref={filterSheetRef}
             role="dialog"
             aria-modal="true"
             aria-label="Analytics filters"

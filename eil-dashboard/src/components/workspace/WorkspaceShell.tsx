@@ -30,6 +30,9 @@ import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch"
 import WorkspaceLoadingState from "@/components/workspace/WorkspaceLoadingState";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { AnalysisRunsContext } from "@/components/workspace/AnalysisRunsContext";
+import { useDialogLayer } from "@/components/ui/Modal";
+import { useIsNarrow } from "@/lib/use-narrow";
 
 type WorkspaceNavItem = {
   href: string;
@@ -336,23 +339,11 @@ export default function WorkspaceShell({
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const drawerWasOpen = useRef(false);
-  // Escape closes the drawer, and closing it puts focus back on the button
-  // that opened it, so a keyboard reader is not dropped at the top of the page.
-  useEffect(() => {
-    if (sidebarOpen) {
-      drawerWasOpen.current = true;
-      const onKey = (event: KeyboardEvent) => {
-        if (event.key === "Escape") setSidebarOpen(false);
-      };
-      window.addEventListener("keydown", onKey);
-      return () => window.removeEventListener("keydown", onKey);
-    }
-    if (drawerWasOpen.current) {
-      drawerWasOpen.current = false;
-      menuButtonRef.current?.focus();
-    }
-  }, [sidebarOpen]);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  // The drawer is a dialog layer below lg: Escape closes it when it is on top,
+  // Tab stays inside, and closing it puts focus back on the menu button.
+  const drawerIsOverlay = useIsNarrow(1024);
+  useDialogLayer(sidebarOpen && drawerIsOverlay, drawerRef, () => setSidebarOpen(false));
   const [navigating, setNavigating] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
@@ -392,6 +383,14 @@ export default function WorkspaceShell({
     },
     [pathname]
   );
+  // The one poller for the followed runs; pages read it through the context.
+  const analysisRuns = useIngestionRuns({
+    enabled: Boolean(analysisSession?.runIds.length),
+    folderJobId: analysisSession?.folderJobId ?? undefined,
+    runIds: analysisSession?.runIds,
+    pollIntervalMs: 3000,
+    onUnauthorized: handleAnalysisUnauthorized,
+  });
   const {
     runs,
     folderJob,
@@ -400,13 +399,7 @@ export default function WorkspaceShell({
     retryActiveProcessing,
     startQueuedProcessing,
     refresh,
-  } =
-    useIngestionRuns({
-    enabled: Boolean(analysisSession?.runIds.length),
-    folderJobId: analysisSession?.folderJobId ?? undefined,
-    pollIntervalMs: 3000,
-    onUnauthorized: handleAnalysisUnauthorized,
-  });
+  } = analysisRuns;
 
   useEffect(() => {
     persistWorkspaceRoute(pathname);
@@ -583,6 +576,7 @@ export default function WorkspaceShell({
 
       {sidebarOpen ? (
         <div
+          ref={drawerRef}
           role="dialog"
           aria-modal="true"
           aria-label="Workspace navigation"
@@ -609,7 +603,7 @@ export default function WorkspaceShell({
           {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
           ) : hasActiveProject ? (
-            children
+            <AnalysisRunsContext.Provider value={analysisRuns}>{children}</AnalysisRunsContext.Provider>
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-xl items-center justify-center">
               <div className="w-full text-center">
@@ -662,7 +656,7 @@ export default function WorkspaceShell({
                 />
               </div>
             ) : (
-              <AnalysisTrayPill runs={activeRuns} onOpen={() => setStatusPanelOpen(true)} />
+              <AnalysisTrayPill runs={activeRuns} onOpen={() => setStatusPanelOpen(true)} onClear={clearAnalysisSession} />
             )}
           </div>
         ) : null}

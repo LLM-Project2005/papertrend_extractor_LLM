@@ -30,6 +30,7 @@ import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { plural, subjectRows, yearAxis } from "@/lib/dashboard-analytics";
+import { idsKey, markPaperIds } from "@/lib/dashboard-drilldown";
 
 interface Props {
   trends: TrendRow[];
@@ -47,6 +48,7 @@ interface Props {
     year?: string;
     topic?: string;
     keyword?: string;
+    paperIds?: string[];
   }) => void;
 }
 
@@ -119,7 +121,7 @@ export default function TrackAnalysis({
         .filter(isDatedYear)
         .sort();
       return yearAxis(years).years.map((year) => {
-        const entry: Record<string, string | number> = { year };
+        const entry: Record<string, string | number | string[]> = { year };
         activeCategories.forEach((category) => {
           const papers = new Set(
             categoryAssignments
@@ -132,6 +134,7 @@ export default function TrackAnalysis({
               .map((row) => row.paper_id)
           );
           entry[category.key] = papers.size;
+          entry[idsKey(category.key)] = [...papers];
         });
         return entry;
       });
@@ -139,10 +142,11 @@ export default function TrackAnalysis({
 
     const years = [...new Set(tracksSingle.map((row) => row.year))].filter(isDatedYear).sort();
     return yearAxis(years).years.map((year) => {
-      const entry: Record<string, string | number> = { year };
+      const entry: Record<string, string | number | string[]> = { year };
       const yearRows = tracksSingle.filter((row) => row.year === year);
       TRACK_COLS.filter((track) => stackedTracks.includes(track)).forEach((track) => {
         entry[track] = yearRows.reduce((sum, row) => sum + row[trackField(track)], 0);
+        entry[idsKey(track)] = yearRows.filter((row) => row[trackField(track)] > 0).map((row) => row.paper_id);
       });
       return entry;
     });
@@ -196,7 +200,7 @@ export default function TrackAnalysis({
           accumulator[row.paper_id] = set;
           return accumulator;
         }, {});
-      const result: Record<string, { topic: string; papers: number }[]> = {};
+      const result: Record<string, { topic: string; papers: number; paperIds: string[] }[]> = {};
 
       activeTopicCategories.forEach((category) => {
         const counts: Record<string, Set<PaperId>> = {};
@@ -207,7 +211,7 @@ export default function TrackAnalysis({
           }
         });
         result[category.key] = Object.entries(counts)
-          .map(([topic, ids]) => ({ topic, papers: ids.size }))
+          .map(([topic, ids]) => ({ topic, papers: ids.size, paperIds: [...ids] }))
           .sort((left, right) => right.papers - left.papers)
           .slice(0, topicsPerTrackLimit);
       });
@@ -216,7 +220,7 @@ export default function TrackAnalysis({
     }
 
     const trackMap = new Map(tracksSingle.map((row) => [row.paper_id, row]));
-    const result: Record<string, { topic: string; papers: number }[]> = {};
+    const result: Record<string, { topic: string; papers: number; paperIds: string[] }[]> = {};
 
     TRACK_COLS.filter((track) => topicTracks.includes(track)).forEach((track) => {
       const counts: Record<string, Set<PaperId>> = {};
@@ -228,7 +232,7 @@ export default function TrackAnalysis({
       });
 
       result[track] = Object.entries(counts)
-        .map(([topic, ids]) => ({ topic, papers: ids.size }))
+        .map(([topic, ids]) => ({ topic, papers: ids.size, paperIds: [...ids] }))
         .sort((left, right) => right.papers - left.papers)
         .slice(0, topicsPerTrackLimit);
     });
@@ -323,7 +327,7 @@ export default function TrackAnalysis({
                     fill={category.color}
                     onClick={(entry) => {
                       if (entry && "year" in entry) {
-                        onDrilldown?.({ track: category.key, year: String(entry.year) });
+                        onDrilldown?.({ track: category.key, year: String(entry.year), paperIds: markPaperIds(entry, category.key) });
                       }
                     }}
                     className={onDrilldown ? "cursor-pointer" : undefined}
@@ -414,6 +418,7 @@ export default function TrackAnalysis({
                                 onDrilldown?.({
                                   track,
                                   topic: String(entry.topic),
+                                  paperIds: markPaperIds(entry),
                                 });
                               }
                             }}

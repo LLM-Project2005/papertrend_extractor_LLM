@@ -11,6 +11,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -99,12 +100,13 @@ import {
   StopIcon,
   TrashIcon,
 } from "@/components/ui/Icons";
-import Modal from "@/components/ui/Modal";
+import Modal, { useDialogLayer } from "@/components/ui/Modal";
 import ChatInsightCard from "@/components/chat/ChatInsightCard";
 import ReportActions from "@/components/chat/ReportActions";
 import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
+import { mergeLatestMessages, NEAR_BOTTOM_PX } from "@/lib/chat-transcript";
 import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
@@ -1431,17 +1433,21 @@ export default function ChatClient() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
   useEffect(() => {
-    if (!menuOpen && !conversationMenuOpen && !threadMenuId && !reportFullViewOpen) return;
+    if (!menuOpen && !conversationMenuOpen && !threadMenuId) return;
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
       setMenuOpen(false);
       setConversationMenuOpen(false);
       setThreadMenuId(null);
-      setReportFullViewOpen(false);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menuOpen, conversationMenuOpen, threadMenuId, reportFullViewOpen]);
+  }, [menuOpen, conversationMenuOpen, threadMenuId]);
+  // The full report is a dialog layer (docs/32, 2.9): a paper opened from it
+  // is the layer on top, so Escape closes the paper and leaves the report.
+  const reportViewRef = useRef<HTMLDivElement>(null);
+  useDialogLayer(reportFullViewOpen, reportViewRef, () => setReportFullViewOpen(false));
   const [sourcesPanelOpen, setSourcesPanelOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
@@ -1454,6 +1460,15 @@ export default function ChatClient() {
   const [pinnedThreadIds, setPinnedThreadIds] = useState<string[]>([]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  /** The transcript's scroll box, and whether the reader is at its bottom (docs/32, 2.7). */
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const nearBottomRef = useRef(true);
+  /** Set when the reader sends a message or opens a conversation: go to the newest. */
+  const forceScrollRef = useRef(true);
+  /** Set before earlier messages are put on top, to keep the reader's place. */
+  const preservedScrollRef = useRef<{ height: number; top: number } | null>(null);
+  /** The last research session state shown, so a poll that changed nothing re-renders nothing. */
+  const deepSessionSignatureRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
   // Names the in-flight answer so Stop can tell the server which one to drop.
   const requestIdRef = useRef<string | null>(null);
@@ -1797,11 +1812,31 @@ export default function ChatClient() {
     resizeComposer();
   }, [draft, resizeComposer]);
 
+  // Earlier messages go on top without moving what the reader is looking at.
+  useLayoutEffect(() => {
+    const preserved = preservedScrollRef.current;
+    const box = scrollContainerRef.current;
+    if (!preserved || !box) return;
+    preservedScrollRef.current = null;
+    box.scrollTop = preserved.top + (box.scrollHeight - preserved.height);
+  }, [messages]);
+
+  // Follow new content only for a reader already at the bottom, or one who
+  // just asked something: it used to pull a reader who had scrolled up back
+  // down on every update, including every five-second research poll.
   useEffect(() => {
+    if (!forceScrollRef.current && !nearBottomRef.current) return;
+    forceScrollRef.current = false;
     scrollAnchorRef.current?.scrollIntoView({
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
   }, [deepSession?.status, loading, messages]);
+
+  const handleTranscriptScroll = useCallback(() => {
+    const box = scrollContainerRef.current;
+    if (!box) return;
+    nearBottomRef.current = box.scrollHeight - box.scrollTop - box.clientHeight < NEAR_BOTTOM_PX;
+  }, []);
 
   useEffect(() => {
     if (deepSession?.status !== "completed") {
@@ -1905,6 +1940,8 @@ export default function ChatClient() {
       // message must not blank the transcript the reader is reading.
       if (loadedThreadIdRef.current !== threadId) {
         loadedThreadIdRef.current = threadId;
+        forceScrollRef.current = true;
+        deepSessionSignatureRef.current = "";
         setMessages([]);
         setDeepSession(null);
       }
@@ -1921,16 +1958,30 @@ export default function ChatClient() {
         if (!response.ok) {
           throw new Error(payload.error ?? "Failed to load chat thread.");
         }
-        setActiveThread(payload.thread);
-        setDeepResearchEnabled(payload.thread.mode === "deep_research");
-        setHasEarlierMessages(Boolean(payload.hasEarlierMessages));
-        oldestMessageAtRef.current = payload.messages?.[0]?.created_at ?? null;
-        setMessages(
-          (payload.messages ?? [])
-            .filter((message) => message.message_kind !== "deep_research_plan")
-            .map(mapMessage)
-        );
-        setDeepSession(payload.deepResearchSession ?? null);
+        if (loadedThreadIdRef.current !== threadId) return;
+        const latest = (payload.messages ?? [])
+          .filter((message) => message.message_kind !== "deep_research_plan")
+          .map(mapMessage);
+        const nextSession = payload.deepResearchSession ?? null;
+        const sessionSignature = JSON.stringify(nextSession);
+        if (options.background) {
+          // A progress poll brings the latest page only. It used to replace the
+          // transcript with that page, dropping the messages "Load earlier"
+          // had added, and to reset what could still be loaded.
+          setMessages((current) => mergeLatestMessages(current, latest));
+          if (sessionSignature !== deepSessionSignatureRef.current) {
+            deepSessionSignatureRef.current = sessionSignature;
+            setDeepSession(nextSession);
+          }
+        } else {
+          setActiveThread(payload.thread);
+          setDeepResearchEnabled(payload.thread.mode === "deep_research");
+          setHasEarlierMessages(Boolean(payload.hasEarlierMessages));
+          oldestMessageAtRef.current = payload.messages?.[0]?.created_at ?? null;
+          setMessages(latest);
+          deepSessionSignatureRef.current = sessionSignature;
+          setDeepSession(nextSession);
+        }
         if (payload.thread.mode === "deep_research") {
           setChatScopeFolderId(payload.deepResearchSession?.folder_id ?? "all");
         }
@@ -2015,6 +2066,8 @@ export default function ChatClient() {
       const earlier = (payload.messages ?? [])
         .filter((message) => message.message_kind !== "deep_research_plan")
         .map(mapMessage);
+      const box = scrollContainerRef.current;
+      if (box) preservedScrollRef.current = { height: box.scrollHeight, top: box.scrollTop };
       setMessages((current) => {
         const known = new Set(current.map((message) => message.id));
         return [...earlier.filter((message) => !known.has(message.id)), ...current];
@@ -2073,13 +2126,16 @@ export default function ChatClient() {
     }
   }, [activeThreadId, canPersist, loadThreadDetail]);
 
+  // Keyed on whether research is running, not on the session object: a new
+  // object on every poll used to tear the timer down and set it up again.
+  const deepSessionRunning = sessionActive(deepSession);
   useEffect(() => {
-    if (!canPersist || !activeThreadId || !sessionActive(deepSession)) return;
+    if (!canPersist || !activeThreadId || !deepSessionRunning) return;
     const timer = window.setInterval(() => {
       void loadThreadDetail(activeThreadId, { background: true });
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [activeThreadId, canPersist, deepSession, loadThreadDetail]);
+  }, [activeThreadId, canPersist, deepSessionRunning, loadThreadDetail]);
 
   useEffect(() => {
     if (!showLibraryPicker) return;
@@ -2705,6 +2761,7 @@ export default function ChatClient() {
       stopGenerating();
       return;
     }
+    forceScrollRef.current = true;
     if (deepResearchEnabled) {
       await handlePlanResearch();
       return;
@@ -2719,6 +2776,7 @@ export default function ChatClient() {
   /** Sends a question the reader clicked rather than typed. */
   async function askQuestion(question: string) {
     if (loading) return;
+    forceScrollRef.current = true;
     setDraft(question);
     await handleNormalSend(question);
   }
@@ -3106,9 +3164,251 @@ export default function ChatClient() {
             </div>
           </header>
 
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-8 sm:px-6 xl:px-8">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleTranscriptScroll}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-8 sm:px-6 xl:px-8"
+          >
+
+            {!hasContent && !loading && !detailLoading ? (
+              <ChatIntro
+                scopeLabel={scopeSummary?.scopeLabel || activeScopeSnapshot.label}
+                eligiblePaperCount={scopeSummary?.eligiblePaperCount ?? null}
+                examples={
+                  scopeSummary?.examples?.length
+                    ? scopeSummary.examples
+                    : exampleQuestions([], activeScopeSnapshot.label)
+                }
+                onAsk={(question) => void askQuestion(question)}
+              />
+            ) : (
+              <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
+                {hasEarlierMessages ? (
+                  <button
+                    type="button"
+                    onClick={() => void loadEarlierMessages()}
+                    disabled={earlierLoading}
+                    className="mx-auto rounded-full border border-hairline bg-surface px-4 py-1.5 text-xs font-medium text-body transition-colors hover:border-hairline-strong hover:text-ink disabled:opacity-60"
+                  >
+                    {earlierLoading ? "Loading earlier messages\u2026" : "Load earlier messages"}
+                  </button>
+                ) : null}
+                {visibleMessages.map((message) => {
+                  const isUser = message.role === "user";
+                  const charts = chartsFromMetadata(message.metadata);
+                  const attachments = attachmentsFromMetadata(message.metadata);
+                  const scopeSnapshot = scopeSnapshotFromMetadata(message.metadata);
+                  const groundingMode = groundingModeFromMetadata(message.metadata);
+                  const citationPreview = previewConversationSources(message.citations, 5);
+                  return (
+                    <section key={message.id}>
+                      {isUser ? (
+                        <div className="flex justify-end">
+                          <div className="group/message relative max-w-[78%] space-y-2">
+                            {editingMessageId === message.id ? (
+                              <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
+                                <MessageAttachmentList attachments={attachments} />
+                                <textarea
+                                  ref={editComposerRef}
+                                  value={editingDraft}
+                                  onChange={(event) => setEditingDraft(event.target.value)}
+                                  aria-label="Edit message"
+                                  rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
+                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-base leading-8 sm:text-[15px] text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
+                                />
+                                <div className="mt-4 flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={cancelEditingUserMessage}
+                                    className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:bg-[#0a0a0a]"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void submitEditedUserMessage(message)}
+                                    disabled={!editingDraft.trim() || loading}
+                                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f1f1f1]"
+                                  >
+                                    Send
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <>
+                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/message:opacity-100 [@media(hover:none)]:opacity-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => void copyMessageContent(message)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
+                                    aria-label="Copy message"
+                                    title="Copy"
+                                  >
+                                    {copiedMessageId === message.id ? (
+                                      <CheckIcon key="copied" className="h-4 w-4 animate-scale-in" />
+                                    ) : (
+                                      <CopyIcon key="copy" className="h-4 w-4" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => startEditingUserMessage(message)}
+                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
+                                    aria-label="Edit message"
+                                    title="Edit"
+                                  >
+                                    <PencilSquareIcon className="h-4 w-4" />
+                                  </button>
+                                </div>
+                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-8 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
+                                  {renderRichMessage(message.content, message.id, "user")}
+                                </div>
+                                <MessageAttachmentList attachments={attachments} />
+                                {scopeSnapshot ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setMenuView("scope");
+                                      setMenuOpen(true);
+                                    }}
+                                    title={scopeSnapshot.eligiblePaperCount > 0
+                                      ? `${scopeSnapshot.eligiblePaperCount} analyzed paper${scopeSnapshot.eligiblePaperCount === 1 ? "" : "s"} in this message scope`
+                                      : "Knowledge scope used for this message"}
+                                    className="ml-auto inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                  >
+                                    <FolderIcon className="h-3.5 w-3.5 flex-none" />
+                                    <span className="truncate">{scopeSnapshot.label}</span>
+                                  </button>
+                                ) : null}
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {/* A stable hook for the layout-shift measurement, which has to
+                              tell an answer arriving from the intro disappearing. */}
+                          {message.kind === "deep_research_report" ? (
+                            <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Deep research report</p>
+                          ) : null}
+                          <div data-testid="assistant-message">
+                            <AssistantAnswer
+                              content={message.content}
+                              messageId={message.id}
+                              citations={message.citations}
+                              unfolded={message.kind === "deep_research_report"}
+                            />
+                          </div>
+                          {message.kind === "deep_research_report" ? (
+                            <ReportActions
+                              content={message.content}
+                              citations={message.citations.map((citation) => ({ ...citation, paperId: String(citation.paperId) }))}
+                              title={researchTitle}
+                            />
+                          ) : null}
+                          {groundingMode === "general" ? (
+                            <div className="text-xs text-slate-600 dark:text-[#8e8e8e]">
+                              Repository context not used
+                            </div>
+                          ) : null}
+                          {charts.map((chart, chartIndex) =>
+                            chart.chartType === "insight" && chart.insight ? (
+                              <ChatInsightCard
+                                key={`${message.id}-chart-${chartIndex}-${chart.title}`}
+                                chart={{ title: chart.title, scopeLabel: chart.scopeLabel, insight: chart.insight, papers: chart.papers }}
+                              />
+                            ) : (
+                              <ChatChartCard
+                                key={`${message.id}-chart-${chartIndex}-${chart.title}`}
+                                chart={chart}
+                              />
+                            )
+                          )}
+                          <AnswerCaveats metadata={message.metadata} />
+                          {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading ? (
+                            <FollowUpSuggestions
+                              suggestions={followUpSuggestions({
+                                limitations: limitationsFromMetadata(message.metadata),
+                                missingEvidenceNeeds: missingEvidenceNeedsFromMetadata(message.metadata),
+                                citedPaperCount: message.citations.length,
+                                scopedPaperCount: coveredPaperCount(message.metadata),
+                              })}
+                              onAsk={(question) => void askQuestion(question)}
+                            />
+                          ) : null}
+                          {message.citations.length > 0 ? (
+                            <div className="max-w-[720px] space-y-1.5">
+                              {citationPreview.visible.map((citation) => (
+                                <CitationLink
+                                  key={`${message.id}-${citation.sourceType ?? "paper"}-${citation.paperId}`}
+                                  citation={citation}
+                                  compact
+                                />
+                              ))}
+                              {citationPreview.remaining > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setSourcesPanelOpen(true)}
+                                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
+                                >
+                                  <PaperIcon className="h-3.5 w-3.5" />
+                                  {citationPreview.remaining} more
+                                </button>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+
+                {loading ? (
+                  <div className="flex items-start gap-3">
+                    <ThinkingOrb
+                      size={32}
+                      className="mt-0.5"
+                      state={
+                        chartModeEnabled
+                          ? "shaping"
+                          : deepResearchEnabled
+                            ? deepSession?.status === "planned"
+                              ? "breathing"
+                              : "working"
+                            : orbStateForStage(progress?.stage)
+                      }
+                    />
+                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
+                      <span className="flex flex-wrap items-baseline gap-x-2">
+                        <span aria-live="polite">
+                          {/* Keyed on the words, so each new step slides in
+                              rather than replacing the last one in place. */}
+                          <span key={progress?.label ?? "pending"} className="status-swap inline-block">
+                            {progress?.label ??
+                              renderLoadingLabel(
+                                deepResearchEnabled,
+                                chartModeEnabled,
+                                deepSession,
+                                researchStarting
+                              )}
+                          </span>
+                        </span>
+                        {progress?.detail ? (
+                          <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">
+                            {progress.detail}
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* Research progress and the report sit after the conversation (docs/32, 2.7):
+                above it, the card grew out of sight of a reader at the bottom. */}
             {deepSession ? (
-              <section className="mx-auto mb-6 w-full max-w-[1040px]">
+              <section className="mx-auto mt-6 w-full max-w-[1040px]">
                 {deepSession.status === "completed" && researchReport ? (
                   <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600 dark:text-[#b4b4b4]">
@@ -3498,241 +3798,6 @@ export default function ChatClient() {
                 )}
               </section>
             ) : null}
-
-            {!hasContent && !loading && !detailLoading ? (
-              <ChatIntro
-                scopeLabel={scopeSummary?.scopeLabel || activeScopeSnapshot.label}
-                eligiblePaperCount={scopeSummary?.eligiblePaperCount ?? null}
-                examples={
-                  scopeSummary?.examples?.length
-                    ? scopeSummary.examples
-                    : exampleQuestions([], activeScopeSnapshot.label)
-                }
-                onAsk={(question) => void askQuestion(question)}
-              />
-            ) : (
-              <div className="mx-auto flex w-full max-w-[1040px] flex-col gap-7">
-                {hasEarlierMessages ? (
-                  <button
-                    type="button"
-                    onClick={() => void loadEarlierMessages()}
-                    disabled={earlierLoading}
-                    className="mx-auto rounded-full border border-hairline bg-surface px-4 py-1.5 text-xs font-medium text-body transition-colors hover:border-hairline-strong hover:text-ink disabled:opacity-60"
-                  >
-                    {earlierLoading ? "Loading earlier messages\u2026" : "Load earlier messages"}
-                  </button>
-                ) : null}
-                {visibleMessages.map((message) => {
-                  const isUser = message.role === "user";
-                  const charts = chartsFromMetadata(message.metadata);
-                  const attachments = attachmentsFromMetadata(message.metadata);
-                  const scopeSnapshot = scopeSnapshotFromMetadata(message.metadata);
-                  const groundingMode = groundingModeFromMetadata(message.metadata);
-                  const citationPreview = previewConversationSources(message.citations, 5);
-                  return (
-                    <section key={message.id}>
-                      {isUser ? (
-                        <div className="flex justify-end">
-                          <div className="group/message relative max-w-[78%] space-y-2">
-                            {editingMessageId === message.id ? (
-                              <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 text-left shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
-                                <MessageAttachmentList attachments={attachments} />
-                                <textarea
-                                  ref={editComposerRef}
-                                  value={editingDraft}
-                                  onChange={(event) => setEditingDraft(event.target.value)}
-                                  aria-label="Edit message"
-                                  rows={Math.min(8, Math.max(3, editingDraft.split("\n").length))}
-                                  className="mt-3 max-h-[260px] min-h-[96px] w-full resize-none bg-transparent text-base leading-8 sm:text-[15px] text-slate-900 outline-none placeholder:text-slate-600 dark:text-white dark:placeholder:text-[#8e8e8e]"
-                                />
-                                <div className="mt-4 flex justify-end gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={cancelEditingUserMessage}
-                                    className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-900 transition-colors hover:bg-slate-100 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-white dark:hover:bg-[#0a0a0a]"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => void submitEditedUserMessage(message)}
-                                    disabled={!editingDraft.trim() || loading}
-                                    className="inline-flex h-10 items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-[#171717] dark:hover:bg-[#f1f1f1]"
-                                  >
-                                    Send
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <>
-                                <div className="absolute -top-8 right-1 z-10 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/message:opacity-100 [@media(hover:none)]:opacity-100">
-                                  <button
-                                    type="button"
-                                    onClick={() => void copyMessageContent(message)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
-                                    aria-label="Copy message"
-                                    title="Copy"
-                                  >
-                                    {copiedMessageId === message.id ? (
-                                      <CheckIcon key="copied" className="h-4 w-4 animate-scale-in" />
-                                    ) : (
-                                      <CopyIcon key="copy" className="h-4 w-4" />
-                                    )}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => startEditingUserMessage(message)}
-                                    className="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-white text-slate-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:bg-[#030303] dark:text-[#ececec] dark:ring-[#242424] dark:hover:bg-[#0a0a0a]"
-                                    aria-label="Edit message"
-                                    title="Edit"
-                                  >
-                                    <PencilSquareIcon className="h-4 w-4" />
-                                  </button>
-                                </div>
-                                <div className="rounded-[18px] border border-slate-200 bg-white px-5 py-3 text-[15px] leading-8 text-slate-900 shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#f3f3f3]">
-                                  {renderRichMessage(message.content, message.id, "user")}
-                                </div>
-                                <MessageAttachmentList attachments={attachments} />
-                                {scopeSnapshot ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setMenuView("scope");
-                                      setMenuOpen(true);
-                                    }}
-                                    title={scopeSnapshot.eligiblePaperCount > 0
-                                      ? `${scopeSnapshot.eligiblePaperCount} analyzed paper${scopeSnapshot.eligiblePaperCount === 1 ? "" : "s"} in this message scope`
-                                      : "Knowledge scope used for this message"}
-                                    className="ml-auto inline-flex h-8 max-w-full items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 text-xs text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                                  >
-                                    <FolderIcon className="h-3.5 w-3.5 flex-none" />
-                                    <span className="truncate">{scopeSnapshot.label}</span>
-                                  </button>
-                                ) : null}
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="space-y-4">
-                          {/* A stable hook for the layout-shift measurement, which has to
-                              tell an answer arriving from the intro disappearing. */}
-                          {message.kind === "deep_research_report" ? (
-                            <p className="text-xs font-semibold text-slate-600 dark:text-[#a3a3a3]">Deep research report</p>
-                          ) : null}
-                          <div data-testid="assistant-message">
-                            <AssistantAnswer
-                              content={message.content}
-                              messageId={message.id}
-                              citations={message.citations}
-                              unfolded={message.kind === "deep_research_report"}
-                            />
-                          </div>
-                          {message.kind === "deep_research_report" ? (
-                            <ReportActions
-                              content={message.content}
-                              citations={message.citations.map((citation) => ({ ...citation, paperId: String(citation.paperId) }))}
-                              title={researchTitle}
-                            />
-                          ) : null}
-                          {groundingMode === "general" ? (
-                            <div className="text-xs text-slate-600 dark:text-[#8e8e8e]">
-                              Repository context not used
-                            </div>
-                          ) : null}
-                          {charts.map((chart, chartIndex) =>
-                            chart.chartType === "insight" && chart.insight ? (
-                              <ChatInsightCard
-                                key={`${message.id}-chart-${chartIndex}-${chart.title}`}
-                                chart={{ title: chart.title, scopeLabel: chart.scopeLabel, insight: chart.insight, papers: chart.papers }}
-                              />
-                            ) : (
-                              <ChatChartCard
-                                key={`${message.id}-chart-${chartIndex}-${chart.title}`}
-                                chart={chart}
-                              />
-                            )
-                          )}
-                          <AnswerCaveats metadata={message.metadata} />
-                          {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading ? (
-                            <FollowUpSuggestions
-                              suggestions={followUpSuggestions({
-                                limitations: limitationsFromMetadata(message.metadata),
-                                missingEvidenceNeeds: missingEvidenceNeedsFromMetadata(message.metadata),
-                                citedPaperCount: message.citations.length,
-                                scopedPaperCount: coveredPaperCount(message.metadata),
-                              })}
-                              onAsk={(question) => void askQuestion(question)}
-                            />
-                          ) : null}
-                          {message.citations.length > 0 ? (
-                            <div className="max-w-[720px] space-y-1.5">
-                              {citationPreview.visible.map((citation) => (
-                                <CitationLink
-                                  key={`${message.id}-${citation.sourceType ?? "paper"}-${citation.paperId}`}
-                                  citation={citation}
-                                  compact
-                                />
-                              ))}
-                              {citationPreview.remaining > 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => setSourcesPanelOpen(true)}
-                                  className="inline-flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-50 hover:text-slate-950 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                                >
-                                  <PaperIcon className="h-3.5 w-3.5" />
-                                  {citationPreview.remaining} more
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-                    </section>
-                  );
-                })}
-
-                {loading ? (
-                  <div className="flex items-start gap-3">
-                    <ThinkingOrb
-                      size={32}
-                      className="mt-0.5"
-                      state={
-                        chartModeEnabled
-                          ? "shaping"
-                          : deepResearchEnabled
-                            ? deepSession?.status === "planned"
-                              ? "breathing"
-                              : "working"
-                            : orbStateForStage(progress?.stage)
-                      }
-                    />
-                    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#b4b4b4]">
-                      <span className="flex flex-wrap items-baseline gap-x-2">
-                        <span aria-live="polite">
-                          {/* Keyed on the words, so each new step slides in
-                              rather than replacing the last one in place. */}
-                          <span key={progress?.label ?? "pending"} className="status-swap inline-block">
-                            {progress?.label ??
-                              renderLoadingLabel(
-                                deepResearchEnabled,
-                                chartModeEnabled,
-                                deepSession,
-                                researchStarting
-                              )}
-                          </span>
-                        </span>
-                        {progress?.detail ? (
-                          <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">
-                            {progress.detail}
-                          </span>
-                        ) : null}
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            )}
 
             {detailLoading ? (
               <div className="mx-auto mt-4 flex w-full max-w-[1040px] items-center gap-3 text-sm text-slate-600 dark:text-[#8e8e8e]">
@@ -4178,6 +4243,7 @@ export default function ChatClient() {
 
       {reportFullViewOpen && researchReport ? (
         <div
+          ref={reportViewRef}
           role="dialog"
           aria-modal="true"
           aria-label="Deep research report"

@@ -1,6 +1,7 @@
 "use client";
 
 import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
+import { hasOpenDialog } from "@/components/ui/Modal";
 import {
   useDeferredValue,
   useEffect,
@@ -255,6 +256,8 @@ export default function WorkspaceGlobalSearch({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
   const deferredQuery = useDeferredValue(query);
 
@@ -267,14 +270,18 @@ export default function WorkspaceGlobalSearch({
 
     function handleEscape(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // Only while open, and marked as handled (docs/32, 2.9).
+        if (!openRef.current || event.defaultPrevented) return;
+        event.preventDefault();
         // Focus goes back to the button, not to the top of the page.
         if (containerRef.current?.contains(document.activeElement)) triggerRef.current?.focus();
         setOpen(false);
         return;
       }
       // "/" opens search from anywhere, as the badge on the button promises,
-      // unless the reader is typing in a field (where "/" is just a slash).
-      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      // unless the reader is typing in a field (where "/" is just a slash) or
+      // a dialog is open over the page.
+      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey && !hasOpenDialog()) {
         const target = event.target as HTMLElement | null;
         const typing =
           target?.isContentEditable ||
@@ -467,7 +474,10 @@ export default function WorkspaceGlobalSearch({
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    // Below lg the wrapper is not positioned, so the palette is placed against
+    // the full-width header rather than the small button near the screen's
+    // right edge, which pushed its left part off a phone's screen (docs/32, 2.10).
+    <div ref={containerRef} className="lg:relative">
       <button
         ref={triggerRef}
         type="button"
@@ -485,7 +495,7 @@ export default function WorkspaceGlobalSearch({
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-[min(680px,calc(100vw-1rem))] origin-top-right overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay motion-safe:animate-scale-in">
+        <div className="absolute inset-x-2 top-full z-50 mt-2 origin-top overflow-hidden rounded-xl border border-hairline bg-surface shadow-overlay motion-safe:animate-scale-in lg:inset-x-auto lg:right-0 lg:top-auto lg:w-[min(680px,calc(100vw-1rem))] lg:origin-top-right">
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -513,7 +523,7 @@ export default function WorkspaceGlobalSearch({
             {query.trim() ? `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}` : ""}
           </p>
           {groupedResults.length > 0 ? (
-            <div className="max-h-[460px] overflow-y-auto p-2">
+            <div className="max-h-[min(460px,calc(100dvh-9rem))] overflow-y-auto p-2">
               {groupedResults.map((group) => (
                 <div key={group.category} className="py-1">
                   <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">

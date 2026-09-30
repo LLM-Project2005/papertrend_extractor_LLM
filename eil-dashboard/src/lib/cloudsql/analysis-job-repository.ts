@@ -15,6 +15,46 @@ export const CANCEL_RUNS_SQL = `UPDATE public.ingestion_runs ir SET
    input_payload = COALESCE(ir.input_payload, '{}'::jsonb) || CASE WHEN ${KEPT} THEN $5::jsonb ELSE $4::jsonb END
  WHERE ir.owner_user_id = $1 AND ir.id = ANY($2::uuid[]) AND ir.status IN ('queued','processing') RETURNING *`;
 
+/**
+ * The payload fields the progress tray reads, and nothing else: it polls up to
+ * 200 runs every few seconds, and a whole payload is several kilobytes. The
+ * paper id goes as text, since a 60-bit number would be rounded by JSON.parse.
+ */
+export const TRAY_RUN_SQL = `SELECT id, owner_user_id, folder_id, folder_analysis_job_id, source_type, status,
+    source_filename, display_name, source_extension, mime_type, file_size_bytes, provider, model,
+    error_message, created_at, updated_at, completed_at, trashed_at,
+    jsonb_strip_nulls(jsonb_build_object(
+      'paper_title', input_payload->'paper_title',
+      'paper_id', input_payload->>'paper_id',
+      'analysis_label', input_payload->'analysis_label',
+      'source_kind', input_payload->'source_kind',
+      'project_id', input_payload->'project_id',
+      'keyword_count', input_payload->'keyword_count',
+      'duplicate_of', input_payload->'duplicate_of',
+      'progress_stage', input_payload->'progress_stage',
+      'progress_message', input_payload->'progress_message',
+      'progress_detail', input_payload->'progress_detail',
+      'progress_updated_at', input_payload->'progress_updated_at',
+      'lifecycle_state', input_payload->'lifecycle_state',
+      'lifecycle_rank', input_payload->'lifecycle_rank',
+      'lifecycle_is_terminal', input_payload->'lifecycle_is_terminal',
+      'lifecycle_updated_at', input_payload->'lifecycle_updated_at',
+      'canceled_by_user', input_payload->'canceled_by_user',
+      'reanalysis_requested_at', input_payload->'reanalysis_requested_at',
+      'reanalysis_failed_at', input_payload->'reanalysis_failed_at',
+      'reanalysis_canceled_at', input_payload->'reanalysis_canceled_at',
+      'reanalysis_error', input_payload->'reanalysis_error',
+      'analysis_metrics', jsonb_strip_nulls(jsonb_build_object(
+        'completed_at', input_payload->'analysis_metrics'->'completed_at',
+        'completed_graph_nodes', input_payload->'analysis_metrics'->'completed_graph_nodes',
+        'graph_seconds', input_payload->'analysis_metrics'->'graph_seconds',
+        'queue_wait_seconds', input_payload->'analysis_metrics'->'queue_wait_seconds',
+        'total_worker_seconds', input_payload->'analysis_metrics'->'total_worker_seconds'))
+    )) AS input_payload
+  FROM public.ingestion_runs
+  WHERE owner_user_id = $1 AND id = ANY($2::uuid[])
+  ORDER BY created_at ASC`;
+
 /** How often one paper may be analysed again in a day. */
 export const MAX_REANALYSES_PER_PAPER_PER_DAY = 3;
 
@@ -45,6 +85,24 @@ export class CloudSqlAnalysisJobRepository {
          ORDER BY created_at DESC LIMIT 25`, values
       );
       return { jobs: jobs.rows, runs: runs.rows };
+    });
+  }
+
+  /**
+   * The runs a person is following, by id, however many (docs/32, 2.6). The
+   * tray used to read the 25 newest runs of the batch or the account, so a
+   * batch of 50, or a re-analysis of older papers, showed wrong totals.
+   */
+  async trayStatus(ownerUserId: string, runIds: string[], folderJobId?: string | null) {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const runs = await client.query<Row>(TRAY_RUN_SQL, [ownerUserId, runIds]);
+      const job = folderJobId
+        ? await client.query<Row>(
+            `SELECT * FROM public.folder_analysis_jobs WHERE owner_user_id = $1 AND id = $2 LIMIT 1`,
+            [ownerUserId, folderJobId]
+          )
+        : null;
+      return { runs: runs.rows, job: job?.rows[0] ?? null };
     });
   }
 

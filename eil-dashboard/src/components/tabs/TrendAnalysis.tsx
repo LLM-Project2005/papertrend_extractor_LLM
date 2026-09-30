@@ -25,6 +25,7 @@ import {
   yearAxis,
   type ThemeShift,
 } from "@/lib/dashboard-analytics";
+import { markPaperIds } from "@/lib/dashboard-drilldown";
 import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -214,7 +215,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                       fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
                       onClick={(entry) => {
                         const year = entry && "year" in entry ? String(entry.year) : undefined;
-                        onDrilldown?.({ topic, year });
+                        onDrilldown?.({ topic, year, paperIds: markPaperIds(entry, topic) });
                       }}
                       className={onDrilldown ? "cursor-pointer" : undefined}
                     />

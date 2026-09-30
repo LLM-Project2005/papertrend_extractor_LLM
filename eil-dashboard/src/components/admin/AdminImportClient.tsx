@@ -825,8 +825,9 @@ export default function AdminImportClient() {
     // Follow the re-queued papers in the progress tray, exactly as an upload
     // is followed. The message used to promise progress "on Home", where
     // nothing about a re-analysis ever appeared.
-    const queuedIds = new Set(payload.queuedRunIds ?? []);
-    const queuedRuns = runs.filter((run) => queuedIds.has(run.id));
+    // Follow what the server queued, by id: filtering the Library's own list
+    // (at most 200 runs) missed papers it had not loaded.
+    const queuedRuns = [...new Set(payload.queuedRunIds ?? [])].map((id) => ({ id }));
     if (queuedRuns.length > 0) {
       startAnalysisSession(queuedRuns, {
         sourceKind: "reanalysis",
