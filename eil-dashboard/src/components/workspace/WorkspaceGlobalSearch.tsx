@@ -29,6 +29,7 @@ import {
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { IngestionRunRow } from "@/types/database";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
+import { getRunDisplayTitle, getRunStatusLabel } from "@/lib/ingestion-status";
 
 interface SearchPageItem {
   id: string;
@@ -84,56 +85,11 @@ const ACTION_ITEMS: Array<{
     keywords: ["analyse", "analyze", "upload", "upload file", "paper analysis", "queue", "pdf"],
     featured: true,
   },
-  {
-    id: "search-library",
-    label: "Search library",
-    description: "Find papers, open a file, or jump into the analysis detail panel.",
-    href: "/workspace/library",
-    icon: PaperIcon,
-    keywords: ["library", "paper", "papers", "file", "files", "detail", "analysis detail"],
-    featured: true,
-  },
-  {
-    id: "deep-research-agent",
-    label: "Deep research agent",
-    description: "Open chat and use the multi-step research agent for plans and reports.",
-    href: "/workspace/chat",
-    icon: SparkIcon,
-    keywords: ["deep agent", "deep research", "agent", "langgraph", "research plan", "report"],
-    featured: true,
-  },
-  {
-    id: "chart-mode",
-    label: "Create a chart",
-    description: "Use chat chart mode to visualize papers, topics, keywords, and categories.",
-    href: "/workspace/chat",
-    icon: ChartIcon,
-    keywords: ["chart", "graph", "visualize", "visualise", "plot", "กราฟ", "แผนภูมิ"],
-  },
-  {
-    id: "switch-project",
-    label: "Switch repository",
-    description: "Choose another repository or create a new one.",
-    href: "/workspaces",
-    icon: HomeIcon,
-    keywords: ["switch repository", "change repository", "repository picker", "switch project", "change project", "project picker"],
-  },
-  {
-    id: "configure-project",
-    label: "Configure repository",
-    description: "Update repository defaults and display preferences.",
-    href: "/workspace/settings",
-    icon: SettingsIcon,
-    keywords: ["settings", "configure", "configuration", "repository settings", "project settings", "preferences"],
-  },
-  {
-    id: "profile",
-    label: "Profile",
-    description: "Manage your account name, avatar, and profile details.",
-    href: "/workspace/settings?section=profile",
-    icon: UserIcon,
-    keywords: ["profile", "account", "user", "avatar"],
-  },
+  // "Search library", "Deep research agent", "Create a chart", "Switch
+  // repository", "Configure repository" and "Profile" were here too, each the
+  // same address as a page below, so the list showed them twice (docs/32,
+  // 2.11, SHELL-7). Their words are the pages' keywords now, and searching the
+  // Library is offered for whatever was typed.
 ];
 
 const DOC_ITEMS: Array<{
@@ -226,14 +182,14 @@ function scoreResult(result: SearchResult, query: string) {
   return score;
 }
 
+/** The paper's own title where the analysis found one, as the Library names it. */
 function titleOf(run: IngestionRunRow) {
-  return run.display_name || run.source_filename || "Untitled paper";
+  return getRunDisplayTitle(run);
 }
 
 function runDescription(run: IngestionRunRow) {
-  const status = run.status === "succeeded" ? "analysis ready" : run.status;
   const updated = run.updated_at ? new Date(run.updated_at).toLocaleDateString() : null;
-  return [status, updated].filter(Boolean).join(" • ");
+  return [getRunStatusLabel(run), updated].filter(Boolean).join(" • ");
 }
 
 export default function WorkspaceGlobalSearch({
@@ -310,11 +266,15 @@ export default function WorkspaceGlobalSearch({
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
 
+  // The repository's papers are read when search opens, so each opening
+  // finds papers analysed since; every page used to fetch them on load
+  // (docs/32, 2.11, SHELL-7).
   useEffect(() => {
     if (!session?.access_token || !selectedProjectId) {
       setLibraryRuns([]);
       return;
     }
+    if (!open) return;
 
     const controller = new AbortController();
     fetch(
@@ -343,7 +303,7 @@ export default function WorkspaceGlobalSearch({
       });
 
     return () => controller.abort();
-  }, [selectedProjectId, session?.access_token]);
+  }, [open, selectedProjectId, session?.access_token]);
 
   const projectIcon =
     pageItems.find((item) => item.id === "project-overview")?.icon ?? HomeIcon;
@@ -387,15 +347,9 @@ export default function WorkspaceGlobalSearch({
         category: "Papers" as const,
         icon: hasUsableAnalysis(run) ? PaperIcon : CloudIcon,
         featured: false,
-        searchText: [
-          titleOf(run),
-          run.status,
-          run.provider ?? "",
-          run.model ?? "",
-          run.source_path ?? "",
-          run.error_message ?? "",
-          "paper library analysis file pdf detail",
-        ].join(" "),
+        // What a reader would type: the title, the file name, the state. Model
+        // names, storage paths and stock words matched almost any query.
+        searchText: [titleOf(run), run.source_filename ?? "", getRunStatusLabel(run)].join(" "),
         onSelect: () => {
           if (hasUsableAnalysis(run) && paperViewer) {
             paperViewer.openPaper({ runId: run.id });
@@ -450,13 +404,31 @@ export default function WorkspaceGlobalSearch({
       return allResults.filter((result) => result.featured).slice(0, 10);
     }
 
-    return allResults
+    const matches = allResults
       .map((result) => ({ result, score: scoreResult(result, normalizedQuery) }))
       .filter((entry) => entry.score > 0)
       .sort((a, b) => b.score - a.score)
       .map((entry) => entry.result)
-      .slice(0, 14);
-  }, [allResults, deferredQuery]);
+      .slice(0, 13);
+    // The Library searches every paper by what was typed; the palette holds
+    // only the first 200.
+    return [
+      ...matches,
+      {
+        id: "action:search-library",
+        label: `Search the Library for \u201c${normalizedQuery}\u201d`,
+        description: "Every paper in this repository, by title, file name and more",
+        category: "Actions" as const,
+        icon: PaperIcon,
+        featured: false,
+        searchText: normalizedQuery,
+        onSelect: () => {
+          setSelectedFolderId("all");
+          router.push(`/workspace/library?q=${encodeURIComponent(normalizedQuery)}`);
+        },
+      },
+    ];
+  }, [allResults, deferredQuery, router, setSelectedFolderId]);
 
   const groupedResults = useMemo(
     () =>

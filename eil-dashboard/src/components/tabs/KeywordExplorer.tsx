@@ -31,6 +31,7 @@ import {
 } from "@/lib/dashboard-analytics";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import { keywordKey, paperIdsByKeywordKey } from "@/lib/dashboard-drilldown";
+import { tooltipTheme } from "@/lib/chart-tooltip";
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
@@ -112,6 +113,7 @@ export default function KeywordExplorer({
 }: Props) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
+  const themedTooltip = tooltipTheme(hydrated && theme === "dark");
   const keywordLabels = labelColumn(useIsNarrow(), { width: 210, chars: 32 });
   const { session } = useAuth();
   const [query, setQuery] = useState("");
@@ -257,7 +259,7 @@ export default function KeywordExplorer({
     return (
       <div className="app-surface px-5 py-5">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          No data for the selected filters.
+          No papers match the current filters.
         </p>
       </div>
     );
@@ -462,7 +464,7 @@ export default function KeywordExplorer({
                         <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                        <Tooltip />
+                        <Tooltip {...themedTooltip} />
                         <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                         <Line isAnimationActive={chartAnimationActive()}
                           type="monotone"
@@ -497,7 +499,7 @@ export default function KeywordExplorer({
                         <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                        <Tooltip />
+                        <Tooltip {...themedTooltip} />
                         <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -860,7 +862,7 @@ export default function KeywordExplorer({
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <Tooltip />
+                <Tooltip {...themedTooltip} />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {comparisonThemes.map((topic, index) => (
                   <Line isAnimationActive={chartAnimationActive()}

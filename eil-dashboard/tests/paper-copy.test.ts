@@ -6,6 +6,8 @@ import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { vector } from "@electric-sql/pglite-pgvector";
 import { copyPaperAnalysis, movePaperRows, PAPER_TABLES, paperIdFromRunSql, paperOfRun } from "../src/lib/cloudsql/paper-copy";
 import { paperIdFromRunId } from "../src/lib/paper-id";
+import { assertRoomForAnotherPaper, LibraryActionError } from "../src/lib/cloudsql/library-repository";
+import { MAX_PAPERS_PER_ACCOUNT } from "../src/lib/upload-safety";
 
 /** Copied and moved papers appear where they are, and a copy is corrected on its own (docs/32, 2.5). */
 
@@ -40,6 +42,32 @@ async function database() {
   await db.query(`INSERT INTO paper_tracks_single (paper_id, owner_user_id, folder_id) VALUES ($1, $2, '00000000-0000-0000-0000-0000000000f1')`, [original, OWNER]);
   return { db, client, original };
 }
+
+test("a copy counts toward the account's papers; exempt roles are exempt (LIB-5)", async () => {
+  const { db, client } = await database();
+  // The account holds one paper; fill it to one below the limit.
+  for (let index = 1; index < MAX_PAPERS_PER_ACCOUNT - 1; index += 1) {
+    await db.query(`INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES ($1, $2, '00000000-0000-0000-0000-0000000000f1', '2020', $3)`, [
+      String(1_000_000 + index),
+      OWNER,
+      `Paper ${index}`,
+    ]);
+  }
+  await assertRoomForAnotherPaper(client, OWNER);
+  await db.query(`INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES ('999', $1, '00000000-0000-0000-0000-0000000000f1', '2020', 'The last one')`, [OWNER]);
+  await assert.rejects(assertRoomForAnotherPaper(client, OWNER), (error: unknown) =>
+    error instanceof LibraryActionError && error.status === 409 && /up to \d+ papers, and a copy is one more/.test(error.message)
+  );
+  // Another account's papers are not counted against this one.
+  await assertRoomForAnotherPaper(client, OTHER);
+  await db.query(`UPDATE user_profiles SET role = 'admin' WHERE id = $1`, [OWNER]);
+  await assertRoomForAnotherPaper(client, OWNER);
+  await db.close();
+  // Making a copy is where it is asked.
+  const library = read("src/lib/cloudsql/library-repository.ts");
+  const copyRun = library.slice(library.indexOf("async copyRun("), library.indexOf("async copyRun(") + 1500);
+  assert.match(copyRun, /await assertRoomForAnotherPaper\(client, ownerUserId\);/);
+});
 
 test("the SQL paper id is the one the worker and the web give the run", async () => {
   const db = new PGlite();

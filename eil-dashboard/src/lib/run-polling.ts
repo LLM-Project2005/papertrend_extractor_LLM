@@ -32,6 +32,22 @@ export function analysisSessionExpired(startedAt: string | null | undefined, now
   return !Number.isFinite(started) || now - started > ANALYSIS_SESSION_MAX_AGE_MS;
 }
 
+/**
+ * Followed papers of this repository still waiting or being analysed, for the
+ * pages that say so (docs/32, 2.11, DASH-7). A run that does not name its
+ * repository counts: the batch was started from this one.
+ */
+export function runsInProgress(
+  runs: ReadonlyArray<{ status?: string | null; input_payload?: Record<string, unknown> | null }>,
+  projectId: string | null | undefined
+): number {
+  return runs.filter((run) => {
+    if (run.status !== "queued" && run.status !== "processing") return false;
+    const runProject = run.input_payload?.project_id;
+    return !projectId || typeof runProject !== "string" || !runProject || runProject === projectId;
+  }).length;
+}
+
 /** The most runs one session follows; the status route accepts this many. */
 export const MAX_FOLLOWED_RUNS = 200;
 

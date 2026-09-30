@@ -29,6 +29,11 @@ const MESSAGES: Record<string, string> = {
   "auth/popup-closed-by-user": "The sign-in window closed before it finished. Try again.",
   "auth/cancelled-popup-request": "The sign-in window closed before it finished. Try again.",
   "auth/popup-blocked": "Your browser blocked the sign-in window. Allow pop-ups for this site, then try again.",
+  // An app's built-in browser, or one with storage switched off (AUTH-2).
+  "auth/operation-not-supported-in-this-environment":
+    "This browser cannot open the sign-in window. Open this page in Chrome or Safari, or sign in with your email.",
+  "auth/web-storage-unsupported":
+    "This browser cannot open the sign-in window. Open this page in Chrome or Safari, or sign in with your email.",
   "auth/network-request-failed": "The sign-in service could not be reached. Check your connection and try again.",
   "auth/account-exists-with-different-credential":
     "This email already signs in another way. Use Google, or your email and password, instead.",

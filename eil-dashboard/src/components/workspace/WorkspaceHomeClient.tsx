@@ -13,7 +13,7 @@
 import Link from "next/link";
 import PaperLink from "@/components/workspace/PaperLink";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
 import { useAnalysisRuns } from "@/components/workspace/AnalysisRunsContext";
@@ -88,8 +88,13 @@ function getRunAgeMinutes(run: IngestionRunRow) {
   return Math.floor((Date.now() - timestampMs) / 60000);
 }
 
+/**
+ * A paper that has stopped updating while being analysed. A queued paper is
+ * waiting its turn, which is not a fault: during a large batch, or while the
+ * daily spending limit holds, it can wait for hours (docs/32, 2.11, SHELL-10).
+ */
 function isRunStuck(run: IngestionRunRow) {
-  if (run.status !== "queued" && run.status !== "processing") {
+  if (run.status !== "processing") {
     return false;
   }
   return getRunAgeMinutes(run) >= STUCK_RUN_MINUTES;
@@ -322,7 +327,7 @@ export default function WorkspaceHomeClient() {
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const { data, loading } = useDashboardData("all", [], {
+  const { data, loading, refresh: refreshDashboardData } = useDashboardData("all", [], {
     projectId: currentProject?.id ?? null,
     enabled: Boolean(currentProject?.id),
   });
@@ -442,6 +447,14 @@ export default function WorkspaceHomeClient() {
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
     : [];
+  // Each paper that finishes is brought into Home's figures and recent papers;
+  // they used to stay as they were when the page opened.
+  const finishedRunCount = activeRuns.filter((run) => run.status === "succeeded").length;
+  const finishedRunCountRef = useRef(finishedRunCount);
+  useEffect(() => {
+    if (finishedRunCount > finishedRunCountRef.current) void refreshDashboardData();
+    finishedRunCountRef.current = finishedRunCount;
+  }, [finishedRunCount, refreshDashboardData]);
   const workspaceRuns = useMemo(() => {
     const merged = new Map(libraryRuns.map((run) => [run.id, run]));
     activeRuns.forEach((run) => merged.set(run.id, run));
@@ -676,7 +689,10 @@ export default function WorkspaceHomeClient() {
 
       {liveDataError ? (
         <Notice tone="danger">
-          This repository&apos;s results could not be loaded just now ({liveDataError}). Refresh the page to try again.
+          This repository&apos;s results could not be loaded just now ({liveDataError}).{" "}
+          <button type="button" onClick={() => void refreshDashboardData()} className="font-medium underline underline-offset-2">
+            Try again
+          </button>
         </Notice>
       ) : null}
 

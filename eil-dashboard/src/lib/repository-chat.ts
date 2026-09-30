@@ -3812,7 +3812,15 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
   const keyParts = {
     ownerUserId: input.ownerUserId,
     versionHash: context.versionHash,
-    scopeKey: [context.projectId ?? "", context.folderId ?? "", [...context.selectedRunIds].sort().join(",")].join("|"),
+    // The model and web search are part of the question asked: another model's
+    // answer is not this one's (docs/32, 2.11, CHAT-5).
+    scopeKey: [
+      context.projectId ?? "",
+      context.folderId ?? "",
+      [...context.selectedRunIds].sort().join(","),
+      `model:${input.model ?? ""}`,
+      `web:${input.allowWeb ? 1 : 0}`,
+    ].join("|"),
     question: input.prompt,
   };
 
@@ -3828,6 +3836,8 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
         citations: structuredClone(hit.citations) as RepositoryCitation[],
         charts: structuredClone(hit.charts) as RepositoryChartPayload[],
         plan: fallbackPromptPlan(input.prompt, false),
+        ...(hit.execution ? { execution: structuredClone(hit.execution) as RepositoryExecutionPlan } : {}),
+        ...(hit.coverage ? { coverage: structuredClone(hit.coverage) as RepositoryCoverage } : {}),
         limitations: [...hit.limitations],
         scopeSnapshot: context.scopeSnapshot,
         diagnostics: {
@@ -3844,12 +3854,17 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
   }
 
   const result = await runRepositoryChatWithContext(input, context);
-  if (cacheable && result.handled && !result.jobId && result.answer.trim()) {
+  // Only a clean answer is kept: one with a limitation - a fallback, a check
+  // that did not run, a gap - would be served again after the cause was gone.
+  const clean = (result.limitations ?? []).length === 0;
+  if (cacheable && clean && result.handled && !result.jobId && result.answer.trim()) {
     writeAnswerCache(keyParts, {
       answer: result.answer,
       citations: structuredClone(result.citations),
       charts: structuredClone(result.charts),
-      limitations: [...(result.limitations ?? [])],
+      limitations: [],
+      execution: result.execution ? structuredClone(result.execution) : undefined,
+      coverage: result.coverage ? structuredClone(result.coverage) : undefined,
     });
   }
   return result;

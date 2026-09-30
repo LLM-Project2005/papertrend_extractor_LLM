@@ -31,6 +31,7 @@ import { isDatedYear } from "@/lib/dated-year";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { plural, subjectRows, yearAxis } from "@/lib/dashboard-analytics";
 import { idsKey, markPaperIds } from "@/lib/dashboard-drilldown";
+import { tooltipTheme } from "@/lib/chart-tooltip";
 
 interface Props {
   trends: TrendRow[];
@@ -69,6 +70,7 @@ export default function TrackAnalysis({
 }: Props) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
+  const themedTooltip = tooltipTheme(hydrated && theme === "dark");
   const orderedCharts =
     planCharts?.map((chart) => chart.chart_key).filter(
       (
@@ -316,7 +318,7 @@ export default function TrackAnalysis({
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <Tooltip />
+                <Tooltip {...themedTooltip} />
                 <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendLabel(ct)} />
                 {stackedChartCategories.map((category) => (
                   <Bar isAnimationActive={chartAnimationActive()}
@@ -407,7 +409,7 @@ export default function TrackAnalysis({
                             tick={tickStyle(ct, 10)}
                             stroke={ct.axisLine}
                           />
-                          <Tooltip />
+                          <Tooltip {...themedTooltip} />
                           <Bar isAnimationActive={chartAnimationActive()}
                             dataKey="papers"
                             fill={category.color}
@@ -428,7 +430,7 @@ export default function TrackAnalysis({
                       </ResponsiveContainer>
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No data</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No papers in this category match the current filters.</p>
                   )}
                 </div>
               );

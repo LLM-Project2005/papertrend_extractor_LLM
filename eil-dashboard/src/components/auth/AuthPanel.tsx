@@ -5,6 +5,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { GoogleIcon, FacebookIcon, SpinnerIcon, UserIcon } from "@/components/ui/Icons";
 import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
+import { clearPendingInvite, readPendingInvite, savePendingInvite } from "@/lib/pending-invite";
+import { IN_APP_BROWSER_NOTICE, isInAppBrowser } from "@/lib/auth/in-app-browser";
 
 const OAUTH_OPTIONS = [
   {
@@ -21,7 +23,6 @@ const OAUTH_OPTIONS = [
 
 /** Matches the server's INVITE_CODE_REQUIRED: on unless turned off. */
 const INVITE_ONLY = process.env.NEXT_PUBLIC_INVITE_ONLY !== "false";
-const PENDING_INVITE_KEY = "papertrend.pendingInvite";
 
 interface AuthPanelProps {
   title?: string;
@@ -66,27 +67,23 @@ export default function AuthPanel({
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [inviteCode, setInviteCode] = useState("");
+  // Read after the first render: the server cannot know the browser.
+  const [inAppBrowser, setInAppBrowser] = useState(false);
+  useEffect(() => setInAppBrowser(isInAppBrowser(window.navigator.userAgent)), []);
 
   // An invite link carries its code after "#", which never reaches a server
-  // or its logs. Keep it for this tab, through a Google or Facebook sign-in,
-  // and take it off the address bar.
+  // or its logs. Keep it on this device for a week - through a Google or
+  // Facebook sign-in, and into the tab the confirmation email opens - and take
+  // it off the address bar.
   useEffect(() => {
     const match = window.location.hash.match(/^#invite=([A-Za-z0-9-]{1,40})$/);
     if (match) {
-      try {
-        window.sessionStorage.setItem(PENDING_INVITE_KEY, match[1]);
-      } catch {
-        // Storage can be unavailable; the code is still used for this page.
-      }
+      savePendingInvite(match[1]);
       window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
       setInviteCode(match[1]);
       return;
     }
-    try {
-      setInviteCode(window.sessionStorage.getItem(PENDING_INVITE_KEY) ?? "");
-    } catch {
-      // No stored invite.
-    }
+    setInviteCode(readPendingInvite());
   }, []);
 
   const displayName = useMemo(() => {
@@ -169,11 +166,7 @@ export default function AuthPanel({
     setError(null);
     try {
       await redeemInviteCode(inviteCode);
-      try {
-        window.sessionStorage.removeItem(PENDING_INVITE_KEY);
-      } catch {
-        // Nothing stored.
-      }
+      clearPendingInvite();
       // The profile check runs again and signs the reader in; stay busy until then.
     } catch (inviteError) {
       setError(inviteError instanceof Error ? inviteError.message : "The invite code couldn't be checked.");
@@ -348,6 +341,28 @@ export default function AuthPanel({
     );
   }
 
+  // Waiting for the email to be confirmed is its own step, with a way out for
+  // a mistyped address; the sign-up form used to stay above it, still saying
+  // "Create your account" (docs/32, 2.11, AUTH-8).
+  if (awaitingConfirmation) {
+    return (
+      <section>
+        <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight text-ink">Check your inbox</h1>
+        <p className="mt-2 text-[15px] leading-7 text-body">
+          One more step: open the link we emailed you, then come back here.
+        </p>
+        {messages}
+        <button
+          type="button"
+          onClick={() => void signOut().catch(() => undefined)}
+          className={buttonClass("secondary", "lg", "mt-4 w-full")}
+        >
+          Wrong address? Start again
+        </button>
+      </section>
+    );
+  }
+
   return (
     <section>
       <h1 className="text-[1.75rem] font-semibold leading-tight tracking-tight text-ink">
@@ -355,7 +370,13 @@ export default function AuthPanel({
       </h1>
       <p className="mt-2 text-[15px] leading-7 text-body">{description}</p>
 
-      <div className="mt-8 grid gap-2.5">
+      {inAppBrowser ? (
+        <p role="note" className="mt-6 rounded-lg bg-subtle px-3 py-2.5 text-[13px] leading-5 text-body ring-1 ring-inset ring-hairline">
+          {IN_APP_BROWSER_NOTICE}
+        </p>
+      ) : null}
+
+      <div className={inAppBrowser ? "mt-4 grid gap-2.5" : "mt-8 grid gap-2.5"}>
         {OAUTH_OPTIONS.map((option) => {
           const Icon = option.icon;
           return (
@@ -422,14 +443,17 @@ export default function AuthPanel({
             <label htmlFor="auth-password" className={labelClass}>
               Password
             </label>
-            <button
-              type="button"
-              onClick={handlePasswordReset}
-              disabled={busy}
-              className="-my-2 rounded px-1 py-2 text-[13px] font-medium text-body transition-colors hover:text-ink disabled:opacity-60"
-            >
-              Reset password
-            </button>
+            {/* A reset is for an account that exists: not offered while creating one. */}
+            {passwordMode === "signin" ? (
+              <button
+                type="button"
+                onClick={handlePasswordReset}
+                disabled={busy}
+                className="-my-2 rounded px-1 py-2 text-[13px] font-medium text-body transition-colors hover:text-ink disabled:opacity-60"
+              >
+                Reset password
+              </button>
+            ) : null}
           </div>
           <input
             id="auth-password"

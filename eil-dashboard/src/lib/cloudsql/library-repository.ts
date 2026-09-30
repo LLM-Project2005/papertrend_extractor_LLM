@@ -14,7 +14,7 @@ export class LibraryActionError extends Error {
 }
 
 /** A copy is a paper like any other, so it counts toward the account's papers. */
-async function assertRoomForAnotherPaper(client: Pick<PoolClient, "query">, ownerUserId: string): Promise<void> {
+export async function assertRoomForAnotherPaper(client: Pick<PoolClient, "query">, ownerUserId: string): Promise<void> {
   const profile = await client.query<{ role: string | null }>(`SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`, [ownerUserId]);
   if (isQuotaExemptRole(profile.rows[0]?.role)) return;
   const papers = await client.query<{ count: string }>(`SELECT count(*)::text AS count FROM public.papers WHERE owner_user_id = $1`, [ownerUserId]);

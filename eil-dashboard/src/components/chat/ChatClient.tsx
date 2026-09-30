@@ -36,6 +36,7 @@ import { useDashboardData } from "@/hooks/useData";
 import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
 import {
   dedupeConversationSources,
+  numberAnswerSources,
   previewConversationSources,
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
@@ -101,6 +102,8 @@ import {
   TrashIcon,
 } from "@/components/ui/Icons";
 import Modal, { useDialogLayer } from "@/components/ui/Modal";
+import { useIsNarrow } from "@/lib/use-narrow";
+import { useComposerOffset } from "@/lib/composer-offset";
 import ChatInsightCard from "@/components/chat/ChatInsightCard";
 import ReportActions from "@/components/chat/ReportActions";
 import type { Insight } from "@/lib/insights/types";
@@ -374,7 +377,7 @@ const localMessage = (
   metadata: metadata ?? null,
 });
 
-function CitationLink({ citation, compact = false }: { citation: Citation; compact?: boolean }) {
+function CitationLink({ citation, compact = false, number }: { citation: Citation; compact?: boolean; number?: number }) {
   return (
     <SourceLink
       href={safeCitationHref(citation.href)}
@@ -389,6 +392,7 @@ function CitationLink({ citation, compact = false }: { citation: Citation; compa
       )}
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium text-slate-900 dark:text-[#ececec]">
+          {number ? <span className="mr-1.5 tabular-nums text-slate-600 dark:text-[#a3a3a3]">[{number}]</span> : null}
           {citation.title}
         </span>
         <span className="mt-0.5 block text-xs text-slate-600 dark:text-[#8e8e8e]">
@@ -707,6 +711,18 @@ function sessionActive(session?: DeepResearchSessionRecord | null) {
 function buildFolderLabel(folderId: string, folders: ResearchFolderRow[]) {
   if (!folderId || folderId === "all") return "Entire repository";
   return folders.find((folder) => folder.id === folderId)?.name ?? "Selected folder";
+}
+
+/** The scope the last question in a conversation was asked in, as the server saved it. */
+function lastQuestionScope(messages: WorkspaceMessageRecord[]): KnowledgeScope | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role !== "user") continue;
+    const scope = (message.metadata as { knowledgeScope?: unknown } | null | undefined)?.knowledgeScope;
+    if (scope && typeof scope === "object" && typeof (scope as { kind?: unknown }).kind === "string") return scope as KnowledgeScope;
+    return null;
+  }
+  return null;
 }
 
 function scopeSnapshotFromMetadata(metadata?: Record<string, unknown> | null): KnowledgeScopeSnapshot | null {
@@ -1441,13 +1457,36 @@ export default function ChatClient() {
       setConversationMenuOpen(false);
       setThreadMenuId(null);
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // On the document, so it runs before a dialog layer's handler (on the
+    // window): Escape in a chat's menu inside the chat drawer closes the menu.
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [menuOpen, conversationMenuOpen, threadMenuId]);
   // The full report is a dialog layer (docs/32, 2.9): a paper opened from it
   // is the layer on top, so Escape closes the paper and leaves the report.
   const reportViewRef = useRef<HTMLDivElement>(null);
   useDialogLayer(reportFullViewOpen, reportViewRef, () => setReportFullViewOpen(false));
+  // Below the large breakpoint the conversation list opens as a drawer, with
+  // the same Pin, Rename, Delete and older chats as the sidebar. Phones and
+  // tablets had only the search dialog, which could open a chat but do
+  // nothing else with it (docs/32, 2.11, CHAT-8).
+  const [chatListOpen, setChatListOpen] = useState(false);
+  const chatListRef = useRef<HTMLElement>(null);
+  const chatListIsOverlay = useIsNarrow(1024);
+  const chatListDrawer = chatListOpen && chatListIsOverlay;
+  useDialogLayer(chatListDrawer, chatListRef, () => setChatListOpen(false));
+  useEffect(() => {
+    if (!chatListIsOverlay) setChatListOpen(false);
+  }, [chatListIsOverlay]);
+  const sidebarCompact = sidebarCollapsed && !chatListDrawer;
+  // Rename and delete ask in the page: window.prompt and window.confirm are
+  // ignored by some in-app browsers, so neither could be done there.
+  const [threadDialog, setThreadDialog] = useState<{ kind: "rename" | "delete"; thread: WorkspaceThreadSummary } | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
+  const [threadDialogBusy, setThreadDialogBusy] = useState(false);
+  // The analysis tray stands above the composer instead of over it.
+  const composerAreaRef = useRef<HTMLDivElement>(null);
+  useComposerOffset(composerAreaRef);
   const [sourcesPanelOpen, setSourcesPanelOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState("");
@@ -1832,6 +1871,26 @@ export default function ChatClient() {
     });
   }, [deepSession?.status, loading, messages]);
 
+  // A screen reader hears when an answer arrives: the only live region was
+  // the "thinking" line, which disappeared with the answer (docs/32, 2.11, CHAT-10).
+  const [answerAnnouncement, setAnswerAnnouncement] = useState("");
+  // "" announces the next answer; null (set when a conversation is opened)
+  // skips the transcript that arrives with it.
+  const announcedAnswerRef = useRef<string | null>("");
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (loading || !last || last.role !== "assistant" || last.id.startsWith("local-")) return;
+    if (announcedAnswerRef.current === null) {
+      // A conversation that is opened is not an answer arriving.
+      announcedAnswerRef.current = last.id;
+      return;
+    }
+    if (announcedAnswerRef.current === last.id) return;
+    announcedAnswerRef.current = last.id;
+    const sources = last.citations.length;
+    setAnswerAnnouncement(`Answer ready${sources ? `, ${sources} source${sources === 1 ? "" : "s"}` : ""}.`);
+  }, [loading, messages]);
+
   const handleTranscriptScroll = useCallback(() => {
     const box = scrollContainerRef.current;
     if (!box) return;
@@ -1856,6 +1915,7 @@ export default function ChatClient() {
       setSelectedLibraryRuns([]);
       setError(null);
       setThreadMenuId(null);
+      setChatListOpen(false);
       setReportFullViewOpen(false);
       setDeepResearchEnabled(mode === "deep_research");
       setChartModeEnabled(false);
@@ -1865,6 +1925,10 @@ export default function ChatClient() {
 
   const applyPayload = useCallback((payload: ChatPayload) => {
     if (payload.thread) {
+      // The answer brings its conversation's transcript: that conversation is
+      // loaded, so opening it must not blank the page and fetch it again
+      // (docs/32, 2.11, CHAT-6).
+      if (payload.messages) loadedThreadIdRef.current = payload.thread.id;
       setActiveThread(payload.thread);
       setActiveThreadId(payload.thread.id);
       setDeepResearchEnabled(payload.thread.mode === "deep_research");
@@ -1883,6 +1947,7 @@ export default function ChatClient() {
           .map(mapMessage)
       );
     }
+    deepSessionSignatureRef.current = JSON.stringify(payload.deepResearchSession ?? null);
     setDeepSession(payload.deepResearchSession ?? null);
     if (payload.thread?.mode === "deep_research") {
       setChatScopeFolderId(payload.deepResearchSession?.folder_id ?? "all");
@@ -1941,6 +2006,7 @@ export default function ChatClient() {
       if (loadedThreadIdRef.current !== threadId) {
         loadedThreadIdRef.current = threadId;
         forceScrollRef.current = true;
+        announcedAnswerRef.current = null;
         deepSessionSignatureRef.current = "";
         setMessages([]);
         setDeepSession(null);
@@ -1984,6 +2050,30 @@ export default function ChatClient() {
         }
         if (payload.thread.mode === "deep_research") {
           setChatScopeFolderId(payload.deepResearchSession?.folder_id ?? "all");
+        } else if (!options.background) {
+          // A conversation reopens in the scope it was asked in: the last
+          // question's repository, folder or papers. It used to reopen in
+          // whatever scope was current (docs/32, 2.11, CHAT-9).
+          const scope = lastQuestionScope(payload.messages ?? []);
+          if (scope?.projectId) {
+            scopeChosenRef.current = true;
+            setChatScopeProjectId(scope.projectId);
+            setChatScopeFolderId(scope.kind === "folder" && scope.folderId ? scope.folderId : "all");
+            setSelectedLibraryRuns([]);
+            if (scope.kind === "selected_papers" && scope.runIds?.length && session?.access_token) {
+              const wanted = new Set(scope.runIds);
+              void fetch(`/api/workspace/library?projectId=${encodeURIComponent(scope.projectId)}`, {
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              })
+                .then(async (response) => (response.ok ? ((await response.json()) as { runs?: IngestionRunRow[] }).runs ?? [] : []))
+                .then((rows) => {
+                  if (loadedThreadIdRef.current !== threadId) return;
+                  setLibraryRuns(rows);
+                  setSelectedLibraryRuns(rows.filter((run) => wanted.has(run.id) && hasUsableAnalysis(run)));
+                })
+                .catch(() => undefined);
+            }
+          }
         }
       } catch (nextError) {
         setError(
@@ -2788,9 +2878,31 @@ export default function ChatClient() {
     }
   }
 
-  async function renameThread(thread: WorkspaceThreadSummary) {
+  function renameThread(thread: WorkspaceThreadSummary) {
     if (!canPersist || !session?.access_token) return;
-    const nextTitle = window.prompt("Rename chat", thread.title)?.trim();
+    setRenameDraft(thread.title);
+    setThreadDialog({ kind: "rename", thread });
+  }
+
+  function deleteThread(thread: WorkspaceThreadSummary) {
+    if (!canPersist || !session?.access_token) return;
+    setThreadDialog({ kind: "delete", thread });
+  }
+
+  async function confirmThreadDialog() {
+    if (!threadDialog || threadDialogBusy) return;
+    setThreadDialogBusy(true);
+    try {
+      if (threadDialog.kind === "rename") await saveThreadTitle(threadDialog.thread, renameDraft.trim());
+      else await removeThread(threadDialog.thread);
+    } finally {
+      setThreadDialogBusy(false);
+      setThreadDialog(null);
+    }
+  }
+
+  async function saveThreadTitle(thread: WorkspaceThreadSummary, nextTitle: string) {
+    if (!canPersist || !session?.access_token) return;
     if (!nextTitle || nextTitle === thread.title) return;
 
     try {
@@ -2824,9 +2936,8 @@ export default function ChatClient() {
     }
   }
 
-  async function deleteThread(thread: WorkspaceThreadSummary) {
+  async function removeThread(thread: WorkspaceThreadSummary) {
     if (!canPersist || !session?.access_token) return;
-    if (!window.confirm(`Delete "${thread.title}"?`)) return;
 
     try {
       const response = await fetch(`/api/chat/threads/${thread.id}`, {
@@ -2890,12 +3001,25 @@ export default function ChatClient() {
             : "h-[calc(100vh-5rem)] supports-[height:100dvh]:h-[calc(100dvh-5rem)]"
         }`}
       >
+        {chatListDrawer ? (
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 z-50 bg-black/40 motion-safe:animate-fade-in"
+            onClick={() => setChatListOpen(false)}
+          />
+        ) : null}
         <aside
-          className={`hidden h-full min-h-0 flex-none border-r border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] lg:flex lg:flex-col ${
-            sidebarCollapsed ? "w-[60px] p-2" : "w-[288px] p-3"
-          }`}
+          ref={chatListRef}
+          {...(chatListDrawer ? { role: "dialog", "aria-modal": true, "aria-label": "Your chats" } : {})}
+          className={
+            chatListDrawer
+              ? "fixed inset-y-0 left-0 z-50 flex h-full w-[min(320px,86vw)] flex-col overscroll-contain border-r border-slate-200 bg-white p-3 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-overlay dark:border-[#1f1f1f] dark:bg-[#050505]"
+              : `hidden h-full min-h-0 flex-none border-r border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505] lg:flex lg:flex-col ${
+                  sidebarCompact ? "w-[60px] p-2" : "w-[288px] p-3"
+                }`
+          }
         >
-          {sidebarCollapsed ? (
+          {sidebarCompact ? (
             <div className="flex flex-col items-center gap-2">
               <button
                 type="button"
@@ -2939,6 +3063,7 @@ export default function ChatClient() {
               <button
                 type="button"
                 onClick={() => {
+                  setChatListOpen(false);
                   setSearchModalOpen(true);
                   setChatSearchQuery("");
                 }}
@@ -2950,16 +3075,16 @@ export default function ChatClient() {
               </div>
               <button
                 type="button"
-                onClick={() => setSidebarCollapsed(true)}
+                onClick={() => (chatListDrawer ? setChatListOpen(false) : setSidebarCollapsed(true))}
                 className="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
-                aria-label="Close chat sidebar"
+                aria-label={chatListDrawer ? "Close your chats" : "Close chat sidebar"}
               >
                 <SidebarIcon className="h-5 w-5" />
               </button>
             </div>
           )}
 
-          {!sidebarCollapsed ? (
+          {!sidebarCompact ? (
           <div className="mt-5 flex min-h-0 flex-1 flex-col">
             <div className="px-1">
               <p className="truncate text-sm font-medium text-slate-800 dark:text-[#ececec]">
@@ -2997,6 +3122,7 @@ export default function ChatClient() {
                       onClick={() => {
                         setActiveThreadId(thread.id);
                         setThreadMenuId(null);
+                        setChatListOpen(false);
                       }}
                       // The padding used to sit on the row wrapper, so the row
                       // looked 28px tall while only the 20px of text was
@@ -3096,15 +3222,13 @@ export default function ChatClient() {
               >
                 <PencilSquareIcon className="h-4 w-4" />
               </button>
-              {/* Below the large breakpoint the conversation list is hidden, and this
-                  was the only way back to an earlier chat: the search dialog lists
-                  every conversation, grouped by day, before anything is typed. */}
+              {/* Below the large breakpoint the conversation list opens as a
+                  drawer, with the sidebar's actions (CHAT-8). */}
               <button
                 type="button"
-                onClick={() => {
-                  setChatSearchQuery("");
-                  setSearchModalOpen(true);
-                }}
+                onClick={() => setChatListOpen(true)}
+                aria-haspopup="dialog"
+                aria-expanded={chatListDrawer}
                 aria-label="Open your chats"
                 title="Your chats"
                 className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 text-slate-700 dark:border-[#1f1f1f] dark:text-[#ececec] lg:hidden"
@@ -3156,7 +3280,7 @@ export default function ChatClient() {
                     className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
                   >
                     <PaperIcon className="h-4 w-4" />
-                    <span className="min-w-0 flex-1">Files in this conversation</span>
+                    <span className="min-w-0 flex-1">Sources</span>
                     <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">{conversationSources.length}</span>
                   </button>
                 </div>
@@ -3199,7 +3323,7 @@ export default function ChatClient() {
                   const attachments = attachmentsFromMetadata(message.metadata);
                   const scopeSnapshot = scopeSnapshotFromMetadata(message.metadata);
                   const groundingMode = groundingModeFromMetadata(message.metadata);
-                  const citationPreview = previewConversationSources(message.citations, 5);
+                  const citationPreview = previewConversationSources(numberAnswerSources(message.content, message.citations), 5);
                   return (
                     <section key={message.id}>
                       {isUser ? (
@@ -3342,6 +3466,7 @@ export default function ChatClient() {
                                 <CitationLink
                                   key={`${message.id}-${citation.sourceType ?? "paper"}-${citation.paperId}`}
                                   citation={citation}
+                                  number={citation.number}
                                   compact
                                 />
                               ))}
@@ -3806,9 +3931,12 @@ export default function ChatClient() {
               </div>
             ) : null}
             <div ref={scrollAnchorRef} />
+            <p className="sr-only" role="status" aria-live="polite">
+              {answerAnnouncement}
+            </p>
           </div>
 
-          <div className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">
+          <div ref={composerAreaRef} className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">
             <form onSubmit={handleSubmit} className="mx-auto w-full max-w-[1040px]">
               {/* The composer shows keyboard focus on its own border, rather
                   than an outline drawn inside it around the text box. */}
@@ -4208,7 +4336,7 @@ export default function ChatClient() {
             <aside className="fixed inset-y-0 right-0 z-40 flex w-[min(90vw,360px)] flex-col border-l border-slate-200 bg-white shadow-[-18px_0_50px_rgba(15,23,42,0.14)] dark:border-[#1f1f1f] dark:bg-[#050505] dark:shadow-[-18px_0_50px_rgba(0,0,0,0.4)] lg:static lg:z-auto lg:w-[340px] lg:flex-none lg:shadow-none">
               <div className="flex h-14 flex-none items-center justify-between border-b border-slate-200 px-4 dark:border-[#1f1f1f]">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">Files in this conversation</p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-[#ececec]">Sources</p>
                   <p className="text-xs text-slate-600 dark:text-[#8e8e8e]">{conversationSources.length} unique sources</p>
                 </div>
                 <button
@@ -4291,6 +4419,58 @@ export default function ChatClient() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {threadDialog ? (
+        <Modal onClose={() => (threadDialogBusy ? undefined : setThreadDialog(null))} zIndexClassName="z-[70]">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void confirmThreadDialog();
+            }}
+            className="w-[min(420px,92vw)] rounded-xl border border-hairline bg-surface p-5 shadow-overlay"
+          >
+            <h2 className="text-base font-semibold text-ink">
+              {threadDialog.kind === "rename" ? "Rename chat" : "Delete this chat?"}
+            </h2>
+            {threadDialog.kind === "rename" ? (
+              <label className="mt-4 block">
+                <span className="sr-only">Chat name</span>
+                <input
+                  autoFocus
+                  value={renameDraft}
+                  onChange={(event) => setRenameDraft(event.target.value)}
+                  maxLength={200}
+                  className="h-10 w-full rounded-lg border border-hairline bg-canvas px-3 text-sm text-ink outline-none focus:border-hairline-strong focus:ring-2 focus:ring-hairline"
+                />
+              </label>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-body">
+                &ldquo;{threadDialog.thread.title || "Untitled chat"}&rdquo; and its messages are deleted. This cannot be undone.
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setThreadDialog(null)}
+                disabled={threadDialogBusy}
+                className="inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium text-body transition-colors hover:bg-subtle hover:text-ink disabled:opacity-60"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                autoFocus={threadDialog.kind === "delete"}
+                disabled={threadDialogBusy || (threadDialog.kind === "rename" && !renameDraft.trim())}
+                className={`inline-flex h-9 items-center rounded-lg px-3 text-sm font-medium transition-colors disabled:opacity-60 ${
+                  threadDialog.kind === "delete" ? "bg-[#dc2626] text-white hover:bg-[#b91c1c]" : "bg-ink text-canvas hover:bg-ink/85"
+                }`}
+              >
+                {threadDialog.kind === "rename" ? "Save" : "Delete"}
+              </button>
+            </div>
+          </form>
+        </Modal>
       ) : null}
 
       {searchModalOpen ? (
