@@ -7,6 +7,7 @@ remains available in process_ingestion_queue.py for rollback during cutover.
 
 from __future__ import annotations
 
+import os
 import uuid
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -68,6 +69,17 @@ def _single_payload_owner(table: str, rows: Iterable[Dict[str, Any]]) -> str:
     return next(iter(owners))
 
 
+# The same total as SITE_SPEND_SQL in eil-dashboard/src/lib/spend-limits.ts: every
+# account's rows since midnight UTC, analysis included.
+SITE_SPEND_SQL = (
+    "SELECT COALESCE(sum(CASE WHEN jsonb_typeof(metadata->'cost_usd') = 'number' "
+    "THEN (metadata->>'cost_usd')::numeric ELSE 0 END), 0)::float8 AS site_usd "
+    "FROM public.ai_usage_events "
+    "WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') "
+    "AND metadata ? 'cost_usd'"
+)
+
+
 def _json_value(value: Any) -> Any:
     if isinstance(value, (dict, list)):
         from psycopg.types.json import Jsonb
@@ -90,14 +102,31 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def worker_deployment(raw: Optional[str] = None) -> str:
+    """The deployment this worker serves: 'pilot' or 'production' (docs/32, 1.1).
+
+    The pilot and production workers share one database. Each run records the
+    deployment that queued it, and a worker lists, claims and recovers only its
+    own, so untested pilot code never analyses a production user's paper. Runs
+    queued before the tag existed count as production.
+    """
+    value = str(os.getenv("WORKER_DEPLOYMENT", "") if raw is None else raw).strip().lower()
+    return "pilot" if value == "pilot" else "production"
+
+
+# The filter every run listing and claim uses, matching the web app's.
+DEPLOYMENT_FILTER = "COALESCE(input_payload->>'deployment', 'production') = %s"
+
+
 class CloudSqlWorkerClient:
     """Trusted worker access to Cloud SQL with owner checks on scoped writes."""
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, database_url: str, deployment: Optional[str] = None) -> None:
         if not str(database_url or "").strip():
             raise ValueError("DATABASE_URL is required for the Cloud SQL worker.")
         self.database_url = database_url
         self.heartbeat_timeout_seconds = 10.0
+        self.deployment = worker_deployment(deployment)
 
     @contextmanager
     def _connection(self) -> Iterator[Any]:
@@ -127,8 +156,9 @@ class CloudSqlWorkerClient:
         with self._connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 f"SELECT * FROM public.ingestion_runs "
-                f"WHERE source_type = 'upload' AND status = %s ORDER BY {order} LIMIT %s",
-                (status, max(int(limit), 1)),
+                f"WHERE source_type = 'upload' AND status = %s AND {DEPLOYMENT_FILTER} "
+                f"ORDER BY {order} LIMIT %s",
+                (status, self.deployment, max(int(limit), 1)),
             )
             return self._rows(cursor)
 
@@ -139,9 +169,10 @@ class CloudSqlWorkerClient:
                 UPDATE public.ingestion_runs
                 SET status = 'processing', error_message = NULL, updated_at = now()
                 WHERE id = %s AND status = 'queued'
+                  AND COALESCE(input_payload->>'deployment', 'production') = %s
                 RETURNING *
                 """,
-                (run_id,),
+                (run_id, self.deployment),
             )
             row = cursor.fetchone()
             return {str(key): _json_safe(value) for key, value in dict(row).items()} if row else None
@@ -154,6 +185,24 @@ class CloudSqlWorkerClient:
 
     def update_run(self, run_id: str, patch: Dict[str, Any]) -> None:
         self._update_owned_record("ingestion_runs", run_id, patch)
+
+    def site_spend_today_usd(self) -> float:
+        """What every model call on the site cost since midnight UTC (docs/32, 1.5)."""
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(SITE_SPEND_SQL)
+            row = cursor.fetchone()
+            return float((row or {}).get("site_usd") or 0.0)
+
+    def record_model_spend(self, owner_user_id: str, units: int, metadata: Dict[str, Any]) -> None:
+        """One ai_usage_events row, which the site-wide limit adds up."""
+        owner = normalize_owner_id(owner_user_id)
+        with self._connection() as connection, connection.cursor() as cursor:
+            set_transaction_owner(cursor, owner)
+            cursor.execute(
+                "INSERT INTO public.ai_usage_events (owner_user_id, usage_kind, units, metadata) "
+                "VALUES (%s, 'chat_message', %s, %s)",
+                (owner, max(int(units), 1), _json_value(metadata)),
+            )
 
     def touch_run(self, run_id: str) -> None:
         with self._connection() as connection, connection.cursor() as cursor:

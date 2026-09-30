@@ -4,7 +4,8 @@ import { DocsArticle } from "@/components/docs/DocsFrame";
 import { MarketingShell } from "@/components/marketing/MarketingLayout";
 import { docsPages, getDocsPage } from "@/lib/docs-content";
 
-export const dynamicParams = false;
+// Unknown slugs reach the page and get notFound(). `dynamicParams = false` made
+// Next log each one as a server error (NoFallbackError), which is alert noise.
 
 export function generateStaticParams() {
   return docsPages.map((page) => ({

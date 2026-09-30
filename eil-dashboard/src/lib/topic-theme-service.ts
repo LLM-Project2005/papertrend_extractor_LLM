@@ -22,6 +22,7 @@ import type { PoolClient } from "pg";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { DEFAULT_FAST_MODEL } from "@/lib/model-routing";
 import { createChatCompletionResult, type ChatMessage } from "@/lib/openai";
+import { spendAllowed, trackModelSpend } from "@/lib/security-guards";
 import { getDatabaseProvider, getOpenAIConfig } from "@/lib/server-env";
 import {
   CONSENSUS_RUNS,
@@ -278,12 +279,22 @@ export async function groupProjectThemes(
   loadTrends: () => Promise<TrendRow[]>
 ): Promise<ThemeGroupingOutcome> {
   if (!themeGroupingAvailable()) return { status: "unavailable" };
+  // While a dollar limit holds, grouping waits; the dashboard shows each paper's own topics.
+  if (!(await spendAllowed(ownerUserId))) return { status: "unavailable" };
   const stored = await loadThemeStore(ownerUserId, projectId);
   if (stored?.failedAt && Date.now() - Date.parse(stored.failedAt) < failureBackoffMs(stored.failures ?? 1)) {
     return { status: "unavailable" };
   }
   if (!(await claim(ownerUserId, projectId))) return { status: "busy" };
+  return trackModelSpend(ownerUserId, "topic-themes", () => groupClaimed(ownerUserId, projectId, loadTrends));
+}
 
+/** The grouping itself, once this request holds the repository's claim. */
+async function groupClaimed(
+  ownerUserId: string,
+  projectId: string,
+  loadTrends: () => Promise<TrendRow[]>
+): Promise<ThemeGroupingOutcome> {
   const started = Date.now();
   try {
     const trends = await loadTrends();

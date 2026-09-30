@@ -122,7 +122,7 @@ export async function POST(request: Request) {
   if (usage.totalTokens > 0) {
     const spend = summarizeSpend(usage.byModel);
     console.info("insights_spend", JSON.stringify({ usd: spend.usd, totalTokens: usage.totalTokens, calls: usage.calls, byModel: spend.byModel, corrected: plan.corrected ?? 0, checks: checks ?? [] }));
-    await persistAiTokenUsage(user.id, usage).catch((error) => {
+    await persistAiTokenUsage(user.id, usage, "insights").catch((error) => {
       console.error("insights_token_usage_persist_failed", { message: error instanceof Error ? error.message : "unknown_error" });
     });
   }

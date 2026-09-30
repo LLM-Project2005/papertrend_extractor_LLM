@@ -38,6 +38,7 @@ from analysis_pipeline.duplicates import find_duplicate, text_fingerprint
 from analysis_pipeline.reanalysis import earlier_results_kept, failed_reanalysis_payload
 from supabase_http import build_retrying_session
 from database_client import create_worker_database_client
+from spend_limits import record_spend, site_spend_limit_reached
 
 try:
     from google.cloud import storage as gcs_storage
@@ -1518,6 +1519,7 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                 checkpoint_callback=lambda: ensure_run_active(client, run_id),
             )
             graph_seconds = elapsed_seconds(graph_started)
+            record_spend(client, run.get("owner_user_id"), result.usage_summary, "analysis", run_id=run_id)
             logger.info("pdf extracted", extra={"run_id": run_id, "text_length": len(result.raw_text)})
             logger.info(
                 "model usage summary",
@@ -1527,6 +1529,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                     "usage_prompt_tokens": result.usage_summary.get("total_prompt_tokens"),
                     "usage_completion_tokens": result.usage_summary.get("total_completion_tokens"),
                     "usage_estimated_cost_usd": result.usage_summary.get("estimated_cost_usd"),
+                    "usage_cost_usd": result.usage_summary.get("cost_usd"),
+                    "usage_cost_source": result.usage_summary.get("cost_source"),
                 },
             )
 
@@ -1545,6 +1549,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
                         "total_prompt_tokens": result.usage_summary.get("total_prompt_tokens"),
                         "total_completion_tokens": result.usage_summary.get("total_completion_tokens"),
                         "estimated_cost_usd": result.usage_summary.get("estimated_cost_usd"),
+                        "cost_usd": result.usage_summary.get("cost_usd"),
+                        "cost_source": result.usage_summary.get("cost_source"),
                     },
                 },
                 force_folder_sync=True,
@@ -1630,6 +1636,10 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
             },
         )
 
+    # While the site-wide dollar limit holds, papers stay queued (docs/32, 1.5).
+    if site_spend_limit_reached(client):
+        return False
+
     queued_runs = client.list_queued_runs(config.queued_limit)
     if not queued_runs:
         return False
@@ -1688,6 +1698,8 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
             logger.info("run completed", extra={"run_id": run_id})
         except Exception as error:  # pragma: no cover - integration path
             message = str(error)
+            # A failed analysis was still charged for the calls it made.
+            record_spend(client, claimed.get("owner_user_id"), getattr(error, "usage_summary", None), "analysis", run_id=run_id)
             latest_run: Optional[Dict[str, Any]] = None
             try:
                 latest_run = client.get_run(run_id)

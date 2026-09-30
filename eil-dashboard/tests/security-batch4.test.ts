@@ -41,7 +41,8 @@ test("the daily usage limit holds under parallel requests and fails closed", () 
   const guards = read("src/lib/security-guards.ts");
   const fn = guards.slice(guards.indexOf("export async function assertAndRecordAiUsage"));
   assert.match(fn, /pg_advisory_xact_lock\(hashtextextended\(\$1, 0\)\)/, "count and insert are serialised");
-  assert.ok(fn.indexOf("pg_advisory_xact_lock") < fn.indexOf("SELECT count(*)"), "the lock comes before the count");
+  assert.ok(fn.indexOf("pg_advisory_xact_lock") < fn.indexOf("client.query<{ count: string }>(AI_USAGE_COUNT_SQL"), "the lock comes before the count");
+  assert.match(guards, /export const AI_USAGE_COUNT_SQL = `SELECT count\(\*\)::text AS count FROM public\.ai_usage_events/);
   assert.match(fn, /throw new GuardError\("Usage could not be checked just now\. Try again in a moment\.", 503\)/);
   assert.doesNotMatch(fn.slice(0, fn.indexOf("const supabase")), /allowing request/);
 });
@@ -61,7 +62,7 @@ test("a paper is analysed again at most three times a day", () => {
   assert.match(repo, /export const MAX_REANALYSES_PER_PAPER_PER_DAY = 3;/);
   assert.match(repo, /'reanalysis_day_count', CASE WHEN/);
   assert.match(repo, /AND NOT \(COALESCE\(ir\.input_payload->>'reanalysis_day', ''\)/);
-  assert.match(repo, /today, MAX_REANALYSES_PER_PAPER_PER_DAY\]/, "the cap is a parameter, not SQL text");
+  assert.match(repo, /today, MAX_REANALYSES_PER_PAPER_PER_DAY, deploymentEnv\(\)\]/, "the cap is a parameter, not SQL text");
 });
 
 test("a new password needs ten characters; an existing one still signs in", () => {

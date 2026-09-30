@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { PoolClient } from "pg";
+import { recordAiTokenUsage } from "@/lib/ai-token-usage";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import { getOpenAIConfig, getRepositoryEmbeddingConfig } from "@/lib/server-env";
 import type { RepositoryPaper } from "@/lib/repository-chat";
@@ -72,7 +73,9 @@ async function embedTexts(texts: string[]): Promise<number[][] | null> {
     body: JSON.stringify({ model: config.model, input: texts, dimensions: config.dimensions }),
   });
   if (!response.ok) return null;
-  const payload = await response.json() as { data?: Array<{ index: number; embedding: number[] }> };
+  const payload = await response.json() as { data?: Array<{ index: number; embedding: number[] }>; usage?: unknown };
+  // Counted in the chat answer's spend, which this search is part of.
+  recordAiTokenUsage(payload.usage, config.model);
   const ordered = [...(payload.data ?? [])].sort((left, right) => left.index - right.index);
   return ordered.length === texts.length ? ordered.map((item) => item.embedding) : null;
 }

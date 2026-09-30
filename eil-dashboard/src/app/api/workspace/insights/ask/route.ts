@@ -82,7 +82,7 @@ export async function POST(request: Request) {
   if (usage.totalTokens > 0) {
     const spend = summarizeSpend(usage.byModel);
     console.info("insights_ask_spend", JSON.stringify({ usd: spend.usd, totalTokens: usage.totalTokens, byModel: spend.byModel, query }));
-    await persistAiTokenUsage(user.id, usage).catch(() => undefined);
+    await persistAiTokenUsage(user.id, usage, "insights-ask").catch(() => undefined);
   }
   if (!query) {
     return NextResponse.json({ error: "The question could not be turned into a view just now. Try rephrasing it." }, { status: 502 });

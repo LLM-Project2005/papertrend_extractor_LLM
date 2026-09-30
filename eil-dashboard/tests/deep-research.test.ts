@@ -287,7 +287,7 @@ test("one unit per run, charged on its first start; a retry is free", () => {
 test("the run is called only by this service's tasks, and its spend is recorded", () => {
   const process = read("src/app/api/chat/research/process/route.ts");
   assert.match(process, /if \(!\(await isVerifiedTaskCaller\(request\)\)\)/);
-  assert.match(process, /await persistAiTokenUsage\(ownerUserId, usage\)/);
+  assert.match(process, /await persistAiTokenUsage\(ownerUserId, usage, "deep-research"\)/);
   assert.match(read("src/app/api/chat/threads/[threadId]/route.ts"), /await resumeIfStale\(/);
 });
 

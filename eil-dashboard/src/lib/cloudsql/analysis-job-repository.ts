@@ -1,4 +1,5 @@
 import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
+import { DEPLOYMENT_KEY, deploymentEnv } from "@/lib/deployment";
 
 /** How often one paper may be analysed again in a day. */
 export const MAX_REANALYSES_PER_PAPER_PER_DAY = 3;
@@ -112,6 +113,7 @@ export class CloudSqlAnalysisJobRepository {
                      ELSE jsonb_build_object('analysis_profile', $${values.length + 2}::jsonb) END
              || CASE WHEN $${values.length + 3}::text IS NULL THEN '{}'::jsonb
                      ELSE jsonb_build_object('project_id', $${values.length + 3}::text) END
+             || jsonb_build_object('deployment', $${values.length + 6}::text)
          WHERE ir.id IN (
            SELECT ir.id FROM public.ingestion_runs ir
            WHERE ir.owner_user_id = $1 AND ir.trashed_at IS NULL
@@ -120,7 +122,7 @@ export class CloudSqlAnalysisJobRepository {
                       AND COALESCE((ir.input_payload->>'reanalysis_day_count')::int, 0) >= $${values.length + 5}::int)
            ORDER BY ir.created_at ASC LIMIT $${values.length})
          RETURNING ir.id`,
-        [...values, timestamp, profileJson, payloadProjectId, today, MAX_REANALYSES_PER_PAPER_PER_DAY]
+        [...values, timestamp, profileJson, payloadProjectId, today, MAX_REANALYSES_PER_PAPER_PER_DAY, deploymentEnv()]
       );
       return result.rows.map((row) => String(row.id));
     });
@@ -200,6 +202,7 @@ export class CloudSqlAnalysisJobRepository {
         [ownerUserId, runIds, JSON.stringify({
           progress_stage: "queued", progress_message: "Recovered stalled analysis run",
           progress_detail: reason, progress_updated_at: new Date().toISOString(),
+          [DEPLOYMENT_KEY]: deploymentEnv(),
         })]
       );
       return result.rowCount ?? 0;
@@ -228,8 +231,10 @@ export class CloudSqlAnalysisJobRepository {
     return withCloudSqlServiceTransaction(async (client) => {
       const stale = await client.query<Row>(
         `SELECT id,input_payload FROM public.ingestion_runs WHERE source_type = 'upload'
-         AND status = 'processing' AND updated_at < $1 ORDER BY updated_at ASC LIMIT $2`,
-        [options.staleBefore, options.maxRows]
+         AND status = 'processing' AND updated_at < $1
+         AND COALESCE(input_payload->>'deployment', 'production') = $3
+         ORDER BY updated_at ASC LIMIT $2`,
+        [options.staleBefore, options.maxRows, deploymentEnv()]
       );
       const staleIds = stale.rows.map((row) => String(row.id));
       let requeuedRuns = 0;

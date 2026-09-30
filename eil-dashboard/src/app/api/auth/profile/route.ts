@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthenticatedIdentityFromRequest, identityToLegacyUser } from "@/lib/auth/adapter";
 import { getProfileRepository } from "@/lib/profile-repository";
 import { unlinkedReason } from "@/lib/auth/account-linking";
+import { PILOT_RESTRICTED_MESSAGE } from "@/lib/deployment";
 
 export const runtime = "nodejs";
 
@@ -31,6 +32,10 @@ async function getOwner(request: Request) {
   }
   if (!identity) {
     return { user: null, error: "Authentication required.", status: 401 };
+  }
+
+  if (identity.mappingStatus === "pilot_restricted") {
+    return { user: null, error: PILOT_RESTRICTED_MESSAGE, code: "pilot_restricted", status: 403 };
   }
 
   if (identity.mappingStatus === "lookup_failed") {

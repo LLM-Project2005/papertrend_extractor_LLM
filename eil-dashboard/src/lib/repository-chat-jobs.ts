@@ -212,6 +212,8 @@ export async function failRepositoryChatJob(ownerUserId: string, id: string, err
       [id, message.slice(0, 1_000), ownerUserId]
     );
     if (!updated.rows[0]) return;
+    // The "research or chat jobs failing" alert counts these.
+    console.error("repository_chat_job_failed", { jobId: id, message: message.slice(0, 300) });
     const job = mapJob(updated.rows[0]);
     const assistantMessageId = String(job.executionPlan.assistantMessageId ?? "");
     if (!assistantMessageId || !job.threadId) return;
