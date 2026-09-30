@@ -30,6 +30,9 @@ import WorkspaceGlobalSearch from "@/components/workspace/WorkspaceGlobalSearch"
 import WorkspaceLoadingState from "@/components/workspace/WorkspaceLoadingState";
 import WorkspaceProfileMenu from "@/components/workspace/WorkspaceProfileMenu";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
+import { AnalysisRunsContext } from "@/components/workspace/AnalysisRunsContext";
+import { useDialogLayer } from "@/components/ui/Modal";
+import { useIsNarrow } from "@/lib/use-narrow";
 
 type WorkspaceNavItem = {
   href: string;
@@ -80,7 +83,7 @@ const SEARCH_PAGE_ITEMS = [
     description: "Switch between research repositories",
     href: "/workspaces",
     icon: HomeIcon,
-    keywords: ["switch repository", "repository picker", "project picker", "projects", "home", "start"],
+    keywords: ["switch repository", "change repository", "repository picker", "switch project", "change project", "project picker", "projects", "start"],
     featured: true,
   },
   {
@@ -107,7 +110,10 @@ const SEARCH_PAGE_ITEMS = [
     description: "Open grounded research chat",
     href: "/workspace/chat",
     icon: ChatIcon,
-    keywords: ["assistant", "conversation", "qa", "ai chat", "deep research", "deep agent", "chart mode", "web search"],
+    keywords: [
+      "assistant", "conversation", "qa", "ai chat", "deep research", "deep agent", "research agent", "research plan", "report",
+      "chart mode", "chart", "graph", "visualize", "visualise", "plot", "กราฟ", "แผนภูมิ", "web search",
+    ],
     featured: true,
   },
   {
@@ -123,9 +129,9 @@ const SEARCH_PAGE_ITEMS = [
     id: "settings",
     label: "Settings",
     description: "Adjust repository preferences and identity",
-    href: "/workspace/settings",
+    href: "/workspace/settings?section=repository",
     icon: SettingsIcon,
-    keywords: ["preferences", "configuration", "repository settings", "project settings", "settings"],
+    keywords: ["preferences", "configure", "configure repository", "configuration", "repository settings", "project settings", "settings"],
   },
   {
     id: "profile",
@@ -133,11 +139,14 @@ const SEARCH_PAGE_ITEMS = [
     description: "Manage your name, picture and sign-in",
     href: "/workspace/settings?section=profile",
     icon: UserIcon,
-    keywords: ["account", "user", "avatar", "profile settings"],
+    keywords: ["profile", "account", "user", "avatar", "profile settings"],
   },
 ];
 
 const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
+
+/** Pages that work without a chosen repository. */
+const PROJECT_OPTIONAL_ROUTES = ["/workspace/settings"];
 
 function WorkspaceBreadcrumb({
   projectName,
@@ -336,27 +345,18 @@ export default function WorkspaceShell({
   } = useWorkspaceProfile();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const drawerWasOpen = useRef(false);
-  // Escape closes the drawer, and closing it puts focus back on the button
-  // that opened it, so a keyboard reader is not dropped at the top of the page.
-  useEffect(() => {
-    if (sidebarOpen) {
-      drawerWasOpen.current = true;
-      const onKey = (event: KeyboardEvent) => {
-        if (event.key === "Escape") setSidebarOpen(false);
-      };
-      window.addEventListener("keydown", onKey);
-      return () => window.removeEventListener("keydown", onKey);
-    }
-    if (drawerWasOpen.current) {
-      drawerWasOpen.current = false;
-      menuButtonRef.current?.focus();
-    }
-  }, [sidebarOpen]);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  // The drawer is a dialog layer below lg: Escape closes it when it is on top,
+  // Tab stays inside, and closing it puts focus back on the menu button.
+  const drawerIsOverlay = useIsNarrow(1024);
+  useDialogLayer(sidebarOpen && drawerIsOverlay, drawerRef, () => setSidebarOpen(false));
   const [navigating, setNavigating] = useState(false);
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [statusPanelOpen, setStatusPanelOpen] = useState(false);
   const isChatPage = pathname.startsWith("/workspace/chat");
+  // Settings hold the account and admin pages, which need no repository; the
+  // repository gate hid them from anyone without one (docs/32, 2.11, AUTH-5).
+  const projectOptional = PROJECT_OPTIONAL_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`));
   // A new upload opens the progress card, so the reader who just added papers
   // from the Library or Chat sees them start instead of a small badge.
   const analysisSessionKey = analysisSession?.runIds.join(",") ?? "";
@@ -372,7 +372,9 @@ export default function WorkspaceShell({
     if (!authHydrated || user) {
       return;
     }
-    const returnTo = encodeURIComponent(pathname || "/workspace/home");
+    // The query too: a paper, a tab or a filter in the address comes back
+    // with the reader after they sign in (docs/32, 2.11, SHELL-5a).
+    const returnTo = encodeURIComponent(`${pathname || "/workspace/home"}${window.location.search}`);
     router.replace(`/login?returnTo=${returnTo}`);
   }, [authHydrated, pathname, router, user]);
 
@@ -392,6 +394,14 @@ export default function WorkspaceShell({
     },
     [pathname]
   );
+  // The one poller for the followed runs; pages read it through the context.
+  const analysisRuns = useIngestionRuns({
+    enabled: Boolean(analysisSession?.runIds.length),
+    folderJobId: analysisSession?.folderJobId ?? undefined,
+    runIds: analysisSession?.runIds,
+    pollIntervalMs: 3000,
+    onUnauthorized: handleAnalysisUnauthorized,
+  });
   const {
     runs,
     folderJob,
@@ -400,13 +410,7 @@ export default function WorkspaceShell({
     retryActiveProcessing,
     startQueuedProcessing,
     refresh,
-  } =
-    useIngestionRuns({
-    enabled: Boolean(analysisSession?.runIds.length),
-    folderJobId: analysisSession?.folderJobId ?? undefined,
-    pollIntervalMs: 3000,
-    onUnauthorized: handleAnalysisUnauthorized,
-  });
+  } = analysisRuns;
 
   useEffect(() => {
     persistWorkspaceRoute(pathname);
@@ -457,7 +461,10 @@ export default function WorkspaceShell({
 
   async function handleCancelAllRuns() {
     try {
-      const canceledRuns = await cancelAllActiveRuns(analysisSession?.folderJobId ?? undefined);
+      const canceledRuns = await cancelAllActiveRuns({
+        folderJobId: analysisSession?.folderJobId ?? undefined,
+        runIds: analysisSession?.runIds,
+      });
       if (canceledRuns.length > 0) {
         removeAnalysisRunIds(canceledRuns.map((run) => run.id));
       }
@@ -580,6 +587,7 @@ export default function WorkspaceShell({
 
       {sidebarOpen ? (
         <div
+          ref={drawerRef}
           role="dialog"
           aria-modal="true"
           aria-label="Workspace navigation"
@@ -605,8 +613,8 @@ export default function WorkspaceShell({
         >
           {!authHydrated || !user || workspaceLoading ? (
             <WorkspaceLoadingState />
-          ) : hasActiveProject ? (
-            children
+          ) : hasActiveProject || projectOptional ? (
+            <AnalysisRunsContext.Provider value={analysisRuns}>{children}</AnalysisRunsContext.Provider>
           ) : (
             <div className="mx-auto flex min-h-[70vh] max-w-xl items-center justify-center">
               <div className="w-full text-center">
@@ -636,7 +644,8 @@ export default function WorkspaceShell({
         (analysisSession.minimized ||
           !ALL_NAV_ITEMS.some((item) => pathname.startsWith(item.href)) ||
           pathname !== "/workspace/home") ? (
-          <div className="pointer-events-none fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 flex justify-end sm:inset-x-auto sm:bottom-5 sm:right-5">
+          // tray-dock: above the chat composer on the chat page, in the corner elsewhere.
+          <div className="tray-dock pointer-events-none fixed inset-x-3 z-40 flex justify-end sm:inset-x-auto sm:right-5">
             {statusPanelOpen ? (
               <div className="w-full sm:w-[400px]">
                 <AnalysisStatusCard
@@ -659,7 +668,7 @@ export default function WorkspaceShell({
                 />
               </div>
             ) : (
-              <AnalysisTrayPill runs={activeRuns} onOpen={() => setStatusPanelOpen(true)} />
+              <AnalysisTrayPill runs={activeRuns} onOpen={() => setStatusPanelOpen(true)} onClear={clearAnalysisSession} />
             )}
           </div>
         ) : null}

@@ -170,9 +170,20 @@ export async function reloadFirebaseUser(auth: Auth): Promise<boolean> {
   return user.emailVerified;
 }
 
+/**
+ * Sends the reset email, whose link brings the reader back to sign in here
+ * (docs/32, 2.11, AUTH-8). A site address Firebase does not know (a test
+ * deployment) is refused as a continue address; then the plain email is sent.
+ */
 export async function sendFirebasePasswordReset(auth: Auth, email: string): Promise<void> {
   const { sendPasswordResetEmail } = await import("firebase/auth");
-  await sendPasswordResetEmail(auth, email);
+  try {
+    await sendPasswordResetEmail(auth, email, { url: `${window.location.origin}/login` });
+  } catch (error) {
+    const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+    if (code !== "auth/unauthorized-continue-uri" && code !== "auth/invalid-continue-uri") throw error;
+    await sendPasswordResetEmail(auth, email);
+  }
 }
 
 export async function signOutFirebase(auth: Auth): Promise<void> {

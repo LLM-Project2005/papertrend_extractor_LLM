@@ -25,6 +25,8 @@ import {
   yearAxis,
   type ThemeShift,
 } from "@/lib/dashboard-analytics";
+import { markPaperIds } from "@/lib/dashboard-drilldown";
+import { MAX_STACKED_SERIES, tooltipTheme } from "@/lib/chart-tooltip";
 import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
 import { useTheme } from "@/components/theme/ThemeProvider";
@@ -53,7 +55,9 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
         ["topic_area", "emerging_topics", "declining_topics"].includes(chart)
     ) ?? ["topic_area", "emerging_topics", "declining_topics"];
   const topicAreaConfig = planCharts?.find((chart) => chart.chart_key === "topic_area")?.config;
-  const effectiveTopN = topicAreaConfig?.top_n ?? topN;
+  // At most eight stacked series: past that the colours cannot be told apart.
+  const effectiveTopN = Math.min(topicAreaConfig?.top_n ?? topN, MAX_STACKED_SERIES);
+  const themedTooltip = tooltipTheme(hydrated && theme === "dark");
 
   // What was studied; method themes are shown on the Overview.
   const subjects = useMemo(() => subjectRows(trends), [trends]);
@@ -74,7 +78,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
   if (trends.length === 0) {
     return (
       <div className="app-surface px-5 py-5">
-        <p className="text-sm text-slate-500 dark:text-slate-400">No data for the selected filters.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">No papers match the current filters.</p>
       </div>
     );
   }
@@ -182,7 +186,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                 <input
                   type="range"
                   min={3}
-                  max={15}
+                  max={MAX_STACKED_SERIES}
                   value={topN}
                   onChange={(event) => setTopN(+event.target.value)}
                   className="h-6 w-32"
@@ -204,7 +208,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                   <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                   <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
                   <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                  <Tooltip />
+                  <Tooltip {...themedTooltip} />
                   <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                   {topThemes.map((topic, index) => (
                     <Bar isAnimationActive={chartAnimationActive()}
@@ -214,7 +218,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                       fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
                       onClick={(entry) => {
                         const year = entry && "year" in entry ? String(entry.year) : undefined;
-                        onDrilldown?.({ topic, year });
+                        onDrilldown?.({ topic, year, paperIds: markPaperIds(entry, topic) });
                       }}
                       className={onDrilldown ? "cursor-pointer" : undefined}
                     />

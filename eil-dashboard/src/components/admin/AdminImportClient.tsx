@@ -54,6 +54,7 @@ import {
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
+import { hasUsableAnalysis } from "@/lib/usable-analysis";
 import { buttonClass, fieldClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 
@@ -88,7 +89,8 @@ type LibraryEntry = {
   id: string;
   kind: "file";
   name: string;
-  ownerLabel: string;
+  /** The paper's year once analysed; the column that said "me" on every row now says this. */
+  yearLabel: string;
   modifiedAt: string | null;
   modifiedMs: number;
   sizeBytes: number | null;
@@ -116,12 +118,11 @@ type RunAnalysisResponse = {
   error?: string;
 };
 
+// Only PDFs can be uploaded; "Images", "Documents" and "Other files" matched
+// nothing (docs/32, 2.11, LIB-7).
 const TYPE_OPTIONS: Array<{ id: TypeFilter; label: string }> = [
   { id: "all", label: "All types" },
   { id: "pdf", label: "PDF" },
-  { id: "image", label: "Images" },
-  { id: "document", label: "Documents" },
-  { id: "other", label: "Other files" },
 ];
 
 const MODIFIED_OPTIONS: Array<{ id: ModifiedFilter; label: string }> = [
@@ -163,6 +164,12 @@ function extOf(run: IngestionRunRow) {
     fileNameOf(run).split(".").pop()?.toLowerCase() ||
     "file"
   );
+}
+
+/** The paper's year, as the analysis found it (or a reader corrected it). */
+function paperYearOf(run: IngestionRunRow): string {
+  const year = run.input_payload?.year;
+  return typeof year === "string" && /^\d{4}$/.test(year.trim()) ? year.trim() : typeof year === "number" ? String(year) : "\u2014";
 }
 
 function sourceOf(run: IngestionRunRow) {
@@ -358,7 +365,6 @@ export default function AdminImportClient() {
     [allProjects, libraryProjectId]
   );
 
-  const ownerInitial = (session?.user?.email?.charAt(0) ?? "M").toUpperCase();
   const projectStats = useMemo(() => {
     // "Papers" counts what was analysed; a failed upload is not a paper in the
     // repository, and was being counted as one.
@@ -591,7 +597,7 @@ export default function AdminImportClient() {
   }
 
   async function handleOpenPrimaryFileAction(run: IngestionRunRow, tab: PaperExplorerTab = "overview") {
-    if (run.status === "succeeded") {
+    if (hasUsableAnalysis(run)) {
       await handleViewAnalysis(run, tab).catch(() => undefined);
       return;
     }
@@ -824,8 +830,9 @@ export default function AdminImportClient() {
     // Follow the re-queued papers in the progress tray, exactly as an upload
     // is followed. The message used to promise progress "on Home", where
     // nothing about a re-analysis ever appeared.
-    const queuedIds = new Set(payload.queuedRunIds ?? []);
-    const queuedRuns = runs.filter((run) => queuedIds.has(run.id));
+    // Follow what the server queued, by id: filtering the Library's own list
+    // (at most 200 runs) missed papers it had not loaded.
+    const queuedRuns = [...new Set(payload.queuedRunIds ?? [])].map((id) => ({ id }));
     if (queuedRuns.length > 0) {
       startAnalysisSession(queuedRuns, {
         sourceKind: "reanalysis",
@@ -1014,7 +1021,7 @@ export default function AdminImportClient() {
           id: `file:${run.id}`,
           kind: "file",
           name: shownName,
-          ownerLabel: "me",
+          yearLabel: paperYearOf(run),
           modifiedAt: run.updated_at ?? run.created_at ?? null,
           modifiedMs: timeToMs(run.updated_at ?? run.created_at ?? null),
           sizeBytes: run.file_size_bytes ?? null,
@@ -1075,8 +1082,6 @@ export default function AdminImportClient() {
   const modifiedFilterLabel =
     MODIFIED_OPTIONS.find((option) => option.id === modifiedFilter)?.label ??
     "Modified";
-  const sourceFilterLabel =
-    SOURCE_OPTIONS.find((option) => option.id === sourceFilter)?.label ?? "Source";
   const currentSortDirectionOptions =
     sortKey === "name"
       ? [
@@ -1295,7 +1300,7 @@ export default function AdminImportClient() {
         className="fixed z-50 origin-top rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
         style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
       >
-        {activeMenuRun.status === "succeeded" ? (
+        {hasUsableAnalysis(activeMenuRun) ? (
           <button
             type="button"
             onClick={async () => {
@@ -1316,7 +1321,7 @@ export default function AdminImportClient() {
             View analysis
           </button>
         ) : null}
-        {activeMenuRun.status === "succeeded" ? (
+        {hasUsableAnalysis(activeMenuRun) ? (
           <button
             type="button"
             onClick={async () => {
@@ -1668,10 +1673,7 @@ export default function AdminImportClient() {
               "modified",
               modifiedFilter === "all" ? "Modified" : modifiedFilterLabel
             )}
-            {renderFilterButton(
-              "source",
-              sourceFilter === "all" ? "Source" : sourceFilterLabel
-            )}
+
           </div>
 
           <div className="flex items-center gap-2 self-start xl:self-auto">
@@ -1811,7 +1813,7 @@ export default function AdminImportClient() {
                   </span>
                 ) : null}
               </button>
-              <div>Owner</div>
+              <div>Year</div>
               <button
                 type="button"
                 onClick={() => handleSortHeaderClick("modified")}
@@ -1898,11 +1900,9 @@ export default function AdminImportClient() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-[#b6b6b6]">
-                      <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-subtle text-[11px] font-semibold text-ink ring-1 ring-inset ring-hairline">
-                        {ownerInitial}
-                      </span>
-                      <span>{item.ownerLabel}</span>
+                    <div className="text-sm tabular-nums text-slate-600 dark:text-[#b6b6b6]">
+                      <span className="md:hidden">Year: </span>
+                      {item.yearLabel}
                     </div>
 
                     <div

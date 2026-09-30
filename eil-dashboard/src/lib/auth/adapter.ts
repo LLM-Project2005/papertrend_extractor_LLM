@@ -52,6 +52,35 @@ export interface VerifyTokenOptions {
   timeoutMs?: number;
   throwOnTimeout?: boolean;
   throwOnConfiguration?: boolean;
+  /**
+   * Throw AuthUnavailableError when the token could not be checked (a network
+   * error, a timeout, the key or revocation service failing), instead of
+   * answering as if it were rejected. Only a definite rejection returns null.
+   */
+  throwOnTransient?: boolean;
+}
+
+/** The token could not be checked just now; it was not rejected. */
+export class AuthUnavailableError extends Error {
+  constructor() {
+    super("Authentication could not be checked just now.");
+    this.name = "AuthUnavailableError";
+  }
+}
+
+/** Firebase's answers that mean the token is no good, as opposed to could not be checked. */
+const DEFINITE_TOKEN_REJECTIONS = new Set([
+  "auth/argument-error",
+  "auth/id-token-expired",
+  "auth/id-token-revoked",
+  "auth/invalid-id-token",
+  "auth/user-disabled",
+  "auth/user-not-found",
+]);
+
+export function isDefiniteTokenRejection(error: unknown): boolean {
+  const code = error && typeof error === "object" ? (error as { code?: unknown }).code : undefined;
+  return typeof code === "string" && DEFINITE_TOKEN_REJECTIONS.has(code);
 }
 
 export function getBearerTokenFromRequest(request: Request): string {
@@ -177,11 +206,11 @@ const supabaseAdapter: AuthAdapter = {
 
 const firebaseAdapter: AuthAdapter = {
   provider: "firebase",
-  async verifyBackendToken(token) {
+  async verifyBackendToken(token, options) {
     const { getAuth } = await import("firebase-admin/auth");
-    const decodedToken = await getAuth(await getFirebaseApp()).verifyIdToken(
-      token,
-      getFirebaseCheckRevoked()
+    const decodedToken = await withTimeout(
+      getAuth(await getFirebaseApp()).verifyIdToken(token, getFirebaseCheckRevoked()),
+      options?.timeoutMs ?? 8000
     );
     return firebaseIdentity(decodedToken);
   },
@@ -260,6 +289,9 @@ export async function getAuthenticatedIdentityFromRequest(
     }
     if (error instanceof AuthConfigurationError && options?.throwOnConfiguration) {
       throw error;
+    }
+    if (options?.throwOnTransient && !isDefiniteTokenRejection(error)) {
+      throw new AuthUnavailableError();
     }
     return null;
   }

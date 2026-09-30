@@ -7,6 +7,7 @@ import {
   tokenizeRepositoryText,
 } from "@/lib/repository-text";
 import {
+  fuseSemanticRanks,
   rankRepositoryEvidence,
   validateInlinePaperCitations,
   type RepositoryRetrievalCandidate,
@@ -27,7 +28,8 @@ import {
   renderingInstruction,
   renderingIssues,
 } from "@/lib/answer-rendering";
-import { hybridRepositorySearch } from "@/lib/repository-memory";
+import { semanticPaperRanking } from "@/lib/repository-memory";
+import { usableAnalysisSql } from "@/lib/usable-analysis";
 import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
 import { reportChatProgress } from "@/lib/chat-progress";
 import {
@@ -880,7 +882,7 @@ async function loadCloudSqlRows(input: RepositoryChatInput): Promise<{
         JOIN public.paper_content pc ON pc.paper_id = p.id
         JOIN public.ingestion_runs ir ON ir.id = pc.ingestion_run_id
         JOIN public.research_folders rf ON rf.id = ir.folder_id
-        WHERE ${conditions.join(" AND ")} AND ir.status = 'succeeded'
+        WHERE ${conditions.join(" AND ")} AND ${usableAnalysisSql("ir")}
         ORDER BY p.title ASC
       `,
       values
@@ -1202,7 +1204,10 @@ async function pruneRepositoryCacheForOwner(ownerUserId: string): Promise<void> 
   }
 }
 
-export async function loadRepositoryContext(input: RepositoryChatInput): Promise<RepositoryContext> {
+export async function loadRepositoryContext(
+  input: RepositoryChatInput,
+  options: { saveCache?: boolean } = {}
+): Promise<RepositoryContext> {
   reportChatProgress("loading_repository");
   const knowledgeScope = normalizeKnowledgeScope(input);
   const selectedRunIds = normalizedIdList(knowledgeScope.runIds ?? input.selectedRunIds);
@@ -1252,7 +1257,8 @@ export async function loadRepositoryContext(input: RepositoryChatInput): Promise
     totalWords,
     runStats: loaded.runStats,
   };
-  await saveRepositoryCache(context);
+  // Indexing loads one paper at a time; a cache row per paper would be clutter.
+  if (options.saveCache !== false) await saveRepositoryCache(context);
   return context;
 }
 
@@ -2200,19 +2206,21 @@ async function selectEvidence(
     getDatabaseProvider() === "cloud-sql" &&
     process.env.REPOSITORY_HYBRID_RETRIEVAL_ENABLED === "true";
   // Started before the in-memory ranking rather than after it. The two share
-  // only the queries and the scope, and the merge below is order-independent,
+  // only the queries and the scope, and the fusion below is order-independent,
   // so the embedding round trip overlaps the tokenising instead of following it.
   const persistentHitsPromise = hybridEnabled
-    ? hybridRepositorySearch(
+    ? semanticPaperRanking(
         {
           ownerUserId: context.ownerUserId,
           projectId: context.projectId,
           folderId: context.folderId,
         },
-        queries.join("\n"),
-        budgets.candidateLimit
+        queries.join("\n")
       ).catch(() => null)
     : null;
+  // With the index in play every paper is ranked, so a paper found by meaning
+  // alone can still reach the candidates; the fusion then cuts to the budget.
+  const rankLimit = persistentHitsPromise ? Math.max(budgets.candidateLimit, context.papers.length) : budgets.candidateLimit;
   let candidates = rankRepositoryEvidence(
     context.papers.map((paper) => ({
       paperId: paper.paperId,
@@ -2226,23 +2234,13 @@ async function selectEvidence(
       keywords: [...paper.keywords.keys()],
     })),
     queries,
-    budgets.candidateLimit
+    rankLimit
   );
   if (persistentHitsPromise) {
-    const persistentHits = await persistentHitsPromise;
-    if (persistentHits) {
-      const byId = new Map(candidates.map((candidate) => [candidate.paperId, candidate]));
-      const orderedIds = [...new Set([
-        ...persistentHits.map((hit) => hit.paperId),
-        ...candidates.map((candidate) => candidate.paperId),
-      ])];
-      candidates = orderedIds
-        .map((paperId) => byId.get(paperId))
-        .filter((candidate): candidate is RepositoryRetrievalCandidate => Boolean(candidate))
-        .slice(0, budgets.candidateLimit);
-    }
-    // A failed hybrid search resolves to null; lexical in-memory retrieval
-    // remains available during rollout and backfill.
+    const semantic = await persistentHitsPromise;
+    // A failed or impossible semantic search resolves to null, and the
+    // in-memory ranking stands as it is.
+    candidates = (semantic ? fuseSemanticRanks(candidates, semantic) : candidates).slice(0, budgets.candidateLimit);
   }
   let selectedIds = candidates.slice(0, budgets.sourceLimit).map((candidate) => candidate.paperId);
   let rerankerSource: SelectedEvidence["rerankerSource"] = "fallback";
@@ -2452,6 +2450,10 @@ async function checkFaithfulness(input: {
   grounded: boolean;
   /** True when the auditor judged the answer incomplete for the request. */
   incomplete: boolean;
+  /** False when the auditor said the answer is not in the requested language. */
+  languageMatched: boolean;
+  /** False when the audit failed, timed out or could not be read: nothing was checked. */
+  auditRan: boolean;
   reason: string;
 }> {
   try {
@@ -2509,6 +2511,8 @@ async function checkFaithfulness(input: {
         valid: false,
         grounded: true,
         incomplete: false,
+        languageMatched: true,
+        auditRan: false,
         reason: "The answer review could not be completed.",
       };
     }
@@ -2525,6 +2529,8 @@ async function checkFaithfulness(input: {
       valid: grounded && parsed.data.completeForRequest && parsed.data.languageMatched,
       grounded,
       incomplete: !parsed.data.completeForRequest,
+      languageMatched: parsed.data.languageMatched,
+      auditRan: true,
       reason: parsed.data.reason,
     };
   } catch {
@@ -2534,9 +2540,69 @@ async function checkFaithfulness(input: {
       valid: false,
       grounded: true,
       incomplete: false,
+      languageMatched: true,
+      auditRan: false,
       reason: "The answer review did not run.",
     };
   }
+}
+
+export const UNCHECKED_ANSWER_LIMITATION =
+  "This answer could not be checked against the papers this time, so check key claims against the cited papers.";
+export const UNVERIFIED_ANSWER_LIMITATION =
+  "This answer could not be verified against the papers, so treat its claims as unconfirmed and check them against the cited papers.";
+export const CORRECTED_ANSWER_LIMITATION =
+  "The first draft of this answer made claims the papers did not support; they were removed or qualified. Check key claims against the cited papers.";
+export const LANGUAGE_LIMITATION = "This answer may not be written in the language you asked in.";
+
+export type QaAuditOutcome = { kind: "answer"; answer: string; limitations: string[] } | { kind: "fallback" };
+
+/**
+ * What a question-answering reply shows after its fact-check (docs/32, 2.2).
+ *
+ * Every verdict ends in a checked answer, a marked one, or the evidence
+ * fallback - never an unmarked draft the check did not pass. Previously a
+ * failed audit shipped the draft silently, and an ungrounded verdict on a
+ * draft that looked sound matched no branch and shipped the draft too.
+ */
+export function resolveQaAudit(input: {
+  checked: { answer: string; valid: boolean; grounded: boolean; incomplete: boolean; languageMatched?: boolean; auditRan: boolean; reason: string };
+  draft: string;
+  /** The draft's own citations or confidence were already too weak to show as they are. */
+  draftNeedsRepair: boolean;
+  allowedIds: string[];
+}): QaAuditOutcome {
+  const { checked, draft, draftNeedsRepair, allowedIds } = input;
+  if (!checked.auditRan) {
+    return draftNeedsRepair ? { kind: "fallback" } : { kind: "answer", answer: draft, limitations: [UNCHECKED_ANSWER_LIMITATION] };
+  }
+  // An empty corrected answer means "the draft was already right".
+  const passed = checked.answer.trim() ? checked.answer : draft;
+  if (checked.valid) return { kind: "answer", answer: passed, limitations: [] };
+  if (checked.grounded) {
+    // The claims hold up; the auditor judged the answer incomplete or in the
+    // wrong language. Saying so is more useful than throwing the answer away.
+    const limitations = checked.incomplete
+      ? [checked.reason
+          ? `This answer may not cover the full request: ${plainLimitation(checked.reason)}`
+          : "This answer may not cover every part of the request."]
+      : checked.languageMatched === false
+        ? [LANGUAGE_LIMITATION]
+        : [];
+    return { kind: "answer", answer: passed, limitations };
+  }
+  // Not grounded. The auditor's correction, when it is a real rewrite whose
+  // citations hold, replaces the draft - marked, since nothing checked it.
+  const corrected = checked.answer.trim();
+  const validation = corrected ? validateInlinePaperCitations(corrected, allowedIds) : null;
+  const correctionUsable =
+    Boolean(validation) &&
+    corrected !== draft.trim() &&
+    validation!.invalidPaperIds.length === 0 &&
+    (!validation!.hasSubstantiveText || validation!.citedPaperIds.length > 0);
+  if (correctionUsable) return { kind: "answer", answer: corrected, limitations: [CORRECTED_ANSWER_LIMITATION] };
+  if (draftNeedsRepair) return { kind: "fallback" };
+  return { kind: "answer", answer: draft, limitations: [UNVERIFIED_ANSWER_LIMITATION] };
 }
 
 /** Self-reported confidence above which a clean draft is trusted unaudited. */
@@ -2733,26 +2799,20 @@ async function repositoryQaResult(
     model: input.model,
     formatConstraint: formatConstraintInstruction(input.prompt),
   });
-  const auditLimitations: string[] = [];
-  if (checked.valid) {
-    answer = checked.answer;
-    groundingConfidence = checked.confidence;
+  const outcome = resolveQaAudit({ checked, draft: answer, draftNeedsRepair, allowedIds });
+  console.info("chat_audit_outcome", JSON.stringify({
+    auditRan: checked.auditRan,
+    valid: checked.valid,
+    grounded: checked.grounded,
+    outcome: outcome.kind === "fallback" ? "fallback" : outcome.limitations.length ? "marked" : "clean",
+  }));
+  const auditLimitations: string[] = outcome.kind === "answer" ? outcome.limitations : [];
+  if (outcome.kind === "answer") {
+    answer = outcome.answer;
+    if (checked.auditRan && checked.valid) groundingConfidence = checked.confidence;
+    else if (checked.auditRan && checked.grounded) groundingConfidence = Math.max(groundingConfidence, checked.confidence);
     validation = validateInlinePaperCitations(answer, allowedIds);
-  } else if (checked.grounded) {
-    // The claims hold up; the auditor only judged the answer incomplete or in
-    // the wrong language. Reporting that is far more useful to a reader than
-    // throwing the answer away and printing raw excerpts.
-    answer = checked.answer;
-    groundingConfidence = Math.max(groundingConfidence, checked.confidence);
-    validation = validateInlinePaperCitations(answer, allowedIds);
-    if (checked.incomplete) {
-      auditLimitations.push(
-        checked.reason
-          ? `This answer may not cover the full request: ${plainLimitation(checked.reason)}`
-          : "This answer may not cover every part of the request."
-      );
-    }
-  } else if (draftNeedsRepair) {
+  } else {
       const fallback = deterministicEvidenceFallback(context, evidence);
       return {
         ...fallback,
@@ -3550,7 +3610,15 @@ export function decideFromAudit(review: {
   grounded: boolean;
   incomplete: boolean;
   reason: string;
+  /** False when the audit failed or could not be read; absent means it ran. */
+  auditRan?: boolean;
 }): AuditDecision {
+  if (review.auditRan === false) {
+    return {
+      useCorrected: false,
+      limitations: ["This synthesis could not be checked against the paper evidence this time, so check key claims against the cited papers."],
+    };
+  }
   if (review.valid) return { useCorrected: true, limitations: [] };
   if (!review.grounded) {
     return {
@@ -3744,7 +3812,15 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
   const keyParts = {
     ownerUserId: input.ownerUserId,
     versionHash: context.versionHash,
-    scopeKey: [context.projectId ?? "", context.folderId ?? "", [...context.selectedRunIds].sort().join(",")].join("|"),
+    // The model and web search are part of the question asked: another model's
+    // answer is not this one's (docs/32, 2.11, CHAT-5).
+    scopeKey: [
+      context.projectId ?? "",
+      context.folderId ?? "",
+      [...context.selectedRunIds].sort().join(","),
+      `model:${input.model ?? ""}`,
+      `web:${input.allowWeb ? 1 : 0}`,
+    ].join("|"),
     question: input.prompt,
   };
 
@@ -3760,6 +3836,8 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
         citations: structuredClone(hit.citations) as RepositoryCitation[],
         charts: structuredClone(hit.charts) as RepositoryChartPayload[],
         plan: fallbackPromptPlan(input.prompt, false),
+        ...(hit.execution ? { execution: structuredClone(hit.execution) as RepositoryExecutionPlan } : {}),
+        ...(hit.coverage ? { coverage: structuredClone(hit.coverage) as RepositoryCoverage } : {}),
         limitations: [...hit.limitations],
         scopeSnapshot: context.scopeSnapshot,
         diagnostics: {
@@ -3776,12 +3854,17 @@ export async function runRepositoryChat(input: RepositoryChatInput): Promise<Rep
   }
 
   const result = await runRepositoryChatWithContext(input, context);
-  if (cacheable && result.handled && !result.jobId && result.answer.trim()) {
+  // Only a clean answer is kept: one with a limitation - a fallback, a check
+  // that did not run, a gap - would be served again after the cause was gone.
+  const clean = (result.limitations ?? []).length === 0;
+  if (cacheable && clean && result.handled && !result.jobId && result.answer.trim()) {
     writeAnswerCache(keyParts, {
       answer: result.answer,
       citations: structuredClone(result.citations),
       charts: structuredClone(result.charts),
-      limitations: [...(result.limitations ?? [])],
+      limitations: [],
+      execution: result.execution ? structuredClone(result.execution) : undefined,
+      coverage: result.coverage ? structuredClone(result.coverage) : undefined,
     });
   }
   return result;

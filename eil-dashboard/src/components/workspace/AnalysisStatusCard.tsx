@@ -734,9 +734,12 @@ function LoadingRows({ loading }: { loading?: boolean }) {
 export function AnalysisTrayPill({
   runs,
   onOpen,
+  onClear,
 }: {
   runs: IngestionRunRow[];
   onOpen: () => void;
+  /** Stops following (or dismisses) without opening the tray first. */
+  onClear?: () => void;
 }) {
   const { summary, terminal, progress, tone } = analysisOverview(runs);
   const plural = summary.total === 1 ? "" : "s";
@@ -746,20 +749,33 @@ export function AnalysisTrayPill({
       ? `${summary.failed} of ${summary.total} failed`
       : `${summary.total} paper${plural} ready`;
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      aria-label={`Open analysis progress: ${label}`}
-      title="Open analysis progress"
-      className="group pointer-events-auto inline-flex h-11 max-w-full items-center gap-2.5 rounded-full border border-hairline bg-surface pl-3 pr-3.5 text-sm font-medium text-ink shadow-float transition-[border-color,transform] duration-150 ease-out-quart hover:border-hairline-strong active:scale-[0.98] motion-safe:animate-rise-in"
-    >
-      <ProgressRing value={progress} tone={tone} size={20} />
-      <span className="truncate">{label}</span>
-      {!terminal ? (
-        <span className="tabular-nums text-mute">{Math.round(progress * 100)}%</span>
+    <span className="pointer-events-auto inline-flex max-w-full items-center gap-1.5 motion-safe:animate-rise-in">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-label={`Open analysis progress: ${label}`}
+        title="Open analysis progress"
+        className="group inline-flex h-11 min-w-0 max-w-full items-center gap-2.5 rounded-full border border-hairline bg-surface pl-3 pr-3.5 text-sm font-medium text-ink shadow-float transition-[border-color,transform] duration-150 ease-out-quart hover:border-hairline-strong active:scale-[0.98]"
+      >
+        <ProgressRing value={progress} tone={tone} size={20} />
+        <span className="truncate">{label}</span>
+        {!terminal ? (
+          <span className="tabular-nums text-mute">{Math.round(progress * 100)}%</span>
+        ) : null}
+        <ChevronUpIcon className="h-3.5 w-3.5 flex-none text-mute transition-transform duration-200 ease-out-quart group-hover:-translate-y-0.5" />
+      </button>
+      {onClear ? (
+        <button
+          type="button"
+          onClick={onClear}
+          aria-label={terminal ? "Dismiss analysis status" : "Stop following this analysis (it keeps running)"}
+          title={terminal ? "Dismiss" : "Stop following (the analysis keeps running)"}
+          className="inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border border-hairline bg-surface text-mute shadow-float transition-colors duration-150 hover:border-hairline-strong hover:text-ink"
+        >
+          <CloseIcon className="h-4 w-4" />
+        </button>
       ) : null}
-      <ChevronUpIcon className="h-3.5 w-3.5 flex-none text-mute transition-transform duration-200 ease-out-quart group-hover:-translate-y-0.5" />
-    </button>
+    </span>
   );
 }
 
@@ -886,13 +902,15 @@ export default function AnalysisStatusCard({
               <FullscreenIcon className="h-4 w-4" />
             </button>
           ) : null}
-          {allTerminal && onClear ? (
+          {onClear ? (
+            // Always there: a batch whose runs cannot be found, or that the
+            // reader no longer wants to watch, used to leave nothing to close.
             <button
               type="button"
               onClick={onClear}
               className={iconButtonClass("md")}
-              aria-label="Dismiss analysis status"
-              title="Dismiss"
+              aria-label={allTerminal ? "Dismiss analysis status" : "Stop following this analysis (it keeps running)"}
+              title={allTerminal ? "Dismiss" : "Stop following (the analysis keeps running)"}
             >
               <CloseIcon className="h-4 w-4" />
             </button>
@@ -977,9 +995,9 @@ export default function AnalysisStatusCard({
                 Start processing now
               </button>
             ) : null}
-            {allTerminal && onClear ? (
-              <button type="button" onClick={onClear} className={buttonClass("primary")}>
-                Dismiss
+            {onClear ? (
+              <button type="button" onClick={onClear} className={buttonClass(allTerminal ? "primary" : "secondary")}>
+                {allTerminal ? "Dismiss" : "Stop following"}
               </button>
             ) : null}
             {/* Was "Open imports" pointing at /workspace/imports, which redirects to

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
 import InsightsTab from "@/components/dashboard/InsightsTab";
@@ -11,7 +11,8 @@ import Overview from "@/components/tabs/Overview";
 import TrendAnalysis from "@/components/tabs/TrendAnalysis";
 import TrackAnalysis from "@/components/tabs/TrackAnalysis";
 import KeywordExplorer from "@/components/tabs/KeywordExplorer";
-import Modal from "@/components/ui/Modal";
+import Modal, { useDialogLayer } from "@/components/ui/Modal";
+import { useIsNarrow } from "@/lib/use-narrow";
 import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
 import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
 import { useDashboardData } from "@/hooks/useData";
@@ -21,6 +22,9 @@ import { buildCategoryOptions, normalizeCategoryKey } from "@/lib/category-optio
 import { filterDashboardData } from "@/lib/dashboard-filters";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { PaperId, TrackRow, TrendRow } from "@/types/database";
+import { explicitDrilldownIds } from "@/lib/dashboard-drilldown";
+import { AnalysisRunsContext } from "@/components/workspace/AnalysisRunsContext";
+import { runsInProgress } from "@/lib/run-polling";
 
 const TAB_DEFINITIONS = [
   { key: "overview", label: "Overview" },
@@ -227,14 +231,10 @@ export default function DashboardClient({
   const activeCategoryCount = effectiveSelectedTracks.length;
   const themeStatus = data?.topicThemes ?? null;
   const [filterOpen, setFilterOpen] = useState(false);
-  useEffect(() => {
-    if (!filterOpen) return;
-    const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === "Escape") setFilterOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [filterOpen]);
+  const filterSheetRef = useRef<HTMLDivElement>(null);
+  // Below xl the filters open as a sheet over the page, a dialog layer; from
+  // xl they are a side panel and the sheet is hidden, so it takes nothing.
+  const filterSheetIsOverlay = useIsNarrow(1280);
   const [drilldownTarget, setDrilldownTarget] = useState<DashboardDrilldownTarget | null>(null);
   const previousAllYearsRef = useRef<string[]>([]);
   const liveDataError = data?.diagnostics?.errorMessage ?? null;
@@ -290,6 +290,31 @@ export default function DashboardClient({
   const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
   const currentTabKey = optimisticTabKey;
   const isSemanticMapTab = currentTabKey === "semantic_map";
+  // The repository's data before any filter: loaded, readable and empty means
+  // no paper has finished its analysis here yet.
+  // Papers the reader is following through the tray: how many are still in
+  // progress, and a fresh read each time one finishes, so the charts do not
+  // stay as they were when the page opened.
+  const followedRuns = useContext(AnalysisRunsContext)?.runs;
+  const papersInProgress = useMemo(
+    () => runsInProgress(followedRuns ?? [], selectedProjectId),
+    [followedRuns, selectedProjectId]
+  );
+  const papersFinished = (followedRuns ?? []).filter((run) => run.status === "succeeded").length;
+  const papersFinishedRef = useRef(papersFinished);
+  useEffect(() => {
+    if (papersFinished > papersFinishedRef.current) void refresh();
+    papersFinishedRef.current = papersFinished;
+  }, [papersFinished, refresh]);
+  const repositoryHasNoPapers = Boolean(
+    data &&
+      !loading &&
+      !liveDataError &&
+      data.trends.length === 0 &&
+      data.tracksSingle.length === 0 &&
+      (data.categoryAssignments ?? []).length === 0
+  );
+  useDialogLayer(filterOpen && filterSheetIsOverlay && !isSemanticMapTab, filterSheetRef, () => setFilterOpen(false));
   const [tabNav, setTabNav] = useState<HTMLElement | null>(null);
   const tabBox = useTabIndicator(tabNav, currentTabKey);
   const requestHeaders = useMemo<Record<string, string>>(
@@ -368,8 +393,16 @@ export default function DashboardClient({
       return [];
     }
 
-    const explicitPaperIds = new Set((drilldownTarget.paperIds ?? []).filter(Boolean));
-    const hasExplicitPaperIds = explicitPaperIds.size > 0;
+    const inView = new Set<string>([
+      ...filteredData.trends.map((row) => row.paper_id),
+      ...filteredData.tracksSingle.map((row) => row.paper_id),
+      ...filteredData.tracksMulti.map((row) => row.paper_id),
+      ...(filteredData.categoryAssignments ?? []).map((row) => row.paper_id),
+    ]);
+    // The chart said which papers it counted: exactly those are listed, with
+    // no rule of the list's own on top (docs/32, 2.8).
+    const explicitPaperIds = explicitDrilldownIds(drilldownTarget, inView);
+    const hasExplicitPaperIds = explicitPaperIds !== null;
     const track = normalizeTrackKey(drilldownTarget.track);
     const categoryKey = normalizeDrilldownCategoryKey(drilldownTarget.track);
     const categoryLabelByKey = new Map(
@@ -401,7 +434,7 @@ export default function DashboardClient({
 
     return [...paperIds]
       .flatMap((paperId) => {
-        if (hasExplicitPaperIds && !explicitPaperIds.has(paperId)) {
+        if (explicitPaperIds && !explicitPaperIds.has(paperId)) {
           return [];
         }
 
@@ -413,7 +446,7 @@ export default function DashboardClient({
           return [];
         }
 
-        if (drilldownTarget.year && representative.year !== drilldownTarget.year) {
+        if (!hasExplicitPaperIds && drilldownTarget.year && representative.year !== drilldownTarget.year) {
           return [];
         }
 
@@ -422,10 +455,11 @@ export default function DashboardClient({
           !categoryKey ||
           categoryRows.some((row) => normalizeCategoryKey(row.category_key) === categoryKey);
 
-        if (categoryKey && hasDynamicCategories && !matchesDynamicCategory) {
+        if (!hasExplicitPaperIds && categoryKey && hasDynamicCategories && !matchesDynamicCategory) {
           return [];
         }
         if (
+          !hasExplicitPaperIds &&
           track &&
           !hasDynamicCategories &&
           !matchesTrack(singleTrack, track) &&
@@ -619,6 +653,15 @@ export default function DashboardClient({
           </div>
         ) : null}
 
+        {!isSemanticMapTab && !repositoryHasNoPapers && papersInProgress > 0 ? (
+          <div
+            role="status"
+            className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#cfcfcf]"
+          >
+            {`${papersInProgress} paper${papersInProgress === 1 ? " is" : "s are"} being analysed. The charts update as each one finishes.`}
+          </div>
+        ) : null}
+
         {/*
           Topics are grouped into themes after a paper is analysed, by a request
           the dashboard makes itself. While that runs, the new papers' topics are
@@ -668,6 +711,7 @@ export default function DashboardClient({
       <div className="min-w-0">
         {!isSemanticMapTab && filterOpen && (
           <div
+            ref={filterSheetRef}
             role="dialog"
             aria-modal="true"
             aria-label="Analytics filters"
@@ -904,6 +948,19 @@ export default function DashboardClient({
         </div> : null}
 
         <section className="min-w-0">
+          {/* A repository with no analysed paper says so, rather than every chart
+              blaming the filters (docs/32, 2.11, DASH-7). */}
+          {repositoryHasNoPapers && !isSemanticMapTab ? (
+            <div className="app-surface px-5 py-10 text-center">
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-white">No analysed papers yet</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-600 dark:text-[#bdbdbd]">
+                {papersInProgress > 0
+                  ? `${papersInProgress} paper${papersInProgress === 1 ? " is" : "s are"} being analysed. Each appears here as soon as it finishes.`
+                  : "Papers appear here as each analysis finishes. Add papers from the Library to begin."}
+              </p>
+            </div>
+          ) : null}
+          {repositoryHasNoPapers && !isSemanticMapTab ? null : <>
           {currentTabKey === "overview" ? (
             <Overview
               trends={filteredData.trends}
@@ -947,6 +1004,7 @@ export default function DashboardClient({
               onDrilldown={openPaperDrilldown}
             />
           ) : null}
+          </>}
           {currentTabKey === "semantic_map" && selectedProjectId ? (
             <RepositorySemanticMapView
               projectId={selectedProjectId}

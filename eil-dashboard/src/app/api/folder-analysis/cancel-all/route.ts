@@ -9,7 +9,10 @@ export const runtime = "nodejs";
 
 type CancelAllBody = {
   folderJobId?: unknown;
+  runIds?: unknown;
 };
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type RunStatus = "queued" | "processing" | "succeeded" | "failed";
 
@@ -95,13 +98,20 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as CancelAllBody;
     const folderJobId = typeof body.folderJobId === "string" ? body.folderJobId.trim() : "";
+    const runIds = Array.isArray(body.runIds)
+      ? [...new Set(body.runIds.filter((id): id is string => typeof id === "string" && UUID.test(id)))].slice(0, 500)
+      : [];
+    // "Cancel all" means the batch in view. With neither a batch nor its runs
+    // it used to cancel every active run the person had, other uploads included.
+    if (!folderJobId && runIds.length === 0) {
+      return NextResponse.json({ error: "Choose the analysis to cancel." }, { status: 400 });
+    }
 
     if (getDatabaseProvider() === "cloud-sql") {
-      const activeRuns = await cloudSqlAnalysisJobRepository.listActive(user.id, folderJobId || null, 500);
-      const canceledRuns = await cloudSqlAnalysisJobRepository.cancelRuns(
-        user.id,
-        activeRuns.map((run) => String(run.id))
-      );
+      const targetIds = runIds.length
+        ? runIds
+        : (await cloudSqlAnalysisJobRepository.listActive(user.id, folderJobId, 500)).map((run) => String(run.id));
+      const canceledRuns = await cloudSqlAnalysisJobRepository.cancelRuns(user.id, targetIds);
       return NextResponse.json({ ok: true, canceledCount: canceledRuns.length, canceledRuns });
     }
 
@@ -116,7 +126,9 @@ export async function POST(request: Request) {
       .order("created_at", { ascending: true })
       .limit(500);
 
-    if (folderJobId) {
+    if (runIds.length) {
+      runQuery = runQuery.in("id", runIds);
+    } else {
       runQuery = runQuery.eq("folder_analysis_job_id", folderJobId);
     }
 

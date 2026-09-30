@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
+import { usableAnalysisSql } from "@/lib/usable-analysis";
 import type {
   RepositorySemanticMap,
   SemanticMapCluster,
@@ -141,7 +142,7 @@ async function loadDocumentsWithClient(
      LEFT JOIN public.paper_tracks_single pts ON pts.paper_id=p.id AND pts.owner_user_id=$1
      WHERE p.owner_user_id=$1
        AND COALESCE(rf.project_id, CASE WHEN ir.input_payload->>'project_id' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN (ir.input_payload->>'project_id')::uuid END)=$2
-       AND ir.status='succeeded' AND ir.trashed_at IS NULL
+       AND ${usableAnalysisSql("ir")} AND ir.trashed_at IS NULL
      ORDER BY p.id ASC`,
     [ownerUserId, projectId]
   );
@@ -174,7 +175,7 @@ export async function loadSemanticMapCoverage(
       missing_analysis: string;
     }>(
       `WITH scoped_runs AS (
-         SELECT ir.id, ir.status
+         SELECT ir.id, ir.status, ir.input_payload
          FROM public.ingestion_runs ir
          LEFT JOIN public.research_folders rf
            ON rf.id=ir.folder_id AND rf.owner_user_id=$1
@@ -194,7 +195,7 @@ export async function loadSemanticMapCoverage(
            ON pc.ingestion_run_id=sr.id AND pc.owner_user_id=$1
          JOIN public.papers p
            ON p.id=pc.paper_id AND p.owner_user_id=$1
-         WHERE sr.status='succeeded'
+         WHERE ${usableAnalysisSql("sr")}
        )
        SELECT
          COUNT(*)::text AS repository_files,

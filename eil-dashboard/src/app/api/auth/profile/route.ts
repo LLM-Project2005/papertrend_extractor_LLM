@@ -13,22 +13,24 @@ const ProfileUpdateSchema = z.object({
   workspace_profile: z.record(z.string(), z.unknown()).optional(),
 });
 
+/** Shown when sign-in could not be checked; the client keeps the person signed in and retries. */
+const CHECK_UNAVAILABLE = "Sign-in could not be checked just now. Try again in a moment.";
+
 async function getOwner(request: Request) {
   let identity;
   try {
     identity = await getAuthenticatedIdentityFromRequest(request, {
       timeoutMs: 8_000,
       throwOnConfiguration: true,
+      // A token that could not be checked is a 503, not a 401: only a
+      // definite rejection may sign the person out (docs/32, 2.1).
+      throwOnTransient: true,
     });
   } catch (error) {
     console.error("Profile authentication failed unexpectedly.", {
       message: error instanceof Error ? error.message : "Unknown authentication error",
     });
-    return {
-      user: null,
-      error: "Authentication service is temporarily unavailable.",
-      status: 503,
-    };
+    return { user: null, error: CHECK_UNAVAILABLE, status: 503 };
   }
   if (!identity) {
     return { user: null, error: "Authentication required.", status: 401 };
@@ -39,11 +41,7 @@ async function getOwner(request: Request) {
   }
 
   if (identity.mappingStatus === "lookup_failed") {
-    return {
-      user: null,
-      error: "The Firebase owner mapping service is temporarily unavailable.",
-      status: 503,
-    };
+    return { user: null, error: CHECK_UNAVAILABLE, status: 503 };
   }
 
   const user = identityToLegacyUser(identity);
@@ -74,14 +72,11 @@ export async function GET(request: Request) {
     console.error("Profile storage lookup failed unexpectedly.", {
       message: error instanceof Error ? error.message : "Unknown profile lookup error",
     });
-    return NextResponse.json(
-      { error: "Profile service is temporarily unavailable." },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: CHECK_UNAVAILABLE }, { status: 503 });
   }
 
   if (!result) {
-    return NextResponse.json({ error: "The authenticated account is not linked to Papertrend." }, { status: 403 });
+    return NextResponse.json({ error: "This sign-in isn't linked to a Papertrend account." }, { status: 403 });
   }
 
   return NextResponse.json({ ownerUserId: user.id, profile: result });
@@ -106,14 +101,11 @@ export async function PATCH(request: Request) {
     console.error("Profile storage update failed unexpectedly.", {
       message: error instanceof Error ? error.message : "Unknown profile update error",
     });
-    return NextResponse.json(
-      { error: "Profile service is temporarily unavailable." },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: CHECK_UNAVAILABLE }, { status: 503 });
   }
 
   if (!result) {
-    return NextResponse.json({ error: "The authenticated account is not linked to Papertrend." }, { status: 403 });
+    return NextResponse.json({ error: "This sign-in isn't linked to a Papertrend account." }, { status: 403 });
   }
 
   return NextResponse.json({ ownerUserId: user.id, profile: result });

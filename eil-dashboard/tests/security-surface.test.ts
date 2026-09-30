@@ -40,7 +40,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
 };
 
 /** A route that verifies a machine caller rather than a person. */
-const MACHINE_AUTH = /isVerifiedTaskCaller|isValidBearerSecret|isAuthorizedAdminRequest|getCronSecret/;
+const MACHINE_AUTH = /isVerifiedTaskCaller|isVerifiedServiceCaller|isValidBearerSecret|isAuthorizedAdminRequest|getCronSecret/;
 /** A route that verifies a signed-in person. */
 const USER_AUTH = /getAuthenticatedUserFromRequest|getAuthenticatedIdentityFromRequest|isAuthorizedUserOrAdminRequest|isAuthorizedAdminRequest|getAdminUserFromRequest/;
 
@@ -167,6 +167,18 @@ test("SQL is parameterized, never concatenated from values", () => {
       /^\$\{scope\}$/,
       /^\$\{organizationFilter\}$/,
       /^\$\{projectFilter\}$/,
+      // The shared "usable analysis" rule, for a literal table alias (docs/32, 2.4).
+      /^\$\{usableAnalysisSql\("[a-z]+"\)\}$/,
+      // paper-copy.ts (docs/32, 2.5): the table comes from the PAPER_TABLES
+      // constant or a literal list, the key is "id" or "paper_id", column names
+      // come from information_schema through ident(), which admits only
+      // [a-z_][a-z0-9_]*, and the values are column references, placeholders or
+      // now(). The paper id helper takes a literal placeholder.
+      /^\$\{table\}$/,
+      /^\$\{key\}$/,
+      /^\$\{copied\.map\(\(column\) => ident\(column\.column_name\)\)\.join\(", "\)\}$/,
+      /^\$\{values\.join\(", "\)\}$/,
+      /^\$\{paperIdFromRunSql\("\$\d"\)\}$/,
     ]
       .map((r) => r.source)
       .join("|")

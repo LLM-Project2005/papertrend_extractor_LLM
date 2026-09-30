@@ -67,7 +67,8 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 
 | Phase | State |
 | --- | --- |
-| 1 | On the pilot and checked live (2026-10-01); going to production |
+| 1 | In production (2026-10-01) |
+| 2 | Built and tested; going to the pilot |
 
 ## Phase 1 results
 
@@ -81,3 +82,52 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | 1.6 | The privacy policy names Facebook (Meta) sign-in, email and password sign-in, invite codes, spending records, Exa, and that deep research decides on its own to search the web (paper text is not sent to the search); the terms name the daily spending limits. Effective 1 October 2026. | `legal-providers.test.ts` fails when a sign-in method, outside host or search engine is added without the policy naming it. The pilot's `/privacy` serves the new text. |
 
 Found while checking, fixed in phase 2: a person whose Firebase login is recreated (same verified email, new login) cannot sign in — linking fails on the one-login-per-owner constraint and the site says "temporarily unavailable" for good.
+
+## 2.11 — the remaining medium findings
+
+Every medium finding the audit made in the Library, chat, dashboard, shell and sign-in areas. "Fixed" items are covered by `tests/audit-small-fixes.test.ts` unless another test is named. The chat area had two sets of numbers (the page and the answer engine); the second set is marked *engine*.
+
+| Finding | What happened |
+| --- | --- |
+| AUTH-2 Invite code lost in a new tab and in in-app browsers | **Fixed.** The code is kept on the device for a week (localStorage) and removed once used, so the tab the confirmation email opens still has it. In an app's built-in browser (LINE, Facebook, Instagram…), which blocks the Google and Facebook window, the sign-in page says so and points to email sign-in or a real browser. Sign-in by redirect was not used: the sign-in service is on another domain, and these browsers do not keep its storage. |
+| AUTH-3 Invite-only is invisible before sign-up; no way to ask | Phase 4 (4.1, request access). |
+| AUTH-4 The per-address invite limit blocks a class | **Fixed.** 200 tries an hour per address (was 20, successes included). The per-account limit of 5 an hour is unchanged and is the one that stops guessing. |
+| AUTH-5 / SHELL-4 Settings unreachable without a repository; shortcuts open Profile | **Fixed.** Settings opens without a repository; "repository settings" shortcuts open the Repository section. |
+| AUTH-6 No self-serve deletion, export, email change | Own plan after phase 4 (account lifecycle). |
+| AUTH-7 Revocation check and database lookup on every call | Phase 3 (3.2). |
+| AUTH-8 Confirmation step under a filled sign-up form | **Fixed.** "Check your inbox" is its own step with "Wrong address? Start again"; Reset password is offered only when signing in; the reset email links back to sign-in. |
+| AUTH-9 Allowance and daily limits unseen until an action fails | Own plan ("usage shown to users"). |
+| AUTH-10 No member management for admins | Own plan after phase 4. |
+| SHELL-5 Sign-in redirect drops the query; a failed token refresh signs out | **Fixed.** The return address keeps its query, and the repositories page returns there too; the refresh part is 2.1. |
+| SHELL-6 A full page reload after 1.5 s of navigation | Phase 3 (3.2). |
+| SHELL-7 Search names papers by file, over-matches, misses new papers, repeats entries | **Fixed.** Papers are named and labelled as in the Library; searched by title, file name and state only; read each time search opens; no entry repeats another's address; "Search the Library for …" passes the typed words on. |
+| SHELL-8 One title for every page; palette keyboard; drawer focus | **Fixed:** each page has its own title; the drawer is a dialog layer (2.9). **Phase 3 (3.4):** the palette's combobox roles and arrow keys. |
+| SHELL-9 Active repository only in localStorage, no switcher | Own plan (a repository in the address). |
+| SHELL-10 Home stale after analysis; queued papers flagged stuck | **Fixed.** Home reads its figures again as each followed paper finishes; only a paper being analysed can be "stuck"; the load error offers Try again. |
+| SHELL-11 Provider at the site root, unused organisation layer | Long-term health. |
+| SHELL-12 Repositories cannot be archived, deleted or shared | Own plan after phase 4. |
+| LIB-5 Copy plus Analyze again gets around the 50-paper limit | **Fixed in 2.5.** A copy is a paper and needs room under the limit (`paper-copy.test.ts`). |
+| LIB-7 A file-manager list; two filters that never match | **Fixed:** the type filter offers PDF only (all that can be uploaded), the source filter is gone, and the Owner column ("me" on every row) shows the paper's year. **Phase 4 (4.5):** Drive files recorded as uploads, for a Drive source filter. |
+| LIB-8 Uploads can outlast their signed links; failed files re-added by hand | Phase 4 (4.5, bulk actions and retry). |
+| LIB-9 A 2,886-line Library component | Long-term health. |
+| LIB-11 PDF preview is canvas-only; menus lack roles | Phase 3 (3.4). |
+| LIB-12 Re-analysis spend has no account limit | **Bounded by 1.5:** the site-wide daily limit includes analysis (the worker holds the queue), each paper can be analysed again 3 times a day, and the confirmation shows the estimated cost. A per-account analysis allowance belongs to "usage shown to users". |
+| DASH-5 The whole corpus sent to the browser | Phase 3 (3.3). |
+| DASH-6 Multi-series charts unreadable | **Fixed.** Tooltips follow the light or dark theme on every tab; trends stack at most 8 series. |
+| DASH-7 Empty states blame the filters; papers in progress not mentioned | **Fixed.** A repository with no analysed paper says so instead of showing the tabs; the tabs' messages say "No papers match the current filters"; papers still being analysed are counted, and the dashboard reads again as each finishes. |
+| DASH-8 Semantic map colours hashed into 8 | **Fixed.** One colour per category or year (years in order, Unknown last) from a 20-colour palette; labels on by default only up to 40 papers. |
+| DASH-9 Switching tabs discards work | Phase 3 (3.3): tabs kept mounted together with the code-splitting. |
+| CHAT-6 A new chat's first answer blanks and refetches | **Fixed.** The transcript that arrives with an answer counts as loaded. |
+| CHAT-7 Inline numbers match no numbered source | **Fixed.** Source cards are numbered in the order the answer cites them; the side panel is "Sources". |
+| CHAT-8 Phones cannot pin, rename or delete chats; the tray covers the composer | **Fixed.** Below the large breakpoint the chat list opens as a drawer with Pin, Rename, Delete and older chats; rename and delete ask in the page (some in-app browsers ignore `window.prompt`); the progress tray stands above the composer. |
+| CHAT-9 Reopening a chat uses the current scope; no folders in the picker | **Fixed:** a normal conversation restores the scope of its last question. **Own plan:** folders in the scope picker. |
+| CHAT-10 Answers not announced; menus and keys incomplete | **Fixed:** an arriving answer is announced once ("Answer ready, 3 sources"). **Phase 3 (3.4):** menu roles and keys. |
+| CHAT-12 A 4,453-line chat component | Long-term health. |
+| CHAT-4 *engine* A failed job is final and shows the raw error | **Fixed.** A failure that is not a refusal goes back to the queue for Cloud Tasks (3 attempts); the last failure shows "This answer could not be finished. Ask again to retry."; the error goes to the logs only. |
+| CHAT-5 *engine* The answer cache ignores the model and keeps failures | **Fixed.** The key includes the model and web search; only answers with no limitation are kept; a hit returns how the answer was reached and its coverage. |
+| CHAT-6 *engine* Every question re-reads all full text | Phase 3 (3.1). |
+| CHAT-7 *engine* Search index filled by hand, ranking biased | **Fixed in 2.3.** |
+| CHAT-8 *engine* Planner and checks on a thinking model | Phase 3 (3.1): measured with the speed work. |
+| CHAT-9 *engine* Citations name a whole paper | Own plan (claim-level citations). |
+| CHAT-10 *engine* Unreachable code in the chat route | Long-term health (legacy paths). |
+| CHAT-11 *engine* Counts disagree with the dashboard | **Not changed for duplicates:** the dashboard counts every analysed paper too, and folding copies would hide ones kept on purpose. Raw topics and shortened abstracts: phase 3 (3.1), with the content loading rework. |

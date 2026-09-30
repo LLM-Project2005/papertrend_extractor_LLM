@@ -6,13 +6,15 @@ import {
   completeRepositoryChatJob,
   failRepositoryChatJob,
   heartbeatRepositoryChatJob,
+  MAX_CHAT_JOB_ATTEMPTS,
+  releaseRepositoryChatJob,
 } from "@/lib/repository-chat-jobs";
 import { addWebContext, webStepApplies } from "@/lib/repository-chat-web";
 import type { RepositoryExecutionPlan } from "@/lib/repository-chat";
 import { isVerifiedTaskCaller } from "@/lib/cloud-tasks-oidc";
 import { withAiTokenUsageTracking } from "@/lib/ai-token-usage";
 import { spendUsd, summarizeSpend } from "@/lib/answer-cost";
-import { persistAiTokenUsage } from "@/lib/security-guards";
+import { GuardError, persistAiTokenUsage } from "@/lib/security-guards";
 
 export const maxDuration = 1800;
 
@@ -83,8 +85,24 @@ export async function POST(request: Request) {
       await completeRepositoryChatJob(job.ownerUserId, job.id, result);
       return NextResponse.json({ ok: true });
     } catch (error) {
-      await failRepositoryChatJob(job.ownerUserId, job.id, error);
-      return NextResponse.json({ ok: false }, { status: 500 });
+      // A refusal (a spending limit, say) says why and ends there. Anything
+      // else - a provider timeout, a dropped connection - goes back to the
+      // queue for Cloud Tasks to run again; it used to fail for good on the
+      // first attempt, with the raw error shown to the reader.
+      const refusal = error instanceof GuardError;
+      const attempt = Number(request.headers.get("x-cloudtasks-taskretrycount") ?? "0") + 1;
+      if (!refusal && attempt < MAX_CHAT_JOB_ATTEMPTS) {
+        await releaseRepositoryChatJob(job.ownerUserId, job.id).catch(() => undefined);
+        console.warn("repository_chat_job_retry", {
+          jobId: job.id,
+          attempt,
+          message: error instanceof Error ? error.message.slice(0, 300) : "unknown_error",
+        });
+        return NextResponse.json({ ok: false, retry: true }, { status: 503 });
+      }
+      await failRepositoryChatJob(job.ownerUserId, job.id, error, refusal ? (error as GuardError).message : undefined);
+      // Final: a success status, so Cloud Tasks does not run it again.
+      return NextResponse.json({ ok: false });
     } finally {
       clearInterval(heartbeat);
       if (usage.totalTokens > 0) {

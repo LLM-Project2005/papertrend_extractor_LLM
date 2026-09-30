@@ -18,6 +18,9 @@ export interface CachedAnswer {
   citations: unknown[];
   charts: unknown[];
   limitations: string[];
+  /** How the answer was reached and how much of the scope it covered, returned with it. */
+  execution?: unknown;
+  coverage?: unknown;
   storedAt: number;
 }
 

@@ -30,6 +30,8 @@ import { legendLabel } from "@/lib/chart-legend";
 import { isDatedYear } from "@/lib/dated-year";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { plural, subjectRows, yearAxis } from "@/lib/dashboard-analytics";
+import { idsKey, markPaperIds } from "@/lib/dashboard-drilldown";
+import { tooltipTheme } from "@/lib/chart-tooltip";
 
 interface Props {
   trends: TrendRow[];
@@ -47,6 +49,7 @@ interface Props {
     year?: string;
     topic?: string;
     keyword?: string;
+    paperIds?: string[];
   }) => void;
 }
 
@@ -67,6 +70,7 @@ export default function TrackAnalysis({
 }: Props) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
+  const themedTooltip = tooltipTheme(hydrated && theme === "dark");
   const orderedCharts =
     planCharts?.map((chart) => chart.chart_key).filter(
       (
@@ -119,7 +123,7 @@ export default function TrackAnalysis({
         .filter(isDatedYear)
         .sort();
       return yearAxis(years).years.map((year) => {
-        const entry: Record<string, string | number> = { year };
+        const entry: Record<string, string | number | string[]> = { year };
         activeCategories.forEach((category) => {
           const papers = new Set(
             categoryAssignments
@@ -132,6 +136,7 @@ export default function TrackAnalysis({
               .map((row) => row.paper_id)
           );
           entry[category.key] = papers.size;
+          entry[idsKey(category.key)] = [...papers];
         });
         return entry;
       });
@@ -139,10 +144,11 @@ export default function TrackAnalysis({
 
     const years = [...new Set(tracksSingle.map((row) => row.year))].filter(isDatedYear).sort();
     return yearAxis(years).years.map((year) => {
-      const entry: Record<string, string | number> = { year };
+      const entry: Record<string, string | number | string[]> = { year };
       const yearRows = tracksSingle.filter((row) => row.year === year);
       TRACK_COLS.filter((track) => stackedTracks.includes(track)).forEach((track) => {
         entry[track] = yearRows.reduce((sum, row) => sum + row[trackField(track)], 0);
+        entry[idsKey(track)] = yearRows.filter((row) => row[trackField(track)] > 0).map((row) => row.paper_id);
       });
       return entry;
     });
@@ -196,7 +202,7 @@ export default function TrackAnalysis({
           accumulator[row.paper_id] = set;
           return accumulator;
         }, {});
-      const result: Record<string, { topic: string; papers: number }[]> = {};
+      const result: Record<string, { topic: string; papers: number; paperIds: string[] }[]> = {};
 
       activeTopicCategories.forEach((category) => {
         const counts: Record<string, Set<PaperId>> = {};
@@ -207,7 +213,7 @@ export default function TrackAnalysis({
           }
         });
         result[category.key] = Object.entries(counts)
-          .map(([topic, ids]) => ({ topic, papers: ids.size }))
+          .map(([topic, ids]) => ({ topic, papers: ids.size, paperIds: [...ids] }))
           .sort((left, right) => right.papers - left.papers)
           .slice(0, topicsPerTrackLimit);
       });
@@ -216,7 +222,7 @@ export default function TrackAnalysis({
     }
 
     const trackMap = new Map(tracksSingle.map((row) => [row.paper_id, row]));
-    const result: Record<string, { topic: string; papers: number }[]> = {};
+    const result: Record<string, { topic: string; papers: number; paperIds: string[] }[]> = {};
 
     TRACK_COLS.filter((track) => topicTracks.includes(track)).forEach((track) => {
       const counts: Record<string, Set<PaperId>> = {};
@@ -228,7 +234,7 @@ export default function TrackAnalysis({
       });
 
       result[track] = Object.entries(counts)
-        .map(([topic, ids]) => ({ topic, papers: ids.size }))
+        .map(([topic, ids]) => ({ topic, papers: ids.size, paperIds: [...ids] }))
         .sort((left, right) => right.papers - left.papers)
         .slice(0, topicsPerTrackLimit);
     });
@@ -312,7 +318,7 @@ export default function TrackAnalysis({
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <Tooltip />
+                <Tooltip {...themedTooltip} />
                 <Legend wrapperStyle={{ fontSize: 12 }} formatter={legendLabel(ct)} />
                 {stackedChartCategories.map((category) => (
                   <Bar isAnimationActive={chartAnimationActive()}
@@ -323,7 +329,7 @@ export default function TrackAnalysis({
                     fill={category.color}
                     onClick={(entry) => {
                       if (entry && "year" in entry) {
-                        onDrilldown?.({ track: category.key, year: String(entry.year) });
+                        onDrilldown?.({ track: category.key, year: String(entry.year), paperIds: markPaperIds(entry, category.key) });
                       }
                     }}
                     className={onDrilldown ? "cursor-pointer" : undefined}
@@ -403,7 +409,7 @@ export default function TrackAnalysis({
                             tick={tickStyle(ct, 10)}
                             stroke={ct.axisLine}
                           />
-                          <Tooltip />
+                          <Tooltip {...themedTooltip} />
                           <Bar isAnimationActive={chartAnimationActive()}
                             dataKey="papers"
                             fill={category.color}
@@ -414,6 +420,7 @@ export default function TrackAnalysis({
                                 onDrilldown?.({
                                   track,
                                   topic: String(entry.topic),
+                                  paperIds: markPaperIds(entry),
                                 });
                               }
                             }}
@@ -423,7 +430,7 @@ export default function TrackAnalysis({
                       </ResponsiveContainer>
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No data</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No papers in this category match the current filters.</p>
                   )}
                 </div>
               );

@@ -47,8 +47,8 @@ test("every place that names a paper opens it in place", () => {
   }
   assert.match(read("src/components/workspace/RepositorySemanticMap.tsx"), /if \(paperViewer\) paperViewer\.openPaper\(\{ runId: focusedPoint\.runId \}\);/);
   // A paper still processing opens in the Library, which shows its progress.
-  assert.match(read("src/components/workspace/WorkspaceGlobalSearch.tsx"), /if \(run\.status === "succeeded" && paperViewer\) \{\s*paperViewer\.openPaper\(\{ runId: run\.id \}\);/);
-  assert.match(read("src/components/workspace/WorkspaceHomeClient.tsx"), /paper=\{run\.status === "succeeded" \? \{ runId: run\.id \} :/);
+  assert.match(read("src/components/workspace/WorkspaceGlobalSearch.tsx"), /if \(hasUsableAnalysis\(run\) && paperViewer\) \{\s*paperViewer\.openPaper\(\{ runId: run\.id \}\);/);
+  assert.match(read("src/components/workspace/WorkspaceHomeClient.tsx"), /paper=\{hasUsableAnalysis\(run\) \? \{ runId: run\.id \} :/);
 });
 
 test("a link to a paper is still a link", () => {

@@ -28,7 +28,7 @@ export const accountCategory: DocsCategoryBase = {
                 "Papertrend is invite-only for now. A new account needs an invite code from an admin: sign in the usual way, and Papertrend asks for the code before your account is created. An invite link fills the code in for you. People who already have an account are never asked.",
                 "Signing in with Google creates your account the first time. For email and password, choose **Create password account**, add your name, and **Create account**; a confirmation link is emailed to you, and your account is created once you open it and choose **I’ve confirmed it** (or come back through the link). **Send the link again** sends a new one.",
                 "If an account with the same email already exists, a verified sign-in (Google, or a confirmed email) is attached to it rather than creating a second account. Facebook does not confirm email addresses to Papertrend, so a Facebook sign-in starts a new account only when no account uses that email; otherwise sign in with Google or your email and password.",
-                "If Papertrend then shows `This Firebase account is not linked to a Papertrend owner account yet`, the new account has not been approved for a workspace yet; see [Troubleshooting](/docs/troubleshooting#signing-in).",
+                "If Papertrend then asks for an invite code, the new account needs one to join while Papertrend is invite-only; see [Troubleshooting](/docs/troubleshooting#signing-in).",
               ],
             },
           ],

@@ -203,13 +203,38 @@ export async function completeRepositoryChatJob(ownerUserId: string, id: string,
   });
 }
 
-export async function failRepositoryChatJob(ownerUserId: string, id: string, error: unknown): Promise<void> {
+/** Attempts a chat job gets before it fails for good (docs/32, 2.11, CHAT-4). */
+export const MAX_CHAT_JOB_ATTEMPTS = 3;
+
+/** Shown to the reader for a failure that is not a refusal: the raw error goes to the logs only. */
+export const CHAT_JOB_FAILED_MESSAGE = "This answer could not be finished. Ask again to retry.";
+
+/** Hands a failed attempt back to the queue, for Cloud Tasks to run it again. */
+export async function releaseRepositoryChatJob(ownerUserId: string, id: string): Promise<void> {
+  await withCloudSqlOwnerTransaction(ownerUserId, (client) => client.query(
+    `UPDATE repository_chat_jobs SET status='queued', updated_at=now()
+     WHERE id=$1 AND owner_user_id=$2 AND status='processing'`,
+    [id, ownerUserId]
+  ));
+}
+
+/**
+ * Fails a job for good. `readerMessage` is what the reader is shown and what
+ * is stored; the error itself is logged, never shown - it could be a provider
+ * or database message meant for nobody outside.
+ */
+export async function failRepositoryChatJob(
+  ownerUserId: string,
+  id: string,
+  error: unknown,
+  readerMessage = CHAT_JOB_FAILED_MESSAGE
+): Promise<void> {
   const message = error instanceof Error ? error.message : String(error);
   await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
     const updated = await client.query<Record<string, unknown>>(
       `UPDATE repository_chat_jobs SET status='failed',error_message=$2,completed_at=now(),updated_at=now()
        WHERE id=$1 AND owner_user_id=$3 AND status IN ('queued','processing') RETURNING *`,
-      [id, message.slice(0, 1_000), ownerUserId]
+      [id, readerMessage.slice(0, 1_000), ownerUserId]
     );
     if (!updated.rows[0]) return;
     // The "research or chat jobs failing" alert counts these.
@@ -223,7 +248,7 @@ export async function failRepositoryChatJob(ownerUserId: string, id: string, err
        WHERE id=$1 AND thread_id=$2 AND owner_user_id=$3`,
       [assistantMessageId, job.threadId, ownerUserId,
         "The repository analysis could not be completed. Retry this message; no partial answer was substituted.",
-        JSON.stringify({ ...jobMessageMetadata(id, "failed", job.executionPlan), repositoryLimitations: [message.slice(0, 1_000)] })]
+        JSON.stringify({ ...jobMessageMetadata(id, "failed", job.executionPlan), repositoryLimitations: [readerMessage.slice(0, 1_000)] })]
     );
   });
 }
