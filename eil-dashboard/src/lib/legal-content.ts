@@ -1,11 +1,13 @@
 /*
  * The Privacy Policy and Terms of Service, as data. Every statement here
  * describes what the code and the deployment actually do (checked on
- * 2026-09-28); if the system changes, this text must change with it.
+ * 2026-10-01); if the system changes, this text must change with it.
+ * tests/legal-providers.test.ts fails when a sign-in method or an outside
+ * service is added to the code without being named here.
  */
 
 export const LEGAL_CONTACT_EMAIL = "p.chantarusorn@gmail.com";
-export const LEGAL_EFFECTIVE_DATE = "28 September 2026";
+export const LEGAL_EFFECTIVE_DATE = "1 October 2026";
 
 export interface LegalSection {
   id: string;
@@ -36,9 +38,9 @@ export const privacyPolicy: LegalDocument = {
       id: "what-we-collect",
       heading: "What we collect",
       bullets: [
-        "Your account: your email address, your name and profile picture (from Google sign-in, or as you enter them), how you sign in, and the settings you save, such as your organisation, research domain and analysis categories.",
+        "Your account: your email address, your name and profile picture (from Google or Facebook sign-in, or as you enter them), how you sign in (Google, Facebook, or email and password), the invite code you joined with, and the settings you save, such as your organisation, research domain and analysis categories.",
         "What you add: the PDF files you upload or choose from Google Drive, the text extracted from them, the analysis results (titles, years, keywords, topics, categories), your repository and folder names, and your chat questions, answers and research sessions.",
-        "Usage and security records: how many times a day your account uses each AI feature (to apply fair-use limits), a one-way hash of your IP address and email address when you sign in (to limit repeated failed attempts), and server request logs kept by Google Cloud (IP address, browser type, the address requested and the time).",
+        "Usage and security records: how many times a day your account uses each AI feature, and the tokens and model fees each AI request used (to apply fair-use and daily spending limits), a one-way hash of your IP address and email address when you sign in (to limit repeated failed attempts), and server request logs kept by Google Cloud (IP address, browser type, the address requested and the time).",
         "We do not use advertising or analytics trackers.",
       ],
     },
@@ -59,7 +61,8 @@ export const privacyPolicy: LegalDocument = {
       heading: "How papers and questions are processed by AI",
       bullets: [
         "To analyse a paper, its text (and, for scanned pages, images of those pages) is sent to AI model providers through OpenRouter, a service that routes requests to models from companies such as OpenAI and Google. Chat questions, together with the relevant passages from your papers, are sent the same way to write answers, and text is sent the same way to build search indexes and the semantic map.",
-        "If you turn on web search in chat, your question is sent to a web search service through OpenRouter.",
+        "If you turn on web search in chat, your question, a search query made from it and the answer drafted from your papers are sent through OpenRouter to a model that searches the web with Exa, a web search provider. Exa receives the search query.",
+        "Deep research decides on its own whether a question needs the web, for example when it asks about current policy or about research beyond your papers. When it does, your question and search queries made from it are sent through OpenRouter to a model that searches with Exa. The text of your papers is not sent to the web search, and pages it finds are cited in the report as web sources, apart from your papers.",
         "To find a paper's publication year, its title or DOI may be sent to Crossref and OpenAlex, which are public bibliographic databases.",
         "These providers receive only what a request needs. Their own terms and privacy policies govern how they handle it.",
       ],
@@ -75,11 +78,22 @@ export const privacyPolicy: LegalDocument = {
       ],
     },
     {
+      id: "facebook-sign-in",
+      heading: "Facebook sign-in",
+      bullets: [
+        "If you sign in with Facebook, Meta (the company behind Facebook) shares your name, email address and profile picture with Papertrend through Firebase Authentication. Papertrend uses them only for your account.",
+        "Papertrend asks only for your public profile and email address. It does not post to Facebook or read your friends, pages or anything else in your Facebook account.",
+        "You can remove Papertrend's access in your Facebook settings, under Apps and Websites. To have the account data Papertrend holds deleted, see Your rights below.",
+      ],
+    },
+    {
       id: "where-it-is-stored",
       heading: "Where data is stored and who processes it",
       bullets: [
-        "Google Cloud hosts the service, the database and the stored files, in Singapore (asia-southeast1). Firebase Authentication, a Google service, handles sign-in.",
-        "OpenRouter and the AI model providers it routes to process paper text and questions, and may do so in other countries, including the United States.",
+        "Google Cloud hosts the service, the database and the stored files, in Singapore (asia-southeast1). Firebase Authentication, a Google service, handles sign-in with Google, Facebook, or email and password, and sends the emails that confirm an address or reset a password.",
+        "Meta handles sign-in with Facebook for those who choose it.",
+        "OpenRouter and the AI model providers it routes to, such as OpenAI and Google, process paper text and questions, and may do so in other countries, including the United States.",
+        "Exa receives web search queries, when chat web search is on or deep research searches the web.",
         "Crossref and OpenAlex receive paper titles or DOIs only.",
       ],
       paragraphs: [
@@ -93,7 +107,7 @@ export const privacyPolicy: LegalDocument = {
         "Papers, analysis results and chats: until you delete them. Deleting a paper from Trash (\"Delete permanently\" or \"Empty Trash\") removes the PDF and everything derived from it. Deleting a chat removes it.",
         "Backups: database backups are kept for 7 days, so deleted data can remain in a backup for up to 7 days before it is gone.",
         "Server request logs: 30 days.",
-        "Usage counts and sign-in rate-limit hashes: for as long as they are needed to apply limits and prevent abuse.",
+        "Usage counts, AI spending records and sign-in rate-limit hashes: for as long as they are needed to apply limits and prevent abuse.",
         "Your account: until you ask us to delete it.",
       ],
     },
@@ -189,7 +203,7 @@ export const termsOfService: LegalDocument = {
       id: "limits",
       heading: "Limits",
       paragraphs: [
-        "Accounts have usage limits, such as the number of papers stored and how often AI features can be used each day. They keep the service fair and affordable, and they may change.",
+        "Accounts have usage limits, such as the number of papers stored, how often AI features can be used each day, and how much each account's AI requests may cost in a day. The whole site has a daily AI spending limit too: when it is reached, AI features pause and uploaded papers wait until the next day (midnight UTC). The limits keep the service fair and affordable, and they may change.",
       ],
     },
     {

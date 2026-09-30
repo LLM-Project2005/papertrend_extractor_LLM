@@ -273,7 +273,7 @@ test("opening the tab never calls a model; writing up is metered and cached", ()
   assert.ok(autoReturn < route.indexOf('assertAndRecordAiUsage(user.id, "chart"'), "and before the quota is charged");
   assert.ok(route.indexOf("assertAiTokenBudget(user.id)") < route.indexOf("createChatCompletionResult("));
   assert.match(route, /withAiTokenUsageTracking\(/);
-  assert.match(route, /persistAiTokenUsage\(user\.id, usage\)/, "tokens count toward the daily budget");
+  assert.match(route, /persistAiTokenUsage\(user\.id, usage, "insights"\)/, "tokens and cost count toward the daily limits");
   assert.match(route, /timeoutMs: 25_000/);
   assert.match(route, /writeCachedPlan\(user\.id, built, body\.projectId, shownPlan\)/);
   assert.match(route, /const \{ checks, \.\.\.shownPlan \} = plan;/, "the checker's notes stay in the log");
@@ -338,7 +338,7 @@ test("asking is metered like writing up, and returns only computed output", () =
   const route = read("src/app/api/workspace/insights/ask/route.ts");
   assert.ok(route.indexOf("assertAiTokenBudget(user.id)") < route.indexOf("createChatCompletionResult("));
   assert.match(route, /assertAndRecordAiUsage\(user\.id, "chart", \{ route: "insights-ask" \}\)/);
-  assert.match(route, /persistAiTokenUsage\(user\.id, usage\)/);
+  assert.match(route, /persistAiTokenUsage\(user\.id, usage, "insights-ask"\)/);
   assert.match(route, /const answer = runAskQuery\(built\.corpus, query\);\s*return NextResponse\.json\(answer/);
   assert.match(route, /question: z\.string\(\)\.trim\(\)\.min\(3\)\.max\(300\)/);
 });

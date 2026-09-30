@@ -324,6 +324,22 @@ def _response_usage_payload(payload: Any) -> Tuple[Optional[int], Optional[int]]
     return None, None
 
 
+def _response_reported_cost(payload: Any) -> Optional[float]:
+    """What OpenRouter says the call cost, in US dollars (`usage.cost`), when it said."""
+    response_metadata = getattr(payload, "response_metadata", None)
+    if isinstance(response_metadata, Mapping):
+        token_usage = response_metadata.get("token_usage")
+        if isinstance(token_usage, Mapping) and token_usage.get("cost") is not None:
+            try:
+                cost = float(token_usage.get("cost"))
+            except (TypeError, ValueError):
+                return None
+            return cost if cost >= 0 else None
+    if isinstance(payload, Mapping) and "raw" in payload:
+        return _response_reported_cost(payload.get("raw"))
+    return None
+
+
 def _to_int(value: Any) -> Optional[int]:
     try:
         return int(value) if value is not None else None
@@ -361,12 +377,22 @@ def consume_usage_summary() -> Dict[str, Any]:
     total_prompt_tokens = sum(event.get("prompt_tokens") or 0 for event in events)
     total_completion_tokens = sum(event.get("completion_tokens") or 0 for event in events)
     total_cost = round(sum(event.get("estimated_cost_usd") or 0.0 for event in events), 8)
+    reported = [event["reported_cost_usd"] for event in events if event.get("reported_cost_usd") is not None]
+    # The provider's figure where a call reported one, the estimate where not.
+    cost = sum(
+        event["reported_cost_usd"] if event.get("reported_cost_usd") is not None else (event.get("estimated_cost_usd") or 0.0)
+        for event in events
+    )
     return {
         "label": _SESSION_LABEL.get(),
         "call_count": len(events),
         "total_prompt_tokens": total_prompt_tokens,
         "total_completion_tokens": total_completion_tokens,
         "estimated_cost_usd": total_cost,
+        "reported_cost_usd": round(sum(reported), 8),
+        "reported_calls": len(reported),
+        "cost_usd": round(cost, 8),
+        "cost_source": "provider" if events and len(reported) == len(events) else "estimate",
         "events": events,
     }
 
@@ -518,6 +544,7 @@ class RoutedChatModel:
                 result = runnable.invoke(*call_args, **kwargs)
                 prompt_tokens, completion_tokens = _response_usage_payload(result)
                 estimated_cost = _estimate_cost_usd(model_name, prompt_tokens, completion_tokens)
+                reported_cost = _response_reported_cost(result)
                 latency_ms = round((time.perf_counter() - started) * 1000, 2)
                 problem = validate(result) if validate is not None else None
                 event = {
@@ -531,6 +558,7 @@ class RoutedChatModel:
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": completion_tokens,
                     "estimated_cost_usd": estimated_cost,
+                    "reported_cost_usd": reported_cost,
                     "output_problem": problem[:300] if problem else None,
                 }
                 _append_usage_event(event)

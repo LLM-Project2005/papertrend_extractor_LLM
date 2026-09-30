@@ -20,8 +20,9 @@ interface FeaturePageProps {
   }>;
 }
 
+// Unknown slugs reach the page and get notFound(). `dynamicParams = false` made
+// Next log each one as a server error (NoFallbackError), which is alert noise.
 export const dynamic = "force-static";
-export const dynamicParams = false;
 
 /** The documentation page that explains each feature in full. */
 const FEATURE_DOCS: Record<MarketingFeature["slug"], { href: string; label: string }> = {

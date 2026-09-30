@@ -69,6 +69,17 @@ def _single_payload_owner(table: str, rows: Iterable[Dict[str, Any]]) -> str:
     return next(iter(owners))
 
 
+# The same total as SITE_SPEND_SQL in eil-dashboard/src/lib/spend-limits.ts: every
+# account's rows since midnight UTC, analysis included.
+SITE_SPEND_SQL = (
+    "SELECT COALESCE(sum(CASE WHEN jsonb_typeof(metadata->'cost_usd') = 'number' "
+    "THEN (metadata->>'cost_usd')::numeric ELSE 0 END), 0)::float8 AS site_usd "
+    "FROM public.ai_usage_events "
+    "WHERE created_at >= (date_trunc('day', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC') "
+    "AND metadata ? 'cost_usd'"
+)
+
+
 def _json_value(value: Any) -> Any:
     if isinstance(value, (dict, list)):
         from psycopg.types.json import Jsonb
@@ -174,6 +185,24 @@ class CloudSqlWorkerClient:
 
     def update_run(self, run_id: str, patch: Dict[str, Any]) -> None:
         self._update_owned_record("ingestion_runs", run_id, patch)
+
+    def site_spend_today_usd(self) -> float:
+        """What every model call on the site cost since midnight UTC (docs/32, 1.5)."""
+        with self._connection() as connection, connection.cursor() as cursor:
+            cursor.execute(SITE_SPEND_SQL)
+            row = cursor.fetchone()
+            return float((row or {}).get("site_usd") or 0.0)
+
+    def record_model_spend(self, owner_user_id: str, units: int, metadata: Dict[str, Any]) -> None:
+        """One ai_usage_events row, which the site-wide limit adds up."""
+        owner = normalize_owner_id(owner_user_id)
+        with self._connection() as connection, connection.cursor() as cursor:
+            set_transaction_owner(cursor, owner)
+            cursor.execute(
+                "INSERT INTO public.ai_usage_events (owner_user_id, usage_kind, units, metadata) "
+                "VALUES (%s, 'chat_message', %s, %s)",
+                (owner, max(int(units), 1), _json_value(metadata)),
+            )
 
     def touch_run(self, run_id: str) -> None:
         with self._connection() as connection, connection.cursor() as cursor:

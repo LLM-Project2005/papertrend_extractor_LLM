@@ -119,7 +119,7 @@ test("both chat paths use the checked web step, and small talk skips it", () => 
   assert.match(job, /const web = await addWebContext\(/);
   assert.doesNotMatch(job, /augmentRepositoryAnswerWithWeb/);
   assert.match(job, /return withAiTokenUsageTracking\(async \(usage\) => \{/, "a background answer's tokens are recorded");
-  assert.match(job, /await persistAiTokenUsage\(job\.ownerUserId, usage\)/);
+  assert.match(job, /await persistAiTokenUsage\(job\.ownerUserId, usage, "chat-job"\)/);
 });
 
 test("each web search counts toward its own daily limit", () => {

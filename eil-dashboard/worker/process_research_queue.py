@@ -16,6 +16,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from analysis_pipeline import configure_logging, load_config, now_iso  # noqa: E402
 from graphs import run_deep_research_graph  # noqa: E402
 from nodes import consume_usage_summary, start_usage_session  # noqa: E402
+from spend_limits import record_spend  # noqa: E402
 from nodes.report_citations import paper_index, readable_message_citations, readable_report  # noqa: E402
 from supabase_http import build_retrying_session  # noqa: E402
 from workspace_data import (  # noqa: E402
@@ -520,8 +521,11 @@ def _save_final_report(
 def process_session(client: SupabaseRestClient, session: Dict[str, Any]) -> Dict[str, Any]:
     start_usage_session(label=f"research:{session.get('id')}")
     initial_state = _session_initial_state(client, session)
-    final_state = run_deep_research_graph(initial_state)
-    usage_summary = consume_usage_summary()
+    try:
+        final_state = run_deep_research_graph(initial_state)
+    finally:
+        usage_summary = consume_usage_summary()
+        record_spend(client, session.get("owner_user_id"), usage_summary, "deep-research-v1", session_id=str(session.get("id") or ""))
 
     if final_state.get("status") == "waiting_on_analysis":
         pending_run_count = len(

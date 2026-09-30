@@ -97,7 +97,7 @@ export async function POST(request: Request) {
           calls: usage.calls,
           byModel: summarizeSpend(usage.byModel).byModel,
         }));
-        await persistAiTokenUsage(job.ownerUserId, usage).catch(() => undefined);
+        await persistAiTokenUsage(job.ownerUserId, usage, "chat-job").catch(() => undefined);
       }
     }
   });
