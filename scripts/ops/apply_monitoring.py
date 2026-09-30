@@ -143,9 +143,12 @@ LOG_METRICS = {
         "Errors logged by the production web service",
         f'resource.type="cloud_run_revision" AND resource.labels.service_name="{WEB_SERVICE}" AND severity>=ERROR',
     ),
+    # The worker logs plain text ("ERROR:papertrend_worker:run failed"), which
+    # Cloud Logging stores without a severity, so the level is read from the text.
     "papertrend_worker_errors": (
         "Errors logged by the production analysis worker",
-        f'resource.type="cloud_run_revision" AND resource.labels.service_name="{WORKER_SERVICE}" AND severity>=ERROR',
+        f'resource.type="cloud_run_revision" AND resource.labels.service_name="{WORKER_SERVICE}" '
+        'AND (severity>=ERROR OR textPayload=~"^(ERROR|CRITICAL):" OR textPayload:"Traceback (most recent call last)")',
     ),
     "papertrend_stuck_papers": (
         "Papers the worker found stalled and recovered or failed",
