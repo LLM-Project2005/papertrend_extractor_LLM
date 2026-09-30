@@ -7,6 +7,7 @@ remains available in process_ingestion_queue.py for rollback during cutover.
 
 from __future__ import annotations
 
+import os
 import uuid
 from contextlib import contextmanager
 from datetime import date, datetime
@@ -90,14 +91,31 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def worker_deployment(raw: Optional[str] = None) -> str:
+    """The deployment this worker serves: 'pilot' or 'production' (docs/32, 1.1).
+
+    The pilot and production workers share one database. Each run records the
+    deployment that queued it, and a worker lists, claims and recovers only its
+    own, so untested pilot code never analyses a production user's paper. Runs
+    queued before the tag existed count as production.
+    """
+    value = str(os.getenv("WORKER_DEPLOYMENT", "") if raw is None else raw).strip().lower()
+    return "pilot" if value == "pilot" else "production"
+
+
+# The filter every run listing and claim uses, matching the web app's.
+DEPLOYMENT_FILTER = "COALESCE(input_payload->>'deployment', 'production') = %s"
+
+
 class CloudSqlWorkerClient:
     """Trusted worker access to Cloud SQL with owner checks on scoped writes."""
 
-    def __init__(self, database_url: str) -> None:
+    def __init__(self, database_url: str, deployment: Optional[str] = None) -> None:
         if not str(database_url or "").strip():
             raise ValueError("DATABASE_URL is required for the Cloud SQL worker.")
         self.database_url = database_url
         self.heartbeat_timeout_seconds = 10.0
+        self.deployment = worker_deployment(deployment)
 
     @contextmanager
     def _connection(self) -> Iterator[Any]:
@@ -127,8 +145,9 @@ class CloudSqlWorkerClient:
         with self._connection() as connection, connection.cursor() as cursor:
             cursor.execute(
                 f"SELECT * FROM public.ingestion_runs "
-                f"WHERE source_type = 'upload' AND status = %s ORDER BY {order} LIMIT %s",
-                (status, max(int(limit), 1)),
+                f"WHERE source_type = 'upload' AND status = %s AND {DEPLOYMENT_FILTER} "
+                f"ORDER BY {order} LIMIT %s",
+                (status, self.deployment, max(int(limit), 1)),
             )
             return self._rows(cursor)
 
@@ -139,9 +158,10 @@ class CloudSqlWorkerClient:
                 UPDATE public.ingestion_runs
                 SET status = 'processing', error_message = NULL, updated_at = now()
                 WHERE id = %s AND status = 'queued'
+                  AND COALESCE(input_payload->>'deployment', 'production') = %s
                 RETURNING *
                 """,
-                (run_id,),
+                (run_id, self.deployment),
             )
             row = cursor.fetchone()
             return {str(key): _json_safe(value) for key, value in dict(row).items()} if row else None

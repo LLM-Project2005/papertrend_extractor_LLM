@@ -1,0 +1,42 @@
+# Runs the web and worker test suites on every pull request and on pushes to
+# the deployed branches (docs/32, 1.2). Cloud Build runs the same suites again
+# before each deploy, so a red check here means the deploy will stop too.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [development, test, main]
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: eil-dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: eil-dashboard/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+      - run: npx tsc --noEmit -p .
+
+  worker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt pytest
+      - run: python -m pytest tests -q

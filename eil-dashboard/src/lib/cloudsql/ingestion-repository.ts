@@ -2,6 +2,7 @@ import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
 import type { IngestionRunRow } from "@/types/database";
 import { MAX_PAPERS_PER_ACCOUNT } from "@/lib/upload-safety";
 import { isQuotaExemptRole } from "@/lib/quota-policy";
+import { DEPLOYMENT_KEY, deploymentEnv } from "@/lib/deployment";
 
 export type IngestionJobRow = Record<string, unknown> & { id: string };
 
@@ -180,6 +181,7 @@ export class CloudSqlIngestionRepository {
               analysis_mode: "automatic",
               analysis_label: input.analysisLabel,
               analysis_profile: input.analysisProfile ?? null,
+              [DEPLOYMENT_KEY]: deploymentEnv(),
               progress_stage: "uploading",
               progress_message: "Uploading",
               progress_detail: "Uploading file directly to storage before queueing analysis.",
@@ -296,7 +298,7 @@ export class CloudSqlIngestionRepository {
            WHERE id = $1 AND owner_user_id = $2 AND folder_analysis_job_id = $3
              AND status = 'processing' AND source_path IS NULL`,
           [item.runId, input.ownerUserId, input.folderJobId, item.storagePath, timestamp,
-            JSON.stringify({ progress_stage: "queued", progress_message: "Queued", progress_detail: "Upload complete. Waiting for worker to claim this file.", uploaded_at: timestamp })]
+            JSON.stringify({ progress_stage: "queued", progress_message: "Queued", progress_detail: "Upload complete. Waiting for worker to claim this file.", uploaded_at: timestamp, [DEPLOYMENT_KEY]: deploymentEnv() })]
         );
         if (result.rowCount !== 1) {
           throw new Error(`Upload finalization did not match run ${item.runId}.`);
