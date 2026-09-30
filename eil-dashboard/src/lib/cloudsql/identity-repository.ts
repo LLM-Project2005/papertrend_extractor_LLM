@@ -158,6 +158,20 @@ export async function provisionInTransaction(
     throw new Error("Failed to provision the Cloud SQL user profile.");
   }
 
+  if (existingProfile.rows[0]?.id) {
+    // A verified email joining its existing account from a new login - the
+    // old Firebase login was deleted and made again. An account has one login
+    // per provider, and mapping keys never change, so the old mapping goes
+    // and the new one takes its place. Without this, the insert below failed
+    // on (provider, owner_user_id) and the person could never sign in again.
+    const replaced = await client.query(
+      `DELETE FROM public.auth_identity_mappings
+       WHERE provider = $1 AND owner_user_id = $2 AND external_subject <> $3`,
+      [identity.provider, ownerUserId, identity.subject]
+    );
+    if (replaced.rowCount) console.info("identity_mapping_relinked", { provider: identity.provider });
+  }
+
   await client.query(
     `INSERT INTO public.auth_identity_mappings
        (owner_user_id, provider, external_subject, email, last_seen_at)

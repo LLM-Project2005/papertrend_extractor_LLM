@@ -1,5 +1,19 @@
 import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
 import { DEPLOYMENT_KEY, deploymentEnv } from "@/lib/deployment";
+import { usableAnalysisSql } from "@/lib/usable-analysis";
+
+const KEPT = usableAnalysisSql("ir");
+
+/** Exported so the SQL can be run against a real Postgres in tests. */
+export const CANCEL_RUNS_SQL = `UPDATE public.ingestion_runs ir SET
+   status = CASE WHEN ${KEPT} THEN 'succeeded' ELSE 'failed' END,
+   error_message = CASE WHEN ${KEPT} THEN NULL ELSE 'Canceled by user.' END,
+   completed_at = CASE WHEN ${KEPT}
+     THEN COALESCE((ir.input_payload->'analysis_metrics'->>'completed_at')::timestamptz, $3::timestamptz)
+     ELSE $3::timestamptz END,
+   updated_at = $3,
+   input_payload = COALESCE(ir.input_payload, '{}'::jsonb) || CASE WHEN ${KEPT} THEN $5::jsonb ELSE $4::jsonb END
+ WHERE ir.owner_user_id = $1 AND ir.id = ANY($2::uuid[]) AND ir.status IN ('queued','processing') RETURNING *`;
 
 /** How often one paper may be analysed again in a day. */
 export const MAX_REANALYSES_PER_PAPER_PER_DAY = 3;
@@ -164,6 +178,11 @@ export class CloudSqlAnalysisJobRepository {
         [runId, ownerUserId]
       );
       if (!run.rows[0]) return null;
+      // A copy made before copies had their own analysis has no paper under
+      // this id; saving the correction to the run alone used to report success
+      // while nothing the reader sees changed.
+      const exists = await client.query(`SELECT 1 FROM public.papers WHERE id = $1 AND owner_user_id = $2`, [paperId, ownerUserId]);
+      if (!exists.rows[0]) return null;
       const payload = (run.rows[0].input_payload ?? {}) as Row;
       const previous = (payload.user_overrides && typeof payload.user_overrides === "object"
         ? payload.user_overrides
@@ -188,7 +207,7 @@ export class CloudSqlAnalysisJobRepository {
          RETURNING title, year`,
         [paperId, ownerUserId, correction.title ?? null, correction.year ?? null]
       );
-      return paper.rows[0] ?? { title: String(correction.title ?? ""), year: String(correction.year ?? "") };
+      return paper.rows[0] ?? null;
     });
   }
 
@@ -209,18 +228,24 @@ export class CloudSqlAnalysisJobRepository {
     });
   }
 
+  /**
+   * Cancels runs. A re-analysis goes back to "succeeded" with its earlier
+   * results (docs/32, 2.4) - they were never removed - instead of being
+   * marked failed, which also kept it out of any later re-analysis.
+   */
   async cancelRuns(ownerUserId: string, runIds: string[]) {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const timestamp = new Date().toISOString();
       const result = await client.query<Row>(
-        `UPDATE public.ingestion_runs SET status = 'failed', error_message = 'Canceled by user.',
-         completed_at = $3, updated_at = $3,
-         input_payload = COALESCE(input_payload, '{}'::jsonb) || $4::jsonb
-         WHERE owner_user_id = $1 AND id = ANY($2::uuid[]) AND status IN ('queued','processing') RETURNING *`,
+        CANCEL_RUNS_SQL,
         [ownerUserId, runIds, timestamp, JSON.stringify({
           progress_stage: "failed", progress_message: "Analysis canceled",
           progress_detail: "This run was canceled manually before analysis finished.",
           progress_updated_at: timestamp, canceled_by_user: true,
+        }), JSON.stringify({
+          progress_stage: "completed", progress_message: "Analysis complete",
+          progress_detail: "Analyzing this paper again was canceled, so its earlier results are kept.",
+          progress_updated_at: timestamp, reanalysis_canceled_at: timestamp,
         })]
       );
       return result.rows;

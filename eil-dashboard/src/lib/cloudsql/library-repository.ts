@@ -1,5 +1,30 @@
 import type { IngestionRunRow } from "@/types/database";
+import type { PoolClient } from "pg";
 import { withCloudSqlOwnerTransaction } from "@/lib/cloudsql/client";
+import { copyPaperAnalysis, movePaperRows, paperOfRun } from "@/lib/cloudsql/paper-copy";
+import { isQuotaExemptRole } from "@/lib/quota-policy";
+import { MAX_PAPERS_PER_ACCOUNT } from "@/lib/upload-safety";
+
+/** A refusal with a reason for the reader and the HTTP status that goes with it. */
+export class LibraryActionError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "LibraryActionError";
+  }
+}
+
+/** A copy is a paper like any other, so it counts toward the account's papers. */
+async function assertRoomForAnotherPaper(client: Pick<PoolClient, "query">, ownerUserId: string): Promise<void> {
+  const profile = await client.query<{ role: string | null }>(`SELECT role FROM public.user_profiles WHERE id=$1 LIMIT 1`, [ownerUserId]);
+  if (isQuotaExemptRole(profile.rows[0]?.role)) return;
+  const papers = await client.query<{ count: string }>(`SELECT count(*)::text AS count FROM public.papers WHERE owner_user_id = $1`, [ownerUserId]);
+  if (Number(papers.rows[0]?.count ?? 0) + 1 > MAX_PAPERS_PER_ACCOUNT) {
+    throw new LibraryActionError(
+      `This account can store up to ${MAX_PAPERS_PER_ACCOUNT} papers, and a copy is one more. Delete papers permanently from Trash to make room.`,
+      409
+    );
+  }
+}
 
 export interface LibraryRunListOptions {
   projectId?: string | null;
@@ -94,6 +119,14 @@ export class CloudSqlLibraryRepository {
       if (!original) {
         throw new Error("File not found.");
       }
+      // The copy gets its own analysis (docs/32, 2.5): a copy that was only a
+      // second run row had no content of its own, so the dashboard, chat and
+      // semantic map never showed it, and a correction to it changed nothing.
+      const sourcePaperId = await paperOfRun(client, ownerUserId, runId);
+      if (!sourcePaperId) {
+        throw new LibraryActionError("Only a paper that has been analysed can be copied.", 409);
+      }
+      await assertRoomForAnotherPaper(client, ownerUserId);
 
       const displayName =
         original.display_name?.trim() || original.source_filename?.trim() || "File";
@@ -148,7 +181,38 @@ export class CloudSqlLibraryRepository {
       if (!created) {
         throw new Error("Failed to copy file.");
       }
-      return created;
+      await copyPaperAnalysis(client, { ownerUserId, fromPaperId: sourcePaperId, toRunId: String(created.id) });
+      const copied = await client.query<IngestionRunRow>(
+        `SELECT * FROM public.ingestion_runs WHERE id = $1 AND owner_user_id = $2`,
+        [created.id, ownerUserId]
+      );
+      return copied.rows[0] ?? created;
+    });
+  }
+
+  /**
+   * Moves a paper to another folder of the same owner, with its analysis rows
+   * and its search index, so the folder and repository it lands in count and
+   * search it.
+   */
+  async moveRun(ownerUserId: string, runId: string, folderId: string): Promise<IngestionRunRow | null> {
+    return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
+      const folder = await client.query<{ project_id: string | null }>(
+        `SELECT project_id::text AS project_id FROM public.research_folders WHERE id = $1 AND owner_user_id = $2`,
+        [folderId, ownerUserId]
+      );
+      if (!folder.rows[0]) throw new LibraryActionError("Folder not found.", 404);
+      const moved = await client.query<IngestionRunRow>(
+        `UPDATE public.ingestion_runs SET folder_id = $3, updated_at = now()
+         WHERE id = $1 AND owner_user_id = $2 RETURNING *`,
+        [runId, ownerUserId, folderId]
+      );
+      if (!moved.rows[0]) return null;
+      const paperId = await paperOfRun(client, ownerUserId, runId);
+      if (paperId) {
+        await movePaperRows(client, { ownerUserId, paperId, folderId, projectId: folder.rows[0].project_id });
+      }
+      return moved.rows[0];
     });
   }
 

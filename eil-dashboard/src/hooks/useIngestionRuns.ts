@@ -161,7 +161,7 @@ export function useIngestionRuns({
   );
 
   const cancelAllActiveRuns = useCallback(
-    async (folderJobId?: string) => {
+    async (scope: { folderJobId?: string; runIds?: string[] }) => {
       if (!requestHeaders) {
         throw new Error("You must be signed in to cancel analysis processing.");
       }
@@ -172,7 +172,7 @@ export function useIngestionRuns({
           "Content-Type": "application/json",
           ...requestHeaders,
         },
-        body: JSON.stringify({ folderJobId }),
+        body: JSON.stringify({ folderJobId: scope.folderJobId, runIds: scope.runIds }),
       });
 
       const payload = (await response.json()) as {

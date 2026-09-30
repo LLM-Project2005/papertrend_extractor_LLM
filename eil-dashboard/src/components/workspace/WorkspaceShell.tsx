@@ -457,7 +457,10 @@ export default function WorkspaceShell({
 
   async function handleCancelAllRuns() {
     try {
-      const canceledRuns = await cancelAllActiveRuns(analysisSession?.folderJobId ?? undefined);
+      const canceledRuns = await cancelAllActiveRuns({
+        folderJobId: analysisSession?.folderJobId ?? undefined,
+        runIds: analysisSession?.runIds,
+      });
       if (canceledRuns.length > 0) {
         removeAnalysisRunIds(canceledRuns.map((run) => run.id));
       }

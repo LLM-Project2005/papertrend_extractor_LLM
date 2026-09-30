@@ -104,6 +104,7 @@ import ChatInsightCard from "@/components/chat/ChatInsightCard";
 import ReportActions from "@/components/chat/ReportActions";
 import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
+import { hasUsableAnalysis } from "@/lib/usable-analysis";
 import type {
   FolderAnalysisJobRow,
   IngestionRunRow,
@@ -2105,7 +2106,7 @@ export default function ChatClient() {
           const rows = payload.runs ?? [];
           const allowed = new Set(runIds);
           setLibraryRuns(rows);
-          setSelectedLibraryRuns(rows.filter((run) => allowed.has(run.id) && run.status === "succeeded"));
+          setSelectedLibraryRuns(rows.filter((run) => allowed.has(run.id) && hasUsableAnalysis(run)));
           scopeChosenRef.current = true;
           setChatScopeProjectId(transfer.projectId!);
           setChatScopeFolderId("all");

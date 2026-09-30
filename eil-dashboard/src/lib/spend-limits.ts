@@ -36,7 +36,8 @@ export type SpendSource =
   | "topic-themes"
   | "topic-cache"
   | "reclassification"
-  | "semantic-map";
+  | "semantic-map"
+  | "search-index";
 
 function parseUsd(raw: string | undefined, fallback: number): number {
   const value = Number(String(raw ?? "").trim());

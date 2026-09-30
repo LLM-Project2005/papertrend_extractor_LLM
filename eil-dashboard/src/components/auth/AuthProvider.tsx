@@ -29,6 +29,15 @@ import {
   updateFirebaseUserProfile,
 } from "@/lib/firebase-client";
 import type { AuthContextValue, AuthSession, UserProfileRecord } from "@/types/auth";
+import {
+  classifyProfileFailure,
+  isProfileRefusalCode,
+  PROFILE_CHECK_TIMEOUT_MS,
+  PROFILE_GAVE_UP_MESSAGE,
+  PROFILE_RETRY_DELAYS_MS,
+  PROFILE_UNREACHABLE_MESSAGE,
+  refusalMessage,
+} from "@/lib/auth/profile-failure";
 import type { WorkspaceProfile } from "@/types/workspace";
 import { safeReturnPath } from "@/lib/safe-return-path";
 
@@ -113,6 +122,19 @@ async function postPasswordAuth<TPayload>(
   return data;
 }
 
+type FirebaseUserLike = NonNullable<Parameters<Parameters<typeof subscribeToFirebaseTokens>[1]>[0]>;
+
+/** Why a profile check failed: an HTTP status, or no answer at all. */
+class ProfileCheckFailure extends Error {
+  constructor(
+    readonly status: number | "network",
+    readonly code?: string,
+    readonly serverMessage?: string
+  ) {
+    super(`profile check failed: ${status}`);
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [session, setSession] = useState<AuthSession | null>(null);
@@ -125,6 +147,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     promise: Promise<void>;
   } | null>(null);
   const firebaseProfileAttemptRef = useRef<{ key: string; at: number } | null>(null);
+  /** The Firebase user the current session belongs to; a transient failure keeps them signed in. */
+  const signedInUidRef = useRef<string | null>(null);
 
   const loadProfile = useCallback(async (activeUser: User | null, accessToken?: string) => {
     if (!activeUser) {
@@ -188,6 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const configurationError = getFirebaseAuthConfigurationError();
       let mounted = true;
       let unsubscribe: (() => void) | null = null;
+      let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
       void (async () => {
         const firebaseAuth = await getFirebaseAuth();
@@ -199,12 +224,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const firebaseUnsubscribe = await subscribeToFirebaseTokens(firebaseAuth, async (firebaseUser) => {
+        const scheduleRetry = (firebaseUser: FirebaseUserLike, attempt: number) => {
+          if (retryTimer) clearTimeout(retryTimer);
+          retryTimer = setTimeout(() => {
+            retryTimer = null;
+            // The 30-second guard stops duplicate token events, not retries.
+            firebaseProfileAttemptRef.current = null;
+            void handleFirebaseUser(firebaseUser, attempt + 1);
+          }, PROFILE_RETRY_DELAYS_MS[attempt]);
+        };
+
+        const handleFirebaseUser = async (firebaseUser: FirebaseUserLike | null, attempt = 0): Promise<void> => {
           if (!mounted) {
             return;
           }
 
           if (!firebaseUser) {
+            if (retryTimer) clearTimeout(retryTimer);
+            retryTimer = null;
+            signedInUidRef.current = null;
             firebaseProfileRequestRef.current = null;
             firebaseProfileAttemptRef.current = null;
             setAuthError(null);
@@ -215,8 +253,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return;
           }
 
+          let firebaseSession: AuthSession | null = null;
           try {
-            const firebaseSession = await firebaseUserToSession(firebaseUser, firebaseUser.uid);
+            try {
+              firebaseSession = await firebaseUserToSession(firebaseUser, firebaseUser.uid);
+            } catch {
+              // No token without a network: the same as a failed request.
+              throw new ProfileCheckFailure("network");
+            }
             const requestKey = `${firebaseUser.uid}:${firebaseSession.access_token}`;
             const previousAttempt = firebaseProfileAttemptRef.current;
             const inFlightRequest = firebaseProfileRequestRef.current;
@@ -238,27 +282,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
 
             firebaseProfileAttemptRef.current = { key: requestKey, at: Date.now() };
+            const token = firebaseSession.access_token;
             const profileRequest = (async () => {
-              const response = await fetch("/api/auth/profile", {
-                headers: { Authorization: `Bearer ${firebaseSession.access_token}` },
-              });
+              let response: Response;
+              try {
+                response = await fetch("/api/auth/profile", {
+                  headers: { Authorization: `Bearer ${token}` },
+                  signal: AbortSignal.timeout(PROFILE_CHECK_TIMEOUT_MS),
+                });
+              } catch {
+                throw new ProfileCheckFailure("network");
+              }
               const payload = (await response.json().catch(() => ({}))) as {
                 error?: string;
-                code?: AuthContextValue["authErrorCode"];
+                code?: string;
                 ownerUserId?: string;
                 profile?: UserProfileRecord | null;
               };
-              setAuthErrorCode(response.ok ? null : payload.code ?? "not_linked");
               if (!response.ok || !payload.ownerUserId) {
-                throw new Error(
-                  payload.error ??
-                    "This Firebase account is not linked to a Papertrend owner account yet."
-                );
+                // A 200 without an owner is a refusal: the account is not linked.
+                throw new ProfileCheckFailure(response.ok ? 403 : response.status, payload.code, payload.error);
               }
 
               const mappedUser = firebaseUserToPapertrendUser(firebaseUser, payload.ownerUserId);
+              signedInUidRef.current = firebaseUser.uid;
+              setAuthErrorCode(null);
               setAuthError(null);
-              setSession({ ...firebaseSession, user: mappedUser });
+              setSession({ ...firebaseSession!, user: mappedUser });
               setUser(mappedUser);
               setProfile(payload.profile ?? null);
               setHydrated(true);
@@ -275,17 +325,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             if (!mounted) {
               return;
             }
+            const failure = error instanceof ProfileCheckFailure ? error : new ProfileCheckFailure("network");
+            if (classifyProfileFailure(failure.status) === "transient") {
+              if (signedInUidRef.current === firebaseUser.uid) {
+                // Still the same person: stay signed in with the fresh token, and try again quietly.
+                const fresh = firebaseSession;
+                if (fresh) setSession((current) => (current ? { ...fresh, user: current.user } : current));
+                if (attempt < PROFILE_RETRY_DELAYS_MS.length) scheduleRetry(firebaseUser, attempt);
+                return;
+              }
+              setAuthErrorCode(null);
+              setAuthError(attempt < PROFILE_RETRY_DELAYS_MS.length ? PROFILE_UNREACHABLE_MESSAGE : PROFILE_GAVE_UP_MESSAGE);
+              setHydrated(true);
+              if (attempt < PROFILE_RETRY_DELAYS_MS.length) scheduleRetry(firebaseUser, attempt);
+              return;
+            }
+            signedInUidRef.current = null;
+            const status = failure.status === "network" ? 401 : failure.status;
+            setAuthErrorCode(isProfileRefusalCode(failure.code) ? failure.code : status === 403 ? "not_linked" : null);
             setSession(null);
             setUser(null);
             setProfile(null);
-            setAuthError(
-              error instanceof Error
-                ? error.message
-                : "The Firebase account could not be linked to Papertrend."
-            );
+            setAuthError(refusalMessage(status, failure.code, failure.serverMessage));
             setHydrated(true);
           }
-        });
+        };
+
+        const firebaseUnsubscribe = await subscribeToFirebaseTokens(firebaseAuth, (firebaseUser) =>
+          handleFirebaseUser(firebaseUser)
+        );
         if (mounted) {
           unsubscribe = firebaseUnsubscribe;
         } else {
@@ -298,6 +366,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return () => {
         mounted = false;
         unsubscribe?.();
+        if (retryTimer) clearTimeout(retryTimer);
         firebaseProfileRequestRef.current = null;
       };
     }

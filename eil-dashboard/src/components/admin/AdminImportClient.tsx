@@ -54,6 +54,7 @@ import {
   getRunStatusLabel,
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
+import { hasUsableAnalysis } from "@/lib/usable-analysis";
 import { buttonClass, fieldClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 
@@ -591,7 +592,7 @@ export default function AdminImportClient() {
   }
 
   async function handleOpenPrimaryFileAction(run: IngestionRunRow, tab: PaperExplorerTab = "overview") {
-    if (run.status === "succeeded") {
+    if (hasUsableAnalysis(run)) {
       await handleViewAnalysis(run, tab).catch(() => undefined);
       return;
     }
@@ -1295,7 +1296,7 @@ export default function AdminImportClient() {
         className="fixed z-50 origin-top rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in"
         style={{ top: itemMenuState.top, left: itemMenuState.left, width: 224 }}
       >
-        {activeMenuRun.status === "succeeded" ? (
+        {hasUsableAnalysis(activeMenuRun) ? (
           <button
             type="button"
             onClick={async () => {
@@ -1316,7 +1317,7 @@ export default function AdminImportClient() {
             View analysis
           </button>
         ) : null}
-        {activeMenuRun.status === "succeeded" ? (
+        {hasUsableAnalysis(activeMenuRun) ? (
           <button
             type="button"
             onClick={async () => {

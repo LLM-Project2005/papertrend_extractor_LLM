@@ -44,6 +44,7 @@ import { buttonClass, chipClass, panelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { isDatedYear } from "@/lib/dated-year";
+import { hasUsableAnalysis } from "@/lib/usable-analysis";
 
 type RankedItem = {
   label: string;
@@ -226,7 +227,7 @@ function RecentPaperRow({ run }: { run: IngestionRunRow }) {
   return (
     <li>
       <PaperLink
-        paper={run.status === "succeeded" ? { runId: run.id } : `/workspace/library?runId=${encodeURIComponent(run.id)}`}
+        paper={hasUsableAnalysis(run) ? { runId: run.id } : `/workspace/library?runId=${encodeURIComponent(run.id)}`}
         className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-150 hover:bg-subtle"
       >
         <RunStatusIcon run={run} />
@@ -569,7 +570,10 @@ export default function WorkspaceHomeClient() {
 
   async function handleCancelAllRuns() {
     try {
-      const canceledRuns = await cancelAllActiveRuns(analysisSession?.folderJobId ?? undefined);
+      const canceledRuns = await cancelAllActiveRuns({
+        folderJobId: analysisSession?.folderJobId ?? undefined,
+        runIds: analysisSession?.runIds,
+      });
       if (canceledRuns.length > 0) {
         removeAnalysisRunIds(canceledRuns.map((run) => run.id));
       }

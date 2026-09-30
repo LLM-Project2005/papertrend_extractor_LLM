@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/Icons";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { IngestionRunRow } from "@/types/database";
+import { hasUsableAnalysis } from "@/lib/usable-analysis";
 
 interface SearchPageItem {
   id: string;
@@ -377,7 +378,7 @@ export default function WorkspaceGlobalSearch({
         label: titleOf(run),
         description: runDescription(run) || "Open this repository paper",
         category: "Papers" as const,
-        icon: run.status === "succeeded" ? PaperIcon : CloudIcon,
+        icon: hasUsableAnalysis(run) ? PaperIcon : CloudIcon,
         featured: false,
         searchText: [
           titleOf(run),
@@ -389,7 +390,7 @@ export default function WorkspaceGlobalSearch({
           "paper library analysis file pdf detail",
         ].join(" "),
         onSelect: () => {
-          if (run.status === "succeeded" && paperViewer) {
+          if (hasUsableAnalysis(run) && paperViewer) {
             paperViewer.openPaper({ runId: run.id });
             return;
           }

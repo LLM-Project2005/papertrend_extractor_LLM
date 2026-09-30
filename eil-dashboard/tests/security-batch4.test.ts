@@ -119,7 +119,10 @@ test("background-job callbacks accept only a Google-signed token for this servic
   const oidc = read("src/lib/cloud-tasks-oidc.ts");
   assert.match(oidc, /verifier\.verifyIdToken\(\{ idToken: match\[1\], audience \}\)/, "signature and audience are checked");
   assert.match(oidc, /payload\.email_verified === true/);
-  assert.match(oidc, /payload\.email\?\.toLowerCase\(\) === expectedEmail\.toLowerCase\(\)/, "only this service's own account");
+  assert.match(oidc, /allowed\.has\(payload\.email\.toLowerCase\(\)\)/, "only an allowed account");
+  // Task routes allow this service's own account alone; the worker's account is
+  // added only for the routes that use isVerifiedServiceCaller (search indexing).
+  assert.match(oidc, /return Boolean\(expectedEmail\) && verifiedCaller\(request, \[expectedEmail!\]\);/, "only this service's own account");
   assert.match(read("package.json"), /"google-auth-library": "\^10\.9\.0"/, "a direct dependency, not a transitive one");
 });
 

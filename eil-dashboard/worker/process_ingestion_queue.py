@@ -38,6 +38,7 @@ from analysis_pipeline.duplicates import find_duplicate, text_fingerprint
 from analysis_pipeline.reanalysis import earlier_results_kept, failed_reanalysis_payload
 from supabase_http import build_retrying_session
 from database_client import create_worker_database_client
+from search_index import catch_up_search_index, request_search_index
 from spend_limits import record_spend, site_spend_limit_reached
 
 try:
@@ -1620,6 +1621,8 @@ def process_run(client: SupabaseRestClient, config: WorkerConfig, run: Dict[str,
             run["completed_at"] = now_iso()
             run["input_payload"] = final_input_payload
             sync_folder_analysis_job(client, run)
+            # The paper is searchable by meaning as soon as its analysis is done.
+            request_search_index(run.get("owner_user_id"), run_id)
             if config.database_provider == "supabase":
                 mirror_completed_dataset(client, run, result.dataset)
 
@@ -1642,6 +1645,8 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
 
     queued_runs = client.list_queued_runs(config.queued_limit)
     if not queued_runs:
+        # Nothing to analyse: bring the search index up to date instead.
+        catch_up_search_index(client)
         return False
 
     quarantined_invalid_run = False
