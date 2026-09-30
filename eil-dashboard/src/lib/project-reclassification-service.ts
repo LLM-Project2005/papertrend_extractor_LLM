@@ -1,4 +1,5 @@
 import { createChatCompletionResult } from "@/lib/openai";
+import { assertSpendAllowed, trackModelSpend } from "@/lib/security-guards";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 import {
   claimReclassificationJob,
@@ -125,9 +126,15 @@ async function mapWithConcurrency<T>(items: T[], limit: number, task: (item: T) 
 }
 
 export async function processProjectReclassificationJob(ownerUserId: string, jobId: string) {
+  return trackModelSpend(ownerUserId, "reclassification", () => runReclassificationJob(ownerUserId, jobId));
+}
+
+async function runReclassificationJob(ownerUserId: string, jobId: string) {
   const job = await claimReclassificationJob(ownerUserId, jobId);
   if (!job) return { claimed: false };
   try {
+    // A dollar limit fails the job with its reason; the previous revision stays active.
+    await assertSpendAllowed(ownerUserId);
     const profile = job.target_profile as ProjectAnalysisProfile;
     const papers = await loadReclassificationPapers(ownerUserId, jobId);
     const failures: Error[] = [];

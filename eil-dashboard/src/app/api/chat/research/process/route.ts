@@ -39,7 +39,7 @@ export async function POST(request: Request) {
         byModel: summarizeSpend(usage.byModel).byModel,
       }));
       // Deep research counts toward the daily token budget like every other answer.
-      await persistAiTokenUsage(ownerUserId, usage).catch(() => undefined);
+      await persistAiTokenUsage(ownerUserId, usage, "deep-research").catch(() => undefined);
     }
     return NextResponse.json({ ok: outcome !== "retry", outcome }, { status: outcome === "retry" ? 500 : 200 });
   });

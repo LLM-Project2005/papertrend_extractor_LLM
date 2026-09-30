@@ -505,6 +505,8 @@ export async function runResearchSession(input: {
       await releaseLease(ownerUserId, sessionId).catch(() => undefined);
       return "retry";
     }
+    // The final failure, after the retries; the "research or chat jobs failing" alert counts these.
+    console.error("deep_research_session_failed", { sessionId, message: message.slice(0, 300) });
     await failSession(ownerUserId, sessionId, `${message} Retry to continue from where it stopped.`).catch(() => undefined);
     return "failed";
   } finally {

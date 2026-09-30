@@ -41,7 +41,8 @@ test("the daily usage limit holds under parallel requests and fails closed", () 
   const guards = read("src/lib/security-guards.ts");
   const fn = guards.slice(guards.indexOf("export async function assertAndRecordAiUsage"));
   assert.match(fn, /pg_advisory_xact_lock\(hashtextextended\(\$1, 0\)\)/, "count and insert are serialised");
-  assert.ok(fn.indexOf("pg_advisory_xact_lock") < fn.indexOf("SELECT count(*)"), "the lock comes before the count");
+  assert.ok(fn.indexOf("pg_advisory_xact_lock") < fn.indexOf("client.query<{ count: string }>(AI_USAGE_COUNT_SQL"), "the lock comes before the count");
+  assert.match(guards, /export const AI_USAGE_COUNT_SQL = `SELECT count\(\*\)::text AS count FROM public\.ai_usage_events/);
   assert.match(fn, /throw new GuardError\("Usage could not be checked just now\. Try again in a moment\.", 503\)/);
   assert.doesNotMatch(fn.slice(0, fn.indexOf("const supabase")), /allowing request/);
 });

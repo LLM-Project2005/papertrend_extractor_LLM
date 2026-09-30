@@ -13,6 +13,8 @@ import {
 import { withCloudSqlOwnerTransaction, withCloudSqlServiceTransaction } from "@/lib/cloudsql/client";
 import { isQuotaExemptRole } from "@/lib/quota-policy";
 import { safeReturnPath } from "@/lib/safe-return-path";
+import { withAiTokenUsageTracking, type AiTokenUsageTotals } from "@/lib/ai-token-usage";
+import { readSpendToday, spendMetadata, spendRefusal, type SpendSource } from "@/lib/spend-limits";
 
 export class GuardError extends Error {
   status: number;
@@ -261,7 +263,66 @@ async function countPersistedAttempts(
 
 export type AiUsageKind = "chat_message" | "web_search" | "chart" | "deep_research";
 
+/**
+ * Today's uses of one kind by one person. Rows with a metric record what a
+ * request used and cost; they are not requests, and counting them made each
+ * chat message count twice.
+ */
+export const AI_USAGE_COUNT_SQL = `SELECT count(*)::text AS count FROM public.ai_usage_events
+  WHERE owner_user_id=$1 AND usage_kind=$2 AND created_at >= $3 AND NOT (metadata ? 'metric')`;
+
+/**
+ * Refuses a request once today's model spend reaches the per-person or the
+ * site-wide dollar limit (docs/32, 1.5; see spend-limits.ts). A spend that
+ * cannot be read refuses too: the caller is about to spend model credit.
+ */
+export async function assertSpendAllowed(ownerUserId: string): Promise<void> {
+  if (getDatabaseProvider() !== "cloud-sql") return;
+  let state: Awaited<ReturnType<typeof readSpendToday>>;
+  try {
+    state = await readSpendToday(ownerUserId);
+  } catch (error) {
+    console.warn("spend_limit_unreadable", { message: error instanceof Error ? error.message : "unknown_error" });
+    throw new GuardError("Usage could not be checked just now. Try again in a moment.", 503);
+  }
+  const refusal = spendRefusal(state);
+  if (!refusal) return;
+  // The "AI spending limit reached" alert counts the site-wide ones. Info, not
+  // error: every refused request logs one, and the error alerts would repeat it.
+  if (refusal.scope === "site") console.info("site_daily_spend_limit_reached", { siteUsd: state.siteUsd });
+  else console.info("person_daily_spend_limit_reached", { personUsd: state.personUsd });
+  throw new GuardError(refusal.message, 429);
+}
+
+/** For work with a quiet fallback (theme grouping, topic merges): whether it may spend now. */
+export async function spendAllowed(ownerUserId: string): Promise<boolean> {
+  try {
+    await assertSpendAllowed(ownerUserId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Runs work that calls models and records what it cost, even when it fails:
+ * a failed call is still charged. For work that has no request of its own to
+ * record it, such as a background job or a cache rebuild.
+ */
+export async function trackModelSpend<T>(ownerUserId: string, source: SpendSource, run: () => Promise<T>): Promise<T> {
+  return withAiTokenUsageTracking(async (usage) => {
+    try {
+      return await run();
+    } finally {
+      await persistAiTokenUsage(ownerUserId, usage, source).catch((error) => {
+        console.warn("model_spend_record_failed", { source, message: error instanceof Error ? error.message : "unknown_error" });
+      });
+    }
+  });
+}
+
 export async function assertAiTokenBudget(ownerUserId: string): Promise<number> {
+  await assertSpendAllowed(ownerUserId);
   const limit = getAiDailyTokenLimit();
   const today = new Date();
   today.setUTCHours(0, 0, 0, 0);
@@ -318,23 +379,26 @@ export async function assertAiTokenBudget(ownerUserId: string): Promise<number> 
   return Math.max(0, limit - used);
 }
 
+/**
+ * Records what one request's model calls used and cost, in one row whose
+ * `metadata.cost_usd` the dollar limits add up. `source` names the feature.
+ */
 export async function persistAiTokenUsage(
   ownerUserId: string,
-  usage: { promptTokens: number; completionTokens: number; totalTokens: number; calls: number }
+  usage: Pick<AiTokenUsageTotals, "promptTokens" | "completionTokens" | "totalTokens" | "calls"> &
+    Partial<Pick<AiTokenUsageTotals, "byModel" | "reportedUsd" | "reportedCalls">>,
+  source: SpendSource = "chat"
 ): Promise<void> {
-  if (usage.totalTokens <= 0) return;
-  const metadata = {
-    metric: "tokens",
-    prompt_tokens: usage.promptTokens,
-    completion_tokens: usage.completionTokens,
-    model_calls: usage.calls,
-  };
+  if (usage.totalTokens <= 0 && usage.calls <= 0) return;
+  const metadata = spendMetadata(usage, source);
+  // units > 0 is a table constraint; a call that reported no tokens still cost something.
+  const units = Math.max(1, usage.totalTokens);
   if (getDatabaseProvider() === "cloud-sql") {
     await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       await client.query(
         `INSERT INTO public.ai_usage_events(owner_user_id,usage_kind,units,metadata)
          VALUES($1,'chat_message',$2,$3)`,
-        [ownerUserId, usage.totalTokens, metadata]
+        [ownerUserId, units, metadata]
       );
     });
     return;
@@ -342,7 +406,7 @@ export async function persistAiTokenUsage(
   const { error } = await getSupabaseAdmin().from("ai_usage_events").insert({
     owner_user_id: ownerUserId,
     usage_kind: "chat_message",
-    units: usage.totalTokens,
+    units,
     metadata,
   });
   if (error) throw new Error(error.message);
@@ -362,6 +426,7 @@ export async function assertAndRecordAiUsage(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const since = today.toISOString();
+  await assertSpendAllowed(ownerUserId);
   if (getDatabaseProvider() === "cloud-sql") {
     try {
       await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
@@ -376,10 +441,7 @@ export async function assertAndRecordAiUsage(
           [ownerUserId]
         );
         if (!isQuotaExemptRole(profile.rows[0]?.role)) {
-          const result = await client.query<{ count: string }>(
-            `SELECT count(*)::text AS count FROM public.ai_usage_events
-             WHERE owner_user_id=$1 AND usage_kind=$2 AND created_at >= $3`, [ownerUserId, kind, since]
-          );
+          const result = await client.query<{ count: string }>(AI_USAGE_COUNT_SQL, [ownerUserId, kind, since]);
           if (Number(result.rows[0]?.count ?? 0) >= limit) {
             throw new GuardError("Daily AI usage limit reached. Please try again tomorrow.", 429);
           }

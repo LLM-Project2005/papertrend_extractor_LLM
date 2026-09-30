@@ -1,3 +1,5 @@
+import { recordAiTokenUsage } from "@/lib/ai-token-usage";
+import { assertSpendAllowed, trackModelSpend } from "@/lib/security-guards";
 import { getOpenAIConfig, getRepositoryEmbeddingConfig } from "@/lib/server-env";
 import {
   SEMANTIC_REPRESENTATION_VERSION,
@@ -36,7 +38,8 @@ async function embedBatch(texts: string[], model: string, dimensions: number): P
         body: JSON.stringify({ model, input: texts, dimensions }),
       });
       if (response.ok) {
-        const payload = await response.json() as { data?: Array<{ index: number; embedding: number[] }> };
+        const payload = await response.json() as { data?: Array<{ index: number; embedding: number[] }>; usage?: unknown };
+        recordAiTokenUsage(payload.usage, model);
         const rows = [...(payload.data ?? [])].sort((left, right) => left.index - right.index).map((item) => item.embedding);
         if (rows.length !== texts.length || rows.some((row) => row.length !== dimensions)) {
           throw new Error("Embedding provider returned an unexpected vector shape.");
@@ -98,7 +101,8 @@ async function improveClusterLabels(clusters: SemanticMapCluster[]): Promise<Sem
       }),
     });
     if (!response.ok) return clusters;
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: unknown };
+    recordAiTokenUsage(payload.usage, provider.model);
     const parsed = JSON.parse(payload.choices?.[0]?.message?.content ?? "{}") as { labels?: Array<{ id?: number; label?: string }> };
     const labels = new Map((parsed.labels ?? []).filter((item) => Number.isInteger(item.id) && item.label?.trim()).map((item) => [item.id!, item.label!.trim().slice(0, 80)]));
     return clusters.map((cluster) => labels.has(cluster.id) ? { ...cluster, label: labels.get(cluster.id)!, source: "llm" } : cluster);
@@ -108,9 +112,15 @@ async function improveClusterLabels(clusters: SemanticMapCluster[]): Promise<Sem
 }
 
 export async function processSemanticMapJob(ownerUserId: string, mapId: string): Promise<{ skipped: boolean }> {
+  return trackModelSpend(ownerUserId, "semantic-map", () => runSemanticMapJob(ownerUserId, mapId));
+}
+
+async function runSemanticMapJob(ownerUserId: string, mapId: string): Promise<{ skipped: boolean }> {
   const job = await claimSemanticMapJob(ownerUserId, mapId);
   if (!job) return { skipped: true };
   try {
+    // A dollar limit fails the job with its reason; the previous map stays.
+    await assertSpendAllowed(ownerUserId);
     const documents = await loadSemanticPaperDocuments(ownerUserId, job.projectId);
     const sourceHash = semanticSourceHash(documents);
     if (sourceHash !== job.sourceHash) throw new Error("Repository changed before generation started. Please update the map again.");

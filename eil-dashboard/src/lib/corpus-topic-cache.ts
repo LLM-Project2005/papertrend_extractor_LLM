@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { createChatCompletion } from "@/lib/openai";
 import { normalizePaperId } from "@/lib/paper-id";
 import { isParticipantDescriptor } from "@/lib/participant-terms";
+import { spendAllowed, trackModelSpend } from "@/lib/security-guards";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import type {
@@ -396,7 +397,8 @@ function mergeFamilyGroup(
 }
 
 async function applyLlmFamilyMerges(
-  families: WorkspaceCorpusTopicFamilyCache[]
+  families: WorkspaceCorpusTopicFamilyCache[],
+  allowModel: boolean
 ): Promise<{
   families: WorkspaceCorpusTopicFamilyCache[];
   familyIdRemap: Map<string, string>;
@@ -404,7 +406,7 @@ async function applyLlmFamilyMerges(
   const familyIdRemap = new Map<string, string>();
   families.forEach((family) => familyIdRemap.set(family.id, family.id));
 
-  if (!llmTopicMergeEnabled() || families.length < 2) {
+  if (!llmTopicMergeEnabled() || !allowModel || families.length < 2) {
     return { families, familyIdRemap };
   }
 
@@ -933,7 +935,8 @@ function rehydrateTopicFamilies(
 async function buildCorpusTopicCache(
   papers: PaperMetadata[],
   concepts: ConceptSourceRow[],
-  keywords: KeywordSourceRow[]
+  keywords: KeywordSourceRow[],
+  allowModel = true
 ): Promise<WorkspaceProjectCorpusTopicCache> {
   const metadataByPaperId = new Map(papers.map((paper) => [paper.paperId, paper]));
   const conceptEntries = concepts
@@ -1169,7 +1172,7 @@ async function buildCorpusTopicCache(
       return right.totalKeywordFrequency - left.totalKeywordFrequency;
     });
 
-  const llmMerged = await applyLlmFamilyMerges(normalizedFamilies);
+  const llmMerged = await applyLlmFamilyMerges(normalizedFamilies, allowModel);
   const familyByMergedId = new Map(llmMerged.families.map((family) => [family.id, family]));
   const mergedKeywordTotals = new Map<string, Map<string, number>>();
 
@@ -1255,12 +1258,17 @@ export async function loadOrBuildProjectCorpusTopicCache(
   ]);
 
   const nextSignature = buildSourceSignature(papers, concepts, keywords);
+  const reuse = Boolean(persistedCache && persistedCache.sourceSignature === nextSignature);
+  // Topic merges by model wait while a dollar limit holds (docs/32, 1.5).
+  const allowModel = reuse ? false : await spendAllowed(ownerUserId);
   const cache =
-    persistedCache && persistedCache.sourceSignature === nextSignature
+    reuse && persistedCache
       ? persistedCache
-      : await buildCorpusTopicCache(papers, concepts, keywords);
+      : await trackModelSpend(ownerUserId, "topic-cache", () => buildCorpusTopicCache(papers, concepts, keywords, allowModel));
 
-  if (!persistedCache || persistedCache.sourceSignature !== cache.sourceSignature) {
+  // A cache built without its model merges is used for this read only, so the
+  // next read after the limit resets builds it properly.
+  if (!reuse && allowModel) {
     await persistProjectCorpusTopicCache(ownerUserId, projectId, cache);
   }
 
