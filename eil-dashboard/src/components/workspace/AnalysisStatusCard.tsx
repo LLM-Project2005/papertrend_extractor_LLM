@@ -879,7 +879,7 @@ export default function AnalysisStatusCard({
     return (
       <section
         aria-labelledby={headingId}
-        className={`${floatingPanelClass} pointer-events-auto flex max-h-[min(72dvh,600px)] origin-bottom-right flex-col overflow-hidden motion-safe:animate-scale-in`}
+        className={`${floatingPanelClass} tray-card pointer-events-auto flex origin-bottom-right flex-col overflow-hidden motion-safe:animate-scale-in`}
       >
         <header className="flex items-center gap-3 border-b border-hairline py-2.5 pl-4 pr-2">
           <ProgressRing value={progress} tone={tone} size={22} />

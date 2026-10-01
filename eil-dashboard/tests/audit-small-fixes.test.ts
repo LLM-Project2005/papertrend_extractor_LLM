@@ -194,6 +194,9 @@ test("the analysis tray stands above the chat composer", () => {
   const css = read("src/app/globals.css");
   assert.match(css, /\.tray-dock \{\s*bottom: calc\(max\(0\.75rem, env\(safe-area-inset-bottom\)\) \+ var\(--chat-composer-offset, 0px\)\);/);
   assert.match(css, /bottom: calc\(1\.25rem \+ var\(--chat-composer-offset, 0px\)\);/);
+  // Open, it stops below the headers (on a phone it covered the chat list button).
+  assert.match(css, /\.tray-card \{\s*max-height: min\(72dvh, 600px, calc\(100dvh - var\(--chat-composer-offset, 0px\) - 9rem\)\);/);
+  assert.match(read("src/components/workspace/AnalysisStatusCard.tsx"), /className=\{`\$\{floatingPanelClass\} tray-card pointer-events-auto/);
 });
 
 // CHAT-10: an arriving answer is announced; opening a conversation is not.

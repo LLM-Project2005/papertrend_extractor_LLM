@@ -364,7 +364,8 @@ test("a chat thread row is clickable across its whole height", () => {
   // The padding sat on the row wrapper, so the row looked 28px tall while only
   // the 20px of text responded to a click.
   const chat = read("src/components/chat/ChatClient.tsx");
-  assert.match(chat, /className="block w-full min-w-0 py-1\.5 text-left"/);
+  // On a touch screen the title also stops short of the always-visible options button.
+  assert.match(chat, /className="block w-full min-w-0 py-1\.5 text-left \[@media\(hover:none\)\]:pr-8"/);
 });
 
 test("a text link on the public pages is bigger than its text", () => {

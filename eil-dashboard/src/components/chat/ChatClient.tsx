@@ -3131,8 +3131,10 @@ export default function ChatClient() {
                       // The padding used to sit on the row wrapper, so the row
                       // looked 28px tall while only the 20px of text was
                       // clickable. Moving it onto the button makes the whole row
-                      // the target it already appeared to be.
-                      className="block w-full min-w-0 py-1.5 text-left"
+                      // the target it already appeared to be. On a touch screen
+                      // the options button always shows, so the title stops
+                      // short of it rather than running underneath.
+                      className="block w-full min-w-0 py-1.5 text-left [@media(hover:none)]:pr-8"
                     >
                       <div className="flex items-center gap-2">
                         {pinned ? (
