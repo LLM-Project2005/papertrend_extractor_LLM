@@ -50,6 +50,9 @@ test("a repository-wide answer and its audit see the counted figures", () => {
   const corpus = source.slice(source.indexOf("async function aggregateCorpusResult("));
   assert.match(corpus, /`Eligible papers: \$\{context\.papers\.length\}`, countsEvidence, "Use these counts for any claim about how often or how many/);
   assert.match(corpus, /evidenceText: \[countsEvidence, \.\.\.summaries\]\.join/);
+  // An answer of counts names no paper; with the counts in evidence it is not failed for that.
+  assert.match(corpus, /formatConstraint: formatConstraintInstruction\(input\.prompt\),\s*countsBacked: true,/);
+  assert.match(source, /validation\.citedPaperIds\.length > 0 \|\| input\.countsBacked === true\)/);
 });
 
 test("a corpus-wide audit that names many papers is read, not rejected", () => {

@@ -30,10 +30,7 @@ export async function indexRunForSearch(
     return result.rows[0]?.project_id ?? null;
   });
   if (!projectId) return { indexed: false, papers: 0, chunks: 0, embedded: 0 };
-  const context = await loadRepositoryContext(
-    { ownerUserId, projectId, selectedRunIds: [runId], prompt: "" },
-    { saveCache: false }
-  );
+  const context = await loadRepositoryContext({ ownerUserId, projectId, selectedRunIds: [runId], prompt: "" });
   if (context.papers.length === 0) return { indexed: false, papers: 0, chunks: 0, embedded: 0 };
   const result = await syncRepositoryMemory({ ownerUserId, projectId, folderId: null }, context.papers);
   return { indexed: true, ...result };

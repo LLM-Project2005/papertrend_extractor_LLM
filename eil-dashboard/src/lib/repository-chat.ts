@@ -592,8 +592,6 @@ const SECTION_JOINER = "\n\n";
 const REPOSITORY_MEMORY_MAX_PAPERS = 500;
 const REPOSITORY_MEMORY_MAX_CHARS = 18_000;
 const REPOSITORY_PAPER_BRIEF_MAX_CHARS = 360;
-const REPOSITORY_CACHE_MAX_ROWS_PER_OWNER = 24;
-const REPOSITORY_CACHE_MAX_AGE_DAYS = 30;
 const DOCUMENT_ANALYSIS_BATCH_SIZE = 6;
 
 /**
@@ -650,9 +648,14 @@ function buildRunStats(rows: Array<{ status?: unknown }>): RepositoryRunStats {
   return stats;
 }
 
+/**
+ * A paper as stored. Its word index is filled in by loadRepositoryContext,
+ * from the cached index when the text has not changed: every paper's full text
+ * used to be tokenised here, on every question, before the cache was checked
+ * (docs/32, 3.1).
+ */
 function paperFromRow(row: PaperRow): RepositoryPaper {
   const { text: content, source: contentSource } = canonicalPaperContent(row);
-  const index = buildRepositoryTermCounts(content);
   return {
     paperId: String(row.paper_id),
     runId: String(row.ingestion_run_id ?? ""),
@@ -666,8 +669,8 @@ function paperFromRow(row: PaperRow): RepositoryPaper {
     content,
     contentHash: hashText(`${TERM_INDEX_VERSION}\u0000${content}`),
     contentSource,
-    totalWords: index.totalWords,
-    termCounts: index.termCounts,
+    totalWords: 0,
+    termCounts: {},
     topics: new Map(),
     keywords: new Map(),
   };
@@ -1010,7 +1013,8 @@ async function saveTermIndexes(ownerUserId: string, papers: RepositoryPaper[]): 
   }
 }
 
-function applyCachedIndexes(papers: RepositoryPaper[], cached: Map<string, TermIndexRow>): RepositoryPaper[] {
+/** Uses each paper's cached word index when its text is unchanged; builds the rest. Returns those built. */
+export function applyCachedIndexes(papers: RepositoryPaper[], cached: Map<string, TermIndexRow>): RepositoryPaper[] {
   const stale: RepositoryPaper[] = [];
   papers.forEach((paper) => {
     const item = cached.get(paper.paperId);
@@ -1018,6 +1022,9 @@ function applyCachedIndexes(papers: RepositoryPaper[], cached: Map<string, TermI
       paper.termCounts = item.term_counts;
       paper.totalWords = Number(item.total_words ?? 0);
     } else {
+      const index = buildRepositoryTermCounts(paper.content);
+      paper.termCounts = index.termCounts;
+      paper.totalWords = index.totalWords;
       stale.push(paper);
     }
   });
@@ -1081,155 +1088,27 @@ function pruneRepositoryMemory(markdown: string): string {
   ].join("\n");
 }
 
-async function saveRepositoryCache(context: RepositoryContext): Promise<void> {
-  const scopeKey = `repository:v1:${context.projectId}:${context.folderId ?? "all"}:${
-    context.selectedRunIds.length > 0 ? hashText(context.selectedRunIds.join(",")).slice(0, 16) : "scope"
-  }`;
-  const payload = {
-    kind: "repository_context_v1",
-    projectId: context.projectId,
-    folderId: context.folderId,
-    selectedRunIds: context.selectedRunIds,
-    paperCount: context.papers.length,
-    runStats: context.runStats,
-    totalWords: context.totalWords,
-    memoryPolicy: {
-      maxPapers: REPOSITORY_MEMORY_MAX_PAPERS,
-      maxCharacters: REPOSITORY_MEMORY_MAX_CHARS,
-      maxPaperBriefCharacters: REPOSITORY_PAPER_BRIEF_MAX_CHARS,
-      cacheMaxRowsPerOwner: REPOSITORY_CACHE_MAX_ROWS_PER_OWNER,
-      cacheMaxAgeDays: REPOSITORY_CACHE_MAX_AGE_DAYS,
-    },
-    summaryMarkdown: context.summaryMarkdown,
-    topics: context.topicCounts.slice(0, 30),
-    keywords: context.keywordCounts.slice(0, 50),
-    manifest: context.papers.slice(0, REPOSITORY_MEMORY_MAX_PAPERS).map((paper) => ({
-      paperId: paper.paperId,
-      runId: paper.runId,
-      title: paper.title,
-      year: paper.year,
-      contentHash: paper.contentHash,
-    })),
-  };
-  try {
-    if (getDatabaseProvider() === "cloud-sql") {
-      await withCloudSqlOwnerTransaction(context.ownerUserId, async (client) => {
-        await client.query(
-          `
-            INSERT INTO public.workspace_analytics_cache (
-              owner_user_id, scope_type, scope_key, version_hash, payload, updated_at
-            ) VALUES ($1, 'custom', $2, $3, $4::jsonb, now())
-            ON CONFLICT (owner_user_id, scope_type, scope_key) DO UPDATE SET
-              version_hash = EXCLUDED.version_hash,
-              payload = EXCLUDED.payload,
-              updated_at = now()
-          `,
-          [context.ownerUserId, scopeKey, context.versionHash, JSON.stringify(payload)]
-        );
-      });
-      await pruneRepositoryCacheForOwner(context.ownerUserId);
-      return;
-    }
-    const supabase = getSupabaseAdmin();
-    await supabase.from("workspace_analytics_cache").upsert(
-      {
-        owner_user_id: context.ownerUserId,
-        scope_type: "custom",
-        scope_key: scopeKey,
-        version_hash: context.versionHash,
-        payload,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "owner_user_id,scope_type,scope_key" }
-    );
-    await pruneRepositoryCacheForOwner(context.ownerUserId);
-  } catch {
-    // This cache is an optimization, never a prerequisite for an answer.
-  }
-}
-
-async function pruneRepositoryCacheForOwner(ownerUserId: string): Promise<void> {
-  try {
-    if (getDatabaseProvider() === "cloud-sql") {
-      await withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
-        await client.query(
-          `
-            DELETE FROM public.workspace_analytics_cache
-            WHERE owner_user_id = $1
-              AND scope_type = 'custom'
-              AND scope_key LIKE 'repository:v1:%'
-              AND updated_at < now() - ($2::text || ' days')::interval
-          `,
-          [ownerUserId, REPOSITORY_CACHE_MAX_AGE_DAYS]
-        );
-        await client.query(
-          `
-            DELETE FROM public.workspace_analytics_cache
-            WHERE ctid IN (
-              SELECT ctid
-              FROM public.workspace_analytics_cache
-              WHERE owner_user_id = $1
-                AND scope_type = 'custom'
-                AND scope_key LIKE 'repository:v1:%'
-              ORDER BY updated_at DESC
-              OFFSET $2
-            )
-          `,
-          [ownerUserId, REPOSITORY_CACHE_MAX_ROWS_PER_OWNER]
-        );
-      });
-      return;
-    }
-
-    const supabase = getSupabaseAdmin();
-    const staleBefore = new Date(Date.now() - REPOSITORY_CACHE_MAX_AGE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-    await supabase
-      .from("workspace_analytics_cache")
-      .delete()
-      .eq("owner_user_id", ownerUserId)
-      .eq("scope_type", "custom")
-      .like("scope_key", "repository:v1:%")
-      .lt("updated_at", staleBefore);
-
-    const { data } = await supabase
-      .from("workspace_analytics_cache")
-      .select("scope_key")
-      .eq("owner_user_id", ownerUserId)
-      .eq("scope_type", "custom")
-      .like("scope_key", "repository:v1:%")
-      .order("updated_at", { ascending: false })
-      .range(REPOSITORY_CACHE_MAX_ROWS_PER_OWNER, 500);
-    const oldKeys = (data ?? [])
-      .map((row) => String((row as { scope_key?: unknown }).scope_key ?? ""))
-      .filter(Boolean);
-    if (oldKeys.length > 0) {
-      await supabase
-        .from("workspace_analytics_cache")
-        .delete()
-        .eq("owner_user_id", ownerUserId)
-        .eq("scope_type", "custom")
-        .in("scope_key", oldKeys);
-    }
-  } catch {
-    // Pruning is best-effort and should never block chat.
-  }
-}
-
-export async function loadRepositoryContext(
-  input: RepositoryChatInput,
-  options: { saveCache?: boolean } = {}
-): Promise<RepositoryContext> {
+export async function loadRepositoryContext(input: RepositoryChatInput): Promise<RepositoryContext> {
   reportChatProgress("loading_repository");
+  const startedAt = performance.now();
   const knowledgeScope = normalizeKnowledgeScope(input);
   const selectedRunIds = normalizedIdList(knowledgeScope.runIds ?? input.selectedRunIds);
   const loaded = getDatabaseProvider() === "cloud-sql"
     ? await loadCloudSqlRows({ ...input, knowledgeScope })
     : await loadSupabaseRows({ ...input, knowledgeScope });
+  const rowsAt = performance.now();
   const papers = loaded.papers.map(paperFromRow);
   addKeywordRows(papers, loaded.keywords);
   const cached = await loadTermIndexes(input.ownerUserId, papers.map((paper) => paper.paperId));
   const stale = applyCachedIndexes(papers, cached);
-  await saveTermIndexes(input.ownerUserId, stale);
+  if (stale.length > 0) await saveTermIndexes(input.ownerUserId, stale);
+  // Where a question's repository load goes (docs/32, 3.1).
+  console.info("chat_repository_load", JSON.stringify({
+    papers: papers.length,
+    indexesBuilt: stale.length,
+    rowsMs: Math.round(rowsAt - startedAt),
+    totalMs: Math.round(performance.now() - startedAt),
+  }));
 
   const topicCounts = aggregateLabels(papers, "topics");
   const keywordCounts = aggregateLabels(papers, "keywords");
@@ -1268,8 +1147,8 @@ export async function loadRepositoryContext(
     totalWords,
     runStats: loaded.runStats,
   };
-  // Indexing loads one paper at a time; a cache row per paper would be clutter.
-  if (options.saveCache !== false) await saveRepositoryCache(context);
+  // A repository context row used to be written here on every question, with
+  // two clean-up deletes; nothing ever read it (docs/32, 3.1).
   return context;
 }
 
@@ -2468,6 +2347,12 @@ async function checkFaithfulness(input: {
   model?: string;
   /** The shape the reader named, if they named one. */
   formatConstraint?: string | null;
+  /**
+   * The evidence includes the repository's own counts, so a claim about how
+   * often or how many is backed without naming a paper. A supported answer of
+   * counts used to fail for citing none (found on the pilot).
+   */
+  countsBacked?: boolean;
 }): Promise<{
   answer: string;
   confidence: number;
@@ -2556,7 +2441,7 @@ async function checkFaithfulness(input: {
     const validation = validateInlinePaperCitations(corrected, input.allowedPaperIds);
     const citationsOk =
       validation.invalidPaperIds.length === 0 &&
-      (!validation.hasSubstantiveText || validation.citedPaperIds.length > 0);
+      (!validation.hasSubstantiveText || validation.citedPaperIds.length > 0 || input.countsBacked === true);
     const grounded = parsed.data.supported && parsed.data.answersIntent && citationsOk;
     // How often answers are judged unsupported, and why, without the answer itself.
     console.info("chat_audit_verdict", JSON.stringify({
@@ -3777,6 +3662,7 @@ async function aggregateCorpusResult(
         scopeMode: "exhaustive",
         model: input.model,
         formatConstraint: formatConstraintInstruction(input.prompt),
+        countsBacked: true,
       });
       // The auditor may approve, approve with gaps, or judge the synthesis
       // ungrounded. Only the first two are safe to present without a warning.
