@@ -17,7 +17,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import PaperAnalysisExplorerModal from "@/components/workspace/PaperAnalysisExplorerModal";
+import dynamic from "next/dynamic";
 import { PAPER_PARAM, PAPER_TAB_PARAM, libraryPaperHref, readPaperTab, type PaperExplorerTab, type PaperTarget } from "@/lib/paper-address";
 import Modal from "@/components/ui/Modal";
 import { buttonClass, fieldClass, labelClass } from "@/components/ui/controls";
@@ -25,6 +25,12 @@ import { SpinnerIcon } from "@/components/ui/Icons";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
 import { getRunDisplayTitle } from "@/lib/ingestion-status";
 import type { IngestionRunRow, RunAnalysisDetail } from "@/types/database";
+
+// The paper window and its PDF reader load when a paper is opened; they were
+// part of every workspace page (docs/32, 3.3).
+const PaperAnalysisExplorerModal = dynamic(() => import("@/components/workspace/PaperAnalysisExplorerModal"), {
+  ssr: false,
+});
 
 interface PaperViewer {
   openPaper: (target: PaperTarget) => void;

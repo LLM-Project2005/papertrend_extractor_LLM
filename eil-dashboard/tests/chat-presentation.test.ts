@@ -19,7 +19,7 @@ import {
 import { GRAY } from "../src/lib/palette";
 
 function chatSource(): string {
-  return ["ChatClient.tsx", "AnswerBody.tsx", "ChatIntro.tsx"]
+  return ["ChatClient.tsx", "ChatChartCard.tsx", "AnswerBody.tsx", "ChatIntro.tsx"]
     .map((file) => readFileSync(new URL(`../src/components/chat/${file}`, import.meta.url), "utf8"))
     .join(String.fromCharCode(10));
 }

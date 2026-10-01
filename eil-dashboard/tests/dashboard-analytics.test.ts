@@ -160,7 +160,8 @@ test("a paper moved to Trash leaves the dashboard and Home's counts", () => {
 
 test("the Adaptive tab carries its own header, and no data pill remains (U2)", () => {
   const client = read("src/components/DashboardClient.tsx");
-  assert.match(client, /\{currentTabKey === "adaptive" \? \(\s*<InsightsTab/);
+  // Kept mounted once opened (docs/32, 3.3).
+  assert.match(client, /<TabPanel active=\{currentTabKey === "adaptive"\} visited=\{visitedTabs\.has\("adaptive"\)\}>\s*<InsightsTab/);
   assert.doesNotMatch(client, /Visualization planner/, "no planner panel above the tabs");
   assert.equal(/"Live data"|Preview data/.test(client.replace(/\/\*[\s\S]*?\*\//g, "")), false);
 });

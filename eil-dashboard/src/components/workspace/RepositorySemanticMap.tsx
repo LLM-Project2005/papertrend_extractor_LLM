@@ -1,5 +1,7 @@
 "use client";
 
+// The graph library's styles come with the map: they were on every page of the site.
+import "@xyflow/react/dist/style.css";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
 import { useRouter } from "next/navigation";

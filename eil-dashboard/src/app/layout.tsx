@@ -3,8 +3,6 @@ import { GeistMono } from "geist/font/mono";
 import { GeistSans } from "geist/font/sans";
 import { AuthProvider } from "@/components/auth/AuthProvider";
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
-import { WorkspaceProvider } from "@/components/workspace/WorkspaceProvider";
-import "@xyflow/react/dist/style.css";
 import "./globals.css";
 
 const metadataBase = new URL(
@@ -74,9 +72,9 @@ export default function RootLayout({
       </head>
       <body>
         <ThemeProvider>
-          <AuthProvider>
-            <WorkspaceProvider>{children}</WorkspaceProvider>
-          </AuthProvider>
+          {/* The workspace state lives in the workspace's own layouts: here it
+              was code on every public page (docs/32, 3.3; audit SHELL-11). */}
+          <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
       </body>
     </html>
