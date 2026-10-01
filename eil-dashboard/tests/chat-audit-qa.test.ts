@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  AUDIT_EVIDENCE_CHARS,
+  auditEvidence,
   CORRECTED_ANSWER_LIMITATION,
   decideFromAudit,
+  FaithfulnessSchema,
+  GroundedAnswerSchema,
   LANGUAGE_LIMITATION,
   resolveQaAudit,
   UNCHECKED_ANSWER_LIMITATION,
@@ -11,6 +15,41 @@ import {
 } from "../src/lib/repository-chat";
 
 /** No chat answer skips the fact-check (docs/32, 2.2). */
+
+test("the audit sees the evidence a repository-wide answer was written from", () => {
+  // Found on the pilot: the whole audit prompt was cut at 24,000 characters,
+  // draft first, so most batch findings of a 41-paper synthesis never reached
+  // the auditor, and it judged the answer unsupported.
+  const findings = "x".repeat(40_000);
+  assert.equal(auditEvidence(findings, "exhaustive"), findings, "a repository's findings fit whole");
+  const cut = auditEvidence("y".repeat(AUDIT_EVIDENCE_CHARS.focused + 500), "focused");
+  assert.ok(cut.startsWith("y".repeat(AUDIT_EVIDENCE_CHARS.focused)));
+  assert.match(cut, /\[Evidence shortened here: judge only claims about the evidence shown/);
+  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
+  const audit = source.slice(source.indexOf("async function checkFaithfulness("), source.indexOf("export const UNCHECKED_ANSWER_LIMITATION"));
+  assert.match(audit, /auditEvidence\(input\.evidenceText, input\.scopeMode\)/);
+  assert.doesNotMatch(audit, /\.slice\(0, 24_000\)/);
+  // Grounding and coverage are judged apart: leaving something out is not an unsupported claim.
+  assert.match(audit, /A claim is never unsupported because the draft leaves something out\./);
+  assert.match(audit, /need not name each paper, nor be longer than the reader asked for/);
+});
+
+test("a corpus-wide audit that names many papers is read, not rejected", () => {
+  // Found on the pilot: the audit of a 41-paper synthesis listed 30 cited ids,
+  // the schema allowed 12, and every corpus answer went out unchecked.
+  const ids = Array.from({ length: 30 }, (_, index) => `10000000000000000${String(index).padStart(2, "0")}`);
+  const audit = FaithfulnessSchema.safeParse({
+    supported: true, answersIntent: true, completeForRequest: true, languageMatched: true,
+    correctedAnswer: "", citedPaperIds: ids, confidence: 0.8, reason: "",
+  });
+  assert.equal(audit.success, true);
+  assert.equal(audit.success && audit.data.citedPaperIds.length, 12);
+  const answer = GroundedAnswerSchema.safeParse({ answer: "Across the papers [Paper 1]...", citedPaperIds: ids, limitations: [] });
+  assert.equal(answer.success, true, "an answer citing many papers is not thrown away either");
+  // A string or nothing still reads as a list.
+  const single = FaithfulnessSchema.safeParse({ supported: "yes", answersIntent: "true", completeForRequest: false, languageMatched: true, citedPaperIds: "42" });
+  assert.equal(single.success && single.data.citedPaperIds.join(), "42");
+});
 
 const ALLOWED = ["101", "102"];
 const DRAFT = "Teachers in both studies used peer feedback to improve writing accuracy over one semester of instruction [Paper 101].";
