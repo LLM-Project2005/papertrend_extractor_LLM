@@ -32,7 +32,6 @@ import {
 } from "recharts";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useDashboardData } from "@/hooks/useData";
 import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
 import {
   dedupeConversationSources,
@@ -1377,7 +1376,9 @@ export default function ChatClient() {
     startAnalysisSession,
     refreshFolders,
   } = useWorkspaceProfile();
-  const [chatScopeProjectId, setChatScopeProjectId] = useState<string>("all");
+  // Starts on the open repository: starting on "all" asked for a summary of
+  // every repository first, then this one's (docs/32, 3.2).
+  const [chatScopeProjectId, setChatScopeProjectId] = useState<string>(() => currentProject?.id ?? "all");
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
   // A chat opened inside a repository asks that repository until the reader
   // picks another scope. It used to start on every repository in the account,
@@ -1400,15 +1401,10 @@ export default function ChatClient() {
   const [chatParameters, setChatParameters] = useState<ChatGenerationParameters>(
     DEFAULT_CHAT_PARAMETERS
   );
-  const projectFolderIds = useMemo(
-    () => folders.map((folder) => folder.id),
-    [folders]
-  );
-  const dashboardScopeFolderId = chatScopeFolderId;
-  const { allYears } = useDashboardData(dashboardScopeFolderId, projectFolderIds, {
-    projectId: selectedProjectId,
-    enabled: Boolean(selectedProjectId),
-  });
+  // The scope's years come with its summary. The whole dashboard dataset used
+  // to be fetched on every chat page for this list alone (docs/32, 3.2).
+  const [scopeYears, setScopeYears] = useState<string[]>([]);
+  const allYears = scopeYears;
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
   // Conversations arrive a page at a time; older ones load on request.
@@ -1736,6 +1732,7 @@ export default function ChatClient() {
           eligiblePaperCount: payload.eligiblePaperCount,
           examples: Array.isArray(payload.examples) ? payload.examples : [],
         });
+        setScopeYears(Array.isArray(payload.years) ? payload.years.map(String) : []);
       })
       .catch(() => {
         // An unreadable scope is not worth an error on an empty page; the

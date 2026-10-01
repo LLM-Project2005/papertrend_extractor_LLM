@@ -56,6 +56,8 @@ export async function GET(request: Request) {
         eligiblePaperCount: papers.length,
         examples: exampleQuestions(papers, context.scopeLabel),
         topics: context.topicCounts.slice(0, 6).map((topic) => topic.label),
+        // The years in scope, for the chat's year filter.
+        years: [...new Set(context.papers.map((paper) => paper.year))].sort(),
       }),
       request
     );
