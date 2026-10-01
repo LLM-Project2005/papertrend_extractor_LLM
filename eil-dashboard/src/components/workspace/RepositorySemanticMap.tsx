@@ -26,10 +26,15 @@ import {
 import ForceDirectedSemanticGraph from "@/components/workspace/ForceDirectedSemanticGraph";
 import Select, { type SelectOption } from "@/components/ui/Select";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
+import {
+  colorScale,
+  NEIGHBORHOOD_PALETTE as PALETTE,
+  pointColor,
+  showLabelsByDefault,
+  type ColorMode,
+} from "@/lib/semantic-map-colors";
 import type { RepositorySemanticMap, SemanticMapCoverage, SemanticMapEdge, SemanticMapPoint } from "@/types/semantic-map";
 import { ChartIcon, CheckIcon, CloseIcon, FilterIcon, RefreshIcon, SearchIcon, SparkIcon } from "@/components/ui/Icons";
-
-type ColorMode = "cluster" | "category" | "year" | "track";
 
 const COLOR_MODE_OPTIONS: SelectOption<ColorMode>[] = [
   { value: "cluster", label: "Neighborhood", description: "Papers the map found near each other" },
@@ -43,7 +48,6 @@ interface Props {
   requestHeaders: Record<string, string>;
 }
 
-const PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#4f46e5"];
 type LayoutMode = "projection" | "force";
 
 type PaperNodeData = {
@@ -110,19 +114,6 @@ function ReadableRelationshipEdge({ id, sourceX, sourceY, targetX, targetY, styl
 
 const EDGE_TYPES = { relationship: ReadableRelationshipEdge };
 
-function hashColor(value: string): string {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) hash = ((hash << 5) - hash + value.charCodeAt(index)) | 0;
-  return PALETTE[Math.abs(hash) % PALETTE.length];
-}
-
-function pointColor(point: SemanticMapPoint, mode: ColorMode): string {
-  if (mode === "cluster") return PALETTE[Math.abs(point.clusterId ?? 0) % PALETTE.length];
-  if (mode === "category") return hashColor(point.categories[0] ?? "Uncategorized");
-  if (mode === "year") return hashColor(point.year || "Unknown");
-  return hashColor(point.track ?? "Unassigned");
-}
-
 function colorLabel(point: SemanticMapPoint, mode: ColorMode, map: RepositorySemanticMap): string {
   if (mode === "cluster") return map.clusters.find((cluster) => cluster.id === point.clusterId)?.label ?? "Other neighborhood";
   if (mode === "category") return point.categories[0] ?? "Uncategorized";
@@ -176,8 +167,12 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   const [paperFilterQuery, setPaperFilterQuery] = useState("");
   const [paperFilterNotice, setPaperFilterNotice] = useState<string | null>(null);
   const [colorMode, setColorMode] = useState<ColorMode>("cluster");
+  // Built from every paper in the map, so a colour means the same value whatever is hidden.
+  const colors = useMemo(() => colorScale(map?.points ?? [], colorMode), [colorMode, map]);
   const [showEdges, setShowEdges] = useState(true);
-  const [showPaperLabels, setShowPaperLabels] = useState(true);
+  // Labels by default only for a map small enough to read them; the reader's choice wins.
+  const [labelChoice, setLabelChoice] = useState<boolean | null>(null);
+  const showPaperLabels = showLabelsByDefault(map?.points.length ?? 0, labelChoice);
   const [selectedPaperIds, setSelectedPaperIds] = useState<string[]>([]);
   const [hiddenPaperIds, setHiddenPaperIds] = useState<string[]>([]);
   const [focusedPaperId, setFocusedPaperId] = useState<string | null>(null);
@@ -297,7 +292,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
     const selected = selectedPaperIds.includes(point.paperId);
     const inFocus = selected || point.paperId === focusedPaperId;
     const hasSelection = selectedPaperIds.length > 0 || Boolean(focusedPaperId);
-    const color = pointColor(point, colorMode);
+    const color = pointColor(point, colorMode, colors);
     return {
       id: point.paperId,
       type: "paper",
@@ -316,13 +311,13 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
       ariaLabel: `${point.title}, ${point.year}, ${colorLabel(point, colorMode, map!)}`,
       selected,
     };
-  }), [activeClusterId, colorMode, focusedPaperId, map, matchedIds, normalizedQuery, selectedPaperIds, showPaperLabels, visiblePoints]);
+  }), [activeClusterId, colorMode, colors, focusedPaperId, map, matchedIds, normalizedQuery, selectedPaperIds, showPaperLabels, visiblePoints]);
 
   const candidateEdges = useMemo(() => (map?.edges ?? [])
     .filter((edge) => visibleIds.has(edge.sourcePaperId) && visibleIds.has(edge.targetPaperId))
     .sort((left, right) => left.distance - right.distance), [map, visibleIds]);
   const selectedIdSet = useMemo(() => new Set(selectedPaperIds), [selectedPaperIds]);
-  const forceColors = useMemo(() => Object.fromEntries(visiblePoints.map((point) => [point.paperId, pointColor(point, colorMode)])), [colorMode, visiblePoints]);
+  const forceColors = useMemo(() => Object.fromEntries(visiblePoints.map((point) => [point.paperId, pointColor(point, colorMode, colors)])), [colorMode, colors, visiblePoints]);
   const forceDimmedIds = useMemo(() => new Set(visiblePoints
     .filter((point) => (activeClusterId !== null && point.clusterId !== activeClusterId) || Boolean(normalizedQuery && !matchedIds.has(point.paperId)))
     .map((point) => point.paperId)), [activeClusterId, matchedIds, normalizedQuery, visiblePoints]);
@@ -398,9 +393,9 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   const legend = useMemo(() => {
     if (!map) return [];
     const rows = new Map<string, string>();
-    for (const point of visiblePoints) rows.set(colorLabel(point, colorMode, map), pointColor(point, colorMode));
+    for (const point of visiblePoints) rows.set(colorLabel(point, colorMode, map), pointColor(point, colorMode, colors));
     return [...rows.entries()].slice(0, 12);
-  }, [colorMode, map, visiblePoints]);
+  }, [colorMode, colors, map, visiblePoints]);
 
   function togglePaperSelection(paperId: string) {
     const removing = selectedPaperIds.includes(paperId);
@@ -526,7 +521,7 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
             </div>
             <p className="mt-3 text-[11px] leading-5 text-slate-500 dark:text-[#888]">{layoutMode === "projection" ? "Positions come from what each paper says, so papers close together are similar in content." : "Positions come from the links between papers and from your dragging. Distance here does not show how similar two papers are; use Fixed projection to read similarity."}</p>
             {layoutMode === "force" ? <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => setForceRunning((current) => !current)} disabled={prefersReducedMotion} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 disabled:cursor-not-allowed disabled:opacity-40 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">{forceRunning ? "Pause motion" : "Resume motion"}</button><button type="button" onClick={resetForceLayout} className="h-8 rounded-md border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 transition hover:border-slate-400 dark:border-[#303030] dark:bg-black dark:text-[#ddd]">Reset graph</button></div> : null}
-            <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-[#999]"><span>Retained relationships</span><span className="font-semibold tabular-nums text-slate-800 dark:text-[#eee]">{candidateEdges.length}</span></div><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Relationships</span><input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} /></label><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Paper labels</span><input type="checkbox" checked={showPaperLabels} onChange={(event) => setShowPaperLabels(event.target.checked)} /></label>
+            <div className="mt-4 flex items-center justify-between gap-3 text-xs text-slate-500 dark:text-[#999]"><span>Retained relationships</span><span className="font-semibold tabular-nums text-slate-800 dark:text-[#eee]">{candidateEdges.length}</span></div><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Relationships</span><input type="checkbox" checked={showEdges} onChange={(event) => setShowEdges(event.target.checked)} /></label><label className="mt-3 flex items-center justify-between gap-3 text-sm text-slate-700 dark:text-[#ddd]"><span>Paper labels</span><input type="checkbox" checked={showPaperLabels} onChange={(event) => setLabelChoice(event.target.checked)} /></label>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-[#202020] dark:bg-[#050505]"><div className="flex items-center justify-between gap-3"><p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#888]">Neighborhoods</p>{focusedClusterId !== null ? <button type="button" onClick={() => setFocusedClusterId(null)} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Clear</button> : null}</div>{map.clusters.length === 1 ? <p className="mt-2 text-[11px] leading-4 text-slate-600 dark:text-[#999]">These papers did not separate into distinct neighborhoods, so colouring by neighborhood gives them all one colour. Colour by category or year to tell them apart.</p> : null}<div className="mt-3 space-y-1.5">{map.clusters.map((cluster) => { const active = focusedClusterId === cluster.id; return <button key={cluster.id} type="button" onClick={() => setFocusedClusterId(active ? null : cluster.id)} className={`flex w-full items-start gap-2 rounded-lg px-2.5 py-2 text-left transition ${active ? "bg-slate-100 dark:bg-[#151515]" : "hover:bg-slate-50 dark:hover:bg-[#101010]"}`}><span className="mt-1 h-2.5 w-2.5 flex-none rounded-full" style={{ backgroundColor: PALETTE[Math.abs(cluster.id) % PALETTE.length] }} /><span className="min-w-0 flex-1"><span className="line-clamp-2 text-xs font-semibold leading-5 text-slate-800 dark:text-[#eee]" title={cluster.label}>{cluster.label}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{cluster.paperCount} papers</span></span></button>; })}</div></div>

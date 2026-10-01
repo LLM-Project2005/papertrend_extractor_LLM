@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthenticatedUserFromRequest } from "@/lib/admin-auth";
-import { cloudSqlLibraryRepository } from "@/lib/cloudsql/library-repository";
+import { cloudSqlLibraryRepository, LibraryActionError } from "@/lib/cloudsql/library-repository";
 import { getDatabaseProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { createGcsSignedReadUrl, resolveStoredObject } from "@/lib/gcs-signed-urls";
@@ -50,7 +50,7 @@ export async function PATCH(
         paperIdFromRunId(runId)
       );
       if (!paper) {
-        return NextResponse.json({ error: "Library file not found." }, { status: 404 });
+        return NextResponse.json({ error: "This paper has no saved analysis to correct." }, { status: 404 });
       }
       return NextResponse.json({ paper });
     }
@@ -75,7 +75,10 @@ export async function PATCH(
         if (!body.folderId) {
           return NextResponse.json({ error: "folderId is required." }, { status: 400 });
         }
-        patch = { folderId: body.folderId };
+        // Checked against the owner's folders, and the paper's rows move with it.
+        const moved = await cloudSqlLibraryRepository.moveRun(user.id, runId, body.folderId);
+        if (!moved) return NextResponse.json({ error: "Library file not found." }, { status: 404 });
+        return NextResponse.json({ run: moved });
       } else if (action === "trash") {
         patch = { trashedAt: now };
       } else if (action === "restore") {
@@ -142,6 +145,9 @@ export async function PATCH(
 
     return NextResponse.json({ run: data });
   } catch (error) {
+    if (error instanceof LibraryActionError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     const message =
       error instanceof Error ? error.message : "Failed to update library file.";
     return NextResponse.json(
@@ -287,6 +293,9 @@ export async function POST(
 
     return NextResponse.json({ url: signed.signedUrl });
   } catch (error) {
+    if (error instanceof LibraryActionError) {
+      return NextResponse.json({ error: error.message }, { status: error.status });
+    }
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Failed to open library file.",

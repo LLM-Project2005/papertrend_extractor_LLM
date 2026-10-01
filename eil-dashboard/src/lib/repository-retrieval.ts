@@ -180,6 +180,45 @@ export function rankRepositoryEvidence(
     .slice(0, Math.max(1, Math.min(limit, 256)));
 }
 
+/**
+ * Adds the search index's semantic ranking as a fourth reciprocal-rank channel
+ * (docs/32, 2.3), over the in-memory ranking of every paper in scope.
+ *
+ * Indexed papers used to be placed ahead of all others, whatever their
+ * relevance, so a paper not yet indexed fell to the back. Now a paper the
+ * index does not hold is scored as if the index agreed with its in-memory
+ * position: being unindexed neither helps nor hurts it. An indexed paper the
+ * index ranked is scored by that rank, and one it did not rank gets nothing
+ * from this channel. Papers outside `candidates` (trashed, out of scope) are
+ * ignored however the index ranked them.
+ */
+export function fuseSemanticRanks(
+  candidates: RepositoryRetrievalCandidate[],
+  semantic: { rankedPaperIds: string[]; indexedPaperIds: Iterable<string> },
+  limit = candidates.length
+): RepositoryRetrievalCandidate[] {
+  const fusionConstant = 60;
+  const semanticRank = new Map(semantic.rankedPaperIds.map((paperId, index) => [paperId, index + 1]));
+  const indexed = new Set(semantic.indexedPaperIds);
+  return candidates
+    .map((candidate, position) => {
+      const rank = semanticRank.get(candidate.paperId);
+      const contribution = rank
+        ? 1 / (fusionConstant + rank)
+        : indexed.has(candidate.paperId)
+          ? 0
+          : 1 / (fusionConstant + position + 1);
+      return { ...candidate, fusedScore: candidate.fusedScore + contribution };
+    })
+    .sort(
+      (left, right) =>
+        right.fusedScore - left.fusedScore ||
+        right.lexicalScore - left.lexicalScore ||
+        left.title.localeCompare(right.title)
+    )
+    .slice(0, Math.max(1, limit));
+}
+
 export function validateInlinePaperCitations(
   answer: string,
   allowedPaperIds: Iterable<string>

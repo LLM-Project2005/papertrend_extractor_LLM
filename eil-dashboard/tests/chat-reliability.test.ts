@@ -291,9 +291,10 @@ test("a follow-up is never answered from the cache", () => {
 });
 
 test("a deferred answer is not cached as if it were the answer", () => {
-  // A 202 carries a job id, not an answer.
+  // A 202 carries a job id, not an answer; and an answer with a limitation is
+  // not kept either (docs/32, 2.11, CHAT-5).
   const chat = server("lib/repository-chat.ts");
-  assert.match(chat, /if \(cacheable && result\.handled && !result\.jobId && result\.answer\.trim\(\)\)/);
+  assert.match(chat, /if \(cacheable && clean && result\.handled && !result\.jobId && result\.answer\.trim\(\)\)/);
 });
 
 test("a cached answer says so", () => {

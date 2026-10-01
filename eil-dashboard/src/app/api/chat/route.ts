@@ -65,6 +65,7 @@ import { spendUsd, summarizeSpend } from "@/lib/answer-cost";
 import { adviseOnFailure } from "@/lib/model-failure";
 import { ModelCallError } from "@/lib/openai";
 import { getPublicRequestOrigin } from "@/lib/public-request-origin";
+import { hasUsableAnalysis } from "@/lib/usable-analysis";
 import type { DashboardData, TrackRow } from "@/types/database";
 import type {
   ChatThreadDetail,
@@ -1892,7 +1893,7 @@ async function resolveChartSessionScope(
     body.projectId
   );
   if (matchedLibraryRuns.length > 0) {
-    const succeededRuns = matchedLibraryRuns.filter((run) => run.status === "succeeded");
+    const succeededRuns = matchedLibraryRuns.filter((run) => hasUsableAnalysis(run));
     const selectedRuns = succeededRuns.length > 0 ? succeededRuns : matchedLibraryRuns;
     return {
       selectedRunIds: selectedRuns.map((run) => run.id),

@@ -1,6 +1,10 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import DashboardClient from "@/components/DashboardClient";
 import WorkspaceLoadingState from "@/components/workspace/WorkspaceLoadingState";
+
+// Each workspace page names itself in the tab and in history (docs/32, 2.11, SHELL-8).
+export const metadata: Metadata = { title: "Dashboard" };
 
 /*
  * This route used to carry its own loading card, and every value in it came

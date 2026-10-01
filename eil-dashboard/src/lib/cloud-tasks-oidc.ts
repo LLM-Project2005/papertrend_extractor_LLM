@@ -60,19 +60,43 @@ const verifier = new OAuth2Client();
  * runtime account, with a verified email.
  */
 export async function isVerifiedTaskCaller(request: Request): Promise<boolean> {
+  const expectedEmail = await getRuntimeServiceAccountEmail();
+  return Boolean(expectedEmail) && verifiedCaller(request, [expectedEmail!]);
+}
+
+/**
+ * The analysis worker's accounts, allowed to call the few routes it needs -
+ * today only search indexing. Set by the deploy (WORKER_CALLER_SERVICE_ACCOUNTS);
+ * on the pilot the worker runs as this service's own account.
+ */
+export function workerCallerAccounts(raw = process.env.WORKER_CALLER_SERVICE_ACCOUNTS): string[] {
+  return String(raw ?? "")
+    .split(/[,;\s]+/)
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value.endsWith(".gserviceaccount.com"));
+}
+
+/** A request from this service's own tasks, or from the analysis worker. */
+export async function isVerifiedServiceCaller(request: Request): Promise<boolean> {
+  const own = await getRuntimeServiceAccountEmail();
+  return verifiedCaller(request, [...(own ? [own] : []), ...workerCallerAccounts()]);
+}
+
+async function verifiedCaller(request: Request, allowedEmails: string[]): Promise<boolean> {
   const header = request.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(.+)$/i.exec(header);
   if (!match) return false;
   const audience = getTaskAudience();
-  const expectedEmail = await getRuntimeServiceAccountEmail();
-  if (!audience || !expectedEmail) return false;
+  const allowed = new Set(allowedEmails.map((email) => email.toLowerCase()));
+  if (!audience || allowed.size === 0) return false;
   try {
     const ticket = await verifier.verifyIdToken({ idToken: match[1], audience });
     const payload = ticket.getPayload();
     return Boolean(
       payload &&
         payload.email_verified === true &&
-        payload.email?.toLowerCase() === expectedEmail.toLowerCase() &&
+        payload.email &&
+        allowed.has(payload.email.toLowerCase()) &&
         (payload.iss === "https://accounts.google.com" || payload.iss === "accounts.google.com")
     );
   } catch {

@@ -42,7 +42,7 @@ export default function ProjectIndexClient() {
   useEffect(() => {
     if (!hydrated) return;
     if (!user) {
-      router.replace("/login");
+      router.replace(`/login?returnTo=${encodeURIComponent("/workspaces")}`);
       return;
     }
     refreshOrganizations().catch(() => undefined);

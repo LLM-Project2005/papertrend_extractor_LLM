@@ -35,6 +35,8 @@ export default function WorkspaceProfileMenu({
 }: WorkspaceProfileMenuProps) {
   const { hydrated, user, profile, isAdmin, signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  openRef.current = open;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
 
@@ -46,10 +48,12 @@ export default function WorkspaceProfileMenu({
     }
 
     function handleEscape(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        if (containerRef.current?.contains(document.activeElement)) buttonRef.current?.focus();
-        setOpen(false);
-      }
+      // Only while open, and marked as handled: this listener is always
+      // attached, and would otherwise take every Escape a dialog is owed.
+      if (event.key !== "Escape" || !openRef.current || event.defaultPrevented) return;
+      event.preventDefault();
+      if (containerRef.current?.contains(document.activeElement)) buttonRef.current?.focus();
+      setOpen(false);
     }
 
     document.addEventListener("mousedown", handlePointerDown);

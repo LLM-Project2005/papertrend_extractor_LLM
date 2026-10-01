@@ -30,6 +30,8 @@ import {
   yearAxis,
 } from "@/lib/dashboard-analytics";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
+import { keywordKey, paperIdsByKeywordKey } from "@/lib/dashboard-drilldown";
+import { tooltipTheme } from "@/lib/chart-tooltip";
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}\u2026` : value;
@@ -71,8 +73,10 @@ const TreemapCell = (props: {
   textFill?: string;
   edge?: string;
   onDrilldown?: (target: { topic?: string; keyword?: string; paperIds?: string[] }) => void;
+  /** The papers behind the cell, passed through by Recharts from the data row. */
+  paperIds?: string[];
 }) => {
-  const { x, y, width, height, name, value, depth, fill = "#3f3f3f", textFill = "#ffffff", edge = "#ffffff", onDrilldown } = props;
+  const { x, y, width, height, name, value, depth, fill = "#3f3f3f", textFill = "#ffffff", edge = "#ffffff", onDrilldown, paperIds } = props;
   // The root spans the whole chart under the cells, labelled with the sum of
   // every theme - "63 papers" in a 39-paper repository, hidden but in the page.
   if (depth === 0) return null;
@@ -80,7 +84,7 @@ const TreemapCell = (props: {
   const maxChars = Math.floor((width - 12) / 6.5);
   const label = name && name.length > maxChars ? `${name.slice(0, Math.max(1, maxChars - 1))}\u2026` : name;
   return (
-    <g className={onDrilldown ? "cursor-pointer" : undefined} onClick={() => onDrilldown?.({ topic: name })}>
+    <g className={onDrilldown ? "cursor-pointer" : undefined} onClick={() => onDrilldown?.({ topic: name, paperIds })}>
       <title>{`${name}: ${value} paper${value === 1 ? "" : "s"}`}</title>
       <rect x={x} y={y} width={width} height={height} fill={fill} stroke={edge} strokeWidth={2} rx={6} />
       {width > 60 && height > 34 && maxChars >= 6 ? (
@@ -109,6 +113,7 @@ export default function KeywordExplorer({
 }: Props) {
   const { theme, hydrated } = useTheme();
   const ct = chartTheme(hydrated && theme === "dark");
+  const themedTooltip = tooltipTheme(hydrated && theme === "dark");
   const keywordLabels = labelColumn(useIsNarrow(), { width: 210, chars: 32 });
   const { session } = useAuth();
   const [query, setQuery] = useState("");
@@ -122,19 +127,9 @@ export default function KeywordExplorer({
     (chart) => chart.chart_key === "keyword_heatmap"
   )?.config;
   const plannerHeatN = heatmapConfig?.heat_n ?? 15;
-  const paperIdsByKeyword = useMemo(() => {
-    const map = new Map<string, Set<PaperId>>();
-    for (const row of trends) {
-      const keyword = String(row.keyword || "").trim();
-      if (!keyword) {
-        continue;
-      }
-      const bucket = map.get(keyword) ?? new Set<PaperId>();
-      bucket.add(row.paper_id);
-      map.set(keyword, bucket);
-    }
-    return map;
-  }, [trends]);
+  // Folded as the keyword counts are, so "Learner autonomy" lists the papers
+  // that say "learner autonomy" too.
+  const paperIdsByKeyword = useMemo(() => paperIdsByKeywordKey(trends), [trends]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -243,7 +238,7 @@ export default function KeywordExplorer({
   }, [axis.years, plannerHeatN, subjects, themes]);
 
   const treeData = useMemo(
-    () => themes.slice(0, treeN).map((entry) => ({ name: entry.topic, value: entry.papers })),
+    () => themes.slice(0, treeN).map((entry) => ({ name: entry.topic, value: entry.papers, paperIds: entry.paperIds })),
     [themes, treeN]
   );
 
@@ -264,7 +259,7 @@ export default function KeywordExplorer({
     return (
       <div className="app-surface px-5 py-5">
         <p className="text-sm text-slate-500 dark:text-slate-400">
-          No data for the selected filters.
+          No papers match the current filters.
         </p>
       </div>
     );
@@ -469,7 +464,7 @@ export default function KeywordExplorer({
                         <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                        <Tooltip />
+                        <Tooltip {...themedTooltip} />
                         <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                         <Line isAnimationActive={chartAnimationActive()}
                           type="monotone"
@@ -504,7 +499,7 @@ export default function KeywordExplorer({
                         <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} vertical={false} />
                         <XAxis dataKey="track" tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
                         <YAxis tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                        <Tooltip />
+                        <Tooltip {...themedTooltip} />
                         <Bar isAnimationActive={chartAnimationActive()} dataKey="papers" fill={TOPIC_PALETTE[5]} radius={[10, 10, 0, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
@@ -811,7 +806,7 @@ export default function KeywordExplorer({
                               onClick={() =>
                                 onDrilldown?.({
                                   keyword,
-                                  paperIds: [...(paperIdsByKeyword.get(keyword) ?? [])],
+                                  paperIds: [...(paperIdsByKeyword.get(keywordKey(keyword)) ?? [])],
                                 })
                               }
                               className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:cursor-default dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-slate-300 dark:hover:border-[#3a3a3a] dark:hover:text-white"
@@ -867,7 +862,7 @@ export default function KeywordExplorer({
                 <CartesianGrid strokeDasharray="3 3" stroke={ct.grid} />
                 <XAxis dataKey="year" tick={tickStyle(ct, 12)} stroke={ct.axisLine} interval="preserveStartEnd" />
                 <YAxis allowDecimals={false} tick={tickStyle(ct, 12)} stroke={ct.axisLine} />
-                <Tooltip />
+                <Tooltip {...themedTooltip} />
                 <Legend wrapperStyle={{ fontSize: 11 }} formatter={legendLabel(ct)} />
                 {comparisonThemes.map((topic, index) => (
                   <Line isAnimationActive={chartAnimationActive()}

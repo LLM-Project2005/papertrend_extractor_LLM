@@ -647,3 +647,23 @@ html:focus-within {
   outline: 2px solid #2563eb;
   outline-offset: 2px;
 }
+
+/* The analysis tray's place: above the chat composer on the chat page (its
+   height is published as --chat-composer-offset), in the corner elsewhere
+   (docs/32, 2.11, CHAT-8). */
+.tray-dock {
+  bottom: calc(max(0.75rem, env(safe-area-inset-bottom)) + var(--chat-composer-offset, 0px));
+}
+
+@media (min-width: 640px) {
+  .tray-dock {
+    bottom: calc(1.25rem + var(--chat-composer-offset, 0px));
+  }
+}
+
+/* The open tray's height: at most 72% of the screen, and on the chat page
+   never past the page and chat headers - stood above a phone's composer, a
+   72% card covered both, and the button that opens the chat list. */
+.tray-card {
+  max-height: min(72dvh, 600px, calc(100dvh - var(--chat-composer-offset, 0px) - 9rem));
+}

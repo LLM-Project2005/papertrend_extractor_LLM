@@ -31,6 +31,7 @@ import {
   yearAxis,
 } from "@/lib/dashboard-analytics";
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
+import { markPaperIds } from "@/lib/dashboard-drilldown";
 import type { VisualizationChartKey } from "@/types/visualization";
 import { isDatedYear } from "@/lib/dated-year";
 import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
@@ -98,7 +99,11 @@ export default function Overview({
   // Every year in the range gets a slot, so a gap in publishing is visible as a
   // gap rather than two distant years drawn as neighbours.
   const axis = yearAxis(dated);
-  const papersByYear = axis.years.map((year) => ({ year, papers: papersByYearMap[year]?.size ?? 0 }));
+  const papersByYear = axis.years.map((year) => ({
+    year,
+    papers: papersByYearMap[year]?.size ?? 0,
+    paperIds: [...(papersByYearMap[year] ?? [])],
+  }));
   const peak = papersByYear.reduce<{ year: string; papers: number } | null>(
     (best, entry) => (!best || entry.papers > best.papers ? entry : best),
     null
@@ -136,6 +141,7 @@ export default function Overview({
         name: category.label,
         value: papersByCategory.get(category.key)?.size ?? 0,
         color: category.color,
+        paperIds: [...(papersByCategory.get(category.key) ?? [])],
       }));
   };
 
@@ -148,6 +154,7 @@ export default function Overview({
         0
       ),
       color: TRACK_COLORS[track as TrackKey],
+      paperIds: rows.filter((row) => Number(row[track.toLowerCase() as keyof TrackRow]) > 0).map((row) => row.paper_id),
     }));
 
   const hasDynamicCategories = categoryAssignments.length > 0;
@@ -190,7 +197,7 @@ export default function Overview({
   function renderTrackBreakdown(
     title: string,
     subtitle: string,
-    items: { key: string; name: string; value: number; color: string }[]
+    items: { key: string; name: string; value: number; color: string; paperIds: string[] }[]
   ) {
     const total = items.reduce((sum, item) => sum + item.value, 0);
 
@@ -217,7 +224,7 @@ export default function Overview({
                     stroke={isDark ? "#1f1f1f" : "#ffffff"}
                     onClick={(entry) => {
                       if (entry && "key" in entry) {
-                        onDrilldown?.({ track: String(entry.key) });
+                        onDrilldown?.({ track: String(entry.key), paperIds: markPaperIds(entry) });
                       }
                     }}
                     className={onDrilldown ? "cursor-pointer" : undefined}
@@ -239,7 +246,7 @@ export default function Overview({
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => onDrilldown?.({ track: item.key })}
+                  onClick={() => onDrilldown?.({ track: item.key, paperIds: item.paperIds })}
                   className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
                 >
                   <div className="flex items-center justify-between gap-3">
@@ -307,7 +314,7 @@ export default function Overview({
                 fill={ct.barFill}
                 radius={[0, 6, 6, 0]}
                 onClick={(entry) => {
-                  if (entry && "topic" in entry) onDrilldown?.({ topic: String(entry.topic) });
+                  if (entry && "topic" in entry) onDrilldown?.({ topic: String(entry.topic), paperIds: markPaperIds(entry) });
                 }}
                 className={onDrilldown ? "cursor-pointer" : undefined}
               />
@@ -331,7 +338,7 @@ export default function Overview({
             <li key={entry.topic}>
               <button
                 type="button"
-                onClick={() => onDrilldown?.({ topic: entry.topic })}
+                onClick={() => onDrilldown?.({ topic: entry.topic, paperIds: entry.paperIds })}
                 className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-left text-sm transition-colors hover:border-slate-300 hover:bg-slate-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a] dark:hover:bg-[#0a0a0a]"
               >
                 <span className="font-medium text-slate-900 dark:text-[#ececec]">{entry.topic}</span>
@@ -378,7 +385,7 @@ export default function Overview({
                   radius={[6, 6, 0, 0]}
                   onClick={(entry) => {
                     if (entry && "year" in entry) {
-                      onDrilldown?.({ year: String(entry.year) });
+                      onDrilldown?.({ year: String(entry.year), paperIds: markPaperIds(entry) });
                     }
                   }}
                   className={onDrilldown ? "cursor-pointer" : undefined}

@@ -12,6 +12,7 @@ import {
 } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { TRACK_COLS } from "@/lib/constants";
+import { analysisSessionExpired, mergeFollowedRunIds } from "@/lib/run-polling";
 import {
   ANALYSIS_SESSION_STORAGE_KEY,
   WORKSPACE_FOLDER_STORAGE_KEY,
@@ -71,7 +72,7 @@ interface WorkspaceContextValue {
   updateProfile: (updates: Partial<WorkspaceProfile>) => void;
   resetProfile: () => void;
   startAnalysisSession: (
-    runs: IngestionRunRow[],
+    runs: Array<Pick<IngestionRunRow, "id">>,
     options?: {
       sourceKind?: string;
       folder?: string;
@@ -299,7 +300,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
 
       const parsed = JSON.parse(raw) as AnalysisSession;
-      if (Array.isArray(parsed.runIds) && parsed.runIds.length > 0) {
+      if (analysisSessionExpired(parsed.startedAt)) {
+        window.localStorage.removeItem(ANALYSIS_SESSION_STORAGE_KEY);
+      } else if (Array.isArray(parsed.runIds) && parsed.runIds.length > 0) {
         setAnalysisSession(parsed);
       }
     } catch {
@@ -1091,15 +1094,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        setAnalysisSession({
-          runIds,
+        // A new batch joins the one being followed instead of replacing it,
+        // which used to lose track of a batch still running.
+        setAnalysisSession((current) => ({
+          runIds: current && !analysisSessionExpired(current.startedAt)
+            ? mergeFollowedRunIds(current.runIds, runIds)
+            : mergeFollowedRunIds([], runIds),
           folderJobId: options?.folderJob?.id ?? null,
           folderId: options?.folderId ?? null,
           sourceKind: options?.sourceKind ?? "pdf-upload",
           folder: options?.folder ?? "Repository",
           minimized: false,
           startedAt: new Date().toISOString(),
-        });
+        }));
       },
       setAnalysisMinimized: (minimized) => {
         setAnalysisSession((current) =>

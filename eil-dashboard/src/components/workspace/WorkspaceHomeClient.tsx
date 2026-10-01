@@ -13,10 +13,10 @@
 import Link from "next/link";
 import PaperLink from "@/components/workspace/PaperLink";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useDashboardData } from "@/hooks/useData";
-import { useIngestionRuns } from "@/hooks/useIngestionRuns";
+import { useAnalysisRuns } from "@/components/workspace/AnalysisRunsContext";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import AnalysisStatusCard from "@/components/workspace/AnalysisStatusCard";
@@ -44,6 +44,7 @@ import { buttonClass, chipClass, panelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { isDatedYear } from "@/lib/dated-year";
+import { hasUsableAnalysis } from "@/lib/usable-analysis";
 
 type RankedItem = {
   label: string;
@@ -87,8 +88,13 @@ function getRunAgeMinutes(run: IngestionRunRow) {
   return Math.floor((Date.now() - timestampMs) / 60000);
 }
 
+/**
+ * A paper that has stopped updating while being analysed. A queued paper is
+ * waiting its turn, which is not a fault: during a large batch, or while the
+ * daily spending limit holds, it can wait for hours (docs/32, 2.11, SHELL-10).
+ */
 function isRunStuck(run: IngestionRunRow) {
-  if (run.status !== "queued" && run.status !== "processing") {
+  if (run.status !== "processing") {
     return false;
   }
   return getRunAgeMinutes(run) >= STUCK_RUN_MINUTES;
@@ -226,7 +232,7 @@ function RecentPaperRow({ run }: { run: IngestionRunRow }) {
   return (
     <li>
       <PaperLink
-        paper={run.status === "succeeded" ? { runId: run.id } : `/workspace/library?runId=${encodeURIComponent(run.id)}`}
+        paper={hasUsableAnalysis(run) ? { runId: run.id } : `/workspace/library?runId=${encodeURIComponent(run.id)}`}
         className="group -mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors duration-150 hover:bg-subtle"
       >
         <RunStatusIcon run={run} />
@@ -321,7 +327,7 @@ export default function WorkspaceHomeClient() {
     removeAnalysisRunIds,
     clearAnalysisSession,
   } = useWorkspaceProfile();
-  const { data, loading } = useDashboardData("all", [], {
+  const { data, loading, refresh: refreshDashboardData } = useDashboardData("all", [], {
     projectId: currentProject?.id ?? null,
     enabled: Boolean(currentProject?.id),
   });
@@ -333,11 +339,7 @@ export default function WorkspaceHomeClient() {
     retryActiveProcessing,
     startQueuedProcessing,
     refresh,
-  } = useIngestionRuns({
-    enabled: Boolean(analysisSession?.runIds.length),
-    folderJobId: analysisSession?.folderJobId ?? undefined,
-    pollIntervalMs: 3000,
-  });
+  } = useAnalysisRuns();
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [libraryRuns, setLibraryRuns] = useState<IngestionRunRow[]>([]);
   const [libraryLoading, setLibraryLoading] = useState(false);
@@ -445,6 +447,14 @@ export default function WorkspaceHomeClient() {
   const activeRuns = analysisSession
     ? runs.filter((run) => analysisSession.runIds.includes(run.id))
     : [];
+  // Each paper that finishes is brought into Home's figures and recent papers;
+  // they used to stay as they were when the page opened.
+  const finishedRunCount = activeRuns.filter((run) => run.status === "succeeded").length;
+  const finishedRunCountRef = useRef(finishedRunCount);
+  useEffect(() => {
+    if (finishedRunCount > finishedRunCountRef.current) void refreshDashboardData();
+    finishedRunCountRef.current = finishedRunCount;
+  }, [finishedRunCount, refreshDashboardData]);
   const workspaceRuns = useMemo(() => {
     const merged = new Map(libraryRuns.map((run) => [run.id, run]));
     activeRuns.forEach((run) => merged.set(run.id, run));
@@ -569,7 +579,10 @@ export default function WorkspaceHomeClient() {
 
   async function handleCancelAllRuns() {
     try {
-      const canceledRuns = await cancelAllActiveRuns(analysisSession?.folderJobId ?? undefined);
+      const canceledRuns = await cancelAllActiveRuns({
+        folderJobId: analysisSession?.folderJobId ?? undefined,
+        runIds: analysisSession?.runIds,
+      });
       if (canceledRuns.length > 0) {
         removeAnalysisRunIds(canceledRuns.map((run) => run.id));
       }
@@ -676,7 +689,10 @@ export default function WorkspaceHomeClient() {
 
       {liveDataError ? (
         <Notice tone="danger">
-          This repository&apos;s results could not be loaded just now ({liveDataError}). Refresh the page to try again.
+          This repository&apos;s results could not be loaded just now ({liveDataError}).{" "}
+          <button type="button" onClick={() => void refreshDashboardData()} className="font-medium underline underline-offset-2">
+            Try again
+          </button>
         </Notice>
       ) : null}
 

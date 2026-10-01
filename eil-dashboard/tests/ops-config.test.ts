@@ -26,6 +26,15 @@ test("production takes traffic only after the new revision answers its health ch
   assert.match(web, /- update-traffic[\s\S]*- --to-latest/);
 });
 
+test("a pilot deploy always takes the traffic, even after a no-traffic check", () => {
+  for (const file of ["cloudbuild.web.cloudsql.pilot.yaml", "cloudbuild.worker.cloudsql.pilot.yaml"]) {
+    const yaml = read(file);
+    const ids = stepIds(yaml);
+    assert.match(ids[ids.length - 1], /^promote-cloudsql-(web|worker)-pilot$/, file);
+    assert.match(yaml.slice(yaml.lastIndexOf("- id: promote-")), /- update-traffic[\s\S]*- --to-latest/, file);
+  }
+});
+
 test("background jobs do not share the one-at-a-time ingestion queue (docs/32, 1.4)", () => {
   const production = read("cloudbuild.web.production.yaml");
   const pilot = read("cloudbuild.web.cloudsql.pilot.yaml");

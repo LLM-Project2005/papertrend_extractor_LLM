@@ -1,0 +1,10 @@
+[
+  { "name": "finished", "status": "succeeded", "input_payload": {}, "usable": true },
+  { "name": "re-analysis queued, finished before", "status": "queued", "input_payload": { "reanalysis_requested_at": "2026-10-01T00:00:00Z", "paper_id": "123", "analysis_metrics": { "completed_at": "2026-09-30T10:00:00Z" } }, "usable": true },
+  { "name": "re-analysis processing, known by keyword count", "status": "processing", "input_payload": { "reanalysis_requested_at": "2026-10-01T00:00:00Z", "paper_id": "123", "keyword_count": 14 }, "usable": true },
+  { "name": "first analysis queued", "status": "queued", "input_payload": {}, "usable": false },
+  { "name": "first analysis processing, has metrics but never finished", "status": "processing", "input_payload": { "paper_id": "123", "analysis_metrics": { "queue_wait_seconds": 3 } }, "usable": false },
+  { "name": "try again after a failure: nothing finished before", "status": "queued", "input_payload": { "reanalysis_requested_at": "2026-10-01T00:00:00Z", "paper_id": "123", "keyword_count": 0 }, "usable": false },
+  { "name": "re-analysis without a paper", "status": "queued", "input_payload": { "reanalysis_requested_at": "2026-10-01T00:00:00Z", "analysis_metrics": { "completed_at": "2026-09-30T10:00:00Z" } }, "usable": false },
+  { "name": "failed", "status": "failed", "input_payload": { "reanalysis_requested_at": "2026-10-01T00:00:00Z", "paper_id": "123", "analysis_metrics": { "completed_at": "2026-09-30T10:00:00Z" } }, "usable": false }
+]

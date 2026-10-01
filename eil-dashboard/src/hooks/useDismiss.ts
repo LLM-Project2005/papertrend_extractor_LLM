@@ -25,7 +25,11 @@ export function useDismiss(open: boolean, onDismiss: () => void, container: RefO
       onDismissRef.current();
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onDismissRef.current();
+      // Handled here and marked, so a dialog around the menu stays open: one
+      // Escape closes one layer (docs/32, 2.9).
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      event.preventDefault();
+      onDismissRef.current();
     };
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("keydown", onKeyDown);

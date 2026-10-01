@@ -17,6 +17,7 @@
  */
 import { isDatedYear } from "@/lib/dated-year";
 import type { PaperId, TrendRow } from "@/types/database";
+import { idsKey } from "@/lib/dashboard-drilldown";
 
 /* --------------------------------------------------------- what is studied */
 
@@ -115,8 +116,11 @@ export function keywordPaperCounts(trends: TrendRow[]): KeywordCount[] {
     .sort((a, b) => b.papers - a.papers || b.occurrences - a.occurrences || a.keyword.localeCompare(b.keyword));
 }
 
-/** Papers per theme per year over a full axis; a year with none is a real zero. */
-export function themePapersByYear(trends: TrendRow[], themes: string[], years: string[]): Array<Record<string, string | number>> {
+/**
+ * Papers per theme per year over a full axis; a year with none is a real zero.
+ * Each cell's paper ids ride along under idsKey(theme), for the drilldown.
+ */
+export function themePapersByYear(trends: TrendRow[], themes: string[], years: string[]): Array<Record<string, string | number | PaperId[]>> {
   const cell = new Map<string, Set<PaperId>>();
   for (const row of trends) {
     if (!isDatedYear(row.year)) continue;
@@ -124,8 +128,12 @@ export function themePapersByYear(trends: TrendRow[], themes: string[], years: s
     cell.set(key, (cell.get(key) ?? new Set<PaperId>()).add(row.paper_id));
   }
   return years.map((year) => {
-    const entry: Record<string, string | number> = { year };
-    for (const theme of themes) entry[theme] = cell.get(`${theme}\u0001${year}`)?.size ?? 0;
+    const entry: Record<string, string | number | PaperId[]> = { year };
+    for (const theme of themes) {
+      const ids = cell.get(`${theme}\u0001${year}`);
+      entry[theme] = ids?.size ?? 0;
+      entry[idsKey(theme)] = [...(ids ?? [])];
+    }
     return entry;
   });
 }

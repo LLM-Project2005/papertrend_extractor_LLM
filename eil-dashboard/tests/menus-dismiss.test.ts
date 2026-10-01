@@ -8,7 +8,7 @@ test("a menu closes when the reader presses anywhere outside it", () => {
   const hook = read("src/hooks/useDismiss.ts");
   assert.match(hook, /document\.addEventListener\("pointerdown", onPointerDown, true\)/, "caught before any control can stop it");
   assert.match(hook, /if \(target instanceof Node && container\.current\?\.contains\(target\)\) return;/, "a press inside, the button included, is left alone");
-  assert.match(hook, /if \(event\.key === "Escape"\) onDismissRef\.current\(\);/);
+  assert.match(hook, /if \(event\.key !== "Escape" \|\| event\.defaultPrevented\) return;\s*event\.preventDefault\(\);\s*onDismissRef\.current\(\);/);
 
   // The chat's "+" menu, the conversation menu and each conversation's "..." menu.
   const chat = read("src/components/chat/ChatClient.tsx");

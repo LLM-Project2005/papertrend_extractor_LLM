@@ -1,3 +1,5 @@
+import { citationPaperId, markCitations } from "@/lib/answer-citations";
+
 export interface ConversationSource {
   paperId: number | string;
   title: string;
@@ -5,6 +7,33 @@ export interface ConversationSource {
   href: string;
   reason: string;
   sourceType?: "paper" | "web";
+}
+
+/**
+ * An answer's sources in the order its inline numbers give them, each with its
+ * number (docs/32, 2.11, CHAT-7). The cards under an answer used to follow the
+ * order retrieval returned, unnumbered, so "[2]" in the text matched no card.
+ * Sources the text does not cite come last, unnumbered.
+ */
+export function numberAnswerSources<T extends { paperId?: unknown; title?: unknown; year?: unknown; href?: unknown }>(
+  content: string,
+  citations: T[]
+): Array<T & { number?: number }> {
+  const { sources } = markCitations(
+    content,
+    citations
+      .filter((citation) => citation.paperId)
+      .map((citation) => ({
+        paperId: citationPaperId(citation),
+        title: String(citation.title ?? ""),
+        year: String(citation.year ?? ""),
+        href: String(citation.href ?? ""),
+      }))
+  );
+  const numberById = new Map(sources.map((source) => [source.paperId, source.number]));
+  return citations
+    .map((citation) => ({ ...citation, number: numberById.get(citationPaperId(citation)) }))
+    .sort((left, right) => (left.number ?? Number.POSITIVE_INFINITY) - (right.number ?? Number.POSITIVE_INFINITY));
 }
 
 export function dedupeConversationSources<T extends ConversationSource>(sources: T[]): T[] {

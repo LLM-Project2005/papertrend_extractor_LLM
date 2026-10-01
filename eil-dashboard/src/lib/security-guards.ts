@@ -166,9 +166,13 @@ export async function assertLoginRateLimit(request: Request, email: string): Pro
 const TOO_MANY_INVITE_TRIES = "Too many invite code attempts. Wait an hour and try again.";
 
 /**
- * Limits invite-code tries: 5 an hour for one signed-in account, and 20 an hour
- * from one address. The account bucket is the one that holds - the address
- * comes from a header the caller can write - and an account needs a real,
+ * Limits invite-code tries: 5 an hour for one signed-in account, and 200 an
+ * hour from one address. Every try counts, successes too, and a class joining
+ * together from one campus network shares one address: at 20 an hour the
+ * twenty-first student was turned away (docs/32, 2.11, AUTH-4).
+ *
+ * The account bucket is the one that holds - the address comes from a header
+ * the caller can write - and an account needs a real,
  * confirmed email or a Google or Facebook sign-in, so a fresh budget is not
  * free. Against a 79-bit code even thousands of accounts would get nowhere.
  */
@@ -178,7 +182,7 @@ export async function assertInviteRedeemRateLimit(request: Request, accountSubje
   const since = new Date(Date.now() - windowSeconds * 1000).toISOString();
   const buckets = [
     { hash: hashSubject(`invite-account:${accountSubject}`), limit: 5 },
-    { hash: hashSubject(`invite-ip:${ipHash}`), limit: 20 },
+    { hash: hashSubject(`invite-ip:${ipHash}`), limit: 200 },
   ];
 
   try {

@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { trackedRunsSettled } from "@/lib/run-polling";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 
 interface UseIngestionRunsOptions {
   enabled?: boolean;
   pollIntervalMs?: number;
   folderJobId?: string;
+  /** The runs being followed; their progress is read by id, however many (docs/32, 2.6). */
+  runIds?: string[];
   onUnauthorized?: () => void;
 }
 
@@ -15,6 +18,7 @@ export function useIngestionRuns({
   enabled = true,
   pollIntervalMs = 12000,
   folderJobId,
+  runIds,
   onUnauthorized,
 }: UseIngestionRunsOptions = {}) {
   const { session, user } = useAuth();
@@ -25,7 +29,12 @@ export function useIngestionRuns({
   const [adminSecret, setAdminSecret] = useState("");
   const [pollingPausedForAuth, setPollingPausedForAuth] = useState(false);
   const [authRejected, setAuthRejected] = useState(false);
+  /** Every followed run has finished: polling stops until something changes. */
+  const [settled, setSettled] = useState(false);
+  const inFlightRef = useRef(false);
   const onUnauthorizedRef = useRef(onUnauthorized);
+  const trackedKey = (runIds ?? []).join(",");
+  const trackedIds = useMemo(() => (trackedKey ? trackedKey.split(",") : []), [trackedKey]);
 
   useEffect(() => {
     onUnauthorizedRef.current = onUnauthorized;
@@ -72,14 +81,21 @@ export function useIngestionRuns({
       return;
     }
 
+    // One request at a time: a slow answer is not stacked behind another.
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     setLoading(true);
     try {
-      const endpoint = folderJobId
-        ? `/api/folder-analysis?jobId=${encodeURIComponent(folderJobId)}`
-        : "/api/admin/import";
-      const response = await fetch(endpoint, {
-        headers: requestHeaders,
-      });
+      const response = trackedIds.length
+        ? await fetch("/api/workspace/runs/status", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...requestHeaders },
+            body: JSON.stringify({ runIds: trackedIds, folderJobId: folderJobId ?? null }),
+          })
+        : await fetch(
+            folderJobId ? `/api/folder-analysis?jobId=${encodeURIComponent(folderJobId)}` : "/api/admin/import",
+            { headers: requestHeaders }
+          );
 
       const payload = (await response.json()) as {
         runs?: IngestionRunRow[];
@@ -98,6 +114,7 @@ export function useIngestionRuns({
 
       setRuns(payload.runs ?? []);
       setFolderJob((payload.jobs ?? [])[0] ?? null);
+      if (trackedIds.length) setSettled(trackedRunsSettled(payload.runs ?? [], trackedIds));
       setError(null);
       setAuthRejected(false);
     } catch (refreshError) {
@@ -107,9 +124,15 @@ export function useIngestionRuns({
           : "Failed to load ingestion runs."
       );
     } finally {
+      inFlightRef.current = false;
       setLoading(false);
     }
-  }, [enabled, folderJobId, pollingPausedForAuth, requestHeaders]);
+  }, [enabled, folderJobId, pollingPausedForAuth, requestHeaders, trackedIds]);
+
+  // A new set of followed runs is watched afresh.
+  useEffect(() => {
+    setSettled(false);
+  }, [trackedKey]);
 
   useEffect(() => {
     // Resume polling after credentials rotate (e.g. session refresh / login).
@@ -161,7 +184,7 @@ export function useIngestionRuns({
   );
 
   const cancelAllActiveRuns = useCallback(
-    async (folderJobId?: string) => {
+    async (scope: { folderJobId?: string; runIds?: string[] }) => {
       if (!requestHeaders) {
         throw new Error("You must be signed in to cancel analysis processing.");
       }
@@ -172,7 +195,7 @@ export function useIngestionRuns({
           "Content-Type": "application/json",
           ...requestHeaders,
         },
-        body: JSON.stringify({ folderJobId }),
+        body: JSON.stringify({ folderJobId: scope.folderJobId, runIds: scope.runIds }),
       });
 
       const payload = (await response.json()) as {
@@ -295,16 +318,36 @@ export function useIngestionRuns({
   }, [refresh]);
 
   useEffect(() => {
-    if (!enabled || !requestHeaders || pollingPausedForAuth) {
+    // Nothing to watch once every followed run has finished; an action that
+    // starts one again (retry, start now) refreshes, and polling resumes.
+    if (!enabled || !requestHeaders || pollingPausedForAuth || settled) {
       return;
     }
 
-    const interval = window.setInterval(() => {
-      void refresh();
-    }, pollIntervalMs);
-
-    return () => window.clearInterval(interval);
-  }, [enabled, pollIntervalMs, pollingPausedForAuth, refresh, requestHeaders]);
+    let stopped = false;
+    let timer: number | undefined;
+    const schedule = () => {
+      if (stopped) return;
+      timer = window.setTimeout(async () => {
+        timer = undefined;
+        // A hidden tab waits; it catches up as soon as it is shown again.
+        if (document.visibilityState === "hidden") return;
+        await refresh();
+        schedule();
+      }, pollIntervalMs);
+    };
+    const onVisibility = () => {
+      if (stopped || document.visibilityState !== "visible" || timer !== undefined) return;
+      void refresh().then(schedule);
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    schedule();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [enabled, pollIntervalMs, pollingPausedForAuth, refresh, requestHeaders, settled]);
 
   return {
     runs,
