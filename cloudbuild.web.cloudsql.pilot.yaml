@@ -60,6 +60,24 @@ steps:
       - --set-secrets
       - WORKER_WEBHOOK_SECRET=WORKER_WEBHOOK_SECRET:latest,FIREBASE_PROJECT_ID=FIREBASE_PROJECT_ID:latest,FIREBASE_CLIENT_EMAIL=FIREBASE_CLIENT_EMAIL:latest,FIREBASE_PRIVATE_KEY=FIREBASE_PRIVATE_KEY:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,OPENAI_BASE_URL=OPENAI_BASE_URL:latest,GOOGLE_PICKER_API_KEY=GOOGLE_PICKER_API_KEY:latest,DATABASE_URL=DATABASE_URL:latest,PILOT_ALLOWED_EMAILS=PILOT_ALLOWED_EMAILS:latest
 
+  # A check on a revision that takes no traffic pins traffic to the revision
+  # serving then, and a later deploy leaves it there: the phase 2 build was
+  # ready and served nothing until traffic was moved by hand. Send traffic to
+  # the new revision every time, as the worker's pilot build does.
+  - id: promote-cloudsql-web-pilot
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - ${_SERVICE_NAME}
+      - --project
+      - ${PROJECT_ID}
+      - --region
+      - ${_REGION}
+      - --to-latest
+
 substitutions:
   _REGION: asia-southeast1
   _SERVICE_NAME: papertrend-web-cloudsql-pilot

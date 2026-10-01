@@ -1866,7 +1866,11 @@ export default function ChatClient() {
   useEffect(() => {
     if (!forceScrollRef.current && !nearBottomRef.current) return;
     forceScrollRef.current = false;
-    scrollAnchorRef.current?.scrollIntoView({
+    // The transcript scrolls itself. scrollIntoView also scrolls every box
+    // around it, the page's overflow-hidden frame included.
+    const box = scrollContainerRef.current;
+    box?.scrollTo({
+      top: box.scrollHeight,
       behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     });
   }, [deepSession?.status, loading, messages]);
@@ -3211,6 +3215,12 @@ export default function ChatClient() {
         </aside>
 
         <section className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col bg-slate-100 dark:bg-black">
+          {/* Here, not in the transcript: positioned against this section, from
+              inside the transcript it stood out below it, and on a phone the
+              page scrolled its header away to follow it. */}
+          <p className="sr-only" role="status" aria-live="polite">
+            {answerAnnouncement}
+          </p>
           <header className="flex h-14 flex-none items-center justify-between border-b border-hairline px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               <button
@@ -3931,9 +3941,6 @@ export default function ChatClient() {
               </div>
             ) : null}
             <div ref={scrollAnchorRef} />
-            <p className="sr-only" role="status" aria-live="polite">
-              {answerAnnouncement}
-            </p>
           </div>
 
           <div ref={composerAreaRef} className="flex-none bg-slate-100 px-4 pb-6 pt-3 dark:bg-black sm:px-6 xl:px-8">

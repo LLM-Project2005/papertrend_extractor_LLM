@@ -6,7 +6,7 @@ import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { vector } from "@electric-sql/pglite-pgvector";
 import { copyPaperAnalysis, movePaperRows, PAPER_TABLES, paperIdFromRunSql, paperOfRun } from "../src/lib/cloudsql/paper-copy";
 import { paperIdFromRunId } from "../src/lib/paper-id";
-import { assertRoomForAnotherPaper, LibraryActionError } from "../src/lib/cloudsql/library-repository";
+import { assertRoomForAnotherPaper, LibraryActionError, MOVE_RUN_SQL } from "../src/lib/cloudsql/library-repository";
 import { MAX_PAPERS_PER_ACCOUNT } from "../src/lib/upload-safety";
 
 /** Copied and moved papers appear where they are, and a copy is corrected on its own (docs/32, 2.5). */
@@ -67,6 +67,25 @@ test("a copy counts toward the account's papers; exempt roles are exempt (LIB-5)
   const library = read("src/lib/cloudsql/library-repository.ts");
   const copyRun = library.slice(library.indexOf("async copyRun("), library.indexOf("async copyRun(") + 1500);
   assert.match(copyRun, /await assertRoomForAnotherPaper\(client, ownerUserId\);/);
+});
+
+test("a moved run records its new repository, and only the owner's run moves", async () => {
+  const { db } = await database();
+  await db.query(`UPDATE ingestion_runs SET input_payload = input_payload || '{"project_id": "00000000-0000-0000-0000-0000000000a1"}'::jsonb WHERE id = $1`, [ORIGINAL_RUN]);
+  const moved = await db.query<{ folder_id: string; project: string; paper: string }>(
+    `WITH m AS (${MOVE_RUN_SQL}) SELECT folder_id::text, input_payload->>'project_id' AS project, input_payload->>'paper_id' AS paper FROM m`,
+    [ORIGINAL_RUN, OWNER, "00000000-0000-0000-0000-0000000000f2", "00000000-0000-0000-0000-0000000000a2"]
+  );
+  assert.deepEqual(moved.rows, [{ folder_id: "00000000-0000-0000-0000-0000000000f2", project: "00000000-0000-0000-0000-0000000000a2", paper: paperIdFromRunId(ORIGINAL_RUN) }]);
+  // A folder outside any repository leaves the payload as it was.
+  const unscoped = await db.query<{ project: string }>(
+    `WITH m AS (${MOVE_RUN_SQL}) SELECT input_payload->>'project_id' AS project FROM m`,
+    [ORIGINAL_RUN, OWNER, "00000000-0000-0000-0000-0000000000f1", null]
+  );
+  assert.equal(unscoped.rows[0].project, "00000000-0000-0000-0000-0000000000a2");
+  const other = await db.query(`WITH m AS (${MOVE_RUN_SQL}) SELECT 1 FROM m`, [ORIGINAL_RUN, OTHER, "00000000-0000-0000-0000-0000000000f1", null]);
+  assert.equal(other.rows.length, 0);
+  await db.close();
 });
 
 test("the SQL paper id is the one the worker and the web give the run", async () => {

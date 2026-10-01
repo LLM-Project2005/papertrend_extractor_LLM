@@ -203,6 +203,12 @@ test("screen readers hear that an answer arrived", () => {
   assert.match(client, /setAnswerAnnouncement\(`Answer ready/);
   const switchBlock = client.slice(client.indexOf("if (loadedThreadIdRef.current !== threadId) {"));
   assert.match(switchBlock.slice(0, 300), /announcedAnswerRef\.current = null;/);
+  // The live region sits outside the transcript: inside it, it stood out
+  // below the section and the phone page scrolled to it (found on the pilot).
+  const region = client.indexOf("{answerAnnouncement}");
+  assert.ok(region > 0 && region < client.indexOf("ref={scrollContainerRef}"), "announcer before the transcript");
+  assert.doesNotMatch(client, /scrollAnchorRef\.current\?\.scrollIntoView/);
+  assert.match(client, /box\?\.scrollTo\(\{\s*top: box\.scrollHeight,/);
 });
 
 // DASH-6: tooltips readable in dark mode; stacked trends capped.
