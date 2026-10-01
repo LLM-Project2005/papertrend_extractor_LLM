@@ -26,6 +26,22 @@ export async function assertRoomForAnotherPaper(client: Pick<PoolClient, "query"
   }
 }
 
+/**
+ * Moves a run to a folder ($3) and records the folder's repository ($4) in its
+ * payload. Readers prefer the folder's repository, but the payload kept the
+ * old one, so anything reading it alone (the dashboard's count of papers in
+ * progress) placed a moved paper in the repository it left.
+ */
+export const MOVE_RUN_SQL = `UPDATE public.ingestion_runs
+   SET folder_id = $3,
+       input_payload = CASE
+         WHEN $4::text IS NULL THEN input_payload
+         ELSE jsonb_set(COALESCE(input_payload, '{}'::jsonb), '{project_id}', to_jsonb($4::text))
+       END,
+       updated_at = now()
+ WHERE id = $1 AND owner_user_id = $2
+ RETURNING *`;
+
 export interface LibraryRunListOptions {
   projectId?: string | null;
   includeTrashed?: boolean;
@@ -202,11 +218,7 @@ export class CloudSqlLibraryRepository {
         [folderId, ownerUserId]
       );
       if (!folder.rows[0]) throw new LibraryActionError("Folder not found.", 404);
-      const moved = await client.query<IngestionRunRow>(
-        `UPDATE public.ingestion_runs SET folder_id = $3, updated_at = now()
-         WHERE id = $1 AND owner_user_id = $2 RETURNING *`,
-        [runId, ownerUserId, folderId]
-      );
+      const moved = await client.query<IngestionRunRow>(MOVE_RUN_SQL, [runId, ownerUserId, folderId, folder.rows[0].project_id]);
       if (!moved.rows[0]) return null;
       const paperId = await paperOfRun(client, ownerUserId, runId);
       if (paperId) {

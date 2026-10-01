@@ -20,7 +20,26 @@ from nodes import consume_usage_summary, start_usage_session
 from nodes.deep_research import generate_deep_research_plan
 
 load_dotenv()
-logging.basicConfig(level=os.getenv("NODE_SERVICE_LOG_LEVEL", "INFO").upper())
+
+_STANDARD_LOG_FIELDS = set(vars(logging.makeLogRecord({}))) | {"message", "asctime"}
+
+
+class WorkerLogFormatter(logging.Formatter):
+    """The default "LEVEL:logger:message" line, followed by the fields a call
+    passed in `extra`. They used to be dropped, so a warning said that a request
+    failed but never why (docs/32, phase 2: the search index catch-up)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        text = super().format(record)
+        extras = {key: value for key, value in vars(record).items() if key not in _STANDARD_LOG_FIELDS}
+        if not extras:
+            return text
+        return f"{text} {json.dumps(extras, default=str, ensure_ascii=False)[:2000]}"
+
+
+_log_handler = logging.StreamHandler()
+_log_handler.setFormatter(WorkerLogFormatter(logging.BASIC_FORMAT))
+logging.basicConfig(level=os.getenv("NODE_SERVICE_LOG_LEVEL", "INFO").upper(), handlers=[_log_handler])
 logger = logging.getLogger("papertrend.node_service")
 PROJECT_ROOT = Path(__file__).resolve().parent
 WORKER_ROOT = PROJECT_ROOT / "eil-dashboard" / "worker"

@@ -81,7 +81,8 @@ test("the worker's stale-index query picks what needs indexing, and nothing it c
   const python = read("worker/database_client.py").match(/STALE_SEARCH_INDEX_SQL = \(([\s\S]*?)\n\)/)?.[1] ?? "";
   let n = 0;
   const staleSql = [...python.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]).join("").replace(/%s/g, () => `$${++n}`);
-  assert.equal(n, 2);
+  // Deployment, owner (row-level security is read per owner: search-index-rls.test.ts), limit.
+  assert.equal(n, 3);
   const db = new PGlite();
   await db.exec(`
     CREATE TABLE ingestion_runs (
@@ -109,9 +110,9 @@ test("the worker's stale-index query picks what needs indexing, and nothing it c
   await add(5, "queued", "2026-09-30T10:00:00Z", { indexedAt: "2026-09-29T00:00:00Z" });       // being re-analysed: keep the old index
   await add(6, "succeeded", "2026-09-30T10:00:00Z", { pilot: true });                          // the pilot's
   await add(7, "succeeded", "2026-09-30T10:00:00Z", { content: false });                       // a copy with no content of its own
-  const picked = (await db.query<{ run_id: string }>(staleSql, ["production", 10])).rows.map((row) => row.run_id).sort();
+  const picked = (await db.query<{ run_id: string }>(staleSql, ["production", owner, 10])).rows.map((row) => row.run_id).sort();
   assert.deepEqual(picked, [run(1), run(3)]);
-  const pilot = (await db.query<{ run_id: string }>(staleSql, ["pilot", 10])).rows.map((row) => row.run_id);
+  const pilot = (await db.query<{ run_id: string }>(staleSql, ["pilot", owner, 10])).rows.map((row) => row.run_id);
   assert.deepEqual(pilot, [run(6)]);
   await db.close();
 });

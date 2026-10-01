@@ -88,5 +88,62 @@ class CatchUpTests(unittest.TestCase):
             self.assertEqual(search_index.catch_up_search_index(broken), 0)
 
 
+class StaleListingTests(unittest.TestCase):
+    """The index tables' row-level security shows an owner's rows only to a
+    transaction naming that owner; tests/search-index-rls.test.ts runs the SQL
+    itself under it. This checks the client sets each owner before reading."""
+
+    def _client(self, owners, stale_by_owner):
+        import contextlib
+        import database_client
+
+        executed = []
+
+        class Cursor:
+            def __init__(self):
+                self.rows = []
+
+            def execute(self, sql, params=()):
+                executed.append((sql, params))
+                if sql is database_client.STALE_SEARCH_INDEX_OWNERS_SQL:
+                    self.rows = [{"owner_user_id": owner} for owner in owners]
+                elif sql is database_client.STALE_SEARCH_INDEX_SQL:
+                    self.rows = stale_by_owner.get(params[1], [])[: params[2]]
+                else:
+                    self.rows = []
+
+            def fetchall(self):
+                return self.rows
+
+        class Connection:
+            def cursor(self):
+                return contextlib.nullcontext(Cursor())
+
+        client = database_client.CloudSqlWorkerClient("postgresql://unused", deployment="pilot")
+        client._connection = lambda: contextlib.nullcontext(Connection())
+        return client, executed
+
+    def test_each_owner_is_set_before_its_papers_are_read(self):
+        import database_client
+
+        o1 = "00000000-0000-0000-0000-000000000001"
+        o2 = "00000000-0000-0000-0000-000000000002"
+        client, executed = self._client([o1, o2], {o1: [{"run_id": "r1", "owner_user_id": o1}], o2: [{"run_id": "r2", "owner_user_id": o2}]})
+        self.assertEqual([row["run_id"] for row in client.list_runs_needing_search_index(10)], ["r1", "r2"])
+        sql = [statement for statement, _ in executed]
+        self.assertIs(sql[0], database_client.STALE_SEARCH_INDEX_OWNERS_SQL)
+        for owner in (o1, o2):
+            set_at = next(i for i, (statement, params) in enumerate(executed) if "set_config('app.current_user_id'" in statement and params == (owner,))
+            self.assertIs(executed[set_at + 1][0], database_client.STALE_SEARCH_INDEX_SQL)
+            self.assertEqual(executed[set_at + 1][1][:2], ("pilot", owner))
+
+    def test_the_limit_stops_the_listing(self):
+        o1 = "00000000-0000-0000-0000-000000000001"
+        o2 = "00000000-0000-0000-0000-000000000002"
+        client, executed = self._client([o1, o2], {o1: [{"run_id": "r1"}, {"run_id": "r2"}], o2: [{"run_id": "r3"}]})
+        self.assertEqual(len(client.list_runs_needing_search_index(2)), 2)
+        self.assertFalse(any(params == (o2,) for _, params in executed), "the second owner is not read once the limit is met")
+
+
 if __name__ == "__main__":
     unittest.main()

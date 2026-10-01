@@ -72,12 +72,24 @@ def _single_payload_owner(table: str, rows: Iterable[Dict[str, Any]]) -> str:
 # A run that owns its paper's content (so a copy that shares another run's
 # content is never picked, and cannot be retried forever), has succeeded, is
 # not in the trash, and whose paper's index document predates the analysis.
+# The search index tables enforce row-level security by owner
+# (cloudsql/phase8_chat_v2.sql), so staleness is checked owner by owner, with the
+# owner set for the transaction. Checked without one, no index row was visible:
+# every paper looked stale and was embedded again on every check.
+STALE_SEARCH_INDEX_OWNERS_SQL = (
+    "SELECT DISTINCT ir.owner_user_id::text AS owner_user_id "
+    "FROM public.ingestion_runs ir "
+    "WHERE ir.source_type = 'upload' AND ir.status = 'succeeded' AND ir.trashed_at IS NULL "
+    "AND COALESCE(ir.input_payload->>'deployment', 'production') = %s"
+)
+
 STALE_SEARCH_INDEX_SQL = (
     "SELECT ir.id::text AS run_id, ir.owner_user_id::text AS owner_user_id "
     "FROM public.ingestion_runs ir "
     "JOIN public.paper_content pc ON pc.ingestion_run_id = ir.id "
     "WHERE ir.source_type = 'upload' AND ir.status = 'succeeded' AND ir.trashed_at IS NULL "
     "AND COALESCE(ir.input_payload->>'deployment', 'production') = %s "
+    "AND ir.owner_user_id = %s::uuid "
     "AND NOT EXISTS ("
     "SELECT 1 FROM public.paper_retrieval_documents d "
     "WHERE d.owner_user_id = ir.owner_user_id AND d.paper_id = pc.paper_id "
@@ -204,10 +216,23 @@ class CloudSqlWorkerClient:
         self._update_owned_record("ingestion_runs", run_id, patch)
 
     def list_runs_needing_search_index(self, limit: int) -> List[Dict[str, Any]]:
-        """This deployment's analysed papers whose search index is missing or older than the analysis."""
+        """This deployment's analysed papers whose search index is missing or older than the analysis.
+
+        Each owner's papers are read with that owner set, as the index tables'
+        row-level security requires (see STALE_SEARCH_INDEX_OWNERS_SQL).
+        """
+        wanted = max(int(limit), 1)
+        stale: List[Dict[str, Any]] = []
         with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(STALE_SEARCH_INDEX_SQL, (self.deployment, max(int(limit), 1)))
-            return self._rows(cursor)
+            cursor.execute(STALE_SEARCH_INDEX_OWNERS_SQL, (self.deployment,))
+            owners = [row["owner_user_id"] for row in self._rows(cursor)]
+            for owner in owners:
+                if len(stale) >= wanted:
+                    break
+                set_transaction_owner(cursor, owner)
+                cursor.execute(STALE_SEARCH_INDEX_SQL, (self.deployment, owner, wanted - len(stale)))
+                stale.extend(self._rows(cursor))
+        return stale
 
     def site_spend_today_usd(self) -> float:
         """What every model call on the site cost since midnight UTC (docs/32, 1.5)."""
