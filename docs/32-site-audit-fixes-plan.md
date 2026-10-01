@@ -110,6 +110,7 @@ Found on the pilot and fixed before promotion:
 - **On a phone the open tray covered the chat header** once it stood above the composer; its height now stops below the headers.
 - **The pilot web build left traffic on the old revision** after a no-traffic check had pinned it; the build now ends by sending traffic to the new revision, as the worker's does.
 - Worker log lines now keep the fields passed in `extra`; the reason a request failed was being dropped.
+- **Repository-wide answers were never fact-checked.** The audit of a 41-paper synthesis listed 30 cited ids and the schema allowed 12, so the whole reply was rejected; production shipped those drafts unchecked and unmarked, and 2.2 made them say "could not be checked". Lists from the model are now cut, not rejected. With the audit running, it then judged such answers unsupported: its prompt was cut at 24,000 characters, draft first, so most of the evidence never reached it, and it counted leaving a paper out as an unsupported claim. Evidence now has its own budget (the synthesis's own for a repository-wide answer, with a stated cut), and grounding and coverage are judged apart. Checked locally against the live data: the same question went from "could not be checked" to checked and supported with no warning; a focused question still passes. Each audit now logs its verdict (`chat_audit_verdict`) or why it did not run (`chat_audit_unavailable`).
 
 ## 2.11 — the remaining medium findings
 
