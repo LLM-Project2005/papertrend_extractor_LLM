@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   AUDIT_EVIDENCE_CHARS,
   auditEvidence,
+  corpusCountsEvidence,
   CORRECTED_ANSWER_LIMITATION,
   decideFromAudit,
   FaithfulnessSchema,
@@ -32,6 +33,23 @@ test("the audit sees the evidence a repository-wide answer was written from", ()
   // Grounding and coverage are judged apart: leaving something out is not an unsupported claim.
   assert.match(audit, /A claim is never unsupported because the draft leaves something out\./);
   assert.match(audit, /need not name each paper, nor be longer than the reader asked for/);
+});
+
+test("a repository-wide answer and its audit see the counted figures", () => {
+  // Found on the pilot: "which topics come up most often" was answered from
+  // model-written batch summaries, and the audit could not confirm a ranking.
+  const counts = corpusCountsEvidence({
+    papers: Array.from({ length: 41 }) as never,
+    topicCounts: [{ label: "Academic writing", paperCount: 9, mentions: 30 }, { label: "Assessment", paperCount: 1, mentions: 2 }],
+    keywordCounts: [{ label: "feedback", paperCount: 4, mentions: 9 }],
+  });
+  assert.match(counts, /^## Counted across all 41 papers in scope/);
+  assert.match(counts, /- Academic writing: 9 papers\n- Assessment: 1 paper\n/);
+  assert.match(counts, /Keywords:\n- feedback: 4 papers/);
+  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
+  const corpus = source.slice(source.indexOf("async function aggregateCorpusResult("));
+  assert.match(corpus, /`Eligible papers: \$\{context\.papers\.length\}`, countsEvidence, "Use these counts for any claim about how often or how many/);
+  assert.match(corpus, /evidenceText: \[countsEvidence, \.\.\.summaries\]\.join/);
 });
 
 test("a corpus-wide audit that names many papers is read, not rejected", () => {

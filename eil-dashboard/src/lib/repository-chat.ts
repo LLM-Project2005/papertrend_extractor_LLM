@@ -3691,6 +3691,29 @@ export function decideFromAudit(review: {
   };
 }
 
+/**
+ * What the repository has counted, for a corpus-wide answer and its audit.
+ * "Which topics come up most often?" was answered from model-written batch
+ * summaries, and the audit rightly could not confirm a ranking from them
+ * (found on the pilot). These are counts, not inferences: each paper's own
+ * topic labels and keywords, before the dashboard groups labels into themes.
+ */
+export function corpusCountsEvidence(
+  context: Pick<RepositoryContext, "papers" | "topicCounts" | "keywordCounts">,
+  limit = 15
+): string {
+  const line = (item: { label: string; paperCount: number }) =>
+    `- ${item.label}: ${item.paperCount} paper${item.paperCount === 1 ? "" : "s"}`;
+  return [
+    `## Counted across all ${context.papers.length} papers in scope`,
+    "Topic labels as each paper's analysis named them (the dashboard groups similar labels into themes, so its counts can be higher):",
+    ...context.topicCounts.slice(0, limit).map(line),
+    "",
+    "Keywords:",
+    ...context.keywordCounts.slice(0, limit).map(line),
+  ].join("\n");
+}
+
 async function aggregateCorpusResult(
   input: RepositoryChatInput,
   context: RepositoryContext,
@@ -3723,6 +3746,7 @@ async function aggregateCorpusResult(
       summaries.push(evidence);
     }
   }
+  const countsEvidence = corpusCountsEvidence(context);
   try {
     const completion = await createChatCompletionResult([
       {
@@ -3737,7 +3761,7 @@ async function aggregateCorpusResult(
       },
       {
         role: "user",
-        content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
+        content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, countsEvidence, "Use these counts for any claim about how often or how many; the batch findings below are for what the papers say.", ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
       },
     ], 0.15, input.model, "CHAT_CORPUS_REDUCE", { maxTokens: 3_000 });
     const answer = completion?.content?.trim();
@@ -3746,7 +3770,7 @@ async function aggregateCorpusResult(
       const review = await checkFaithfulness({
         question: execution.refinedQuestion,
         answer,
-        evidenceText: summaries.join("\n\n"),
+        evidenceText: [countsEvidence, ...summaries].join("\n\n"),
         allowedPaperIds: allowed,
         answerLanguage: execution.answerLanguage,
         evidenceNeeds: execution.evidenceNeeds,
