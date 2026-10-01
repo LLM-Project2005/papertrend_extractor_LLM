@@ -68,7 +68,7 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | Phase | State |
 | --- | --- |
 | 1 | In production (2026-10-01) |
-| 2 | Built and tested; going to the pilot |
+| 2 | Checked live on the pilot (2026-10-01); going to production |
 
 ## Phase 1 results
 
@@ -82,6 +82,34 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | 1.6 | The privacy policy names Facebook (Meta) sign-in, email and password sign-in, invite codes, spending records, Exa, and that deep research decides on its own to search the web (paper text is not sent to the search); the terms name the daily spending limits. Effective 1 October 2026. | `legal-providers.test.ts` fails when a sign-in method, outside host or search engine is added without the policy naming it. The pilot's `/privacy` serves the new text. |
 
 Found while checking, fixed in phase 2: a person whose Firebase login is recreated (same verified email, new login) cannot sign in — linking fails on the one-login-per-owner constraint and the site says "temporarily unavailable" for good.
+
+## Phase 2 results
+
+Checked live on the pilot (web 00253 and the fix after it, worker 00037) on 2026-10-01, with the admin test account unless named. Spend: one analysis and its embeddings, about $0.02.
+
+| # | What was done | How it was checked |
+| --- | --- | --- |
+| 2.1 | A network error, a 5xx or a timeout while checking the profile keeps the session and retries (1, 3, 10, 30 s) with a fresh token; only 401/403 or "not linked" signs out. The token check has a timeout; the profile route answers 503 when the check itself is unavailable. | `auth-resilience.test.ts`. |
+| 2.2 | The fact-check decision returns whether the check ran and whether the language matched; an answer whose check did not run is marked, and every branch is tested. | `chat-audit-qa.test.ts`, `chat-audit-decision.test.ts`. |
+| 2.3 | The worker asks the web to index a paper as soon as its run succeeds (OIDC as the worker's account), and when idle catches up papers whose index is missing or older than their analysis, 10 at a time. Semantic search is fused with the in-memory ranking instead of putting indexed papers first. | `search-index.test.ts`, `search-index-rls.test.ts` (the catch-up under the live row-level security, as an ordinary role), `tests/test_worker_search_index.py`. **Live:** a new upload was indexed within its run (39 chunks, all embedded). After the fix below, an idle check found nothing stale and sent nothing. |
+| 2.4 | Re-analysis keeps the previous analysis usable everywhere (one SQL rule shared by the web and the worker); cancelling restores "succeeded" with the old results, owner-scoped. | `reanalysis-availability.test.ts`, `tests/test_usable_analysis_parity.py`. **Live:** while the paper was analysed again its analysis stayed available (same paper, 5 topics); cancel returned it to "succeeded"; the worker stopped after one model call. |
+| 2.5 | A copy gets its own analysis under its own paper id and counts toward the paper limit; a move carries the paper's rows, its search index and its repository. | `paper-copy.test.ts` (the real schema). **Live:** a copy had its own paper id and analysis, moved to another repository, appeared in that repository's dashboard and not the source's, then went to Trash. |
+| 2.6 | The tray follows its runs by id (up to 200) through one poller shared by the shell and Home, stops when all are finished and while the tab is hidden, and can always be closed. | `progress-tray.test.ts`. **Live:** the status route reported the run queued, processing, then succeeded. |
+| 2.7 | Chat follows new content only for a reader at the bottom or one who just asked; earlier messages keep the position; the research card sits below the transcript. | `chat-scroll.test.ts`. **Live (phone):** the header stays in place (it scrolled away on the first pilot build, fixed below). |
+| 2.8 | Every drilldown passes the ids it counted; the list shows exactly those. | `dashboard-drilldown.test.ts`. **Live:** a bar whose tooltip said 7 opened a drilldown stating 7 and listing 7. |
+| 2.9 | One dialog-layer stack: Escape closes only the top layer, and hand-built overlays (navigation drawer, filter sheet, full report, chat list) trap focus and return it. | `dialog-layers.test.ts`, `menus-dismiss.test.ts`. **Live:** a paper opened from a drilldown closed on one Escape, leaving the drilldown; in the phone chat list, Escape closed a chat's menu and left the list. |
+| 2.10 | The search popover spans the screen below the large breakpoint. | **Live:** at 390 px the search box runs from x 17 to 373. |
+| 2.11 | See the list below. | `audit-small-fixes.test.ts`. **Live:** each workspace page has its own title; search lists no entry twice and offers "Search the Library for …"; the in-app browser notice shows in LINE's browser and not in an ordinary one; on a phone the chat list opens as a drawer (50 chats, Pin, Rename, Delete), rename asks in the page, and the open tray stops below the headers and above the composer. |
+| 2.12 | A verified profile whose Firebase login was recreated has its stale mapping replaced instead of failing on the one-login-per-owner constraint. | `identity-provisioning.test.ts`. **Live**, with a non-admin account: a new login for the existing profile was linked on the pilot, which then refused it with the pilot message (403 `pilot_restricted`, not "temporarily unavailable"); production admitted it as a member. The same run checked 1.1 (the pilot refuses non-admins) and 1.5 (on a no-traffic revision with a tiny per-person limit, the first question was answered and the second refused, 429). |
+
+Found on the pilot and fixed before promotion:
+
+- **The search-index catch-up re-embedded the same papers on every check.** The index tables enforce row-level security by owner; the worker read them without an owner, saw no index rows, and took every paper for stale. It now reads owner by owner with the owner set. The first tests ran as a superuser, which skips row-level security; `search-index-rls.test.ts` runs as an ordinary role.
+- **In the background (`async: true`) the worker's catch-up requests failed:** with CPU only during a request, they never reached the web. The pilot's scheduler now calls synchronously, as production's already did.
+- **The phone chat header scrolled away**: the new answer announcer stood out below the transcript and the page frame scrolled to follow. It moved out of the transcript, and the transcript scrolls itself.
+- **On a phone the open tray covered the chat header** once it stood above the composer; its height now stops below the headers.
+- **The pilot web build left traffic on the old revision** after a no-traffic check had pinned it; the build now ends by sending traffic to the new revision, as the worker's does.
+- Worker log lines now keep the fields passed in `extra`; the reason a request failed was being dropped.
 
 ## 2.11 — the remaining medium findings
 

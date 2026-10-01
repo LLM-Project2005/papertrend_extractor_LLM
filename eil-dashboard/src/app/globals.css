@@ -660,3 +660,10 @@ html:focus-within {
     bottom: calc(1.25rem + var(--chat-composer-offset, 0px));
   }
 }
+
+/* The open tray's height: at most 72% of the screen, and on the chat page
+   never past the page and chat headers - stood above a phone's composer, a
+   72% card covered both, and the button that opens the chat list. */
+.tray-card {
+  max-height: min(72dvh, 600px, calc(100dvh - var(--chat-composer-offset, 0px) - 9rem));
+}
