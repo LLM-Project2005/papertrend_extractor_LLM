@@ -15,9 +15,6 @@ from typing import Any, Dict, Optional
 
 from dotenv import load_dotenv
 
-from graphs import run_workspace_query_graph
-from nodes import consume_usage_summary, start_usage_session
-from nodes.deep_research import generate_deep_research_plan
 
 load_dotenv()
 
@@ -46,15 +43,10 @@ WORKER_ROOT = PROJECT_ROOT / "eil-dashboard" / "worker"
 if str(WORKER_ROOT) not in sys.path:
     sys.path.insert(0, str(WORKER_ROOT))
 _QUEUE_PROCESS_LOCK = threading.Lock()
-_RESEARCH_PROCESS_LOCK = threading.Lock()
 _QUEUE_THREAD_GUARD = threading.Lock()
-_RESEARCH_THREAD_GUARD = threading.Lock()
 _QUEUE_PROCESS_THREAD: Optional[threading.Thread] = None
-_RESEARCH_PROCESS_THREAD: Optional[threading.Thread] = None
 _QUEUE_PROCESS_STARTED_AT = 0.0
-_RESEARCH_PROCESS_STARTED_AT = 0.0
 _FORCED_QUEUE_BATCH_COUNT = 0
-_FORCED_RESEARCH_BATCH_COUNT = 0
 
 try:
     import google.auth
@@ -403,16 +395,6 @@ def _run_queue_batch(max_runs: int) -> Dict[str, Any]:
     }
 
 
-def _run_research_batch(max_runs: int) -> Dict[str, Any]:
-    from analysis_pipeline import load_config
-    from process_research_queue import SupabaseRestClient, process_batch
-    from database_client import create_worker_database_client
-
-    config = load_config()
-    client = create_worker_database_client(config, SupabaseRestClient)
-    return process_batch(client, max_runs=max_runs)
-
-
 def _worker_base_url_from_request(handler: BaseHTTPRequestHandler) -> str:
     configured = (
         os.getenv("CLOUD_TASKS_TARGET_BASE_URL")
@@ -654,120 +636,6 @@ def _run_queue_batch_foreground(max_runs: int, *, force: bool = False) -> Dict[s
                 _QUEUE_PROCESS_STARTED_AT = 0.0
 
 
-def _run_research_batch_background(max_runs: int, *, force: bool = False) -> Dict[str, Any]:
-    global _RESEARCH_PROCESS_THREAD, _RESEARCH_PROCESS_STARTED_AT, _FORCED_RESEARCH_BATCH_COUNT
-
-    stale_after_seconds = _batch_stale_after_seconds("NODE_SERVICE_RESEARCH_STALE_LOCK_SECONDS", 1200)
-    with _RESEARCH_THREAD_GUARD:
-        active_state = _active_thread_state(
-            _RESEARCH_PROCESS_THREAD,
-            _RESEARCH_PROCESS_STARTED_AT,
-            stale_after_seconds,
-        )
-        if active_state["alive"] and not (force or active_state["stale"]):
-            return {
-                "started": False,
-                "already_running": True,
-                "stale_lock_recovered": False,
-                "active_batch_age_seconds": active_state["age_seconds"],
-            }
-        if active_state["alive"] and (force or active_state["stale"]):
-            _FORCED_RESEARCH_BATCH_COUNT += 1
-
-    def _worker() -> None:
-        try:
-            summary = _run_research_batch(max_runs=max_runs)
-            logger.info("research queue batch %s", summary)
-        except Exception as error:
-            logger.exception("research queue batch failed: %s", error)
-        finally:
-            global _RESEARCH_PROCESS_THREAD, _RESEARCH_PROCESS_STARTED_AT
-            with _RESEARCH_THREAD_GUARD:
-                current = threading.current_thread()
-                if _RESEARCH_PROCESS_THREAD is current:
-                    _RESEARCH_PROCESS_THREAD = None
-                    _RESEARCH_PROCESS_STARTED_AT = 0.0
-
-    thread = threading.Thread(
-        target=_worker,
-        name=f"papertrend-research-batch-{max_runs}",
-        daemon=True,
-    )
-    with _RESEARCH_THREAD_GUARD:
-        _RESEARCH_PROCESS_THREAD = thread
-        _RESEARCH_PROCESS_STARTED_AT = time.monotonic()
-    thread.start()
-    return {
-        "started": True,
-        "already_running": False,
-        "stale_lock_recovered": bool(active_state["alive"] and (force or active_state["stale"])),
-        "active_batch_age_seconds": active_state["age_seconds"],
-        "forced_batch_count": _FORCED_RESEARCH_BATCH_COUNT,
-    }
-
-
-def _build_keyword_search_payload(body: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "request_kind": "keyword-search",
-        "owner_user_id": str(body.get("ownerUserId") or ""),
-        "folder_id": str(body.get("folderId") or ""),
-        "project_id": str(body.get("projectId") or ""),
-        "message": str(body.get("query") or ""),
-        "search_query": str(body.get("query") or ""),
-        "selected_years": list(body.get("selectedYears") or []),
-        "selected_tracks": list(body.get("selectedTracks") or []),
-        "query_language": str(body.get("queryLanguage") or ""),
-        "errors": [],
-    }
-
-
-def _build_visualization_payload(body: Dict[str, Any]) -> Dict[str, Any]:
-    context = body.get("context") if isinstance(body.get("context"), dict) else {}
-    return {
-        "request_kind": "visualization",
-        "owner_user_id": str(body.get("ownerUserId") or ""),
-        "folder_id": str(body.get("folderId") or ""),
-        "project_id": str(body.get("projectId") or ""),
-        "selected_years": list(body.get("selectedYears") or []),
-        "selected_tracks": list(body.get("selectedTracks") or []),
-        "search_query": str(body.get("searchQuery") or ""),
-        "message": str(context.get("goal") or ""),
-        "errors": [],
-    }
-
-
-def _build_chat_payload(body: Dict[str, Any]) -> Dict[str, Any]:
-    messages = body.get("messages") if isinstance(body.get("messages"), list) else []
-    current_message = str(body.get("message") or "")
-    if not current_message:
-        for message in reversed(messages):
-            if isinstance(message, dict) and message.get("role") == "user":
-                current_message = str(message.get("content") or "")
-                break
-    return {
-        "request_kind": "chat",
-        "owner_user_id": str(body.get("ownerUserId") or ""),
-        "folder_id": str(body.get("folderId") or ""),
-        "project_id": str(body.get("projectId") or ""),
-        "thread_id": str(body.get("threadId") or ""),
-        "session_id": str(body.get("sessionId") or ""),
-        "model": str(body.get("model") or ""),
-        "chat_mode": str(body.get("chatMode") or "normal"),
-        "action": str(body.get("action") or "message"),
-        "message": current_message,
-        "messages": [
-            {"role": str(message.get("role") or ""), "content": str(message.get("content") or "")}
-            for message in messages
-            if isinstance(message, dict)
-        ],
-        "selected_years": list(body.get("selectedYears") or []),
-        "selected_tracks": list(body.get("selectedTracks") or []),
-        "search_query": str(body.get("searchQuery") or ""),
-        "query_language": str(body.get("queryLanguage") or ""),
-        "errors": [],
-    }
-
-
 class NodeServiceHandler(BaseHTTPRequestHandler):
     server_version = "PapertrendNodeService/1.0"
 
@@ -899,76 +767,12 @@ class NodeServiceHandler(BaseHTTPRequestHandler):
                 _json_response(self, 200, _check_gcs_object_status(body))
                 return
 
-            if self.path == "/process-research-queue":
-                max_runs = min(max(int(body.get("maxRuns") or 1), 1), 5)
-                run_async = bool(body.get("async", True))
-                force_start = bool(body.get("force", False))
-                if run_async:
-                    start_result = _run_research_batch_background(
-                        max_runs=max_runs,
-                        force=force_start,
-                    )
-                    _json_response(
-                        self,
-                        202,
-                        {
-                            "ok": True,
-                            "queued": bool(start_result["started"]),
-                            "already_running": bool(start_result["already_running"]),
-                            "max_runs": max_runs,
-                            "force": force_start,
-                            "stale_lock_recovered": bool(start_result["stale_lock_recovered"]),
-                            "active_batch_age_seconds": start_result["active_batch_age_seconds"],
-                            "forced_batch_count": start_result.get("forced_batch_count", 0),
-                        },
-                    )
-                    return
-
-                summary = _run_research_batch(max_runs=max_runs)
-                logger.info("research queue batch %s", summary)
-                _json_response(self, 200, summary)
-                return
-
             if self.path == "/debug/reset-queue-lock":
                 _json_response(self, 200, _reset_queue_worker_gate())
                 return
 
-            if self.path == "/research-plan":
-                start_usage_session(label="workspace:deep-research-plan")
-                plan = generate_deep_research_plan(
-                    owner_user_id=str(body.get("ownerUserId") or ""),
-                    folder_id=str(body.get("folderId") or "") or None,
-                    project_id=str(body.get("projectId") or "") or None,
-                    prompt=str(body.get("message") or ""),
-                    selected_run_ids=list(body.get("selectedRunIds") or []),
-                    attachment_names=list(body.get("attachmentNames") or []),
-                    source_policy=dict(body.get("sourcePolicy") or {}),
-                )
-                logger.info("workspace usage summary %s", consume_usage_summary())
-                _json_response(self, 200, plan)
-                return
-
-            if self.path == "/keyword-search":
-                start_usage_session(label="workspace:keyword-search")
-                final_state = run_workspace_query_graph(_build_keyword_search_payload(body))
-                logger.info("workspace usage summary %s", consume_usage_summary())
-                _json_response(self, 200, final_state.get("keyword_search_result", {}))
-                return
-
-            if self.path == "/visualization":
-                start_usage_session(label="workspace:visualization")
-                final_state = run_workspace_query_graph(_build_visualization_payload(body))
-                logger.info("workspace usage summary %s", consume_usage_summary())
-                _json_response(self, 200, final_state.get("visualization_result", {}))
-                return
-
-            if self.path == "/chat":
-                start_usage_session(label="workspace:chat")
-                final_state = run_workspace_query_graph(_build_chat_payload(body))
-                logger.info("workspace usage summary %s", consume_usage_summary())
-                _json_response(self, 200, final_state.get("chat_result", {}))
-                return
-
+            # Python chat, keyword search, chart planning and deep research
+            # lived here; they run in the web app now (docs/31, docs/32).
             _json_response(self, 404, {"error": "Not found."})
         except Exception as error:
             _json_response(self, 500, {"error": str(error)})

@@ -3911,21 +3911,11 @@ async function runRepositoryChatWithContext(
   context: RepositoryContext
 ): Promise<RepositoryChatResult> {
   reportChatProgress("planning");
-  const chatV2Enabled = process.env.REPOSITORY_CHAT_V2_ENABLED !== "false";
-  const execution = chatV2Enabled
-    ? input.executionPlan ?? await planRepositoryExecution(input, context)
-    : undefined;
-  const plan = execution
-    ? legacyPlanForExecution(execution, input.prompt)
-    : requestsRepositoryStatistics(input.prompt)
-      ? fallbackPromptPlan(input.prompt, Boolean(input.forceChart))
-      : await refineRepositoryPrompt(
-          input.prompt,
-          context,
-          input.model,
-          input.forceChart,
-          input.history
-        );
+  // Every request is planned as typed operations (chat v2). The planner it
+  // replaced, refineRepositoryPrompt, ran only with REPOSITORY_CHAT_V2_ENABLED
+  // set to "false", which no deployment does (docs/32, long-term health).
+  const execution = input.executionPlan ?? await planRepositoryExecution(input, context);
+  const plan = legacyPlanForExecution(execution, input.prompt);
   const diagnostics = {
     projectId: context.projectId,
     folderId: context.folderId,
