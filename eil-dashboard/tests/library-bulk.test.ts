@@ -25,16 +25,16 @@ const OTHER_RUN = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 async function database() {
   const db = new PGlite({ extensions: { vector, pgcrypto } });
   await db.exec("CREATE EXTENSION IF NOT EXISTS vector;");
-  for (const file of ["schema.sql", "phase8_chat_v2.sql"]) await db.exec(read(`cloudsql/${file}`));
+  await db.exec(read("cloudsql/schema.sql"));
   const client = { query: (text: string, params?: unknown[]) => db.query(text, params) } as never;
   await db.exec(`
     INSERT INTO user_profiles (id, email) VALUES ('${OWNER}', 'owner@example.edu'), ('${OTHER}', 'other@example.edu');
     INSERT INTO workspace_organizations (id, owner_user_id, name) VALUES
       ('00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Org'), ('00000000-0000-0000-0000-0000000000c9', '${OTHER}', 'Org');
-    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name) VALUES
-      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository A'),
-      ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository B'),
-      ('00000000-0000-0000-0000-0000000000a9', '00000000-0000-0000-0000-0000000000c9', '${OTHER}', 'Theirs');
+    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name, analysis_profile, analysis_profile_version, analysis_profile_hash, analysis_profile_updated_at) VALUES
+      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository A', '{}'::jsonb, 2, 'test', now()),
+      ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository B', '{}'::jsonb, 2, 'test', now()),
+      ('00000000-0000-0000-0000-0000000000a9', '00000000-0000-0000-0000-0000000000c9', '${OTHER}', 'Theirs', '{}'::jsonb, 2, 'test', now());
     INSERT INTO research_folders (id, owner_user_id, name, project_id) VALUES
       ('${FOLDER_A}', '${OWNER}', 'A', '00000000-0000-0000-0000-0000000000a1'),
       ('${FOLDER_B}', '${OWNER}', 'B', '00000000-0000-0000-0000-0000000000a2'),

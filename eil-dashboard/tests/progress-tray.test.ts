@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+import { vector } from "@electric-sql/pglite-pgvector";
 import { TRAY_RUN_SQL } from "../src/lib/cloudsql/analysis-job-repository";
 import {
   analysisSessionExpired,
@@ -40,7 +41,7 @@ test("a new batch joins the one followed, up to the limit, and a day-old session
 });
 
 test("the status query returns every followed run of the owner, with only what the tray reads", async () => {
-  const db = new PGlite({ extensions: { pgcrypto } });
+  const db = new PGlite({ extensions: { vector, pgcrypto } });
   await db.exec(read("cloudsql/schema.sql"));
   const owner = "00000000-0000-0000-0000-00000000000a";
   const other = "00000000-0000-0000-0000-00000000000b";

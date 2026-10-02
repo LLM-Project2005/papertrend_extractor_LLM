@@ -34,14 +34,14 @@ function workerSql(name: string): string {
 async function database() {
   const db = new PGlite({ extensions: { vector, pgcrypto } });
   await db.exec("CREATE EXTENSION IF NOT EXISTS vector;");
-  for (const file of ["schema.sql", "phase8_chat_v2.sql"]) await db.exec(read(`cloudsql/${file}`));
+  await db.exec(read("cloudsql/schema.sql"));
   await db.exec(`
     INSERT INTO user_profiles (id, email) VALUES ('${OWNER}', 'owner@example.edu'), ('${OTHER}', 'other@example.edu');
     INSERT INTO workspace_organizations (id, owner_user_id, name) VALUES
       ('00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Org'), ('00000000-0000-0000-0000-0000000000c2', '${OTHER}', 'Org');
-    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name) VALUES
-      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'A'),
-      ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000c2', '${OTHER}', 'B');
+    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name, analysis_profile, analysis_profile_version, analysis_profile_hash, analysis_profile_updated_at) VALUES
+      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'A', '{}'::jsonb, 2, 'test', now()),
+      ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000c2', '${OTHER}', 'B', '{}'::jsonb, 2, 'test', now());
     INSERT INTO research_folders (id, owner_user_id, name, project_id) VALUES
       ('00000000-0000-0000-0000-0000000000f1', '${OWNER}', 'A', '00000000-0000-0000-0000-0000000000a1'),
       ('00000000-0000-0000-0000-0000000000f2', '${OTHER}', 'B', '00000000-0000-0000-0000-0000000000a2');
