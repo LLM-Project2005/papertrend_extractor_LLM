@@ -25,6 +25,7 @@ import {
   previewConversationSources,
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
+import { readChatScopeTransfer, runsInTransfer } from "@/lib/chat-scope-transfer";
 import { normalizeChatRequestPayload } from "@/lib/chat-request-payload";
 import {
   chatEndpoint,
@@ -63,6 +64,7 @@ import {
   CircleIcon,
   CloseIcon,
   CopyIcon,
+  DownloadIcon,
   BooksIcon,
   GeminiIcon,
   OpenAIIcon,
@@ -104,6 +106,8 @@ const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"
   ),
 });
 import ReportActions from "@/components/chat/ReportActions";
+import MarkdownActions, { downloadMarkdown } from "@/components/chat/MarkdownActions";
+import { answerMarkdown, conversationMarkdown, markdownFileName } from "@/lib/answer-export";
 import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
@@ -360,6 +364,40 @@ const mapMessage = (message: WorkspaceMessageRecord): MessageView => ({
   kind: message.message_kind,
   metadata: message.metadata ?? null,
 });
+
+/** The question an answer replied to, for its file name. */
+function questionBefore(messages: MessageView[], index: number): string {
+  for (let at = index - 1; at >= 0; at -= 1) {
+    if (messages[at].role === "user") return messages[at].content.split("\n")[0].slice(0, 80);
+  }
+  return "";
+}
+
+/**
+ * Every message of a conversation, oldest first. The transcript may hold only
+ * the latest page, so an export reads the pages itself (docs/32, 4.2).
+ */
+async function fetchWholeConversation(threadId: string, token: string): Promise<MessageView[]> {
+  const pages: WorkspaceMessageRecord[][] = [];
+  let before: string | null = null;
+  for (let page = 0; page < 50; page += 1) {
+    const query: string = before ? `?before=${encodeURIComponent(before)}` : "";
+    const response = await fetch(`/api/chat/threads/${threadId}${query}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const payload = (await response.json().catch(() => ({}))) as ChatThreadDetail & { error?: string };
+    if (!response.ok) throw new Error(payload.error ?? "The conversation couldn't be loaded.");
+    const messages = payload.messages ?? [];
+    pages.unshift(messages);
+    before = messages[0]?.created_at ?? null;
+    if (!payload.hasEarlierMessages || !before) break;
+  }
+  const seen = new Set<string>();
+  return pages
+    .flat()
+    .filter((message) => !seen.has(message.id) && Boolean(seen.add(message.id)))
+    .map(mapMessage);
+}
 
 const localMessage = (
   role: MessageView["role"],
@@ -1495,6 +1533,16 @@ export default function ChatClient() {
         }))
     );
   }, [messages, researchReport]);
+  // An older (v1) report is drawn as its own card; it copies and downloads
+  // with every source, web pages included (docs/32, 4.2).
+  const researchReportCitations = useMemo(
+    () =>
+      ([...messages].reverse().find((message) => message.kind === "deep_research_report")?.citations ?? []).map((citation) => ({
+        ...citation,
+        paperId: String(citation.paperId),
+      })),
+    [messages]
+  );
   const researchBlocks = useMemo(
     () => splitReportBlocks(researchMarked.text),
     [researchMarked.text]
@@ -1975,6 +2023,26 @@ export default function ChatClient() {
     }
   }, [session?.access_token, threads]);
 
+  const [exportingConversation, setExportingConversation] = useState(false);
+  // The whole conversation, every page of it, with sources numbered once
+  // across it (docs/32, 4.2). A guest's conversation is only what is on screen.
+  const exportConversation = useCallback(async () => {
+    setExportingConversation(true);
+    try {
+      const threadId = activeThreadId;
+      const messages =
+        canPersist && threadId && session?.access_token
+          ? await fetchWholeConversation(threadId, session.access_token)
+          : visibleMessages;
+      const markdown = conversationMarkdown({ title: pageTitle, messages, exportedAt: new Date() });
+      downloadMarkdown(markdownFileName(pageTitle, "papertrend-chat"), markdown);
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "The conversation couldn't be exported.");
+    } finally {
+      setExportingConversation(false);
+    }
+  }, [activeThreadId, canPersist, pageTitle, session?.access_token, visibleMessages]);
+
   const loadEarlierMessages = useCallback(async () => {
     const threadId = activeThreadId;
     const before = oldestMessageAtRef.current;
@@ -2075,10 +2143,9 @@ export default function ChatClient() {
     if (!raw) return;
     window.localStorage.removeItem(CHAT_SCOPE_TRANSFER_STORAGE_KEY);
     try {
-      const transfer = JSON.parse(raw) as { projectId?: string; runIds?: string[]; prompt?: string; createdAt?: string };
-      const runIds = [...new Set((transfer.runIds ?? []).filter((value) => typeof value === "string" && value))];
-      const age = Date.now() - new Date(transfer.createdAt ?? 0).getTime();
-      if (!transfer.projectId || runIds.length === 0 || !Number.isFinite(age) || age > 15 * 60 * 1000) return;
+      // Papers come by run (the semantic map) or by paper (a dashboard drilldown).
+      const transfer = readChatScopeTransfer(raw);
+      if (!transfer) return;
       void fetch(`/api/workspace/library?projectId=${encodeURIComponent(transfer.projectId)}`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       })
@@ -2086,11 +2153,10 @@ export default function ChatClient() {
           const payload = await response.json() as { runs?: IngestionRunRow[]; error?: string };
           if (!response.ok) throw new Error(payload.error ?? "Failed to transfer papers to chat.");
           const rows = payload.runs ?? [];
-          const allowed = new Set(runIds);
           setLibraryRuns(rows);
-          setSelectedLibraryRuns(rows.filter((run) => allowed.has(run.id) && hasUsableAnalysis(run)));
+          setSelectedLibraryRuns(runsInTransfer(rows, transfer).filter((run) => hasUsableAnalysis(run)));
           scopeChosenRef.current = true;
-          setChatScopeProjectId(transfer.projectId!);
+          setChatScopeProjectId(transfer.projectId);
           setChatScopeFolderId("all");
           if (transfer.prompt?.trim()) setDraft(transfer.prompt.trim());
         })
@@ -3127,6 +3193,18 @@ export default function ChatClient() {
                     <span className="min-w-0 flex-1">Sources</span>
                     <span className="text-xs text-slate-600 dark:text-[#8e8e8e]">{conversationSources.length}</span>
                   </button>
+                  <button
+                    type="button"
+                    disabled={exportingConversation || visibleMessages.length === 0}
+                    onClick={() => {
+                      setConversationMenuOpen(false);
+                      void exportConversation();
+                    }}
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <DownloadIcon className="h-4 w-4" />
+                    <span className="min-w-0 flex-1">{exportingConversation ? "Exporting\u2026" : "Export conversation (.md)"}</span>
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -3161,7 +3239,7 @@ export default function ChatClient() {
                     {earlierLoading ? "Loading earlier messages\u2026" : "Load earlier messages"}
                   </button>
                 ) : null}
-                {visibleMessages.map((message) => {
+                {visibleMessages.map((message, messageIndex) => {
                   const isUser = message.role === "user";
                   const charts = chartsFromMetadata(message.metadata);
                   const attachments = attachmentsFromMetadata(message.metadata);
@@ -3293,6 +3371,15 @@ export default function ChatClient() {
                             )
                           )}
                           <AnswerCaveats metadata={message.metadata} />
+                          {message.kind !== "deep_research_report" && message.content.trim() ? (
+                            <MarkdownActions
+                              markdown={() => answerMarkdown(message.content, message.citations, message.metadata)}
+                              fileName={markdownFileName(questionBefore(visibleMessages, messageIndex) || pageTitle, "papertrend-answer")}
+                              copyLabel="Copy"
+                              label="Answer actions"
+                              compact
+                            />
+                          ) : null}
                           {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading ? (
                             <FollowUpSuggestions
                               suggestions={followUpSuggestions({
@@ -3398,13 +3485,16 @@ export default function ChatClient() {
                           </>
                         ) : null}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => setReportFullViewOpen(true)}
-                        className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
-                      >
-                        Full view
-                      </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ReportActions content={researchReport} citations={researchReportCitations} title={researchTitle} />
+                        <button
+                          type="button"
+                          onClick={() => setReportFullViewOpen(true)}
+                          className="inline-flex h-10 items-center rounded-full border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#ececec] dark:hover:bg-[#0a0a0a]"
+                        >
+                          Full view
+                        </button>
+                      </div>
                     </div>
 
                     <ResearchEvidenceSummary summary={researchEvidenceSummary} />

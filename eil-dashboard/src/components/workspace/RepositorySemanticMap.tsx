@@ -27,7 +27,9 @@ import {
 } from "@/lib/semantic-map-presentation";
 import ForceDirectedSemanticGraph from "@/components/workspace/ForceDirectedSemanticGraph";
 import Select, { type SelectOption } from "@/components/ui/Select";
-import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
+import { writeChatScopeTransfer } from "@/lib/chat-scope-transfer";
+import ChartCsvButton from "@/components/tabs/ChartCsvButton";
+import { semanticMapCsv } from "@/lib/semantic-map-export";
 import {
   colorScale,
   NEIGHBORHOOD_PALETTE as PALETTE,
@@ -447,11 +449,12 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
   }
   function transferToChat(prompt?: string) {
     const runIds = map?.points.filter((point) => selectedPaperIds.includes(point.paperId)).map((point) => point.runId).filter((id): id is string => Boolean(id)) ?? [];
-    window.localStorage.setItem(CHAT_SCOPE_TRANSFER_STORAGE_KEY, JSON.stringify({ projectId, runIds, prompt, createdAt: new Date().toISOString() }));
+    writeChatScopeTransfer(window.localStorage, { projectId, runIds, paperIds: selectedPaperIds, prompt });
     router.push("/workspace/chat");
   }
 
   const mappedPaperCount = map?.points.length ?? 0;
+  const mapCsv = useMemo(() => (map ? semanticMapCsv(map) : null), [map]);
   const waitingForMapCount = Math.max(eligiblePapers - mappedPaperCount, 0);
   const repositoryFileCount = coverage?.repositoryFiles ?? eligiblePapers;
   if (loading) return <div className="flex min-h-[520px] items-center justify-center text-sm text-slate-500 dark:text-[#999]">Loading semantic map…</div>;
@@ -500,6 +503,8 @@ export default function RepositorySemanticMapView({ projectId, projectName, requ
           <div className="nodrag nopan absolute left-3 right-3 top-3 z-10 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur dark:border-[#242424] dark:bg-[#080808]/95">
             <label className="relative min-w-[200px] flex-1"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a paper, topic, or keyword" aria-label="Find on map" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-base sm:text-sm outline-none focus:border-slate-400 dark:border-[#292929] dark:text-white" /></label>
             <Select<ColorMode> value={colorMode} onChange={(next) => { setColorMode(next); setFocusedClusterId(null); }} label="Color papers by" prefix="Color:" options={COLOR_MODE_OPTIONS} />
+            {mapCsv ? <ChartCsvButton csv={mapCsv.papers} label="Papers CSV" /> : null}
+            {mapCsv ? <ChartCsvButton csv={mapCsv.connections} label="Connections CSV" /> : null}
             <details className="group relative"><summary className="flex h-9 cursor-pointer list-none items-center gap-2 rounded-lg border border-hairline bg-surface px-3 text-sm font-medium text-ink transition-colors hover:border-hairline-strong [&::-webkit-details-marker]:hidden"><FilterIcon className="h-4 w-4" /> Papers <span className="tabular-nums">{visiblePoints.length}/{map.points.length}</span></summary><div className="nodrag nopan absolute right-0 top-11 z-30 w-[min(380px,calc(100vw-3rem))] origin-top-right rounded-xl border border-hairline bg-surface p-3 shadow-overlay motion-safe:animate-scale-in"><div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-slate-950 dark:text-white">Papers in view</p><p className="text-xs text-slate-500 dark:text-[#999]">Hide papers without rebuilding the map.</p></div><button type="button" onClick={() => setHiddenPaperIds([])} className="text-xs font-semibold text-slate-700 dark:text-[#ddd]">Show all</button></div><label className="relative mt-3 block"><SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" /><input value={paperFilterQuery} onChange={(event) => setPaperFilterQuery(event.target.value)} placeholder="Filter paper list" aria-label="Filter paper list" className="h-9 w-full rounded-md border border-slate-200 bg-transparent pl-9 pr-3 text-base sm:text-sm text-slate-950 outline-none dark:border-[#292929] dark:text-white" /></label>{paperFilterNotice ? <p className="mt-2 text-[11px] text-amber-700 dark:text-amber-300">{paperFilterNotice}</p> : null}<div className="nowheel mt-2 max-h-72 overflow-y-auto overscroll-contain pr-1">{paperFilterPoints.map((point) => { const visible = !hiddenIds.has(point.paperId); return <label key={point.paperId} className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-slate-50 dark:hover:bg-[#121212]"><input type="checkbox" checked={visible} onChange={(event) => setPaperVisible(point.paperId, event.target.checked)} className="peer sr-only" /><span aria-hidden="true" className={`mt-0.5 flex h-4 w-4 flex-none items-center justify-center rounded border peer-focus-visible:ring-2 peer-focus-visible:ring-[rgb(var(--focus))] peer-focus-visible:ring-offset-2 ${visible ? "border-slate-900 bg-slate-900 text-white dark:border-white dark:bg-white dark:text-black" : "border-field"}`}>{visible ? <CheckIcon className="h-3 w-3" /> : null}</span><span className="min-w-0"><span className="block text-xs font-medium leading-5 text-slate-800 dark:text-[#eee]">{point.title}</span><span className="block text-[11px] text-slate-500 dark:text-[#888]">{point.year}</span></span></label>; })}</div></div></details>
           </div>
           {layoutMode === "projection" ? <ReactFlow key={`${map.mapId}:projection`} nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} edgeTypes={EDGE_TYPES} onInit={fitInitialView} onNodeClick={onNodeClick} onPaneClick={() => { setFocusedPaperId(null); setFocusedEdge(null); }} onEdgeClick={(_event, edge) => { setFocusedPaperId(null); setFocusedEdge(visibleEdges.find((item) => `${item.sourcePaperId}:${item.targetPaperId}` === edge.id) ?? null); }} nodesDraggable={false} nodesConnectable={false} elementsSelectable autoPanOnNodeFocus={false} minZoom={0.45} maxZoom={2.5} className="semantic-map-flow">

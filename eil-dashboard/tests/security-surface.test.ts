@@ -37,6 +37,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
   "src/app/api/auth/password-signup/route.ts": "account creation",
   "src/app/api/auth/password-reset/route.ts": "reset requested while locked out",
   "src/app/api/auth/firebase/link/route.ts": "links a Firebase identity to an owner record",
+  "src/app/api/access-requests/route.ts": "someone without an account asks for an invite; rate limited, same reply for every request",
 };
 
 /** A route that verifies a machine caller rather than a person. */
@@ -179,6 +180,9 @@ test("SQL is parameterized, never concatenated from values", () => {
       /^\$\{copied\.map\(\(column\) => ident\(column\.column_name\)\)\.join\(", "\)\}$/,
       /^\$\{values\.join\(", "\)\}$/,
       /^\$\{paperIdFromRunSql\("\$\d"\)\}$/,
+      // access-request-repository.ts (docs/32, 4.1): a constant list of literal
+      // column names; every value is a placeholder.
+      /^\$\{SUMMARY_COLUMNS\}$/,
     ]
       .map((r) => r.source)
       .join("|")

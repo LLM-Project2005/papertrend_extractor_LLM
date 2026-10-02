@@ -1,13 +1,13 @@
 /*
  * The Privacy Policy and Terms of Service, as data. Every statement here
  * describes what the code and the deployment actually do (checked on
- * 2026-10-01); if the system changes, this text must change with it.
+ * 2026-10-02); if the system changes, this text must change with it.
  * tests/legal-providers.test.ts fails when a sign-in method or an outside
  * service is added to the code without being named here.
  */
 
 export const LEGAL_CONTACT_EMAIL = "p.chantarusorn@gmail.com";
-export const LEGAL_EFFECTIVE_DATE = "1 October 2026";
+export const LEGAL_EFFECTIVE_DATE = "2 October 2026";
 
 export interface LegalSection {
   id: string;
@@ -41,6 +41,7 @@ export const privacyPolicy: LegalDocument = {
         "Your account: your email address, your name and profile picture (from Google or Facebook sign-in, or as you enter them), how you sign in (Google, Facebook, or email and password), the invite code you joined with, and the settings you save, such as your organisation, research domain and analysis categories.",
         "What you add: the PDF files you upload or choose from Google Drive, the text extracted from them, the analysis results (titles, years, keywords, topics, categories), your repository and folder names, and your chat questions, answers and research sessions.",
         "Usage and security records: how many times a day your account uses each AI feature, and the tokens and model fees each AI request used (to apply fair-use and daily spending limits), a one-way hash of your IP address and email address when you sign in (to limit repeated failed attempts), and server request logs kept by Google Cloud (IP address, browser type, the address requested and the time).",
+        "If you request access without an account: the name, email address, affiliation and intended use you enter, and whether we sent you an invite code.",
         "We do not use advertising or analytics trackers.",
       ],
     },
@@ -50,6 +51,7 @@ export const privacyPolicy: LegalDocument = {
       bullets: [
         "To provide the service you ask for: storing your papers, analysing them, showing dashboards and answering your questions.",
         "To keep the service secure and fair: signing you in, applying rate and usage limits, preventing abuse and fixing problems.",
+        "To decide on an access request, and to email an invite code to the address it gives.",
         "We do not sell personal data, use it for advertising, or use your papers to train AI models.",
       ],
       paragraphs: [
@@ -108,6 +110,7 @@ export const privacyPolicy: LegalDocument = {
         "Backups: database backups are kept for 7 days, so deleted data can remain in a backup for up to 7 days before it is gone.",
         "Server request logs: 30 days.",
         "Usage counts, AI spending records and sign-in rate-limit hashes: for as long as they are needed to apply limits and prevent abuse.",
+        "Access requests: 180 days from when you send one, whether or not you were invited; sooner if you ask us to delete it.",
         "Your account: until you ask us to delete it.",
       ],
     },

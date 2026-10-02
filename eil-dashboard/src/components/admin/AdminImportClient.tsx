@@ -22,6 +22,7 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
+import dynamic from "next/dynamic";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -32,6 +33,7 @@ import {
   BooksIcon,
   DriveIcon,
   FileIcon,
+  FolderIcon,
   GridViewIcon,
   ImageIcon,
   ListViewIcon,
@@ -39,10 +41,12 @@ import {
   PaperIcon,
   PencilSquareIcon,
   PlusIcon,
+  RefreshIcon,
   SearchIcon,
   SortIcon,
   StarIcon,
   TrashIcon,
+  UndoIcon,
   UploadIcon,
 } from "@/components/ui/Icons";
 import type { IngestionRunRow, RunAnalysisDetail } from "@/types/database";
@@ -55,7 +59,7 @@ import {
 } from "@/lib/ingestion-status";
 import { formatReanalysisEstimate } from "@/lib/reanalysis";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
-import { buttonClass, fieldClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
+import { buttonClass, fieldClass, labelClass, menuItemClass, menuPanelClass } from "@/components/ui/controls";
 import Mascot from "@/components/ui/Mascot";
 
 type ViewMode = "list" | "grid";
@@ -135,7 +139,8 @@ const MODIFIED_OPTIONS: Array<{ id: ModifiedFilter; label: string }> = [
 
 const SOURCE_OPTIONS: Array<{ id: SourceFilter; label: string }> = [
   { id: "all", label: "All sources" },
-  { id: "upload", label: "Upload" },
+  { id: "upload", label: "From a computer" },
+  { id: "google-drive", label: "Google Drive" },
 ];
 
 const SORT_KEY_OPTIONS: Array<{ id: SortKey; label: string }> = [
@@ -172,7 +177,13 @@ function paperYearOf(run: IngestionRunRow): string {
   return typeof year === "string" && /^\d{4}$/.test(year.trim()) ? year.trim() : typeof year === "number" ? String(year) : "\u2014";
 }
 
+/**
+ * Where the file came from. A file picked in Google Drive is uploaded like
+ * any other and recorded as import_source (docs/32, 4.5; audit LIB-7); the
+ * older Drive connector set source_kind.
+ */
 function sourceOf(run: IngestionRunRow) {
+  if (run.input_payload?.import_source === "google-drive") return "Google Drive";
   const value =
     typeof run.input_payload?.source_kind === "string"
       ? run.input_payload.source_kind
@@ -278,6 +289,9 @@ function defaultDirectionForSort(sortKey: SortKey): SortDirection {
   return sortKey === "name" ? "asc" : "desc";
 }
 
+// Loaded when first opened: the formats are only needed by people who cite.
+const ReferencesDialog = dynamic(() => import("@/components/admin/ReferencesDialog"), { ssr: false });
+
 export default function AdminImportClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -325,6 +339,14 @@ export default function AdminImportClient() {
   const [analysisTab, setAnalysisTab] = useState<PaperExplorerTab>("overview");
   // Permanent deletion from Trash: one paper, or everything in Trash.
   const [deleteTarget, setDeleteTarget] = useState<{ runs: IngestionRunRow[]; all: boolean } | null>(null);
+  // Several papers at once (docs/32, 4.5): the selection, by run, and the
+  // papers a move is choosing a destination for.
+  const [selectedRunIds, setSelectedRunIds] = useState<Set<string>>(() => new Set());
+  const [moveTarget, setMoveTarget] = useState<IngestionRunRow[] | null>(null);
+  const [moveFolderId, setMoveFolderId] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  // References for a selection or a whole repository (docs/32, 4.4).
+  const [referencesFor, setReferencesFor] = useState<{ selection: { runIds: string[] } | { projectId: string }; label: string } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [analysisDetail, setAnalysisDetail] = useState<RunAnalysisDetail | null>(null);
@@ -872,7 +894,9 @@ export default function AdminImportClient() {
       setMessage(
         deleteTarget.all
           ? `Emptied Trash: ${count} paper${count === 1 ? "" : "s"} deleted for good.`
-          : `Deleted "${titleOf(deleteTarget.runs[0])}" for good.`
+          : deleteTarget.runs.length > 1
+            ? `Deleted ${count} papers for good.`
+            : `Deleted "${titleOf(deleteTarget.runs[0])}" for good.`
       );
       setDeleteTarget(null);
       setDeleteConfirmText("");
@@ -1083,6 +1107,83 @@ export default function AdminImportClient() {
 
   const rootGridFiles = visibleEntries;
 
+  // A selection holds only what is in view: a paper a filter hides is never
+  // acted on unseen, and switching to Trash or another repository starts afresh.
+  useEffect(() => {
+    setSelectedRunIds(new Set());
+  }, [showTrash, libraryProjectId]);
+  const selectedRuns = useMemo(
+    () => visibleEntries.filter((entry) => selectedRunIds.has(entry.run.id)).map((entry) => entry.run),
+    [selectedRunIds, visibleEntries]
+  );
+  const allVisibleSelected = visibleEntries.length > 0 && selectedRuns.length === visibleEntries.length;
+  const someVisibleSelected = selectedRuns.length > 0;
+  const reanalysableSelection = selectedRuns.filter((run) => run.status === "succeeded" && !run.trashed_at);
+  const retryableSelection = selectedRuns.filter((run) => run.status === "failed" && !run.trashed_at && Boolean(run.source_path));
+  const citableSelection = selectedRuns.filter((run) => hasUsableAnalysis(run) && !run.trashed_at);
+  function toggleRunSelected(runId: string) {
+    setSelectedRunIds((current) => {
+      const next = new Set(current);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
+  }
+  function toggleAllVisible() {
+    setSelectedRunIds(allVisibleSelected ? new Set() : new Set(visibleEntries.map((entry) => entry.run.id)));
+  }
+  /** Trash, restore or move a selection in one request (docs/32, 4.5). */
+  async function runBulk(action: "trash" | "restore" | "move", targets: IngestionRunRow[], folderId?: string) {
+    if (targets.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/workspace/library/bulk", {
+        method: "POST",
+        headers: jsonRequestHeaders,
+        body: JSON.stringify({ action, runIds: targets.map((run) => run.id), ...(folderId ? { folderId } : {}) }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { changed?: number; skipped?: number; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The papers could not be changed.");
+      const changed = payload.changed ?? 0;
+      const papers = `${changed} paper${changed === 1 ? "" : "s"}`;
+      const destination = folderId ? moveDestinationLabel(folderId) : "";
+      setMessage(
+        (action === "trash"
+          ? `Moved ${papers} to Trash.`
+          : action === "restore"
+            ? `Restored ${papers} to ${changed === 1 ? "its repository" : "their repositories"}.`
+            : `Moved ${papers} to ${destination}.`) +
+          (payload.skipped ? ` ${payload.skipped} ${payload.skipped === 1 ? "was" : "were"} already there.` : "")
+      );
+      setSelectedRunIds(new Set());
+      setMoveTarget(null);
+      await loadRuns();
+    } catch (bulkError) {
+      setError(bulkError instanceof Error ? bulkError.message : "The papers could not be changed.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+  // Where a paper can be moved: each repository's folders, named by the
+  // repository (and the folder, where a repository has more than one).
+  const moveDestinations = useMemo(
+    () =>
+      allProjects
+        .map((project) => {
+          const folders = allFolders.filter((folder) => folder.project_id === project.id);
+          return folders.map((folder) => ({
+            id: folder.id,
+            label: folders.length > 1 ? `${project.name} / ${folder.name}` : project.name,
+          }));
+        })
+        .flat(),
+    [allFolders, allProjects]
+  );
+  function moveDestinationLabel(folderId: string) {
+    return moveDestinations.find((destination) => destination.id === folderId)?.label ?? "the folder";
+  }
+
   const typeFilterLabel =
     TYPE_OPTIONS.find((option) => option.id === typeFilter)?.label ?? "Type";
   const modifiedFilterLabel =
@@ -1153,6 +1254,18 @@ export default function AdminImportClient() {
               className={itemClass}
             >
               <span>Analyze repository again</span>
+            </button>
+          ) : null}
+          {libraryProject ? (
+            <button
+              type="button"
+              onClick={() => {
+                setToolbarPopover(null);
+                setReferencesFor({ selection: { projectId: libraryProject.id }, label: libraryProject.name });
+              }}
+              className={itemClass}
+            >
+              <span>Export references</span>
             </button>
           ) : null}
         </div>
@@ -1420,6 +1533,19 @@ export default function AdminImportClient() {
         >
           Make a copy
         </button>
+        {!activeMenuRun.trashed_at ? (
+          <button
+            type="button"
+            onClick={() => {
+              setMoveFolderId("");
+              setMoveTarget([activeMenuRun]);
+              setItemMenuState(null);
+            }}
+            className={itemClass}
+          >
+            Move to another repository…
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={async () => {
@@ -1683,6 +1809,13 @@ export default function AdminImportClient() {
               "modified",
               modifiedFilter === "all" ? "Modified" : modifiedFilterLabel
             )}
+            {/* A filter that cannot match anything is not offered (audit LIB-7). */}
+            {sourceFilter !== "all" || fileEntries.some((entry) => entry.sourceFilter === "google-drive")
+              ? renderFilterButton(
+                  "source",
+                  sourceFilter === "all" ? "Source" : SOURCE_OPTIONS.find((option) => option.id === sourceFilter)?.label ?? "Source"
+                )
+              : null}
 
           </div>
 
@@ -1774,6 +1907,109 @@ export default function AdminImportClient() {
               </button>
             ) : null}
           </div>
+          {selectedRuns.length > 0 ? (
+            <div
+              role="region"
+              aria-label="Selected papers"
+              className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-hairline bg-subtle px-3 py-2"
+            >
+              <p className="mr-1 text-sm font-medium text-ink" aria-live="polite">
+                {selectedRuns.length} selected
+              </p>
+              {showTrash ? (
+                <>
+                  <button type="button" disabled={bulkBusy} onClick={() => void runBulk("restore", selectedRuns)} className={buttonClass("secondary", "sm")}>
+                    <UndoIcon className="h-4 w-4" />
+                    Restore
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() => setDeleteTarget({ runs: selectedRuns, all: false })}
+                    className={buttonClass("danger", "sm")}
+                  >
+                    Delete permanently…
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={bulkBusy || allFolders.length === 0}
+                    onClick={() => {
+                      setMoveFolderId("");
+                      setMoveTarget(selectedRuns);
+                    }}
+                    className={buttonClass("secondary", "sm")}
+                  >
+                    <FolderIcon className="h-4 w-4" />
+                    Move…
+                  </button>
+                  {reanalysableSelection.length > 0 ? (
+                    <button
+                      type="button"
+                      disabled={bulkBusy}
+                      onClick={() =>
+                        void handleReanalyze({ runIds: reanalysableSelection.map((run) => run.id) }, reanalysableSelection.length)
+                          .then(() => setSelectedRunIds(new Set()))
+                          .catch((reanalyzeError) =>
+                            setError(reanalyzeError instanceof Error ? reanalyzeError.message : "The papers could not be queued.")
+                          )
+                      }
+                      className={buttonClass("secondary", "sm")}
+                    >
+                      <RefreshIcon className="h-4 w-4" />
+                      Analyze again ({reanalysableSelection.length})
+                    </button>
+                  ) : null}
+                  {retryableSelection.length > 0 ? (
+                    <button
+                      type="button"
+                      disabled={bulkBusy}
+                      onClick={() =>
+                        void handleReanalyze({ runIds: retryableSelection.map((run) => run.id) }, retryableSelection.length)
+                          .then(() => setSelectedRunIds(new Set()))
+                          .catch((retryError) =>
+                            setError(retryError instanceof Error ? retryError.message : "The papers could not be queued.")
+                          )
+                      }
+                      className={buttonClass("secondary", "sm")}
+                    >
+                      <RefreshIcon className="h-4 w-4" />
+                      Try again ({retryableSelection.length})
+                    </button>
+                  ) : null}
+                  {citableSelection.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReferencesFor({
+                          selection: { runIds: citableSelection.map((run) => run.id) },
+                          label: citableSelection.length === 1 ? titleOf(citableSelection[0]) : `${citableSelection.length} papers`,
+                        })
+                      }
+                      className={buttonClass("secondary", "sm")}
+                    >
+                      <BooksIcon className="h-4 w-4" />
+                      Cite ({citableSelection.length})
+                    </button>
+                  ) : null}
+                  <button type="button" disabled={bulkBusy} onClick={() => void runBulk("trash", selectedRuns)} className={buttonClass("secondary", "sm")}>
+                    <TrashIcon className="h-4 w-4" />
+                    Move to Trash
+                  </button>
+                </>
+              )}
+              <button type="button" onClick={() => setSelectedRunIds(new Set())} className={buttonClass("ghost", "sm")}>
+                Clear selection
+              </button>
+              {!allVisibleSelected ? (
+                <button type="button" onClick={toggleAllVisible} className={buttonClass("ghost", "sm")}>
+                  Select all {visibleEntries.length}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {visibleEntries.length === 0 ? (
@@ -1818,19 +2054,31 @@ export default function AdminImportClient() {
         ) : viewMode === "list" ? (
           <div className="px-4 py-4 sm:px-6">
             <div className="hidden grid-cols-[minmax(0,1.5fr)_180px_170px_120px_160px] items-center gap-4 border-b border-slate-200 px-3 py-3 text-sm font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#9c9c9c] md:grid">
-              <button
-                type="button"
-                onClick={() => handleSortHeaderClick("name")}
-                aria-label={sortLabel("Name", "name")}
-                className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
-              >
-                <span>Name</span>
-                {sortKey === "name" ? (
-                  <span className="text-xs text-ink">
-                    {sortDirection === "asc" ? "\u2191" : "\u2193"}
-                  </span>
-                ) : null}
-              </button>
+              <div className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  ref={(element) => {
+                    if (element) element.indeterminate = someVisibleSelected && !allVisibleSelected;
+                  }}
+                  onChange={toggleAllVisible}
+                  aria-label="Select every file shown"
+                  className="h-4 w-4 flex-none cursor-pointer rounded border-field accent-[rgb(var(--ink))]"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSortHeaderClick("name")}
+                  aria-label={sortLabel("Name", "name")}
+                  className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
+                >
+                  <span>Name</span>
+                  {sortKey === "name" ? (
+                    <span className="text-xs text-ink">
+                      {sortDirection === "asc" ? "\u2191" : "\u2193"}
+                    </span>
+                  ) : null}
+                </button>
+              </div>
               <div>Year</div>
               <button
                 type="button"
@@ -1871,6 +2119,13 @@ export default function AdminImportClient() {
                   >
                     <div className="min-w-0">
                       <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={selectedRunIds.has(item.run.id)}
+                          onChange={() => toggleRunSelected(item.run.id)}
+                          aria-label={`Select ${item.name}`}
+                          className="mt-3 h-4 w-4 flex-none cursor-pointer rounded border-field accent-[rgb(var(--ink))]"
+                        />
                         <span
                           className={`mt-0.5 flex h-10 w-10 flex-none items-center justify-center rounded-lg ${badgeToneForEntry(item)}`}
                         >
@@ -2030,8 +2285,15 @@ export default function AdminImportClient() {
                     return (
                       <article
                         key={item.id}
-                        className="group overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
+                        className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 dark:border-[#1f1f1f] dark:bg-[#050505] dark:hover:border-[#3a3a3a]"
                       >
+                        <input
+                          type="checkbox"
+                          checked={selectedRunIds.has(item.run!.id)}
+                          onChange={() => toggleRunSelected(item.run!.id)}
+                          aria-label={`Select ${item.name}`}
+                          className="absolute left-3 top-3 z-10 h-4 w-4 flex-none cursor-pointer rounded border-field accent-[rgb(var(--ink))]"
+                        />
                         <button
                           type="button"
                           onClick={() => void handleOpenPrimaryFileAction(item.run!)}
@@ -2043,7 +2305,7 @@ export default function AdminImportClient() {
                             >
                               <Glyph className="h-7 w-7" />
                             </span>
-                            <span className="absolute left-4 top-4 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:bg-[#050505]/90 dark:text-[#d0d0d0]">
+                            <span className="absolute left-10 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm dark:bg-[#050505]/90 dark:text-[#d0d0d0]">
                               {extOf(item.run!).toUpperCase()}
                             </span>
                             {item.favorite ? (
@@ -2258,6 +2520,67 @@ export default function AdminImportClient() {
         onSubmit={handleRenameSubmit}
       />
 
+      {referencesFor ? (
+        <ReferencesDialog
+          selection={referencesFor.selection}
+          label={referencesFor.label}
+          headers={jsonRequestHeaders}
+          onClose={() => setReferencesFor(null)}
+        />
+      ) : null}
+
+      {moveTarget ? (
+        <Modal
+          onClose={() => {
+            if (bulkBusy) return;
+            setMoveTarget(null);
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (moveFolderId) void runBulk("move", moveTarget, moveFolderId);
+            }}
+            className="w-[min(480px,92vw)] rounded-xl border border-hairline bg-surface p-6 shadow-overlay"
+          >
+            <h2 className="text-lg font-semibold tracking-tight text-ink">
+              Move {moveTarget.length === 1 ? "this paper" : `${moveTarget.length} papers`}
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-body">
+              The analysis moves with each paper, so it is counted and searched where it lands.
+            </p>
+            <label htmlFor="move-destination" className={`${labelClass} mt-4`}>
+              Move to
+            </label>
+            <select
+              id="move-destination"
+              value={moveFolderId}
+              onChange={(event) => setMoveFolderId(event.target.value)}
+              required
+              autoFocus
+              className={`${fieldClass} mt-1.5 h-10`}
+            >
+              <option value="" disabled>
+                Choose a repository
+              </option>
+              {moveDestinations.map((destination) => (
+                <option key={destination.id} value={destination.id}>
+                  {destination.label}
+                </option>
+              ))}
+            </select>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" disabled={bulkBusy} onClick={() => setMoveTarget(null)} className={buttonClass("secondary", "md")}>
+                Cancel
+              </button>
+              <button type="submit" disabled={bulkBusy || !moveFolderId} className={buttonClass("primary", "md")}>
+                {bulkBusy ? "Moving\u2026" : "Move"}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      ) : null}
+
       {deleteTarget ? (
         <Modal
           onClose={() => {
@@ -2274,14 +2597,20 @@ export default function AdminImportClient() {
             className="w-[min(480px,92vw)] rounded-xl border border-hairline bg-surface p-6 shadow-overlay"
           >
             <h2 className="text-lg font-semibold tracking-tight text-ink">
-              {deleteTarget.all ? "Empty Trash?" : "Delete this paper permanently?"}
+              {deleteTarget.all
+                ? "Empty Trash?"
+                : deleteTarget.runs.length > 1
+                  ? `Delete ${deleteTarget.runs.length} papers permanently?`
+                  : "Delete this paper permanently?"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-body">
               {deleteTarget.all
                 ? "Every paper in Trash is deleted for good: the PDFs and everything the analysis found. This cannot be undone."
-                : `"${titleOf(deleteTarget.runs[0])}" is deleted for good: the PDF and everything the analysis found. This cannot be undone.`}
+                : deleteTarget.runs.length > 1
+                  ? `The ${deleteTarget.runs.length} selected papers are deleted for good: their PDFs and everything the analysis found. This cannot be undone.`
+                  : `"${titleOf(deleteTarget.runs[0])}" is deleted for good: the PDF and everything the analysis found. This cannot be undone.`}
             </p>
-            {deleteTarget.all ? (
+            {deleteTarget.all || deleteTarget.runs.length > 1 ? (
               <label className="mt-4 block text-sm text-body">
                 Type <span className="font-mono font-medium text-ink">delete</span> to confirm
                 <input
@@ -2308,7 +2637,10 @@ export default function AdminImportClient() {
               </button>
               <button
                 type="submit"
-                disabled={deleting || (deleteTarget.all && deleteConfirmText.trim().toLowerCase() !== "delete")}
+                disabled={
+                  deleting ||
+                  ((deleteTarget.all || deleteTarget.runs.length > 1) && deleteConfirmText.trim().toLowerCase() !== "delete")
+                }
                 className={buttonClass("danger", "md")}
               >
                 {deleting ? "Deleting…" : deleteTarget.all ? "Empty Trash" : "Delete permanently"}

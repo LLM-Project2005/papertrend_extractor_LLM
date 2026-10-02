@@ -42,6 +42,58 @@ export const MOVE_RUN_SQL = `UPDATE public.ingestion_runs
  WHERE id = $1 AND owner_user_id = $2
  RETURNING *`;
 
+export type BulkLibraryAction = "trash" | "restore" | "move";
+export const MAX_BULK_RUNS = 200;
+
+/**
+ * Several papers at once (docs/32, 4.5), in the caller's owner-scoped
+ * transaction, so a selection is acted on whole or not at all. A run that is
+ * not the owner's, or already where the action would put it, is skipped.
+ */
+export async function bulkUpdateRunsIn(
+  client: Pick<PoolClient, "query">,
+  ownerUserId: string,
+  input: { action: BulkLibraryAction; runIds: string[]; folderId?: string | null }
+): Promise<{ runs: IngestionRunRow[]; skipped: number }> {
+  const runIds = [...new Set(input.runIds)].slice(0, MAX_BULK_RUNS);
+  if (input.action === "trash" || input.action === "restore") {
+    const result = await client.query<IngestionRunRow>(
+      input.action === "trash"
+        ? `UPDATE public.ingestion_runs SET trashed_at = now(), updated_at = now()
+           WHERE owner_user_id = $1 AND id = ANY($2::uuid[]) AND trashed_at IS NULL
+           RETURNING *`
+        : `UPDATE public.ingestion_runs SET trashed_at = NULL, updated_at = now()
+           WHERE owner_user_id = $1 AND id = ANY($2::uuid[]) AND trashed_at IS NOT NULL
+           RETURNING *`,
+      [ownerUserId, runIds]
+    );
+    return { runs: result.rows, skipped: runIds.length - result.rows.length };
+  }
+
+  if (!input.folderId) throw new LibraryActionError("Choose a folder to move the papers to.", 400);
+  const folder = await client.query<{ project_id: string | null }>(
+    `SELECT project_id::text AS project_id FROM public.research_folders WHERE id = $1 AND owner_user_id = $2`,
+    [input.folderId, ownerUserId]
+  );
+  if (!folder.rows[0]) throw new LibraryActionError("Folder not found.", 404);
+  const movable = await client.query<{ id: string }>(
+    `SELECT id::text AS id FROM public.ingestion_runs
+     WHERE owner_user_id = $1 AND id = ANY($2::uuid[]) AND trashed_at IS NULL AND folder_id IS DISTINCT FROM $3::uuid`,
+    [ownerUserId, runIds, input.folderId]
+  );
+  const moved: IngestionRunRow[] = [];
+  for (const { id } of movable.rows) {
+    const result = await client.query<IngestionRunRow>(MOVE_RUN_SQL, [id, ownerUserId, input.folderId, folder.rows[0].project_id]);
+    if (!result.rows[0]) continue;
+    const paperId = await paperOfRun(client, ownerUserId, id);
+    if (paperId) {
+      await movePaperRows(client, { ownerUserId, paperId, folderId: input.folderId, projectId: folder.rows[0].project_id });
+    }
+    moved.push(result.rows[0]);
+  }
+  return { runs: moved, skipped: runIds.length - moved.length };
+}
+
 export interface LibraryRunListOptions {
   projectId?: string | null;
   includeTrashed?: boolean;
@@ -211,6 +263,13 @@ export class CloudSqlLibraryRepository {
    * and its search index, so the folder and repository it lands in count and
    * search it.
    */
+  async bulkUpdateRuns(
+    ownerUserId: string,
+    input: { action: BulkLibraryAction; runIds: string[]; folderId?: string | null }
+  ): Promise<{ runs: IngestionRunRow[]; skipped: number }> {
+    return withCloudSqlOwnerTransaction(ownerUserId, (client) => bulkUpdateRunsIn(client, ownerUserId, input));
+  }
+
   async moveRun(ownerUserId: string, runId: string, folderId: string): Promise<IngestionRunRow | null> {
     return withCloudSqlOwnerTransaction(ownerUserId, async (client) => {
       const folder = await client.query<{ project_id: string | null }>(

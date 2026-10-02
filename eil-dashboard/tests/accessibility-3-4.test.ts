@@ -3,6 +3,9 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { categoricalColor, CATEGORICAL_PALETTE, ordinalColor, ORDINAL_RAMP } from "../src/lib/chart-palette";
 import { categoryColor } from "../src/lib/category-options";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import ChartValues from "../src/components/tabs/ChartValues";
 
 /** Accessibility fixes from the audit (docs/32, 3.4). Contrast is in contrast-all.test.ts. */
 
@@ -22,9 +25,17 @@ test("every chart that opens papers on a click has a keyboard path to the same p
     assert.equal((source.match(/<ChartValues\b/g) ?? []).length, lists, file);
     assert.match(source, /onSelect: onDrilldown\s*\?\s*\(\) => onDrilldown\(/, file);
   }
-  const values = read("src/components/tabs/ChartValues.tsx");
-  assert.match(values, /<details className="group mt-3">/);
-  assert.match(values, /<button\s+type="button"\s+onClick=\{item\.onSelect\}/);
+  // Rendered: a collapsed list whose values are buttons, and the CSV beside it (4.3).
+  const html = renderToStaticMarkup(
+    createElement(ChartValues, {
+      title: "Papers per year",
+      values: [{ key: "2019", label: "2019", detail: "7 papers", onSelect: () => undefined }],
+      csv: { name: "Papers per year", header: ["Year", "Papers"], rows: [["2019", 7]] },
+    })
+  );
+  assert.match(html, /<details class="group min-w-0 flex-1"><summary[^>]*>.*Show the values/);
+  assert.match(html, /<button type="button"[^>]*><span class="min-w-0 truncate">2019<\/span><span[^>]*>7 papers<\/span><\/button>/);
+  assert.match(html, /Download CSV<span class="sr-only">: Papers per year<\/span>/);
 });
 
 test("the PDF's text can be selected and searched, and the page counter is quiet", () => {
