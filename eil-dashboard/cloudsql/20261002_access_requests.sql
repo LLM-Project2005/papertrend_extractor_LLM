@@ -20,7 +20,10 @@ CREATE TABLE IF NOT EXISTS public.access_requests (
   affiliation     TEXT NOT NULL CHECK (char_length(affiliation) BETWEEN 1 AND 200),
   intended_use    TEXT NOT NULL CHECK (char_length(intended_use) BETWEEN 1 AND 1000),
   status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'invited', 'declined')),
-  invite_code_id  UUID REFERENCES public.invite_codes(id),
+  -- Not a foreign key: invite_codes belongs to another role, and the app's
+  -- role may not reference it. Codes are never deleted (no DELETE grant), so
+  -- the id cannot dangle.
+  invite_code_id  UUID,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
   reviewed_at     TIMESTAMPTZ,
