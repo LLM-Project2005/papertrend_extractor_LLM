@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import MarkdownActions from "../src/components/chat/MarkdownActions";
 import { citationLabel } from "../src/lib/answer-citations";
-import { answerMarkdown, conversationMarkdown, markdownFileName, type ExportMessage } from "../src/lib/answer-export";
+import { answerMarkdown, conversationMarkdown, isFinishedAnswer, markdownFileName, type ExportMessage } from "../src/lib/answer-export";
 
 /** Every chat answer copies and downloads with its references; a conversation exports whole (docs/32, 4.2). */
 
@@ -82,9 +82,31 @@ test("the actions render as two labelled buttons", () => {
   assert.match(html, /Download \(\.md\)/);
 });
 
+test("only a finished answer has the actions; a background answer still being written does not", () => {
+  const pending = { kind: "status", content: "Analyzing the selected Papertrend knowledge scope in the background...", metadata: { repositoryJobStatus: "processing" } };
+  assert.equal(isFinishedAnswer(pending), false);
+  assert.equal(isFinishedAnswer({ ...pending, kind: "chat" }), false, "a running job, whatever its kind");
+  assert.equal(isFinishedAnswer({ ...pending, kind: "chat", metadata: { repositoryJobStatus: "queued" } }), false);
+  assert.equal(isFinishedAnswer({ kind: "chat", content: "Most papers are quasi-experimental.", metadata: { repositoryJobStatus: "succeeded" } }), true);
+  assert.equal(isFinishedAnswer({ kind: "chat", content: "An answer.", metadata: null }), true);
+  assert.equal(isFinishedAnswer({ kind: "deep_research_report", content: "# Report", metadata: {} }), true);
+  assert.equal(isFinishedAnswer({ kind: "deep_research_plan", content: "1. Gather", metadata: {} }), false);
+  assert.equal(isFinishedAnswer({ kind: "chat", content: "   ", metadata: {} }), false);
+  const markdown = conversationMarkdown({
+    title: "Methods",
+    exportedAt: new Date("2026-10-02T00:00:00Z"),
+    messages: [
+      { role: "user", content: "Which methods?", citations: [] },
+      { role: "assistant", ...pending, citations: [] },
+    ],
+  });
+  assert.doesNotMatch(markdown, /in the background/, "nor is it exported");
+  assert.match(markdown, /## You\n\nWhich methods\?/);
+});
+
 test("every answer has the actions, and the conversation menu exports the whole conversation", () => {
   const chat = read("src/components/chat/ChatClient.tsx");
-  assert.match(chat, /message\.kind !== "deep_research_report" && message\.content\.trim\(\) \? \(\s*<MarkdownActions/);
+  assert.match(chat, /message\.kind !== "deep_research_report" && isFinishedAnswer\(message\) \? \(\s*<MarkdownActions/);
   assert.match(chat, /answerMarkdown\(message\.content, message\.citations, message\.metadata\)/);
   assert.match(chat, /Export conversation \(\.md\)/);
   assert.match(chat, /await fetchWholeConversation\(threadId, session\.access_token\)/);

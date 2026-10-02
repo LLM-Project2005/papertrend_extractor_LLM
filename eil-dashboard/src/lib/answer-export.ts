@@ -110,6 +110,19 @@ export function answerMarkdown(content: string, citations: ExportCitation[], met
   return `${text}${caveats(metadata)}${sourcesSection(sources)}`.trimEnd() + "\n";
 }
 
+/**
+ * Whether an assistant message is a finished answer, worth copying or
+ * exporting: not a status line, a research plan, or a background answer still
+ * being written ("Analyzing ... in the background", found by the pilot smoke
+ * check on 2026-10-02 with Copy and Download under it).
+ */
+export function isFinishedAnswer(message: Pick<ExportMessage, "kind" | "content" | "metadata">): boolean {
+  if (message.kind === "status" || message.kind === "deep_research_plan") return false;
+  const job = message.metadata?.repositoryJobStatus;
+  if (job === "queued" || job === "processing") return false;
+  return Boolean(message.content.trim());
+}
+
 const SPEAKER: Record<string, string> = {
   deep_research_report: "Deep research report",
 };
@@ -122,13 +135,14 @@ export function conversationMarkdown(input: { title: string; messages: ExportMes
   const sources = new Map<string, NumberedSource>();
   const parts: string[] = [];
   for (const message of input.messages) {
-    if (message.role === "system" || message.kind === "status" || message.kind === "deep_research_plan") continue;
-    if (!message.content.trim()) continue;
+    if (message.role === "system") continue;
     if (message.role === "user") {
+      if (!message.content.trim()) continue;
       const attached = attachmentNamesOf(message.metadata);
       parts.push(`## You\n\n${message.content.trim()}${attached.length ? `\n\n_Attached: ${attached.join(", ")}_` : ""}`);
       continue;
     }
+    if (!isFinishedAnswer(message)) continue;
     const speaker = SPEAKER[message.kind ?? ""] ?? "Papertrend";
     parts.push(`## ${speaker}\n\n${numberAnswer(message.content, message.citations, sources).trim()}${caveats(message.metadata)}`);
   }
