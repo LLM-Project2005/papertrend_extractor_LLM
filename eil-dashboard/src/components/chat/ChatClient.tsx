@@ -3961,10 +3961,16 @@ export default function ChatClient() {
                   data-testid="composer-scope"
                   className={`px-1 pb-1 ${ANSWER_META_CLASS} text-slate-600 dark:text-[#8e8e8e]`}
                 >
-                  {scopeDescription(
-                    scopeSummary?.scopeLabel || activeScopeSnapshot.label,
-                    scopeSummary?.eligiblePaperCount ?? null
-                  )}
+                  {/* Chosen papers are counted here, not by the summary: it is asked
+                      by repository and folder, so with papers chosen it described
+                      the whole account ("52 analysed papers in All projects")
+                      while the question searched only the chosen ones. */}
+                  {activeKnowledgeScope.kind === "selected_papers"
+                    ? scopeDescription(activeScopeSnapshot.label, null)
+                    : scopeDescription(
+                        scopeSummary?.scopeLabel || activeScopeSnapshot.label,
+                        scopeSummary?.eligiblePaperCount ?? null
+                      )}
                 </p>
 
                 <textarea

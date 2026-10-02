@@ -184,7 +184,10 @@ test("a drilldown's papers reach chat by paper id, matched against the repositor
   assert.match(client, /paperIds: drilldownPapers\.map\(\(paper\) => String\(paper\.paperId\)\)/);
   assert.match(client, /Copy list/);
   assert.match(client, /Ask in chat/);
-  assert.match(read("src/components/chat/ChatClient.tsx"), /setSelectedLibraryRuns\(runsInTransfer\(rows, transfer\)\.filter\(\(run\) => hasUsableAnalysis\(run\)\)\)/);
+  const chat = read("src/components/chat/ChatClient.tsx");
+  assert.match(chat, /setSelectedLibraryRuns\(runsInTransfer\(rows, transfer\)\.filter\(\(run\) => hasUsableAnalysis\(run\)\)\)/);
+  // Found on the pilot: with papers chosen, the line above the composer named the whole account.
+  assert.match(chat, /activeKnowledgeScope\.kind === "selected_papers"\s*\? scopeDescription\(activeScopeSnapshot\.label, null\)/);
 });
 
 test("the browser gets no topic-family evidence snippets, which only the server reads", () => {
