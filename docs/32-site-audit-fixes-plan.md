@@ -184,10 +184,18 @@ State on 2026-10-02. Changes listed "on development" go out with the next build 
 - The new tests found one bug, fixed on development: a file name with two dots in a row (`report..final.pdf`) kept them in its storage path, and finalize refuses any path containing "..", so the upload failed. Stored names now fold runs of dots.
 - Next: route handlers called with fake requests (which needs a seam for auth), `renderToStaticMarkup` for components, PGlite for the SQL still pinned as text (32 assertions), and imported constants in place of matched ones.
 
-**Remove the unreachable legacy paths: mapped, waiting on a decision.**
-- The old chart agent and the generic answer tail, about 3,800 of `src/app/api/chat/route.ts`'s 4,750 lines plus `chart-agent.ts` and `chart-recommendation.ts`, cannot be reached in production. The repository chat always answers.
-- The Python research worker can still be reached. Pressing **Start** on a session planned before deep research v2 sends it there, and production holds 8 such sessions in "planned" (the newest from 2026-05-31). No spend has ever been recorded on that path, and no scheduler calls it.
-- Removing it means answering those 8 with "plan it again", deleting the worker's research and query graphs (`nodes/deep_research.py` and its tests), and checking chat, charts and deep research on the pilot.
+**Remove the unreachable legacy paths: unwired (on development); the unused files are listed for deletion.**
+- **The chat route** keeps what answers today: the repository chat, deep research v2, streaming, spend and the per-person slot. It drops the chart agent, the general model answer with its own web search, and the old deep research plan and run, going from 4,750 lines to 832.
+- **The repository chat** always plans with v2. The other planner ran only with `REPOSITORY_CHAT_V2_ENABLED=false`, which no deployment sets.
+- **A session planned before v2** is answered with a clear refusal (409). Production holds 8 of them; their card now offers **Plan again** instead of **Start**. Pressing Start used to send one to the Python worker. Completed old reports still display as before.
+- **The worker** no longer serves research, chat, keyword search or chart planning. `graphs.py` keeps only the ingestion graph, so the research code (`nodes/deep_research.py`, `workspace_data.py`) is no longer loaded at startup.
+- **Left to do by hand:** Claude Code's auto mode refuses to delete files or read the ingestion hook.
+  - *Delete (web):* `src/lib/chart-agent.ts`, `src/lib/chart-recommendation.ts`, `src/lib/python-node-service.ts`, then `getPythonNodeServiceUrl` (and its fallback in `getWorkerServiceUrl`) in `server-env.ts` and the chart-agent entry in `tests/spend-limits.test.ts`.
+  - *Delete (web):* `src/app/api/cron/process-research-queue/route.ts`, its `vercel.json` crons and its lines in `security-surface.test.ts`.
+  - *Delete (web):* `refineRepositoryPrompt`, `PromptPlanSchema` and `normalizePromptPlanCandidate` in `repository-chat.ts`, with `scripts/repository-chat-live-eval.ts`.
+  - *Delete (worker):* `nodes/deep_research.py`, `nodes/report_citations.py`, `nodes/conversation.py`, `nodes/visualization.py`, `nodes/keyword_search.py`, `nodes/workspace_loader.py`, `workspace_data.py`, `eil-dashboard/worker/process_research_queue.py` and `scripts/evaluate_chatbot_offline.py`; then the `DeepResearch*` and `WorkspaceQueryState` types in `state.py`, and the `worker:research` scripts in `package.json`.
+  - *Delete (worker tests):* `tests/test_deep_research.py`, `test_deep_research_thai_and_provider.py`, `test_deep_research_state_contract.py`, `test_report_citations.py`, `test_conversation_tools.py`, `test_workspace_data.py`, and the keyword-search cases in `test_new_ingestion_nodes.py`.
+  - *Edit:* in `eil-dashboard/worker/process_ingestion_queue.py`, `resume_waiting_research_sessions_for_folder` and its three calls (with the research-session methods in `database_client.py`) move sessions from "waiting on analysis" to "queued", statuses only the old path used. No production session is in either.
 
 ## 2.11 — the remaining medium findings
 
