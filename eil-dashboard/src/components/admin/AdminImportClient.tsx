@@ -22,6 +22,7 @@ import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import { normalizePaperId, paperIdForRun } from "@/lib/paper-id";
 import { buildAnalysisMarkdown, sanitizeFilenamePart, triggerTextDownload } from "@/lib/paper-report";
 import Modal from "@/components/ui/Modal";
+import dynamic from "next/dynamic";
 import {
   ArrowRightIcon,
   CheckIcon,
@@ -288,6 +289,9 @@ function defaultDirectionForSort(sortKey: SortKey): SortDirection {
   return sortKey === "name" ? "asc" : "desc";
 }
 
+// Loaded when first opened: the formats are only needed by people who cite.
+const ReferencesDialog = dynamic(() => import("@/components/admin/ReferencesDialog"), { ssr: false });
+
 export default function AdminImportClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -341,6 +345,8 @@ export default function AdminImportClient() {
   const [moveTarget, setMoveTarget] = useState<IngestionRunRow[] | null>(null);
   const [moveFolderId, setMoveFolderId] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  // References for a selection or a whole repository (docs/32, 4.4).
+  const [referencesFor, setReferencesFor] = useState<{ selection: { runIds: string[] } | { projectId: string }; label: string } | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [analysisDetail, setAnalysisDetail] = useState<RunAnalysisDetail | null>(null);
@@ -1114,6 +1120,7 @@ export default function AdminImportClient() {
   const someVisibleSelected = selectedRuns.length > 0;
   const reanalysableSelection = selectedRuns.filter((run) => run.status === "succeeded" && !run.trashed_at);
   const retryableSelection = selectedRuns.filter((run) => run.status === "failed" && !run.trashed_at && Boolean(run.source_path));
+  const citableSelection = selectedRuns.filter((run) => hasUsableAnalysis(run) && !run.trashed_at);
   function toggleRunSelected(runId: string) {
     setSelectedRunIds((current) => {
       const next = new Set(current);
@@ -1247,6 +1254,18 @@ export default function AdminImportClient() {
               className={itemClass}
             >
               <span>Analyze repository again</span>
+            </button>
+          ) : null}
+          {libraryProject ? (
+            <button
+              type="button"
+              onClick={() => {
+                setToolbarPopover(null);
+                setReferencesFor({ selection: { projectId: libraryProject.id }, label: libraryProject.name });
+              }}
+              className={itemClass}
+            >
+              <span>Export references</span>
             </button>
           ) : null}
         </div>
@@ -1960,6 +1979,21 @@ export default function AdminImportClient() {
                       Try again ({retryableSelection.length})
                     </button>
                   ) : null}
+                  {citableSelection.length > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setReferencesFor({
+                          selection: { runIds: citableSelection.map((run) => run.id) },
+                          label: citableSelection.length === 1 ? titleOf(citableSelection[0]) : `${citableSelection.length} papers`,
+                        })
+                      }
+                      className={buttonClass("secondary", "sm")}
+                    >
+                      <BooksIcon className="h-4 w-4" />
+                      Cite ({citableSelection.length})
+                    </button>
+                  ) : null}
                   <button type="button" disabled={bulkBusy} onClick={() => void runBulk("trash", selectedRuns)} className={buttonClass("secondary", "sm")}>
                     <TrashIcon className="h-4 w-4" />
                     Move to Trash
@@ -2485,6 +2519,15 @@ export default function AdminImportClient() {
         }}
         onSubmit={handleRenameSubmit}
       />
+
+      {referencesFor ? (
+        <ReferencesDialog
+          selection={referencesFor.selection}
+          label={referencesFor.label}
+          headers={jsonRequestHeaders}
+          onClose={() => setReferencesFor(null)}
+        />
+      ) : null}
 
       {moveTarget ? (
         <Modal
