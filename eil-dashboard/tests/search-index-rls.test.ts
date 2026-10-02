@@ -129,6 +129,16 @@ test("a re-analysed paper is stale again until it is indexed again, and the limi
   await db.close();
 });
 
+test("a run in no repository's folder is not listed: no chat searches it, and indexing it writes nothing", async () => {
+  // Two production runs from before repositories have no folder; the index
+  // route answered "indexed: false" for them on every half-hourly catch-up.
+  const db = await database();
+  await db.exec(`UPDATE ingestion_runs SET folder_id = NULL WHERE id = '${OTHER_RUN}'`);
+  await db.exec("SET ROLE papertrend_app");
+  assert.deepEqual(await staleRuns(db, "pilot", 10), [RUN]);
+  await db.close();
+});
+
 test("a legacy run with no owner does not stop the catch-up for everyone else", async () => {
   // Production holds two such runs; listed as an owner, one stopped every
   // catch-up once fewer stale papers were left than the limit.
