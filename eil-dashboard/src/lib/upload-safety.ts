@@ -13,7 +13,13 @@ export type UploadMetadata = {
 };
 
 export function sanitizeStorageFileName(fileName: string): string {
-  const safeName = fileName.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  // Runs of dots are folded too: finalize refuses any storage path holding
+  // "..", so "report..final.pdf" uploaded and then failed (found by
+  // security-behaviour.test.ts).
+  const safeName = fileName
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^[-.]+|-+$/g, "");
   return safeName || "paper.pdf";
 }
 

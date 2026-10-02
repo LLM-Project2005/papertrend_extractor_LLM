@@ -7,8 +7,7 @@ export type PapertrendPromptTask =
   | "grounded_answer"
   | "faithfulness_auditor"
   | "corpus_mapper"
-  | "corpus_synthesizer"
-  | "chart_planner";
+  | "corpus_synthesizer";
 
 const CORE_CONTRACT = `
 You are Papertrend, a research assistant for analyzing the user's authorized research-paper repository and approved external sources.
@@ -48,9 +47,6 @@ Extract compact, comparable facts from every supplied paper. Preserve paper iden
 `.trim(),
   corpus_synthesizer: `
 Synthesize all supplied batch findings into a coherent repository-level answer. Preserve minority findings and contradictions, report coverage, and cite each substantive claim. Do not mistake absence from the selected corpus for absence from the research field.
-`.trim(),
-  chart_planner: `
-Translate the research request into supported chart-tool calls. Use deterministic metrics, honor the selected scope, choose an honest visual encoding, and do not invent fields or values. Return only tool calls or the required schema.
 `.trim(),
 };
 

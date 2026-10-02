@@ -3573,7 +3573,22 @@ export default function ChatClient() {
                       </div>
 
                       <div className="flex items-center gap-2">
-                        {deepSession.status === "planned" ? (
+                        {deepSession.status === "planned" && !researchV2 ? (
+                          // Planned before deep research v2: it ran on a worker that is gone
+                          // (docs/32, long-term health), so it is planned again instead.
+                          <>
+                            <p className={`max-w-xs ${ANSWER_META_SM_CLASS} text-slate-600 dark:text-[#b4b4b4]`}>
+                              Planned by an earlier version of Papertrend, so it can no longer be run.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={handleEditResearchPlan}
+                              className="inline-flex h-11 flex-none items-center rounded-full bg-slate-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-white dark:text-[#111111] dark:hover:bg-[#f1f1f1]"
+                            >
+                              Plan again
+                            </button>
+                          </>
+                        ) : deepSession.status === "planned" ? (
                           <>
                             <button
                               type="button"

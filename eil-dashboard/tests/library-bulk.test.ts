@@ -25,16 +25,16 @@ const OTHER_RUN = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 async function database() {
   const db = new PGlite({ extensions: { vector, pgcrypto } });
   await db.exec("CREATE EXTENSION IF NOT EXISTS vector;");
-  for (const file of ["schema.sql", "phase8_chat_v2.sql"]) await db.exec(read(`cloudsql/${file}`));
+  await db.exec(read("cloudsql/schema.sql"));
   const client = { query: (text: string, params?: unknown[]) => db.query(text, params) } as never;
   await db.exec(`
     INSERT INTO user_profiles (id, email) VALUES ('${OWNER}', 'owner@example.edu'), ('${OTHER}', 'other@example.edu');
     INSERT INTO workspace_organizations (id, owner_user_id, name) VALUES
       ('00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Org'), ('00000000-0000-0000-0000-0000000000c9', '${OTHER}', 'Org');
-    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name) VALUES
-      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository A'),
-      ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository B'),
-      ('00000000-0000-0000-0000-0000000000a9', '00000000-0000-0000-0000-0000000000c9', '${OTHER}', 'Theirs');
+    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name, analysis_profile, analysis_profile_version, analysis_profile_hash, analysis_profile_updated_at) VALUES
+      ('00000000-0000-0000-0000-0000000000a1', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository A', '{}'::jsonb, 2, 'test', now()),
+      ('00000000-0000-0000-0000-0000000000a2', '00000000-0000-0000-0000-0000000000c1', '${OWNER}', 'Repository B', '{}'::jsonb, 2, 'test', now()),
+      ('00000000-0000-0000-0000-0000000000a9', '00000000-0000-0000-0000-0000000000c9', '${OTHER}', 'Theirs', '{}'::jsonb, 2, 'test', now());
     INSERT INTO research_folders (id, owner_user_id, name, project_id) VALUES
       ('${FOLDER_A}', '${OWNER}', 'A', '00000000-0000-0000-0000-0000000000a1'),
       ('${FOLDER_B}', '${OWNER}', 'B', '00000000-0000-0000-0000-0000000000a2'),
@@ -163,6 +163,10 @@ test("a duplicate is left out with its reason, and the rest of the batch uploads
   assert.equal(result.runs[0].input_payload?.source_kind, "pdf-upload", "never the connector's source_kind");
   assert.equal(result.runs[1].input_payload?.import_source, "computer");
   assert.equal(Number(result.folderJob.total_runs), 2);
+  // Each accepted file's fingerprint now names its new run, for the next upload's check.
+  const recorded = await db.query<{ latest_run_id: string }>(`SELECT latest_run_id::text FROM file_fingerprints WHERE owner_user_id = $1 AND sha256 = $2`, [OWNER, "c".repeat(64)]);
+  assert.equal(recorded.rows[0]?.latest_run_id, result.runs[1].id);
+
 
   // Nothing new at all: refused, every file listed.
   await assert.rejects(createUploadBatchIn(client, batch([{ name: "x.pdf", sha256: known }])), (error: unknown) => {
@@ -171,6 +175,11 @@ test("a duplicate is left out with its reason, and the rest of the batch uploads
     assert.equal(error.skipped.length, 1);
     return true;
   });
+  // A fingerprint whose run failed is not a paper in the account: that file goes ahead.
+  await db.query(`UPDATE ingestion_runs SET status = 'failed' WHERE id = $1`, [RUNS[0]]);
+  const retried = await createUploadBatchIn(client, batch([{ name: "renamed copy.pdf", sha256: known }]));
+  assert.deepEqual(retried.acceptedPositions, [0], "only a succeeded paper with content counts as already analysed");
+  await db.query(`UPDATE ingestion_runs SET status = 'succeeded' WHERE id = $1`, [RUNS[0]]);
   await db.close();
 });
 

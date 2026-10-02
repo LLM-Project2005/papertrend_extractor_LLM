@@ -5,70 +5,26 @@ from langgraph.graph import END, StateGraph
 
 from nodes.author_keywords import extract_author_keywords_node
 from nodes.cleaner import clean_and_route_node
-from nodes.conversation import conversation_node
 from nodes.dataset_builder import build_dataset_node
-from nodes.deep_research import (
-    research_critic_node,
-    research_evidence_review_node,
-    research_execute_step_node,
-    research_finalize_node,
-    research_gap_check_node,
-    research_preflight_node,
-    research_synthesis_node,
-)
 from nodes.extractor import extract_pdf_node
 from nodes.facet_extractor import extract_facets_node
 from nodes.keyword_extractor import grounded_keyword_extractor_node
 from nodes.keyword_grouper import semantic_keyword_grouper_node
-from nodes.keyword_search import keyword_search_node
 from nodes.metadata import infer_metadata_node
 from nodes.research_typology import classify_research_typology_node
 from nodes.segmentation import segment_to_json_node
 from nodes.topic_labeler import topic_labeler_node
 from nodes.track_classifier import classify_tracks_node
 from nodes.translator import smart_translate_node
-from nodes.visualization import visualization_node
-from nodes.workspace_loader import load_workspace_data_node
-from state import DeepResearchState, IngestionState, WorkspaceQueryState
+from state import IngestionState
+
+# The ingestion graph only. The workspace query graph (Python chat, keyword
+# search, chart planning) and the deep research graph served routes nothing
+# calls any more: chat and deep research run in the web app (docs/31, docs/32).
 
 
 def _route_translation(state: IngestionState) -> str:
     return "translate" if state.get("needs_translation") else "segment"
-
-
-def _route_workspace_request(state: WorkspaceQueryState) -> str:
-    kind = state.get("request_kind")
-    if kind == "visualization":
-        return "visualization"
-    return "keyword_search"
-
-
-def _route_after_keyword_search(state: WorkspaceQueryState) -> str:
-    return "conversation" if state.get("request_kind") == "chat" else "finish"
-
-
-def _route_research_after_preflight(state: DeepResearchState) -> str:
-    return "finish" if state.get("status") == "waiting_on_analysis" else "execute_step"
-
-
-def _route_research_after_step(state: DeepResearchState) -> str:
-    status = str(state.get("status") or "")
-    if status == "waiting_on_analysis":
-        return "finish"
-    if status == "research_ready_for_evidence_review":
-        return "evidence_review"
-    if status == "research_ready_for_synthesis":
-        return "synthesize"
-    if status == "research_completed":
-        return "finish"
-    return "execute_step"
-
-
-def _route_research_after_gap_check(state: DeepResearchState) -> str:
-    status = str(state.get("status") or "")
-    if status == "research_step_completed":
-        return "execute_step"
-    return "synthesize"
 
 
 @lru_cache(maxsize=1)
@@ -121,88 +77,5 @@ def build_ingestion_graph():
     return workflow.compile()
 
 
-@lru_cache(maxsize=1)
-def build_workspace_query_graph():
-    workflow = StateGraph(WorkspaceQueryState)
-    workflow.add_node("load_workspace", load_workspace_data_node)
-    workflow.add_node("keyword_search", keyword_search_node)
-    workflow.add_node("conversation", conversation_node)
-    workflow.add_node("visualization", visualization_node)
-
-    workflow.set_entry_point("load_workspace")
-    workflow.add_conditional_edges(
-        "load_workspace",
-        _route_workspace_request,
-        {
-            "visualization": "visualization",
-            "keyword_search": "keyword_search",
-        },
-    )
-    workflow.add_conditional_edges(
-        "keyword_search",
-        _route_after_keyword_search,
-        {
-            "conversation": "conversation",
-            "finish": END,
-        },
-    )
-    workflow.add_edge("conversation", END)
-    workflow.add_edge("visualization", END)
-    return workflow.compile()
-
-
-@lru_cache(maxsize=1)
-def build_deep_research_graph():
-    workflow = StateGraph(DeepResearchState)
-    workflow.add_node("preflight", research_preflight_node)
-    workflow.add_node("execute_step", research_execute_step_node)
-    workflow.add_node("evidence_review", research_evidence_review_node)
-    workflow.add_node("gap_check", research_gap_check_node)
-    workflow.add_node("synthesize", research_synthesis_node)
-    workflow.add_node("critic", research_critic_node)
-    workflow.add_node("finalize", research_finalize_node)
-
-    workflow.set_entry_point("preflight")
-    workflow.add_conditional_edges(
-        "preflight",
-        _route_research_after_preflight,
-        {
-            "finish": END,
-            "execute_step": "execute_step",
-        },
-    )
-    workflow.add_conditional_edges(
-        "execute_step",
-        _route_research_after_step,
-        {
-            "execute_step": "execute_step",
-            "evidence_review": "evidence_review",
-            "synthesize": "synthesize",
-            "finish": END,
-        },
-    )
-    workflow.add_edge("evidence_review", "gap_check")
-    workflow.add_conditional_edges(
-        "gap_check",
-        _route_research_after_gap_check,
-        {
-            "execute_step": "execute_step",
-            "synthesize": "synthesize",
-        },
-    )
-    workflow.add_edge("synthesize", "critic")
-    workflow.add_edge("critic", "finalize")
-    workflow.add_edge("finalize", END)
-    return workflow.compile()
-
-
 def run_ingestion_graph(initial_state: Dict[str, Any]) -> Dict[str, Any]:
     return build_ingestion_graph().invoke(initial_state)
-
-
-def run_workspace_query_graph(initial_state: Dict[str, Any]) -> Dict[str, Any]:
-    return build_workspace_query_graph().invoke(initial_state)
-
-
-def run_deep_research_graph(initial_state: Dict[str, Any]) -> Dict[str, Any]:
-    return build_deep_research_graph().invoke(initial_state)

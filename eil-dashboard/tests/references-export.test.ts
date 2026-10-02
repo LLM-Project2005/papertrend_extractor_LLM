@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
+import { vector } from "@electric-sql/pglite-pgvector";
 import {
   apaReference,
   citationFromCrossref,
@@ -262,7 +263,7 @@ test("past the deadline, the rest are exported with title and year and looked up
 });
 
 test("papers load for the owner only, and a kept lookup leaves the run's modified date alone", async () => {
-  const db = new PGlite({ extensions: { pgcrypto } });
+  const db = new PGlite({ extensions: { vector, pgcrypto } });
   await db.exec(read("cloudsql/schema.sql"));
   const client = { query: (text: string, params?: unknown[]) => db.query(text, params) } as never;
   const owner = "00000000-0000-0000-0000-00000000000a";
