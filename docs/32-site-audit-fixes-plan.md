@@ -70,7 +70,7 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | 1 | In production (2026-10-01) |
 | 2 | In production (2026-10-02) |
 | 3 | In production (2026-10-02), except the items listed as open under its results |
-| 4 | Checked live on the pilot (2026-10-02); going to production |
+| 4 | In production (2026-10-02): web 00072, worker 00062 |
 
 ## Phase 1 results
 
@@ -152,6 +152,13 @@ Found on the pilot and fixed before production:
 - **Chat's scope line** read "Searching 52 analysed papers in All projects" whenever papers were chosen (from a drilldown, the semantic map or chat's own picker): the summary behind it is asked by repository and folder only. It now names the chosen papers. The hand-off itself was right: replayed against the live runs, it chose 7 of 7.
 
 **DASH-5,** measured on the 41-paper repository: the dashboard payload is 521 KB of JSON (79 KB gzipped) and a filter pass takes 1.4–2 ms. With an account holding at most 50 papers, moving the filtering to the server is not warranted; typing now filters once the reader pauses instead of on every key, and 54 KB of evidence snippets that no browser code read are no longer sent.
+
+**In production** (web 00072, worker 00062; rollback web 00070, worker 00061) the same browser check passed on papertrend.web.app: the request form and its admin list, both chat exports, the dashboard's address and CSV, the drilldown handing 7 papers to chat ("Searching 7 selected papers"), references from Crossref, the Library's bar and move dialog. The search-index catch-up, failing since 00:30, indexed its 3 waiting papers at 13:00.
+
+Found verifying production, and fixed the same day:
+
+- **Pages outlived their scripts at Firebase's CDN.** The first production run logged "Cannot read properties of undefined (reading 'call')" on /login and Home: the CDN served /login from before the deploy (kept 5 minutes plus 10 stale), and /privacy, /terms and /request-access with Next's header for a static page (a year), so each asked for scripts the new build no longer had (404). Every public page is now cached for 60 seconds with nothing served stale (`firebase.json`, deployed to both sites, which also cleared the cache), and a test fails for any public page without such a rule. After the deploy: no page errors, no failed scripts, all 14 of /privacy's scripts loading.
+- **Two runs from before repositories** (no folder) were asked about by the catch-up every half hour; indexing them writes nothing and costs nothing, but no chat can search them. The catch-up now leaves them out (on development, with the next worker change: a worker build for this alone is not worth it).
 
 **The migration ledger** (long-term health): `schema_migrations` records the migrations applied before it (checked one by one by the objects each creates; `phase3_owner_rls.sql`, a preparation script, never was) and every migration from it on records itself inside its own transaction; the apply script refuses one already recorded. Both 2026-10-02 migrations were applied this way after on-demand backup 1790941606479.
 
