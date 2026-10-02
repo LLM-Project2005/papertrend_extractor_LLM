@@ -75,11 +75,14 @@ def _single_payload_owner(table: str, rows: Iterable[Dict[str, Any]]) -> str:
 # The search index tables enforce row-level security by owner
 # (cloudsql/phase8_chat_v2.sql), so staleness is checked owner by owner, with the
 # owner set for the transaction. Checked without one, no index row was visible:
-# every paper looked stale and was embedded again on every check.
+# every paper looked stale and was embedded again on every check. A legacy run
+# with no owner has no index to build, and listed as an owner it stopped the
+# whole catch-up (set_transaction_owner refuses it), so it is left out.
 STALE_SEARCH_INDEX_OWNERS_SQL = (
     "SELECT DISTINCT ir.owner_user_id::text AS owner_user_id "
     "FROM public.ingestion_runs ir "
     "WHERE ir.source_type = 'upload' AND ir.status = 'succeeded' AND ir.trashed_at IS NULL "
+    "AND ir.owner_user_id IS NOT NULL "
     "AND COALESCE(ir.input_payload->>'deployment', 'production') = %s"
 )
 

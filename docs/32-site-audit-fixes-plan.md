@@ -70,6 +70,7 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | 1 | In production (2026-10-01) |
 | 2 | In production (2026-10-02) |
 | 3 | In production (2026-10-02), except the items listed as open under its results |
+| 4 | Checked live on the pilot (2026-10-02); going to production |
 
 ## Phase 1 results
 
@@ -128,10 +129,31 @@ Found on the pilot: a paper's PDF stored in production's bucket does not load in
 
 Still open from the items given to phase 3, with what each needs:
 
-- **DASH-5** the whole row-level corpus is sent to the browser and filtered there on every keystroke. Needs the filtering moved to the server or into a worker thread; it is a change to the dashboard's data contract, planned with phase 4.3 (filters in the address).
+- **DASH-5** the whole row-level corpus is sent to the browser and filtered there on every keystroke. **Measured and addressed in 4.3** (see phase 4 results).
 - **CHAT-8** *engine*: the planner and checks run on the reader's chosen model. Changing them needs a measured before/after on answer quality and cost; it is left for its own evaluation rather than changed blind.
 - **CHAT-11** *engine*: abstracts are cut at 500 characters in the repository-wide summaries. Longer abstracts cost tokens on every such answer; to be weighed with CHAT-8.
-- **SHELL-6** a slow navigation (over 1.5 s) reloaded the whole page. Fixed on development (it now waits 12 s, for a truly stuck navigation) and goes out with the next batch.
+- **SHELL-6** a slow navigation (over 1.5 s) reloaded the whole page. **Fixed** (it now waits 12 s, for a truly stuck navigation), with phase 4.
+
+## Phase 4 results
+
+Checked on the pilot (web 00264, worker built from the same merge) on 2026-10-02 with the admin test account and the 41-paper testtest repository, in a browser (`scratchpad/pw/p34-phase4-ui.ts`); every change the check made was undone. Model spend: none.
+
+| # | What was done | How it was checked |
+| --- | --- | --- |
+| 4.1 | The landing page, its FAQ and footer, the sign-in form and the invite-code screen say Papertrend is invite-only and link to `/request-access`, which takes a name, email, affiliation and intended use: 3 a day per email, 10 per address, 200 for the site; a hidden field catches bots; every accepted request gets the same reply. **Settings > Admin > Access requests** lists them beside invite codes: **Invite** makes a one-use code bound to the email, with an email ready to send; **Decline**; **Delete**. Requests are deleted after 180 days, and the privacy policy says what is collected and for how long. | `access-requests.test.ts` (PGlite, as the app's role). **Live:** a request sent at 390 px wide (no sideways scroll), "Request sent" focused; in Settings it was invited (code shown once, bound to the email, mail link carrying the invite link), then deleted, and the code revoked. |
+| 4.2 | Every answer has **Copy** and **Download (.md)**: citations numbered, a source list (papers by title and year, web pages by address), limitations and chart titles kept; older report cards too. **Export conversation (.md)** reads every page of the conversation and numbers its sources once across it. | `answer-export.test.ts`. **Live:** an answer copied with its [n] citations (4,957 characters); its file and the conversation's both downloaded, the conversation with its title, date and one source list. |
+| 4.3 | Filters, the repository and the tab are in the address (applied once the repository's saved filters have loaded, then written back), with **Copy link**. Every chart downloads its data as CSV: value lists, category breakdowns, heatmaps, the treemap, timelines, concept search, each Adaptive insight, the semantic map's papers and connections (quoted, formula-safe, UTF-8 for Thai). A drilldown's papers are copied as a list or sent to chat, scoped to exactly them. | `dashboard-export.test.ts`. **Live:** a link with `q=feedback` opened with the search applied; Copy link carried the repository, tab and search; a CSV opened with its byte-order mark and header; clearing the search took it out of the address; a drilldown of 7 papers copied as 7 lines and opened chat with a prompt naming 7. |
+| 4.4 | Selected papers (**Cite**) or a repository (**New > Export references**) as BibTeX, RIS or APA 7. The analysis keeps title and year only, so authors, venue, volume, pages and DOI come from Crossref, by the DOI on the paper's first pages or the one the year lookup found, else a strict title match (the worker's rule plus a year check), and are kept with the run. A corrected title or year wins; affiliations and emails deposited as authors are left out; one lookup at a time without a contact address, waiting out a 429. | `references-export.test.ts` (the title score matches the worker's to 6 places). **Measured, read-only, live Crossref:** 28 of 41 papers with full details, 13 with title and year only (Crossref does not list them), no errors, 45 s the first time (four at once had drawn 35 refusals). **Live:** 2 papers exported as 2 BibTeX entries, 2 APA references and 2 RIS blocks. |
+| 4.5 | Papers are ticked one by one or all in view; a bar trashes, restores, moves (with the analysis), analyses again, retries, cites, or deletes permanently (typing `delete` for more than one); a paper moves from its menu too. A duplicate file is left out of an upload with its reason, and takes no room; the upload window shows how many more papers fit; a long upload renews a signed link near expiry or refused as expired (LIB-8); a Drive file is recorded as such, and a Source filter appears once one exists (LIB-7). | `library-bulk.test.ts` (PGlite: an owner's selection only, the rows moving with a paper, duplicates and the limit). **Live:** 2 papers ticked showed the bar with **Cite (2)** and **Analyze again (2)**; the move dialog listed the 5 repositories; one paper went to Trash from the bar and came back from Trash. |
+
+Found on the pilot and fixed before production:
+
+- **Access requests:** the app's role may not reference `invite_codes` (another role owns it), so the request keeps the code's id without a foreign key; found by a rolled-back dry run of the migration on the live database.
+- **Chat's scope line** read "Searching 52 analysed papers in All projects" whenever papers were chosen (from a drilldown, the semantic map or chat's own picker): the summary behind it is asked by repository and folder only. It now names the chosen papers. The hand-off itself was right: replayed against the live runs, it chose 7 of 7.
+
+**DASH-5,** measured on the 41-paper repository: the dashboard payload is 521 KB of JSON (79 KB gzipped) and a filter pass takes 1.4–2 ms. With an account holding at most 50 papers, moving the filtering to the server is not warranted; typing now filters once the reader pauses instead of on every key, and 54 KB of evidence snippets that no browser code read are no longer sent.
+
+**The migration ledger** (long-term health): `schema_migrations` records the migrations applied before it (checked one by one by the objects each creates; `phase3_owner_rls.sql`, a preparation script, never was) and every migration from it on records itself inside its own transaction; the apply script refuses one already recorded. Both 2026-10-02 migrations were applied this way after on-demand backup 1790941606479.
 
 ## 2.11 — the remaining medium findings
 
@@ -140,7 +162,7 @@ Every medium finding the audit made in the Library, chat, dashboard, shell and s
 | Finding | What happened |
 | --- | --- |
 | AUTH-2 Invite code lost in a new tab and in in-app browsers | **Fixed.** The code is kept on the device for a week (localStorage) and removed once used, so the tab the confirmation email opens still has it. In an app's built-in browser (LINE, Facebook, Instagram…), which blocks the Google and Facebook window, the sign-in page says so and points to email sign-in or a real browser. Sign-in by redirect was not used: the sign-in service is on another domain, and these browsers do not keep its storage. |
-| AUTH-3 Invite-only is invisible before sign-up; no way to ask | Phase 4 (4.1, request access). |
+| AUTH-3 Invite-only is invisible before sign-up; no way to ask | **Fixed in 4.1:** stated on the public site, with a request form. |
 | AUTH-4 The per-address invite limit blocks a class | **Fixed.** 200 tries an hour per address (was 20, successes included). The per-account limit of 5 an hour is unchanged and is the one that stops guessing. |
 | AUTH-5 / SHELL-4 Settings unreachable without a repository; shortcuts open Profile | **Fixed.** Settings opens without a repository; "repository settings" shortcuts open the Repository section. |
 | AUTH-6 No self-serve deletion, export, email change | Own plan after phase 4 (account lifecycle). |
@@ -149,7 +171,7 @@ Every medium finding the audit made in the Library, chat, dashboard, shell and s
 | AUTH-9 Allowance and daily limits unseen until an action fails | Own plan ("usage shown to users"). |
 | AUTH-10 No member management for admins | Own plan after phase 4. |
 | SHELL-5 Sign-in redirect drops the query; a failed token refresh signs out | **Fixed.** The return address keeps its query, and the repositories page returns there too; the refresh part is 2.1. |
-| SHELL-6 A full page reload after 1.5 s of navigation | **Fixed** (12 s, for a stuck navigation only); in the next batch. |
+| SHELL-6 A full page reload after 1.5 s of navigation | **Fixed** (12 s, for a stuck navigation only), with phase 4. |
 | SHELL-7 Search names papers by file, over-matches, misses new papers, repeats entries | **Fixed.** Papers are named and labelled as in the Library; searched by title, file name and state only; read each time search opens; no entry repeats another's address; "Search the Library for …" passes the typed words on. |
 | SHELL-8 One title for every page; palette keyboard; drawer focus | **Fixed:** each page has its own title; the drawer is a dialog layer (2.9). **Fixed in 3.4:** the palette is a combobox with arrow keys. |
 | SHELL-9 Active repository only in localStorage, no switcher | Own plan (a repository in the address). |
@@ -157,12 +179,12 @@ Every medium finding the audit made in the Library, chat, dashboard, shell and s
 | SHELL-11 Provider at the site root, unused organisation layer | Long-term health. |
 | SHELL-12 Repositories cannot be archived, deleted or shared | Own plan after phase 4. |
 | LIB-5 Copy plus Analyze again gets around the 50-paper limit | **Fixed in 2.5.** A copy is a paper and needs room under the limit (`paper-copy.test.ts`). |
-| LIB-7 A file-manager list; two filters that never match | **Fixed:** the type filter offers PDF only (all that can be uploaded), the source filter is gone, and the Owner column ("me" on every row) shows the paper's year. **Phase 4 (4.5):** Drive files recorded as uploads, for a Drive source filter. |
-| LIB-8 Uploads can outlast their signed links; failed files re-added by hand | Phase 4 (4.5, bulk actions and retry). |
+| LIB-7 A file-manager list; two filters that never match | **Fixed:** the type filter offers PDF only (all that can be uploaded), the source filter is gone, and the Owner column ("me" on every row) shows the paper's year. **Fixed in 4.5:** Drive files are recorded, and a Source filter appears once one exists. |
+| LIB-8 Uploads can outlast their signed links; failed files re-added by hand | **Fixed in 4.5:** a long upload renews its links; failed papers retry together from the bar. |
 | LIB-9 A 2,886-line Library component | Long-term health. |
 | LIB-11 PDF preview is canvas-only; menus lack roles | **Fixed in 3.4:** a text layer; menus and toggles say their state. |
 | LIB-12 Re-analysis spend has no account limit | **Bounded by 1.5:** the site-wide daily limit includes analysis (the worker holds the queue), each paper can be analysed again 3 times a day, and the confirmation shows the estimated cost. A per-account analysis allowance belongs to "usage shown to users". |
-| DASH-5 The whole corpus sent to the browser | Open: with phase 4.3 (see phase 3 results). |
+| DASH-5 The whole corpus sent to the browser | **Measured and addressed in 4.3** (see phase 4 results). |
 | DASH-6 Multi-series charts unreadable | **Fixed.** Tooltips follow the light or dark theme on every tab; trends stack at most 8 series. |
 | DASH-7 Empty states blame the filters; papers in progress not mentioned | **Fixed.** A repository with no analysed paper says so instead of showing the tabs; the tabs' messages say "No papers match the current filters"; papers still being analysed are counted, and the dashboard reads again as each finishes. |
 | DASH-8 Semantic map colours hashed into 8 | **Fixed.** One colour per category or year (years in order, Unknown last) from a 20-colour palette; labels on by default only up to 40 papers. |

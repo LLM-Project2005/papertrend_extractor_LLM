@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { MIN_NEW_PASSWORD_LENGTH, friendlyAuthError } from "@/lib/auth/auth-errors";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -324,6 +325,12 @@ export default function AuthPanel({
           </button>
         </form>
         <p className="mt-6 text-center text-sm text-body">
+          No code yet?{" "}
+          <Link href="/request-access" className="font-medium text-ink underline-offset-4 hover:underline">
+            Request access
+          </Link>
+        </p>
+        <p className="mt-2 text-center text-sm text-body">
           Signed in with the wrong account?{" "}
           <button
             type="button"
@@ -496,7 +503,14 @@ export default function AuthPanel({
         <p className="mt-3 text-center text-[13px] leading-5 text-mute">
           {inviteCode
             ? "You have an invite. Sign in or create an account, and the code will be filled in for you."
-            : "Papertrend is invite-only for now. A new account asks for an invite code after you sign in."}
+            : (
+              <>
+                Papertrend is invite-only for now. A new account asks for an invite code after you sign in.{" "}
+                <Link href="/request-access" className="font-medium text-ink underline underline-offset-2">
+                  Request access
+                </Link>
+              </>
+            )}
         </p>
       ) : null}
 

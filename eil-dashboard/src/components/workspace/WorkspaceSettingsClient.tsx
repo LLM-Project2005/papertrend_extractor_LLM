@@ -27,6 +27,7 @@ import {
   CheckCircleIcon,
   CheckIcon,
   CopyIcon,
+  EmailIcon,
   EqualizerIcon,
   FolderIcon,
   KeyIcon,
@@ -36,6 +37,7 @@ import {
   PaletteIcon,
   ShieldCheckIcon,
   SunIcon,
+  TrashIcon,
   UserCircleIcon,
 } from "@/components/ui/Icons";
 import {
@@ -47,10 +49,11 @@ import {
   panelClass,
   type ChipTone,
 } from "@/components/ui/controls";
+import { ACCESS_REQUEST_INVITE_DAYS, ACCESS_REQUEST_RETENTION_DAYS } from "@/lib/access-request-limits";
 import { createGeneralAnalysisProfile, sanitizeProjectAnalysisProfile } from "@/lib/project-analysis-profile";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 
-type SectionId = "profile" | "security" | "appearance" | "repository" | "analysis" | "invites";
+type SectionId = "profile" | "security" | "appearance" | "repository" | "analysis" | "invites" | "requests";
 
 type SectionDef = {
   id: SectionId;
@@ -105,6 +108,13 @@ const SECTIONS: SectionDef[] = [
     label: "Invite codes",
     description: "Who may create an account while Papertrend is invite-only.",
     icon: KeyIcon,
+  },
+  {
+    id: "requests",
+    group: "Admin",
+    label: "Access requests",
+    description: "People without an account asking for an invite code.",
+    icon: EmailIcon,
   },
 ];
 
@@ -1280,6 +1290,254 @@ function InviteCodesSection() {
   );
 }
 
+/* ------------------------------------------------------- access requests */
+
+type AccessRequestView = {
+  id: string;
+  name: string;
+  email: string;
+  affiliation: string;
+  intendedUse: string;
+  status: "pending" | "invited" | "declined";
+  createdAt: string;
+  updatedAt: string;
+  reviewedAt: string | null;
+  inviteStatus: InviteSummary["status"] | null;
+};
+
+const REQUEST_STATUS: Record<AccessRequestView["status"], { tone: ChipTone; label: string }> = {
+  pending: { tone: "warning", label: "Waiting" },
+  invited: { tone: "success", label: "Invited" },
+  declined: { tone: "neutral", label: "Declined" },
+};
+
+const SENT_CODE_STATUS: Record<InviteSummary["status"], string> = {
+  active: "code not used yet",
+  used: "joined",
+  expired: "code expired unused",
+  revoked: "code revoked",
+};
+
+/** The email an admin sends with a new code. The link carries the code after "#", which never reaches a server. */
+function inviteEmailHref(request: AccessRequestView, code: string, origin: string): string {
+  const subject = "Your Papertrend invite";
+  const body = [
+    `Hello ${request.name},`,
+    "",
+    "Thanks for asking to try Papertrend. Here is your invite code:",
+    "",
+    code,
+    "",
+    `Sign in with ${request.email} at ${origin}/login#invite=${code} and the code is filled in for you. It works once, for that address.`,
+  ].join("\n");
+  return `mailto:${encodeURIComponent(request.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+
+/**
+ * Admins only: requests from the public Request access page (docs/32, 4.1).
+ * Inviting makes a one-use code bound to the request's email; the code is
+ * shown once, with an email ready to send.
+ */
+function AccessRequestsSection() {
+  const { session } = useAuth();
+  const token = session?.access_token;
+  const [requests, setRequests] = useState<AccessRequestView[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [sent, setSent] = useState<{ request: AccessRequestView; code: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!token) return;
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/access-requests", { headers: { Authorization: `Bearer ${token}` } });
+      const payload = (await response.json().catch(() => ({}))) as { requests?: AccessRequestView[]; error?: string };
+      if (!response.ok || !payload.requests) throw new Error(payload.error ?? "Access requests can't be loaded right now.");
+      setRequests(payload.requests);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Access requests can't be loaded right now.");
+    }
+  }, [token]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  function replace(updated: AccessRequestView) {
+    setRequests((current) => (current ?? []).map((item) => (item.id === updated.id ? updated : item)));
+  }
+
+  async function answer(request: AccessRequestView, action: "invite" | "decline") {
+    if (!token) return;
+    if (action === "decline" && !window.confirm(`Decline the request from ${request.name}? They are not told.`)) return;
+    setBusy(request.id);
+    setError(null);
+    setSent(null);
+    setCopied(false);
+    try {
+      const response = await fetch(`/api/admin/access-requests/${encodeURIComponent(request.id)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { request?: AccessRequestView; code?: string; error?: string };
+      if (!response.ok || !payload.request) throw new Error(payload.error ?? "The request couldn't be answered right now.");
+      replace(payload.request);
+      if (payload.code) setSent({ request: payload.request, code: payload.code });
+    } catch (answerError) {
+      setError(answerError instanceof Error ? answerError.message : "The request couldn't be answered right now.");
+      void load();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function remove(request: AccessRequestView) {
+    if (!token) return;
+    if (!window.confirm(`Delete the request from ${request.name}? Their details are removed at once.`)) return;
+    setBusy(request.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/access-requests/${encodeURIComponent(request.id)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "The request couldn't be deleted right now.");
+      setRequests((current) => (current ?? []).filter((item) => item.id !== request.id));
+      if (sent?.request.id === request.id) setSent(null);
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : "The request couldn't be deleted right now.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function copyLink() {
+    if (!sent) return;
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/login#invite=${sent.code}`);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  const waiting = requests?.filter((request) => request.status === "pending").length ?? 0;
+  return (
+    <div className="space-y-6">
+      <Section
+        title="Access requests"
+        description={`From the public Request access page. Waiting ones come first; every request is deleted ${ACCESS_REQUEST_RETENTION_DAYS} days after it was sent.`}
+      >
+        {sent ? (
+          <div className="mb-5 rounded-lg border border-hairline bg-subtle px-4 py-4" role="status">
+            <p className="text-sm font-medium text-ink">Invite code for {sent.request.email}</p>
+            <p className="mt-2 select-all break-all font-mono text-lg tracking-wider text-ink">{sent.code}</p>
+            <p className="mt-1.5 text-[13px] leading-5 text-body">
+              It works once, for that address, for {ACCESS_REQUEST_INVITE_DAYS} days. Send it now: it can&apos;t be shown again.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <a href={inviteEmailHref(sent.request, sent.code, window.location.origin)} className={buttonClass("primary", "sm")}>
+                <EmailIcon className="h-4 w-4" />
+                Write the email
+              </a>
+              <button type="button" onClick={() => void copyLink()} className={buttonClass("secondary", "sm")}>
+                <CopyIcon className="h-4 w-4" />
+                {copied ? "Copied" : "Copy invite link"}
+              </button>
+              <button type="button" onClick={() => setSent(null)} className={buttonClass("ghost", "sm")}>
+                Done
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {error ? (
+          <p className="mb-4 text-[13px] text-red-700 dark:text-red-300" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {requests === null && !error ? (
+          <div className="space-y-2" role="status" aria-label="Loading access requests">
+            <span className="skeleton block h-20 w-full rounded-lg" />
+            <span className="skeleton block h-20 w-full rounded-lg" />
+          </div>
+        ) : null}
+        {requests && requests.length === 0 ? <p className="text-sm text-body">No requests yet.</p> : null}
+        {requests && requests.length > 0 ? (
+          <>
+            <p className="mb-3 text-[13px] text-mute">
+              {waiting} waiting · {requests.length} in all
+            </p>
+            <ul className="divide-y divide-hairline">
+              {requests.map((request) => {
+                const status = REQUEST_STATUS[request.status];
+                return (
+                  <li key={request.id} className="py-4 first:pt-0">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-ink">
+                          <span className="break-words">{request.name}</span>
+                          <span className={chipClass(status.tone)}>{status.label}</span>
+                        </p>
+                        <p className="mt-1 break-all text-[13px] leading-5 text-body">
+                          {request.email} · {request.affiliation}
+                        </p>
+                        <p className="mt-0.5 text-[13px] leading-5 text-mute">
+                          Sent {formatDate(request.updatedAt)}
+                          {request.status === "invited" && request.inviteStatus
+                            ? ` · invited ${formatDate(request.reviewedAt)}, ${SENT_CODE_STATUS[request.inviteStatus]}`
+                            : ""}
+                          {request.status === "declined" ? ` · declined ${formatDate(request.reviewedAt)}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {request.status === "pending" ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={busy === request.id}
+                              onClick={() => void answer(request, "invite")}
+                              className={buttonClass("primary", "sm")}
+                            >
+                              {busy === request.id ? "Working…" : "Invite"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy === request.id}
+                              onClick={() => void answer(request, "decline")}
+                              className={buttonClass("secondary", "sm")}
+                            >
+                              Decline
+                            </button>
+                          </>
+                        ) : null}
+                        <button
+                          type="button"
+                          disabled={busy === request.id}
+                          onClick={() => void remove(request)}
+                          aria-label={`Delete the request from ${request.name}`}
+                          className={buttonClass("ghost", "sm")}
+                        >
+                          <TrashIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-2 whitespace-pre-line break-words rounded-lg bg-subtle px-3 py-2.5 text-[13px] leading-5 text-body">
+                      {request.intendedUse}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        ) : null}
+      </Section>
+    </div>
+  );
+}
+
 function discardQuestion(section: SectionId): string {
   const label =
     section === "profile" ? "your profile" : section === "repository" ? "this repository" : "the analysis profile";
@@ -1431,6 +1689,7 @@ export default function WorkspaceSettingsClient() {
             <AnalysisSection onDirtyChange={setSectionDirty} />
           ) : null}
           {active.id === "invites" && isAdmin ? <InviteCodesSection /> : null}
+          {active.id === "requests" && isAdmin ? <AccessRequestsSection /> : null}
         </div>
       </div>
     </div>

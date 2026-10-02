@@ -18,8 +18,8 @@ import {
 import { buttonClass } from "@/components/ui/controls";
 import type { FolderAnalysisJobRow, IngestionRunRow } from "@/types/database";
 import { fingerprintFiles } from "@/lib/client-file-hash";
-import { putFileWithRetry } from "@/lib/upload-retry";
-import { DrivePickerCancelled, pickPdfsFromDrive, type DrivePickerConfig } from "@/lib/google-drive-picker";
+import { putWithFreshUrl } from "@/lib/upload-retry";
+import { DrivePickerCancelled, driveFileIdOf, pickPdfsFromDrive, type DrivePickerConfig } from "@/lib/google-drive-picker";
 import type { ProjectAnalysisProfile } from "@/types/workspace";
 
 const MAX_UPLOAD_FILE_BYTES = 10 * 1024 * 1024;
@@ -74,7 +74,12 @@ type QueuedSummary = {
   failedCount: number;
   projectName: string;
   warning?: string | null;
+  /** Files left out because they were already in the account (docs/32, 4.5). */
+  skipped: Array<{ name: string; reason: string }>;
 };
+
+type AccountRoom = { used: number; limit: number | null; remaining: number | null };
+type SkippedFile = { fileIndex: number; name: string; reason: string };
 
 export default function AnalyzeFlowModal({
   open,
@@ -108,6 +113,24 @@ export default function AnalyzeFlowModal({
   // Google Drive is offered only when the service has its Picker settings.
   const [driveConfig, setDriveConfig] = useState<DrivePickerConfig | null>(null);
   const [driveProgress, setDriveProgress] = useState<{ done: number; total: number } | null>(null);
+  // How many more papers the account has room for, shown before anything
+  // uploads (docs/32, 4.5). Null for an exempt account, or until it loads.
+  const [room, setRoom] = useState<AccountRoom | null>(null);
+  // Files the server left out of the last attempt, with why, by name.
+  const [skippedByName, setSkippedByName] = useState<Map<string, string>>(() => new Map());
+  useEffect(() => {
+    if (!open || !session?.access_token) return;
+    let cancelled = false;
+    void fetch("/api/workspace/library/room", { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then((response) => (response.ok ? (response.json() as Promise<AccountRoom>) : null))
+      .then((payload) => {
+        if (!cancelled) setRoom(payload && typeof payload.used === "number" ? payload : null);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, session?.access_token]);
   useEffect(() => {
     if (!open || !session?.access_token) return;
     let cancelled = false;
@@ -275,6 +298,7 @@ export default function AnalyzeFlowModal({
             size: file.size,
             type: file.type || "application/pdf",
             sha256: fingerprints[fileIndex],
+            drive_file_id: driveFileIdOf(file),
           })),
         }),
       });
@@ -290,8 +314,11 @@ export default function AnalyzeFlowModal({
           uploadHeaders?: Record<string, string>;
           fileName: string;
         }>;
+        skipped?: SkippedFile[];
         error?: string;
       }>(prepareResponse);
+      const skipped = preparePayload?.skipped ?? [];
+      setSkippedByName(new Map(skipped.map((skip) => [skip.name, skip.reason])));
 
       if (!prepareResponse.ok || !preparePayload?.folderJob || !preparePayload.uploads) {
         throw new Error(
@@ -301,6 +328,9 @@ export default function AnalyzeFlowModal({
       }
 
       const uploads = preparePayload.uploads;
+      const folderJobId = preparePayload.folderJob.id;
+      // When the batch's upload URLs were signed; a long batch renews them on the way.
+      const signedAt = Date.now();
       setUploadStage(`Uploading ${plural(uploads.length, "PDF")}`);
       setUploadProgress({ done: 0, total: uploads.length });
 
@@ -318,10 +348,24 @@ export default function AnalyzeFlowModal({
           });
         } else {
           try {
-            await putFileWithRetry(uploadTarget.signedUrl, file, {
-              "Content-Type": file.type || "application/pdf",
-              ...(uploadTarget.uploadHeaders ?? { "x-upsert": "false" }),
-            });
+            await putWithFreshUrl(
+              { signedUrl: uploadTarget.signedUrl, uploadHeaders: uploadTarget.uploadHeaders, signedAt },
+              file,
+              (upload) => ({
+                "Content-Type": file.type || "application/pdf",
+                ...(upload.uploadHeaders ?? { "x-upsert": "false" }),
+              }),
+              async () => {
+                const response = await fetch("/api/admin/import/renew", {
+                  method: "POST",
+                  headers,
+                  body: JSON.stringify({ folderJobId, runId: uploadTarget.runId, storagePath: uploadTarget.storagePath }),
+                });
+                const renewed = await readJsonPayload<{ signedUrl?: string; uploadHeaders?: Record<string, string>; error?: string }>(response);
+                if (!response.ok || !renewed?.signedUrl) throw new Error(renewed?.error ?? "The upload link could not be renewed.");
+                return { signedUrl: renewed.signedUrl, uploadHeaders: renewed.uploadHeaders };
+              }
+            );
             uploaded.push({
               runId: uploadTarget.runId,
               storagePath: uploadTarget.storagePath,
@@ -390,7 +434,9 @@ export default function AnalyzeFlowModal({
         failedCount: failed.length,
         projectName,
         warning: finalizePayload?.warning ?? null,
+        skipped: skipped.map((skip) => ({ name: skip.name, reason: skip.reason })),
       });
+      setSkippedByName(new Map());
       setFiles([]);
       setError(null);
     } catch (uploadError) {
@@ -412,7 +458,7 @@ export default function AnalyzeFlowModal({
     "flex max-h-[calc(100dvh-1.5rem)] w-[min(36rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-2xl dark:border-[#1f1f1f] dark:bg-[#050505] sm:max-h-[calc(100dvh-3rem)]";
 
   if (queuedSummary) {
-    const { count, firstName, failedCount, warning } = queuedSummary;
+    const { count, firstName, failedCount, warning, skipped: skippedFiles } = queuedSummary;
     return (
       <Modal onClose={handleClose}>
         <div className={panelClass}>
@@ -464,6 +510,20 @@ export default function AnalyzeFlowModal({
               of every other page.
             </p>
 
+            {skippedFiles.length > 0 ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm dark:border-[#1f1f1f] dark:bg-[#0a0a0a]">
+                <p className="font-medium text-slate-800 dark:text-[#e5e5e5]">
+                  {plural(skippedFiles.length, "file")} left out
+                </p>
+                <ul className="mt-1.5 space-y-1 text-slate-600 dark:text-[#b4b4b4]">
+                  {skippedFiles.map((skip) => (
+                    <li key={skip.name} className="break-words">
+                      <span className="font-medium text-slate-800 dark:text-[#e5e5e5]">{skip.name}</span>: {skip.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             {failedCount > 0 ? (
               <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
                 {plural(failedCount, "file")} could not be uploaded. They are marked as failed in the
@@ -568,7 +628,7 @@ export default function AnalyzeFlowModal({
               {files.length > 0 ? "Add more PDFs" : "Drop PDFs here, or click to choose"}
             </span>
             <span className="mt-1.5 block text-sm leading-6 text-slate-500 dark:text-[#9c9c9c]">
-              Up to {MAX_UPLOAD_FILES} PDFs at a time, 10 MB each. A paper already analyzed in this account is caught before it uploads.
+              Up to {MAX_UPLOAD_FILES} PDFs at a time, 10 MB each. A paper already analyzed in this account is left out, and you are told which.
             </span>
           </label>
 
@@ -609,9 +669,21 @@ export default function AnalyzeFlowModal({
                   </button>
                 ) : null}
               </div>
+              {room && room.remaining !== null && room.limit !== null ? (
+                <p
+                  className={`mt-1 text-xs leading-5 ${
+                    files.length > room.remaining ? "text-amber-700 dark:text-amber-300" : "text-slate-500 dark:text-[#9c9c9c]"
+                  }`}
+                >
+                  {files.length > room.remaining
+                    ? `This account has room for ${plural(room.remaining, "more paper")} (${room.used} of ${room.limit} used), so ${plural(files.length - room.remaining, "file")} too many, unless some are already in the account. Remove some, or delete papers permanently from Trash.`
+                    : `Room for ${plural(room.remaining, "more paper")} in this account (${room.used} of ${room.limit} used, Trash included).`}
+                </p>
+              ) : null}
               <ul className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
                 {files.map((file, index) => {
-                  const flagged = Boolean(error && error.includes(file.name));
+                  const skipReason = skippedByName.get(file.name);
+                  const flagged = Boolean(skipReason) || Boolean(error && error.includes(file.name));
                   return (
                     <li
                       key={`${file.name}-${file.size}-${file.lastModified}`}
@@ -628,7 +700,7 @@ export default function AnalyzeFlowModal({
                             {file.name}
                           </span>
                           <span className={`block text-xs ${flagged ? "text-red-700 dark:text-red-200" : "text-slate-500 dark:text-[#9c9c9c]"}`}>
-                            {flagged ? "Remove this file to continue" : formatFileSize(file.size)}
+                            {skipReason ?? (flagged ? "Remove this file to continue" : formatFileSize(file.size))}
                           </span>
                         </span>
                       </span>

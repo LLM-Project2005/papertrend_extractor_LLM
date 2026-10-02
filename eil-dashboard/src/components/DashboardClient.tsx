@@ -10,7 +10,9 @@ import Overview from "@/components/tabs/Overview";
 import Modal, { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
 import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
-import { CloseIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
+import { ChatIcon, CheckIcon, CloseIcon, CopyIcon, FilterIcon, SearchIcon } from "@/components/ui/Icons";
+import { hasViewInAddress, readDashboardAddress, withDashboardAddress } from "@/lib/dashboard-address";
+import { writeChatScopeTransfer } from "@/lib/chat-scope-transfer";
 import { useDashboardData } from "@/hooks/useData";
 import { TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
 import { readCategoryLabelMap } from "@/lib/analysis-profile";
@@ -215,6 +217,9 @@ export default function DashboardClient({
   const searchParams = useSearchParams();
   const {
     selectedProjectId,
+    setSelectedProjectId,
+    allProjects,
+    filtersLoadedFor,
     workspaceLoading,
     currentProject,
     profile,
@@ -407,6 +412,92 @@ export default function DashboardClient({
     });
   };
 
+  // A link carries the view (docs/32, 4.3). Its filters are applied once,
+  // after the repository it names is open and that repository's saved filters
+  // have loaded (which would otherwise overwrite them); from then on the view
+  // is written back to the address as it changes.
+  const [linkedView] = useState(() => readDashboardAddress(searchParams));
+  const [addressReady, setAddressReady] = useState(false);
+  useEffect(() => {
+    if (addressReady) return;
+    if (linkedView.projectId && linkedView.projectId !== selectedProjectId) {
+      if (allProjects.some((project) => project.id === linkedView.projectId)) {
+        setSelectedProjectId(linkedView.projectId);
+        return;
+      }
+      if (workspaceLoading) return;
+      // Not one of this account's repositories: the saved view stays.
+      setAddressReady(true);
+      return;
+    }
+    if (!selectedProjectId) {
+      if (!workspaceLoading) setAddressReady(true);
+      return;
+    }
+    if (filtersLoadedFor !== selectedProjectId) return;
+    if (hasViewInAddress(linkedView)) {
+      if (linkedView.years) setSelectedYears(linkedView.years);
+      if (linkedView.categories) setSelectedTracks(linkedView.categories);
+      if (linkedView.query !== null) setSearchQuery(linkedView.query);
+    }
+    setAddressReady(true);
+  }, [
+    addressReady,
+    allProjects,
+    filtersLoadedFor,
+    linkedView,
+    selectedProjectId,
+    setSearchQuery,
+    setSelectedProjectId,
+    setSelectedTracks,
+    setSelectedYears,
+    workspaceLoading,
+  ]);
+  const viewAddress = () =>
+    withDashboardAddress(new URLSearchParams(window.location.search), {
+      projectId: selectedProjectId,
+      years: selectedYears,
+      allYears,
+      categories: classificationEnabled ? effectiveSelectedTracks : [],
+      allCategories: categoryOptions.map((category) => category.key),
+      query: searchQuery,
+    });
+  useEffect(() => {
+    if (!addressReady || !data) return;
+    const timer = window.setTimeout(() => {
+      const current = window.location.search.replace(/^\?/, "");
+      const next = viewAddress().toString();
+      if (next === current) return;
+      window.history.replaceState(window.history.state, "", `${window.location.pathname}${next ? `?${next}` : ""}${window.location.hash}`);
+    }, 250);
+    return () => window.clearTimeout(timer);
+    // viewAddress reads exactly these.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addressReady, allYears, categoryOptions, classificationEnabled, data, effectiveSelectedTracks, searchQuery, selectedProjectId, selectedYears]);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const copyViewLink = async () => {
+    const params = viewAddress().toString();
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}${params ? `?${params}` : ""}`);
+      setLinkCopied(true);
+      window.setTimeout(() => setLinkCopied(false), 2_000);
+    } catch {
+      setLinkCopied(false);
+    }
+  };
+
+  // Typing filters once the reader pauses, not on every key: each filter pass
+  // walks the whole repository's rows (audit DASH-5).
+  const [searchDraft, setSearchDraft] = useState(searchQuery);
+  useEffect(() => {
+    setSearchDraft(searchQuery);
+  }, [searchQuery]);
+  useEffect(() => {
+    if (searchDraft === searchQuery) return;
+    const timer = window.setTimeout(() => setSearchQuery(searchDraft), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchDraft, searchQuery, setSearchQuery]);
+
   const openPaperDrilldown = (target: DashboardDrilldownTarget) => {
     setDrilldownTarget(target);
   };
@@ -589,6 +680,44 @@ export default function DashboardClient({
     filteredData,
   ]);
 
+  const drilldownTitle = drilldownTarget
+    ? buildDashboardDrilldownTitle(drilldownTarget, (key) => {
+        const normalized = normalizeDrilldownCategoryKey(key);
+        return (
+          categoryOptions.find((category) => category.key === normalized)?.label ??
+          categoryLabels[key.toLowerCase() as TrackKey] ??
+          key
+        );
+      })
+    : "";
+  // The papers behind a value leave the dashboard as a list, or as a chat
+  // scoped to exactly them (docs/32, 4.3).
+  const [drilldownCopied, setDrilldownCopied] = useState(false);
+  const copyDrilldownList = async () => {
+    const count = drilldownPapers.length;
+    const lines = drilldownPapers.map(
+      (paper, index) => `${index + 1}. ${paper.title}${paper.year && paper.year !== "Unknown" ? ` (${paper.year})` : ""}`
+    );
+    const text = `${drilldownTitle}\n${count} paper${count === 1 ? "" : "s"} in the current dashboard scope\n\n${lines.join("\n")}\n`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setDrilldownCopied(true);
+      window.setTimeout(() => setDrilldownCopied(false), 2_000);
+    } catch {
+      setDrilldownCopied(false);
+    }
+  };
+  const askAboutDrilldown = () => {
+    if (!selectedProjectId || drilldownPapers.length === 0) return;
+    writeChatScopeTransfer(window.localStorage, {
+      projectId: selectedProjectId,
+      paperIds: drilldownPapers.map((paper) => String(paper.paperId)),
+      prompt: `Summarise what these ${drilldownPapers.length} papers (${drilldownTitle}) find, and how they differ.`,
+    });
+    setDrilldownTarget(null);
+    router.push("/workspace/chat");
+  };
+
   // With no repository chosen the data hook never starts, so its loading flag
   // stayed true and the page spun forever.
   if (!selectedProjectId && !workspaceLoading) {
@@ -648,8 +777,8 @@ export default function DashboardClient({
             <SearchIcon className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-mute" />
             <input
               type="search"
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              value={searchDraft}
+              onChange={(event) => setSearchDraft(event.target.value)}
               placeholder="Search papers, topics, keywords, or years…"
               aria-label="Search the dashboard"
               className="h-10 w-full rounded-lg border border-hairline bg-surface py-2 pl-10 pr-3 text-base text-ink shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 sm:text-sm"
@@ -680,6 +809,10 @@ export default function DashboardClient({
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+            <button type="button" onClick={() => void copyViewLink()} className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]">
+              {linkCopied ? <CheckIcon className="h-4 w-4" /> : <CopyIcon className="h-4 w-4" />}
+              <span aria-live="polite">{linkCopied ? "Link copied" : "Copy link"}</span>
             </button>
             <button
               type="button"
@@ -812,19 +945,27 @@ export default function DashboardClient({
                     <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8e8e8e]">
                       Dashboard drilldown
                     </p>
-                    <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                      {buildDashboardDrilldownTitle(drilldownTarget, (key) => {
-                        const normalized = normalizeDrilldownCategoryKey(key);
-                        return (
-                          categoryOptions.find((category) => category.key === normalized)?.label ??
-                          categoryLabels[key.toLowerCase() as TrackKey] ??
-                          key
-                        );
-                      })}
-                    </h2>
+                    <h2 className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{drilldownTitle}</h2>
                     <p className="mt-2 text-sm text-slate-500 dark:text-[#a3a3a3]">
                       {drilldownPapers.length} associated paper{drilldownPapers.length === 1 ? "" : "s"} in the current dashboard scope.
                     </p>
+                    {drilldownPapers.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" onClick={() => void copyDrilldownList()} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white">
+                          {drilldownCopied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
+                          <span aria-live="polite">{drilldownCopied ? "Copied" : "Copy list"}</span>
+                        </button>
+                        <button
+                          type="button"
+                          disabled={!selectedProjectId}
+                          onClick={askAboutDrilldown}
+                          className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-[#1f1f1f] dark:bg-[#050505] dark:text-[#d0d0d0] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+                        >
+                          <ChatIcon className="h-3.5 w-3.5" />
+                          Ask in chat
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
                   <button
                     type="button"

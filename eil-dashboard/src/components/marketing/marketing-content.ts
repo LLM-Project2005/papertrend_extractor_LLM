@@ -249,6 +249,11 @@ export const productDetails: Array<{ term: string; detail: string }> = [
 
 export const faqs: Array<{ question: string; answer: string }> = [
   {
+    question: "How do I get an account?",
+    answer:
+      "Papertrend is invite-only during its beta: a new account needs an invite code. Ask for one on the Request access page, and if there is room you will get a code by email for that address.",
+  },
+  {
     question: "What kind of papers does it work with?",
     answer:
       "Research papers, theses and articles as PDF files, in English or Thai. It was built with applied linguistics and English-language education research, and its General profile works for other fields too.",

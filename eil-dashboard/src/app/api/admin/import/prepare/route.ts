@@ -4,7 +4,7 @@ import {
   isAuthorizedUserOrAdminRequest,
 } from "@/lib/admin-auth";
 import { ensureResearchFolder, sanitizeFolderName } from "@/lib/research-folders";
-import { getDatabaseProvider, getGcsUploadBucket, getMaxUploadBytes, getStorageProvider } from "@/lib/server-env";
+import { getDatabaseProvider, getStorageProvider } from "@/lib/server-env";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 import { getWorkspaceRepository } from "@/lib/workspace-repository";
 import {
@@ -17,7 +17,8 @@ import {
   sanitizeProjectAnalysisProfile,
   toIngestionAnalysisProfile,
 } from "@/lib/project-analysis-profile";
-import { createGcsSignedUploadUrl as signGcsUpload, deleteRunUploads } from "@/lib/gcs-signed-urls";
+import { deleteRunUploads } from "@/lib/gcs-signed-urls";
+import { signPaperUpload } from "@/lib/paper-upload-url";
 import {
   MAX_FILES_PER_BATCH,
   sanitizeStorageFileName,
@@ -36,6 +37,8 @@ type PrepareUploadFile = {
   size: number;
   type?: string | null;
   sha256?: string | null;
+  /** Picked in Google Drive: recorded with the run (audit LIB-7). */
+  drive_file_id?: string | null;
 };
 
 class UploadPreparationError extends Error {
@@ -46,37 +49,6 @@ class UploadPreparationError extends Error {
     super(message);
     this.name = "UploadPreparationError";
   }
-}
-
-async function createGcsSignedUploadUrl({
-  storagePath,
-  contentType,
-}: {
-  storagePath: string;
-  contentType: string;
-}): Promise<{
-  signedUrl: string;
-  storagePath: string;
-  headers?: Record<string, string>;
-}> {
-  const bucket = getGcsUploadBucket();
-  if (!bucket) throw new Error("GCS_UPLOAD_BUCKET is not configured.");
-  return signGcsUpload({
-    bucketName: bucket,
-    objectName: storagePath,
-    contentType,
-    // Short enough that a URL left lying around is of little use, long enough
-    // for a slow connection to finish a batch.
-    expiresMinutes: 15,
-    // The signed URL can also bind the body size, which is the stronger check,
-    // but the browser must then send x-goog-content-length-range and storage
-    // only permits request headers the bucket's CORS rule lists. Until that
-    // rule includes it, sending it would fail every upload's preflight, so the
-    // size is enforced at finalize instead (storage is asked for the object's
-    // real size before anything is queued). Set GCS_SIGN_UPLOAD_SIZE=true once
-    // the bucket allows the header.
-    maxBytes: process.env.GCS_SIGN_UPLOAD_SIZE === "true" ? getMaxUploadBytes() : undefined,
-  });
 }
 
 export async function POST(request: Request) {
@@ -152,6 +124,9 @@ export async function POST(request: Request) {
 
     let folderJob: Record<string, unknown> & { id: string };
     let preparedRuns: Array<Record<string, unknown>> = [];
+    // Files that go ahead, in order with preparedRuns, and those left out with a reason (docs/32, 4.5).
+    let acceptedFiles: PrepareUploadFile[] = files;
+    let skippedFiles: Array<{ fileIndex: number; name: string; reason: string }> = [];
     if (databaseProvider === "cloud-sql") {
       // This person's uploads that were prepared but never finished are
       // closed and their files deleted first, so they neither linger in the
@@ -163,7 +138,10 @@ export async function POST(request: Request) {
         ownerUserId: user!.id,
         projectId,
         folderId,
-        files,
+        files: files.map((file) => ({
+          ...file,
+          driveFileId: typeof file.drive_file_id === "string" ? file.drive_file_id : null,
+        })),
         folderName: folder,
         sourceKind,
         provider: AUTO_ANALYSIS_PROVIDER,
@@ -173,6 +151,8 @@ export async function POST(request: Request) {
       });
       folderJob = batch.folderJob;
       preparedRuns = batch.runs as unknown as Array<Record<string, unknown>>;
+      acceptedFiles = batch.acceptedPositions.map((position) => files[position]);
+      skippedFiles = batch.skipped.map((skip) => ({ fileIndex: files[skip.position]?.fileIndex ?? skip.position, name: skip.name, reason: skip.reason }));
     } else {
       const { data, error } = await supabase!
         .from("folder_analysis_jobs")
@@ -198,7 +178,7 @@ export async function POST(request: Request) {
 
     const createdRuns: Array<Record<string, unknown>> = [];
 
-    for (const [filePosition, file] of files.entries()) {
+    for (const [filePosition, file] of acceptedFiles.entries()) {
       const lowerName = file.name.toLowerCase();
       let runData = preparedRuns[filePosition] as Record<string, unknown> | undefined;
       if (!runData) {
@@ -243,8 +223,8 @@ export async function POST(request: Request) {
       let uploadHeaders: Record<string, string> | undefined;
 
       if (getStorageProvider() === "gcs") {
-        const signedUpload = await createGcsSignedUploadUrl({
-          storagePath: objectPath,
+        const signedUpload = await signPaperUpload({
+          objectName: objectPath,
           contentType: file.type || "application/pdf",
         });
         storagePath = signedUpload.storagePath;
@@ -282,6 +262,7 @@ export async function POST(request: Request) {
         folderJob,
         runs: createdRuns,
         uploads,
+        skipped: skippedFiles,
       },
       { status: 201 }
     );
@@ -289,6 +270,10 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Failed to prepare uploads.",
+        // Every file left out, so the dialog can say which (the dialog numbers its files in order).
+        ...(error instanceof UploadPolicyError && error.skipped.length
+          ? { skipped: error.skipped.map((skip) => ({ fileIndex: skip.position, name: skip.name, reason: skip.reason })) }
+          : {}),
       },
       {
         status:

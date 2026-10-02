@@ -854,6 +854,36 @@ CREATE TABLE IF NOT EXISTS invite_code_redemptions (
 CREATE INDEX IF NOT EXISTS idx_invite_code_redemptions_code
   ON invite_code_redemptions(invite_code_id);
 
+-- Access requests (cloudsql/20261002_access_requests.sql): someone without an
+-- invite code asks for one; deleted after 180 days.
+CREATE TABLE IF NOT EXISTS access_requests (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT NOT NULL CHECK (char_length(name) BETWEEN 1 AND 120),
+  email           TEXT NOT NULL CHECK (email = lower(email) AND char_length(email) BETWEEN 3 AND 254),
+  affiliation     TEXT NOT NULL CHECK (char_length(affiliation) BETWEEN 1 AND 200),
+  intended_use    TEXT NOT NULL CHECK (char_length(intended_use) BETWEEN 1 AND 1000),
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'invited', 'declined')),
+  invite_code_id  UUID, -- an invite_codes id; not a foreign key (see the migration)
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  reviewed_at     TIMESTAMPTZ,
+  reviewed_by     UUID REFERENCES user_profiles(id) ON DELETE SET NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_access_requests_open_email
+  ON access_requests(email) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_access_requests_created
+  ON access_requests(created_at DESC);
+
+-- The migration ledger (cloudsql/20261002_schema_migrations.sql): every
+-- migration records its own name here before it commits.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  name        TEXT PRIMARY KEY CHECK (name ~ '^[0-9a-z_]+\.sql$'),
+  applied_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  applied_by  TEXT NOT NULL DEFAULT current_user,
+  note        TEXT NOT NULL DEFAULT '' CHECK (char_length(note) <= 200)
+);
+
 CREATE TABLE IF NOT EXISTS ai_usage_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   owner_user_id UUID NOT NULL,

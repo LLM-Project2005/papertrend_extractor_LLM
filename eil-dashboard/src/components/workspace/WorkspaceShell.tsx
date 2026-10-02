@@ -145,6 +145,9 @@ const SEARCH_PAGE_ITEMS = [
 
 const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 
+/** How long a client navigation may take before the page is loaded afresh. */
+export const STUCK_NAVIGATION_MS = 12_000;
+
 /** Pages that work without a chosen repository. */
 const PROJECT_OPTIONAL_ROUTES = ["/workspace/settings"];
 
@@ -418,6 +421,10 @@ export default function WorkspaceShell({
     setPendingHref(null);
   }, [pathname]);
 
+  // A last resort for a client navigation that never commits. At 1.5 seconds
+  // it reloaded the whole page on any slow load - a phone on a weak network, a
+  // server waking up - so the page loaded twice and lost its state (docs/32,
+  // 3.2; audit SHELL-6). It now waits long enough to mean "stuck".
   useEffect(() => {
     if (!navigating || !pendingHref) {
       return;
@@ -436,7 +443,7 @@ export default function WorkspaceShell({
 
       setNavigating(false);
       setPendingHref(null);
-    }, 1500);
+    }, STUCK_NAVIGATION_MS);
 
     return () => window.clearTimeout(timeoutId);
   }, [navigating, pendingHref]);

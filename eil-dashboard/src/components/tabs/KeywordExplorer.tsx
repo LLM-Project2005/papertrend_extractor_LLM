@@ -32,6 +32,8 @@ import {
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import { keywordKey, paperIdsByKeywordKey } from "@/lib/dashboard-drilldown";
 import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
+import ChartCsvButton from "@/components/tabs/ChartCsvButton";
+import { seriesTable } from "@/lib/chart-csv";
 import { tooltipTheme } from "@/lib/chart-tooltip";
 
 function truncate(value: string, max: number): string {
@@ -456,9 +458,18 @@ export default function KeywordExplorer({
 
               {conceptResult.timeline.length > 0 ? (
                 <section className="app-surface px-5 py-5">
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                    Emergence over time
-                  </h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                      Emergence over time
+                    </h3>
+                    <ChartCsvButton
+                      csv={{
+                        name: `${conceptResult.canonicalConcept || "concept"} over time`,
+                        header: ["Year", "Frequency", "Papers"],
+                        rows: conceptResult.timeline.map((row) => [row.year, row.frequency, row.papers]),
+                      }}
+                    />
+                  </div>
                   <div className="mt-5 h-[320px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={conceptResult.timeline}>
@@ -491,9 +502,18 @@ export default function KeywordExplorer({
 
               {conceptResult.trackSpread.length > 0 ? (
                 <section className="app-surface px-5 py-5">
-                  <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                    Track spread
-                  </h3>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                      Track spread
+                    </h3>
+                    <ChartCsvButton
+                      csv={{
+                        name: `${conceptResult.canonicalConcept || "concept"} by category`,
+                        header: ["Category", "Papers"],
+                        rows: conceptResult.trackSpread.map((row) => [String(row.track), row.papers]),
+                      }}
+                    />
+                  </div>
                   <div className="mt-5 h-[280px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={conceptResult.trackSpread}>
@@ -676,6 +696,11 @@ export default function KeywordExplorer({
             </ResponsiveContainer>
             <ChartValues
               title="Keywords used by the most papers"
+              csv={{
+                name: "Keywords used by the most papers",
+                header: ["Keyword", "Papers"],
+                rows: sharedKeywords.slice(0, 15).map((row) => [row.keyword, row.papers]),
+              }}
               values={sharedKeywords.slice(0, 15).map((row) => ({
                 key: row.keyword,
                 label: row.keyword,
@@ -696,6 +721,16 @@ export default function KeywordExplorer({
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Papers per theme per year for the {Math.min(plannerHeatN, themes.length)} largest themes. Every year in the range has a column.
         </p>
+        {heatmapData.rows.length > 0 ? (
+          <ChartCsvButton
+            className="mt-1"
+            csv={{
+              name: "Themes across years",
+              header: ["Theme", ...axis.years],
+              rows: heatmapData.rows.map((row) => [row.theme, ...row.values]),
+            }}
+          />
+        ) : null}
         {heatmapData.rows.length > 0 ? (
           <div className="mt-4">
             <Heatmap
@@ -733,6 +768,10 @@ export default function KeywordExplorer({
           </label>
         </div>
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Each rectangle is a theme, sized by its number of papers.</p>
+        <ChartCsvButton
+          className="mt-1"
+          csv={{ name: "Theme sizes", header: ["Theme", "Papers"], rows: treeData.map((row) => [row.name, row.value]) }}
+        />
         {treeData.length > 0 && (
           <div className="mt-4 h-[380px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -767,6 +806,21 @@ export default function KeywordExplorer({
           Each theme, the topic labels its papers were given, and the keywords most of its papers use.
           {query.trim() ? ` Filtered by "${query.trim()}".` : ""}
         </p>
+        <ChartCsvButton
+          className="mt-1"
+          csv={{
+            name: "Themes and what they gather",
+            header: ["Theme", "Papers", "First year", "Last year", "Paper labels", "Keywords"],
+            rows: visibleThemes.map((row) => [
+              row.topic,
+              row.papers,
+              row.years[0] ?? "",
+              row.years[row.years.length - 1] ?? "",
+              row.aliases.join("; "),
+              row.keywords.join("; "),
+            ]),
+          }}
+        />
         <div className="mt-4 max-h-[460px] overflow-auto rounded-xl border border-slate-200 dark:border-[#1f1f1f]">
           <table className="min-w-full text-xs">
             <thead className="sticky top-0 bg-slate-50 dark:bg-[#030303]">
@@ -865,6 +919,15 @@ export default function KeywordExplorer({
             </button>
           ))}
         </div>
+        {comparisonThemes.length > 0 && axis.years.length > 0 ? (
+          <ChartCsvButton
+            className="mt-3"
+            csv={{
+              name: "Compare themes over time",
+              ...seriesTable(timelineData, "year", comparisonThemes.map((topic) => ({ key: topic, label: topic }))),
+            }}
+          />
+        ) : null}
         {comparisonThemes.length > 0 && axis.years.length > 0 ? (
           <div className="mt-5 h-[320px]">
             <ResponsiveContainer width="100%" height="100%">

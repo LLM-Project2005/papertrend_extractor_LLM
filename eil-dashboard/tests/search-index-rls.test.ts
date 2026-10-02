@@ -19,6 +19,7 @@ const OWNER = "00000000-0000-0000-0000-00000000000a";
 const OTHER = "00000000-0000-0000-0000-00000000000b";
 const RUN = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
 const OTHER_RUN = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** A Python SQL constant from the worker, with %s placeholders numbered for Postgres. */
 function workerSql(name: string): string {
@@ -81,6 +82,8 @@ async function staleRuns(db: PGlite, deployment: string, limit: number): Promise
     const stale: string[] = [];
     for (const { owner_user_id: owner } of owners.rows) {
       if (stale.length >= limit) break;
+      // set_transaction_owner refuses an owner that is not a UUID, and the whole listing with it.
+      assert.match(String(owner), UUID, "the worker refuses this owner");
       await db.query("SELECT set_config('app.current_user_id', $1, true)", [owner]);
       const rows = await db.query<{ run_id: string }>(workerSql("STALE_SEARCH_INDEX_SQL"), [deployment, owner, limit - stale.length]);
       stale.push(...rows.rows.map((row) => row.run_id));
@@ -123,5 +126,19 @@ test("a re-analysed paper is stale again until it is indexed again, and the limi
   await db.query(`UPDATE ingestion_runs SET completed_at = now() + interval '1 minute' WHERE id = $1`, [RUN]);
   assert.deepEqual(await staleRuns(db, "pilot", 10), [RUN, OTHER_RUN].sort());
   assert.equal((await staleRuns(db, "pilot", 1)).length, 1);
+  await db.close();
+});
+
+test("a legacy run with no owner does not stop the catch-up for everyone else", async () => {
+  // Production holds two such runs; listed as an owner, one stopped every
+  // catch-up once fewer stale papers were left than the limit.
+  const db = await database();
+  await db.exec(`
+    INSERT INTO ingestion_runs (id, owner_user_id, source_type, status, input_payload, completed_at)
+    VALUES ('c1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d', NULL, 'upload', 'succeeded', '{"deployment": "pilot"}', now());
+  `);
+  await db.exec("SET ROLE papertrend_app");
+  await indexPaper(db, OWNER, 11, RUN, "00000000-0000-0000-0000-0000000000a1");
+  assert.deepEqual(await staleRuns(db, "pilot", 10), [OTHER_RUN]);
   await db.close();
 });

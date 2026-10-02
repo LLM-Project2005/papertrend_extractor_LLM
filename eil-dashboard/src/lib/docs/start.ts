@@ -220,12 +220,29 @@ export const startCategory: DocsCategoryBase = {
               ["**Preview PDF** / **Open in new tab**", "Shows the original file."],
               ["**Rename file**", "Changes the name shown in Papertrend. It does not change the detected title; for that, use **Correct title or year** in the paper explorer."],
               ["**Make a copy**", "Adds a second entry for the same PDF in the same repository, with the same results. It is not analyzed again."],
+              ["**Move to another repository...**", "Moves the paper, with its analysis, so it is counted and searched where it lands."],
               ["**Add to favorite**", "Adds a star. There is no favorites filter yet."],
               ["**Analyze again** / **Try again**", "Runs the analysis again with the current pipeline and the repository's current profile (see below)."],
               ["**File information**", "Name, type, source, size, last update and storage path."],
               ["**Move to trash**", "Moves the paper to Trash (see below)."],
             ],
           },
+        },
+        {
+          id: "several-papers",
+          title: "Several papers at once",
+          body: [
+            "Tick the box beside each paper, or the box above the list to tick every paper shown. A bar above the list then acts on all of them together: **Move...**, **Analyze again**, **Try again**, **Cite** and **Move to Trash**; in Trash, **Restore** and **Delete permanently...** (type `delete` to confirm more than one).",
+            "Only papers in view are acted on: a paper hidden by the search or a filter is never changed unseen.",
+          ],
+        },
+        {
+          id: "references",
+          title: "Exporting references",
+          body: [
+            "**Cite** in the bar (for the papers ticked) or **New > Export references** (for the whole repository) opens the references as **BibTeX**, **RIS** or **APA**, to copy or download. BibTeX and RIS import into Zotero, Mendeley, EndNote and LaTeX; APA is an APA 7 reference list as plain text.",
+            "The analysis keeps a paper's title and year, but not its authors or journal. Those are looked up in Crossref, by the DOI printed on the paper or else by an exact title match, and kept with the paper, so the first export takes a few seconds per paper and later ones are immediate. A paper Crossref does not list, such as many theses, is exported with its title and year only, and the window says how many. A title or year you corrected is used instead of Crossref's.",
+          ],
         },
         {
           id: "analyze-again",
@@ -251,7 +268,7 @@ export const startCategory: DocsCategoryBase = {
             "In Trash, a paper's **...** menu has **Delete permanently...**, and **Empty Trash...** deletes everything in it. Both remove the PDF and everything the analysis found, and cannot be undone; emptying Trash asks you to type `delete` first.",
             "A paper in Trash still counts toward the 50-paper allowance until it is deleted permanently.",
             "A copy made with **Make a copy** shares its original's analysis: deleting the copy leaves the original untouched.",
-            "Uploading the same PDF again is refused while a copy is in Trash; restore the existing one instead.",
+            "Uploading the same PDF again leaves it out of the upload while a copy is in Trash, and says so; restore the existing one instead.",
           ],
         },
         {

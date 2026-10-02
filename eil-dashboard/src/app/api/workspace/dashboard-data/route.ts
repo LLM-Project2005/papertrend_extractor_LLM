@@ -4,6 +4,7 @@ import {
   RequestAuthTimeoutError,
 } from "@/lib/admin-auth";
 import { loadDashboardDataServer } from "@/lib/dashboard-data-server";
+import { dashboardPayloadForBrowser } from "@/lib/dashboard-payload";
 import type { DashboardDataMode } from "@/types/database";
 
 export const runtime = "nodejs";
@@ -85,7 +86,7 @@ export async function GET(request: Request) {
       20000
     );
 
-    return NextResponse.json({ data });
+    return NextResponse.json({ data: dashboardPayloadForBrowser(data) });
   } catch (error) {
     if (error instanceof RequestAuthTimeoutError) {
       return NextResponse.json(

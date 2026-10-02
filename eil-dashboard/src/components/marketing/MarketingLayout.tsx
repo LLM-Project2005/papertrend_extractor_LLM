@@ -98,6 +98,7 @@ const FOOTER_GROUPS: Array<{ title: string; links: Array<{ label: string; href: 
     title: "Account",
     links: [
       { label: "Sign in", href: "/login" },
+      { label: "Request access", href: "/request-access" },
       { label: "Repositories", href: "/workspaces" },
       { label: "Settings", href: "/workspace/settings" },
     ],

@@ -204,6 +204,44 @@ export async function assertInviteRedeemRateLimit(request: Request, accountSubje
   }
 }
 
+const TOO_MANY_ACCESS_REQUESTS = "Too many requests from here today. Try again tomorrow.";
+
+/**
+ * Limits the public access-request form (docs/32, 4.1), per day: 3 for one
+ * email, 10 from one address, and 200 for the whole site. The form needs no
+ * account, so the site-wide bucket is the one a caller cannot reset by
+ * changing the address header or the email; it bounds what lands in the table
+ * and in front of an admin.
+ */
+export async function assertAccessRequestRateLimit(request: Request, email: string): Promise<void> {
+  const windowSeconds = 86_400;
+  const ipHash = hashSubject(getClientIp(request));
+  const since = new Date(Date.now() - windowSeconds * 1000).toISOString();
+  const buckets = [
+    { hash: hashSubject(`access-email:${normalizeEmail(email)}`), limit: 3 },
+    { hash: hashSubject(`access-ip:${ipHash}`), limit: 10 },
+    { hash: hashSubject("access-site"), limit: 200 },
+  ];
+
+  try {
+    const blocked = await countPersistedAttempts(buckets, ipHash, since, "access_request");
+    if (blocked) throw new GuardError(TOO_MANY_ACCESS_REQUESTS, 429);
+    return;
+  } catch (error) {
+    if (error instanceof GuardError) throw error;
+    console.warn("[security] access request rate limit store unavailable; counting in memory", {
+      message: error instanceof Error ? error.message : "unknown_error",
+    });
+  }
+
+  const now = Date.now();
+  for (const bucket of buckets) {
+    if (countInMemory(bucket.hash, windowSeconds * 1000, now) > bucket.limit) {
+      throw new GuardError(TOO_MANY_ACCESS_REQUESTS, 429);
+    }
+  }
+}
+
 /**
  * Records one attempt against every bucket and reports whether any was already
  * at its limit.
