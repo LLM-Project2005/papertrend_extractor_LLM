@@ -34,6 +34,7 @@ import { useTheme } from "@/components/theme/ThemeProvider";
 import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
 import { labelColumn, useIsNarrow } from "@/lib/use-narrow";
 import { legendLabel } from "@/lib/chart-legend";
+import { seriesTable } from "@/lib/chart-csv";
 
 interface Props {
   trends: TrendRow[];
@@ -168,6 +169,17 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
         </div>
         <ChartValues
           title={title}
+          csv={{
+            name: `${title} ${periods.earlyLabel} to ${periods.lateLabel}`,
+            header: [
+              "Theme",
+              `Papers ${periods.earlyLabel}`,
+              `Share ${periods.earlyLabel} (%)`,
+              `Papers ${periods.lateLabel}`,
+              `Share ${periods.lateLabel} (%)`,
+            ],
+            rows: rows.map((row) => [row.topic, row.early, row.earlier, row.late, row.later]),
+          }}
           values={rows.map((row) => ({
             key: row.topic,
             label: row.topic,
@@ -239,6 +251,10 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
           )}
           <ChartValues
             title="Themes by year"
+            csv={{
+              name: "Themes by year",
+              ...seriesTable(byYear, "year", topThemes.map((topic) => ({ key: topic, label: topic }))),
+            }}
             values={byYear.flatMap((row) =>
               topThemes
                 .filter((topic) => Number(row[topic] ?? 0) > 0)

@@ -32,6 +32,8 @@ import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardN
 import { plural, subjectRows, yearAxis } from "@/lib/dashboard-analytics";
 import { idsKey, markPaperIds } from "@/lib/dashboard-drilldown";
 import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
+import ChartCsvButton from "@/components/tabs/ChartCsvButton";
+import { seriesTable } from "@/lib/chart-csv";
 import { tooltipTheme } from "@/lib/chart-tooltip";
 
 interface Props {
@@ -341,6 +343,14 @@ export default function TrackAnalysis({
           </div>
           <ChartValues
             title="Papers per category per year"
+            csv={{
+              name: "Papers per category per year",
+              ...seriesTable(
+                stackedData as Array<Record<string, unknown>>,
+                "year",
+                stackedChartCategories.map((category) => ({ key: category.key, label: category.label }))
+              ),
+            }}
             values={stackedData.flatMap((row) =>
               stackedChartCategories
                 .filter((category) => Number((row as Record<string, unknown>)[category.key] ?? 0) > 0)
@@ -366,6 +376,14 @@ export default function TrackAnalysis({
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
             How often categories appear together on the same paper.
           </p>
+          <ChartCsvButton
+            className="mt-1"
+            csv={{
+              name: "Category co-occurrence",
+              header: ["Category", ...topicChartCategories.map((category) => category.label)],
+              rows: topicChartCategories.map((category, index) => [category.label, ...(coMatrix[index] ?? [])]),
+            }}
+          />
           <div className="mt-4">
             <Heatmap
               rows={topicChartCategories.map((category) => category.label)}
@@ -447,6 +465,11 @@ export default function TrackAnalysis({
                       </ResponsiveContainer>
                       <ChartValues
                         title={category.label}
+                        csv={{
+                          name: `Topics in ${category.label}`,
+                          header: ["Topic", "Papers"],
+                          rows: data.map((row) => [String(row.topic), Number(row.papers)]),
+                        }}
                         values={data.map((row) => ({
                           key: String(row.topic),
                           label: String(row.topic),

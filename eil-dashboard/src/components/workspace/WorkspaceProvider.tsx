@@ -68,6 +68,8 @@ interface WorkspaceContextValue {
   selectedYears: string[];
   selectedTracks: string[];
   searchQuery: string;
+  /** The repository whose saved filters are loaded (undefined until the first load). */
+  filtersLoadedFor: string | null | undefined;
   hasActiveProject: boolean;
   updateProfile: (updates: Partial<WorkspaceProfile>) => void;
   resetProfile: () => void;
@@ -1046,6 +1048,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       selectedYears,
       selectedTracks,
       searchQuery,
+      filtersLoadedFor: filtersProjectId,
       hasActiveProject: Boolean(currentProject),
       updateProfile: (updates) => {
         profileDirtyRef.current = true;
@@ -1226,6 +1229,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       updateProjectAnalysisProfile,
       currentOrganization,
       currentProject,
+      filtersProjectId,
       renameFolder,
       renameProject,
       allFolders,

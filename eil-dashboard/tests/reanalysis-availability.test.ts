@@ -74,7 +74,7 @@ test("chat, the semantic map and the Library read a paper being re-analysed", ()
   assert.match(map, /AND \$\{usableAnalysisSql\("ir"\)\} AND ir\.trashed_at IS NULL/);
   assert.match(map, /WHERE \$\{usableAnalysisSql\("sr"\)\}/);
   assert.match(read("src/app/api/chat/route.ts"), /matchedLibraryRuns\.filter\(\(run\) => hasUsableAnalysis\(run\)\)/);
-  assert.match(read("src/components/chat/ChatClient.tsx"), /allowed\.has\(run\.id\) && hasUsableAnalysis\(run\)/);
+  assert.match(read("src/components/chat/ChatClient.tsx"), /runsInTransfer\(rows, transfer\)\.filter\(\(run\) => hasUsableAnalysis\(run\)\)/);
   const library = read("src/components/admin/AdminImportClient.tsx");
   assert.equal((library.match(/hasUsableAnalysis\(activeMenuRun\)/g) ?? []).length, 2, "View analysis and Download report");
   assert.match(library, /if \(hasUsableAnalysis\(run\)\) \{\s*await handleViewAnalysis/);

@@ -33,6 +33,7 @@ import {
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import { markPaperIds } from "@/lib/dashboard-drilldown";
 import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
+import ChartCsvButton from "@/components/tabs/ChartCsvButton";
 import type { VisualizationChartKey } from "@/types/visualization";
 import { isDatedYear } from "@/lib/dated-year";
 import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
@@ -212,6 +213,14 @@ export default function Overview({
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {subtitle}
             </p>
+            <ChartCsvButton
+              className="mt-1"
+              csv={{
+                name: title,
+                header: ["Category", "Papers", "Share of selected papers (%)"],
+                rows: items.map((item) => [item.name, item.value, total > 0 ? Math.round((item.value / total) * 100) : 0]),
+              }}
+            />
             <div className="mt-4 h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -324,6 +333,7 @@ export default function Overview({
         </div>
         <ChartValues
           title="What this repository studies"
+          csv={{ name: "What this repository studies", header: ["Theme", "Papers"], rows: topThemes.map((theme) => [theme.topic, theme.papers]) }}
           values={topThemes.map((theme) => ({
             key: theme.topic,
             label: theme.topic,
@@ -343,7 +353,11 @@ export default function Overview({
         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
           Research designs and instruments, kept apart from the themes above so they do not crowd out what was studied.
         </p>
-        <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+        <ChartCsvButton
+          className="mt-1"
+          csv={{ name: "How these studies were done", header: ["Method", "Papers"], rows: methods.slice(0, 8).map((entry) => [entry.topic, entry.papers]) }}
+        />
+        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
           {methods.slice(0, 8).map((entry) => (
             <li key={entry.topic}>
               <button
@@ -405,6 +419,7 @@ export default function Overview({
           </div>
           <ChartValues
             title="Papers published per year"
+            csv={{ name: "Papers published per year", header: ["Year", "Papers"], rows: papersByYear.map((entry) => [entry.year, entry.papers]) }}
             values={papersByYear
               .filter((entry) => entry.papers > 0)
               .map((entry) => ({

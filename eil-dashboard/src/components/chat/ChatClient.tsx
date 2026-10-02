@@ -25,6 +25,7 @@ import {
   previewConversationSources,
 } from "@/lib/conversation-sources";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "@/lib/workspace-session";
+import { readChatScopeTransfer, runsInTransfer } from "@/lib/chat-scope-transfer";
 import { normalizeChatRequestPayload } from "@/lib/chat-request-payload";
 import {
   chatEndpoint,
@@ -2142,10 +2143,9 @@ export default function ChatClient() {
     if (!raw) return;
     window.localStorage.removeItem(CHAT_SCOPE_TRANSFER_STORAGE_KEY);
     try {
-      const transfer = JSON.parse(raw) as { projectId?: string; runIds?: string[]; prompt?: string; createdAt?: string };
-      const runIds = [...new Set((transfer.runIds ?? []).filter((value) => typeof value === "string" && value))];
-      const age = Date.now() - new Date(transfer.createdAt ?? 0).getTime();
-      if (!transfer.projectId || runIds.length === 0 || !Number.isFinite(age) || age > 15 * 60 * 1000) return;
+      // Papers come by run (the semantic map) or by paper (a dashboard drilldown).
+      const transfer = readChatScopeTransfer(raw);
+      if (!transfer) return;
       void fetch(`/api/workspace/library?projectId=${encodeURIComponent(transfer.projectId)}`, {
         headers: { Authorization: `Bearer ${session?.access_token}` },
       })
@@ -2153,11 +2153,10 @@ export default function ChatClient() {
           const payload = await response.json() as { runs?: IngestionRunRow[]; error?: string };
           if (!response.ok) throw new Error(payload.error ?? "Failed to transfer papers to chat.");
           const rows = payload.runs ?? [];
-          const allowed = new Set(runIds);
           setLibraryRuns(rows);
-          setSelectedLibraryRuns(rows.filter((run) => allowed.has(run.id) && hasUsableAnalysis(run)));
+          setSelectedLibraryRuns(runsInTransfer(rows, transfer).filter((run) => hasUsableAnalysis(run)));
           scopeChosenRef.current = true;
-          setChatScopeProjectId(transfer.projectId!);
+          setChatScopeProjectId(transfer.projectId);
           setChatScopeFolderId("all");
           if (transfer.prompt?.trim()) setDraft(transfer.prompt.trim());
         })

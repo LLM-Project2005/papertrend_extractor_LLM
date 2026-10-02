@@ -11,6 +11,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import InsightChart, { type OpenPapers } from "@/components/dashboard/InsightChart";
+import ChartCsvButton from "@/components/tabs/ChartCsvButton";
+import { insightCsv } from "@/lib/insights/csv";
 import { ChartIcon, CloseIcon, SearchIcon, SparkIcon, SpinnerIcon, InfoIcon } from "@/components/ui/Icons";
 import type { Insight, InsightNotice, InsightPlan, InsightReport } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
@@ -90,13 +92,16 @@ function InsightCard({
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-[#1a1a1a]">
         <p className="max-w-2xl text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{insight.basis}</p>
-        <button
-          type="button"
-          onClick={() => onOpen(insight.paperIds, title)}
-          className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#262626] dark:text-[#d4d4d4] dark:hover:border-[#3a3a3a] dark:hover:text-white"
-        >
-          The {insight.paperIds.length} paper{insight.paperIds.length === 1 ? "" : "s"} behind this
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <ChartCsvButton csv={insightCsv(insight, title)} />
+          <button
+            type="button"
+            onClick={() => onOpen(insight.paperIds, title)}
+            className="inline-flex min-h-9 items-center rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-700 transition-colors hover:border-slate-300 hover:text-slate-950 dark:border-[#262626] dark:text-[#d4d4d4] dark:hover:border-[#3a3a3a] dark:hover:text-white"
+          >
+            The {insight.paperIds.length} paper{insight.paperIds.length === 1 ? "" : "s"} behind this
+          </button>
+        </div>
       </div>
     </section>
   );
