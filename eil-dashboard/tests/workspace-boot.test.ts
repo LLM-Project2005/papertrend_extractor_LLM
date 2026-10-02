@@ -44,6 +44,13 @@ test("the workspace asks for its repositories and folders once each", () => {
   assert.match(provider, /if \(projectListRef\.current\) return projectListRef\.current;/);
 });
 
+test("a slow navigation is not reloaded as if it were stuck (SHELL-6)", () => {
+  const shell = read("src/components/workspace/WorkspaceShell.tsx");
+  assert.match(shell, /export const STUCK_NAVIGATION_MS = 12_000;/);
+  assert.match(shell, /\}, STUCK_NAVIGATION_MS\);/);
+  assert.doesNotMatch(shell, /\}, 1500\);/);
+});
+
 test("the chat page does not fetch the dashboard, and starts on the open repository", () => {
   const chat = read("src/components/chat/ChatClient.tsx");
   assert.doesNotMatch(chat, /useDashboardData/);
