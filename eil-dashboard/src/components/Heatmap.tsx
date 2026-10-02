@@ -1,5 +1,7 @@
 "use client";
 
+import { readableTextOn } from "@/lib/contrast";
+
 /**
  * A simple CSS-grid heatmap component. Receives a 2D data map
  * with row labels, column labels, and values.
@@ -30,12 +32,14 @@ function interpolate(low: string, high: string, t: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-/** Dark or light text, whichever reads on this cell; the scale can run either
- * way (light to dark on a light page, dark to light on a dark one). */
+/** Dark or light text, whichever has more contrast on this cell; the scale can
+ * run either way (light to dark on a light page, dark to light on a dark one).
+ * A gamma-blind luminance cut-off put white on mid greys at 3.2:1 (A11Y-9). */
 function textOn(rgb: string): string {
   const [r, g, b] = (rgb.match(/\d+/g) ?? ["0", "0", "0"]).map(Number);
-  const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-  return luminance > 0.55 ? "#1f2937" : "#fafafa";
+  const hex = `#${[r, g, b].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+  // Black or white: one of the two clears 4.5:1 on any colour.
+  return readableTextOn(hex, ["#000000", "#ffffff"]);
 }
 
 export default function Heatmap({

@@ -297,7 +297,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
   return (
     <section className="grid gap-4 rounded-lg border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#050505] lg:grid-cols-2">
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Publication year</p>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Publication year</p>
         <p className="mt-2 text-sm text-slate-800 dark:text-[#e5e5e5]">
           {hasYear ? (
             <>
@@ -313,7 +313,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
         ) : null}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Research type</p>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Research type</p>
         {extracted.typology ? (
           <>
             <p className="mt-2 text-sm font-semibold text-slate-800 dark:text-[#e5e5e5]">
@@ -327,7 +327,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
         )}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">The paper&rsquo;s own keywords</p>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">The paper&rsquo;s own keywords</p>
         {extracted.authorKeywords.length ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
             {extracted.authorKeywords.map((keyword) => (
@@ -341,7 +341,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
         )}
       </div>
       <div>
-        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Methods found</p>
+        <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Methods found</p>
         <p className="mt-2 text-sm text-slate-800 dark:text-[#e5e5e5]">
           {extracted.methodTopics.length ? extracted.methodTopics.join(", ") : "None identified as separate topics."}
         </p>
@@ -354,7 +354,7 @@ function ExtractedDetails({ extracted, year }: { extracted: RunAnalysisExtracted
       ) : null}
       {extracted.analysisNotes.length ? (
         <div className="lg:col-span-2">
-          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Analysis notes</p>
+          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Analysis notes</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-xs leading-5 text-slate-600 dark:text-[#bbb]">
             {extracted.analysisNotes.map((note) => (
               <li key={note}>{note}</li>
@@ -565,7 +565,7 @@ export default function PaperAnalysisExplorerModal({
                     Your correction is kept when the paper is analysed again. Leave the year empty if the paper has none.
                   </p>
                   {correctionError ? (
-                    <p id="correction-error" role="alert" className="text-xs text-red-600 dark:text-red-300 sm:col-span-3">{correctionError}</p>
+                    <p id="correction-error" role="alert" className="text-xs text-red-700 dark:text-red-300 sm:col-span-3">{correctionError}</p>
                   ) : null}
                 </form>
               ) : (
@@ -754,7 +754,7 @@ export default function PaperAnalysisExplorerModal({
                     <section className="rounded-lg border border-slate-200 bg-white px-4 py-4 dark:border-[#242424] dark:bg-[#050505]">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">{detail.classification.taxonomyName}</p>
+                          <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">{detail.classification.taxonomyName}</p>
                           <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">{detail.classification.primaryCategory}</p>
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${detail.classification.status === "current" ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300" : "bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300"}`}>
@@ -763,7 +763,7 @@ export default function PaperAnalysisExplorerModal({
                       </div>
                       {detail.classification.additionalCategories.length ? <p className="mt-2 text-sm text-slate-500 dark:text-[#999]">Also: {detail.classification.additionalCategories.join(", ")}</p> : null}
                       <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-[#bbb]">{detail.classification.rationale}</p>
-                      <p className="mt-3 text-xs text-slate-500 dark:text-[#777]">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
+                      <p className="mt-3 text-xs text-slate-500 dark:text-[#8f8f8f]">Profile v{detail.classification.profileVersion}{detail.classification.classifiedAt ? ` - ${new Date(detail.classification.classifiedAt).toLocaleDateString()}` : ""}</p>
                     </section>
                   ) : null}
                   {detail.extracted ? <ExtractedDetails extracted={detail.extracted} year={detail.year} /> : null}

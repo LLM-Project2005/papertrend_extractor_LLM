@@ -14,6 +14,7 @@ import {
   showLabelsByDefault,
 } from "../src/lib/semantic-map-colors";
 import { TOPIC_PALETTE } from "../src/lib/constants";
+import { ORDINAL_RAMP } from "../src/lib/chart-palette";
 import { CHAT_JOB_FAILED_MESSAGE, MAX_CHAT_JOB_ATTEMPTS } from "../src/lib/repository-chat-jobs";
 import { isInAppBrowser } from "../src/lib/auth/in-app-browser";
 import { friendlyAuthError } from "../src/lib/auth/auth-errors";
@@ -258,19 +259,24 @@ test("papers still being analysed are counted for their repository only", () => 
 });
 
 // DASH-8: one colour per value; labels by default only on a readable map.
-test("the semantic map gives each category or year its own colour", () => {
+test("the semantic map gives each category its own colour, and years an ordered ramp", () => {
   const points = Array.from({ length: 12 }, (_, index) => ({
     clusterId: 0,
-    categories: [`Category ${index}`],
+    categories: [`Category ${String(index).padStart(2, "0")}`],
     year: String(2010 + index),
     track: null,
   }));
-  const byCategory = colorScale(points, "category");
-  assert.equal(new Set(byCategory.values()).size, 12, "twelve categories, twelve colours");
+  // Categories by position from the checked eight (3.4): no two of the first eight share one.
+  const byCategory = colorScale(points.slice(0, 8), "category");
+  assert.equal(new Set(byCategory.values()).size, 8, "eight categories, eight colours");
+  assert.equal(byCategory.get("Category 00"), TOPIC_PALETTE[0]);
+  // Years are ordered: a single-hue ramp from earliest (lightest) to latest, Unknown grey.
   const byYear = colorScale([...points, { clusterId: 0, categories: [], year: "", track: null }], "year");
   assert.deepEqual([...byYear.keys()].slice(0, 2), ["2010", "2011"]);
   assert.equal([...byYear.keys()].at(-1), "Unknown");
-  assert.equal(byYear.get("2010"), TOPIC_PALETTE[0]);
+  assert.equal(byYear.get("2010"), ORDINAL_RAMP[0]);
+  assert.equal(byYear.get("2021"), ORDINAL_RAMP[ORDINAL_RAMP.length - 1]);
+  assert.equal(byYear.get("Unknown"), FALLBACK_POINT_COLOR);
   assert.equal(pointColor(points[3], "year", byYear), byYear.get("2013"));
   assert.equal(pointColor(points[3], "year", new Map()), FALLBACK_POINT_COLOR);
   assert.equal(showLabelsByDefault(LABELS_BY_DEFAULT_MAX, null), true);

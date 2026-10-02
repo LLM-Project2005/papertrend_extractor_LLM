@@ -1,4 +1,5 @@
-import { TOPIC_PALETTE, TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import { TRACK_COLORS, TRACK_COLS, TRACK_NAMES, type TrackKey } from "@/lib/constants";
+import { categoricalColor } from "@/lib/chart-palette";
 import type { DashboardData } from "@/types/database";
 import type { WorkspaceProfile } from "@/types/workspace";
 
@@ -19,21 +20,15 @@ export function normalizeCategoryKey(value: string): string {
     .slice(0, 80);
 }
 
+/**
+ * A category's colour: by its position among the repository's categories.
+ * It was a hash of the key, so two of five categories shared a colour about
+ * as often as not (docs/32, 3.4; audit A11Y-5).
+ */
 export function categoryColor(key: string, index = 0): string {
   const directTrack = TRACK_COLS.find((track) => track === key) as TrackKey | undefined;
-  if (directTrack) {
-    return {
-      EL: "#4a7fe5",
-      ELI: "#e05c5c",
-      LAE: "#3cba83",
-      Other: "#9b7fd4",
-    }[directTrack];
-  }
-  const seed = [...normalizeCategoryKey(key)].reduce(
-    (sum, char) => sum + char.charCodeAt(0),
-    index
-  );
-  return TOPIC_PALETTE[Math.abs(seed) % TOPIC_PALETTE.length];
+  if (directTrack) return TRACK_COLORS[directTrack];
+  return categoricalColor(index);
 }
 
 export function buildCategoryOptions(

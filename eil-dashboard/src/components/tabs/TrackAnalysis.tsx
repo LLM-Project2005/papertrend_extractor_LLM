@@ -31,6 +31,7 @@ import { isDatedYear } from "@/lib/dated-year";
 import { CategoriesOffNotice, Takeaway } from "@/components/dashboard/DashboardNotes";
 import { plural, subjectRows, yearAxis } from "@/lib/dashboard-analytics";
 import { idsKey, markPaperIds } from "@/lib/dashboard-drilldown";
+import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
 import { tooltipTheme } from "@/lib/chart-tooltip";
 
 interface Props {
@@ -338,6 +339,22 @@ export default function TrackAnalysis({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <ChartValues
+            title="Papers per category per year"
+            values={stackedData.flatMap((row) =>
+              stackedChartCategories
+                .filter((category) => Number((row as Record<string, unknown>)[category.key] ?? 0) > 0)
+                .map((category) => ({
+                  key: `${row.year}:${category.key}`,
+                  group: String(row.year),
+                  label: category.label,
+                  detail: paperCount(Number((row as Record<string, unknown>)[category.key])),
+                  onSelect: onDrilldown
+                    ? () => onDrilldown({ track: category.key, year: String(row.year), paperIds: markPaperIds(row, category.key) })
+                    : undefined,
+                }))
+            )}
+          />
         </section>
       )}
 
@@ -428,6 +445,17 @@ export default function TrackAnalysis({
                           />
                         </BarChart>
                       </ResponsiveContainer>
+                      <ChartValues
+                        title={category.label}
+                        values={data.map((row) => ({
+                          key: String(row.topic),
+                          label: String(row.topic),
+                          detail: paperCount(Number(row.papers)),
+                          onSelect: onDrilldown
+                            ? () => onDrilldown({ track, topic: String(row.topic), paperIds: markPaperIds(row) })
+                            : undefined,
+                        }))}
+                      />
                     </div>
                   ) : (
                     <p className="text-sm text-slate-500 dark:text-slate-400">No papers in this category match the current filters.</p>

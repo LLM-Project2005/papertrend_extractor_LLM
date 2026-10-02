@@ -959,6 +959,12 @@ export default function AdminImportClient() {
     setToolbarPopover(null);
   }
 
+  /** A column header's name, with how the list is sorted by it. */
+  function sortLabel(label: string, key: SortKey): string {
+    if (sortKey !== key) return `${label}, sort by this column`;
+    return `${label}, sorted ${sortDirection === "asc" ? "ascending" : "descending"}`;
+  }
+
   function handleSortHeaderClick(nextSortKey: SortKey) {
     if (sortKey === nextSortKey) {
       setSortDirection((current) => (current === "asc" ? "desc" : "asc"));
@@ -1258,6 +1264,7 @@ export default function AdminImportClient() {
                 setSortKey(option.id);
                 setSortDirection(defaultDirectionForSort(option.id));
               }}
+              aria-pressed={sortKey === option.id}
               className={itemClass}
             >
               <span>{option.label}</span>
@@ -1275,6 +1282,7 @@ export default function AdminImportClient() {
               key={option.id}
               type="button"
               onClick={() => setSortDirection(option.id)}
+              aria-pressed={sortDirection === option.id}
               className={itemClass}
             >
               <span>{option.label}</span>
@@ -1505,7 +1513,7 @@ export default function AdminImportClient() {
               setDeleteTarget({ runs: [activeMenuRun], all: false });
               setItemMenuState(null);
             }}
-            className="flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-red-700 transition-colors duration-150 hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none dark:text-red-300 dark:hover:bg-red-950/30 dark:focus-visible:bg-red-950/30"
+            className="flex w-full rounded-lg px-2.5 py-2 text-left text-sm text-red-700 transition-colors duration-150 hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-700 dark:text-red-300 dark:focus-visible:ring-red-300 dark:hover:bg-red-950/30 dark:focus-visible:bg-red-950/30"
           >
             Delete permanently…
           </button>
@@ -1540,6 +1548,7 @@ export default function AdminImportClient() {
       <button
         type="button"
         onClick={(event) => openToolbarMenu(event, kind, 220)}
+        aria-expanded={toolbarPopover?.kind === kind}
         className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
       >
         <span>{label}</span>
@@ -1630,6 +1639,7 @@ export default function AdminImportClient() {
                 }
                 openToolbarMenu(event, "new", 240);
               }}
+              aria-expanded={toolbarPopover?.kind === "new"}
               className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-ink px-4 text-sm font-medium text-canvas shadow-raise transition-[background-color,transform] duration-150 hover:bg-ink/85 active:scale-[0.98]"
             >
               <PlusIcon className="h-4 w-4" />
@@ -1680,6 +1690,10 @@ export default function AdminImportClient() {
             <button
               type="button"
               onClick={(event) => openToolbarMenu(event, "sort", 260)}
+              aria-expanded={toolbarPopover?.kind === "sort"}
+              aria-label={`Sort: ${SORT_KEY_OPTIONS.find((option) => option.id === sortKey)?.label ?? "Name"}, ${
+                currentSortDirectionOptions.find((option) => option.id === sortDirection)?.label ?? ""
+              }`}
               className="inline-flex h-9 items-center gap-2 rounded-lg border border-hairline bg-surface px-3.5 text-sm font-medium text-ink shadow-raise transition-[background-color,border-color,transform] duration-150 hover:border-hairline-strong hover:bg-subtle active:scale-[0.98]"
             >
               <SortIcon className="h-4 w-4" />
@@ -1696,9 +1710,11 @@ export default function AdminImportClient() {
               <button
                 type="button"
                 onClick={() => setViewMode("list")}
+                // The chosen layout in ink, and said: a pale fill alone was 1.1:1 (A11Y-6, A11Y-7).
+                aria-pressed={viewMode === "list"}
                 className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
                   viewMode === "list"
-                    ? "bg-subtle text-ink"
+                    ? "bg-ink text-canvas"
                     : "text-mute hover:text-ink"
                 }`}
                 aria-label="List layout"
@@ -1708,9 +1724,10 @@ export default function AdminImportClient() {
               <button
                 type="button"
                 onClick={() => setViewMode("grid")}
+                aria-pressed={viewMode === "grid"}
                 className={`inline-flex h-8 w-8 items-center justify-center rounded-md transition-colors duration-150 ${
                   viewMode === "grid"
-                    ? "bg-subtle text-ink"
+                    ? "bg-ink text-canvas"
                     : "text-mute hover:text-ink"
                 }`}
                 aria-label="Grid layout"
@@ -1804,6 +1821,7 @@ export default function AdminImportClient() {
               <button
                 type="button"
                 onClick={() => handleSortHeaderClick("name")}
+                aria-label={sortLabel("Name", "name")}
                 className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
               >
                 <span>Name</span>
@@ -1817,6 +1835,7 @@ export default function AdminImportClient() {
               <button
                 type="button"
                 onClick={() => handleSortHeaderClick("modified")}
+                aria-label={sortLabel("Date modified", "modified")}
                 className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
               >
                 <span>Date modified</span>
@@ -1829,6 +1848,7 @@ export default function AdminImportClient() {
               <button
                 type="button"
                 onClick={() => handleSortHeaderClick("size")}
+                aria-label={sortLabel("File size", "size")}
                 className="flex items-center gap-2 text-left transition hover:text-slate-900 dark:hover:text-white"
               >
                 <span>File size</span>
@@ -1969,12 +1989,13 @@ export default function AdminImportClient() {
                             }}
                             className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
                               item.favorite
-                                ? "bg-amber-100 text-amber-600 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
+                                ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
                                 : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                             }`}
                             aria-label={`${item.favorite ? "Remove" : "Add"} ${item.name} ${
                               item.favorite ? "from" : "to"
                             } favorites`}
+                            aria-pressed={item.favorite}
                           >
                             <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
                           </button>
@@ -1982,6 +2003,7 @@ export default function AdminImportClient() {
                       <button
                         type="button"
                         onClick={(event) => openItemMenu(event, item)}
+                        aria-expanded={itemMenuState?.item.id === item.id}
                         className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                         aria-label={`Open actions for ${item.name}`}
                       >
@@ -2025,7 +2047,7 @@ export default function AdminImportClient() {
                               {extOf(item.run!).toUpperCase()}
                             </span>
                             {item.favorite ? (
-                              <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-600 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
+                              <span className="absolute right-4 top-4 rounded-full bg-amber-100 p-2 text-amber-700 shadow-sm dark:bg-amber-950/30 dark:text-amber-300">
                                 <StarIcon className="h-4 w-4" weight="fill" />
                               </span>
                             ) : null}
@@ -2105,12 +2127,13 @@ export default function AdminImportClient() {
                               }}
                               className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition ${
                                 item.favorite
-                                  ? "bg-amber-100 text-amber-600 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
+                                  ? "bg-amber-100 text-amber-700 hover:bg-amber-200 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
                                   : "text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-[#8f8f8f] dark:hover:bg-[#0a0a0a] dark:hover:text-white"
                               }`}
                               aria-label={`${item.favorite ? "Remove" : "Add"} ${item.name} ${
                                 item.favorite ? "from" : "to"
                               } favorites`}
+                            aria-pressed={item.favorite}
                             >
                               <StarIcon className="h-4 w-4" weight={item.favorite ? "fill" : "regular"} />
                             </button>
@@ -2118,6 +2141,7 @@ export default function AdminImportClient() {
                           <button
                             type="button"
                             onClick={(event) => openItemMenu(event, item)}
+                        aria-expanded={itemMenuState?.item.id === item.id}
                             className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-mute transition-colors duration-150 hover:bg-subtle hover:text-ink"
                             aria-label={`Open actions for ${item.name}`}
                           >
@@ -2181,7 +2205,7 @@ export default function AdminImportClient() {
                             {stats.failed} failed to analyze
                           </span>
                         ) : null}
-                        <span className="mt-3 block text-xs text-slate-500 dark:text-[#777777]">Updated {formatShortDate(stats.latest)}</span>
+                        <span className="mt-3 block text-xs text-slate-500 dark:text-[#8f8f8f]">Updated {formatShortDate(stats.latest)}</span>
                       </span>
                       <ArrowRightIcon className="mt-1 h-4 w-4 flex-none text-slate-500 transition-transform group-hover:translate-x-0.5" />
                     </button>

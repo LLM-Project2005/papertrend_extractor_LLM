@@ -74,8 +74,8 @@ function contrastFailures(theme: "light" | "dark"): string[] {
   for (const pair of colourPairs(chatSource())) {
     if (pair.theme !== theme) continue;
     const ratio = pair.background
-      ? checkContrast(pair.text, pair.background)?.ratio ?? Number.NaN
-      : worstRatio(pair.text, surfaces);
+      ? checkContrast(pair.text, pair.background, AA_NORMAL, theme)?.ratio ?? Number.NaN
+      : worstRatio(pair.text, surfaces, theme);
     if (!Number.isFinite(ratio) || ratio >= AA_NORMAL) continue;
     failures.push(`${pair.text} on ${pair.background ?? `(inherited ${theme})`} = ${ratio.toFixed(2)} | ${pair.source}`);
   }

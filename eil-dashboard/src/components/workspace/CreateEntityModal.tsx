@@ -78,7 +78,7 @@ export default function CreateEntityModal({
               onChange={(event) => onValueChange(event.target.value)}
               placeholder={fieldPlaceholder}
               autoFocus
-              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-white"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition-colors placeholder:text-slate-500 focus:border-slate-900 dark:border-[#1f1f1f] dark:bg-black dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-white"
             />
           </label>
 

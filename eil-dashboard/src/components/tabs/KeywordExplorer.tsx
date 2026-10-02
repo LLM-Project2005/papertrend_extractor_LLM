@@ -31,6 +31,7 @@ import {
 } from "@/lib/dashboard-analytics";
 import type { CorpusTopicFamily, PaperId, TrendRow } from "@/types/database";
 import { keywordKey, paperIdsByKeywordKey } from "@/lib/dashboard-drilldown";
+import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
 import { tooltipTheme } from "@/lib/chart-tooltip";
 
 function truncate(value: string, max: number): string {
@@ -546,7 +547,7 @@ export default function KeywordExplorer({
                           key={`${item.paperId}-${index}`}
                           className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 dark:border-[#1f1f1f] dark:bg-[#030303]"
                         >
-                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-slate-500">
+                          <p className="text-xs font-semibold uppercase tracking-normal text-slate-500 dark:text-slate-400">
                             {item.year} • {item.section}
                           </p>
                           <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
@@ -673,6 +674,15 @@ export default function KeywordExplorer({
                 />
               </BarChart>
             </ResponsiveContainer>
+            <ChartValues
+              title="Keywords used by the most papers"
+              values={sharedKeywords.slice(0, 15).map((row) => ({
+                key: row.keyword,
+                label: row.keyword,
+                detail: paperCount(row.papers),
+                onSelect: onDrilldown ? () => onDrilldown({ keyword: row.keyword, paperIds: row.paperIds }) : undefined,
+              }))}
+            />
           </div>
         ) : (
           <p className="mt-4 text-sm text-slate-600 dark:text-[#bdbdbd]">

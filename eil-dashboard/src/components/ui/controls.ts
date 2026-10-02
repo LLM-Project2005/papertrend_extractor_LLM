@@ -57,15 +57,17 @@ export const floatingPanelClass = "rounded-xl border border-hairline bg-surface 
 /*
  * Menus and dropdown lists, in the style of the chat + menu: a rounded panel
  * that scales in from where it opens, and items that highlight as a soft
- * rounded pill. Keyboard focus inside a menu shows as that same pill with a
- * hairline ring, instead of the page's focus outline boxing each row.
+ * rounded pill. Keyboard focus inside a menu shows as that pill with a 2px
+ * ink ring, and the active item with an ink bar at its edge: the pill alone
+ * and its hairline ring were about 1.1:1 and 1.4:1, under the 3:1 a focus or
+ * selection mark needs (docs/32, 3.4; audit A11Y-6). The ring is over 6:1.
  */
 export const menuPanelClass =
   "rounded-xl border border-hairline bg-surface p-1.5 shadow-overlay motion-safe:animate-scale-in";
 
 export function menuItemClass(active = false, extra = ""): string {
-  return `flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:bg-subtle focus-visible:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong ${
-    active ? "bg-subtle text-ink" : "text-body hover:bg-subtle hover:text-ink"
+  return `flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left text-sm transition-colors duration-150 focus-visible:bg-subtle focus-visible:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70 ${
+    active ? "bg-subtle text-ink shadow-[inset_3px_0_0_rgb(var(--ink))]" : "text-body hover:bg-subtle hover:text-ink"
   }${extra ? ` ${extra}` : ""}`;
 }
 
@@ -77,10 +79,12 @@ export const wellClass = "rounded-lg bg-subtle";
 
 /**
  * Text inputs, selects and textareas. 16px on a phone: iOS Safari zooms the
- * page into any field smaller than that when it takes focus.
+ * page into any field smaller than that when it takes focus. The outline is
+ * the field-border token, over 3:1 on the page in both themes; the hairline
+ * it used was about 1.2:1, so a field barely showed (audit A11Y-6).
  */
 export const fieldClass =
-  "block w-full rounded-lg border border-hairline bg-surface px-3 py-2 text-base text-ink sm:text-sm shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-hairline-strong focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-60";
+  "block w-full rounded-lg border border-field bg-surface px-3 py-2 text-base text-ink sm:text-sm shadow-raise outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-mute hover:border-ink/60 focus:border-accent focus:ring-4 focus:ring-accent/15 disabled:cursor-not-allowed disabled:opacity-60";
 
 /** The label above a field. */
 export const labelClass = "block text-sm font-medium text-ink";

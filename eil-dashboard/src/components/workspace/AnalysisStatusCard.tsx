@@ -336,7 +336,7 @@ function ProgressRing({ value, tone, size = 20 }: { value: number; tone: Overall
   if (tone === "done") {
     return (
       <span className="flex flex-none" style={{ width: size, height: size }} aria-hidden="true">
-        <CheckCircleIcon weight="fill" className="h-full w-full text-emerald-600 dark:text-emerald-400" />
+        <CheckCircleIcon weight="fill" className="h-full w-full text-emerald-700 dark:text-emerald-400" />
       </span>
     );
   }
@@ -373,9 +373,9 @@ function RunGlyph({ run }: { run: IngestionRunRow }) {
   return (
     <span className="flex h-5 w-5 flex-none items-center justify-center" aria-hidden="true">
       {run.status === "succeeded" ? (
-        <CheckCircleIcon weight="fill" className="h-[18px] w-[18px] text-emerald-600 dark:text-emerald-400" />
+        <CheckCircleIcon weight="fill" className="h-[18px] w-[18px] text-emerald-700 dark:text-emerald-400" />
       ) : run.status === "failed" ? (
-        <WarningCircleIcon weight="fill" className="h-[18px] w-[18px] text-red-600 dark:text-red-400" />
+        <WarningCircleIcon weight="fill" className="h-[18px] w-[18px] text-red-700 dark:text-red-400" />
       ) : run.status === "processing" ? (
         <SpinnerIcon className="h-4 w-4 text-ink" />
       ) : (
