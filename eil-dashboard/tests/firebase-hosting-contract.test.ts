@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -80,6 +80,53 @@ test("Firebase Hosting prevents authenticated caching and preserves immutable Ne
     cacheValue("/_next/static/**"),
     "public, max-age=31536000, immutable"
   );
+  }
+});
+
+/** Every page of the app, as the address it is served at ("/docs/[slug]" for a dynamic one). */
+function appPages(): string[] {
+  const appDir = resolve(repositoryRoot, "eil-dashboard", "src", "app");
+  const pages: string[] = [];
+  const walk = (dir: string, route: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        // Route groups such as (marketing) are not part of the address.
+        const segment = /^\(.*\)$/.test(entry.name) ? "" : `/${entry.name}`;
+        walk(resolve(dir, entry.name), `${route}${segment}`);
+      } else if (/^page\.(tsx|ts|jsx|js)$/.test(entry.name)) {
+        pages.push(route || "/");
+      }
+    }
+  };
+  walk(appDir, "");
+  return pages;
+}
+
+test("every public page is cached at the CDN for a minute at most, so it never outlives its scripts", () => {
+  // Found verifying phase 4 in production (docs/32): pages without a rule here
+  // reached the CDN with Next's header for a static page, s-maxage of a year,
+  // and the rest for 5 minutes plus 10 stale. After a deploy, the cached page
+  // asked for scripts the new build no longer has (404), and its JavaScript
+  // failed - on /login, /privacy and every page added since.
+  const signedIn = /^\/(api|workspace|workspaces|admin)(\/|$)/;
+  const pages = appPages().filter((page) => !signedIn.test(page) && !page.includes("_not-found"));
+  assert.ok(pages.includes("/request-access") && pages.includes("/privacy") && pages.includes("/"), "the walk finds the public pages");
+  for (const site of hostingSites()) {
+    const rules = site.headers.map((entry) => ({
+      source: entry.source,
+      cache: entry.headers.find((header) => header.key.toLowerCase() === "cache-control")?.value ?? "",
+    }));
+    for (const page of pages) {
+      const rule = rules.find(
+        (candidate) =>
+          candidate.source === page ||
+          (candidate.source.endsWith("/**") && page.startsWith(`${candidate.source.slice(0, -3)}/`))
+      );
+      assert.ok(rule, `${site.target}: ${page} has no cache rule, so Next's year-long header reaches the CDN`);
+      const maxAge = Number(/s-maxage=(\d+)/.exec(rule.cache)?.[1] ?? NaN);
+      assert.ok(maxAge <= 60, `${site.target}: ${page} is cached for ${rule.cache}`);
+      assert.doesNotMatch(rule.cache, /stale-while-revalidate/, `${site.target}: ${page} may be served stale after a deploy`);
+    }
   }
 });
 
