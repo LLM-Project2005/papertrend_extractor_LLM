@@ -27,6 +27,7 @@ const config: Config = {
         subtle: token("subtle"),
         hairline: token("hairline"),
         "hairline-strong": token("hairline-strong"),
+        field: token("field-border"),
         ink: token("ink"),
         body: token("body"),
         mute: token("mute"),
@@ -47,12 +48,6 @@ const config: Config = {
         card: {
           bg: "#f8f9fb",
           border: "#dde1e8",
-        },
-        track: {
-          el: "#4a7fe5",
-          eli: "#e05c5c",
-          lae: "#3cba83",
-          other: "#9b7fd4",
         },
       },
       fontFamily: {

@@ -32,6 +32,7 @@ import {
 } from "@/lib/dashboard-analytics";
 import type { CategoryAssignmentRow, PaperId, TrendRow, TrackRow } from "@/types/database";
 import { markPaperIds } from "@/lib/dashboard-drilldown";
+import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
 import type { VisualizationChartKey } from "@/types/visualization";
 import { isDatedYear } from "@/lib/dated-year";
 import { chartTheme, tickStyle, chartAnimationActive } from "@/lib/chart-theme";
@@ -321,6 +322,15 @@ export default function Overview({
             </BarChart>
           </ResponsiveContainer>
         </div>
+        <ChartValues
+          title="What this repository studies"
+          values={topThemes.map((theme) => ({
+            key: theme.topic,
+            label: theme.topic,
+            detail: paperCount(theme.papers),
+            onSelect: onDrilldown ? () => onDrilldown({ topic: theme.topic, paperIds: theme.paperIds }) : undefined,
+          }))}
+        />
       </section>
     );
   }
@@ -393,6 +403,17 @@ export default function Overview({
               </BarChart>
             </ResponsiveContainer>
           </div>
+          <ChartValues
+            title="Papers published per year"
+            values={papersByYear
+              .filter((entry) => entry.papers > 0)
+              .map((entry) => ({
+                key: entry.year,
+                label: entry.year,
+                detail: paperCount(entry.papers),
+                onSelect: onDrilldown ? () => onDrilldown({ year: entry.year, paperIds: entry.paperIds.map(String) }) : undefined,
+              }))}
+          />
           {axis.empty.length > 0 || undated > 0 ? (
             <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">
               {axis.empty.length > 0 ? `No papers from ${listOf(axis.empty)}. ` : ""}

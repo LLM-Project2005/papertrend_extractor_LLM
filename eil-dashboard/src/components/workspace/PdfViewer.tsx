@@ -116,6 +116,7 @@ function PdfPage({
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const textLayerRef = useRef<HTMLDivElement>(null);
   const [near, setNear] = useState(pageNumber === 1);
   const [page, setPage] = useState<PDFPageProxy | null>(null);
   const [rects, setRects] = useState<Rect[]>([]);
@@ -177,6 +178,33 @@ function PdfPage({
     return () => task.cancel();
   }, [page, scale]);
 
+  // The page's text, laid invisibly over the drawing so it can be selected,
+  // copied, found with the browser's search and read by a screen reader. The
+  // page was a picture only (docs/32, 3.4; audit LIB-11).
+  useEffect(() => {
+    const container = textLayerRef.current;
+    if (!page || !container) return;
+    let cancelled = false;
+    let layer: { cancel: () => void } | null = null;
+    container.replaceChildren();
+    void loadPdfJs()
+      .then((pdfjs) => {
+        if (cancelled) return;
+        const textLayer = new pdfjs.TextLayer({
+          textContentSource: page.streamTextContent(),
+          container,
+          viewport: page.getViewport({ scale }),
+        });
+        layer = textLayer;
+        return textLayer.render();
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      layer?.cancel();
+    };
+  }, [page, scale]);
+
   useEffect(() => {
     if (!page || !highlightRuns?.runs.length) {
       setRects([]);
@@ -231,9 +259,10 @@ function PdfPage({
       ref={wrapperRef}
       data-page={pageNumber}
       className="relative mx-auto bg-white shadow-raise"
-      style={{ width, height }}
+      style={{ width, height, ["--scale-factor" as string]: scale }}
     >
       {page ? <canvas ref={canvasRef} className="block" aria-hidden="true" /> : <div className="skeleton h-full w-full" />}
+      {page ? <div ref={textLayerRef} className="textLayer" /> : null}
       {rects.map((rect, index) => (
         <span
           key={index}
@@ -404,7 +433,8 @@ export default function PdfViewer({
   return (
     <div className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-hairline bg-subtle">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline bg-surface px-3 py-2">
-        <p className="text-xs tabular-nums text-mute" aria-live="polite">
+        {/* Not a live region: it changes on every scroll, and was read out each time. */}
+        <p className="text-xs tabular-nums text-mute">
           {doc ? `Page ${currentPage} of ${doc.numPages}` : "Loading the PDF…"}
         </p>
         <div className="flex items-center gap-1">

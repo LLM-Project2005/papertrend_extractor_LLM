@@ -197,6 +197,44 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     startedAt: 0,
     promise: null,
   });
+  // One request for the account's repositories, and one for its folders, at a
+  // time. Every page asked for this repository group's projects and for all
+  // projects at the same moment, and the same for folders - four requests where
+  // two give the same rows (docs/32, 3.2). The scoped lists are filtered here.
+  const projectListRef = useRef<Promise<WorkspaceProjectRow[]> | null>(null);
+  const folderListRef = useRef<Promise<ResearchFolderRow[]> | null>(null);
+  const fetchProjectList = useCallback((accessToken: string): Promise<WorkspaceProjectRow[]> => {
+    if (projectListRef.current) return projectListRef.current;
+    const request = (async () => {
+      const response = await fetch("/api/workspace/projects", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const payload = (await response.json()) as { projects?: WorkspaceProjectRow[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load projects.");
+      return payload.projects ?? [];
+    })();
+    projectListRef.current = request;
+    void request.finally(() => {
+      if (projectListRef.current === request) projectListRef.current = null;
+    }).catch(() => undefined);
+    return request;
+  }, []);
+  const fetchFolderList = useCallback((accessToken: string): Promise<ResearchFolderRow[]> => {
+    if (folderListRef.current) return folderListRef.current;
+    const request = (async () => {
+      const response = await fetch("/api/workspace/folders", {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const payload = (await response.json()) as { folders?: ResearchFolderRow[]; error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Failed to load workspace folders.");
+      return payload.folders ?? [];
+    })();
+    folderListRef.current = request;
+    void request.finally(() => {
+      if (folderListRef.current === request) folderListRef.current = null;
+    }).catch(() => undefined);
+    return request;
+  }, []);
 
   useEffect(() => {
     if (!authHydrated) {
@@ -468,25 +506,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       }
 
       const request = (async () => {
-        const response = await fetch(
-          `/api/workspace/projects?organizationId=${encodeURIComponent(targetOrganizationId)}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.access_token}`,
-            },
-          }
-        );
-
-        const payload = (await response.json()) as {
-          projects?: WorkspaceProjectRow[];
-          error?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(payload.error ?? "Failed to load projects.");
-        }
-
-        const nextProjects = sortByName(payload.projects ?? []);
+        const allRows = await fetchProjectList(session.access_token);
+        const nextProjects = sortByName(allRows.filter((project) => project.organization_id === targetOrganizationId));
         setProjects(nextProjects);
         setSelectedProjectIdState((current) => {
           const preferredProjectId = current ?? cachedWorkspaceRef.current.projectId;
@@ -514,7 +535,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [selectedOrganizationIdState, session?.access_token, user]
+    [fetchProjectList, selectedOrganizationIdState, session?.access_token, user]
   );
 
   const refreshAllProjects = useCallback(async () => {
@@ -534,22 +555,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     const request = (async () => {
-      const response = await fetch("/api/workspace/projects", {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-
-      const payload = (await response.json()) as {
-        projects?: WorkspaceProjectRow[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load projects.");
-      }
-
-      setAllProjects(sortByName(payload.projects ?? []));
+      setAllProjects(sortByName(await fetchProjectList(session.access_token)));
       setWorkspaceLoadError(null);
     })();
 
@@ -572,7 +578,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setAllProjectsLoading(false);
       setAllProjectsLoadAttempted(true);
     }
-  }, [session?.access_token, user]);
+  }, [fetchProjectList, session?.access_token, user]);
 
   const refreshFolders = useCallback(async () => {
     if (!user || !session?.access_token || !selectedProjectIdState) {
@@ -596,25 +602,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     const request = (async () => {
-      const response = await fetch(
-        `/api/workspace/folders?projectId=${encodeURIComponent(selectedProjectIdState)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
-          },
-        }
-      );
-
-      const payload = (await response.json()) as {
-        folders?: ResearchFolderRow[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load folders.");
-      }
-
-      const nextFolders = sortByName(payload.folders ?? []);
+      const allRows = await fetchFolderList(session.access_token);
+      const nextFolders = sortByName(allRows.filter((folder) => folder.project_id === selectedProjectIdState));
       setFolders(nextFolders);
       setSelectedFolderIdState((current) =>
         current === "all" || nextFolders.some((folder) => folder.id === current)
@@ -636,7 +625,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         foldersRequestRef.current.promise = null;
       }
     }
-  }, [selectedProjectIdState, session?.access_token, user]);
+  }, [fetchFolderList, selectedProjectIdState, session?.access_token, user]);
 
   const refreshAllFolders = useCallback(async () => {
     if (!user || !session?.access_token) {
@@ -653,22 +642,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
 
     const request = (async () => {
-      const response = await fetch("/api/workspace/folders", {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-
-      const payload = (await response.json()) as {
-        folders?: ResearchFolderRow[];
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(payload.error ?? "Failed to load workspace folders.");
-      }
-
-      setAllFolders(sortByName(payload.folders ?? []));
+      setAllFolders(sortByName(await fetchFolderList(session.access_token)));
     })();
 
     allFoldersRequestRef.current = {
@@ -681,7 +655,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     } finally {
       allFoldersRequestRef.current.promise = null;
     }
-  }, [session?.access_token, user]);
+  }, [fetchFolderList, session?.access_token, user]);
 
   const createOrganization = useCallback(
     async (name: string, type: WorkspaceOrganizationRow["type"]) => {

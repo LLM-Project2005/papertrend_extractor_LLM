@@ -5,10 +5,12 @@ import { hasOpenDialog } from "@/components/ui/Modal";
 import {
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ComponentType,
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
@@ -438,6 +440,32 @@ export default function WorkspaceGlobalSearch({
       })).filter((group) => group.items.length > 0),
     [searchResults]
   );
+  // The results as they are shown, in order, for the arrow keys (docs/32, 3.4;
+  // audit SHELL-8): the palette was a list of buttons the keyboard could only
+  // Tab through, with nothing telling a screen reader it was a list of choices.
+  const shownResults = useMemo(() => groupedResults.flatMap((group) => group.items), [groupedResults]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const listboxId = useId();
+  const optionId = (index: number) => `${listboxId}-option-${index}`;
+  useEffect(() => setActiveIndex(0), [shownResults]);
+  useEffect(() => {
+    if (!open) return;
+    document.getElementById(optionId(activeIndex))?.scrollIntoView({ block: "nearest" });
+    // optionId is derived from listboxId, which never changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, open]);
+
+  function handleInputKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (shownResults.length === 0) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      const step = event.key === "ArrowDown" ? 1 : -1;
+      setActiveIndex((current) => (current + step + shownResults.length) % shownResults.length);
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      setActiveIndex(event.key === "Home" ? 0 : shownResults.length - 1);
+    }
+  }
 
   function handleSelect(result: SearchResult) {
     setQuery("");
@@ -471,9 +499,8 @@ export default function WorkspaceGlobalSearch({
           <form
             onSubmit={(event) => {
               event.preventDefault();
-              if (searchResults[0]) {
-                handleSelect(searchResults[0]);
-              }
+              const chosen = shownResults[activeIndex] ?? shownResults[0];
+              if (chosen) handleSelect(chosen);
             }}
             className="border-b border-slate-200 p-2 dark:border-[#1f1f1f]"
           >
@@ -482,11 +509,17 @@ export default function WorkspaceGlobalSearch({
               <input
                 ref={inputRef}
                 type="search"
+                role="combobox"
+                aria-expanded={shownResults.length > 0}
+                aria-controls={listboxId}
+                aria-autocomplete="list"
+                aria-activedescendant={shownResults.length > 0 ? optionId(activeIndex) : undefined}
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={handleInputKeyDown}
                 placeholder="Search actions, papers, repositories, docs…"
                 aria-label="Search actions, papers, repositories, and documentation"
-                className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-base text-slate-900 sm:text-sm outline-none transition-colors placeholder:text-slate-400 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
+                className="h-11 w-full rounded-xl border border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-base text-slate-900 sm:text-sm outline-none transition-colors placeholder:text-slate-500 focus:border-slate-300 dark:bg-[#0a0a0a] dark:text-white dark:placeholder:text-[#8f8f8f] dark:focus:border-[#3a3a3a]"
               />
             </label>
           </form>
@@ -495,22 +528,31 @@ export default function WorkspaceGlobalSearch({
             {query.trim() ? `${searchResults.length} result${searchResults.length === 1 ? "" : "s"}` : ""}
           </p>
           {groupedResults.length > 0 ? (
-            <div className="max-h-[min(460px,calc(100dvh-9rem))] overflow-y-auto p-2">
+            <div id={listboxId} role="listbox" aria-label="Search results" className="max-h-[min(460px,calc(100dvh-9rem))] overflow-y-auto p-2">
               {groupedResults.map((group) => (
-                <div key={group.category} className="py-1">
-                  <p className="px-3 py-2 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
+                <div key={group.category} role="group" aria-labelledby={`${listboxId}-${group.category}`} className="py-1">
+                  <p id={`${listboxId}-${group.category}`} className="px-3 py-2 text-[11px] font-semibold uppercase tracking-normal text-slate-500 dark:text-[#8f8f8f]">
                     {group.category}
                   </p>
                   <div className="space-y-1">
                     {group.items.map((result) => {
                       const Icon = result.icon;
+                      const index = shownResults.indexOf(result);
+                      const active = index === activeIndex;
 
                       return (
-                        <button
+                        <div
                           key={result.id}
-                          type="button"
+                          id={optionId(index)}
+                          role="option"
+                          aria-selected={active}
                           onClick={() => handleSelect(result)}
-                          className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
+                          onMouseMove={() => {
+                            if (!active) setActiveIndex(index);
+                          }}
+                          className={`flex w-full cursor-pointer items-start gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                            active ? "bg-slate-100 ring-2 ring-inset ring-ink/70 dark:bg-[#0a0a0a]" : "hover:bg-slate-100 dark:hover:bg-[#0a0a0a]"
+                          }`}
                         >
                           <span className="mt-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 dark:border-[#1f1f1f] dark:bg-[#0a0a0a] dark:text-[#d0d0d0]">
                             <Icon className="h-4 w-4" />
@@ -523,7 +565,7 @@ export default function WorkspaceGlobalSearch({
                               {result.description}
                             </span>
                           </span>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>

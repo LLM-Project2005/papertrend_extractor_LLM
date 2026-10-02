@@ -1,16 +1,16 @@
-import { TOPIC_PALETTE } from "@/lib/constants";
+import { CATEGORICAL_PALETTE, categoricalColor, NEUTRAL_MARK, ordinalColor } from "@/lib/chart-palette";
 import type { SemanticMapPoint } from "@/types/semantic-map";
 
 export type ColorMode = "cluster" | "category" | "year" | "track";
 
 /** The neighbourhood colours, shared by the points and the neighbourhood list. */
-export const NEIGHBORHOOD_PALETTE = ["#2563eb", "#16a34a", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#db2777", "#4f46e5"];
+export const NEIGHBORHOOD_PALETTE: readonly string[] = CATEGORICAL_PALETTE;
 
 /** Up to this many papers, their labels are drawn unless the reader turns them off. */
 export const LABELS_BY_DEFAULT_MAX = 40;
 
 /** A point with no category, year or track still gets a colour. */
-export const FALLBACK_POINT_COLOR = "#94a3b8";
+export const FALLBACK_POINT_COLOR = NEUTRAL_MARK;
 
 export function colorLabelValue(point: Pick<SemanticMapPoint, "categories" | "year" | "track">, mode: ColorMode): string {
   if (mode === "category") return point.categories[0] ?? "Uncategorized";
@@ -19,9 +19,11 @@ export function colorLabelValue(point: Pick<SemanticMapPoint, "categories" | "ye
 }
 
 /**
- * One colour per value in the map, in order (years chronologically, Unknown
- * last), from the twenty-colour palette (docs/32, 2.11, DASH-8). Values used
- * to be hashed into eight colours, so two categories or years could share one.
+ * A colour per value in the map, in order. Categories and tracks take the
+ * checked categorical palette by position (docs/32, 2.11 DASH-8 and 3.4
+ * A11Y-5); years are ordered, so they take a single-hue ramp, earliest
+ * lightest, with Unknown grey. Values used to be hashed into eight colours,
+ * so two categories or years could share one.
  */
 export function colorScale(
   points: Array<Pick<SemanticMapPoint, "categories" | "year" | "track">>,
@@ -32,7 +34,11 @@ export function colorScale(
       ? (left === "Unknown" ? 1 : 0) - (right === "Unknown" ? 1 : 0) || left.localeCompare(right, undefined, { numeric: true })
       : left.localeCompare(right)
   );
-  return new Map(values.map((value, index) => [value, TOPIC_PALETTE[index % TOPIC_PALETTE.length]]));
+  if (mode === "year") {
+    const known = values.filter((value) => value !== "Unknown");
+    return new Map(values.map((value) => [value, value === "Unknown" ? NEUTRAL_MARK : ordinalColor(known.indexOf(value), known.length)]));
+  }
+  return new Map(values.map((value, index) => [value, categoricalColor(index)]));
 }
 
 export function pointColor(

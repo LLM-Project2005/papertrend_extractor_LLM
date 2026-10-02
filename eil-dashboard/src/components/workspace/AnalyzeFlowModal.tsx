@@ -657,7 +657,7 @@ export default function AnalyzeFlowModal({
             <section className="rounded-lg border border-slate-200 px-4 py-3 dark:border-[#242424]">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#777]">Analysis profile</p>
+                  <p className="text-xs font-semibold uppercase text-slate-500 dark:text-[#8f8f8f]">Analysis profile</p>
                   <p className="mt-1 text-sm font-medium leading-6 text-slate-900 dark:text-white">{profileSummary(activeAnalysisProfile)}</p>
                   <p className="mt-0.5 text-xs leading-5 text-slate-500 dark:text-[#999]">
                     {activeAnalysisProfile.classificationEnabled

@@ -238,7 +238,7 @@ export default function Sidebar({
                     <span
                       className={`mt-1 block text-xs ${
                         active
-                          ? "text-slate-200 dark:text-[#4f4f4f]"
+                          ? "opacity-80"
                           : "text-slate-500 dark:text-[#8f8f8f]"
                       }`}
                     >

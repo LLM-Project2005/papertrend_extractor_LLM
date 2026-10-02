@@ -1,7 +1,6 @@
 "use client";
 
 import { useDismiss } from "@/hooks/useDismiss";
-import { chartAnimationActive } from "@/lib/chart-theme";
 import Link from "next/link";
 import PaperLink from "@/components/workspace/PaperLink";
 import { parsePaperHref } from "@/lib/paper-address";
@@ -16,24 +15,10 @@ import {
   useRef,
   useState,
 } from "react";
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import dynamic from "next/dynamic";
 import AnalyzeFlowModal from "@/components/workspace/AnalyzeFlowModal";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { useDashboardData } from "@/hooks/useData";
-import { TOPIC_PALETTE, TRACK_COLS } from "@/lib/constants";
+import { TRACK_COLS } from "@/lib/constants";
 import {
   dedupeConversationSources,
   numberAnswerSources,
@@ -104,7 +89,20 @@ import {
 import Modal, { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
 import { useComposerOffset } from "@/lib/composer-offset";
-import ChatInsightCard from "@/components/chat/ChatInsightCard";
+// Charts load when an answer has one: Recharts was 106 kB on every chat page
+// (docs/32, 3.3). The placeholders hold the chart's box while it loads.
+const ChatChartCard = dynamic(() => import("@/components/chat/ChatChartCard"), {
+  ssr: false,
+  loading: () => (
+    <div aria-hidden="true" className="h-[402px] rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]" />
+  ),
+});
+const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"), {
+  ssr: false,
+  loading: () => (
+    <div aria-hidden="true" className="h-[320px] rounded-xl border border-slate-200 bg-white dark:border-[#1f1f1f] dark:bg-[#050505]" />
+  ),
+});
 import ReportActions from "@/components/chat/ReportActions";
 import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
@@ -146,7 +144,7 @@ type ChartMetric =
   | "keyword_trend"
   | "track_trend";
 
-interface ChatChartPayload {
+export interface ChatChartPayload {
   /** "insight": a computed view drawn by the Adaptive tab's renderer (docs/31). */
   chartType: Exclude<ChartType, "auto"> | "insight";
   title: string;
@@ -418,170 +416,6 @@ function SourceLink({ href, className, children }: { href: string; className?: s
     <Link href={href} className={className}>
       {children}
     </Link>
-  );
-}
-
-const chatChartTooltipTheme = {
-  contentStyle: {
-    backgroundColor: "#111827",
-    border: "1px solid rgba(148, 163, 184, 0.35)",
-    borderRadius: "12px",
-    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.32)",
-    color: "#fafafa",
-  },
-  labelStyle: {
-    color: "#fafafa",
-    fontWeight: 600,
-  },
-  itemStyle: {
-    color: "#e5e7eb",
-  },
-  cursor: {
-    fill: "rgba(148, 163, 184, 0.14)",
-    stroke: "rgba(148, 163, 184, 0.25)",
-  },
-};
-
-function ChatChartCard({ chart }: { chart: ChatChartPayload }) {
-  const chartData = chart.data ?? [];
-  const yKeys = chart.yKeys.length > 0 ? chart.yKeys : ["value"];
-  const primaryKey = yKeys[0] ?? "value";
-  const maxValue = Math.max(
-    ...chartData.flatMap((row) =>
-      yKeys.map((key) => Number(row[key]) || 0)
-    ),
-    0
-  );
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-[#1f1f1f] dark:bg-[#050505]">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 dark:border-[#1f1f1f]">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-normal text-slate-600 dark:text-[#8e8e8e]">
-            Chart
-          </p>
-          <h3 className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
-            {chart.title}
-          </h3>
-          <p className="mt-1 text-xs text-slate-600 dark:text-[#a3a3a3]">
-            {chart.scopeLabel}
-          </p>
-        </div>
-        <span className="rounded-full border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:border-[#1f1f1f] dark:text-[#d8d8d8]">
-          {chart.chartType}
-        </span>
-      </div>
-
-      {chart.chartType === "table" ? (
-        <div className="max-h-[360px] overflow-auto">
-          <table className="min-w-full text-left text-sm">
-            <thead className="sticky top-0 bg-slate-100 text-slate-600 dark:bg-[#050505] dark:text-[#b4b4b4]">
-              <tr>
-                <th className="px-4 py-3 font-semibold">Label</th>
-                {yKeys.map((key) => (
-                  <th key={key} className="px-4 py-3 text-right font-semibold">
-                    {key}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {chartData.map((row) => (
-                <tr key={String(row.label)} className="border-t border-slate-200 dark:border-[#1f1f1f]">
-                  <td className="px-4 py-3 text-slate-700 dark:text-[#ececec]">{row.label}</td>
-                  {yKeys.map((key) => (
-                    <td
-                      key={key}
-                      className="px-4 py-3 text-right font-medium text-slate-900 dark:text-white"
-                    >
-                      {Number(row[key]) || 0}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="h-[320px] px-3 py-4 text-slate-600 dark:text-[#a3a3a3]">
-          <ResponsiveContainer width="100%" height="100%">
-            {chart.chartType === "line" ? (
-              <LineChart data={chartData} margin={{ left: 6, right: 18, top: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
-                <XAxis dataKey="label" tick={{ fill: "currentColor", fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fill: "currentColor", fontSize: 12 }} />
-                <Tooltip {...chatChartTooltipTheme} />
-                {yKeys.map((key, index) => (
-                  <Line isAnimationActive={chartAnimationActive()}
-                    key={key}
-                    type="monotone"
-                    dataKey={key}
-                    stroke={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    strokeWidth={2.4}
-                    dot={{ r: 3 }}
-                    activeDot={{ r: 5 }}
-                  />
-                ))}
-              </LineChart>
-            ) : chart.chartType === "pie" ? (
-              <PieChart>
-                <Tooltip {...chatChartTooltipTheme} />
-                <Pie isAnimationActive={chartAnimationActive()}
-                  data={chartData}
-                  dataKey={primaryKey}
-                  nameKey="label"
-                  outerRadius={105}
-                  label={(entry) => entry.label}
-                >
-                  {chartData.map((row, index) => (
-                    <Cell
-                      key={`${row.label}-${index}`}
-                      fill={TOPIC_PALETTE[index % TOPIC_PALETTE.length]}
-                    />
-                  ))}
-                </Pie>
-              </PieChart>
-            ) : (
-              <BarChart
-                data={chartData}
-                layout={chartData.length > 6 ? "vertical" : "horizontal"}
-                margin={{ left: chartData.length > 6 ? 30 : 6, right: 18, top: 8, bottom: 8 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.22)" />
-                <XAxis
-                  type={chartData.length > 6 ? "number" : "category"}
-                  dataKey={chartData.length > 6 ? undefined : "label"}
-                  tick={{ fill: "currentColor", fontSize: 12 }}
-                  domain={chartData.length > 6 ? [0, Math.ceil(maxValue)] : undefined}
-                />
-                <YAxis
-                  type={chartData.length > 6 ? "category" : "number"}
-                  dataKey={chartData.length > 6 ? "label" : undefined}
-                  width={chartData.length > 6 ? 120 : undefined}
-                  allowDecimals={false}
-                  tick={{ fill: "currentColor", fontSize: 12 }}
-                />
-                <Tooltip {...chatChartTooltipTheme} />
-                {yKeys.map((key, keyIndex) => (
-                  <Bar isAnimationActive={chartAnimationActive()} key={key} dataKey={key} radius={[4, 4, 0, 0]}>
-                    {chartData.map((row, index) => (
-                      <Cell
-                        key={`${String(row.label)}-${key}-${index}`}
-                        fill={
-                          yKeys.length > 1
-                            ? TOPIC_PALETTE[keyIndex % TOPIC_PALETTE.length]
-                            : TOPIC_PALETTE[index % TOPIC_PALETTE.length]
-                        }
-                      />
-                    ))}
-                  </Bar>
-                ))}
-              </BarChart>
-            )}
-          </ResponsiveContainer>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1377,7 +1211,9 @@ export default function ChatClient() {
     startAnalysisSession,
     refreshFolders,
   } = useWorkspaceProfile();
-  const [chatScopeProjectId, setChatScopeProjectId] = useState<string>("all");
+  // Starts on the open repository: starting on "all" asked for a summary of
+  // every repository first, then this one's (docs/32, 3.2).
+  const [chatScopeProjectId, setChatScopeProjectId] = useState<string>(() => currentProject?.id ?? "all");
   const [chatScopeFolderId, setChatScopeFolderId] = useState<string>("all");
   // A chat opened inside a repository asks that repository until the reader
   // picks another scope. It used to start on every repository in the account,
@@ -1400,15 +1236,10 @@ export default function ChatClient() {
   const [chatParameters, setChatParameters] = useState<ChatGenerationParameters>(
     DEFAULT_CHAT_PARAMETERS
   );
-  const projectFolderIds = useMemo(
-    () => folders.map((folder) => folder.id),
-    [folders]
-  );
-  const dashboardScopeFolderId = chatScopeFolderId;
-  const { allYears } = useDashboardData(dashboardScopeFolderId, projectFolderIds, {
-    projectId: selectedProjectId,
-    enabled: Boolean(selectedProjectId),
-  });
+  // The scope's years come with its summary. The whole dashboard dataset used
+  // to be fetched on every chat page for this list alone (docs/32, 3.2).
+  const [scopeYears, setScopeYears] = useState<string[]>([]);
+  const allYears = scopeYears;
   const [draft, setDraft] = useState("");
   const [threads, setThreads] = useState<WorkspaceThreadSummary[]>([]);
   // Conversations arrive a page at a time; older ones load on request.
@@ -1736,6 +1567,7 @@ export default function ChatClient() {
           eligiblePaperCount: payload.eligiblePaperCount,
           examples: Array.isArray(payload.examples) ? payload.examples : [],
         });
+        setScopeYears(Array.isArray(payload.years) ? payload.years.map(String) : []);
       })
       .catch(() => {
         // An unreadable scope is not worth an error on an empty page; the
@@ -3169,7 +3001,7 @@ export default function ChatClient() {
                             togglePinnedThread(thread.id);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                         >
                           <PinIcon className="h-4 w-4" />
                           <span>{pinned ? "Unpin chat" : "Pin chat"}</span>
@@ -3180,7 +3012,7 @@ export default function ChatClient() {
                             void renameThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                         >
                           <PencilSquareIcon className="h-4 w-4" />
                           <span>Rename</span>
@@ -3191,7 +3023,7 @@ export default function ChatClient() {
                             void deleteThread(thread);
                             setThreadMenuId(null);
                           }}
-                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 transition-colors hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none dark:text-red-300 dark:hover:bg-red-950/20 dark:focus-visible:bg-red-950/20"
+                          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-700 transition-colors hover:bg-red-50 focus-visible:bg-red-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-red-700 dark:text-red-300 dark:focus-visible:ring-red-300 dark:hover:bg-red-950/20 dark:focus-visible:bg-red-950/20"
                         >
                           <TrashIcon className="h-4 w-4" />
                           <span>Delete</span>
@@ -3289,7 +3121,7 @@ export default function ChatClient() {
                       setSourcesPanelOpen(true);
                       setConversationMenuOpen(false);
                     }}
-                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
+                    className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm text-body transition-colors hover:bg-subtle hover:text-ink focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                   >
                     <PaperIcon className="h-4 w-4" />
                     <span className="min-w-0 flex-1">Sources</span>
@@ -3770,7 +3602,7 @@ export default function ChatClient() {
                                       ? "border border-amber-400/60 bg-amber-500/10 text-amber-700 dark:text-amber-200"
                                     : isPending
                                       ? "border border-slate-300 bg-transparent text-transparent dark:border-[#1f1f1f]"
-                                      : "border border-red-400/50 bg-red-500/10 text-red-600 dark:text-red-300"
+                                      : "border border-red-400/50 bg-red-500/10 text-red-700 dark:text-red-300"
                               }`}
                             >
                               {isComplete ? (
@@ -4146,7 +3978,7 @@ export default function ChatClient() {
                               <button
                                 type="button"
                                 onClick={() => setMenuView("scope")}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                               >
                                 <FolderIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -4161,7 +3993,7 @@ export default function ChatClient() {
                                   setShowLibraryPicker(true);
                                   setMenuOpen(false);
                                 }}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                               >
                                 <FileIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -4176,7 +4008,7 @@ export default function ChatClient() {
                                   setShowAnalyzeModal(true);
                                   setMenuOpen(false);
                                 }}
-                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong"
+                                className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-subtle focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70"
                               >
                                 <PaperIcon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                 <span className="min-w-0 flex-1">
@@ -4210,7 +4042,9 @@ export default function ChatClient() {
                                       }
                                       setMenuOpen(false);
                                     }}
-                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-hairline-strong ${item.active ? "bg-subtle" : "hover:bg-subtle"}`}
+                                    // A tool says whether it is on, not only with a tick (docs/32, 3.4; audit CHAT-10, A11Y-7).
+                                    aria-pressed={item.active}
+                                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors focus-visible:bg-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/70 ${item.active ? "bg-subtle shadow-[inset_3px_0_0_rgb(var(--ink))]" : "hover:bg-subtle"}`}
                                   >
                                     <Icon className="h-4 w-4 flex-none text-slate-600 dark:text-[#b4b4b4]" />
                                     <span className="min-w-0 flex-1">

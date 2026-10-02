@@ -10,8 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Session, User } from "@supabase/supabase-js";
-import { supabase } from "@/lib/supabase";
+import type { Session, SupabaseClient, User } from "@supabase/supabase-js";
 import {
   firebaseUserToPapertrendUser,
   firebaseUserToSession,
@@ -40,6 +39,17 @@ import {
 } from "@/lib/auth/profile-failure";
 import type { WorkspaceProfile } from "@/types/workspace";
 import { safeReturnPath } from "@/lib/safe-return-path";
+
+/**
+ * The Supabase client, loaded only by a deployment that signs in with
+ * Supabase. Imported at the top, it put 54 kB on every page - the public
+ * ones too - of a site that signs in with Firebase (docs/32, 3.3).
+ */
+let supabaseClient: Promise<SupabaseClient | null> | null = null;
+function getSupabase(): Promise<SupabaseClient | null> {
+  supabaseClient ??= import("@/lib/supabase").then((module) => module.supabase);
+  return supabaseClient;
+}
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 const configuredAuthProvider = getClientAuthProvider();
@@ -175,6 +185,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    const supabase = await getSupabase();
     if (!supabase) {
       setProfile(null);
       return;
@@ -371,64 +382,65 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    if (!supabase) {
-      setHydrated(true);
-      return;
-    }
-
     let mounted = true;
+    let subscription: { unsubscribe: () => void } | null = null;
+    void getSupabase().then((supabase) => {
+      if (!mounted) return;
+      if (!supabase) {
+        setHydrated(true);
+        return;
+      }
 
-    withTimeout(supabase.auth.getSession(), 8000)
-      .then(({ data }) => {
-        if (!mounted) {
-          return;
-        }
+      withTimeout(supabase.auth.getSession(), 8000)
+        .then(({ data }) => {
+          if (!mounted) {
+            return;
+          }
 
+          setAuthError(null);
+          setSession(data.session ? toAppSession(data.session) : null);
+          setUser(data.session?.user ?? null);
+          setHydrated(true);
+
+          if (data.session?.user) {
+            loadProfile(data.session.user, data.session.access_token).catch(() => {
+              if (mounted) {
+                setProfile(null);
+              }
+            });
+          } else {
+            setProfile(null);
+          }
+        })
+        .catch(() => {
+          if (mounted) {
+            setAuthError(null);
+            setSession(null);
+            setUser(null);
+            setProfile(null);
+            setHydrated(true);
+          }
+        });
+
+      subscription = supabase.auth.onAuthStateChange((_, nextSession) => {
         setAuthError(null);
-        setSession(data.session ? toAppSession(data.session) : null);
-        setUser(data.session?.user ?? null);
+        setSession(nextSession ? toAppSession(nextSession) : null);
+        setUser(nextSession?.user ?? null);
         setHydrated(true);
 
-        if (data.session?.user) {
-          loadProfile(data.session.user, data.session.access_token).catch(() => {
-            if (mounted) {
-              setProfile(null);
-            }
+        if (nextSession?.user) {
+          loadProfile(nextSession.user, nextSession.access_token).catch(() => {
+            setProfile(null);
           });
         } else {
           setProfile(null);
         }
-      })
-      .catch(() => {
-        if (mounted) {
-          setAuthError(null);
-          setSession(null);
-          setUser(null);
-          setProfile(null);
-          setHydrated(true);
-        }
-      });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_, nextSession) => {
-      setAuthError(null);
-      setSession(nextSession ? toAppSession(nextSession) : null);
-      setUser(nextSession?.user ?? null);
-      setHydrated(true);
-
-      if (nextSession?.user) {
-        loadProfile(nextSession.user, nextSession.access_token).catch(() => {
-          setProfile(null);
-        });
-      } else {
-        setProfile(null);
-      }
+      }).data.subscription;
     });
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, [loadProfile]);
 
@@ -485,6 +497,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const supabase = await getSupabase();
       if (!supabase) {
         return;
       }
@@ -543,6 +556,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const supabase = await getSupabase();
       if (!supabase) {
         throw new Error("Supabase auth is not configured.");
       }
@@ -620,6 +634,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const supabase = await getSupabase();
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }
@@ -658,6 +673,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const supabase = await getSupabase();
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }
@@ -690,6 +706,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const supabase = await getSupabase();
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }
@@ -738,6 +755,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        const supabase = await getSupabase();
         if (!supabase) {
           throw new Error("Supabase auth is not configured.");
         }

@@ -26,6 +26,7 @@ import {
   type ThemeShift,
 } from "@/lib/dashboard-analytics";
 import { markPaperIds } from "@/lib/dashboard-drilldown";
+import ChartValues, { paperCount } from "@/components/tabs/ChartValues";
 import { MAX_STACKED_SERIES, tooltipTheme } from "@/lib/chart-tooltip";
 import type { TrendRow } from "@/types/database";
 import type { VisualizationPlanChart } from "@/types/visualization";
@@ -165,6 +166,15 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
             </BarChart>
           </ResponsiveContainer>
         </div>
+        <ChartValues
+          title={title}
+          values={rows.map((row) => ({
+            key: row.topic,
+            label: row.topic,
+            detail: `${periods.earlyLabel}: ${row.early}, ${periods.lateLabel}: ${row.late}`,
+            onSelect: onDrilldown ? () => onDrilldown({ topic: row.topic, paperIds: row.paperIds }) : undefined,
+          }))}
+        />
       </div>
     );
   }
@@ -227,6 +237,22 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
               </ResponsiveContainer>
             </div>
           )}
+          <ChartValues
+            title="Themes by year"
+            values={byYear.flatMap((row) =>
+              topThemes
+                .filter((topic) => Number(row[topic] ?? 0) > 0)
+                .map((topic) => ({
+                  key: `${row.year}:${topic}`,
+                  group: String(row.year),
+                  label: topic,
+                  detail: paperCount(Number(row[topic])),
+                  onSelect: onDrilldown
+                    ? () => onDrilldown({ topic, year: String(row.year), paperIds: markPaperIds(row, topic) })
+                    : undefined,
+                }))
+            )}
+          />
           {axis.empty.length > 0 || undated > 0 ? (
             <p className="mt-2 text-xs leading-5 text-slate-600 dark:text-[#a3a3a3]">
               {axis.empty.length > 0 ? `No papers from ${listOf(axis.empty)}. ` : ""}
