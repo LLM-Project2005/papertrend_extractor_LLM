@@ -32,21 +32,14 @@ test("upload entry points support batches and send SHA-256 fingerprints", () => 
   assert.doesNotMatch(library, /\/api\/admin\/import\/prepare/);
 });
 
-test("Cloud SQL upload preparation serializes quota and duplicate checks", () => {
-  const source = readFileSync(
-    join(root, "src/lib/cloudsql/ingestion-repository.ts"),
-    "utf8"
-  );
-  assert.match(source, /pg_advisory_xact_lock/);
-  assert.match(source, /MAX_PAPERS_PER_ACCOUNT/);
-  assert.match(source, /file_fingerprints/);
-  assert.match(source, /ON CONFLICT \(owner_user_id, sha256\)/);
-  assert.match(source, /r\.status = 'succeeded'/);
-  assert.match(source, /pc\.ingestion_run_id = r\.id/);
-  assert.match(source, /status = 'succeeded'/);
-  assert.doesNotMatch(source, /status NOT IN \('failed', 'canceled'\)/);
-  // A repeat is now left out rather than refusing the batch; run in PGlite in library-bulk.test.ts.
-  assert.match(source, /It was chosen more than once; one copy is uploaded\./);
+test("Cloud SQL upload preparation takes the owner's lock before counting", () => {
+  // The limit, duplicates (by fingerprint, by name and size, within the batch),
+  // what counts as already analysed, and the fingerprint written for each new
+  // run all run in PGlite in library-bulk.test.ts. Two uploads at once can only
+  // be told apart with two connections, so the lock is checked here.
+  const source = readFileSync(join(root, "src/lib/cloudsql/ingestion-repository.ts"), "utf8");
+  const body = source.slice(source.indexOf("export async function createUploadBatchIn("));
+  assert.ok(body.indexOf("pg_advisory_xact_lock") < body.indexOf("accountPaperUsageIn(client"), "lock, then count");
 });
 
 test("upload finalization tolerates Cloud Run cold starts and persists trigger failures", () => {

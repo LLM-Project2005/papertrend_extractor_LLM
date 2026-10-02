@@ -163,6 +163,10 @@ test("a duplicate is left out with its reason, and the rest of the batch uploads
   assert.equal(result.runs[0].input_payload?.source_kind, "pdf-upload", "never the connector's source_kind");
   assert.equal(result.runs[1].input_payload?.import_source, "computer");
   assert.equal(Number(result.folderJob.total_runs), 2);
+  // Each accepted file's fingerprint now names its new run, for the next upload's check.
+  const recorded = await db.query<{ latest_run_id: string }>(`SELECT latest_run_id::text FROM file_fingerprints WHERE owner_user_id = $1 AND sha256 = $2`, [OWNER, "c".repeat(64)]);
+  assert.equal(recorded.rows[0]?.latest_run_id, result.runs[1].id);
+
 
   // Nothing new at all: refused, every file listed.
   await assert.rejects(createUploadBatchIn(client, batch([{ name: "x.pdf", sha256: known }])), (error: unknown) => {
@@ -171,6 +175,11 @@ test("a duplicate is left out with its reason, and the rest of the batch uploads
     assert.equal(error.skipped.length, 1);
     return true;
   });
+  // A fingerprint whose run failed is not a paper in the account: that file goes ahead.
+  await db.query(`UPDATE ingestion_runs SET status = 'failed' WHERE id = $1`, [RUNS[0]]);
+  const retried = await createUploadBatchIn(client, batch([{ name: "renamed copy.pdf", sha256: known }]));
+  assert.deepEqual(retried.acceptedPositions, [0], "only a succeeded paper with content counts as already analysed");
+  await db.query(`UPDATE ingestion_runs SET status = 'succeeded' WHERE id = $1`, [RUNS[0]]);
   await db.close();
 });
 
