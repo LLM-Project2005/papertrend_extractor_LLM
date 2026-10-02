@@ -7,6 +7,7 @@
  * shown in full and wraps at phone width, where a chart's axis would cut it.
  */
 import { useTheme } from "@/components/theme/ThemeProvider";
+import { greyHex, readableTextOn } from "@/lib/contrast";
 import type { Insight, LifecycleRow } from "@/lib/insights/types";
 import type { PaperId } from "@/types/database";
 
@@ -124,13 +125,11 @@ function MatrixChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers
                 const value = chart.values[r][c];
                 const kind = mark.get(`${r}:${c}`);
                 const strength = value / max;
-                const background = value === 0
-                  ? "transparent"
-                  : isDark
-                    ? `rgba(229, 229, 229, ${0.12 + strength * 0.7})`
-                    : `rgba(38, 38, 38, ${0.08 + strength * 0.72})`;
-                const dark = isDark ? strength > 0.55 : strength > 0.5;
-                const text = value === 0 ? (isDark ? "#8f8f8f" : "#707070") : isDark ? (dark ? "#0a0a0a" : "#f5f5f5") : dark ? "#fafafa" : "#262626";
+                // The cell's colour as drawn over the panel (white, or #0a0a0a in dark),
+                // so its text can be picked by contrast rather than by a cut-off.
+                const alpha = isDark ? 0.12 + strength * 0.7 : 0.08 + strength * 0.72;
+                const background = value === 0 ? "transparent" : greyHex(isDark ? 10 + (229 - 10) * alpha : 255 + (38 - 255) * alpha);
+                const text = value === 0 ? (isDark ? "#8f8f8f" : "#707070") : readableTextOn(background, ["#000000", "#ffffff"]);
                 return (
                   <td key={col} className="p-0">
                     <button

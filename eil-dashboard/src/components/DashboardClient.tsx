@@ -1,16 +1,12 @@
 "use client";
 
-import { useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { memo, useContext, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/components/auth/AuthProvider";
-import InsightsTab from "@/components/dashboard/InsightsTab";
 import { usePaperViewer } from "@/components/workspace/PaperViewerProvider";
-import RepositorySemanticMapView from "@/components/workspace/RepositorySemanticMap";
 import Sidebar from "@/components/Sidebar";
 import Overview from "@/components/tabs/Overview";
-import TrendAnalysis from "@/components/tabs/TrendAnalysis";
-import TrackAnalysis from "@/components/tabs/TrackAnalysis";
-import KeywordExplorer from "@/components/tabs/KeywordExplorer";
 import Modal, { useDialogLayer } from "@/components/ui/Modal";
 import { useIsNarrow } from "@/lib/use-narrow";
 import { TabIndicator, useTabIndicator } from "@/components/ui/TabIndicator";
@@ -23,6 +19,45 @@ import { filterDashboardData } from "@/lib/dashboard-filters";
 import { useWorkspaceProfile } from "@/components/workspace/WorkspaceProvider";
 import type { PaperId, TrackRow, TrendRow } from "@/types/database";
 import { explicitDrilldownIds } from "@/lib/dashboard-drilldown";
+
+/** Holds a tab's place while its code loads. */
+function TabLoading() {
+  return <div aria-hidden="true" className="app-surface min-h-[420px] motion-safe:animate-pulse" />;
+}
+
+// Every tab but the first loads when it is opened: the semantic map's graph
+// library and every tab's charts were part of the dashboard's first load
+// (docs/32, 3.3).
+const TrendAnalysis = dynamic(() => import("@/components/tabs/TrendAnalysis"), { loading: TabLoading });
+const TrackAnalysis = dynamic(() => import("@/components/tabs/TrackAnalysis"), { loading: TabLoading });
+const KeywordExplorer = dynamic(() => import("@/components/tabs/KeywordExplorer"), { loading: TabLoading });
+const InsightsTab = dynamic(() => import("@/components/dashboard/InsightsTab"), { loading: TabLoading });
+const RepositorySemanticMapView = dynamic(() => import("@/components/workspace/RepositorySemanticMap"), {
+  ssr: false,
+  loading: TabLoading,
+});
+
+/** Renders its node, and keeps the last one while hidden so nothing below re-renders. */
+const FrozenWhileHidden = memo(function FrozenWhileHidden({ node }: { node: ReactNode }) {
+  return <>{node}</>;
+});
+
+/**
+ * A tab that stays mounted once opened (docs/32, 3.3; audit DASH-9). Switching
+ * tabs unmounted the last one, so the semantic map fetched and laid itself
+ * out again and the Adaptive tab lost its paid Ask answers. Hidden, a tab keeps
+ * the props it last had, so a filter change does not redraw it until it shows.
+ */
+function TabPanel({ active, visited, children }: { active: boolean; visited: boolean; children: ReactNode }) {
+  const lastShown = useRef<ReactNode>(null);
+  if (active) lastShown.current = children;
+  if (!visited) return null;
+  return (
+    <div hidden={!active}>
+      <FrozenWhileHidden node={active ? children : lastShown.current} />
+    </div>
+  );
+}
 import { AnalysisRunsContext } from "@/components/workspace/AnalysisRunsContext";
 import { runsInProgress } from "@/lib/run-polling";
 
@@ -290,6 +325,16 @@ export default function DashboardClient({
   const [optimisticTabKey, setOptimisticTabKey] = useState(routeTabKey);
   const currentTabKey = optimisticTabKey;
   const isSemanticMapTab = currentTabKey === "semantic_map";
+  // Tabs opened so far stay mounted; a new repository starts afresh.
+  const currentTabKeyRef = useRef(currentTabKey);
+  currentTabKeyRef.current = currentTabKey;
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([currentTabKey]));
+  useEffect(() => {
+    setVisitedTabs((current) => (current.has(currentTabKey) ? current : new Set([...current, currentTabKey])));
+  }, [currentTabKey]);
+  useEffect(() => {
+    setVisitedTabs((current) => (current.size === 1 ? current : new Set([currentTabKeyRef.current])));
+  }, [selectedProjectId]);
   // The repository's data before any filter: loaded, readable and empty means
   // no paper has finished its analysis here yet.
   // Papers the reader is following through the tray: how many are still in
@@ -961,7 +1006,7 @@ export default function DashboardClient({
             </div>
           ) : null}
           {repositoryHasNoPapers && !isSemanticMapTab ? null : <>
-          {currentTabKey === "overview" ? (
+          <TabPanel active={currentTabKey === "overview"} visited={visitedTabs.has("overview")}>
             <Overview
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
@@ -973,14 +1018,14 @@ export default function DashboardClient({
               classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
             />
-          ) : null}
-          {currentTabKey === "trend_analysis" ? (
+          </TabPanel>
+          <TabPanel active={currentTabKey === "trend_analysis"} visited={visitedTabs.has("trend_analysis")}>
             <TrendAnalysis
               trends={filteredData.trends}
               onDrilldown={openPaperDrilldown}
             />
-          ) : null}
-          {currentTabKey === "track_analysis" ? (
+          </TabPanel>
+          <TabPanel active={currentTabKey === "track_analysis"} visited={visitedTabs.has("track_analysis")}>
             <TrackAnalysis
               trends={filteredData.trends}
               tracksSingle={filteredData.tracksSingle}
@@ -992,8 +1037,8 @@ export default function DashboardClient({
               classificationEnabled={classificationEnabled}
               onDrilldown={openPaperDrilldown}
             />
-          ) : null}
-          {currentTabKey === "keyword_explorer" ? (
+          </TabPanel>
+          <TabPanel active={currentTabKey === "keyword_explorer"} visited={visitedTabs.has("keyword_explorer")}>
             <KeywordExplorer
               trends={filteredData.trends}
               topicFamilies={filteredData.topicFamilies}
@@ -1003,16 +1048,18 @@ export default function DashboardClient({
               selectedTracks={effectiveSelectedTracks}
               onDrilldown={openPaperDrilldown}
             />
-          ) : null}
+          </TabPanel>
           </>}
-          {currentTabKey === "semantic_map" && selectedProjectId ? (
-            <RepositorySemanticMapView
-              projectId={selectedProjectId}
-              projectName={currentProject?.name ?? "Repository"}
-              requestHeaders={requestHeaders}
-            />
+          {selectedProjectId ? (
+            <TabPanel active={currentTabKey === "semantic_map"} visited={visitedTabs.has("semantic_map")}>
+              <RepositorySemanticMapView
+                projectId={selectedProjectId}
+                projectName={currentProject?.name ?? "Repository"}
+                requestHeaders={requestHeaders}
+              />
+            </TabPanel>
           ) : null}
-          {currentTabKey === "adaptive" ? (
+          <TabPanel active={currentTabKey === "adaptive"} visited={visitedTabs.has("adaptive")}>
             <InsightsTab
               projectId={selectedProjectId ?? null}
               accessToken={session?.access_token ?? null}
@@ -1022,7 +1069,7 @@ export default function DashboardClient({
               dataVersion={adaptiveDataVersion}
               onOpenPapers={(paperIds, label) => openPaperDrilldown({ paperIds: paperIds.map(String), label })}
             />
-          ) : null}
+          </TabPanel>
         </section>
       </div>
     </div>

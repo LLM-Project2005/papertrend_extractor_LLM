@@ -6,6 +6,7 @@ import {
   auditEvidence,
   corpusCountsEvidence,
   CORRECTED_ANSWER_LIMITATION,
+  themeCountsEvidence,
   decideFromAudit,
   FaithfulnessSchema,
   GroundedAnswerSchema,
@@ -33,6 +34,8 @@ test("the audit sees the evidence a repository-wide answer was written from", ()
   // Grounding and coverage are judged apart: leaving something out is not an unsupported claim.
   assert.match(audit, /A claim is never unsupported because the draft leaves something out\./);
   assert.match(audit, /need not name each paper, nor be longer than the reader asked for/);
+  // A count the system computed is evidence; the audit does not ask for the papers behind it.
+  assert.match(audit, /a claim that repeats one of them is supported, and an answer need not list the papers behind a count/);
 });
 
 test("a repository-wide answer and its audit see the counted figures", () => {
@@ -53,6 +56,35 @@ test("a repository-wide answer and its audit see the counted figures", () => {
   // An answer of counts names no paper; with the counts in evidence it is not failed for that.
   assert.match(corpus, /formatConstraint: formatConstraintInstruction\(input\.prompt\),\s*countsBacked: true,/);
   assert.match(source, /validation\.citedPaperIds\.length > 0 \|\| input\.countsBacked === true\)/);
+});
+
+test("repository-wide answers count themes as the dashboard does, methods apart (CHAT-11)", () => {
+  const paper = (paperId: string, labels: string[]) => ({ paperId, topics: new Map(labels.map((label) => [label, 1])) });
+  const store = {
+    version: 1,
+    themes: [{ name: "Mixed methods", kind: "method" }, { name: "Academic writing", kind: "topic" }],
+    assignments: { "mixed-methods research design": 0, "mixed-method research design": 0, "l2 writing": 1, "academic writing": 1 },
+    groupedAt: null, fullGroupingTopics: 0, model: null, pendingSince: null, failedAt: null, failures: 0,
+  } as never;
+  const evidence = themeCountsEvidence(
+    [
+      paper("1", ["Mixed-Methods Research Design", "L2 writing"]),
+      paper("2", ["Mixed-Method Research Design", "Academic Writing"]),
+      paper("3", ["L2 Writing", "Academic writing"]),
+    ],
+    store
+  );
+  // Two spellings of one method are one theme; a paper counts once per theme.
+  assert.match(evidence, /^## Themes, as the dashboard groups them/);
+  assert.match(evidence, /- Academic writing: 3 papers \(Paper 1, Paper 2, Paper 3\)/);
+  assert.match(evidence, /Research designs and methods:\n- Mixed methods: 2 papers \(Paper 1, Paper 2\)/);
+  assert.equal(themeCountsEvidence([paper("1", ["x"])], null), "");
+  // With themes, the raw labels are not sent as a second, different count.
+  const counts = corpusCountsEvidence({ papers: [] as never, topicCounts: [{ label: "x", paperCount: 1, mentions: 1 }], keywordCounts: [] }, 15, { topicLabels: false });
+  assert.doesNotMatch(counts, /Topic labels as each paper's analysis named them/);
+  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
+  assert.match(source, /corpusCountsEvidence\(context, 15, \{ topicLabels: !themeCounts \}\)/);
+  assert.match(source, /Do not count papers or topics: this is one batch of the repository/);
 });
 
 test("a corpus-wide audit that names many papers is read, not rejected", () => {

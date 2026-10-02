@@ -6,7 +6,7 @@ import { termsOfService } from "@/lib/legal-content";
 export const dynamic = "force-static";
 
 export const metadata: Metadata = {
-  title: `${termsOfService.title} | Papertrend`,
+  title: termsOfService.title,
   description: termsOfService.description,
   alternates: { canonical: "/terms" },
 };

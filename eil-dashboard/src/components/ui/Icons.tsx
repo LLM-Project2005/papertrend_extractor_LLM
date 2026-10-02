@@ -12,94 +12,98 @@
  * Brand marks (Papertrend's own logo, Google, Facebook, Microsoft) are drawn
  * here as authored logos, not glyphs: a person scanning for the Google "G" is
  * looking for that exact object.
+ *
+ * The drawings come from icon-glyphs.ts, generated from Phosphor by
+ * scripts/generate-icons.mjs with only the weights used here.
  */
-import type { Icon as PhosphorGlyph } from "@phosphor-icons/react";
+import { createElement } from "react";
+import type { GlyphWeights } from "./icon-glyphs";
 import {
-  ArrowClockwiseIcon,
-  ArrowCounterClockwiseIcon,
-  ArrowLeftIcon as PhArrowLeft,
-  ArrowRightIcon as PhArrowRight,
-  ArrowSquareOutIcon,
-  ArrowUpRightIcon as PhArrowUpRight,
-  ArrowsDownUpIcon,
-  ArrowsInIcon,
-  ArrowsOutIcon,
-  BookOpenIcon as PhBookOpen,
-  BooksIcon as PhBooks,
-  CaretDownIcon,
-  CaretLeftIcon,
-  CaretRightIcon,
-  CaretUpIcon,
-  CaretUpDownIcon as PhCaretUpDown,
-  ChartBarIcon,
-  ChatCircleTextIcon,
-  CheckCircleIcon as PhCheckCircle,
-  CheckIcon as PhCheck,
-  CircleHalfIcon,
-  CircleIcon as PhCircle,
-  CircleNotchIcon,
-  ClockIcon as PhClock,
-  CloudIcon as PhCloud,
-  CopyIcon as PhCopy,
-  DatabaseIcon as PhDatabase,
-  DotsThreeIcon,
-  DownloadSimpleIcon,
-  EnvelopeSimpleIcon,
-  EyeIcon as PhEye,
-  FileIcon as PhFile,
-  FilePdfIcon as PhFilePdf,
-  FileTextIcon,
-  FolderIcon as PhFolder,
-  FolderOpenIcon as PhFolderOpen,
-  FunnelIcon,
-  GearSixIcon,
-  GlobeIcon as PhGlobe,
-  GoogleDriveLogoIcon,
-  HourglassIcon as PhHourglass,
-  HouseIcon,
-  ImageIcon as PhImage,
-  InfoIcon as PhInfo,
-  KeyIcon as PhKey,
-  LightningIcon as PhLightning,
-  ListBulletsIcon,
-  ListIcon,
-  LockIcon as PhLock,
-  MagnifyingGlassIcon,
-  MinusIcon as PhMinus,
-  PauseIcon as PhPause,
-  PlayIcon as PhPlay,
-  MonitorIcon as PhMonitor,
-  MoonIcon as PhMoon,
-  PaletteIcon as PhPalette,
-  PaperPlaneRightIcon,
-  PaperclipIcon,
-  PencilSimpleIcon,
-  PlusIcon as PhPlus,
-  PushPinIcon,
-  QuestionIcon as PhQuestion,
-  ShieldCheckIcon as PhShieldCheck,
-  SidebarSimpleIcon,
-  SignOutIcon,
-  SlidersHorizontalIcon,
-  SparkleIcon,
-  SquaresFourIcon,
-  StackIcon as PhStack,
-  StarIcon as PhStar,
-  StopIcon as PhStop,
-  SunIcon as PhSun,
-  TagIcon as PhTag,
-  TranslateIcon as PhTranslate,
-  TrashIcon as PhTrash,
-  UploadSimpleIcon,
-  TreeStructureIcon as PhTreeStructure,
-  UserCircleIcon as PhUserCircle,
-  UserIcon as PhUser,
-  WarningCircleIcon as PhWarningCircle,
-  WarningIcon as PhWarning,
-  XCircleIcon as PhXCircle,
-  XIcon,
-  AppleLogoIcon,
-} from "@phosphor-icons/react/dist/ssr";
+  ArrowClockwiseGlyph as ArrowClockwiseIcon,
+  ArrowCounterClockwiseGlyph as ArrowCounterClockwiseIcon,
+  ArrowLeftGlyph as PhArrowLeft,
+  ArrowRightGlyph as PhArrowRight,
+  ArrowSquareOutGlyph as ArrowSquareOutIcon,
+  ArrowUpRightGlyph as PhArrowUpRight,
+  ArrowsDownUpGlyph as ArrowsDownUpIcon,
+  ArrowsInGlyph as ArrowsInIcon,
+  ArrowsOutGlyph as ArrowsOutIcon,
+  BookOpenGlyph as PhBookOpen,
+  BooksGlyph as PhBooks,
+  CaretDownGlyph as CaretDownIcon,
+  CaretLeftGlyph as CaretLeftIcon,
+  CaretRightGlyph as CaretRightIcon,
+  CaretUpGlyph as CaretUpIcon,
+  CaretUpDownGlyph as PhCaretUpDown,
+  ChartBarGlyph as ChartBarIcon,
+  ChatCircleTextGlyph as ChatCircleTextIcon,
+  CheckCircleGlyph as PhCheckCircle,
+  CheckGlyph as PhCheck,
+  CircleHalfGlyph as CircleHalfIcon,
+  CircleGlyph as PhCircle,
+  CircleNotchGlyph as CircleNotchIcon,
+  ClockGlyph as PhClock,
+  CloudGlyph as PhCloud,
+  CopyGlyph as PhCopy,
+  DatabaseGlyph as PhDatabase,
+  DotsThreeGlyph as DotsThreeIcon,
+  DownloadSimpleGlyph as DownloadSimpleIcon,
+  EnvelopeSimpleGlyph as EnvelopeSimpleIcon,
+  EyeGlyph as PhEye,
+  FileGlyph as PhFile,
+  FilePdfGlyph as PhFilePdf,
+  FileTextGlyph as FileTextIcon,
+  FolderGlyph as PhFolder,
+  FolderOpenGlyph as PhFolderOpen,
+  FunnelGlyph as FunnelIcon,
+  GearSixGlyph as GearSixIcon,
+  GlobeGlyph as PhGlobe,
+  GoogleDriveLogoGlyph as GoogleDriveLogoIcon,
+  HourglassGlyph as PhHourglass,
+  HouseGlyph as HouseIcon,
+  ImageGlyph as PhImage,
+  InfoGlyph as PhInfo,
+  KeyGlyph as PhKey,
+  LightningGlyph as PhLightning,
+  ListBulletsGlyph as ListBulletsIcon,
+  ListGlyph as ListIcon,
+  LockGlyph as PhLock,
+  MagnifyingGlassGlyph as MagnifyingGlassIcon,
+  MinusGlyph as PhMinus,
+  PauseGlyph as PhPause,
+  PlayGlyph as PhPlay,
+  MonitorGlyph as PhMonitor,
+  MoonGlyph as PhMoon,
+  PaletteGlyph as PhPalette,
+  PaperPlaneRightGlyph as PaperPlaneRightIcon,
+  PaperclipGlyph as PaperclipIcon,
+  PencilSimpleGlyph as PencilSimpleIcon,
+  PlusGlyph as PhPlus,
+  PushPinGlyph as PushPinIcon,
+  QuestionGlyph as PhQuestion,
+  ShieldCheckGlyph as PhShieldCheck,
+  SidebarSimpleGlyph as SidebarSimpleIcon,
+  SignOutGlyph as SignOutIcon,
+  SlidersHorizontalGlyph as SlidersHorizontalIcon,
+  SparkleGlyph as SparkleIcon,
+  SquaresFourGlyph as SquaresFourIcon,
+  StackGlyph as PhStack,
+  StarGlyph as PhStar,
+  StopGlyph as PhStop,
+  SunGlyph as PhSun,
+  TagGlyph as PhTag,
+  TranslateGlyph as PhTranslate,
+  TrashGlyph as PhTrash,
+  UploadSimpleGlyph as UploadSimpleIcon,
+  TreeStructureGlyph as PhTreeStructure,
+  UserCircleGlyph as PhUserCircle,
+  UserGlyph as PhUser,
+  WarningCircleGlyph as PhWarningCircle,
+  WarningGlyph as PhWarning,
+  XCircleGlyph as PhXCircle,
+  XGlyph as XIcon,
+  AppleLogoGlyph as AppleLogoIcon,
+} from "./icon-glyphs";
 
 export type IconWeight = "regular" | "bold" | "fill";
 
@@ -109,9 +113,26 @@ export interface IconProps {
   weight?: IconWeight;
 }
 
-function glyph(Glyph: PhosphorGlyph, name: string) {
+// Each export is marked pure so a page carries only the icons it uses: built
+// by a call at load time, every one of them was on every page - 45 kB of icons
+// on the landing page (docs/32, 3.3).
+function glyph(weights: GlyphWeights, name: string) {
+  // Phosphor's own SVG, drawn from the weights kept in icon-glyphs.ts.
   function Icon({ className, weight = "regular" }: IconProps) {
-    return <Glyph aria-hidden="true" focusable="false" weight={weight} className={className} />;
+    return createElement(
+      "svg",
+      {
+        xmlns: "http://www.w3.org/2000/svg",
+        width: "1em",
+        height: "1em",
+        fill: "currentColor",
+        viewBox: "0 0 256 256",
+        "aria-hidden": "true",
+        focusable: "false",
+        className,
+      },
+      weights[weight].map(([tag, props], index) => createElement(tag, { key: index, ...props }))
+    );
   }
   Icon.displayName = name;
   return Icon;
@@ -119,120 +140,115 @@ function glyph(Glyph: PhosphorGlyph, name: string) {
 
 /* ------------------------------------------------------------ navigation */
 
-export const HomeIcon = glyph(HouseIcon, "HomeIcon");
-export const ChartIcon = glyph(ChartBarIcon, "ChartIcon");
-export const ChatIcon = glyph(ChatCircleTextIcon, "ChatIcon");
-export const PaperIcon = glyph(FileTextIcon, "PaperIcon");
-export const UploadIcon = glyph(UploadSimpleIcon, "UploadIcon");
-export const SettingsIcon = glyph(GearSixIcon, "SettingsIcon");
-export const MenuIcon = glyph(ListIcon, "MenuIcon");
-export const SidebarIcon = glyph(SidebarSimpleIcon, "SidebarIcon");
-export const BooksIcon = glyph(PhBooks, "BooksIcon");
-export const BookOpenIcon = glyph(PhBookOpen, "BookOpenIcon");
+export const HomeIcon = /*#__PURE__*/ glyph(HouseIcon, "HomeIcon");
+export const ChartIcon = /*#__PURE__*/ glyph(ChartBarIcon, "ChartIcon");
+export const ChatIcon = /*#__PURE__*/ glyph(ChatCircleTextIcon, "ChatIcon");
+export const PaperIcon = /*#__PURE__*/ glyph(FileTextIcon, "PaperIcon");
+export const UploadIcon = /*#__PURE__*/ glyph(UploadSimpleIcon, "UploadIcon");
+export const SettingsIcon = /*#__PURE__*/ glyph(GearSixIcon, "SettingsIcon");
+export const MenuIcon = /*#__PURE__*/ glyph(ListIcon, "MenuIcon");
+export const SidebarIcon = /*#__PURE__*/ glyph(SidebarSimpleIcon, "SidebarIcon");
+export const BooksIcon = /*#__PURE__*/ glyph(PhBooks, "BooksIcon");
+export const BookOpenIcon = /*#__PURE__*/ glyph(PhBookOpen, "BookOpenIcon");
 
 /* ---------------------------------------------------------------- actions */
 
-export const ArrowRightIcon = glyph(PhArrowRight, "ArrowRightIcon");
-export const ArrowLeftIcon = glyph(PhArrowLeft, "ArrowLeftIcon");
-export const ArrowUpRightIcon = glyph(PhArrowUpRight, "ArrowUpRightIcon");
-export const ExternalLinkIcon = glyph(ArrowSquareOutIcon, "ExternalLinkIcon");
-export const PlusIcon = glyph(PhPlus, "PlusIcon");
-export const MinusIcon = glyph(PhMinus, "MinusIcon");
-export const PauseIcon = glyph(PhPause, "PauseIcon");
-export const PlayIcon = glyph(PhPlay, "PlayIcon");
-export const SendIcon = glyph(PaperPlaneRightIcon, "SendIcon");
-export const CloseIcon = glyph(XIcon, "CloseIcon");
-export const CopyIcon = glyph(PhCopy, "CopyIcon");
-export const RefreshIcon = glyph(ArrowClockwiseIcon, "RefreshIcon");
-export const UndoIcon = glyph(ArrowCounterClockwiseIcon, "UndoIcon");
-export const AttachmentIcon = glyph(PaperclipIcon, "AttachmentIcon");
-export const DownloadIcon = glyph(DownloadSimpleIcon, "DownloadIcon");
-export const PencilSquareIcon = glyph(PencilSimpleIcon, "PencilSquareIcon");
-export const TrashIcon = glyph(PhTrash, "TrashIcon");
-export const PinIcon = glyph(PushPinIcon, "PinIcon");
-export const StopIcon = glyph(PhStop, "StopIcon");
-export const StarIcon = glyph(PhStar, "StarIcon");
-export const LogoutIcon = glyph(SignOutIcon, "LogoutIcon");
-export const FullscreenIcon = glyph(ArrowsOutIcon, "FullscreenIcon");
-export const ExitFullscreenIcon = glyph(ArrowsInIcon, "ExitFullscreenIcon");
-export const MoreHorizontalIcon = glyph(DotsThreeIcon, "MoreHorizontalIcon");
+export const ArrowRightIcon = /*#__PURE__*/ glyph(PhArrowRight, "ArrowRightIcon");
+export const ArrowLeftIcon = /*#__PURE__*/ glyph(PhArrowLeft, "ArrowLeftIcon");
+export const ArrowUpRightIcon = /*#__PURE__*/ glyph(PhArrowUpRight, "ArrowUpRightIcon");
+export const ExternalLinkIcon = /*#__PURE__*/ glyph(ArrowSquareOutIcon, "ExternalLinkIcon");
+export const PlusIcon = /*#__PURE__*/ glyph(PhPlus, "PlusIcon");
+export const MinusIcon = /*#__PURE__*/ glyph(PhMinus, "MinusIcon");
+export const PauseIcon = /*#__PURE__*/ glyph(PhPause, "PauseIcon");
+export const PlayIcon = /*#__PURE__*/ glyph(PhPlay, "PlayIcon");
+export const SendIcon = /*#__PURE__*/ glyph(PaperPlaneRightIcon, "SendIcon");
+export const CloseIcon = /*#__PURE__*/ glyph(XIcon, "CloseIcon");
+export const CopyIcon = /*#__PURE__*/ glyph(PhCopy, "CopyIcon");
+export const RefreshIcon = /*#__PURE__*/ glyph(ArrowClockwiseIcon, "RefreshIcon");
+export const UndoIcon = /*#__PURE__*/ glyph(ArrowCounterClockwiseIcon, "UndoIcon");
+export const AttachmentIcon = /*#__PURE__*/ glyph(PaperclipIcon, "AttachmentIcon");
+export const DownloadIcon = /*#__PURE__*/ glyph(DownloadSimpleIcon, "DownloadIcon");
+export const PencilSquareIcon = /*#__PURE__*/ glyph(PencilSimpleIcon, "PencilSquareIcon");
+export const TrashIcon = /*#__PURE__*/ glyph(PhTrash, "TrashIcon");
+export const PinIcon = /*#__PURE__*/ glyph(PushPinIcon, "PinIcon");
+export const StopIcon = /*#__PURE__*/ glyph(PhStop, "StopIcon");
+export const StarIcon = /*#__PURE__*/ glyph(PhStar, "StarIcon");
+export const LogoutIcon = /*#__PURE__*/ glyph(SignOutIcon, "LogoutIcon");
+export const FullscreenIcon = /*#__PURE__*/ glyph(ArrowsOutIcon, "FullscreenIcon");
+export const ExitFullscreenIcon = /*#__PURE__*/ glyph(ArrowsInIcon, "ExitFullscreenIcon");
+export const MoreHorizontalIcon = /*#__PURE__*/ glyph(DotsThreeIcon, "MoreHorizontalIcon");
 
 /* ------------------------------------------------------ direction, choice */
 
-export const ChevronDownIcon = glyph(CaretDownIcon, "ChevronDownIcon");
-export const ChevronUpIcon = glyph(CaretUpIcon, "ChevronUpIcon");
-export const ChevronLeftIcon = glyph(CaretLeftIcon, "ChevronLeftIcon");
-export const ChevronRightIcon = glyph(CaretRightIcon, "ChevronRightIcon");
-export const CaretUpDownIcon = glyph(PhCaretUpDown, "CaretUpDownIcon");
-export const CheckIcon = glyph(PhCheck, "CheckIcon");
-export const CheckCircleIcon = glyph(PhCheckCircle, "CheckCircleIcon");
-export const CircleIcon = glyph(PhCircle, "CircleIcon");
-export const XCircleIcon = glyph(PhXCircle, "XCircleIcon");
+export const ChevronDownIcon = /*#__PURE__*/ glyph(CaretDownIcon, "ChevronDownIcon");
+export const ChevronUpIcon = /*#__PURE__*/ glyph(CaretUpIcon, "ChevronUpIcon");
+export const ChevronLeftIcon = /*#__PURE__*/ glyph(CaretLeftIcon, "ChevronLeftIcon");
+export const ChevronRightIcon = /*#__PURE__*/ glyph(CaretRightIcon, "ChevronRightIcon");
+export const CaretUpDownIcon = /*#__PURE__*/ glyph(PhCaretUpDown, "CaretUpDownIcon");
+export const CheckIcon = /*#__PURE__*/ glyph(PhCheck, "CheckIcon");
+export const CheckCircleIcon = /*#__PURE__*/ glyph(PhCheckCircle, "CheckCircleIcon");
+export const CircleIcon = /*#__PURE__*/ glyph(PhCircle, "CircleIcon");
+export const XCircleIcon = /*#__PURE__*/ glyph(PhXCircle, "XCircleIcon");
 
 /* --------------------------------------------------------- view controls */
 
-export const FilterIcon = glyph(FunnelIcon, "FilterIcon");
-export const EqualizerIcon = glyph(SlidersHorizontalIcon, "EqualizerIcon");
-export const SearchIcon = glyph(MagnifyingGlassIcon, "SearchIcon");
-export const ListViewIcon = glyph(ListBulletsIcon, "ListViewIcon");
-export const GridViewIcon = glyph(SquaresFourIcon, "GridViewIcon");
-export const SortIcon = glyph(ArrowsDownUpIcon, "SortIcon");
-export const EyeIcon = glyph(PhEye, "EyeIcon");
+export const FilterIcon = /*#__PURE__*/ glyph(FunnelIcon, "FilterIcon");
+export const EqualizerIcon = /*#__PURE__*/ glyph(SlidersHorizontalIcon, "EqualizerIcon");
+export const SearchIcon = /*#__PURE__*/ glyph(MagnifyingGlassIcon, "SearchIcon");
+export const ListViewIcon = /*#__PURE__*/ glyph(ListBulletsIcon, "ListViewIcon");
+export const GridViewIcon = /*#__PURE__*/ glyph(SquaresFourIcon, "GridViewIcon");
+export const SortIcon = /*#__PURE__*/ glyph(ArrowsDownUpIcon, "SortIcon");
+export const EyeIcon = /*#__PURE__*/ glyph(PhEye, "EyeIcon");
 
 /* ------------------------------------------------------ objects, sources */
 
-export const FolderIcon = glyph(PhFolder, "FolderIcon");
-export const FolderOpenIcon = glyph(PhFolderOpen, "FolderOpenIcon");
-export const FileIcon = glyph(PhFile, "FileIcon");
-export const FilePdfIcon = glyph(PhFilePdf, "FilePdfIcon");
-export const CloudIcon = glyph(PhCloud, "CloudIcon");
-export const DriveIcon = glyph(GoogleDriveLogoIcon, "DriveIcon");
-export const ImageIcon = glyph(PhImage, "ImageIcon");
-export const DatabaseIcon = glyph(PhDatabase, "DatabaseIcon");
-export const StackIcon = glyph(PhStack, "StackIcon");
-export const TagIcon = glyph(PhTag, "TagIcon");
-export const TreeIcon = glyph(PhTreeStructure, "TreeIcon");
-export const TranslateIcon = glyph(PhTranslate, "TranslateIcon");
-export const SparkIcon = glyph(SparkleIcon, "SparkIcon");
-export const LightningIcon = glyph(PhLightning, "LightningIcon");
+export const FolderIcon = /*#__PURE__*/ glyph(PhFolder, "FolderIcon");
+export const FolderOpenIcon = /*#__PURE__*/ glyph(PhFolderOpen, "FolderOpenIcon");
+export const FileIcon = /*#__PURE__*/ glyph(PhFile, "FileIcon");
+export const FilePdfIcon = /*#__PURE__*/ glyph(PhFilePdf, "FilePdfIcon");
+export const CloudIcon = /*#__PURE__*/ glyph(PhCloud, "CloudIcon");
+export const DriveIcon = /*#__PURE__*/ glyph(GoogleDriveLogoIcon, "DriveIcon");
+export const ImageIcon = /*#__PURE__*/ glyph(PhImage, "ImageIcon");
+export const DatabaseIcon = /*#__PURE__*/ glyph(PhDatabase, "DatabaseIcon");
+export const StackIcon = /*#__PURE__*/ glyph(PhStack, "StackIcon");
+export const TagIcon = /*#__PURE__*/ glyph(PhTag, "TagIcon");
+export const TreeIcon = /*#__PURE__*/ glyph(PhTreeStructure, "TreeIcon");
+export const TranslateIcon = /*#__PURE__*/ glyph(PhTranslate, "TranslateIcon");
+export const SparkIcon = /*#__PURE__*/ glyph(SparkleIcon, "SparkIcon");
+export const LightningIcon = /*#__PURE__*/ glyph(PhLightning, "LightningIcon");
 
 /* ------------------------------------------------------ people, account */
 
-export const UserIcon = glyph(PhUser, "UserIcon");
-export const UserCircleIcon = glyph(PhUserCircle, "UserCircleIcon");
-export const EmailIcon = glyph(EnvelopeSimpleIcon, "EmailIcon");
-export const KeyIcon = glyph(PhKey, "KeyIcon");
-export const LockIcon = glyph(PhLock, "LockIcon");
-export const ShieldCheckIcon = glyph(PhShieldCheck, "ShieldCheckIcon");
-export const GlobeIcon = glyph(PhGlobe, "GlobeIcon");
+export const UserIcon = /*#__PURE__*/ glyph(PhUser, "UserIcon");
+export const UserCircleIcon = /*#__PURE__*/ glyph(PhUserCircle, "UserCircleIcon");
+export const EmailIcon = /*#__PURE__*/ glyph(EnvelopeSimpleIcon, "EmailIcon");
+export const KeyIcon = /*#__PURE__*/ glyph(PhKey, "KeyIcon");
+export const LockIcon = /*#__PURE__*/ glyph(PhLock, "LockIcon");
+export const ShieldCheckIcon = /*#__PURE__*/ glyph(PhShieldCheck, "ShieldCheckIcon");
+export const GlobeIcon = /*#__PURE__*/ glyph(PhGlobe, "GlobeIcon");
 
 /* -------------------------------------------------------------- theme */
 
-export const SunIcon = glyph(PhSun, "SunIcon");
-export const MoonIcon = glyph(PhMoon, "MoonIcon");
-export const MonitorIcon = glyph(PhMonitor, "MonitorIcon");
-export const ContrastIcon = glyph(CircleHalfIcon, "ContrastIcon");
-export const PaletteIcon = glyph(PhPalette, "PaletteIcon");
+export const SunIcon = /*#__PURE__*/ glyph(PhSun, "SunIcon");
+export const MoonIcon = /*#__PURE__*/ glyph(PhMoon, "MoonIcon");
+export const MonitorIcon = /*#__PURE__*/ glyph(PhMonitor, "MonitorIcon");
+export const ContrastIcon = /*#__PURE__*/ glyph(CircleHalfIcon, "ContrastIcon");
+export const PaletteIcon = /*#__PURE__*/ glyph(PhPalette, "PaletteIcon");
 
 /* ------------------------------------------------------------- status */
 
-export const InfoIcon = glyph(PhInfo, "InfoIcon");
-export const WarningIcon = glyph(PhWarning, "WarningIcon");
-export const WarningCircleIcon = glyph(PhWarningCircle, "WarningCircleIcon");
-export const QuestionIcon = glyph(PhQuestion, "QuestionIcon");
-export const ClockIcon = glyph(PhClock, "ClockIcon");
-export const HourglassIcon = glyph(PhHourglass, "HourglassIcon");
+export const InfoIcon = /*#__PURE__*/ glyph(PhInfo, "InfoIcon");
+export const WarningIcon = /*#__PURE__*/ glyph(PhWarning, "WarningIcon");
+export const WarningCircleIcon = /*#__PURE__*/ glyph(PhWarningCircle, "WarningCircleIcon");
+export const QuestionIcon = /*#__PURE__*/ glyph(PhQuestion, "QuestionIcon");
+export const ClockIcon = /*#__PURE__*/ glyph(PhClock, "ClockIcon");
+export const HourglassIcon = /*#__PURE__*/ glyph(PhHourglass, "HourglassIcon");
 
 /** A spinner for the few places a skeleton cannot stand in (inside a button). */
+const SpinnerGlyph = /*#__PURE__*/ glyph(CircleNotchIcon, "SpinnerGlyph");
+
 export function SpinnerIcon({ className }: { className?: string }) {
-  return (
-    <CircleNotchIcon
-      aria-hidden="true"
-      focusable="false"
-      weight="bold"
-      className={`animate-spin motion-reduce:animate-none ${className ?? ""}`}
-    />
-  );
+  return createElement(SpinnerGlyph, { weight: "bold", className: `animate-spin motion-reduce:animate-none ${className ?? ""}` });
 }
 
 /* ------------------------------------------------------------ brand marks */
@@ -318,6 +334,8 @@ export function MicrosoftIcon({ className }: { className?: string }) {
   );
 }
 
+const AppleGlyph = /*#__PURE__*/ glyph(AppleLogoIcon, "AppleGlyph");
+
 export function AppleIcon({ className }: { className?: string }) {
-  return <AppleLogoIcon aria-hidden="true" focusable="false" weight="fill" className={className} />;
+  return <AppleGlyph weight="fill" className={className} />;
 }

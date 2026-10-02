@@ -32,8 +32,37 @@ const SKY: Record<string, string> = {
   "950": "#082f49",
 };
 
-/** Resolves a Tailwind colour token to a hex value, or null if unknown. */
-export function resolveColour(token: string): string | null {
+/** Tailwind's own ramps for the status colours the pages use. */
+const STATUS_RAMPS: Record<string, Record<string, string>> = {
+  red: { "50": "#fef2f2", "100": "#fee2e2", "200": "#fecaca", "300": "#fca5a5", "400": "#f87171", "500": "#ef4444", "600": "#dc2626", "700": "#b91c1c", "800": "#991b1b", "900": "#7f1d1d", "950": "#450a0a" },
+  amber: { "50": "#fffbeb", "100": "#fef3c7", "200": "#fde68a", "300": "#fcd34d", "400": "#fbbf24", "500": "#f59e0b", "600": "#d97706", "700": "#b45309", "800": "#92400e", "900": "#78350f", "950": "#451a03" },
+  emerald: { "50": "#ecfdf5", "100": "#d1fae5", "200": "#a7f3d0", "300": "#6ee7b7", "400": "#34d399", "500": "#10b981", "600": "#059669", "700": "#047857", "800": "#065f46", "900": "#064e3b", "950": "#022c22" },
+};
+
+/**
+ * The theme tokens (globals.css) as each theme renders them. They were unknown
+ * here, so text-mute on bg-subtle was never checked (docs/32, 3.4; audit A11Y-9).
+ */
+const SEMANTIC: Record<"light" | "dark", Record<string, string>> = {
+  light: {
+    canvas: "#fafafa", surface: "#ffffff", subtle: "#f4f4f4",
+    ink: "#171717", body: "#525252", mute: "#707070",
+    accent: "#2563eb", "accent-soft": "#eff6ff", "accent-ink": "#1d4ed8",
+  },
+  dark: {
+    canvas: "#000000", surface: "#0a0a0a", subtle: "#141414",
+    ink: "#ededed", body: "#a1a1a1", mute: "#8f8f8f",
+    accent: "#60a5fa", "accent-soft": "#172554", "accent-ink": "#93c5fd",
+  },
+};
+
+/** The theme token names, longest first so a pattern prefers "accent-ink" to "accent". */
+const SEMANTIC_NAMES = Object.keys(SEMANTIC.light).sort((left, right) => right.length - left.length);
+
+/** Resolves a Tailwind colour token to a hex value for a theme, or null if unknown. */
+export function resolveColour(token: string, theme: "light" | "dark" = "light"): string | null {
+  const semantic = SEMANTIC[theme][token];
+  if (semantic) return semantic;
   const arbitrary = token.match(/^\[#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})\]$/);
   if (arbitrary) {
     const hex = arbitrary[1];
@@ -45,6 +74,8 @@ export function resolveColour(token: string): string | null {
   if (slate) return SLATE[slate[1]] ?? null;
   const sky = token.match(/^sky-(\d{2,3})$/);
   if (sky) return SKY[sky[1]] ?? null;
+  const status = token.match(/^(red|amber|emerald)-(\d{2,3})$/);
+  if (status) return STATUS_RAMPS[status[1]][status[2]] ?? null;
   return null;
 }
 
@@ -71,6 +102,24 @@ export function contrastRatio(foreground: string, background: string): number {
   return (lighter + 0.05) / (darker + 0.05);
 }
 
+/** A grey of `level` (0-255) as hex. */
+export function greyHex(level: number): string {
+  const channelHex = Math.max(0, Math.min(255, Math.round(level))).toString(16).padStart(2, "0");
+  return `#${channelHex}${channelHex}${channelHex}`;
+}
+
+/**
+ * Whichever text colour reads better on this background. Cells in the
+ * Adaptive matrix and the heatmap switched text at a fixed strength or a
+ * gamma-blind threshold, so mid-strength cells sat under 4.5:1 (docs/32, 3.4;
+ * audit A11Y-9).
+ */
+export function readableTextOn(background: string, candidates: readonly string[]): string {
+  return candidates.reduce((best, candidate) =>
+    contrastRatio(candidate, background) > contrastRatio(best, background) ? candidate : best
+  );
+}
+
 /** WCAG AA for body text. Large text needs only 3, but answers are body text. */
 export const AA_NORMAL = 4.5;
 
@@ -87,10 +136,11 @@ export interface ContrastCheck {
 export function checkContrast(
   foregroundToken: string,
   backgroundToken: string,
-  minimum: number = AA_NORMAL
+  minimum: number = AA_NORMAL,
+  theme: "light" | "dark" = "light"
 ): ContrastCheck | null {
-  const foreground = resolveColour(foregroundToken);
-  const background = resolveColour(backgroundToken);
+  const foreground = resolveColour(foregroundToken, theme);
+  const background = resolveColour(backgroundToken, theme);
   if (!foreground || !background) return null;
   const ratio = contrastRatio(foreground, background);
   return {
@@ -111,11 +161,11 @@ export const LIGHT_SURFACES = ["white", "slate-50", "slate-100"];
 export const DARK_SURFACES = ["[#000000]", "[#050505]", "[#0a0a0a]", "[#121212]"];
 
 /** The worst ratio a colour achieves across the surfaces it can appear on. */
-export function worstRatio(foregroundToken: string, surfaces: string[]): number {
-  const foreground = resolveColour(foregroundToken);
+export function worstRatio(foregroundToken: string, surfaces: string[], theme: "light" | "dark" = "light"): number {
+  const foreground = resolveColour(foregroundToken, theme);
   if (!foreground) return Number.NaN;
   return surfaces.reduce((worst, surface) => {
-    const background = resolveColour(surface);
+    const background = resolveColour(surface, theme);
     if (!background) return worst;
     return Math.min(worst, contrastRatio(foreground, background));
   }, Number.POSITIVE_INFINITY);
@@ -138,12 +188,18 @@ export interface ColourPair {
   source: string;
 }
 
-const TEXT_TOKEN = String.raw`(?:slate|sky)-\d{2,3}|white|black|\[#[0-9a-fA-F]{3,8}\]`;
+const TEXT_TOKEN = String.raw`(?:slate|sky|red|amber|emerald)-\d{2,3}|white|black|\[#[0-9a-fA-F]{3,8}\]|` + SEMANTIC_NAMES.join("|");
+const SEMANTIC_PATTERN = new RegExp(`^(?:text|bg)-(?:${SEMANTIC_NAMES.join("|")})$`);
 
 export function colourPairs(source: string): ColourPair[] {
   const pairs: ColourPair[] = [];
+  // Decoration hidden from assistive technology - a separator, a swatch - is
+  // not text a reader must read, and WCAG exempts it.
+  const readable = source.replace(/<[a-zA-Z][^<>]*aria-hidden="true"[^<>]*>/g, (tag) =>
+    tag.replace(/className=(?:"[^"]*"|\{`[^`]*`\})/, "")
+  );
   const classAttributes = [
-    ...source.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g),
+    ...readable.matchAll(/className=(?:"([^"]*)"|\{`([^`]*)`\})/g),
   ].map((match) => match[1] ?? match[2] ?? "");
 
   for (const classes of classAttributes) {
@@ -169,7 +225,17 @@ export function colourPairs(source: string): ColourPair[] {
           token
             .replace(/^dark:/, "")
             .replace(/^(?:hover|focus|group-hover|placeholder|focus-visible):/, "");
-        const themed = tokens.filter(wants).map(strip);
+        let themed = tokens.filter(wants).map(strip);
+        if (theme === "dark") {
+          // A theme token with no dark: twin renders in dark too, as its dark value.
+          const overridden = (kind: "text" | "bg") => themed.some((token) => new RegExp(`^${kind}-(?:${TEXT_TOKEN})$`).test(token));
+          const inherited = tokens
+            .filter((token) => !token.startsWith("dark:"))
+            .map(strip)
+            .filter((token) => SEMANTIC_PATTERN.test(token))
+            .filter((token) => !overridden(token.startsWith("bg-") ? "bg" : "text"));
+          themed = [...themed, ...inherited];
+        }
         const background = themed.find((token) =>
           new RegExp(`^bg-(?:${TEXT_TOKEN})$`).test(token)
         );

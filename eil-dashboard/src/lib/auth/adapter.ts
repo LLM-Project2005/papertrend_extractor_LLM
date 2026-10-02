@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { App } from "firebase-admin/app";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import type { User } from "@supabase/supabase-js";
@@ -253,6 +254,48 @@ export async function applyDeploymentGate(identity: AuthIdentity): Promise<AuthI
   return { ...identity, ownerUserId: null, mappingStatus: "pilot_restricted" };
 }
 
+/**
+ * A verified identity, kept for a minute by token (docs/32, 3.2; audit AUTH-7).
+ * Each API call verified its token with Firebase - with a revocation check,
+ * over the network - and looked up its owner, and a workspace page makes six
+ * to eight of them as it opens. A token is now verified once per request and
+ * its identity reused for 60 seconds, never past the token's own expiry; a
+ * revoked token or a removed account stops working within that minute. Only
+ * an identity mapped to an owner is kept: one still waiting for an invite or
+ * refused by the pilot is checked afresh every time.
+ */
+export const VERIFIED_IDENTITY_TTL_MS = 60_000;
+const VERIFIED_IDENTITY_MAX_ENTRIES = 1_000;
+const verifiedIdentities = new Map<string, { identity: AuthIdentity; expiresAt: number }>();
+const requestIdentities = new WeakMap<Request, Promise<AuthIdentity | null>>();
+
+function tokenKey(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+/** How long a verified identity may be reused: a minute, and not past the token's expiry. */
+export function verifiedIdentityExpiry(identity: AuthIdentity, now = Date.now()): number {
+  const exp = Number(identity.claims?.exp);
+  const tokenExpiry = Number.isFinite(exp) && exp > 0 ? exp * 1000 : Number.POSITIVE_INFINITY;
+  return Math.min(now + VERIFIED_IDENTITY_TTL_MS, tokenExpiry);
+}
+
+function rememberIdentity(key: string, identity: AuthIdentity): void {
+  if (!identity.ownerUserId) return;
+  const expiresAt = verifiedIdentityExpiry(identity);
+  if (expiresAt <= Date.now()) return;
+  if (verifiedIdentities.size >= VERIFIED_IDENTITY_MAX_ENTRIES) {
+    const oldest = verifiedIdentities.keys().next().value;
+    if (oldest !== undefined) verifiedIdentities.delete(oldest);
+  }
+  verifiedIdentities.set(key, { identity, expiresAt });
+}
+
+/** Forgets every kept identity (tests; and nothing else needs it). */
+export function clearVerifiedIdentities(): void {
+  verifiedIdentities.clear();
+}
+
 export async function getAuthenticatedIdentityFromRequest(
   request: Request,
   options?: VerifyTokenOptions
@@ -261,7 +304,29 @@ export async function getAuthenticatedIdentityFromRequest(
   if (!token) {
     return null;
   }
+  const pending = requestIdentities.get(request);
+  if (pending) return pending;
+  const key = tokenKey(token);
+  const kept = verifiedIdentities.get(key);
+  if (kept && kept.expiresAt > Date.now()) return kept.identity;
+  if (kept) verifiedIdentities.delete(key);
 
+  const verification = verifyRequestIdentity(token, options);
+  requestIdentities.set(request, verification);
+  try {
+    const identity = await verification;
+    if (identity) rememberIdentity(key, identity);
+    // Only a success is shared within the request; a refusal is checked again.
+    else requestIdentities.delete(request);
+    return identity;
+  } catch (error) {
+    // A failed check is not reused: another call in this request may ask with other options.
+    requestIdentities.delete(request);
+    throw error;
+  }
+}
+
+async function verifyRequestIdentity(token: string, options?: VerifyTokenOptions): Promise<AuthIdentity | null> {
   try {
     const identity = await getConfiguredAdapter().verifyBackendToken(token, options);
     // Await the mapping lookup so Supabase/configuration failures stay inside

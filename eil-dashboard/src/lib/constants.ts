@@ -2,16 +2,19 @@
    Shared constants — track definitions, colour palette, etc.
    ──────────────────────────────────────────────────────────────── */
 
+import { CATEGORICAL_PALETTE } from "@/lib/chart-palette";
+
 export const TRACK_COLS = ["EL", "ELI", "LAE", "Other"] as const;
 export type TrackKey = (typeof TRACK_COLS)[number];
 
 export const DEFAULT_REPOSITORY_NAME = "Repository";
 
+/** The legacy slots, from the checked palette (lib/chart-palette.ts): red and green no longer sit together. */
 export const TRACK_COLORS: Record<TrackKey, string> = {
-  EL: "#4a7fe5",
-  ELI: "#e05c5c",
-  LAE: "#3cba83",
-  Other: "#9b7fd4",
+  EL: CATEGORICAL_PALETTE[0],
+  ELI: CATEGORICAL_PALETTE[1],
+  LAE: CATEGORICAL_PALETTE[2],
+  Other: CATEGORICAL_PALETTE[6],
 };
 
 export const TRACK_NAMES: Record<TrackKey, string> = {
@@ -21,10 +24,5 @@ export const TRACK_NAMES: Record<TrackKey, string> = {
   Other: "Other / Unclassified",
 };
 
-/** 20-colour palette for topic / keyword charts */
-export const TOPIC_PALETTE = [
-  "#4a7fe5", "#e05c5c", "#3cba83", "#9b7fd4", "#f0a830",
-  "#2ec4b6", "#e76f51", "#606c88", "#8ecae6", "#d4a373",
-  "#118ab2", "#ef476f", "#06d6a0", "#ffd166", "#073b4c",
-  "#b5838d", "#6d6875", "#e9c46a", "#264653", "#a8dadc",
-];
+/** The palette for topic and keyword charts: the checked eight (lib/chart-palette.ts). */
+export const TOPIC_PALETTE: readonly string[] = CATEGORICAL_PALETTE;
