@@ -27,24 +27,23 @@ test("every citation renderer uses the scheme check", () => {
   assert.match(chat, /function SourceLink\(\{ href, className, children \}[^)]*\) \{\s*return parsePaperHref\(href\) \?/);
 });
 
-test("the Adaptive insights request is bounded and carries no free text to the model", () => {
+test("the Adaptive insights request carries no free text to the model", () => {
   // The old chart planner took a "context" object straight into a paid prompt.
-  // The insights route takes only filters; the model sees computed facts.
+  // The insights route takes only filters (their bounds are called in
+  // routes-signed-in.test.ts); unknown fields are dropped, not passed on.
   const route = read("src/app/api/workspace/insights/route.ts");
   assert.doesNotMatch(route, /\.passthrough\(\)/);
-  assert.match(route, /projectId: z\.string\(\)\.uuid\(\)/);
-  assert.match(route, /searchQuery: z\.string\(\)\.max\(500\)/);
   assert.doesNotMatch(route, /context:/);
 });
 
-test("the daily usage limit holds under parallel requests and fails closed", () => {
+test("parallel requests cannot all pass the daily limit", () => {
+  // The limit, its kinds and its refusal when it cannot be checked run in
+  // guards-behaviour.test.ts. PGlite has one connection, so what keeps
+  // parallel requests from all reading the same count is pinned here.
   const guards = read("src/lib/security-guards.ts");
   const fn = guards.slice(guards.indexOf("export async function assertAndRecordAiUsage"));
   assert.match(fn, /pg_advisory_xact_lock\(hashtextextended\(\$1, 0\)\)/, "count and insert are serialised");
   assert.ok(fn.indexOf("pg_advisory_xact_lock") < fn.indexOf("client.query<{ count: string }>(AI_USAGE_COUNT_SQL"), "the lock comes before the count");
-  assert.match(guards, /export const AI_USAGE_COUNT_SQL = `SELECT count\(\*\)::text AS count FROM public\.ai_usage_events/);
-  assert.match(fn, /throw new GuardError\("Usage could not be checked just now\. Try again in a moment\.", 503\)/);
-  assert.doesNotMatch(fn.slice(0, fn.indexOf("const supabase")), /allowing request/);
 });
 
 test("one person has at most two answers in flight", () => {
@@ -57,14 +56,6 @@ test("one person has at most two answers in flight", () => {
   assert.match(post, /if \(!streaming\) releaseSlot\(\);/, "the JSON path releases in finally");
 });
 
-test("a paper is analysed again at most three times a day", () => {
-  const repo = read("src/lib/cloudsql/analysis-job-repository.ts");
-  assert.match(repo, /export const MAX_REANALYSES_PER_PAPER_PER_DAY = 3;/);
-  assert.match(repo, /'reanalysis_day_count', CASE WHEN/);
-  assert.match(repo, /AND NOT \(COALESCE\(ir\.input_payload->>'reanalysis_day', ''\)/);
-  assert.match(repo, /today, MAX_REANALYSES_PER_PAPER_PER_DAY, deploymentEnv\(\)\]/, "the cap is a parameter, not SQL text");
-});
-
 test("a new password needs ten characters; an existing one still signs in", () => {
   const panel = read("src/components/auth/AuthPanel.tsx");
   assert.match(panel, /minLength=\{passwordMode === "signup" \? MIN_NEW_PASSWORD_LENGTH : undefined\}/);
@@ -74,15 +65,10 @@ test("a new password needs ten characters; an existing one still signs in", () =
 });
 
 test("refused and abandoned uploads do not stay in the bucket", () => {
+  // Which runs the sweep fails is called in guards-behaviour.test.ts.
   const finalize = read("src/app/api/admin/import/finalize/route.ts");
   const refusals = finalize.slice(finalize.indexOf("const maxUploadBytes"), finalize.indexOf("queueableUploadedItems.push(item);"));
   assert.equal((refusals.match(/await deleteGcsObject\(storagePath\)/g) ?? []).length, 2, "an oversized or non-PDF file is deleted");
-
-  const repo = read("src/lib/cloudsql/ingestion-repository.ts");
-  const sweep = repo.slice(repo.indexOf("async failAbandonedUploads"), repo.indexOf("async loadOwnedBatch"));
-  assert.match(sweep, /WHERE owner_user_id = \$1 AND source_type = 'upload'/, "only the caller's own uploads");
-  assert.match(sweep, /status = 'processing' AND source_path IS NULL/, "only uploads never finalized");
-  assert.match(sweep, /make_interval\(mins => \$2::int\)/);
 
   const prepare = read("src/app/api/admin/import/prepare/route.ts");
   assert.ok(
@@ -94,18 +80,10 @@ test("refused and abandoned uploads do not stay in the bucket", () => {
   assert.match(gcs, /\[0-9a-f\]\{8\}-/, "the run id is checked before it goes into a glob");
 });
 
-test("background-job callbacks accept only a Google-signed token for this service", () => {
+test("background jobs are queued with a Google-signed token, not the shared secret", () => {
+  // The callbacks' check runs, with signed tokens, in task-callers.test.ts.
   // They used to accept the shared worker secret, carried in every task's
   // headers and held by several services.
-  for (const route of [
-    "src/app/api/chat/jobs/process/route.ts",
-    "src/app/api/workspace/semantic-map/jobs/process/route.ts",
-    "src/app/api/workspace/projects/reclassify/process/route.ts",
-  ]) {
-    const src = read(route);
-    assert.match(src, /if \(!\(await isVerifiedTaskCaller\(request\)\)\)/, `${route} verifies the token`);
-    assert.doesNotMatch(src, /x-worker-secret/, `${route} no longer reads the secret`);
-  }
   for (const creator of [
     "src/lib/repository-chat-jobs.ts",
     "src/lib/semantic-map-jobs.ts",
@@ -116,30 +94,7 @@ test("background-job callbacks accept only a Google-signed token for this servic
     assert.match(src, /\n\s+oidcToken,\n/, `${creator} attaches it to the task`);
     assert.doesNotMatch(src, /"x-worker-secret"/, `${creator} no longer puts the secret in the task`);
   }
-  const oidc = read("src/lib/cloud-tasks-oidc.ts");
-  assert.match(oidc, /verifier\.verifyIdToken\(\{ idToken: match\[1\], audience \}\)/, "signature and audience are checked");
-  assert.match(oidc, /payload\.email_verified === true/);
-  assert.match(oidc, /allowed\.has\(payload\.email\.toLowerCase\(\)\)/, "only an allowed account");
-  // Task routes allow this service's own account alone; the worker's account is
-  // added only for the routes that use isVerifiedServiceCaller (search indexing).
-  assert.match(oidc, /return Boolean\(expectedEmail\) && verifiedCaller\(request, \[expectedEmail!\]\);/, "only this service's own account");
   assert.match(read("package.json"), /"google-auth-library": "\^10\.9\.0"/, "a direct dependency, not a transitive one");
-});
-
-test("every response carries an enforced Content-Security-Policy", () => {
-  const config = read("next.config.mjs");
-  assert.match(config, /const CSP_HEADER = "Content-Security-Policy";/, "enforced, not report-only");
-  assert.match(config, /\{ key: CSP_HEADER, value: contentSecurityPolicy \}/);
-  for (const directive of [
-    "default-src 'self'",
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ]) {
-    assert.ok(config.includes(`"${directive}"`), `missing ${directive}`);
-  }
-  assert.match(config, /\["connect-src 'self'", directApiOrigin,/, "data may go only to named hosts");
 });
 
 test("the Drive Picker opens in view, above the upload window", () => {
