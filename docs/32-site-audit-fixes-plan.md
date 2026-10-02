@@ -162,6 +162,33 @@ Found verifying production, and fixed the same day:
 
 **The migration ledger** (long-term health): `schema_migrations` records the migrations applied before it (checked one by one by the objects each creates; `phase3_owner_rls.sql`, a preparation script, never was) and every migration from it on records itself inside its own transaction; the apply script refuses one already recorded. Both 2026-10-02 migrations were applied this way after on-demand backup 1790941606479.
 
+## Long-term health results
+
+State on 2026-10-02. Changes listed "on development" go out with the next build batch (a pilot and a production build); a build for them alone is not worth it.
+
+**Record the database schema: done** (ledger in production; the folded schema on development).
+- The migration ledger is described under the phase 4 results.
+- `schema.sql` alone now builds the live database. Six applied migrations had never been copied into it (the phase 8 search index and chat jobs, the semantic map and its distances, dynamic categories, repository profiles), and three NOT NULL rules had been set on the live database outside any file. All are folded in.
+- `cloudsql/live-structure.json` records the live structure, read on 2026-10-02: 41 tables, every column's type and nullability, 155 indexes and 8 views. `schema-authority.test.ts` fails if `schema.sql` builds anything else. After applying a migration, fold it into `schema.sql` and refresh the snapshot.
+
+**Replace source-text tests with behaviour tests: begun.**
+- Inventory: 1,180 assertions read application source instead of running it (1,167 in TypeScript, 13 in Python). That is 37% of all TypeScript assertions, in 335 of 1,008 tests. Most of the rest are config checks, which may stay as text.
+- Most are aimed at five large modules: the chat client, the repository chat, the Library, the chat route and the dashboard. No test yet calls a route handler or renders with a DOM.
+- First tranche, on development:
+  - Secret comparison and the queue cron's refusal, by calling them.
+  - Cross-origin headers and redirect targets, by calling them.
+  - What counts as a PDF, and stored file names.
+  - The invite switch, and the invite admin routes, called without a session or with the shared import secret.
+  - Upload duplicates and fingerprints, in PGlite.
+  - Together these replace 38 source-text assertions in `security-surface`, `invite-codes` and `account-guardrails`.
+- The new tests found one bug, fixed on development: a file name with two dots in a row (`report..final.pdf`) kept them in its storage path, and finalize refuses any path containing "..", so the upload failed. Stored names now fold runs of dots.
+- Next: route handlers called with fake requests (which needs a seam for auth), `renderToStaticMarkup` for components, PGlite for the SQL still pinned as text (32 assertions), and imported constants in place of matched ones.
+
+**Remove the unreachable legacy paths: mapped, waiting on a decision.**
+- The old chart agent and the generic answer tail, about 3,800 of `src/app/api/chat/route.ts`'s 4,750 lines plus `chart-agent.ts` and `chart-recommendation.ts`, cannot be reached in production. The repository chat always answers.
+- The Python research worker can still be reached. Pressing **Start** on a session planned before deep research v2 sends it there, and production holds 8 such sessions in "planned" (the newest from 2026-05-31). No spend has ever been recorded on that path, and no scheduler calls it.
+- Removing it means answering those 8 with "plan it again", deleting the worker's research and query graphs (`nodes/deep_research.py` and its tests), and checking chat, charts and deep research on the pilot.
+
 ## 2.11 — the remaining medium findings
 
 Every medium finding the audit made in the Library, chat, dashboard, shell and sign-in areas. "Fixed" items are covered by `tests/audit-small-fixes.test.ts` unless another test is named. The chat area had two sets of numbers (the page and the answer engine); the second set is marked *engine*.
