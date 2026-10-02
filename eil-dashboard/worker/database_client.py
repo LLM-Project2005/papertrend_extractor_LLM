@@ -93,6 +93,11 @@ STALE_SEARCH_INDEX_SQL = (
     "WHERE ir.source_type = 'upload' AND ir.status = 'succeeded' AND ir.trashed_at IS NULL "
     "AND COALESCE(ir.input_payload->>'deployment', 'production') = %s "
     "AND ir.owner_user_id = %s::uuid "
+    # A run in no repository's folder (from before repositories) is never
+    # searched by any chat, and indexing it writes nothing: listed, it was
+    # asked about again every half hour.
+    "AND EXISTS (SELECT 1 FROM public.research_folders f "
+    "WHERE f.id = ir.folder_id AND f.project_id IS NOT NULL) "
     "AND NOT EXISTS ("
     "SELECT 1 FROM public.paper_retrieval_documents d "
     "WHERE d.owner_user_id = ir.owner_user_id AND d.paper_id = pc.paper_id "

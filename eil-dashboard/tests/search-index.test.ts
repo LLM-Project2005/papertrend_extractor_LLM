@@ -88,17 +88,32 @@ test("the worker's stale-index query picks what needs indexing, and nothing it c
     CREATE TABLE ingestion_runs (
       id uuid PRIMARY KEY, owner_user_id uuid NOT NULL, source_type text NOT NULL DEFAULT 'upload',
       status text NOT NULL, trashed_at timestamptz, input_payload jsonb NOT NULL DEFAULT '{}',
-      completed_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now());
+      completed_at timestamptz, updated_at timestamptz NOT NULL DEFAULT now(), folder_id uuid);
+    CREATE TABLE research_folders (id uuid PRIMARY KEY, project_id uuid);
+    INSERT INTO research_folders VALUES ('00000000-0000-0000-0000-0000000000f1', '00000000-0000-0000-0000-0000000000a1');
     CREATE TABLE paper_content (paper_id bigint PRIMARY KEY, ingestion_run_id uuid);
     CREATE TABLE paper_retrieval_documents (owner_user_id uuid, paper_id bigint, updated_at timestamptz NOT NULL);
   `);
   const owner = "00000000-0000-0000-0000-00000000000a";
   const run = (n: number) => `00000000-0000-0000-0000-0000000001${String(n).padStart(2, "0")}`;
-  const add = async (n: number, status: string, completed: string, options: { trashed?: boolean; pilot?: boolean; content?: boolean; indexedAt?: string } = {}) => {
+  const add = async (
+    n: number,
+    status: string,
+    completed: string,
+    options: { trashed?: boolean; pilot?: boolean; content?: boolean; indexedAt?: string; noFolder?: boolean } = {}
+  ) => {
     await db.query(
-      `INSERT INTO ingestion_runs (id, owner_user_id, status, trashed_at, input_payload, completed_at)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [run(n), owner, status, options.trashed ? "2026-10-01T00:00:00Z" : null, options.pilot ? { deployment: "pilot" } : {}, completed]
+      `INSERT INTO ingestion_runs (id, owner_user_id, status, trashed_at, input_payload, completed_at, folder_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        run(n),
+        owner,
+        status,
+        options.trashed ? "2026-10-01T00:00:00Z" : null,
+        options.pilot ? { deployment: "pilot" } : {},
+        completed,
+        options.noFolder ? null : "00000000-0000-0000-0000-0000000000f1",
+      ]
     );
     if (options.content !== false) await db.query(`INSERT INTO paper_content VALUES ($1,$2)`, [1000 + n, run(n)]);
     if (options.indexedAt) await db.query(`INSERT INTO paper_retrieval_documents VALUES ($1,$2,$3)`, [owner, 1000 + n, options.indexedAt]);
@@ -110,6 +125,7 @@ test("the worker's stale-index query picks what needs indexing, and nothing it c
   await add(5, "queued", "2026-09-30T10:00:00Z", { indexedAt: "2026-09-29T00:00:00Z" });       // being re-analysed: keep the old index
   await add(6, "succeeded", "2026-09-30T10:00:00Z", { pilot: true });                          // the pilot's
   await add(7, "succeeded", "2026-09-30T10:00:00Z", { content: false });                       // a copy with no content of its own
+  await add(8, "succeeded", "2026-09-30T10:00:00Z", { noFolder: true });                       // from before repositories: no chat searches it
   const picked = (await db.query<{ run_id: string }>(staleSql, ["production", owner, 10])).rows.map((row) => row.run_id).sort();
   assert.deepEqual(picked, [run(1), run(3)]);
   const pilot = (await db.query<{ run_id: string }>(staleSql, ["pilot", owner, 10])).rows.map((row) => row.run_id);

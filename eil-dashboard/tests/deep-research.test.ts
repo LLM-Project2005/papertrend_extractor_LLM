@@ -278,10 +278,11 @@ test("a stalled run is picked up again; a just-started one is not", () => {
 test("one unit per run, charged on its first start; a retry is free", () => {
   const actions = read("src/lib/deep-research/actions.ts");
   assert.match(actions, /if \(session\.status === "planned" \|\| \(session\.status === "canceled" && neverRan\)\) \{\s*await assertAndRecordAiUsage\(ownerUserId, "deep_research"/);
+  // The route charges nothing itself: the old per-request charge went with the
+  // legacy research path. A session planned before v2 is refused, not run.
   const route = read("src/app/api/chat/route.ts");
-  const v2 = route.indexOf('if (chatMode === "deep_research" && getDatabaseProvider() === "cloud-sql")');
-  const legacy = route.indexOf("await assertAndRecordAiUsage(ownerUserId, usageKindForRequest(body)");
-  assert.ok(v2 > 0 && legacy > v2, "v2 returns before the old per-request charge");
+  assert.doesNotMatch(route, /assertAndRecordAiUsage/);
+  assert.match(route, /if \(!detail\) return NextResponse\.json\(\{ error: EARLIER_RESEARCH_MESSAGE \}, \{ status: 409 \}\);/);
 });
 
 test("the run is called only by this service's tasks, and its spend is recorded", () => {

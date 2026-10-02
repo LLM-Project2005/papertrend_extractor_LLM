@@ -145,14 +145,6 @@ export function triggerWorkerQueue(options?: {
   return triggerWorkerEndpoint("/process-queue", options);
 }
 
-export function triggerResearchQueue(options?: {
-  maxRuns?: number;
-  reason?: string;
-  force?: boolean;
-}): Promise<TriggerResult> {
-  return triggerWorkerEndpoint("/process-research-queue", options);
-}
-
 export async function resetWorkerQueueLock(): Promise<{
   ok: boolean;
   status: number;

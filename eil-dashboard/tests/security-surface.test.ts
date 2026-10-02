@@ -96,14 +96,10 @@ test("the admin secret is never read from a URL", () => {
   }
 });
 
-test("secrets are compared in constant time and fail closed when unset", () => {
-  const auth = read("src/lib/admin-auth.ts");
-  assert.match(auth, /timingSafeEqual/);
-  // safeEqual must length-check first: timingSafeEqual throws on a length
-  // mismatch, so a missing check turns a wrong guess into a 500 that leaks the
-  // expected length.
-  assert.match(auth, /if \(leftBuffer\.length !== rightBuffer\.length\) \{\s*\n\s*return false;/);
-  assert.match(auth, /if \(!expectedSecret\) return false;/);
+test("background jobs prove who called them, and the research cron compares its secret safely", () => {
+  // How a secret is compared (exactly, fail-closed, without throwing on a
+  // length mismatch) and that the queue cron refuses a wrong one are run in
+  // security-behaviour.test.ts.
 
   // The background-job callbacks no longer take a shared secret at all: each
   // task carries a Google-signed identity token (see cloud-tasks-oidc.ts).
@@ -111,10 +107,7 @@ test("secrets are compared in constant time and fail closed when unset", () => {
   assert.doesNotMatch(jobs, /isRepositoryJobSecretValid/);
   assert.match(read("src/lib/cloud-tasks-oidc.ts"), /verifier\.verifyIdToken/);
 
-  for (const cron of [
-    "src/app/api/cron/process-queue/route.ts",
-    "src/app/api/cron/process-research-queue/route.ts",
-  ]) {
+  for (const cron of ["src/app/api/cron/process-research-queue/route.ts"]) {
     const src = read(cron);
     assert.match(src, /isValidBearerSecret\(authHeader, expectedCronSecret\)/);
     assert.equal(
@@ -239,27 +232,8 @@ test("the only raw HTML injected is a static module constant", () => {
   assert.deepEqual(sinks, [], "only the pre-paint theme constant may be injected as HTML");
 });
 
-test("cross-origin access is an allowlist, never a wildcard", () => {
-  const cors = read("src/lib/chat-cors.ts");
-  assert.equal(/"Access-Control-Allow-Origin": "\*"/.test(cors), false);
-  assert.match(cors, /if \(!allowed\.includes\(normalized\)\) return \{\};/);
-  assert.match(cors, /Vary: "Origin"/, "a varying origin must not be cached across origins");
-  assert.equal(
-    /Access-Control-Allow-Credentials/.test(cors),
-    false,
-    "bearer-token auth needs no credentials, and allowing them widens the blast radius"
-  );
-});
-
-test("a redirect target cannot be pointed off-site", () => {
-  const guards = read("src/lib/security-guards.ts");
-  const fn = guards.slice(guards.indexOf("export function validateSafeReturnTo"));
-  assert.match(fn, /raw\.startsWith\("\/\/"\)/, "a protocol-relative URL leaves the site");
-  assert.match(fn, /url\.origin === new URL\(configured\)\.origin/);
-  // A leading slash is not enough (a backslash or a tab after it leaves the
-  // site in a browser), so every path goes through the shared check.
-  assert.match(fn, /return safeReturnPath\(raw, fallback\);/);
-});
+// Cross-origin access (an allowlist, no credentials) and redirect targets
+// (never off-site) are run in security-behaviour.test.ts.
 
 test("the analysis route cleans stored text in linear time", () => {
   // raw_text comes from an uploaded PDF and can be large. The old \\s-based
@@ -289,10 +263,8 @@ test("an upload is finalized once, and its real size is checked", () => {
   assert.match(finalize, /ACCEPTED_UPLOAD_TYPES\.has/);
 });
 
-test("uploads are checked by content, not only by name", () => {
-  const safety = read("src/lib/upload-safety.ts");
-  assert.match(safety, /subarray\(0, 5\)\.toString\("ascii"\) === "%PDF-"/);
-  assert.match(safety, /replace\(\/\[\^a-zA-Z0-9\._-\]\+\/g, "-"\)/, "the stored name is stripped to a safe set");
+test("the server-side import checks a file's content", () => {
+  // What counts as a PDF, and the safe stored name, are run in security-behaviour.test.ts.
   assert.match(read("src/app/api/admin/import/route.ts"), /if \(!hasPdfMagic\(fileBuffer\)\)/);
 });
 

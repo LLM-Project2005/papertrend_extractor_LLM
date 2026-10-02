@@ -162,6 +162,41 @@ Found verifying production, and fixed the same day:
 
 **The migration ledger** (long-term health): `schema_migrations` records the migrations applied before it (checked one by one by the objects each creates; `phase3_owner_rls.sql`, a preparation script, never was) and every migration from it on records itself inside its own transaction; the apply script refuses one already recorded. Both 2026-10-02 migrations were applied this way after on-demand backup 1790941606479.
 
+## Long-term health results
+
+State on 2026-10-02. Changes listed "on development" go out with the next build batch (a pilot and a production build); a build for them alone is not worth it.
+
+**Record the database schema: done** (ledger in production; the folded schema on development).
+- The migration ledger is described under the phase 4 results.
+- `schema.sql` alone now builds the live database. Six applied migrations had never been copied into it (the phase 8 search index and chat jobs, the semantic map and its distances, dynamic categories, repository profiles), and three NOT NULL rules had been set on the live database outside any file. All are folded in.
+- `cloudsql/live-structure.json` records the live structure, read on 2026-10-02: 41 tables, every column's type and nullability, 155 indexes and 8 views. `schema-authority.test.ts` fails if `schema.sql` builds anything else. After applying a migration, fold it into `schema.sql` and refresh the snapshot.
+
+**Replace source-text tests with behaviour tests: begun.**
+- Inventory: 1,180 assertions read application source instead of running it (1,167 in TypeScript, 13 in Python). That is 37% of all TypeScript assertions, in 335 of 1,008 tests. Most of the rest are config checks, which may stay as text.
+- Most are aimed at five large modules: the chat client, the repository chat, the Library, the chat route and the dashboard. No test yet calls a route handler or renders with a DOM.
+- First tranche, on development:
+  - Secret comparison and the queue cron's refusal, by calling them.
+  - Cross-origin headers and redirect targets, by calling them.
+  - What counts as a PDF, and stored file names.
+  - The invite switch, and the invite admin routes, called without a session or with the shared import secret.
+  - Upload duplicates and fingerprints, in PGlite.
+  - Together these replace 38 source-text assertions in `security-surface`, `invite-codes` and `account-guardrails`.
+- The new tests found one bug, fixed on development: a file name with two dots in a row (`report..final.pdf`) kept them in its storage path, and finalize refuses any path containing "..", so the upload failed. Stored names now fold runs of dots.
+- Next: route handlers called with fake requests (which needs a seam for auth), `renderToStaticMarkup` for components, PGlite for the SQL still pinned as text (32 assertions), and imported constants in place of matched ones.
+
+**Remove the unreachable legacy paths: unwired (on development); the unused files are listed for deletion.**
+- **The chat route** keeps what answers today: the repository chat, deep research v2, streaming, spend and the per-person slot. It drops the chart agent, the general model answer with its own web search, and the old deep research plan and run, going from 4,750 lines to 832.
+- **The repository chat** always plans with v2. The other planner ran only with `REPOSITORY_CHAT_V2_ENABLED=false`, which no deployment sets.
+- **A session planned before v2** is answered with a clear refusal (409). Production holds 8 of them; their card now offers **Plan again** instead of **Start**. Pressing Start used to send one to the Python worker. Completed old reports still display as before.
+- **The worker** no longer serves research, chat, keyword search or chart planning. `graphs.py` keeps only the ingestion graph, so the research code (`nodes/deep_research.py`, `workspace_data.py`) is no longer loaded at startup.
+- **Left to do by hand:** Claude Code's auto mode refuses to delete files or read the ingestion hook.
+  - *Delete (web):* `src/lib/chart-agent.ts`, `src/lib/chart-recommendation.ts`, `src/lib/python-node-service.ts`, then `getPythonNodeServiceUrl` (and its fallback in `getWorkerServiceUrl`) in `server-env.ts` and the chart-agent entry in `tests/spend-limits.test.ts`.
+  - *Delete (web):* `src/app/api/cron/process-research-queue/route.ts`, its `vercel.json` crons and its lines in `security-surface.test.ts`.
+  - *Delete (web):* `refineRepositoryPrompt`, `PromptPlanSchema` and `normalizePromptPlanCandidate` in `repository-chat.ts`, with `scripts/repository-chat-live-eval.ts`.
+  - *Delete (worker):* `nodes/deep_research.py`, `nodes/report_citations.py`, `nodes/conversation.py`, `nodes/visualization.py`, `nodes/keyword_search.py`, `nodes/workspace_loader.py`, `workspace_data.py`, `eil-dashboard/worker/process_research_queue.py` and `scripts/evaluate_chatbot_offline.py`; then the `DeepResearch*` and `WorkspaceQueryState` types in `state.py`, and the `worker:research` scripts in `package.json`.
+  - *Delete (worker tests):* `tests/test_deep_research.py`, `test_deep_research_thai_and_provider.py`, `test_deep_research_state_contract.py`, `test_report_citations.py`, `test_conversation_tools.py`, `test_workspace_data.py`, and the keyword-search cases in `test_new_ingestion_nodes.py`.
+  - *Edit:* in `eil-dashboard/worker/process_ingestion_queue.py`, `resume_waiting_research_sessions_for_folder` and its three calls (with the research-session methods in `database_client.py`) move sessions from "waiting on analysis" to "queued", statuses only the old path used. No production session is in either.
+
 ## 2.11 — the remaining medium findings
 
 Every medium finding the audit made in the Library, chat, dashboard, shell and sign-in areas. "Fixed" items are covered by `tests/audit-small-fixes.test.ts` unless another test is named. The chat area had two sets of numbers (the page and the answer engine); the second set is marked *engine*.

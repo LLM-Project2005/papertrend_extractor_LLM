@@ -50,10 +50,11 @@ test("Cloud SQL chat writes normalize repository-wide folder scope", () => {
   assert.doesNotMatch(repository, /input\.folderId \|\| null/);
 });
 
-test("Deep Research resolves selected runs through canonical paper content", () => {
+test("the chat route reads no papers itself: the repository chat and deep research v2 do", () => {
+  // Its own paper SQL belonged to the legacy chart and research paths, removed
+  // (docs/32, long-term health); a failure is still logged by name.
   const route = readFileSync(join(root, "src/app/api/chat/route.ts"), "utf8");
-  assert.match(route, /c\.ingestion_run_id=ANY/);
-  assert.match(route, /COALESCE\(c\.folder_id,p\.folder_id\)/);
+  assert.doesNotMatch(route, /SELECT/);
   assert.doesNotMatch(route, /p\.ingestion_run_id/);
   assert.match(route, /chat_request_failed/);
 });

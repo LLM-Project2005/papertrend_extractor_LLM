@@ -65,26 +65,11 @@ test("an invite's status", () => {
   assert.equal(inviteStatus({ ...base, revoked_at: "2026-09-30T00:00:00Z", use_count: 1 }, now), "revoked");
 });
 
-test("a new account is created only by spending a valid code, in the same transaction", () => {
+test("redeeming a code provisions in one service transaction", () => {
+  // What provisioning does - existing accounts first, nothing created without
+  // a code, the code spent by one conditional update, a bound email honoured -
+  // runs in PGlite in identity-provisioning.test.ts.
   const repo = read("src/lib/cloudsql/identity-repository.ts");
-  const body = repo.slice(repo.indexOf("async function provisionInTransaction"));
-  // Existing accounts (a mapping, or a verified email) are found before any invite check.
-  assert.ok(body.indexOf("FROM public.auth_identity_mappings") < body.indexOf('newAccount === "invite_required"'));
-  assert.ok(body.indexOf("FROM public.user_profiles WHERE lower(email)") < body.indexOf('newAccount === "invite_required"'));
-  // Without a code, nothing is created.
-  assert.match(body, /if \(newAccount === "invite_required"\) \{\s*return \{ status: "invite_required" \};/);
-  // The code is spent by one conditional UPDATE, before the profile is inserted.
-  assert.ok(body.indexOf("UPDATE public.invite_codes") < body.indexOf("INSERT INTO public.user_profiles"));
-  for (const condition of [
-    "WHERE code_hash = $1",
-    "AND revoked_at IS NULL",
-    "AND expires_at > now()",
-    "AND use_count < max_uses",
-    "AND (bound_email IS NULL OR (bound_email = $2 AND $3::boolean))",
-  ]) {
-    assert.ok(body.includes(condition), condition);
-  }
-  assert.match(body, /if \(!inviteCodeId\) \{\s*return \{ status: "invalid_code" \};/);
   assert.match(repo, /withCloudSqlServiceTransaction\(\(client\) =>\s*provisionInTransaction\(client, identity, allowed, \{ inviteCodeHash \}\)/);
 });
 
@@ -92,8 +77,7 @@ test("signing in without an account asks for a code instead of creating one", ()
   const mapping = read("src/lib/auth/identity-mapping.ts");
   assert.match(mapping, /inviteRequired: getInviteCodeRequired\(\),/);
   assert.match(mapping, /return \{ \.\.\.identity, mappingStatus: "invite_required" \};/);
-  const env = read("src/lib/server-env.ts");
-  assert.match(env, /INVITE_CODE_REQUIRED\)\.toLowerCase\(\) !== "false"/, "on unless explicitly turned off");
+  // On unless explicitly turned off: run in invite-behaviour.test.ts.
   assert.match(read("src/app/api/auth/profile/route.ts"), /inviteRequired: identity\.mappingStatus === "invite_required"/);
 
   const claims = (provider: string, verified: boolean) => ({ email_verified: verified, firebase: { sign_in_provider: provider } });
@@ -118,20 +102,8 @@ test("redeeming is limited, refuses alike, and never logs the code", () => {
   assert.equal(INVITE_REFUSED_MESSAGE.includes("expired"), false, "one message, whatever the reason");
 });
 
-test("only a signed-in admin makes, lists or revokes codes", () => {
-  for (const path of ["src/app/api/admin/invites/route.ts", "src/app/api/admin/invites/[inviteId]/route.ts"]) {
-    const src = read(path);
-    assert.match(src, /const admin = await getAdminUserFromRequest\(request\);/);
-    assert.match(src, /if \(!admin\) return NextResponse\.json\(\{ error: "Only an admin can manage invite codes\." \}, \{ status: 403 \}\);/);
-    assert.doesNotMatch(src, /isAuthorizedAdminRequest/, "the shared import secret is not enough");
-  }
-  const auth = read("src/lib/admin-auth.ts");
-  const fn = auth.slice(
-    auth.indexOf("export async function getAdminUserFromRequest"),
-    auth.indexOf("export async function isAuthorizedUserOrAdminRequest")
-  );
-  assert.doesNotMatch(fn, /x-admin-secret/);
-  assert.match(fn, /return isAdmin \? user : null;/);
+test("listing codes never reads their hashes", () => {
+  // Admins only, the shared import secret not enough: the routes are called in invite-behaviour.test.ts.
   const list = read("src/lib/cloudsql/invite-repository.ts");
   assert.doesNotMatch(list.slice(list.indexOf("export async function listInviteCodes")), /code_hash/, "hashes never leave the database");
 });

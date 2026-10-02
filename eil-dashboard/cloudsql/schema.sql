@@ -6,6 +6,8 @@
 -- Cloud SQL database without breaking the current production contract.
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- The search index and the semantic map store embeddings (folded in below).
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- This Cloud SQL schema intentionally omits Supabase RLS policies, auth.users
 -- foreign keys, storage bucket creation, and auth triggers. Authorization must
@@ -1116,3 +1118,601 @@ SELECT
   prt.classifier_source
 FROM papers p
 JOIN paper_research_typologies prt ON prt.paper_id = p.id;
+
+-- ===========================================================================
+-- Folded in from migrations (docs/32, long-term health: one authoritative
+-- schema). These files were applied to the live database but never copied
+-- here, so this file alone built a database without the search index, the
+-- semantic map or the repository profiles. Each part names its file; the
+-- BEGIN/COMMIT and GRANT lines are left out (a fresh database has no app role
+-- yet). The result was checked against the live database on 2026-10-02, and
+-- tests/schema-authority.test.ts keeps it that way (cloudsql/live-structure.json).
+-- ===========================================================================
+
+-- ----------------------------------------------------- from phase8_chat_v2.sql
+
+-- Agentic Repository Chat V2: durable digests, hybrid retrieval, and report jobs.
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE OR REPLACE FUNCTION public.papertrend_current_user_id()
+RETURNS UUID
+LANGUAGE sql
+STABLE
+AS $$
+  SELECT NULLIF(current_setting('app.current_user_id', true), '')::UUID;
+$$;
+
+CREATE TABLE IF NOT EXISTS public.paper_retrieval_documents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  project_id UUID REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  ingestion_run_id UUID REFERENCES public.ingestion_runs(id) ON DELETE SET NULL,
+  digest_markdown TEXT NOT NULL,
+  content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+  digest_version TEXT NOT NULL DEFAULT 'repository-digest-v1',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, paper_id, digest_version)
+);
+
+CREATE TABLE IF NOT EXISTS public.paper_retrieval_chunks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  ingestion_run_id UUID REFERENCES public.ingestion_runs(id) ON DELETE SET NULL,
+  section TEXT NOT NULL,
+  chunk_index INT NOT NULL CHECK (chunk_index >= 0),
+  content TEXT NOT NULL,
+  content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+  token_count INT NOT NULL DEFAULT 0 CHECK (token_count >= 0),
+  embedding_model TEXT,
+  embedding_version TEXT,
+  embedding VECTOR(1536),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, paper_id, section, chunk_index, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS public.repository_chat_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  thread_id UUID REFERENCES public.workspace_threads(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  prompt TEXT NOT NULL,
+  execution_plan JSONB NOT NULL DEFAULT '{}'::jsonb,
+  status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','processing','succeeded','failed','canceled')),
+  progress_current INT NOT NULL DEFAULT 0 CHECK (progress_current >= 0),
+  progress_total INT NOT NULL DEFAULT 0 CHECK (progress_total >= 0),
+  result_text TEXT,
+  citations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  charts JSONB NOT NULL DEFAULT '[]'::jsonb,
+  coverage JSONB NOT NULL DEFAULT '{}'::jsonb,
+  limitations JSONB NOT NULL DEFAULT '[]'::jsonb,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_documents_owner_scope
+  ON public.paper_retrieval_documents(owner_user_id, project_id, folder_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_owner_scope
+  ON public.paper_retrieval_chunks(owner_user_id, project_id, folder_id, paper_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_fts
+  ON public.paper_retrieval_chunks USING GIN (to_tsvector('simple', content));
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_embedding
+  ON public.paper_retrieval_chunks USING hnsw (embedding vector_cosine_ops)
+  WHERE embedding IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_repository_chat_jobs_owner_status
+  ON public.repository_chat_jobs(owner_user_id, status, updated_at DESC);
+
+DO $$
+DECLARE table_name TEXT;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY[
+    'paper_retrieval_documents',
+    'paper_retrieval_chunks',
+    'repository_chat_jobs'
+  ] LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('DROP POLICY IF EXISTS papertrend_owner_access ON public.%I', table_name);
+    EXECUTE format(
+      'CREATE POLICY papertrend_owner_access ON public.%I FOR ALL USING (owner_user_id = public.papertrend_current_user_id()) WITH CHECK (owner_user_id = public.papertrend_current_user_id())',
+      table_name
+    );
+  END LOOP;
+END $$;
+
+-- ----------------------------------------------------- from phase8_knowledge_chat_v3.sql
+
+-- Knowledge Chat V3 supports owner-wide reports that are not tied to one project.
+ALTER TABLE public.repository_chat_jobs
+  ALTER COLUMN project_id DROP NOT NULL;
+
+-- ----------------------------------------------------- from 20260909_dynamic_paper_categories.sql
+
+-- Dynamic project category storage for the authoritative Cloud SQL database.
+-- Additive and safe to run more than once.
+-- Revision 2: does not alter or reference functions owned by another DB role.
+
+CREATE TABLE IF NOT EXISTS public.paper_category_definitions (
+  id                    BIGSERIAL PRIMARY KEY,
+  paper_id              BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  owner_user_id         UUID,
+  folder_id             UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  taxonomy_name         TEXT NOT NULL DEFAULT 'Project categories',
+  taxonomy_definition   TEXT,
+  domain                TEXT,
+  domain_definition     TEXT,
+  category_key          TEXT NOT NULL,
+  category_label        TEXT NOT NULL,
+  category_description  TEXT,
+  position              INT NOT NULL DEFAULT 1,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, paper_id, category_key)
+);
+
+CREATE TABLE IF NOT EXISTS public.paper_category_assignments (
+  id                    BIGSERIAL PRIMARY KEY,
+  paper_id              BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  owner_user_id         UUID,
+  folder_id             UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  taxonomy_name         TEXT NOT NULL DEFAULT 'Project categories',
+  category_key          TEXT NOT NULL,
+  category_label        TEXT NOT NULL,
+  assignment_type       TEXT NOT NULL CHECK (assignment_type IN ('single', 'multi')),
+  is_other              BOOLEAN NOT NULL DEFAULT false,
+  rationale             TEXT,
+  position              INT NOT NULL DEFAULT 1,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, paper_id, assignment_type, category_key)
+);
+
+-- Complete partially applied installations without changing existing data.
+ALTER TABLE public.paper_category_definitions
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS taxonomy_name TEXT NOT NULL DEFAULT 'Project categories',
+  ADD COLUMN IF NOT EXISTS taxonomy_definition TEXT,
+  ADD COLUMN IF NOT EXISTS domain TEXT,
+  ADD COLUMN IF NOT EXISTS domain_definition TEXT,
+  ADD COLUMN IF NOT EXISTS category_description TEXT,
+  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1;
+
+ALTER TABLE public.paper_category_assignments
+  ADD COLUMN IF NOT EXISTS owner_user_id UUID,
+  ADD COLUMN IF NOT EXISTS folder_id UUID,
+  ADD COLUMN IF NOT EXISTS taxonomy_name TEXT NOT NULL DEFAULT 'Project categories',
+  ADD COLUMN IF NOT EXISTS category_label TEXT,
+  ADD COLUMN IF NOT EXISTS is_other BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS rationale TEXT,
+  ADD COLUMN IF NOT EXISTS position INT NOT NULL DEFAULT 1;
+
+DO $$
+BEGIN
+  ALTER TABLE public.paper_category_definitions
+    ADD CONSTRAINT paper_category_definitions_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES public.research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+  ALTER TABLE public.paper_category_assignments
+    ADD CONSTRAINT paper_category_assignments_folder_id_fkey
+    FOREIGN KEY (folder_id) REFERENCES public.research_folders(id) ON DELETE SET NULL;
+EXCEPTION
+  WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_paper_category_definitions_owner_user_id
+  ON public.paper_category_definitions(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_category_definitions_folder_id
+  ON public.paper_category_definitions(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_category_definitions_category
+  ON public.paper_category_definitions(owner_user_id, category_key);
+CREATE INDEX IF NOT EXISTS idx_paper_category_assignments_owner_user_id
+  ON public.paper_category_assignments(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_paper_category_assignments_folder_id
+  ON public.paper_category_assignments(folder_id);
+CREATE INDEX IF NOT EXISTS idx_paper_category_assignments_category
+  ON public.paper_category_assignments(owner_user_id, assignment_type, category_key);
+CREATE INDEX IF NOT EXISTS idx_paper_category_assignments_paper_id
+  ON public.paper_category_assignments(paper_id);
+
+ALTER TABLE public.paper_category_definitions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.paper_category_definitions FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS papertrend_owner_access ON public.paper_category_definitions;
+CREATE POLICY papertrend_owner_access ON public.paper_category_definitions
+  FOR ALL
+  USING (owner_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID)
+  WITH CHECK (owner_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+
+ALTER TABLE public.paper_category_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.paper_category_assignments FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS papertrend_owner_access ON public.paper_category_assignments;
+CREATE POLICY papertrend_owner_access ON public.paper_category_assignments
+  FOR ALL
+  USING (owner_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID)
+  WITH CHECK (owner_user_id = NULLIF(current_setting('app.current_user_id', true), '')::UUID);
+
+-- Tables created by the migration administrator still need to be available to
+-- the restricted application role. Row-level security remains authoritative.
+
+-- ----------------------------------------------------- from 20260909_repository_semantic_map.sql
+
+-- Repository Semantic Map: document embeddings, versioned projections, and explainable edges.
+-- Safe to run multiple times against Cloud SQL PostgreSQL.
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS public.paper_semantic_embeddings (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  folder_id UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  ingestion_run_id UUID REFERENCES public.ingestion_runs(id) ON DELETE SET NULL,
+  content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+  representation_version TEXT NOT NULL,
+  embedding_model TEXT NOT NULL,
+  embedding_dimensions INT NOT NULL CHECK (embedding_dimensions > 0),
+  embedding VECTOR(1536) NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (owner_user_id, paper_id, representation_version, embedding_model, content_hash)
+);
+
+CREATE TABLE IF NOT EXISTS public.repository_semantic_maps (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'processing', 'succeeded', 'failed', 'canceled')),
+  source_hash TEXT NOT NULL CHECK (length(source_hash) = 64),
+  representation_version TEXT NOT NULL,
+  projection_algorithm TEXT,
+  projection_version TEXT,
+  projection_parameters JSONB NOT NULL DEFAULT '{}'::jsonb,
+  random_seed INT NOT NULL DEFAULT 42,
+  paper_count INT NOT NULL DEFAULT 0 CHECK (paper_count >= 0),
+  quality_metrics JSONB NOT NULL DEFAULT '{}'::jsonb,
+  clusters JSONB NOT NULL DEFAULT '[]'::jsonb,
+  progress_stage TEXT NOT NULL DEFAULT 'queued',
+  progress_current INT NOT NULL DEFAULT 0 CHECK (progress_current >= 0),
+  progress_total INT NOT NULL DEFAULT 0 CHECK (progress_total >= 0),
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS public.repository_semantic_points (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  map_id UUID NOT NULL REFERENCES public.repository_semantic_maps(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  ingestion_run_id UUID REFERENCES public.ingestion_runs(id) ON DELETE SET NULL,
+  folder_id UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  x DOUBLE PRECISION NOT NULL,
+  y DOUBLE PRECISION NOT NULL,
+  cluster_id INT,
+  title TEXT NOT NULL,
+  year TEXT,
+  folder_name TEXT,
+  categories JSONB NOT NULL DEFAULT '[]'::jsonb,
+  topics JSONB NOT NULL DEFAULT '[]'::jsonb,
+  keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (map_id, paper_id)
+);
+
+CREATE TABLE IF NOT EXISTS public.repository_semantic_edges (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  map_id UUID NOT NULL REFERENCES public.repository_semantic_maps(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  source_paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  target_paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  cosine_similarity DOUBLE PRECISION NOT NULL CHECK (cosine_similarity >= -1 AND cosine_similarity <= 1),
+  euclidean_distance DOUBLE PRECISION CHECK (euclidean_distance IS NULL OR euclidean_distance >= 0),
+  edge_rank INT NOT NULL DEFAULT 1 CHECK (edge_rank > 0),
+  shared_signals JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CHECK (source_paper_id < target_paper_id),
+  UNIQUE (map_id, source_paper_id, target_paper_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_semantic_embeddings_owner_project
+  ON public.paper_semantic_embeddings(owner_user_id, project_id, paper_id);
+CREATE INDEX IF NOT EXISTS idx_repository_semantic_maps_owner_project
+  ON public.repository_semantic_maps(owner_user_id, project_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_repository_semantic_maps_active_source
+  ON public.repository_semantic_maps(owner_user_id, project_id, source_hash)
+  WHERE status IN ('queued', 'processing');
+CREATE INDEX IF NOT EXISTS idx_repository_semantic_points_owner_map
+  ON public.repository_semantic_points(owner_user_id, map_id);
+CREATE INDEX IF NOT EXISTS idx_repository_semantic_edges_owner_map
+  ON public.repository_semantic_edges(owner_user_id, map_id);
+
+DO $$
+DECLARE table_name TEXT;
+BEGIN
+  FOREACH table_name IN ARRAY ARRAY[
+    'paper_semantic_embeddings',
+    'repository_semantic_maps',
+    'repository_semantic_points',
+    'repository_semantic_edges'
+  ] LOOP
+    EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('ALTER TABLE public.%I FORCE ROW LEVEL SECURITY', table_name);
+    EXECUTE format('DROP POLICY IF EXISTS papertrend_owner_access ON public.%I', table_name);
+    EXECUTE format(
+      'CREATE POLICY papertrend_owner_access ON public.%I FOR ALL USING (owner_user_id = public.papertrend_current_user_id()) WITH CHECK (owner_user_id = public.papertrend_current_user_id())',
+      table_name
+    );
+  END LOOP;
+END $$;
+
+-- ----------------------------------------------------- from 20260910_project_analysis_profiles.sql
+
+-- Repository-owned analysis profiles and classification provenance.
+-- Additive and safe to run multiple times.
+
+ALTER TABLE public.workspace_projects
+  ADD COLUMN IF NOT EXISTS analysis_profile JSONB,
+  ADD COLUMN IF NOT EXISTS analysis_profile_version INT,
+  ADD COLUMN IF NOT EXISTS analysis_profile_hash TEXT,
+  ADD COLUMN IF NOT EXISTS analysis_profile_updated_at TIMESTAMPTZ;
+
+UPDATE public.workspace_projects p
+SET analysis_profile = CASE
+      WHEN jsonb_array_length(
+        CASE WHEN jsonb_typeof(up.workspace_profile->'analysisCategories') = 'array'
+          THEN up.workspace_profile->'analysisCategories' ELSE '[]'::jsonb END
+      ) > 0
+      THEN jsonb_build_object(
+        'version', 2,
+        'mode', 'custom',
+        'displayName', COALESCE(NULLIF(up.workspace_profile->>'categoryTaxonomyName', ''), 'Custom Taxonomy'),
+        'domain', COALESCE(NULLIF(up.workspace_profile->>'domain', ''), 'General academic research'),
+        'domainDefinition', COALESCE(up.workspace_profile->>'domainDefinition', ''),
+        'taxonomyName', COALESCE(NULLIF(up.workspace_profile->>'categoryTaxonomyName', ''), 'Custom Taxonomy'),
+        'taxonomyDefinition', COALESCE(up.workspace_profile->>'categoryTaxonomyDefinition', ''),
+        'additionalContext', COALESCE(up.workspace_profile->>'analysisContext', ''),
+        'classificationEnabled', true,
+        'categories', up.workspace_profile->'analysisCategories'
+      )
+      ELSE jsonb_build_object(
+        'version', 2, 'mode', 'general', 'displayName', 'General Research',
+        'domain', 'General academic research', 'domainDefinition', '',
+        'taxonomyName', 'No category classification', 'taxonomyDefinition', '',
+        'additionalContext', '', 'classificationEnabled', false, 'categories', '[]'::jsonb
+      )
+    END,
+    analysis_profile_version = 2,
+    analysis_profile_updated_at = COALESCE(p.updated_at, now())
+FROM public.user_profiles up
+WHERE p.owner_user_id = up.id AND p.analysis_profile IS NULL;
+
+UPDATE public.workspace_projects
+SET analysis_profile = jsonb_build_object(
+      'version', 2, 'mode', 'general', 'displayName', 'General Research',
+      'domain', 'General academic research', 'domainDefinition', '',
+      'taxonomyName', 'No category classification', 'taxonomyDefinition', '',
+      'additionalContext', '', 'classificationEnabled', false, 'categories', '[]'::jsonb
+    ),
+    analysis_profile_version = 2,
+    analysis_profile_updated_at = COALESCE(updated_at, now())
+WHERE analysis_profile IS NULL;
+
+-- The controlled application backfill replaces this temporary database hash
+-- with the canonical profile hash before the pilot is enabled.
+UPDATE public.workspace_projects
+SET analysis_profile_hash = md5(analysis_profile::text)
+WHERE analysis_profile_hash IS NULL;
+
+ALTER TABLE public.workspace_projects
+  ALTER COLUMN analysis_profile SET NOT NULL,
+  ALTER COLUMN analysis_profile_version SET NOT NULL,
+  ALTER COLUMN analysis_profile_hash SET NOT NULL,
+  ALTER COLUMN analysis_profile_updated_at SET NOT NULL;
+
+DO $$
+BEGIN
+  ALTER TABLE public.workspace_projects
+    ADD CONSTRAINT workspace_projects_analysis_profile_version_check
+    CHECK (analysis_profile_version > 0);
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE public.paper_category_definitions
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT,
+  ADD COLUMN IF NOT EXISTS profile_version INT,
+  ADD COLUMN IF NOT EXISTS classification_revision_id UUID,
+  ADD COLUMN IF NOT EXISTS classifier_model TEXT,
+  ADD COLUMN IF NOT EXISTS classified_at TIMESTAMPTZ DEFAULT now();
+
+ALTER TABLE public.paper_category_assignments
+  ADD COLUMN IF NOT EXISTS project_id UUID REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  ADD COLUMN IF NOT EXISTS profile_hash TEXT,
+  ADD COLUMN IF NOT EXISTS profile_version INT,
+  ADD COLUMN IF NOT EXISTS classification_revision_id UUID,
+  ADD COLUMN IF NOT EXISTS classifier_model TEXT,
+  ADD COLUMN IF NOT EXISTS classified_at TIMESTAMPTZ DEFAULT now();
+
+UPDATE public.paper_category_definitions pcd
+SET project_id = rf.project_id,
+    classified_at = COALESCE(pcd.classified_at, pcd.created_at)
+FROM public.research_folders rf
+WHERE pcd.project_id IS NULL AND pcd.folder_id = rf.id;
+
+UPDATE public.paper_category_assignments pca
+SET project_id = rf.project_id,
+    classified_at = COALESCE(pca.classified_at, pca.created_at)
+FROM public.research_folders rf
+WHERE pca.project_id IS NULL AND pca.folder_id = rf.id;
+
+UPDATE public.paper_category_definitions pcd
+SET profile_hash = COALESCE(
+      NULLIF(ir.input_payload #>> '{analysis_profile,profileHash}', ''),
+      NULLIF(ir.input_payload #>> '{analysis_profile,profile_hash}', ''),
+      'legacy'
+    ),
+    profile_version = CASE
+      WHEN COALESCE(
+        NULLIF(ir.input_payload #>> '{analysis_profile,profileVersion}', ''),
+        NULLIF(ir.input_payload #>> '{analysis_profile,profile_version}', '')
+      ) ~ '^[1-9][0-9]*$'
+      THEN COALESCE(
+        NULLIF(ir.input_payload #>> '{analysis_profile,profileVersion}', ''),
+        NULLIF(ir.input_payload #>> '{analysis_profile,profile_version}', '')
+      )::INT
+      ELSE 1
+    END,
+    classifier_model = COALESCE(pcd.classifier_model, ir.model, 'legacy')
+FROM public.paper_content pc
+JOIN public.ingestion_runs ir ON ir.id = pc.ingestion_run_id
+WHERE pcd.paper_id = pc.paper_id AND pcd.owner_user_id = pc.owner_user_id
+  AND (pcd.profile_hash IS NULL OR pcd.profile_version IS NULL OR pcd.classifier_model IS NULL);
+
+UPDATE public.paper_category_assignments pca
+SET profile_hash = COALESCE(
+      NULLIF(ir.input_payload #>> '{analysis_profile,profileHash}', ''),
+      NULLIF(ir.input_payload #>> '{analysis_profile,profile_hash}', ''),
+      'legacy'
+    ),
+    profile_version = CASE
+      WHEN COALESCE(
+        NULLIF(ir.input_payload #>> '{analysis_profile,profileVersion}', ''),
+        NULLIF(ir.input_payload #>> '{analysis_profile,profile_version}', '')
+      ) ~ '^[1-9][0-9]*$'
+      THEN COALESCE(
+        NULLIF(ir.input_payload #>> '{analysis_profile,profileVersion}', ''),
+        NULLIF(ir.input_payload #>> '{analysis_profile,profile_version}', '')
+      )::INT
+      ELSE 1
+    END,
+    classifier_model = COALESCE(pca.classifier_model, ir.model, 'legacy')
+FROM public.paper_content pc
+JOIN public.ingestion_runs ir ON ir.id = pc.ingestion_run_id
+WHERE pca.paper_id = pc.paper_id AND pca.owner_user_id = pc.owner_user_id
+  AND (pca.profile_hash IS NULL OR pca.profile_version IS NULL OR pca.classifier_model IS NULL);
+
+UPDATE public.paper_category_definitions
+SET profile_hash = COALESCE(profile_hash, 'legacy'),
+    profile_version = COALESCE(profile_version, 1),
+    classifier_model = COALESCE(classifier_model, 'legacy')
+WHERE profile_hash IS NULL OR profile_version IS NULL OR classifier_model IS NULL;
+
+UPDATE public.paper_category_assignments
+SET profile_hash = COALESCE(profile_hash, 'legacy'),
+    profile_version = COALESCE(profile_version, 1),
+    classifier_model = COALESCE(classifier_model, 'legacy')
+WHERE profile_hash IS NULL OR profile_version IS NULL OR classifier_model IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_workspace_projects_analysis_profile_hash
+  ON public.workspace_projects(owner_user_id, analysis_profile_hash);
+CREATE INDEX IF NOT EXISTS idx_paper_category_definitions_project_profile
+  ON public.paper_category_definitions(owner_user_id, project_id, profile_hash);
+CREATE INDEX IF NOT EXISTS idx_paper_category_assignments_project_profile
+  ON public.paper_category_assignments(owner_user_id, project_id, profile_hash, assignment_type);
+
+CREATE TABLE IF NOT EXISTS public.project_reclassification_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  owner_user_id UUID NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  target_profile JSONB NOT NULL,
+  target_profile_hash TEXT NOT NULL,
+  target_profile_version INT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'processing', 'succeeded', 'failed', 'canceled')),
+  total_items INT NOT NULL DEFAULT 0,
+  processed_items INT NOT NULL DEFAULT 0,
+  failed_items INT NOT NULL DEFAULT 0,
+  progress_stage TEXT NOT NULL DEFAULT 'queued',
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS public.project_reclassification_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  job_id UUID NOT NULL REFERENCES public.project_reclassification_jobs(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES public.user_profiles(id) ON DELETE CASCADE,
+  project_id UUID NOT NULL REFERENCES public.workspace_projects(id) ON DELETE CASCADE,
+  paper_id BIGINT NOT NULL REFERENCES public.papers(id) ON DELETE CASCADE,
+  ingestion_run_id UUID REFERENCES public.ingestion_runs(id) ON DELETE SET NULL,
+  folder_id UUID REFERENCES public.research_folders(id) ON DELETE SET NULL,
+  status TEXT NOT NULL DEFAULT 'queued'
+    CHECK (status IN ('queued', 'processing', 'succeeded', 'failed', 'canceled')),
+  result_payload JSONB,
+  classifier_model TEXT,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  completed_at TIMESTAMPTZ,
+  UNIQUE (job_id, paper_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_reclassification_jobs_owner_project
+  ON public.project_reclassification_jobs(owner_user_id, project_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_project_reclassification_items_owner_job
+  ON public.project_reclassification_items(owner_user_id, job_id, status);
+
+ALTER TABLE public.project_reclassification_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.project_reclassification_jobs FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS papertrend_owner_access ON public.project_reclassification_jobs;
+CREATE POLICY papertrend_owner_access ON public.project_reclassification_jobs
+  FOR ALL
+  USING (owner_user_id = public.papertrend_current_user_id())
+  WITH CHECK (owner_user_id = public.papertrend_current_user_id());
+
+ALTER TABLE public.project_reclassification_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.project_reclassification_items FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS papertrend_owner_access ON public.project_reclassification_items;
+CREATE POLICY papertrend_owner_access ON public.project_reclassification_items
+  FOR ALL
+  USING (owner_user_id = public.papertrend_current_user_id())
+  WITH CHECK (owner_user_id = public.papertrend_current_user_id());
+
+-- ----------------------------------------------------- from 20260915_semantic_map_euclidean.sql
+
+-- Semantic Map V2: preserve Euclidean relationship distance alongside the
+-- legacy cosine score so old map revisions remain readable during rollout.
+
+ALTER TABLE public.repository_semantic_edges
+  ADD COLUMN IF NOT EXISTS euclidean_distance DOUBLE PRECISION;
+
+UPDATE public.repository_semantic_edges
+SET euclidean_distance = sqrt(GREATEST(0, 2 - (2 * cosine_similarity)))
+WHERE euclidean_distance IS NULL;
+
+ALTER TABLE public.repository_semantic_edges
+  DROP CONSTRAINT IF EXISTS repository_semantic_edges_euclidean_distance_check;
+
+ALTER TABLE public.repository_semantic_edges
+  ADD CONSTRAINT repository_semantic_edges_euclidean_distance_check
+  CHECK (euclidean_distance IS NULL OR euclidean_distance >= 0);
+
+CREATE INDEX IF NOT EXISTS idx_repository_semantic_edges_map_distance
+  ON public.repository_semantic_edges(owner_user_id, map_id, euclidean_distance);
+
+-- ----------------------------------------------------- set on the live database
+-- outside any migration file; recorded here so a fresh database matches it.
+
+ALTER TABLE paper_category_assignments ALTER COLUMN created_at SET NOT NULL;
+ALTER TABLE paper_category_definitions ALTER COLUMN created_at SET NOT NULL;
+ALTER TABLE paper_retrieval_documents ALTER COLUMN project_id SET NOT NULL;
