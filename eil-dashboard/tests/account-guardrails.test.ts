@@ -42,15 +42,12 @@ test("Cloud SQL upload preparation takes the owner's lock before counting", () =
   assert.ok(body.indexOf("pg_advisory_xact_lock") < body.indexOf("accountPaperUsageIn(client"), "lock, then count");
 });
 
-test("upload finalization tolerates Cloud Run cold starts and persists trigger failures", () => {
-  const trigger = readFileSync(join(root, "src/lib/worker-trigger.ts"), "utf8");
+test("upload finalization persists trigger failures", () => {
+  // A cold or unreachable worker is reported, not waited on: run in worker-trigger.test.ts.
   const finalize = readFileSync(
     join(root, "src/app/api/admin/import/finalize/route.ts"),
     "utf8"
   );
-  assert.match(trigger, /WORKER_REQUEST_TIMEOUT_MS = 20_000/);
-  assert.match(trigger, /worker_request_timeout/);
-  assert.match(trigger, /catch \(error\)/);
   assert.match(finalize, /buildTriggerExceptionResult/);
   assert.match(finalize, /queueStart = buildTriggerExceptionResult\(triggerError\)/);
 });
@@ -75,13 +72,9 @@ test("trusted account roles bypass application quotas without disabling metering
   assert.equal(isQuotaExemptRole("member"), false);
   assert.equal(isQuotaExemptRole(undefined), false);
 
-  const guards = readFileSync(join(root, "src/lib/security-guards.ts"), "utf8");
-  const ingestion = readFileSync(join(root, "src/lib/cloudsql/ingestion-repository.ts"), "utf8");
+  // Admins pass the daily limits but are still metered (guards-behaviour.test.ts),
+  // and upload past the paper cap but are still counted (library-bulk.test.ts).
   const migration = readFileSync(join(root, "cloudsql/20260909_quota_exempt_admins.sql"), "utf8");
-  assert.match(guards, /isQuotaExemptRole/);
-  assert.match(guards, /INSERT INTO public\.ai_usage_events/);
-  assert.match(ingestion, /exempt: isQuotaExemptRole\(profile\.rows\[0\]\?\.role\)/);
-  assert.match(ingestion, /if \(!usage\.exempt && usage\.used \+ accepted\.length > MAX_PAPERS_PER_ACCOUNT\)/);
   assert.match(migration, /testosterone142@gmail\.com/);
   assert.match(migration, /p\.chantarusorn@gmail\.com/);
 });

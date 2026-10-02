@@ -201,6 +201,10 @@ test("the account's room counts stored papers and uploads under way; a skipped f
   assert.equal((await accountPaperUsageIn(client, OWNER)).used, MAX_PAPERS_PER_ACCOUNT, "the upload under way counts");
   await db.query(`UPDATE user_profiles SET role = 'admin' WHERE id = $1`, [OWNER]);
   assert.equal((await accountPaperUsageIn(client, OWNER)).exempt, true);
+  // An admin is not held to the cap; their uploads are still counted.
+  const past = await createUploadBatchIn(client, batch([{ name: "two.pdf", sha256: "f".repeat(64) }, { name: "three.pdf", sha256: "a".repeat(64) }]));
+  assert.equal(past.runs.length, 2);
+  assert.equal((await accountPaperUsageIn(client, OWNER)).used, MAX_PAPERS_PER_ACCOUNT + 2);
   await db.close();
 });
 

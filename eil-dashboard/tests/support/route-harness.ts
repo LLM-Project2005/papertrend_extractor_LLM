@@ -81,6 +81,18 @@ function installHooks() {
   });
 }
 
+/**
+ * Swaps one more application module for this test process, matched by the end
+ * of its path (for example "/src/lib/openai.ts"), such as a model call that
+ * records its prompt instead of sending it. Call it before anything that loads
+ * that module is imported. A stub kept in tests/support reaches the real
+ * modules it imports; one kept elsewhere is itself redirected.
+ */
+export function stubModule(pathSuffix: string, stubUrl: string) {
+  installHooks();
+  FILE_STUBS.push([pathSuffix, stubUrl]);
+}
+
 const ENV: Record<string, string> = {
   AUTH_PROVIDER: "firebase",
   DATABASE_PROVIDER: "cloud-sql",

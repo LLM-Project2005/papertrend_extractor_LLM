@@ -51,6 +51,8 @@ test("the daily limit refuses each person's request past it, per kind, and an ad
   assert.equal(await outcome(assertAndRecordAiUsage(OWNER, "web_search")), 200);
   assert.equal(await outcome(assertAndRecordAiUsage(OWNER, "web_search")), 429, "web search stops at its own limit");
   for (let i = 0; i < 5; i += 1) assert.equal(await outcome(assertAndRecordAiUsage(ADMIN, "chat_message")), 200, "an admin is exempt");
+  const metered = await db.query<{ count: number }>(`SELECT count(*)::int AS count FROM ai_usage_events WHERE owner_user_id = $1`, [ADMIN]);
+  assert.equal(metered.rows[0].count, 5, "but still metered");
 
   // Yesterday's use does not count today.
   await db.query(`UPDATE ai_usage_events SET created_at = now() - interval '2 days' WHERE owner_user_id = $1`, [OWNER]);
