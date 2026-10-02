@@ -83,12 +83,13 @@ test("the job callback routes refuse anything but a task token, the old shared s
     "../src/app/api/workspace/projects/reclassify/process/route",
   ]) {
     const { POST } = await import(path);
-    for (const headers of [
+    const attempts: Array<Record<string, string>> = [
       {},
       { "x-worker-secret": "shared-worker-secret-for-tests" },
       { authorization: "Bearer shared-worker-secret-for-tests" },
       { authorization: `Bearer ${token({ email: WORKER })}` },
-    ]) {
+    ];
+    for (const headers of attempts) {
       const response: Response = await POST(call(headers));
       assert.equal(response.status, 401, `${path} with ${Object.keys(headers).join(",") || "nothing"}`);
     }
