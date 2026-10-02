@@ -29,6 +29,8 @@ import {
   renderingIssues,
 } from "@/lib/answer-rendering";
 import { semanticPaperRanking } from "@/lib/repository-memory";
+import { loadThemeStore } from "@/lib/topic-theme-service";
+import { normalizeTopicKey, type ThemeStore } from "@/lib/topic-themes";
 import { usableAnalysisSql } from "@/lib/usable-analysis";
 import { chatChartResult, loadChatInsightCorpus, type ChatInsightChart } from "@/lib/chat-chart";
 import { reportChatProgress } from "@/lib/chat-progress";
@@ -2365,6 +2367,8 @@ async function checkFaithfulness(input: {
   languageMatched: boolean;
   /** False when the audit failed, timed out or could not be read: nothing was checked. */
   auditRan: boolean;
+  /** True when the auditor returned its own version of the answer. */
+  rewritten?: boolean;
   reason: string;
 }> {
   try {
@@ -2379,7 +2383,8 @@ async function checkFaithfulness(input: {
             "If any formatting problem is listed, you MUST return a rewritten correctedAnswer that fixes it while preserving every claim, citation and number exactly. " +
             "Only rewrite when something is actually wrong: lead with the direct answer, restore omitted requested parts, improve structure and clarity, and remove or qualify unsupported claims and invalid citations. Do not add outside knowledge. " +
             "Judge the two questions apart: supported is whether every claim the draft makes is backed by the evidence; completeForRequest is whether it covers what was asked. A claim is never unsupported because the draft leaves something out. " +
-            "In exhaustive scope the evidence summarises every eligible paper, and an answer that states corpus-wide patterns need not name each paper, nor be longer than the reader asked for. Return JSON only: " +
+            "In exhaustive scope the evidence summarises every eligible paper, and an answer that states corpus-wide patterns need not name each paper, nor be longer than the reader asked for. " +
+            "Figures under a heading that begins '## Counted' or '## Themes' were computed by the system from every paper in scope: a claim that repeats one of them is supported, and an answer need not list the papers behind a count. Return JSON only: " +
             "{supported, answersIntent, completeForRequest, languageMatched, correctedAnswer, citedPaperIds, confidence, reason}. Any corrected answer must cite paper-backed claims inline as [Paper <id>]. "
             + "Write reason for the reader as one short sentence naming what the answer still does not cover. Never describe your own edits. "
             + `When you rewrite, follow this house style: ${ANSWER_FORMAT_RULES}`,
@@ -2438,6 +2443,7 @@ async function checkFaithfulness(input: {
     }
     // An empty correctedAnswer means "the draft is already correct".
     const corrected = readableAnswerText(parsed.data.correctedAnswer) || input.answer;
+    const rewritten = corrected.trim() !== input.answer.trim();
     const validation = validateInlinePaperCitations(corrected, input.allowedPaperIds);
     const citationsOk =
       validation.invalidPaperIds.length === 0 &&
@@ -2462,6 +2468,7 @@ async function checkFaithfulness(input: {
       incomplete: !parsed.data.completeForRequest,
       languageMatched: parsed.data.languageMatched,
       auditRan: true,
+      rewritten,
       reason: parsed.data.reason,
     };
   } catch (error) {
@@ -2502,7 +2509,7 @@ export type QaAuditOutcome = { kind: "answer"; answer: string; limitations: stri
  * draft that looked sound matched no branch and shipped the draft too.
  */
 export function resolveQaAudit(input: {
-  checked: { answer: string; valid: boolean; grounded: boolean; incomplete: boolean; languageMatched?: boolean; auditRan: boolean; reason: string };
+  checked: { answer: string; valid: boolean; grounded: boolean; incomplete: boolean; languageMatched?: boolean; auditRan: boolean; rewritten?: boolean; reason: string };
   draft: string;
   /** The draft's own citations or confidence were already too weak to show as they are. */
   draftNeedsRepair: boolean;
@@ -3548,6 +3555,8 @@ export function decideFromAudit(review: {
   reason: string;
   /** False when the audit failed or could not be read; absent means it ran. */
   auditRan?: boolean;
+  /** True when the auditor returned its own version of the answer. */
+  rewritten?: boolean;
 }): AuditDecision {
   if (review.auditRan === false) {
     return {
@@ -3556,6 +3565,11 @@ export function decideFromAudit(review: {
     };
   }
   if (review.valid) return { useCorrected: true, limitations: [] };
+  // The auditor removed or qualified what the draft could not support: its
+  // version is shown, and says so - as a focused answer's is (resolveQaAudit).
+  if (!review.grounded && review.rewritten) {
+    return { useCorrected: true, limitations: [CORRECTED_ANSWER_LIMITATION] };
+  }
   if (!review.grounded) {
     return {
       useCorrected: false,
@@ -3585,18 +3599,78 @@ export function decideFromAudit(review: {
  */
 export function corpusCountsEvidence(
   context: Pick<RepositoryContext, "papers" | "topicCounts" | "keywordCounts">,
-  limit = 15
+  limit = 15,
+  options: { topicLabels?: boolean } = {}
 ): string {
   const line = (item: { label: string; paperCount: number }) =>
     `- ${item.label}: ${item.paperCount} paper${item.paperCount === 1 ? "" : "s"}`;
+  // With themes supplied, the raw labels are left out: two sets of counts for
+  // the same papers read as a contradiction to the synthesis and its audit.
+  const topicLabels = options.topicLabels !== false;
   return [
     `## Counted across all ${context.papers.length} papers in scope`,
-    "Topic labels as each paper's analysis named them (the dashboard groups similar labels into themes, so its counts can be higher):",
-    ...context.topicCounts.slice(0, limit).map(line),
-    "",
+    ...(topicLabels
+      ? [
+          "Topic labels as each paper's analysis named them (the dashboard groups similar labels into themes, so its counts can be higher):",
+          ...context.topicCounts.slice(0, limit).map(line),
+          "",
+        ]
+      : []),
     "Keywords:",
     ...context.keywordCounts.slice(0, limit).map(line),
   ].join("\n");
+}
+
+/**
+ * Papers per theme, grouped as the dashboard groups them (docs/32, 3.1; audit
+ * CHAT-11). Chat counted each paper's own topic labels, so "Mixed-Methods
+ * Research Design" and "Mixed-Method Research Design" were two topics where
+ * the dashboard showed one theme, and the two disagreed. Method themes are
+ * listed apart, so "which methods are used most" has counted figures too.
+ */
+export function themeCountsEvidence(
+  papers: Array<Pick<RepositoryPaper, "paperId" | "topics">>,
+  store: ThemeStore | null,
+  limit = 15
+): string {
+  if (!store || store.themes.length === 0) return "";
+  const byTheme = new Map<number, Set<string>>();
+  for (const paper of papers) {
+    for (const label of paper.topics.keys()) {
+      const theme = store.assignments[normalizeTopicKey(label)];
+      if (!Number.isInteger(theme) || theme < 0 || theme >= store.themes.length) continue;
+      const set = byTheme.get(theme) ?? new Set<string>();
+      set.add(paper.paperId);
+      byTheme.set(theme, set);
+    }
+  }
+  const rows = [...byTheme.entries()]
+    .map(([theme, ids]) => ({ name: store.themes[theme].name, kind: store.themes[theme].kind, papers: ids.size, ids: [...ids] }))
+    .sort((left, right) => right.papers - left.papers || left.name.localeCompare(right.name));
+  if (rows.length === 0) return "";
+  // The papers behind each count, so a synthesis that names examples - and the
+  // audit checking them - can see which papers a theme holds.
+  const line = (row: { name: string; papers: number; ids: string[] }) =>
+    `- ${row.name}: ${row.papers} paper${row.papers === 1 ? "" : "s"} (${row.ids
+      .slice(0, THEME_MEMBERS_SHOWN)
+      .map((id) => `Paper ${id}`)
+      .join(", ")}${row.ids.length > THEME_MEMBERS_SHOWN ? ", ..." : ""})`;
+  const topics = rows.filter((row) => row.kind !== "method").slice(0, limit);
+  const methods = rows.filter((row) => row.kind === "method").slice(0, limit);
+  return [
+    "## Themes, as the dashboard groups them (a paper counts once per theme)",
+    ...topics.map(line),
+    ...(methods.length > 0 ? ["", "Research designs and methods:", ...methods.map(line)] : []),
+  ].join("\n");
+}
+
+/** At most this many papers are named under each theme in the counted evidence. */
+const THEME_MEMBERS_SHOWN = 12;
+
+/** The repository's stored theme grouping, when there is one. */
+async function themeStoreFor(context: RepositoryContext): Promise<ThemeStore | null> {
+  if (!context.projectId || getDatabaseProvider() !== "cloud-sql") return null;
+  return loadThemeStore(context.ownerUserId, context.projectId).catch(() => null);
 }
 
 async function aggregateCorpusResult(
@@ -3622,7 +3696,7 @@ async function aggregateCorpusResult(
       const completion = await createChatCompletionResult([
         {
           role: "system",
-          content: buildPapertrendSystemPrompt("corpus_mapper", ["Extract compact repository-level facts for a later synthesis. Preserve differences, methods, findings, gaps, and paper IDs."]),
+          content: buildPapertrendSystemPrompt("corpus_mapper", ["Extract compact repository-level facts for a later synthesis. Preserve differences, methods, findings, gaps, and paper IDs. Do not count papers or topics: this is one batch of the repository, and the counts for the whole repository are supplied separately."]),
         },
         { role: "user", content: `Research request: ${execution.refinedQuestion}\n\n${evidence}` },
       ], 0, input.model, "CHAT_CORPUS_MAP", { maxTokens: 1_500 });
@@ -3631,7 +3705,8 @@ async function aggregateCorpusResult(
       summaries.push(evidence);
     }
   }
-  const countsEvidence = corpusCountsEvidence(context);
+  const themeCounts = themeCountsEvidence(context.papers, await themeStoreFor(context));
+  const countsEvidence = [themeCounts, corpusCountsEvidence(context, 15, { topicLabels: !themeCounts })].filter(Boolean).join("\n\n");
   try {
     const completion = await createChatCompletionResult([
       {
@@ -3646,7 +3721,7 @@ async function aggregateCorpusResult(
       },
       {
         role: "user",
-        content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, countsEvidence, "Use these counts for any claim about how often or how many; the batch findings below are for what the papers say.", ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
+        content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, countsEvidence, "Use these counts for any claim about how often or how many - prefer the themes, which are what the dashboard shows; the batch findings below are for what the papers say.", ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
       },
     ], 0.15, input.model, "CHAT_CORPUS_REDUCE", { maxTokens: 3_000 });
     const answer = completion?.content?.trim();

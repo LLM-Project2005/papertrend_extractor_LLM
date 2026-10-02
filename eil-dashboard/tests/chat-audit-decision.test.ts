@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { decideFromAudit } from "../src/lib/repository-chat";
+import { CORRECTED_ANSWER_LIMITATION, decideFromAudit } from "../src/lib/repository-chat";
 
 const APPROVED = { valid: true, grounded: true, incomplete: false, reason: "" };
 const INCOMPLETE = { valid: false, grounded: true, incomplete: true, reason: "sample sizes are missing" };
@@ -35,14 +35,25 @@ test("an ungrounded audit is never silently accepted", () => {
   assert.match(decision.limitations[0], /unconfirmed/);
 });
 
+test("an ungrounded draft the auditor rewrote is shown in its corrected form, and says so", () => {
+  // Found on the pilot: corpus answers whose counts were right were shown as
+  // "unconfirmed" drafts while the auditor's corrected version was discarded.
+  const decision = decideFromAudit({ ...UNGROUNDED, rewritten: true });
+  assert.equal(decision.useCorrected, true);
+  assert.deepEqual(decision.limitations, [CORRECTED_ANSWER_LIMITATION]);
+  assert.equal(decideFromAudit({ ...UNGROUNDED, rewritten: false }).useCorrected, false, "no rewrite: the draft stays, marked");
+});
+
 test("an ungrounded verdict always produces a warning, whatever else it says", () => {
   for (const incomplete of [true, false]) {
     for (const reason of ["", "some reason"]) {
-      const decision = decideFromAudit({ valid: false, grounded: false, incomplete, reason });
-      assert.ok(
-        decision.limitations.some((item) => /could not be verified/.test(item)),
-        `ungrounded must warn (incomplete=${incomplete}, reason=${reason || "none"})`
-      );
+      for (const rewritten of [true, false]) {
+        const decision = decideFromAudit({ valid: false, grounded: false, incomplete, reason, rewritten });
+        assert.ok(
+          decision.limitations.some((item) => /could not be verified|removed or qualified/.test(item)),
+          `ungrounded must warn (incomplete=${incomplete}, reason=${reason || "none"}, rewritten=${rewritten})`
+        );
+      }
     }
   }
 });
