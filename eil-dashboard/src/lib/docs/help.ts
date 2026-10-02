@@ -39,7 +39,7 @@ export const helpCategory: DocsCategoryBase = {
               ["Wrong password, pop-up closed or blocked, too many requests", "Check the password or use **Reset password**, allow pop-ups, or wait a few minutes if there were many attempts."],
               ["Enter your email first, then request a reset link.", "Type your email address, then choose **Reset password**."],
               ["Papertrend can't be reached right now. Trying again…", "Your connection or the server had a brief problem. Papertrend keeps trying on its own; if it gives up, check your connection and reload the page. You stay signed in."],
-              ["Enter your invite code", "Papertrend is invite-only for now. Enter the code you were given; it works once, for your account."],
+              ["Enter your invite code", "Papertrend is invite-only for now. Enter the code you were given; it works once, for your account. No code? Use Request access."],
               ["This is Papertrend's test deployment", "You opened the test site, which only the project owner can use. Use the main Papertrend site instead."],
               ["Your sign-in has ended. Please sign in again.", "Your session ended. Sign in again; you come back to the page you were on."],
             ],

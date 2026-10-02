@@ -25,7 +25,7 @@ export const accountCategory: DocsCategoryBase = {
             {
               title: "Creating an account",
               body: [
-                "Papertrend is invite-only for now. A new account needs an invite code from an admin: sign in the usual way, and Papertrend asks for the code before your account is created. An invite link fills the code in for you. People who already have an account are never asked.",
+                "Papertrend is invite-only for now. A new account needs an invite code from an admin: sign in the usual way, and Papertrend asks for the code before your account is created. An invite link fills the code in for you. No code? Ask for one on the [Request access](/request-access) page. People who already have an account are never asked.",
                 "Signing in with Google creates your account the first time. For email and password, choose **Create password account**, add your name, and **Create account**; a confirmation link is emailed to you, and your account is created once you open it and choose **I’ve confirmed it** (or come back through the link). **Send the link again** sends a new one.",
                 "If an account with the same email already exists, a verified sign-in (Google, or a confirmed email) is attached to it rather than creating a second account. Facebook does not confirm email addresses to Papertrend, so a Facebook sign-in starts a new account only when no account uses that email; otherwise sign in with Google or your email and password.",
                 "If Papertrend then asks for an invite code, the new account needs one to join while Papertrend is invite-only; see [Troubleshooting](/docs/troubleshooting#signing-in).",
@@ -53,7 +53,7 @@ export const accountCategory: DocsCategoryBase = {
           title: "The Settings page",
           body: [
             "**Settings** has two groups. **Account** holds things that follow you into every repository; **Repository** holds settings for the repository you have open, named under the group heading. On a phone the sections are a row of tabs across the top.",
-            "Admins also see **Admin > Invite codes**, where they make a code (with a note, how many accounts it may create, when it expires, and optionally the one email it works for), copy it or an invite link once, and revoke codes. A code is shown only when it is made; Papertrend does not keep it in readable form.",
+            "Admins also see **Admin > Invite codes**, where they make a code (with a note, how many accounts it may create, when it expires, and optionally the one email it works for), copy it or an invite link once, and revoke codes. A code is shown only when it is made; Papertrend does not keep it in readable form. **Admin > Access requests** lists requests from the public Request access page: **Invite** makes a one-use code for that email and opens an email to send it, **Decline** closes the request, and every request is deleted after 180 days.",
           ],
         },
         {

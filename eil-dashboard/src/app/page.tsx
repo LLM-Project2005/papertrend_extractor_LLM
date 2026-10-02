@@ -120,6 +120,12 @@ export default function LandingPage() {
               </a>
             </div>
             <p className="mt-5 text-[13px] text-mute">English and Thai papers · PDFs up to 10 MB · 50 at a time</p>
+            <p className="mt-2 text-[13px] text-mute">
+              Invite-only during the beta.{" "}
+              <Link href="/request-access" className="font-medium text-ink underline underline-offset-2">
+                Request access
+              </Link>
+            </p>
           </div>
           <div className="hero-rise mt-16 sm:mt-20">
             <ProductShot
@@ -286,6 +292,12 @@ export default function LandingPage() {
               Read the guide
             </Link>
           </div>
+          <p className="mt-6 text-[13px] text-mute">
+            New accounts need an invite code during the beta.{" "}
+            <Link href="/request-access" className="font-medium text-ink underline underline-offset-2">
+              Request access
+            </Link>
+          </p>
         </div>
       </section>
     </MarketingShell>
