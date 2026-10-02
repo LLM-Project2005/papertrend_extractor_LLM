@@ -187,8 +187,8 @@ export const accountCategory: DocsCategoryBase = {
           table: {
             columns: ["Action", "Possible?", "How"],
             rows: [
-              ["Move a paper to Trash, or restore it", "Yes", "The paper's **...** menu in the Library"],
-              ["Delete a paper or its PDF permanently", "Yes", "In Trash, the paper's **...** menu, **Delete permanently...**"],
+              ["Move a paper to Trash, or restore it", "Yes", "The paper's **...** menu in the Library, or tick several papers and use the bar above the list"],
+              ["Delete a paper or its PDF permanently", "Yes", "In Trash, the paper's **...** menu, **Delete permanently...**, or tick several papers; type `delete` to confirm more than one"],
               ["Empty Trash", "Yes", "**Empty Trash...** in Trash; type `delete` to confirm"],
               ["Delete a repository", "No", ""],
               ["Delete a chat conversation", "Yes", "In Chat (see [Research chat](/docs/chat))"],

@@ -45,7 +45,8 @@ test("Cloud SQL upload preparation serializes quota and duplicate checks", () =>
   assert.match(source, /pc\.ingestion_run_id = r\.id/);
   assert.match(source, /status = 'succeeded'/);
   assert.doesNotMatch(source, /status NOT IN \('failed', 'canceled'\)/);
-  assert.match(source, /The same PDF was selected more than once/);
+  // A repeat is now left out rather than refusing the batch; run in PGlite in library-bulk.test.ts.
+  assert.match(source, /It was chosen more than once; one copy is uploaded\./);
 });
 
 test("upload finalization tolerates Cloud Run cold starts and persists trigger failures", () => {
@@ -86,7 +87,8 @@ test("trusted account roles bypass application quotas without disabling metering
   const migration = readFileSync(join(root, "cloudsql/20260909_quota_exempt_admins.sql"), "utf8");
   assert.match(guards, /isQuotaExemptRole/);
   assert.match(guards, /INSERT INTO public\.ai_usage_events/);
-  assert.match(ingestion, /!isQuotaExemptRole\(profile\.rows\[0\]\?\.role\)/);
+  assert.match(ingestion, /exempt: isQuotaExemptRole\(profile\.rows\[0\]\?\.role\)/);
+  assert.match(ingestion, /if \(!usage\.exempt && usage\.used \+ accepted\.length > MAX_PAPERS_PER_ACCOUNT\)/);
   assert.match(migration, /testosterone142@gmail\.com/);
   assert.match(migration, /p\.chantarusorn@gmail\.com/);
 });

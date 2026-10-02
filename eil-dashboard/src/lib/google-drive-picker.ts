@@ -216,6 +216,13 @@ function showPicker(google: GoogleGlobal, config: DrivePickerConfig, token: stri
   });
 }
 
+/** The Drive file each picked file came from, so the upload can record it (audit LIB-7). */
+const driveFileIds = new WeakMap<File, string>();
+
+export function driveFileIdOf(file: File): string | null {
+  return driveFileIds.get(file) ?? null;
+}
+
 /**
  * Lets the reader pick PDFs in Google Drive and returns them as files ready
  * for the upload dialog. Files over 10 MB are returned in `tooLarge` rather
@@ -240,7 +247,9 @@ export async function pickPdfsFromDrive(
     if (!response.ok) throw new Error(`"${document.name}" could not be downloaded from Drive.`);
     const blob = await response.blob();
     const name = document.name.toLowerCase().endsWith(".pdf") ? document.name : `${document.name}.pdf`;
-    files.push(new File([blob], name, { type: "application/pdf" }));
+    const file = new File([blob], name, { type: "application/pdf" });
+    driveFileIds.set(file, document.id);
+    files.push(file);
     done += 1;
     options.onProgress?.(done, wanted.length);
   }
