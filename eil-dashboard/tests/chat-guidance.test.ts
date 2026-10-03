@@ -87,20 +87,8 @@ test("no example is a question the assistant would refuse", () => {
 
 /* ------------------------------------------------------------------- refusals */
 
-test("the refusal check is the server's own, not a second copy", () => {
-  // A separate list would drift, and the failure would be the page offering a
-  // question the server then declines.
-  const server = readFileSync(
-    new URL("../src/lib/repository-chat.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(server, /import \{\s*detectUnavailableMetric/);
-  assert.equal(
-    /const UNAVAILABLE_METRIC_PATTERNS/.test(server),
-    false,
-    "the server must not keep its own copy of the refusal patterns"
-  );
-});
+// That the server refuses exactly what isRefusedQuestion refuses is run in
+// chat-answer-behaviour-pipeline.test.ts.
 
 test("questions the repository cannot answer are recognised", () => {
   const refused = [
@@ -232,75 +220,20 @@ test("each limit explains why, not just that", () => {
 
 /* ------------------------------------------------------------- the page wiring */
 
-function page(): string {
-  return [
-    readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8"),
-    readFileSync(new URL("../src/components/chat/ChatIntro.tsx", import.meta.url), "utf8"),
-  ].join(String.fromCharCode(10));
+// The empty page, its examples and composer are rendered, and the scope
+// route and the reader's own words through every answer writer are run, in
+// chat-answer-behaviour-page.test.ts and chat-answer-behaviour-pipeline.test.ts.
+// These two stay as text: the page's answers arrive by an effect, which a
+// static render never runs, so no answer is on screen to sit under.
+
+function client(): string {
+  return readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8");
 }
-
-test("the empty page no longer asks where to begin and says nothing else", () => {
-  // Checked against the file that renders it, not the whole page: the phrase
-  // still appears in a comment explaining why it went, and a test that fails on
-  // its own explanation is a test nobody will keep.
-  const client = readFileSync(
-    new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
-    "utf8"
-  );
-  assert.equal(
-    client.includes("Where should we begin?"),
-    false,
-    "the bare heading must be replaced by something that teaches the page"
-  );
-  assert.match(client, /<ChatIntro/);
-});
-
-test("examples are clickable and send as questions", () => {
-  const source = page();
-  assert.match(source, /onAsk=\{\(question\) => void askQuestion\(question\)\}/);
-  // React state is not readable in the tick it is set, so the clicked text has
-  // to be passed to the send rather than routed through the draft.
-  assert.match(source, /async function handleNormalSend\(promptOverride\?: string\)/);
-  assert.match(source, /const prompt = \(promptOverride \?\? draft\)\.trim\(\)/);
-});
-
-test("the composer states what a question will search", () => {
-  const source = page();
-  assert.match(source, /data-testid="composer-scope"/);
-  assert.match(source, /scopeDescription\(/);
-});
-
-test("the composer count and the answer count come from the same loader", () => {
-  // The acceptance criterion: the scope in the composer must match the scope
-  // the answer reports. Both now read loadRepositoryContext - the composer via
-  // the scope-summary route, the answer directly - so they cannot disagree
-  // without the repository itself having changed between the two.
-  const route = readFileSync(
-    new URL("../src/app/api/chat/scope-summary/route.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(route, /import \{ loadRepositoryContext \} from "@\/lib\/repository-chat"/);
-  assert.match(route, /eligiblePaperCount: papers\.length/);
-  assert.match(route, /papers = context\.papers\.map/);
-});
-
-test("the composer never invents a count it does not have", () => {
-  // It used to pass a hardcoded zero, so it claimed "0 papers" for every scope
-  // until an answer came back.
-  const source = readFileSync(
-    new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
-    "utf8"
-  );
-  assert.match(source, /scopeSummary\?\.eligiblePaperCount \?\? null/);
-});
 
 test("a follow-up is offered only under the newest answer", () => {
   // Suggestions under every old answer would be noise, and acting on one would
   // ask a question about an answer that is no longer on screen.
-  const source = readFileSync(
-    new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
-    "utf8"
-  );
+  const source = client();
   assert.match(source, /message === visibleMessages\[visibleMessages\.length - 1\]/);
   assert.match(source, /<FollowUpSuggestions/);
 });
@@ -308,47 +241,5 @@ test("a follow-up is offered only under the newest answer", () => {
 test("a widening suggestion uses the answer's own corpus size", () => {
   // Reading it from the composer's scope would let a suggestion claim a
   // different corpus than the answer it sits under, if the scope had changed.
-  const source = readFileSync(
-    new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
-    "utf8"
-  );
-  assert.match(source, /scopedPaperCount: coveredPaperCount\(message\.metadata\)/);
-});
-
-test("the scope route refuses an unauthenticated caller and answers its preflight", () => {
-  const route = readFileSync(
-    new URL("../src/app/api/chat/scope-summary/route.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(route, /export async function OPTIONS/);
-  assert.match(route, /status: 401/);
-  assert.match(route, /withChatCors/);
-});
-
-/* --------------------------------------------- the reader's own words survive */
-
-function server(): string {
-  return readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
-}
-
-test("every synthesis step sees the request as the reader wrote it", () => {
-  // The corpus reduce step was the only one that did not, so "summarise this
-  // whole repository in one paragraph" came back as seven paragraphs: the
-  // planner's refined question had dropped the constraint and nothing
-  // downstream could know it had been asked for.
-  const source = server();
-  assert.match(source, /Original request: \$\{input\.prompt\}/);
-  assert.match(source, /originalRequest: input\.prompt/);
-  const reduce = source.slice(source.indexOf("CHAT_CORPUS_REDUCE") - 2200, source.indexOf("CHAT_CORPUS_REDUCE"));
-  assert.match(reduce, /Original request: \$\{input\.prompt\}/);
-});
-
-test("summarising the collection is one summary, not one per paper", () => {
-  // "analyze_each_document when every document needs an explanation, summary,
-  // classification" pulled "summarise this repository" to the per-document
-  // path, which answered a summary request with 17,176 characters across 49
-  // paragraphs and 16 headings.
-  const source = server();
-  assert.match(source, /A request to summarise the collection is one summary of the corpus, not one summary per paper/);
-  assert.match(source, /Per-paper summaries are only what is wanted when the reader asks about each, every or per paper/);
+  assert.match(client(), /scopedPaperCount: coveredPaperCount\(message\.metadata\)/);
 });

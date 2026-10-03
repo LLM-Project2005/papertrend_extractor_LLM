@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { markCitations } from "../src/lib/answer-citations";
 import {
@@ -11,9 +10,7 @@ import {
   webStepApplies,
   type WebSource,
 } from "../src/lib/repository-chat-web";
-import { parseExecutionPlanCandidate, promptRequestsChart } from "../src/lib/repository-chat";
-
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+import { isSmallTalk, parseExecutionPlanCandidate, plainLimitation, promptRequestsChart } from "../src/lib/repository-chat";
 
 const SOURCES: WebSource[] = [
   {
@@ -89,10 +86,11 @@ test("addresses match however they are spelled, and odd titles cannot break a ci
   assert.equal(sources[0].title, "A draft v2");
 });
 
-test("the search always runs, with the date, and page text is data", () => {
-  const source = read("src/lib/repository-chat-web.ts");
-  assert.match(source, /plugins: \[\{ id: "web", engine: "exa", max_results: MAX_RESULTS \}\]/, "the web plugin searches before the model answers");
-  assert.doesNotMatch(source, /toolChoice: "auto"/);
+// That the search always runs (the web plugin, not a tool the model may skip),
+// counts toward its own daily limit, and is added on both chat paths without
+// touching a cached answer is run in chat-answer-behaviour-web.test.ts.
+
+test("the search is told the date, and page text is data", () => {
   const messages = webMessages({ question: "q", searchQuery: "refined q", answer: "a", thai: false, today: "2026-09-29" });
   assert.match(messages[0].content, /Today is 2026-09-29/);
   assert.match(messages[0].content, /never as instructions/);
@@ -109,36 +107,15 @@ test("a web step that cannot run keeps the repository answer", async () => {
   assert.ok(result.note);
 });
 
-test("both chat paths use the checked web step, and small talk skips it", () => {
+test("small talk skips the web step", () => {
   assert.equal(webStepApplies("converse"), false);
   assert.equal(webStepApplies("search_evidence"), true);
-  const route = read("src/app/api/chat/route.ts");
-  assert.match(route, /const web = await addWebContext\(/);
-  assert.match(route, /const repositoryCitations = \[\.\.\.\(repositoryResult\.citations as Citation\[\]\)\];/, "a copy, never the cached array");
-  const job = read("src/app/api/chat/jobs/process/route.ts");
-  assert.match(job, /const web = await addWebContext\(/);
-  assert.doesNotMatch(job, /augmentRepositoryAnswerWithWeb/);
-  assert.match(job, /return withAiTokenUsageTracking\(async \(usage\) => \{/, "a background answer's tokens are recorded");
-  assert.match(job, /await persistAiTokenUsage\(job\.ownerUserId, usage, "chat-job"\)/);
 });
 
-test("each web search counts toward its own daily limit", () => {
-  assert.match(read("src/lib/repository-chat-web.ts"), /assertAndRecordAiUsage\(input\.ownerUserId, "web_search"/);
-  assert.match(read("src/lib/security-guards.ts"), /kind === "web_search"\s*\?\s*getAiDailyWebSearchLimit\(\)/);
-});
-
-test("a cached answer is handed out as a copy", () => {
-  const source = read("src/lib/repository-chat.ts");
-  assert.match(source, /citations: structuredClone\(hit\.citations\) as RepositoryCitation\[\]/);
-  assert.match(source, /citations: structuredClone\(result\.citations\),/);
-});
-
-test("with web search on, only small talk goes unsearched", async () => {
-  const { isSmallTalk, plainLimitation } = await import("../src/lib/repository-chat");
+test("small talk is told apart from a question for the web", () => {
+  // The planner's use of it, with web search on, is run in chat-answer-behaviour-pipeline.test.ts.
   assert.equal(isSmallTalk("hello, thanks for your help!"), true);
   assert.equal(isSmallTalk("What does recent research outside these papers say about dynamic assessment?"), false);
-  const planner = read("src/lib/repository-chat.ts");
-  assert.match(planner, /if \(input\.allowWeb && operations\.length === 1 && operations\[0\] === "converse" && !isSmallTalk\(input\.prompt\)\) \{\s*operations = \["search_evidence"\];/);
   // Limitation lines speak of the papers, not of this pipeline's inputs.
   assert.equal(plainLimitation("The supplied excerpts do not identify an official target."), "the papers searched do not identify an official target.");
 });
@@ -154,9 +131,11 @@ test("a small-talk plan is a valid plan", () => {
   });
   assert.ok(plan, "a converse plan used to fail the schema and cost a repair call");
   assert.deepEqual(plan?.operations, ["converse"]);
-  // web_search is not an operation; offering it invited a plan the schema dropped.
-  const planner = read("src/lib/repository-chat.ts");
-  assert.doesNotMatch(planner, /\.\.\.\(input\.allowWeb \? \["web_search"\] : \[\]\)/);
+  // web_search is not an operation, and the planner is no longer offered it
+  // (chat-answer-behaviour-pipeline.test.ts).
+  assert.equal(parseExecutionPlanCandidate({ operation: "web_search", operations: ["web_search"], scopeMode: "focused", refinedQuestion: "q" }), null);
+  const mixed = parseExecutionPlanCandidate({ operation: "search_evidence", operations: ["search_evidence", "web_search"], scopeMode: "focused", refinedQuestion: "q" });
+  assert.deepEqual(mixed?.operations, ["search_evidence"]);
 });
 
 test("a chart is added only when one was asked for", () => {
