@@ -7,9 +7,29 @@ import { workerCallerAccounts } from "../src/lib/cloud-tasks-oidc";
 import { INDEXED_PAPERS_SQL, SEMANTIC_PAPER_SQL } from "../src/lib/repository-memory";
 import { fuseSemanticRanks, type RepositoryRetrievalCandidate } from "../src/lib/repository-retrieval";
 
-/** The search index keeps up with the papers, and stops steering (docs/32, 2.3). */
+/**
+ * The search index keeps up with the papers, and stops steering (docs/32,
+ * 2.3). Indexing, its route and the chat's use of it run in
+ * research-behaviour-search-index.test.ts.
+ */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+
+interface PlanNode {
+  "Node Type": string;
+  "Index Name"?: string;
+  Plans?: PlanNode[];
+}
+
+/** The node directly above the first node `match` accepts; null at the root, undefined if none matches. */
+function parentOf(node: PlanNode, match: (node: PlanNode) => boolean, parent: PlanNode | null = null): PlanNode | null | undefined {
+  if (match(node)) return parent;
+  for (const child of node.Plans ?? []) {
+    const found = parentOf(child, match, node);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
 
 function candidate(paperId: string, fusedScore: number): RepositoryRetrievalCandidate {
   return { paperId, title: `Paper ${paperId}`, excerpt: "", lexicalScore: fusedScore, metadataScore: 0, phraseScore: 0, fusedScore };
@@ -40,13 +60,15 @@ test("papers outside the scope are ignored, and the limit holds", () => {
   assert.ok(!ids(fused).includes("TRASHED"));
 });
 
-test("the semantic SQL ranks papers by their closest chunk, within the owner and scope", async () => {
+test("the semantic SQL ranks papers by their closest chunk, within the owner and scope, reading the nearest from the vector index", async () => {
   const db = new PGlite({ extensions: { vector } });
   await db.exec(`
     CREATE EXTENSION vector;
     CREATE TABLE paper_retrieval_chunks (
       id serial PRIMARY KEY, owner_user_id uuid NOT NULL, project_id uuid, folder_id uuid,
       paper_id bigint NOT NULL, embedding vector(3));
+    -- As in schema.sql.
+    CREATE INDEX chunks_embedding ON paper_retrieval_chunks USING hnsw (embedding vector_cosine_ops) WHERE embedding IS NOT NULL;
   `);
   const owner = "00000000-0000-0000-0000-00000000000a";
   const other = "00000000-0000-0000-0000-00000000000b";
@@ -71,13 +93,18 @@ test("the semantic SQL ranks papers by their closest chunk, within the owner and
   assert.deepEqual(ranked, ["1", "2", "3"], "each paper once, by its closest chunk");
   const limited = (await db.query<{ paper_id: string }>(SEMANTIC_PAPER_SQL, [...scope, "[1,0,0]", 1])).rows.map((row) => row.paper_id);
   assert.deepEqual(limited, ["1"]);
-  // The distance is what the query orders by, which lets the vector index serve it.
-  assert.match(SEMANTIC_PAPER_SQL, /ORDER BY embedding <=> \$4::vector\s+LIMIT 200/);
-  assert.doesNotMatch(read("src/lib/repository-memory.ts"), /row_number\(\) OVER \(ORDER BY embedding/);
+  // The nearest chunks are read from the vector index straight under a LIMIT;
+  // the old row_number() ordering put a window between them. Seq scans are
+  // off, as on a table large enough for the index to pay.
+  await db.exec("SET enable_seqscan = off");
+  const explained = await db.query<{ "QUERY PLAN": [{ Plan: PlanNode }] }>(`EXPLAIN (FORMAT JSON) ${SEMANTIC_PAPER_SQL}`, [...scope, "[1,0,0]", 10]);
+  const plan = explained.rows[0]["QUERY PLAN"][0].Plan;
+  assert.equal(parentOf(plan, (node) => node["Index Name"] === "chunks_embedding")?.["Node Type"], "Limit");
   await db.close();
 });
 
 test("the worker's stale-index query picks what needs indexing, and nothing it cannot index", async () => {
+  // The worker's own SQL, taken from its Python and run here against Postgres.
   const python = read("worker/database_client.py").match(/STALE_SEARCH_INDEX_SQL = \(([\s\S]*?)\n\)/)?.[1] ?? "";
   let n = 0;
   const staleSql = [...python.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]).join("").replace(/%s/g, () => `$${++n}`);
@@ -133,26 +160,15 @@ test("the worker's stale-index query picks what needs indexing, and nothing it c
   await db.close();
 });
 
-test("indexing replaces a paper's chunks, embeds outside the transaction, and is wired end to end", () => {
-  const memory = read("src/lib/repository-memory.ts");
-  const write = memory.slice(memory.indexOf("async function writePaperMemory("), memory.indexOf("export async function syncRepositoryMemory("));
-  assert.ok(write.indexOf("DELETE FROM paper_retrieval_chunks") < write.indexOf("INSERT INTO paper_retrieval_chunks"), "old chunks go first");
-  assert.doesNotMatch(write, /embedTexts\(/, "no model call inside the transaction");
-  assert.match(memory, /signal: AbortSignal\.timeout\(EMBEDDING_TIMEOUT_MS\)/);
-  const sync = memory.slice(memory.indexOf("export async function syncRepositoryMemory("));
-  assert.ok(sync.indexOf("await preparePaper(paper)") < sync.indexOf("withCloudSqlOwnerTransaction"), "embeddings before the transaction");
-
-  const chat = read("src/lib/repository-chat.ts");
-  assert.match(chat, /candidates = \(semantic \? fuseSemanticRanks\(candidates, semantic\) : candidates\)\.slice\(0, budgets\.candidateLimit\)/);
-  assert.doesNotMatch(chat, /\.\.\.persistentHits\.map\(\(hit\) => hit\.paperId\)/, "indexed papers no longer go first");
-
-  const route = read("src/app/api/workspace/repository-memory/index/route.ts");
-  assert.match(route, /isVerifiedServiceCaller\(request\)/);
-  assert.match(route, /trackModelSpend\(ownerUserId, "search-index"/);
+test("the worker asks for a paper to be indexed when its analysis succeeds", () => {
+  // Python, and no Python test covers the success path's call (an idle
+  // worker's catch-up is covered in tests/test_worker_search_index.py).
   const worker = read("worker/process_ingestion_queue.py");
   const success = worker.slice(worker.indexOf('run["status"] = "succeeded"'));
   assert.ok(success.indexOf("request_search_index(") < success.indexOf("mirror_completed_dataset"), "indexed on success");
-  assert.match(worker, /if not queued_runs:\s*# Nothing to analyse: bring the search index up to date instead\.\s*catch_up_search_index\(client\)/);
+});
+
+test("each worker deploy points search indexing at its own web service, which admits the worker's account", () => {
   for (const [yaml, url] of [
     ["../cloudbuild.worker.production.yaml", "https://papertrend-web-production-javhavgdsq-as.a.run.app/api/workspace/repository-memory/index"],
     ["../cloudbuild.worker.cloudsql.pilot.yaml", "https://papertrend-web-cloudsql-pilot-javhavgdsq-as.a.run.app/api/workspace/repository-memory/index"],
