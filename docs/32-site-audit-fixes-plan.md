@@ -71,7 +71,7 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | 2 | In production (2026-10-02) |
 | 3 | In production (2026-10-02), except the items listed as open under its results |
 | 4 | In production (2026-10-02): web 00072, worker 00062 |
-| Long-term health | Schema and legacy removal in production (2026-10-02): web 00074, worker 00063. Behaviour tests continue on development. |
+| Long-term health | Done. Schema and legacy removal in production 2026-10-02 (web 00074, worker 00063); behaviour tests and the fixes they found in production 2026-10-04 (web 00076, PR #253; rollback 00074). |
 
 ## Phase 1 results
 
@@ -172,7 +172,7 @@ State on 2026-10-03. Changes listed "on development" go out with the next build 
 - `schema.sql` alone now builds the live database. Six applied migrations had never been copied into it (the phase 8 search index and chat jobs, the semantic map and its distances, dynamic categories, repository profiles), and three NOT NULL rules had been set on the live database outside any file. All are folded in.
 - `cloudsql/live-structure.json` records the live structure, read on 2026-10-02: 41 tables, every column's type and nullability, 155 indexes and 8 views. `schema-authority.test.ts` fails if `schema.sql` builds anything else. After applying a migration, fold it into `schema.sql` and refresh the snapshot.
 
-**Replace source-text tests with behaviour tests: done (on development, 2026-10-04).** Of about 1,180 assertions that read source, about 300 remain, each with a one-line reason beside it. The TypeScript suite grew from 1,033 tests to 1,186, all passing (twice in a row). Tests build nothing, so this went out with no Cloud Build.
+**Replace source-text tests with behaviour tests: done; the fixes are in production (2026-10-04, web 00076, PR #253; checked on the pilot and in production: background chat answer with no actions under its placeholder, chart, dashboard and semantic map, dashboard-data 401 without a session; spend $0.025 on the pilot and $0.050 in production).** Of about 1,180 assertions that read source, about 300 remain, each with a one-line reason beside it. The TypeScript suite grew from 1,033 tests to 1,186, all passing (twice in a row). Tests build nothing, so this went out with no Cloud Build.
 
 - **How a test now runs the code** (all in `tests/support/`):
   - *Routes:* `route-harness.ts` calls a route as a signed-in person against PGlite, which is built from `schema.sql` and runs as the app's role under row-level security. Node's module hooks swap only Firebase's token check and the Cloud SQL connection; the auth adapter, owner mapping, pilot gate, guards and SQL run as written. `stubModule` swaps one more module per test file, such as a scripted model, Cloud Tasks or storage.
