@@ -53,7 +53,7 @@ const ADVICE: Record<FailureKind, Omit<FailureAdvice, "kind">> = {
     retryable: true,
   },
   cancelled: {
-    message: "Stopped at your request. Nothing was saved.",
+    message: "Stopped at your request. No answer was written.",
     retryable: true,
   },
   unauthorized: {

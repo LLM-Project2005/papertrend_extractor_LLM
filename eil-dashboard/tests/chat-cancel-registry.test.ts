@@ -97,7 +97,14 @@ test("generated ids are distinct", () => {
   assert.equal(ids.size, 200);
 });
 
+// The routes behind Stop - an answer registered under the id it was sent with,
+// stopped only by its own reader, nothing half-written left in the thread, and
+// the chat route refusing a stranger before any spend - run in
+// boot-security-behaviour-chat.test.ts.
+
 test("Stop tells the server, not just the browser", () => {
+  // Kept as text: Stop is a click handler in the chat page, which a static
+  // render cannot press.
   const client = readFileSync(
     new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
     "utf8"
@@ -109,81 +116,12 @@ test("Stop tells the server, not just the browser", () => {
 });
 
 test("the request announces the id Stop will name", () => {
+  // Kept as text: the header is set as the page sends a question, which a
+  // static render never does. That the browser may send it across origins is
+  // run in boot-security-behaviour-chat.test.ts.
   const client = readFileSync(
     new URL("../src/components/chat/ChatClient.tsx", import.meta.url),
     "utf8"
   );
   assert.match(client, /"X-Chat-Request-Id": requestId/);
-});
-
-test("the route registers the request against the same header", () => {
-  const route = readFileSync(
-    new URL("../src/app/api/chat/route.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(route, /request\.headers\.get\("x-chat-request-id"\)/);
-  assert.match(route, /registerCancellable\(user\.id, requestId, readerLeft\)/);
-  // Without this a finished request stays in the map until its TTL.
-  assert.match(route, /unregister\?\.\(\)/);
-});
-
-test("the cancel route refuses an unauthenticated caller", () => {
-  const route = readFileSync(
-    new URL("../src/app/api/chat/cancel/route.ts", import.meta.url),
-    "utf8"
-  );
-  // The behaviour, not its formatting: no authenticated user means 401, and
-  // nothing is cancelled without one.
-  const guard = route.slice(route.indexOf("if (!user)"), route.indexOf("const body"));
-  assert.ok(guard.length > 0, "no unauthenticated guard found");
-  assert.match(guard, /error: "Unauthorized"/);
-  assert.match(guard, /status: 401/);
-  assert.ok(
-    route.indexOf("if (!user)") < route.indexOf("cancelRequest("),
-    "the guard must come before anything is cancelled"
-  );
-  assert.match(route, /cancelRequest\(user\.id, requestId\)/);
-});
-
-test("a cancelled answer leaves no partial assistant message behind", () => {
-  // The criterion is that Stop leaves nothing half-written in the thread. That
-  // holds because every assistant message is written once, from inside
-  // handlePost, after the answer exists - a cancelled request throws before
-  // reaching the write. Nothing persists from the streaming wrapper, which is
-  // the only place a partial answer could be observed.
-  const route = readFileSync(
-    new URL("../src/app/api/chat/route.ts", import.meta.url),
-    "utf8"
-  );
-  const streamStart = route.indexOf("function streamPostWithProgress");
-  const streamEnd = route.indexOf("export async function POST", streamStart);
-  assert.ok(streamStart > 0 && streamEnd > streamStart, "streaming wrapper not found");
-  const wrapper = route.slice(streamStart, streamEnd);
-  assert.equal(
-    wrapper.includes("appendMessage"),
-    false,
-    "the streaming wrapper must not persist messages; only the finished answer is written"
-  );
-  assert.equal(
-    wrapper.includes('role: "assistant"'),
-    false,
-    "no assistant message may be written from the streaming path"
-  );
-  // And the reader's own question is kept, which is what a reader expects after
-  // pressing Stop: the thread shows what they asked, with no half answer.
-  assert.match(route, /persistedUserMessage = await chatRepository\.appendMessage/);
-});
-
-test("the chat route refuses an unauthenticated caller before spending anything", () => {
-  // It used to answer anonymous callers from the paid model, with web search
-  // and no budget. The guard must come before the budget check and the model.
-  const route = readFileSync(new URL("../src/app/api/chat/route.ts", import.meta.url), "utf8");
-  const post = route.slice(route.indexOf("export async function POST(request: Request) {"));
-  const guard = post.indexOf("if (!user?.id)");
-  assert.ok(guard > 0, "POST has no unauthenticated guard");
-  assert.match(post.slice(guard, guard + 200), /status: 401/);
-  assert.ok(guard < post.indexOf("assertAiTokenBudget(user.id)"), "the guard comes first");
-  assert.ok(guard < post.indexOf("handlePost(request)"), "the guard comes before any answer");
-  const handle = route.slice(route.indexOf("async function handlePost(request: Request) {"));
-  assert.ok(handle.indexOf("if (!ownerUserId)") < handle.indexOf("normalChat("), "handlePost checks too");
 });

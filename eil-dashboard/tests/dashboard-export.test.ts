@@ -12,7 +12,12 @@ import { semanticMapCsv } from "../src/lib/semantic-map-export";
 import { CHAT_SCOPE_TRANSFER_STORAGE_KEY } from "../src/lib/workspace-session";
 import type { DashboardData } from "../src/types/database";
 
-/** The dashboard can be linked and exported (docs/32, 4.3). */
+/**
+ * The dashboard can be linked and exported (docs/32, 4.3). The CSV beside each
+ * chart, and the Copy link button, are drawn in
+ * boot-security-behaviour-render.test.ts; what the dashboard route sends the
+ * browser runs through the route in boot-security-behaviour-routes.test.ts.
+ */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const REPO = "948dd4cc-f4b5-4337-81dc-31851ae05507";
@@ -65,6 +70,8 @@ test("an address is read back to the same view, and anything malformed is left o
 });
 
 test("a link's view is applied once its repository's saved filters have loaded, then written back", () => {
+  // Kept as text: the view is applied and written back in effects, and typing
+  // waits on a timer; a static render runs neither.
   const client = read("src/components/DashboardClient.tsx");
   assert.match(client, /if \(filtersLoadedFor !== selectedProjectId\) return;\s*if \(hasViewInAddress\(linkedView\)\)/);
   assert.match(client, /setSelectedProjectId\(linkedView\.projectId\)/);
@@ -72,7 +79,6 @@ test("a link's view is applied once its repository's saved filters have loaded, 
   // Typing filters on a pause, not on every key (DASH-5).
   assert.match(client, /value=\{searchDraft\}\s*onChange=\{\(event\) => setSearchDraft\(event\.target\.value\)\}/);
   assert.match(client, /window\.setTimeout\(\(\) => setSearchQuery\(searchDraft\), 250\)/);
-  assert.match(client, /Copy link/);
   assert.match(read("src/components/workspace/WorkspaceProvider.tsx"), /filtersLoadedFor: filtersProjectId,/);
 });
 
@@ -109,22 +115,10 @@ test("a stacked chart becomes one row per year and one column per series", () =>
   assert.deepEqual(table, { header: ["Year", "Reading", "Writing"], rows: [["2019", 2, 1], ["2020", 0, 4]] });
 });
 
-test("every chart on the dashboard offers its data as CSV", () => {
-  const counts: Array<[string, RegExp, number]> = [
-    ["src/components/tabs/Overview.tsx", /csv=\{\{/g, 4],
-    ["src/components/tabs/TrendAnalysis.tsx", /csv=\{\{/g, 2],
-    ["src/components/tabs/TrackAnalysis.tsx", /csv=\{\{/g, 3],
-    ["src/components/tabs/KeywordExplorer.tsx", /csv=\{\{/g, 7],
-  ];
-  for (const [file, pattern, expected] of counts) {
-    assert.equal((read(file).match(pattern) ?? []).length, expected, file);
-  }
-  // Every "Show the values" list has its CSV.
-  for (const file of ["Overview", "TrendAnalysis", "TrackAnalysis", "KeywordExplorer"]) {
-    const source = read(`src/components/tabs/${file}.tsx`);
-    const lists = source.match(/<ChartValues\b[\s\S]*?\/>/g) ?? [];
-    for (const list of lists) assert.match(list, /csv=\{/, `${file}: a ChartValues without csv`);
-  }
+test("the Adaptive tab and the semantic map offer their data as CSV", () => {
+  // The four chart tabs are drawn in boot-security-behaviour-render.test.ts.
+  // Kept as text: these two draw only after fetching their data in an effect,
+  // which a static render never runs.
   assert.match(read("src/components/dashboard/InsightsTab.tsx"), /<ChartCsvButton csv=\{insightCsv\(insight, title\)\} \/>/);
   assert.match(read("src/components/workspace/RepositorySemanticMap.tsx"), /<ChartCsvButton csv=\{mapCsv\.papers\}/);
 });
@@ -180,6 +174,8 @@ test("a drilldown's papers reach chat by paper id, matched against the repositor
   assert.equal(readChatScopeTransfer("{not json", Date.now()), null);
   assert.equal(readChatScopeTransfer(JSON.stringify({ projectId: REPO, runIds: [], paperIds: [], createdAt: new Date().toISOString() })), null);
 
+  // Kept as text: a drilldown opens on a click, and chat reads the note in an
+  // effect; a static render does neither.
   const client = read("src/components/DashboardClient.tsx");
   assert.match(client, /paperIds: drilldownPapers\.map\(\(paper\) => String\(paper\.paperId\)\)/);
   assert.match(client, /Copy list/);
@@ -209,5 +205,4 @@ test("the browser gets no topic-family evidence snippets, which only the server 
   assert.deepEqual(sent.topicFamilies?.[0].evidenceSnippets, []);
   assert.equal(sent.topicFamilies?.[0].totalKeywordFrequency, 4, "what Home reads stays");
   assert.deepEqual(family.evidenceSnippets, ["a long passage"], "the server's copy is untouched");
-  assert.match(read("src/app/api/workspace/dashboard-data/route.ts"), /NextResponse\.json\(\{ data: dashboardPayloadForBrowser\(data\) \}\)/);
 });
