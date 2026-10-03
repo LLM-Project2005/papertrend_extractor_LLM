@@ -54,7 +54,8 @@ async function chat() {
 }
 
 async function until(condition: () => boolean) {
-  for (let round = 0; round < 200 && !condition(); round += 1) await new Promise((resolve) => setImmediate(resolve));
+  // By time, not by turns: the database work behind it is slower on a CI runner.
+  for (const started = Date.now(); !condition() && Date.now() - started < 10_000; ) await new Promise((resolve) => setImmediate(resolve));
   assert.ok(condition(), "the work started");
 }
 

@@ -381,9 +381,13 @@ async function withSignalledFetch<T>(
     calls += 1;
     return next(init);
   }) as typeof fetch;
+  // AbortSignal.timeout's timer does not hold the process open; while a stubbed
+  // call hangs nothing else may, and the test runner would end the file early.
+  const keepAlive = setInterval(() => undefined, 1_000);
   try {
     return { value: await run(), calls };
   } finally {
+    clearInterval(keepAlive);
     globalThis.fetch = original;
   }
 }
