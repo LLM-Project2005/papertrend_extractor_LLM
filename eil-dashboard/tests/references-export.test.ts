@@ -28,8 +28,17 @@ import {
   saveCitationCacheIn,
 } from "../src/lib/references/resolve";
 import { paperIdFromRunId } from "../src/lib/paper-id";
+import { privacyPolicy } from "../src/lib/legal-content";
+import type { ReactNode } from "react";
+import { routeHarness } from "./support/route-harness";
+import { captured, elementsOf, headlessRoot, textOf } from "./support/stub-smallfix-root";
 
-/** Selected papers, or a repository, export as BibTeX, RIS and APA (docs/32, 4.4). */
+/*
+ * Selected papers, or a repository, export as BibTeX, RIS and APA (docs/32,
+ * 4.4). The export route runs against PGlite under the app's role
+ * (tests/support/route-harness.ts), and the dialog runs its effects through
+ * React's client renderer without a document (stub-smallfix-root.ts).
+ */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -295,10 +304,106 @@ test("papers load for the owner only, and a kept lookup leaves the run's modifie
   await db.close();
 });
 
-test("the Library offers references for a selection and for a whole repository", () => {
-  const library = read("src/components/admin/AdminImportClient.tsx");
-  assert.match(library, /Cite \(\{citableSelection\.length\}\)/);
-  assert.match(library, /setReferencesFor\(\{ selection: \{ projectId: libraryProject\.id \}, label: libraryProject\.name \}\)/);
-  assert.match(read("src/components/admin/ReferencesDialog.tsx"), /formatReferences\(loaded\.records, format\)/);
-  assert.match(read("src/lib/legal-content.ts"), /Crossref and OpenAlex receive paper titles or DOIs only/);
+/* ------------------------------------------------------------ the export */
+
+const OWNER = "00000000-0000-4000-8000-00000000000a";
+const PROJECT = "00000000-0000-4000-8000-0000000000a1";
+
+test("a repository's references are its own finished papers, and a selection's are the papers chosen", async () => {
+  const harness = await routeHarness();
+  const owner = await harness.signIn(OWNER);
+  const other = await harness.signIn("00000000-0000-4000-8000-00000000000b");
+  const OTHER_PROJECT = "00000000-0000-4000-8000-0000000000a2";
+  await harness.db.exec(`
+    INSERT INTO workspace_organizations (id, owner_user_id, name) VALUES ('00000000-0000-4000-8000-0000000000c1', '${OWNER}', 'Org');
+    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name, analysis_profile, analysis_profile_version, analysis_profile_hash, analysis_profile_updated_at) VALUES
+      ('${PROJECT}', '00000000-0000-4000-8000-0000000000c1', '${OWNER}', 'Assessment', '{}'::jsonb, 2, 'test', now()),
+      ('${OTHER_PROJECT}', '00000000-0000-4000-8000-0000000000c1', '${OWNER}', 'Phonology', '{}'::jsonb, 2, 'test', now());
+    INSERT INTO research_folders (id, owner_user_id, name, project_id) VALUES
+      ('00000000-0000-4000-8000-0000000000f1', '${OWNER}', 'A', '${PROJECT}'),
+      ('00000000-0000-4000-8000-0000000000f2', '${OWNER}', 'B', '${OTHER_PROJECT}');
+  `);
+  const paper = async (run: string, folder: string, title: string, status = "succeeded", trashed = false) => {
+    await harness.db.query(
+      `INSERT INTO ingestion_runs (id, owner_user_id, folder_id, source_type, status, trashed_at) VALUES ($1, $2, $3, 'upload', $4, CASE WHEN $5 THEN now() END)`,
+      [run, OWNER, folder, status, trashed]
+    );
+    const id = paperIdFromRunId(run);
+    await harness.db.query(`INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES ($1, $2, $3, '2019', $4)`, [id, OWNER, folder, title]);
+    await harness.db.query(`INSERT INTO paper_content (paper_id, owner_user_id, folder_id, ingestion_run_id, raw_text) VALUES ($1, $2, $3, $4, 'Abstract only.')`, [id, OWNER, folder, run]);
+  };
+  const runs = ["1a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c51", "2a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c52", "3a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c53", "4a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c54", "5a2b3c4d-e5f6-4a7b-8c9d-0e1f2a3b4c55"];
+  await paper(runs[0], "00000000-0000-4000-8000-0000000000f1", "Peer feedback in EFL writing classrooms");
+  await paper(runs[1], "00000000-0000-4000-8000-0000000000f1", "Washback of a national English test");
+  await paper(runs[2], "00000000-0000-4000-8000-0000000000f1", "A paper still being read", "processing");
+  await paper(runs[3], "00000000-0000-4000-8000-0000000000f1", "A paper put in Trash", "succeeded", true);
+  await paper(runs[4], "00000000-0000-4000-8000-0000000000f2", "Vowel length in Thai learners' English");
+
+  // Crossref knows none of them here; nothing leaves the process.
+  const asked: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input instanceof Request ? input.url : input);
+    assert.ok(url.startsWith("https://api.crossref.org/"), url);
+    asked.push(url);
+    return Response.json({ message: { items: [] } });
+  }) as typeof fetch;
+  try {
+    const { POST } = await import("../src/app/api/workspace/library/references/route");
+    const cite = async (body: unknown, headers = owner) => {
+      const response = await POST(harness.request("/api/workspace/library/references", { headers, body }));
+      return { status: response.status, body: (await response.json()) as { records?: CitationRecord[]; titleOnly?: number; error?: string } };
+    };
+    const repository = await cite({ projectId: PROJECT });
+    assert.equal(repository.status, 200);
+    assert.deepEqual(repository.body.records?.map((record) => record.title), ["Peer feedback in EFL writing classrooms", "Washback of a national English test"]);
+    assert.equal(repository.body.titleOnly, 2);
+    assert.ok(asked.length >= 2, "each was looked up");
+    const chosen = await cite({ runIds: [runs[1], runs[4]] });
+    assert.deepEqual(chosen.body.records?.map((record) => record.title), ["Vowel length in Thai learners' English", "Washback of a national English test"]);
+    assert.equal((await cite({ projectId: PROJECT }, other)).status, 404, "another person's request finds none of them");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("the references dialog writes the papers it was sent in the format chosen", async () => {
+  const records = [ARTICLE, citationFromPaper({ title: "Untraced paper", year: "2018" })];
+  const sent: Array<{ url: string; body: unknown; authorization: string | null }> = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    sent.push({ url: String(input), body: JSON.parse(String(init?.body)), authorization: new Headers(init?.headers).get("authorization") });
+    return Response.json({ records, fromCrossref: 1, titleOnly: 1, notLookedUp: 0 });
+  }) as typeof fetch;
+  const { default: ReferencesDialog } = await import("../src/components/admin/ReferencesDialog");
+  const root = await headlessRoot();
+  let tree: ReactNode = null;
+  try {
+    await root.render(
+      captured(ReferencesDialog, { selection: { projectId: PROJECT }, label: "Assessment", headers: { Authorization: "Bearer reader-token" }, onClose: () => undefined }, (next) => (tree = next))
+    );
+    await root.act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    assert.deepEqual(sent, [{ url: "/api/workspace/library/references", body: { projectId: PROJECT }, authorization: "Bearer reader-token" }]);
+    const shown = () => elementsOf(tree).find((element) => element.type === "textarea")?.props.value;
+    const status = elementsOf(tree).find((element) => element.props.role === "status");
+    assert.match(textOf(status), /^1 of 2 with authors and venue from Crossref; 1 with title and year only/);
+    assert.equal(shown(), toBibTeX(records), "BibTeX first");
+    const press = (label: string) => {
+      const button = elementsOf(tree).find((element) => element.type === "button" && textOf(element) === label);
+      return root.act(() => (button?.props.onClick as () => void)());
+    };
+    await press("RIS");
+    assert.equal(shown(), toRIS(records));
+    await press("APA");
+    assert.equal(shown(), toAPA(records));
+  } finally {
+    await root.unmount();
+    globalThis.fetch = realFetch;
+  }
+});
+
+test("the privacy policy says what Crossref and OpenAlex are sent", () => {
+  // The Library's Cite and Export references buttons are run in small-fixes-behaviour-library.test.ts.
+  const policy = privacyPolicy.sections.flatMap((section) => [...(section.paragraphs ?? []), ...(section.bullets ?? [])]).join(" ");
+  assert.match(policy, /Crossref and OpenAlex receive paper titles or DOIs only/);
 });

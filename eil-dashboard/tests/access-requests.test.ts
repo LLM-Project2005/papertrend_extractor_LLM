@@ -1,12 +1,16 @@
 /*
  * Request access (docs/32, 4.1): the form's parsing, its rate limit, and the
  * requests table run for real in PGlite, as the application's role, with the
- * repository's own transaction bodies.
+ * repository's own transaction bodies. The public pages and the invite screen
+ * are rendered, with sign-in, the theme and Next's router swapped
+ * (tests/support/stub-auditfix-*.ts).
  */
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import React, { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { parseAccessRequest } from "../src/lib/access-requests";
 import {
   AccessRequestStateError,
@@ -19,6 +23,15 @@ import {
 import { hashInviteCode, normalizeInviteCode } from "../src/lib/invite-codes";
 import { ledgerProblems, mustRecordItself } from "../src/lib/migration-ledger";
 import { assertAccessRequestRateLimit, GuardError, resetLoginRateLimitMemory } from "../src/lib/security-guards";
+import { faqs } from "../src/components/marketing/marketing-content";
+import { privacyPolicy } from "../src/lib/legal-content";
+import { stubModule } from "./support/route-harness";
+
+const support = (name: string) => new URL(`./support/${name}`, import.meta.url).href;
+stubModule("/node_modules/next/navigation.js", support("stub-auditfix-navigation.ts"));
+stubModule("/src/components/auth/AuthProvider.tsx", support("stub-auditfix-auth.ts"));
+stubModule("/src/components/theme/ThemeProvider.tsx", support("stub-auditfix-theme.ts"));
+(globalThis as { React?: typeof React }).React = React;
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const ADMIN = "00000000-0000-0000-0000-0000000000ad";
@@ -182,13 +195,34 @@ test("every migration from the ledger on records itself inside its transaction",
   assert.deepEqual(ledgerProblems("20260929_invite_codes.sql", "anything"), [], "earlier files are recorded by the ledger");
 });
 
-test("the public site says it is invite-only and links to the form; the code screen does too", () => {
-  for (const path of ["src/app/page.tsx", "src/components/auth/AuthPanel.tsx", "src/components/marketing/MarketingLayout.tsx"]) {
-    assert.match(read(path), /href[=:] ?"\/request-access"/, path);
+/** The text of every link to `href`, tags removed. */
+const linksTo = (html: string, href: string) =>
+  [...html.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].filter((match) => match[1] === href).map((match) => match[2].replace(/<[^>]+>/g, "").trim());
+const visible = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, "&").replace(/\s+/g, " ");
+
+test("the public site says it is invite-only and links to the form; the code screen does too", async () => {
+  globalThis.__auditfixAuth = undefined;
+  const { default: LandingPage } = await import("../src/app/page");
+  const home = renderToStaticMarkup(createElement(LandingPage));
+  assert.ok(linksTo(home, "/request-access").length >= 3, "the front page and its footer link to the form");
+  assert.match(visible(home), /invite-only during its beta/, "the front page answers how to get an account");
+  assert.ok(faqs.some((item) => item.answer.includes("Request access page")));
+
+  const { default: AuthPanel } = await import("../src/components/auth/AuthPanel");
+  const signIn = renderToStaticMarkup(createElement(AuthPanel));
+  assert.deepEqual(linksTo(signIn, "/request-access"), ["Request access"], "sign-in links to the form");
+
+  // Signed in with no account yet: the invite code screen.
+  const invite = "Papertrend is invite-only. Enter your invite code to create your account.";
+  globalThis.__auditfixAuth = { authErrorCode: "invite_required", authError: invite };
+  try {
+    const screen = renderToStaticMarkup(createElement(AuthPanel));
+    assert.match(visible(screen), /Enter your invite code/);
+    assert.match(visible(screen), /No code yet\? Request access/);
+    assert.deepEqual(linksTo(screen, "/request-access"), ["Request access"]);
+  } finally {
+    globalThis.__auditfixAuth = undefined;
   }
-  const panel = read("src/components/auth/AuthPanel.tsx");
-  const inviteScreen = panel.slice(panel.indexOf("Enter your invite code"), panel.indexOf("Signed in with the wrong account?"));
-  assert.match(inviteScreen, /No code yet\?/);
-  assert.match(read("src/components/marketing/marketing-content.ts"), /invite-only during its beta/);
-  assert.match(read("src/lib/legal-content.ts"), /Access requests: 180 days/);
+  const policy = privacyPolicy.sections.flatMap((section) => [...(section.paragraphs ?? []), ...(section.bullets ?? [])]).join(" ");
+  assert.match(policy, /Access requests: 180 days/);
 });
