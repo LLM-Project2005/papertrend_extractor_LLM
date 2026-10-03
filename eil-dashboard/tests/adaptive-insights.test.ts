@@ -5,10 +5,12 @@ import { buildInsightCorpus } from "../src/lib/insights/corpus";
 import { buildInsightReport } from "../src/lib/insights/engine";
 import { FIXED_VIEWS, sameView } from "../src/lib/insights/fixed-views";
 import { allowedFacts, claimsCause, dropFiller, extractClaims, insightLabels, scrubLoadedWords, unbackedClaims } from "../src/lib/insights/check";
-import { checkPlan, computedPlan, buildInsightMessages } from "../src/lib/insights/plan";
+import { checkPlan, computedPlan, buildInsightMessages, INSIGHTS_PROMPT_VERSION } from "../src/lib/insights/plan";
 import { expectedDistinct, lift, liftWithOneFewer } from "../src/lib/insights/stats";
+import { paperIdFromRunId } from "../src/lib/paper-id";
 import type { CategoryAssignmentRow, TrendRow } from "../src/types/database";
-import type { InsightFact } from "../src/lib/insights/types";
+import type { Insight, InsightFact } from "../src/lib/insights/types";
+import { routeHarness } from "./support/route-harness";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -265,34 +267,184 @@ test("the prompt is small and carries facts, not raw rows", () => {
 
 /* ------------------------------------------------------------- the route */
 
-test("opening the tab never calls a model; writing up is metered and cached", () => {
-  const route = read("src/app/api/workspace/insights/route.ts");
-  const autoReturn = route.indexOf('if (body.mode === "auto" || report.insights.length === 0) return respond(computedPlan(report));');
-  assert.ok(autoReturn > 0);
-  assert.ok(autoReturn < route.indexOf("createChatCompletionResult("), "auto returns before any model call");
-  assert.ok(autoReturn < route.indexOf('assertAndRecordAiUsage(user.id, "chart"'), "and before the quota is charged");
-  assert.ok(route.indexOf("assertAiTokenBudget(user.id)") < route.indexOf("createChatCompletionResult("));
-  assert.match(route, /withAiTokenUsageTracking\(/);
-  assert.match(route, /persistAiTokenUsage\(user\.id, usage, "insights"\)/, "tokens and cost count toward the daily limits");
-  assert.match(route, /timeoutMs: 25_000/);
-  assert.match(route, /writeCachedPlan\(user\.id, built, body\.projectId, shownPlan\)/);
-  assert.match(route, /const \{ checks, \.\.\.shownPlan \} = plan;/, "the checker's notes stay in the log");
-  const server = read("src/lib/insights/server.ts");
-  assert.match(server, /return `\$\{INSIGHTS_PROMPT_VERSION\}:\$\{dataHash\}`;/, "a cached plan is for exactly these papers and this prompt");
-  assert.match(server, /scope_type = 'custom' AND scope_key = \$2 AND version_hash = \$3/);
-  assert.match(server, /\.update\(JSON\.stringify\(corpus\.papers\.map\(\(paper\) => String\(paper\.id\)\)\.sort\(\)\)\)/, "keyed by the papers selected, not the spelling of the filters");
+/*
+ * The routes run against PGlite under the app's role (tests/support/route-harness.ts),
+ * with the fixture's papers stored as the analysis stores them. The model is
+ * the real client with fetch replaced: it answers here, and no request leaves.
+ */
+const OWNER = "00000000-0000-4000-8000-00000000000a";
+const PROJECT = "00000000-0000-4000-8000-0000000000a1";
+const FOLDER = "00000000-0000-4000-8000-0000000000f1";
+const MODEL_URL = "https://openrouter.ai/api/v1/chat/completions";
+const runOf = (paper: string) => `${Number(paper).toString(16).padStart(8, "0")}-e5f6-4a7b-8c9d-0e1f2a3b4c5d`;
+
+async function storedRepository() {
+  const harness = await routeHarness({
+    OPENAI_API_KEY: "route-test-key",
+    OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+    MODEL_TASK_ADAPTIVE_INSIGHTS: undefined,
+    AI_DAILY_TOKEN_LIMIT: undefined,
+  });
+  const { db } = harness;
+  const owner = await harness.signIn(OWNER);
+  await db.exec(`
+    INSERT INTO workspace_organizations (id, owner_user_id, name) VALUES ('00000000-0000-4000-8000-0000000000c1', '${OWNER}', 'Org');
+    INSERT INTO workspace_projects (id, organization_id, owner_user_id, name, analysis_profile, analysis_profile_version, analysis_profile_hash, analysis_profile_updated_at)
+      VALUES ('${PROJECT}', '00000000-0000-4000-8000-0000000000c1', '${OWNER}', 'Mine', '{"classificationEnabled": false}'::jsonb, 2, 'test', now());
+    INSERT INTO research_folders (id, owner_user_id, name, project_id) VALUES ('${FOLDER}', '${OWNER}', 'A', '${PROJECT}');
+  `);
+  const byPaper = new Map<string, TrendRow[]>();
+  for (const row of fixture().trends) byPaper.set(row.paper_id, [...(byPaper.get(row.paper_id) ?? []), row]);
+  for (const [paper, rows] of byPaper) {
+    const run = runOf(paper);
+    const id = paperIdFromRunId(run);
+    await db.query(`INSERT INTO ingestion_runs (id, owner_user_id, folder_id, source_type, status) VALUES ($1, $2, $3, 'upload', 'succeeded')`, [run, OWNER, FOLDER]);
+    await db.query(`INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES ($1, $2, $3, $4, $5)`, [id, OWNER, FOLDER, rows[0].year, rows[0].title]);
+    await db.query(`INSERT INTO paper_content (paper_id, owner_user_id, folder_id, ingestion_run_id) VALUES ($1, $2, $3, $4)`, [id, OWNER, FOLDER, run]);
+    for (const row of rows) {
+      await db.query(`INSERT INTO paper_keywords (paper_id, owner_user_id, folder_id, topic, keyword) VALUES ($1, $2, $3, $4, $5)`, [id, OWNER, FOLDER, row.topic, row.keyword]);
+    }
+  }
+  const usage = async () =>
+    (
+      await db.query<{ usage_kind: string; units: number; metadata: Record<string, unknown> }>(
+        `SELECT usage_kind, units, metadata FROM ai_usage_events WHERE owner_user_id = $1 ORDER BY created_at, usage_kind`,
+        [OWNER]
+      )
+    ).rows;
+  return { ...harness, owner, usage };
+}
+
+/** The model's endpoint, answered here; any other address fails the test. */
+function stubModel(reply: (body: Record<string, unknown>) => unknown) {
+  const calls: Array<Record<string, unknown>> = [];
+  const timeouts: number[] = [];
+  const original = { fetch: globalThis.fetch, timeout: AbortSignal.timeout };
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    if (String(url) !== MODEL_URL) throw new Error(`Unexpected request to ${String(url)}`);
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    calls.push(body);
+    return new Response(JSON.stringify(reply(body)), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  AbortSignal.timeout = (milliseconds: number) => {
+    timeouts.push(milliseconds);
+    return original.timeout.call(AbortSignal, milliseconds);
+  };
+  return {
+    calls,
+    timeouts,
+    restore() {
+      globalThis.fetch = original.fetch;
+      AbortSignal.timeout = original.timeout;
+    },
+  };
+}
+
+const toolReply = (name: string, args: unknown) => ({
+  model: "google/gemini-3.1-flash-lite",
+  usage: { prompt_tokens: 900, completion_tokens: 300, total_tokens: 1200 },
+  choices: [{ message: { content: null, tool_calls: [{ id: "call_1", type: "function", function: { name, arguments: JSON.stringify(args) } }] } }],
 });
 
-test("the editor runs on Gemini 3.1 Flash-Lite unless configured otherwise", () => {
-  assert.match(read("src/lib/server-env.ts"), /ADAPTIVE_INSIGHTS: "google\/gemini-3\.1-flash-lite",/);
-  assert.match(read("src/app/api/workspace/insights/route.ts"), /const TASK = "ADAPTIVE_INSIGHTS";/);
+const fixtureYears = () => [...new Set(fixture().trends.map((row) => row.year))].sort();
+
+test("opening the tab never calls a model; writing up is metered, bounded and cached", async () => {
+  const { db, request, owner, usage } = await storedRepository();
+  const { POST } = await import("../src/app/api/workspace/insights/route");
+  const model = stubModel(() =>
+    toolReply("write_insights_page", {
+      headline: "Writing and Feedback travel together",
+      summary: "Across 30 papers, a few patterns stand out.",
+      cards: [{ insight_id: "theme_pairs", title: "Writing and Feedback go together", takeaway: "They share 7 papers." }],
+      caveats: [],
+    })
+  );
+  const open = async (body: Record<string, unknown> = {}) => {
+    const response = await POST(request("/api/workspace/insights", { headers: owner, body: { projectId: PROJECT, fresh: true, ...body } }));
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  try {
+    const opened = await open();
+    assert.equal(opened.plan.source, "computed");
+    const pairs = (opened.report.insights as Insight[]).find((insight) => insight.id === "theme_pairs");
+    assert.ok(pairs, "the stored papers give the planted pairing");
+    assert.equal(model.calls.length, 0, "opening the tab calls no model");
+    assert.deepEqual(await usage(), [], "and charges nothing");
+
+    const written = await open({ mode: "write" });
+    assert.equal(model.calls.length, 1);
+    assert.equal(model.calls[0].model, "google/gemini-3.1-flash-lite", "the editor runs on Gemini 3.1 Flash-Lite");
+    assert.deepEqual(model.timeouts, [25_000], "and is given 25 seconds");
+    assert.equal(written.plan.source, "model");
+    assert.equal(written.cached, false);
+    assert.equal(written.plan.cards[0].takeaway, pairs!.takeaway, "the model's wrong number went back to the computed sentence");
+    assert.ok(written.plan.corrected >= 1);
+    assert.equal("checks" in written.plan, false, "the checker's notes stay in the log");
+    const charged = await usage();
+    assert.deepEqual(
+      charged.map((row) => [row.usage_kind, row.metadata.route ?? row.metadata.source]),
+      [["chart", "insights"], ["chat_message", "insights"]],
+      "one write-up against the daily quota, and its tokens against the daily limits"
+    );
+    assert.equal(charged[1].units, 1200);
+    assert.equal(charged[1].metadata.metric, "tokens");
+
+    const again = await open({ mode: "write" });
+    assert.equal(again.cached, true, "the write-up is cached for these papers");
+    assert.deepEqual(again.plan, written.plan);
+    assert.equal((await open()).cached, true, "and shown when the tab is opened again");
+    assert.equal((await open({ selectedYears: fixtureYears() })).cached, true, "every year selected is the same papers");
+    assert.equal(model.calls.length, 1, "none of which calls the model");
+    assert.equal((await usage()).length, 2, "or charges again");
+
+    const fewer = await open({ selectedYears: fixtureYears().slice(1) });
+    assert.equal(fewer.cached, false, "other papers have no write-up yet");
+    assert.equal(fewer.plan.source, "computed");
+
+    const stored = await db.query<{ version_hash: string }>(`SELECT version_hash FROM workspace_analytics_cache WHERE scope_key LIKE 'insights:%'`);
+    assert.equal(stored.rows.length, 1);
+    assert.ok(stored.rows[0].version_hash.startsWith(`${INSIGHTS_PROMPT_VERSION}:`), "stored under this prompt");
+    await db.query(`UPDATE workspace_analytics_cache SET version_hash = replace(version_hash, $1, 'an-older-prompt') WHERE scope_key LIKE 'insights:%'`, [INSIGHTS_PROMPT_VERSION]);
+    assert.equal((await open()).cached, false, "a write-up made under another prompt is not shown");
+  } finally {
+    model.restore();
+  }
 });
 
-test("the old planner and its hidden Library call are gone", () => {
+test("a spent token budget writes nothing up, and the editor's model can be configured", async () => {
+  const { db, request, owner, usage } = await storedRepository();
+  const { POST } = await import("../src/app/api/workspace/insights/route");
+  const model = stubModel(() => toolReply("write_insights_page", { headline: "x", summary: "y", cards: [], caveats: [] }));
+  const write = () => POST(request("/api/workspace/insights", { headers: owner, body: { projectId: PROJECT, fresh: true, mode: "write", refresh: true } }));
+  try {
+    await db.query(
+      `INSERT INTO ai_usage_events (owner_user_id, usage_kind, units, metadata) VALUES ($1, 'chat_message', 1000000, '{"metric": "tokens"}'::jsonb)`,
+      [OWNER]
+    );
+    const refused = await (await write()).json();
+    assert.equal(refused.plan.source, "computed");
+    assert.match(refused.notice, /Daily chat token limit reached/);
+    assert.equal(model.calls.length, 0, "no model is called");
+    assert.equal((await usage()).length, 1, "and no write-up is counted");
+
+    await db.exec(`DELETE FROM ai_usage_events`);
+    process.env.MODEL_TASK_ADAPTIVE_INSIGHTS = "openai/gpt-5-mini";
+    await write();
+    assert.equal(model.calls[0].model, "openai/gpt-5-mini");
+  } finally {
+    delete process.env.MODEL_TASK_ADAPTIVE_INSIGHTS;
+    model.restore();
+  }
+});
+
+test("the old planner and its hidden Library call are gone", async () => {
+  // Only an effect in these two large client components could call it, and
+  // effects need a browser, so the wording is checked.
   assert.doesNotMatch(read("src/components/admin/AdminImportClient.tsx"), /visualization-plan/);
   assert.doesNotMatch(read("src/components/DashboardClient.tsx"), /visualization-plan|generateAdaptiveCharts/);
-  for (const path of ["src/lib/visualization-planner.ts", "src/lib/visualization-plan.ts", "src/app/api/visualization-plan/route.ts"]) {
-    assert.throws(() => read(path), `${path} still exists`);
+  for (const path of ["../src/lib/visualization-planner", "../src/lib/visualization-plan", "../src/app/api/visualization-plan/route"]) {
+    await assert.rejects(import(path), `${path} still loads`);
   }
 });
 
@@ -334,13 +486,45 @@ test("a question becomes a computed view; the model's words never reach the page
   assert.equal(parseAskQuery({ answerable: true, rows: "theme", columns: "none", measure: "papers", title: "x" })?.columns, null);
 });
 
-test("asking is metered like writing up, and returns only computed output", () => {
-  const route = read("src/app/api/workspace/insights/ask/route.ts");
-  assert.ok(route.indexOf("assertAiTokenBudget(user.id)") < route.indexOf("createChatCompletionResult("));
-  assert.match(route, /assertAndRecordAiUsage\(user\.id, "chart", \{ route: "insights-ask" \}\)/);
-  assert.match(route, /persistAiTokenUsage\(user\.id, usage, "insights-ask"\)/);
-  assert.match(route, /const answer = runAskQuery\(built\.corpus, query\);\s*return NextResponse\.json\(answer/);
-  assert.match(route, /question: z\.string\(\)\.trim\(\)\.min\(3\)\.max\(300\)/);
+test("asking is metered like writing up, and returns only computed output", async () => {
+  const { db, request, owner, usage } = await storedRepository();
+  const { POST } = await import("../src/app/api/workspace/insights/ask/route");
+  const { buildInsightsForRequest } = await import("../src/lib/insights/server");
+  const { parseAskQuery, runAskQuery } = await import("../src/lib/insights/ask");
+  const view = { answerable: true, title: "IGNORED 99 words from a model", measure: "papers", rows: "theme", columns: "none" };
+  const model = stubModel(() => toolReply("build_view", view));
+  const ask = (question: unknown) => POST(request("/api/workspace/insights/ask", { headers: owner, body: { projectId: PROJECT, question } }));
+  try {
+    for (const question of ["ab", "  ab  ", "x".repeat(301), 42]) {
+      const response = await ask(question);
+      assert.equal(response.status, 400, JSON.stringify(question).slice(0, 40));
+      assert.deepEqual(await response.json(), { error: "Ask a question of 3 to 300 characters." });
+    }
+    assert.equal(model.calls.length, 0, "a malformed question reaches no model");
+
+    const response = await ask("  Which themes are most common?  ");
+    assert.equal(response.status, 200);
+    const answer = await response.json();
+    const built = await buildInsightsForRequest({ ownerUserId: OWNER, projectId: PROJECT, selectedYears: [], selectedTracks: [], searchQuery: "", fresh: true });
+    assert.deepEqual(answer, JSON.parse(JSON.stringify(runAskQuery(built.corpus, parseAskQuery(view)!))), "the view computed from the model's query, and nothing else");
+    assert.doesNotMatch(JSON.stringify(answer), /IGNORED|99 words/);
+    assert.equal(model.calls[0].model, "google/gemini-3.1-flash-lite");
+    assert.deepEqual(model.timeouts, [20_000]);
+    assert.deepEqual(
+      (await usage()).map((row) => [row.usage_kind, row.metadata.route ?? row.metadata.source]),
+      [["chart", "insights-ask"], ["chat_message", "insights-ask"]]
+    );
+
+    await db.query(
+      `INSERT INTO ai_usage_events (owner_user_id, usage_kind, units, metadata) VALUES ($1, 'chat_message', 1000000, '{"metric": "tokens"}'::jsonb)`,
+      [OWNER]
+    );
+    const refused = await ask("Which themes are most common?");
+    assert.equal(refused.status, 429, "a spent budget is refused before the model is asked");
+    assert.equal(model.calls.length, 1);
+  } finally {
+    model.restore();
+  }
 });
 
 test("a narrowed question is answered against all papers, about the value asked", async () => {

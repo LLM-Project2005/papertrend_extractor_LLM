@@ -91,8 +91,10 @@ export function classifyFailure(input: {
   if (status === 413 || /context length|too many tokens|maximum context|request too large/.test(message)) {
     return "too_long";
   }
-  if (/abort|cancel/.test(message)) return "cancelled";
+  // A deadline aborts the request too ("The operation was aborted due to
+  // timeout"), so it is told apart before any abort is read as the reader's.
   if (/timeout|timed out|etimedout|deadline/.test(message)) return "timeout";
+  if (/abort|cancel/.test(message)) return "cancelled";
   if (status >= 500) return "provider_error";
   if (/fetch failed|econnreset|socket hang up|network/.test(message)) return "provider_error";
   return "unknown";

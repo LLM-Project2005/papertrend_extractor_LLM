@@ -16,7 +16,8 @@ function poolClient(tx: Transaction): PoolClient {
     async query(text: string | { text: string; values?: unknown[] }, values?: unknown[]) {
       const sql = typeof text === "string" ? text : text.text;
       const result = await tx.query(sql, typeof text === "string" ? values : text.values);
-      return { rows: result.rows, rowCount: result.affectedRows ?? result.rows.length, fields: result.fields, command: "", oid: 0 };
+      // pg counts the rows a SELECT returns; PGlite's affectedRows is 0 for one.
+      return { rows: result.rows, rowCount: result.affectedRows || result.rows.length, fields: result.fields, command: "", oid: 0 };
     },
     release() {},
   } as unknown as PoolClient;

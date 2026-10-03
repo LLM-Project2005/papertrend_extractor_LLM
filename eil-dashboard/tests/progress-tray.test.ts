@@ -3,6 +3,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import React, { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { PGlite } from "@electric-sql/pglite";
 import { pgcrypto } from "@electric-sql/pglite/contrib/pgcrypto";
 import { vector } from "@electric-sql/pglite-pgvector";
@@ -14,8 +16,13 @@ import {
   mergeFollowedRunIds,
   trackedRunsSettled,
 } from "../src/lib/run-polling";
+import type { IngestionRunRow } from "../src/types/database";
 
-/** The progress tray follows its batch, however large, and stops polling when done (docs/32, 2.6). */
+/**
+ * The progress tray follows its batch, however large, and stops polling when
+ * done (docs/32, 2.6). Its status route is called in
+ * upload-spend-behaviour-uploads.test.ts.
+ */
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -76,6 +83,8 @@ function sourceFiles(dir: string): string[] {
 }
 
 test("one poller, which waits while hidden and stops when done", () => {
+  // Which components poll, and a hook driven by the browser's visibility events
+  // inside the auth provider: nothing here can run them, so they are read.
   const callers = sourceFiles(join(root, "src"))
     .filter((path) => /useIngestionRuns\(\{/.test(readFileSync(path, "utf8")))
     .map((path) => path.replaceAll("\\", "/").replace(/.*\/src\//, "src/"))
@@ -92,14 +101,42 @@ test("one poller, which waits while hidden and stops when done", () => {
   assert.match(hook, /fetch\("\/api\/workspace\/runs\/status"/);
 });
 
-test("the tray can always be closed, and a re-analysis follows what the server queued", () => {
-  const card = read("src/components/workspace/AnalysisStatusCard.tsx");
-  assert.doesNotMatch(card, /\{allTerminal && onClear \? \(/, "no longer only when finished");
-  assert.match(card, /"Stop following this analysis \(it keeps running\)"/);
-  assert.match(card, /\{allTerminal \? "Dismiss" : "Stop following"\}/);
+/** Every button in rendered markup, by its accessible name. */
+function buttons(html: string): string[] {
+  return [...html.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)].map(([, attributes, inner]) =>
+    (attributes.match(/aria-label="([^"]*)"/)?.[1] ?? inner.replace(/<[^>]+>/g, "")).trim()
+  );
+}
+
+test("the tray can always be closed: Stop following while papers run, Dismiss once they finish", async () => {
+  // The card is compiled with the classic JSX runtime and does not import React itself.
+  (globalThis as { React?: typeof React }).React = React;
+  const { default: AnalysisStatusCard, AnalysisTrayPill } = await import("../src/components/workspace/AnalysisStatusCard");
+  const noop = () => undefined;
+  const runs = (...statuses: Array<IngestionRunRow["status"]>) =>
+    statuses.map((status, n): IngestionRunRow => ({ id: `r${n}`, source_type: "upload", status, source_filename: `${n}.pdf` }));
+  const cases: Array<[IngestionRunRow[], string, string]> = [
+    [runs("processing", "queued"), "Stop following this analysis (it keeps running)", "Stop following"],
+    [runs("succeeded", "failed"), "Dismiss analysis status", "Dismiss"],
+  ];
+  for (const [batch, label, word] of cases) {
+    const tray = buttons(renderToStaticMarkup(createElement(AnalysisStatusCard, { runs: batch, compact: true, onClear: noop })));
+    assert.ok(tray.includes(label), `tray: ${label}`);
+    const pill = buttons(renderToStaticMarkup(createElement(AnalysisTrayPill, { runs: batch, onOpen: noop, onClear: noop })));
+    assert.ok(pill.includes(label), `pill: ${label}`);
+    const card = buttons(renderToStaticMarkup(createElement(AnalysisStatusCard, { runs: batch, onClear: noop })));
+    assert.ok(card.includes(word), `card: ${word}`);
+  }
+  // A batch whose runs cannot be found still has a way out.
+  const lost = buttons(renderToStaticMarkup(createElement(AnalysisStatusCard, { runs: [], compact: true, onClear: noop })));
+  assert.ok(lost.some((name) => cases.some(([, label]) => name === label)), lost.join(", "));
+  // With nothing to close it with, nothing offers to.
+  const bare = renderToStaticMarkup(createElement(AnalysisStatusCard, { runs: runs("processing"), compact: true }));
+  assert.doesNotMatch(bare, /Stop following|Dismiss/);
+});
+
+test("the shell's pill closes the session, and a re-analysis follows what the server queued", () => {
+  // Wiring inside the shell and the Library, which need the app's providers and router to render, so it is read.
   assert.match(read("src/components/workspace/WorkspaceShell.tsx"), /<AnalysisTrayPill runs=\{activeRuns\} onOpen=\{\(\) => setStatusPanelOpen\(true\)\} onClear=\{clearAnalysisSession\} \/>/);
   assert.match(read("src/components/admin/AdminImportClient.tsx"), /const queuedRuns = \[\.\.\.new Set\(payload\.queuedRunIds \?\? \[\]\)\]\.map\(\(id\) => \(\{ id \}\)\);/);
-  const route = read("src/app/api/workspace/runs/status/route.ts");
-  assert.match(route, /getAuthenticatedUserFromRequest\(request\)/);
-  assert.match(route, /runIds: z\.array\(z\.string\(\)\.uuid\(\)\)\.min\(1\)\.max\(MAX_TRACKED_RUNS\)/);
 });

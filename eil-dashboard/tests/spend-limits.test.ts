@@ -34,8 +34,7 @@ test("the limits come from the environment, with defaults sized to the budget", 
     assert.equal(dailySpendLimits({ AI_DAILY_USD_LIMIT_SITE: unusable }).siteUsd, DEFAULT_SITE_DAILY_USD, unusable);
   }
   assert.equal(dailySpendLimits({ AI_DAILY_USD_LIMIT_SITE: "99999" }).siteUsd, 1_000, "capped");
-  // The worker holds papers at the same site-wide default.
-  assert.match(read("worker/spend_limits.py"), new RegExp(`DEFAULT_SITE_DAILY_USD = ${DEFAULT_SITE_DAILY_USD}\\b`));
+  // The worker's default is held to this one by tests/test_worker_spend_limits.py.
 });
 
 test("the site-wide limit binds everyone; admins are exempt from the per-person limit only", () => {
@@ -112,12 +111,24 @@ test("the spend SQL, run on Postgres: the site counts everyone and analysis, a p
   const site = await db.query<{ site_usd: number }>(sql(SITE_SPEND_SQL), [day]);
   assert.equal(Math.round(site.rows[0].site_usd * 1e6) / 1e6, 0.6, "every account and the analysis; a malformed cost counts as nothing");
 
-  // The worker's own copy of the site-wide sum agrees.
+  // The worker's own copy of the site-wide sum, taken from its Python as data and run here, agrees.
   const python = read("worker/database_client.py").match(/SITE_SPEND_SQL = \(([\s\S]*?)\n\)/)?.[1] ?? "";
   const workerSql = [...python.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]).join("");
-  assert.match(workerSql, /date_trunc\('day', now\(\) AT TIME ZONE 'UTC'\)/);
   const worker = await db.query<{ site_usd: number }>(sql(workerSql));
   assert.equal(Math.round(worker.rows[0].site_usd * 1e6) / 1e6, 0.6);
+
+  // Both days start at midnight UTC, whatever the session's time zone: a row a
+  // second before it counts for nothing, a row a second after it counts.
+  await db.exec(`SET TIME ZONE 'Asia/Bangkok'`);
+  await db.query(
+    `INSERT INTO ai_usage_events (owner_user_id, usage_kind, metadata, created_at)
+     VALUES ($1, 'chat_message', $2, $4::timestamptz - interval '1 second'), ($1, 'chat_message', $3, $4::timestamptz + interval '1 second')`,
+    [b, { metric: "tokens", cost_usd: 7, source: "chat" }, { metric: "tokens", cost_usd: 0.05, source: "chat" }, day]
+  );
+  for (const [name, text, values] of [["worker", workerSql, []], ["web", SITE_SPEND_SQL, [day]]] as const) {
+    const total = await db.query<{ site_usd: number }>(sql(text), [...values]);
+    assert.equal(Math.round(total.rows[0].site_usd * 1e6) / 1e6, 0.65, name);
+  }
 
   // Spend rows are not requests: two messages were sent today, not five.
   const count = await db.query<{ count: string }>(sql(AI_USAGE_COUNT_SQL), [a, "chat_message", day]);
@@ -125,16 +136,15 @@ test("the spend SQL, run on Postgres: the site counts everyone and analysis, a p
   await db.close();
 });
 
-test("every request that can reach a model checks the limits first", () => {
-  const guards = read("src/lib/security-guards.ts");
-  const body = (name: string) => guards.slice(guards.indexOf(`export async function ${name}(`), guards.indexOf("\n}\n", guards.indexOf(`export async function ${name}(`)));
-  assert.match(body("assertAiTokenBudget"), /await assertSpendAllowed\(ownerUserId\)/, "chat, insights");
-  assert.match(body("assertAndRecordAiUsage"), /await assertSpendAllowed\(ownerUserId\)/, "deep research, web search, charts");
-  assert.match(body("assertSpendAllowed"), /new GuardError\(refusal\.message, 429\)/);
-  assert.match(body("assertSpendAllowed"), /Usage could not be checked just now[\s\S]*503/, "an unreadable spend refuses");
-  assert.match(read("src/lib/project-reclassification-service.ts"), /await assertSpendAllowed\(ownerUserId\)/);
-  assert.match(read("src/lib/semantic-map-service.ts"), /await assertSpendAllowed\(ownerUserId\)/);
-  assert.match(read("src/lib/topic-theme-service.ts"), /if \(!\(await spendAllowed\(ownerUserId\)\)\) return \{ status: "unavailable" \}/);
+/*
+ * The guards, the services and the routes that end model work are run in
+ * upload-spend-behaviour-limits.test.ts and upload-spend-behaviour-routes.test.ts:
+ * refused before a model is called while a limit holds, and their cost
+ * recorded under their own names, even when the work fails.
+ */
+
+test("the topic cache merges topics by model only while spending is allowed", () => {
+  // It reads and stores through Supabase, which the route harness does not stand in for, so it is read.
   assert.match(read("src/lib/corpus-topic-cache.ts"), /await spendAllowed\(ownerUserId\)/);
   assert.match(read("src/lib/corpus-topic-cache.ts"), /if \(!reuse && allowModel\)/, "a cache built without its merges is not kept");
 });
@@ -184,27 +194,13 @@ test("every file that calls a model has its cost recorded", () => {
     .map((path) => relative(root, path).replaceAll("\\", "/"))
     .filter((path) => path !== "src/lib/openai.ts")
     .sort();
+  // An inventory of files, which no behaviour can list, so it is read; the
+  // routes and services in it are run in the upload-spend-behaviour tests.
   assert.deepEqual(callers, Object.keys(MODEL_CALLERS).sort());
 
-  // The routes that end a request record it, each under its own source.
+  // The rest are read: the chat route streams an answer through retrieval,
+  // routing and caching too large to drive here, and the topic cache goes
+  // through Supabase, which the route harness does not stand in for.
   assert.match(read("src/app/api/chat/route.ts"), /await persistAiTokenUsage\(user\.id, usage\)/);
-  assert.match(read("src/app/api/chat/jobs/process/route.ts"), /persistAiTokenUsage\(job\.ownerUserId, usage, "chat-job"\)/);
-  assert.match(read("src/app/api/chat/research/process/route.ts"), /persistAiTokenUsage\(ownerUserId, usage, "deep-research"\)/);
-  assert.match(read("src/app/api/workspace/insights/route.ts"), /persistAiTokenUsage\(user\.id, usage, "insights"\)/);
-  assert.match(read("src/app/api/workspace/insights/ask/route.ts"), /persistAiTokenUsage\(user\.id, usage, "insights-ask"\)/);
-  for (const [file, source] of [
-    ["src/lib/topic-theme-service.ts", "topic-themes"],
-    ["src/lib/corpus-topic-cache.ts", "topic-cache"],
-    ["src/lib/project-reclassification-service.ts", "reclassification"],
-    ["src/lib/semantic-map-service.ts", "semantic-map"],
-  ]) {
-    assert.match(read(file), new RegExp(`trackModelSpend\\(ownerUserId, "${source}"`), file);
-  }
-  // Calls made with fetch report their usage like the client's do.
-  assert.equal((read("src/lib/semantic-map-service.ts").match(/recordAiTokenUsage\(payload\.usage/g) ?? []).length, 2);
-  assert.match(read("src/lib/repository-memory.ts"), /recordAiTokenUsage\(payload\.usage, config\.model\)/);
-  // The client records each call's usage, which carries OpenRouter's `cost`.
-  assert.match(read("src/lib/openai.ts"), /recordAiTokenUsage\(payload\.usage, String\(requestBody\.model\)\)/);
-  // A failed piece of work still records what it spent.
-  assert.match(read("src/lib/security-guards.ts"), /try \{\s*return await run\(\);\s*\} finally \{\s*await persistAiTokenUsage\(ownerUserId, usage, source\)/);
+  assert.match(read("src/lib/corpus-topic-cache.ts"), /trackModelSpend\(ownerUserId, "topic-cache"/);
 });
