@@ -121,7 +121,7 @@ test("generating a map records the job for the signed-in person, whatever owner 
   const job = await import("../src/app/api/workspace/semantic-map/jobs/[jobId]/route");
 
   const refused = await POST(request("/api/workspace/semantic-map", { headers: other, body: { projectId: PROJECT, ownerUserId: OWNER } }));
-  assert.equal(refused.ok, false);
+  assert.equal(refused.status, 404, "the same answer as reading it");
   assert.equal((await refused.json()).error, "Repository not found.");
   assert.equal((await db.query("SELECT 1 FROM repository_semantic_maps")).rows.length, 0, "nothing written for someone else's repository");
 
@@ -146,6 +146,27 @@ test("generating a map records the job for the signed-in person, whatever owner 
   const seenByOwner = await job.GET(request(`/api/workspace/semantic-map/jobs/${mapId}`, { headers: owner }), params({ jobId: mapId }));
   assert.equal(seenByOwner.status, 200);
   assert.equal((await seenByOwner.json()).map.status, "failed");
+});
+
+test("a database failure is logged, not shown to the browser", async () => {
+  const { db, request, owner } = await repository();
+  const { GET, POST } = await import("../src/app/api/workspace/semantic-map/route");
+  await db.exec("REVOKE SELECT ON repository_semantic_maps FROM papertrend_app");
+  const logged: unknown[] = [];
+  const error = console.error;
+  console.error = (...args: unknown[]) => void logged.push(args);
+  try {
+    const read = await GET(request(`/api/workspace/semantic-map?projectId=${PROJECT}`, { headers: owner }));
+    assert.equal(read.status, 500);
+    assert.deepEqual(await read.json(), { error: "The semantic map could not be loaded right now." });
+    const made = await POST(request("/api/workspace/semantic-map", { headers: owner, body: { projectId: PROJECT } }));
+    assert.equal(made.status, 500);
+    assert.deepEqual(await made.json(), { error: "The semantic map could not be generated right now." });
+  } finally {
+    console.error = error;
+  }
+  assert.equal(logged.length, 2);
+  assert.match(JSON.stringify(logged), /permission denied/, "the cause is in the log");
 });
 
 test("a map reaches the browser without embeddings or document text", async () => {
