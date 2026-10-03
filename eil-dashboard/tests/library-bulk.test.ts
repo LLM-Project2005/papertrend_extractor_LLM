@@ -101,21 +101,8 @@ test("a selection moves to another repository with its analysis; a folder that i
   await db.close();
 });
 
-test("the Library selects, and acts on, only what is in view", () => {
-  const library = read("src/components/admin/AdminImportClient.tsx");
-  assert.match(library, /aria-label="Select every file shown"/);
-  assert.match(library, /aria-label=\{`Select \$\{item\.name\}`\}/);
-  assert.match(library, /visibleEntries\.filter\(\(entry\) => selectedRunIds\.has\(entry\.run\.id\)\)/);
-  for (const action of ["Move to Trash", "Restore", "Delete permanently…", "Move…", "Analyze again (", "Try again ("]) {
-    assert.ok(library.includes(action), action);
-  }
-  assert.match(library, /void runBulk\("trash", selectedRuns\)/);
-  assert.match(library, /setDeleteTarget\(\{ runs: selectedRuns, all: false \}\)/);
-  assert.match(library, /run\.status === "failed" && !run\.trashed_at && Boolean\(run\.source_path\)/);
-  // The Source filter is offered once a paper came from Drive (LIB-7).
-  assert.match(library, /run\.input_payload\?\.import_source === "google-drive"/);
-  assert.match(library, /fileEntries\.some\(\(entry\) => entry\.sourceFilter === "google-drive"\)/);
-});
+// The Library page selecting and acting on only what is in view runs in
+// small-fixes2-behaviour-library-page.test.ts.
 
 /* ------------------------------------------------------------------ uploads */
 
@@ -201,19 +188,40 @@ test("the account's room counts stored papers and uploads under way; a skipped f
   assert.equal((await accountPaperUsageIn(client, OWNER)).used, MAX_PAPERS_PER_ACCOUNT, "the upload under way counts");
   await db.query(`UPDATE user_profiles SET role = 'admin' WHERE id = $1`, [OWNER]);
   assert.equal((await accountPaperUsageIn(client, OWNER)).exempt, true);
+  // An admin is not held to the cap; their uploads are still counted.
+  const past = await createUploadBatchIn(client, batch([{ name: "two.pdf", sha256: "f".repeat(64) }, { name: "three.pdf", sha256: "a".repeat(64) }]));
+  assert.equal(past.runs.length, 2);
+  assert.equal((await accountPaperUsageIn(client, OWNER)).used, MAX_PAPERS_PER_ACCOUNT + 2);
   await db.close();
 });
 
-test("the upload dialog shows the room, sends where a file came from, and renews its links", () => {
-  const modal = read("src/components/workspace/AnalyzeFlowModal.tsx");
-  assert.match(modal, /fetch\("\/api\/workspace\/library\/room"/);
-  assert.match(modal, /Room for \$\{plural\(room\.remaining, "more paper"\)\}/);
-  assert.match(modal, /drive_file_id: driveFileIdOf\(file\)/);
-  assert.match(modal, /await putWithFreshUrl\(/);
-  assert.match(modal, /fetch\("\/api\/admin\/import\/renew"/);
-  assert.match(modal, /skipped: skipped\.map/);
-  assert.match(read("src/lib/google-drive-picker.ts"), /driveFileIds\.set\(file, document\.id\)/);
+test("two uploads at once are counted one after the other: the owner's lock is held when the room is counted", async () => {
+  // PGlite has one connection, so two uploads cannot race here; what is
+  // checked is that the lock is held at the moment of counting.
+  const { db } = await database();
+  const held: boolean[] = [];
+  await db.transaction(async (tx) => {
+    const client = {
+      async query(text: string, params?: unknown[]) {
+        if (/FROM public\.papers WHERE owner_user_id = \$1\) \+/.test(text)) {
+          const lock = await tx.query<{ held: boolean }>(
+            `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted AND pid = pg_backend_pid()
+               AND ((classid::bigint << 32) | objid::bigint) = hashtextextended($1, 0)) AS held`,
+            [`paper-upload:${OWNER}`]
+          );
+          held.push(lock.rows[0].held);
+        }
+        return tx.query(text, params);
+      },
+    } as never;
+    await createUploadBatchIn(client, batch([{ name: "one.pdf", sha256: "e".repeat(64) }]));
+  });
+  assert.deepEqual(held, [true]);
+  await db.close();
 });
+
+// The upload dialog showing the room, recording a Drive file and renewing its
+// links runs in small-fixes2-behaviour-upload-dialog.test.ts.
 
 /* --------------------------------------------------------- links that last */
 
@@ -259,7 +267,6 @@ test("only the object a pending upload was signed for is signed again", () => {
   assert.equal(pendingObjectName(`gs://uploads/pending/Repo/other-run/a.pdf`, run, "uploads"), null, "another run");
   assert.equal(pendingObjectName(`gs://uploads/pending/Repo/${run}/../../papers/x.pdf`, run, "uploads"), null);
   assert.equal(pendingObjectName(`gs://uploads/papers/${run}/a.pdf`, run, "uploads"), null, "not a pending upload");
-  const renew = read("src/app/api/admin/import/renew/route.ts");
-  assert.match(renew, /cloudSqlIngestionRepository\.pendingUploadRun\(user\.id, folderJobId, runId\)/);
-  assert.match(read("src/lib/cloudsql/ingestion-repository.ts"), /AND source_path IS NULL AND trashed_at IS NULL\s*AND created_at > now\(\) - interval '60 minutes'/);
+  // The renew route refusing another person's, an old, a stored or a trashed
+  // upload runs in small-fixes2-behaviour-uploads.test.ts.
 });

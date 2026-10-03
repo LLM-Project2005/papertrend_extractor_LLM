@@ -1,6 +1,17 @@
+/*
+ * The site's visual and navigation fixes. What a page draws is rendered and
+ * checked in tests/site-ui-behaviour.test.ts; what is left here is the chart
+ * palette's own numbers, the published figures, the stylesheet, the
+ * page-audit script's in-page code (run against a small page), and a few pins
+ * on states a server render cannot reach, each saying why.
+ */
 import assert from "node:assert/strict";
 import test from "node:test";
+import vm from "node:vm";
 import { existsSync, readFileSync } from "node:fs";
+import ts from "typescript";
+import { chartTheme } from "../src/lib/chart-theme";
+import { proofMetrics } from "../src/components/marketing/marketing-content";
 
 function exists(relative: string): boolean {
   return existsSync(new URL(`../${relative}`, import.meta.url));
@@ -37,238 +48,86 @@ function contrast(a: string, b: string): number {
 
 /* ------------------------------------------------- chart legibility and colour */
 
-test("charts read the theme instead of hardcoding one", () => {
-  // Four of the five chart components hardcoded stroke="#94a3b8" and never read
-  // the theme. Measured on the deployed dashboard, tick text rendered at
-  // rgb(124,138,160) on the page background - 3.35:1, under the 4.5:1 that
-  // body-size text needs. The hardcoded value elsewhere is worse, about 2.6:1.
-  for (const file of [
-    "src/components/tabs/KeywordExplorer.tsx",
-    "src/components/tabs/TrackAnalysis.tsx",
-    "src/components/tabs/TrendAnalysis.tsx",
-  ]) {
-    const src = read(file);
-    assert.equal(/#94a3b8/.test(src), false, `${file} still hardcodes the axis colour`);
-    assert.match(src, /chartTheme\(hydrated && theme === "dark"\)/, `${file} must read the theme`);
-    assert.match(src, /tickStyle\(ct/, `${file} must set an explicit tick fill`);
-    // Three gridlines still had a fixed light grey and drew bright white dashes
-    // across the dark dashboard, the loudest thing on the chart.
-    assert.equal(/<CartesianGrid[^>]*stroke="#/.test(src), false, `${file} hardcodes a grid colour`);
-  }
-});
-
 test("tick labels clear WCAG AA on both page backgrounds", () => {
   // Recharts paints tick text with `fill`, not `color`. A checker that reads
   // `color` reports a clean page while every chart label fails - which is
   // exactly what happened, so this is asserted on the values themselves.
-  const theme = read("src/lib/chart-theme.ts");
-  const labels = [...theme.matchAll(/label: "(#[0-9a-f]{6})"/g)].map((m) => m[1]);
-  assert.equal(labels.length, 2, "one label colour per theme");
-  const [darkLabel, lightLabel] = labels;
-  assert.ok(
-    contrast(darkLabel, "#000000") >= 4.5,
-    `dark label ${darkLabel} is ${contrast(darkLabel, "#000000").toFixed(2)}:1`
-  );
-  assert.ok(
-    contrast(lightLabel, "#f8fafc") >= 4.5,
-    `light label ${lightLabel} is ${contrast(lightLabel, "#f8fafc").toFixed(2)}:1`
-  );
+  const darkLabel = chartTheme(true).label;
+  const lightLabel = chartTheme(false).label;
+  assert.notEqual(darkLabel, lightLabel, "one label colour per theme");
+  assert.ok(contrast(darkLabel, "#000000") >= 4.5, `dark label ${darkLabel} is ${contrast(darkLabel, "#000000").toFixed(2)}:1`);
+  assert.ok(contrast(lightLabel, "#f8fafc") >= 4.5, `light label ${lightLabel} is ${contrast(lightLabel, "#f8fafc").toFixed(2)}:1`);
 });
 
-test("one quantity is drawn in one colour", () => {
-  // The identical "Papers" series was cyan, purple and hot pink in three
-  // adjacent charts, inviting a reader to infer a categorical meaning the hue
-  // does not carry.
-  // The Adaptive insights draw every count in one neutral fill, in both themes.
-  const tab = read("src/components/dashboard/InsightChart.tsx");
-  assert.equal(/(?:fill|stroke)="#[0-9a-fA-F]{6}"/.test(tab), false, "no chart colour may be hardcoded");
-  assert.equal((tab.match(/bg-slate-700 dark:bg-\[#d4d4d4\]/g) ?? []).length, 2, "bars and pairs share one fill");
-});
-
-/* ----------------------------------------------------- the stock palette is gone */
-
-test("the borrowed template palette appears nowhere in the app", () => {
-  // #007cf0 / #00dfd8 / #ff0080 / #7928ca / #f9cb28 are the stock gradient
-  // colours of a well-known deployment template. They carried no product
-  // meaning, clashed with a monochrome brand, and had leaked off the marketing
-  // pages into real dashboard charts.
+test("the Adaptive tab's cards add no colour of the borrowed template palette", () => {
+  // The cards around each chart draw only after the insights request, made in
+  // an effect, returns, so a server render shows none of them; the charts
+  // themselves are rendered in site-ui-behaviour.test.ts.
   const stock = ["#007cf0", "#00dfd8", "#ff0080", "#7928ca", "#f9cb28", "#50e3c2", "#ff4d4d", "#eb367f"];
-  for (const file of [
-    "src/app/page.tsx",
-    "src/app/features/[slug]/page.tsx",
-    "src/components/marketing/MarketingLayout.tsx",
-    "src/components/marketing/ProductShot.tsx",
-    "src/components/marketing/styles.ts",
-    "src/components/marketing/marketing-content.ts",
-    "src/components/dashboard/InsightChart.tsx",
-    "src/components/dashboard/InsightsTab.tsx",
-  ]) {
-    const src = read(file);
-    for (const hex of stock) {
-      assert.equal(src.includes(hex), false, `${file} still uses ${hex}`);
-    }
-  }
+  const tab = read("src/components/dashboard/InsightsTab.tsx").toLowerCase();
+  for (const hex of stock) assert.equal(tab.includes(hex), false, `InsightsTab still uses ${hex}`);
 });
 
-test("the public pages show the product, not a drawing of it", () => {
+/* ------------------------------------------------- the public pages */
+
+test("the drawings of the product, and the script that photographed real data, are gone", () => {
   // The front page used to carry div-built imitations of the product - an
-  // "example workspace" with invented stages and percentages that read as
-  // accuracy figures nothing measures. The pages now show screenshots of the
-  // real app, taken in both themes by scripts/marketing-mock/record-clips.ts.
+  // "example workspace" with invented stages and percentages. The pages now show
+  // screenshots of the real app (rendered in site-ui-behaviour.test.ts).
   for (const gone of ["FeatureShowcases.tsx", "MarketingMotion.tsx", "FeatureBand.tsx"]) {
     assert.equal(exists(`src/components/marketing/${gone}`), false, `${gone} was a drawing of the product`);
   }
-  const pages = [read("src/app/page.tsx"), read("src/app/features/[slug]/page.tsx")].join("\n");
-  assert.match(pages, /<ProductShot/);
-  const content = read("src/components/marketing/marketing-content.ts");
-  const names = new Set([
-    ...[...pages.matchAll(/<ProductShot[\s\S]*?name="([a-z-]+)"/g)].map((m) => m[1]),
-    ...[...content.matchAll(/shot: "([a-z-]+)"/g)].map((m) => m[1]),
-  ]);
-  assert.ok(names.size >= 5, `expected several screenshots, found ${[...names].join(", ")}`);
-  const manifest = read("src/components/marketing/shot-manifest.ts");
-  for (const name of names) {
-    for (const theme of ["light", "dark"]) {
-      assert.ok(exists(`public/marketing/${name}-${theme}.webp`), `${name}-${theme}.webp is missing`);
-    }
-    assert.match(manifest, new RegExp(`"${name}":`), `${name} has no recorded size, so its box cannot be reserved`);
-  }
-});
-
-test("the product clips play only what they should, with the invented collection", () => {
-  // The landing page loops short recordings of the product over its stills.
-  // They are recorded against the mock API, which refuses anything it does not
-  // know, so a real account's papers cannot reach a public video.
-  const shot = read("src/components/marketing/ProductShot.tsx");
-  const clips = [...(shot.match(/const CLIPS = new Set\(\[([^\]]*)\]\)/)?.[1] ?? "").matchAll(/"([a-z-]+)"/g)].map((m) => m[1]);
-  assert.ok(clips.length >= 3, "the front page has clips");
-  for (const name of clips) {
-    for (const theme of ["light", "dark"]) {
-      assert.ok(exists(`public/marketing/video/${name}-${theme}.mp4`), `${name}-${theme}.mp4 is missing`);
-    }
-  }
-  const clip = read("src/components/marketing/ProductClip.tsx");
-  assert.match(clip, /prefers-reduced-motion: reduce/, "no autoplay for readers who asked for less motion");
-  assert.match(clip, /muted/);
-  assert.match(clip, /playsInline/);
-  assert.match(clip, /IntersectionObserver/, "a clip off screen does not play");
-  assert.match(clip, /Pause the product video/, "moving content beside text can be stopped");
-  const harness = read("scripts/marketing-mock/harness.ts");
-  assert.match(harness, /Not available in the demo recording\./, "unknown requests are refused, never passed through");
   assert.equal(exists("scripts/capture-marketing-shots.ts"), false, "the real-data capture script is gone");
 });
 
-test("a published number can be traced to the thing it counts", () => {
-  // "9 analysis passes" matched nothing in the code. The ingestion graph
-  // registers 13 nodes, 12 of which analyse.
-  const content = read("src/components/marketing/marketing-content.ts");
-  assert.equal(/metric: "9", label: "analysis passes"/.test(content), false);
-  assert.match(content, /metric: "12", label: "analysis stages per paper"/);
+test("a product clip waits for the reader's motion setting and for being on screen, and can be paused", () => {
+  // These run in the clip's effects and its playing event, which a server
+  // render never fires; that the clips are muted, inline and in the page's
+  // theme is rendered in site-ui-behaviour.test.ts.
+  const clip = read("src/components/marketing/ProductClip.tsx");
+  assert.match(clip, /prefers-reduced-motion: reduce/, "no autoplay for readers who asked for less motion");
+  assert.match(clip, /IntersectionObserver/, "a clip off screen does not play");
+  assert.match(clip, /Pause the product video/, "moving content beside text can be stopped");
 });
 
 test("the figures under the hero are figures, and each one is checkable", () => {
   // "4 core research workflows" and "1 workspace for papers, charts and chat"
-  // were set at display size, where the eye goes looking for evidence - and
-  // proved nothing. Both numbers here can be counted in the code.
-  const content = readCode("src/components/marketing/marketing-content.ts");
-  const strip = content.slice(
-    content.indexOf("export const proofMetrics"),
-    content.indexOf("];", content.indexOf("export const proofMetrics"))
-  );
-  assert.equal(/value: "4", label: "core research workflows"/.test(strip), false);
-  assert.match(strip, /value: "12", label: "analysis stages per paper"/);
-  assert.match(strip, /value: "6", label: "dashboard views/);
+  // were set at display size and proved nothing.
+  const figures = proofMetrics.map((metric) => `${metric.value} ${metric.label}`);
+  assert.equal(figures.includes("4 core research workflows"), false);
+  assert.ok(figures.includes("12 analysis stages per paper"), figures.join("; "));
+  assert.ok(figures.some((figure) => figure.startsWith("6 dashboard views")), figures.join("; "));
 
-  // The published counts must match what they count.
+  // Twelve is the ingestion graph's analysing nodes. graphs.py is the Python
+  // worker's graph, which these Node tests cannot build, so its registrations
+  // are counted. (The six dashboard views are counted as rendered tabs in
+  // site-ui-behaviour.test.ts.)
   const graphs = readFileSync(new URL("../../graphs.py", import.meta.url), "utf8");
   const ingestion = graphs.slice(graphs.indexOf("def build_ingestion_graph"));
   const nodes = (ingestion.slice(0, ingestion.indexOf("return")).match(/workflow\.add_node\(/g) ?? []).length;
   assert.equal(nodes, 13, "12 analysing nodes plus build_dataset");
-
-  const dash = readCode("src/components/DashboardClient.tsx");
-  assert.equal((dash.match(/\{ key: "[a-z_]+", label: "[^"]+" \}/g) ?? []).length, 6);
 });
 
-test("footer navigation looks like navigation", () => {
-  // Six links were drawn as bordered, filled boxes in a two-column grid - the
-  // treatment this site gives buttons and text inputs - so the footer read as a
-  // row of disabled form controls.
-  const layout = readCode("src/components/marketing/MarketingLayout.tsx");
-  const footer = layout.slice(layout.indexOf("data-site-footer"));
-  assert.match(footer, /<nav aria-label="Footer"/);
-  assert.equal(
-    /footerLinks\.map[\s\S]{0,400}rounded-lg border border-slate-200 bg-white/.test(footer),
-    false,
-    "a link should not wear the control treatment"
-  );
-  // inline-block, or the vertical padding on an inline link overlaps its
-  // neighbours instead of making the target taller.
-  assert.match(footer, /-mx-2 inline-block rounded px-2 py-2 text-sm/, "padding keeps the hit area the boxes gave");
-});
-
-test("a perpetual rainbow sweep no longer runs over every product frame", () => {
+test("a perpetual rainbow sweep is no longer in the stylesheet", () => {
   assert.equal(read("src/app/globals.css").includes("marketing-scanline"), false);
-  assert.equal(read("src/components/marketing/ProductShot.tsx").includes("marketing-scanline"), false);
-});
-
-test("variant colours survive the light-mode retrofit", () => {
-  // The retrofit rewrites base utility classes *by name*. `hover:bg-[#0a0a0a]`
-  // and `first:bg-[#0a0a0a]` are different class names from `bg-[#0a0a0a]`, so
-  // no rule converts them - and because the base rule out-specifies the variant,
-  // the light page either ignores the variant entirely or keeps a dark value.
-  // Both were measured: hover rest and hover both rgb(255,255,255), and a
-  // first:-styled chip at 2.61:1.
-  //
-  // This is the standing trap left by keeping the override layer, so the guard
-  // covers every interactive variant, not just the one that was found first.
-  const banned = /(?<!dark:)\b(?:hover|focus|focus-visible|active|first|last|odd|even|group-hover):(?:bg|border|text)-\[#[0-9a-fA-F]{6}\]/;
-  for (const file of [
-    "src/app/page.tsx",
-    "src/app/features/[slug]/page.tsx",
-    "src/components/marketing/MarketingLayout.tsx",
-    "src/components/marketing/ProductShot.tsx",
-  ]) {
-    assert.equal(banned.test(read(file)), false, `${file} hover state cannot reach light mode`);
-  }
 });
 
 /* --------------------------------------------------------- dark-mode legibility */
 
-test("the workspace tells you which page you are on, in both themes", () => {
-  // The rail's active chip was #111111 on a #050505 surface (1.08:1); the
-  // drawer's was #030303, darker than the surface it sat on, so the "you are
-  // here" mark was not merely invisible but inverted.
+test("the drawer marks the page you are on in the rail's tone", () => {
+  // The rail is rendered in site-ui-behaviour.test.ts. The drawer is drawn only
+  // after its menu button is clicked, which a server render cannot do, so both
+  // chips are counted: the drawer's was #030303, darker than its own surface.
   const shell = read("src/components/workspace/WorkspaceShell.tsx");
-  assert.equal(/dark:bg-\[#111111\]"/.test(shell), false);
   assert.equal(/"bg-slate-900 text-white dark:bg-\[#030303\]"/.test(shell), false);
   assert.ok(contrast("#1f1f1f", "#050505") > contrast("#111111", "#050505"));
   assert.equal((shell.match(/bg-slate-900 text-white dark:bg-\[#1f1f1f\]/g) ?? []).length, 2);
 });
 
-test("a selected choice looks different from an unselected one, in both themes", () => {
-  // Active and inactive once rendered byte-identical dark classes, and hovering
-  // an option you had NOT chosen gave it a brighter border than the one you had.
-  // The choices now read the theme tokens, so one class is right in both
-  // themes: the chosen card gets an ink ring, the others only a hairline, and
-  // the choice is exposed as a radio rather than inferred from colour.
-  for (const file of [
-    "src/components/workspace/WorkspaceSettingsClient.tsx",
-    "src/components/workspace/AnalysisProfileEditor.tsx",
-  ]) {
-    const source = read(file);
-    assert.match(source, /role="radiogroup"/, `${file} groups its choices`);
-    assert.match(source, /role="radio"\s+aria-checked=\{selected\}/, `${file} says which one is chosen`);
-    assert.match(source, /\? "border-ink shadow-\[0_0_0_1px_rgb\(var\(--ink\)\)\]"/, `${file} rings the chosen card`);
-    assert.match(source, /: "border-hairline hover:border-hairline-strong hover:bg-subtle"/);
-  }
-  // The legacy goal, intake and output groups wrote to nothing and are gone.
-  const settings = read("src/components/workspace/WorkspaceSettingsClient.tsx");
-  assert.doesNotMatch(settings, /WORKSPACE_GOALS|WORKSPACE_SOURCES|WORKSPACE_OUTPUTS|Research Signal Lab|Supabase/);
-});
-
 test("a failed chat message can be read in light mode", () => {
   // text-red-200 (#fecaca) over bg-red-500/10 on white computes to about 1.27:1.
-  // The sentence explaining the failure was present and unreadable.
+  // The error surfaces appear only once a request has failed, which a server
+  // render of the chat never reaches.
   const chat = read("src/components/chat/ChatClient.tsx");
   const surfaces = [...chat.matchAll(/border-red-500\/20 bg-red-500\/10[^"]*/g)].map((m) => m[0]);
   assert.ok(surfaces.length >= 3);
@@ -279,9 +138,8 @@ test("a failed chat message can be read in light mode", () => {
 });
 
 test("the commit action in the message editor outranks the cancel action", () => {
-  // Cancel was the one solid near-black pill and Send was white-on-white with no
-  // border, so the page styled the discard as primary and the commit as nothing.
-  // In dark mode the fault swapped: Cancel became #000000 on a #050505 card.
+  // Cancel was the one solid near-black pill and Send was white-on-white. The
+  // editor opens on a click, which a server render cannot make.
   const chat = read("src/components/chat/ChatClient.tsx");
   assert.equal(/dark:bg-black dark:text-white dark:hover:bg-\[#0a0a0a\]/.test(chat), false);
   assert.match(chat, /onClick=\{cancelEditingUserMessage\}\s*\n\s*className="inline-flex h-10 items-center rounded-full border/);
@@ -289,18 +147,12 @@ test("the commit action in the message editor outranks the cancel action", () =>
 
 /* ---------------------------------------------------------------- navigation */
 
-test("a citation leads to the paper it cites", () => {
-  // /workspace/papers is a redirect() with a fixed path, so ?paperId= was
-  // discarded. Every research-chat citation and every "Open paper" link pointed
-  // there, and the destination reads paperId perfectly well - the parameter just
-  // never arrived. A citation that opens nothing reads as a fabricated citation.
-  const chat = read("src/lib/repository-chat.ts");
-  assert.equal(/\/workspace\/papers\?paperId=/.test(chat), false, "chat still links to the redirect");
-  assert.match(chat, /\/workspace\/library\?paperId=/);
-  // Keyword Explorer names the paper; the link's address comes from one place.
+test("the places that open a paper by its id still do", () => {
+  // The citation, the paper link and the old /workspace/papers address are run
+  // in site-ui-behaviour.test.ts. Keyword Explorer's paper links appear only
+  // once its concept search, a request made in an effect, has answered, and
+  // the Library opens a ?paperId= paper in an effect once its list has loaded.
   assert.match(read("src/components/tabs/KeywordExplorer.tsx"), /<PaperLink\s+paper=\{\{ paperId: String\(paper\.paperId\) \}\}/);
-  assert.match(read("src/lib/paper-address.ts"), /params\.set\("paperId", target\.paperId\)/);
-  assert.match(read("src/lib/paper-address.ts"), /return `\/workspace\/library\?\$\{params\.toString\(\)\}`;/);
   assert.match(
     read("src/components/admin/AdminImportClient.tsx"),
     /searchParams\.get\("paperId"\)/,
@@ -308,27 +160,9 @@ test("a citation leads to the paper it cites", () => {
   );
 });
 
-test("an old bookmark keeps its parameters", () => {
-  const page = read("src/app/workspace/papers/page.tsx");
-  assert.match(page, /searchParams/);
-  assert.match(page, /\/workspace\/library\?\$\{suffix\}/);
-});
-
-test("the History page is gone, and its one irreplaceable job moved to the paper", () => {
-  // It was taken out at the owner's request: it pulled attention away from the
-  // papers, and a separate log of runs is a confusing second place to look.
-  const shell = readCode("src/components/workspace/WorkspaceShell.tsx");
-  assert.equal(/\/workspace\/logs/.test(shell), false, "no nav entry or palette item may point at it");
-  assert.equal(/label: "History"/.test(shell), false);
-
-  // The URL stays as a redirect, like every other retired route, so an old link
-  // lands somewhere useful instead of a 404.
-  const route = readCode("src/app/workspace/logs/page.tsx");
-  assert.match(route, /redirect\("\/workspace\/library"\)/);
-
-  // What History did that nothing else did was say why an *older* run failed.
-  // That now lives on the paper in the library - in both the list and grid
-  // views, since the grid view shows no status pill at all.
+test("the Library says why a run failed, in both the list and grid views", () => {
+  // What the retired History page did that nothing else did. The Library's
+  // runs arrive by a request made in an effect, so a server render has none.
   const library = readCode("src/components/admin/AdminImportClient.tsx");
   assert.match(library, /run\.status === "failed"\s*\n?\s*\? describeRunFailure\(run\.error_message\)/);
   assert.ok(
@@ -337,174 +171,78 @@ test("the History page is gone, and its one irreplaceable job moved to the paper
   );
 });
 
-test("one label does not name two destinations", () => {
-  // The command palette listed "Repositories" twice - /workspaces and
-  // /workspace/library - so the reader had to read the descriptions to guess.
-  const shell = read("src/components/workspace/WorkspaceShell.tsx");
-  const start = shell.indexOf("const SEARCH_PAGE_ITEMS");
-  const items = shell.slice(start, shell.indexOf("];", start));
-  const labels = [...items.matchAll(/^\s*label: "([^"]+)"/gm)].map((m) => m[1]);
-  assert.ok(labels.length >= 7);
-  assert.equal(new Set(labels).size, labels.length, `duplicate labels: ${labels.join(", ")}`);
-});
-
-test("a button says where it actually goes", () => {
-  // "Open imports" pointed at /workspace/imports, which redirects to
-  // /workspace/library - a page titled "Repositories".
-  const card = read("src/components/workspace/AnalysisStatusCard.tsx");
-  assert.equal(/href="\/workspace\/imports"/.test(card), false);
-  // And /workspace/library is the Library: "Repositories" is the picker at
-  // /workspaces, so the old label here named the wrong page as well.
-  assert.match(card, /href="\/workspace\/library"[\s\S]{0,400}Open library/);
-});
-
 /* --------------------------------------------------------------- hit areas */
 
 test("a chat thread row is clickable across its whole height", () => {
   // The padding sat on the row wrapper, so the row looked 28px tall while only
-  // the 20px of text responded to a click.
+  // the 20px of text responded. The thread list arrives by a request made in
+  // an effect, so a server render of the chat has no rows.
   const chat = read("src/components/chat/ChatClient.tsx");
-  // On a touch screen the title also stops short of the always-visible options button.
   assert.match(chat, /className="block w-full min-w-0 py-1\.5 text-left \[@media\(hover:none\)\]:pr-8"/);
-});
-
-test("a text link on the public pages is bigger than its text", () => {
-  // The link under each feature was a 20px target for a 14px line of text.
-  assert.match(read("src/components/marketing/styles.ts"), /arrowLinkClass =\s*"group -my-2 inline-flex items-center gap-1\.5 py-2/);
 });
 
 /* -------------------------------------------------------- page structure */
 
-test("the dashboard names itself", () => {
-  // It opened directly onto a search field: the only workspace page with no h1,
-  // and the only one a screen reader announced with no title.
-  assert.match(
-    read("src/components/DashboardClient.tsx"),
-    /<h1 className="text-(?:2xl|3xl) font-semibold[^"]*">\s*Dashboard\s*<\/h1>/
-  );
-});
-
-test("icon-only controls carry a name", () => {
-  assert.match(read("src/components/chat/ChatClient.tsx"), /aria-label="Start a new chat"/);
-  const dash = read("src/components/DashboardClient.tsx");
-  assert.equal((dash.match(/aria-label="Close analytics filters"/g) ?? []).length, 2);
-});
-
-test("a decorative separator is marked decorative", () => {
-  assert.match(
-    read("src/components/workspace/WorkspaceShell.tsx"),
-    /aria-hidden="true" className="hidden flex-none text-slate-300/
-  );
+test("the filter sheet's close button carries a name too", () => {
+  // The side panel's is rendered in site-ui-behaviour.test.ts; the sheet that
+  // replaces it below xl opens on a click, so both are counted.
+  assert.equal((read("src/components/DashboardClient.tsx").match(/aria-label="Close analytics filters"/g) ?? []).length, 2);
 });
 
 /* ------------------------------------------------------- muted text legibility */
 
-test("muted light-mode text is not slate-400", () => {
-  // slate-400 on white measures 2.56:1 and was the most common contrast failure
-  // on the site. dark:text-slate-400 is deliberately left alone: on a near-black
-  // surface it reads 7.8:1, and one step darker would fail.
+test("the replacement greys measure as the fixes say", () => {
+  // slate-400 on white was the most common contrast failure on the site;
+  // #666666 and #6f6f6f were the faintest dark-mode greys. Where they were used
+  // is rendered in site-ui-behaviour.test.ts.
   assert.ok(contrast("#94a3b8", "#ffffff") < 4.5, "slate-400 on white fails");
   assert.ok(contrast("#64748b", "#ffffff") >= 4.5, "slate-500 on white passes");
-  const offenders: string[] = [];
-  for (const file of [
-    "src/components/docs/DocsFrame.tsx",
-    "src/components/docs/DocsOnThisPage.tsx",
-    "src/components/workspace/WorkspaceShell.tsx",
-    "src/components/DashboardClient.tsx",
-    "src/components/admin/AdminImportClient.tsx",
-    "src/components/auth/AuthPanel.tsx",
-  ]) {
-    if (/(?<!dark:)(?<!:)\btext-slate-400\b/.test(read(file))) offenders.push(file);
-  }
-  assert.deepEqual(offenders, []);
+  assert.ok(contrast("#666666", "#050505") < 4.5 && contrast("#6f6f6f", "#050505") < 4.5);
+  assert.ok(contrast("#8f8f8f", "#050505") >= 4.5);
 });
 
 /* ------------------------------------------------------ state and feedback */
 
 test("switching conversations does not show the previous one's messages", () => {
-  // Clicking a thread marks it active in the sidebar at once, but the transcript
-  // was only replaced when the fetch returned - so for the length of the round
-  // trip one conversation sat under another's name, and on failure it stayed
-  // there under an error about a thread the reader was no longer looking at.
+  // Clicking a thread marks it active at once, but the transcript was only
+  // replaced when the fetch returned. This all happens in the chat's effects
+  // and click handlers, which a server render never runs.
   const chat = readCode("src/components/chat/ChatClient.tsx");
   assert.match(chat, /const loadedThreadIdRef = useRef<string \| null>\(null\)/);
   assert.match(chat, /if \(loadedThreadIdRef\.current !== threadId\) \{[\s\S]{0,200}setMessages\(\[\]\)/);
   // ...but reloading the SAME thread after sending a message must not blank it.
   assert.match(chat, /loadedThreadIdRef\.current = threadId;/);
-  // and the empty transcript must not flash the "ask me anything" intro, which
-  // would say "this conversation is empty" about one that is still arriving.
+  // and the empty transcript must not flash the "ask me anything" intro.
   assert.match(chat, /!hasContent && !loading && !detailLoading \?/);
   assert.match(chat, /setActiveThread\(null\);\s*\n\s*loadedThreadIdRef\.current = null;/);
 });
 
-test("looking inside a repository does not silently change which one the app is about", () => {
-  // Browsing any repository's files from the library is a requested feature.
-  // The problem was the side effect: the card click also set the app's active
-  // repository, so opening one just to see what was in it redirected the
-  // Dashboard and Chat opened next, with nothing on screen saying so.
+test("opening a repository's card in the Library does not switch the app to it", () => {
+  // The notice and its switch button are rendered in site-ui-behaviour.test.ts;
+  // what the card and the button do happens in their click handlers.
   const library = readCode("src/components/admin/AdminImportClient.tsx");
   const cardClick = library.slice(
     library.indexOf("setLibraryProjectId(project.id);"),
     library.indexOf("setLibraryProjectId(project.id);") + 220
   );
-  assert.equal(
-    /setSelectedProjectId\(project\.id\)/.test(cardClick),
-    false,
-    "browsing must not change the active repository"
-  );
-  // Switching is still possible - deliberately, from a labelled control.
-  assert.match(library, /Switch to this repository/);
+  assert.equal(/setSelectedProjectId\(project\.id\)/.test(cardClick), false, "browsing must not change the active repository");
   assert.match(library, /onClick=\{\(\) => setSelectedProjectId\(libraryProject\.id\)\}/);
-  // And the difference is stated while it exists.
-  assert.match(library, /libraryProject\.id !== currentProject\.id/);
-  assert.match(library, /Dashboard\s*\n?\s*and Chat still use/);
 });
 
 test("a loading indicator still means something without motion", () => {
-  // The site-wide reduced-motion rule collapses every animation duration, so
-  // animate-pulse on a half-width bar stopped at its last keyframe and sat
-  // there - a bar frozen at 50%, which reads as stalled rather than working.
+  // The site-wide reduced-motion rule froze animate-pulse on a half-width bar.
+  // The bar shows only after a navigation link is clicked.
   const shell = readCode("src/components/workspace/WorkspaceShell.tsx");
   assert.match(shell, /role="status"\s*\n\s*aria-label="Loading page"/);
   assert.match(shell, /w-full bg-slate-950 motion-safe:w-1\/2 motion-safe:animate-pulse/);
 });
 
-test("a tab row does not resize when you click a tab", () => {
-  // The border sat only on the inactive pills. Under border-box sizing with auto
-  // width that made every inactive pill 2px wider and taller than the active
-  // one, so clicking reflowed the whole nowrap row sideways under the pointer.
-  const modal = readCode("src/components/workspace/PaperAnalysisExplorerModal.tsx");
-  assert.match(modal, /className=\{`tab-btn \$\{activeTab === tab\.id \? "tab-btn-active" : "tab-btn-inactive"\}`\}/);
-  // Both tab states carry the same 2px bottom border, so neither is larger.
+test("both tab states carry the same bottom border, so neither is larger", () => {
+  // That every tab wears tab-btn and only one is active is rendered in
+  // site-ui-behaviour.test.ts; the border itself is the stylesheet's.
   const css = read("src/app/globals.css");
   assert.match(css, /\.tab-btn \{\s*@apply[^;]*border-b-2/);
   assert.match(css, /\.tab-btn-inactive \{\s*@apply border-transparent/);
-});
-
-test("nothing on a dark page is painted in a light-only palette", () => {
-  // Two places had escaped every dark-mode pass. The dashboard route's Suspense
-  // fallback used a beige #dfd5c6 border, a blue-500 spinner, `gray` where the
-  // palette is `slate`, and no dark variant - so opening the dashboard in dark
-  // mode flashed a white card. Heatmap, which four dashboard tabs render, had
-  // zero dark variants, leaving its title, column headers and row labels dark
-  // grey on a near-black page.
-  const grayScale = /\b(?:text|bg|border)-gray-[0-9]/;
-  for (const file of [
-    "src/components/Heatmap.tsx",
-    "src/app/workspace/dashboard/page.tsx",
-    "src/components/DashboardClient.tsx",
-    "src/components/tabs/Overview.tsx",
-  ]) {
-    assert.equal(grayScale.test(readCode(file)), false, `${file} uses the gray scale, not slate`);
-  }
-
-  const heatmap = readCode("src/components/Heatmap.tsx");
-  assert.ok((heatmap.match(/dark:/g) ?? []).length >= 3, "the heatmap chrome needs dark variants");
-
-  const dashboardRoute = readCode("src/app/workspace/dashboard/page.tsx");
-  assert.equal(/border-blue-500/.test(dashboardRoute), false);
-  assert.equal(/#dfd5c6/.test(dashboardRoute), false);
-  assert.match(dashboardRoute, /fallback=\{<WorkspaceLoadingState \/>\}/, "one loading treatment, not two");
 });
 
 test("no stylesheet rule ships with nothing to style", () => {
@@ -518,97 +256,156 @@ test("no stylesheet rule ships with nothing to style", () => {
   }
 });
 
-/* ------------------------------------------------- data the reader is shown */
-
-test("no signed-in reader can be shown fabricated data", () => {
-  // Two paths handed back generateMockData() - eleven years of invented topics.
-  // One was the moment after mount before the session hydrates; the other was
-  // the dashboard's DATA dropdown, whose "Preview" option - a first-version
-  // debugging switch - served the invention to a signed-in reader as though it
-  // were their library. Both are gone, at every layer.
-  const hook = read("src/hooks/useData.ts");
-  assert.equal(/generateMockData/.test(hook), false, "the hook never fabricates");
-  const client = read("src/components/DashboardClient.tsx");
-  assert.equal(/searchParams\.get\("data"\)/.test(client), false, "no data mode is read from the URL");
-  assert.equal(/<option value="mock">/.test(client), false, "no Preview option");
-  const route = read("src/app/api/workspace/dashboard-data/route.ts");
-  assert.match(route, /return value === "live" \? "live" : "auto";/, "?mode=mock is not accepted");
-  const server = read("src/lib/dashboard-data-server.ts");
-  assert.equal(/if \(mode === "mock"\)/.test(server), false);
-});
-
-test("the first screen after signing in is not an empty box", () => {
-  // /workspaces is where login lands and where every workspace breadcrumb
-  // points. It rendered a bare coloured <main> for the whole projects
-  // round-trip: no logo, no heading, no spinner, nothing.
-  const index = read("src/components/workspace/workspaces/ProjectIndexClient.tsx");
-  assert.equal(
-    /return <main className="min-h-screen bg-slate-50 dark:bg-black" \/>;/.test(index),
-    false
-  );
-  const start = index.indexOf("if (!hydrated || workspaceLoading)");
-  const loading = index.slice(start, index.indexOf(String.fromCharCode(10) + "  return (", start));
-  assert.match(loading, /aria-busy="true"/);
-  assert.match(loading, /Loading your repositories/);
-  assert.match(loading, /skeleton/, "the cards are blocked out so the page does not jump");
-  assert.match(loading, /\{header\}/, "the real chrome is there while it loads");
-});
-
-test("the dashboard feature page does not claim what the code refuses to do", () => {
-  // "Live library updates" - the dashboard passes no pollIntervalMs and sets
-  // refetchOnWindowFocus: false, so the only refresh is the manual one. And
-  // there are six views, not four.
-  const content = read("src/components/marketing/marketing-content.ts");
-  assert.equal(/metric: "Live", label: "library updates"/.test(content), false);
-  assert.equal(/metric: "4", label: "category views"/.test(content), false);
-  assert.match(content, /metric: "6", label: "dashboard views"/);
-
-  const dash = read("src/components/DashboardClient.tsx");
-  const tabs = (dash.match(/\{ key: "[a-z_]+", label: "[^"]+" \}/g) ?? []).length;
-  assert.equal(tabs, 6, "the published count must match TAB_DEFINITIONS");
-  assert.equal(/pollIntervalMs/.test(dash), false, "still not polling, so still not live");
-});
-
-test("the faintest dark-mode greys are gone", () => {
-  // #666666 measured 3.55:1 and #6f6f6f 4.06:1 on the #050505 panel; #8f8f8f
-  // reads 6.31:1 and was already the brand's label grey, so this raises
-  // legibility and removes two near-duplicate greys in the same move.
-  assert.ok(contrast("#8f8f8f", "#050505") >= 4.5);
-  for (const file of [
-    "src/components/docs/DocsFrame.tsx",
-    "src/components/workspace/WorkspaceShell.tsx",
-    "src/app/error.tsx",
-  ]) {
-    const src = read(file);
-    assert.equal(/text-\[#666666\]/.test(src), false, `${file} still uses #666666`);
-    assert.equal(/text-\[#6f6f6f\]/.test(src), false, `${file} still uses #6f6f6f`);
-  }
-});
-
 /* ------------------------------------------------- the instrument itself */
 
-test("the in-page diagnostics block cannot be truncated by its own comments", () => {
-  // DIAGNOSTICS is a template literal holding the code that runs inside the
-  // page. A backtick anywhere in it - including inside a comment written to
-  // explain the code - ends the literal early. That happened: the file stopped
-  // parsing, and the probe still ran, because the truncated string was
-  // coincidentally valid JavaScript. A checker that silently measures less than
-  // it claims is worse than no checker.
-  const script = read("scripts/capture-ui.ts");
-  const start = script.indexOf("const DIAGNOSTICS = ");
-  assert.ok(start > 0, "the diagnostics block must exist");
-  const body = script.slice(script.indexOf("(() => {", start), script.lastIndexOf("})()"));
-  assert.equal(body.includes("`"), false, "a backtick would end the literal early");
-  assert.equal(body.includes("${"), false, "a template hole would interpolate at build time");
+/**
+ * The in-page code of scripts/capture-ui.ts: the value of its DIAGNOSTICS
+ * literal, as page.evaluate receives it. The script launches a browser when
+ * it is loaded, so the value is taken from its syntax tree instead.
+ */
+function diagnosticsLiteral() {
+  const path = new URL("../scripts/capture-ui.ts", import.meta.url);
+  const source = ts.createSourceFile("capture-ui.ts", readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true);
+  let initializer: ts.Expression | undefined;
+  const visit = (node: ts.Node) => {
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === "DIAGNOSTICS") initializer = node.initializer;
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  assert.ok(initializer, "the diagnostics block must exist");
+  return initializer;
+}
+
+type FakeNode = FakeElement | { nodeType: 3; textContent: string };
+
+/** Just enough of a DOM element for the diagnostics to walk. */
+class FakeElement {
+  readonly nodeType = 1;
+  parentElement: FakeElement | null = null;
+  readonly childNodes: FakeNode[] = [];
+  readonly scrollWidth = 0;
+  readonly clientWidth = 0;
+  constructor(
+    readonly tagName: string,
+    readonly attributes: Record<string, string> = {},
+    readonly style: Record<string, string> = {},
+    children: Array<FakeElement | string> = []
+  ) {
+    for (const child of children) {
+      if (typeof child === "string") this.childNodes.push({ nodeType: 3, textContent: child });
+      else {
+        child.parentElement = this;
+        this.childNodes.push(child);
+      }
+    }
+  }
+  get id() {
+    return this.attributes.id ?? "";
+  }
+  get className() {
+    return this.attributes.class ?? "";
+  }
+  get textContent(): string {
+    return this.childNodes.map((node) => node.textContent).join("");
+  }
+  get outerHTML() {
+    return `<${this.tagName.toLowerCase()}>${this.textContent}</${this.tagName.toLowerCase()}>`;
+  }
+  getAttribute(name: string) {
+    return this.attributes[name] ?? null;
+  }
+  hasAttribute(name: string) {
+    return name in this.attributes;
+  }
+  getBoundingClientRect() {
+    return { left: 10, top: 10, right: 110, bottom: 30, width: 100, height: 20 };
+  }
+  descendants(): FakeElement[] {
+    return this.childNodes.flatMap((node) => (node instanceof FakeElement ? [node, ...node.descendants()] : []));
+  }
+  matches(selector: string): boolean {
+    return selector.split(",").some((compound) => {
+      const parts = compound.trim().split(/\s+/);
+      if (!matchesSimple(this, parts[parts.length - 1])) return false;
+      let ancestor = this.parentElement;
+      for (const part of parts.slice(0, -1).reverse()) {
+        while (ancestor && !matchesSimple(ancestor, part)) ancestor = ancestor.parentElement;
+        if (!ancestor) return false;
+        ancestor = ancestor.parentElement;
+      }
+      return true;
+    });
+  }
+  closest(selector: string): FakeElement | null {
+    for (let node: FakeElement | null = this; node; node = node.parentElement) if (node.matches(selector)) return node;
+    return null;
+  }
+  querySelectorAll(selector: string) {
+    return this.descendants().filter((node) => node.matches(selector));
+  }
+  querySelector(selector: string) {
+    return this.querySelectorAll(selector)[0] ?? null;
+  }
+}
+
+function matchesSimple(element: FakeElement, part: string) {
+  if (part === "*") return true;
+  const attribute = /^\[([\w-]+)="([^"]*)"\]$/.exec(part);
+  if (attribute) return element.attributes[attribute[1]] === attribute[2];
+  return element.tagName.toLowerCase() === part.toLowerCase();
+}
+
+const COMPUTED_DEFAULTS: Record<string, string> = {
+  display: "block",
+  visibility: "visible",
+  opacity: "1",
+  color: "rgb(0, 0, 0)",
+  backgroundColor: "rgba(0, 0, 0, 0)",
+  fill: "rgb(0, 0, 0)",
+  fontSize: "14px",
+  fontWeight: "400",
+  position: "static",
+  overflow: "visible",
+  overflowX: "visible",
+  textOverflow: "clip",
+  zIndex: "auto",
+};
+
+/** Runs the diagnostics on a page built of fake elements, as the page would. */
+function diagnose(body: FakeElement) {
+  const html = new FakeElement("HTML", {}, {}, [body]);
+  const document = {
+    documentElement: Object.assign(html, { clientWidth: 1280, scrollWidth: 1280 }),
+    querySelectorAll: (selector: string) => [html, ...html.descendants()].filter((node) => node.matches(selector)),
+  };
+  const getComputedStyle = (element: FakeElement) => ({ ...COMPUTED_DEFAULTS, ...element.style });
+  const initializer = diagnosticsLiteral();
+  assert.ok(ts.isNoSubstitutionTemplateLiteral(initializer));
+  const result = vm.runInNewContext(initializer.text, { document, getComputedStyle });
+  return JSON.parse(JSON.stringify(result)) as { contrast: Array<Record<string, unknown>>; [section: string]: unknown };
+}
+
+test("the in-page diagnostics block is one whole literal, with no holes, that runs to its end", () => {
+  // A backtick anywhere in it - even in a comment - ends the literal early.
+  // That happened, and the truncated string still ran, measuring less than it
+  // claimed. A template hole would interpolate at build time.
+  assert.ok(ts.isNoSubstitutionTemplateLiteral(diagnosticsLiteral()), "one literal with no ${} holes");
+  const header = new FakeElement("HEADER", {}, { zIndex: "40" }, [new FakeElement("H1", {}, { fontSize: "30px" }, ["Dashboard"])]);
+  const report = diagnose(new FakeElement("BODY", {}, { backgroundColor: "rgb(255, 255, 255)" }, [header, new FakeElement("P", {}, {}, ["Readable text"])]));
+  assert.deepEqual(report.contrast, []);
+  assert.deepEqual(report.headings, [{ level: 1, text: "Dashboard", fontSize: 30 }]);
+  assert.deepEqual(report.zIndexes, [{ z: "40", count: 1 }], "the last section ran");
 });
 
-test("the harness measures text drawn inside SVG", () => {
-  // Every chart label on the site is SVG text, painted with `fill`. Reading the
-  // `color` property reports a clean page while the axis labels sit at 3.5:1 -
-  // which is how four chart components were fixed off a separate one-off
-  // script, and a fifth stayed broken because the sweep could not see it.
-  const script = read("scripts/capture-ui.ts");
-  assert.match(script, /querySelectorAll\('svg text, svg tspan'\)/);
-  assert.match(script, /const fill = parse\(s\.fill\)/);
-  assert.match(script, /tag: 'svg:'/);
+test("the page audit measures chart text by its fill, not its colour", () => {
+  // Every chart label is SVG text painted with `fill`. Reading `color` reported
+  // a clean page while the axis labels sat at 2.6:1.
+  const tick = (label: string, fill: string) => new FakeElement("text", { class: "recharts-text" }, { fill, color: "rgb(0, 0, 0)", fontSize: "12px" }, [label]);
+  const chart = new FakeElement("DIV", {}, {}, [new FakeElement("svg", {}, {}, [new FakeElement("g", {}, {}, [tick("2018", "rgb(148, 163, 184)"), tick("2020", "rgb(112, 112, 112)")])])]);
+  const report = diagnose(new FakeElement("BODY", {}, { backgroundColor: "rgb(255, 255, 255)" }, [chart]));
+  assert.deepEqual(
+    report.contrast.map((entry) => [entry.tag, entry.text, entry.color, entry.ratio, entry.need]),
+    [["svg:text", "2018", "rgb(148, 163, 184)", 2.56, 4.5]],
+    "the grey tick label fails; the #707070 one and the black `color` do not count"
+  );
 });

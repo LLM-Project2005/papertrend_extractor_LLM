@@ -198,8 +198,9 @@ function getStageIndex(run: IngestionRunRow): number {
  */
 function failedStageIndex(run: IngestionRunRow): number {
   const message = (run.error_message ?? "").toLowerCase();
-  if (/upload|storage path/.test(message)) return 0;
+  // Download first: a download error names the bucket, "papertrend-uploads".
   if (/download|cloud storage|empty file/.test(message)) return 2;
+  if (/upload|storage path/.test(message)) return 0;
   const completed = readCompletedGraphNodes(run);
   let furthest = -1;
   TIMELINE_STAGES.forEach((stage, index) => {

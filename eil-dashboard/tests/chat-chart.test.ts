@@ -111,15 +111,10 @@ test("a question the model cannot map says what can be charted", async () => {
   assert.match(outcome.answer, /theme, method, category, contribution, kind of study, aim or year/);
 });
 
-test("chat's chart step is the question engine, not the fixed charts", () => {
-  const source = read("src/lib/repository-chat.ts");
-  assert.match(source, /: await visualizeResult\(input, context, stepExecution\);/);
-  assert.match(source, /if \(execution\?\.operation === "visualize" && plan\.intent !== "word_count"\) \{\s*const result = await visualizeResult\(input, context, execution\);/);
-  assert.match(read("src/lib/chat-chart.ts"), /toolChoice: \{ type: "function", function: \{ name: "build_view" \} \}/);
-  assert.match(read("src/lib/server-env.ts"), /CHAT_CHART_QUERY: "google\/gemini-3\.1-flash-lite"/);
-  // A chart request read as small talk still draws the chart.
-  assert.match(source, /After the chart is added: a chart request that the planner also read as\s*\/\/ small talk must draw the chart, not chat\./);
-});
+// That chat's chart step is this question engine - one forced build_view call
+// on the chart model, the chart computed from the repository's papers, and a
+// chart request read as small talk still drawn - runs through the model client
+// in boot-security-behaviour-chart.test.ts.
 
 test("Chart mode answers with the chart alone", async () => {
   const { chartModeOperations, fallbackExecutionPlan } = await import("../src/lib/repository-chat");
@@ -130,15 +125,17 @@ test("Chart mode answers with the chart alone", async () => {
   const fallback = fallbackExecutionPlan("How many papers were published each year?", true);
   assert.deepEqual(fallback.operations, ["visualize"]);
   assert.equal(fallback.operation, "visualize");
-  const source = read("src/lib/repository-chat.ts");
-  assert.match(source, /if \(input\.forceChart\) \{\s*operations = chartModeOperations\(operations, parsed\.data\.terms\.length > 0\);/);
+  // The planner's own plan is narrowed the same way: boot-security-behaviour-chart.test.ts.
 });
 
 test("the page draws a computed chart with the Adaptive tab's renderer", () => {
+  // That the card draws the Adaptive tab's chart is drawn in
+  // boot-security-behaviour-render.test.ts. Kept as text: a chart reaches the
+  // page in a message loaded by an effect, and a bar's papers are listed after
+  // a click; a static render does neither.
   const client = read("src/components/chat/ChatClient.tsx");
   assert.match(client, /chart\.chartType === "insight" && chart\.insight \? \(\s*<ChatInsightCard/);
   const card = read("src/components/chat/ChatInsightCard.tsx");
-  assert.match(card, /<InsightChart insight=\{insight\} onOpen=\{onOpen\} \/>/);
   assert.match(card, /<PaperLink paper=\{\{ paperId: paper\.id \}\}/, "a bar's papers open in place");
   // The planner's internal reason is no longer shown under a chart.
   assert.doesNotMatch(client, /chart\.planner\?\.reason \? ` - \$\{chart\.planner\.reason\}`/);

@@ -20,9 +20,11 @@ import {
 } from "../src/lib/model-failure";
 import { costOfCall, formatUsd, isPricedModel, spendUsd, summarizeSpend, WEB_SEARCH_FEE_USD } from "../src/lib/answer-cost";
 
-function server(file: string): string {
-  return readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8");
-}
+/*
+ * The route's side of this - spend recorded on both paths, a cached answer
+ * marked, a reader leaving - is run in chat-scope-behaviour-route.test.ts, and
+ * the repository chat's cache and fallbacks in chat-scope-behaviour-pipeline.test.ts.
+ */
 
 const KEY = {
   ownerUserId: "user-1",
@@ -116,21 +118,6 @@ test("rate limiting waits longer than a dropped connection", () => {
   assert.ok(backoffMs("provider_error", 0) >= 600);
 });
 
-test("the model call retries once, and only once", () => {
-  const source = server("lib/openai.ts");
-  assert.match(source, /for \(let attempt = 0; attempt < 2; attempt \+= 1\)/);
-  // A reader who has gone away must not be retried into.
-  assert.match(source, /if \(cancellationSignal\(\)\?\.aborted \|\| !isTransient\(lastFailure\)\) break;/);
-});
-
-test("a failed call still carries its advice to the route", () => {
-  const source = server("lib/openai.ts");
-  assert.match(source, /export class ModelCallError/);
-  assert.match(source, /throw new ModelCallError\(advice/);
-  const route = server("app/api/chat/route.ts");
-  assert.match(route, /error instanceof ModelCallError\s*\?\s*error\.advice/);
-});
-
 /* ----------------------------------------------------------------- the cost */
 
 test("a token count becomes a cost, per model, at OpenRouter's listed prices", () => {
@@ -186,32 +173,6 @@ test("a cost under a cent is not rounded away to zero", () => {
   assert.match(formatUsd(tiny), /^\$0\.\d{4}$/);
   assert.equal(formatUsd(1.234), "$1.23");
   assert.equal(formatUsd(0), "$0.00");
-});
-
-test("the streaming path records its own spend, where the work happens", () => {
-  // The Response is returned before any model call runs, so the usage scope
-  // wrapping it was always empty - and the UI streams, which meant in practice
-  // no answer's cost was ever recorded.
-  const route = server("app/api/chat/route.ts");
-  const start = route.indexOf("async start(controller)");
-  const end = route.indexOf("return new Response(stream");
-  const inside = route.slice(start, end);
-  assert.match(inside, /withAiTokenUsageTracking/);
-  assert.match(inside, /recordAnswerSpend\(request, usage\)/);
-});
-
-test("both paths record through the same function", () => {
-  const route = server("app/api/chat/route.ts");
-  const uses = route.match(/recordAnswerSpend\(request, usage\)/g) ?? [];
-  assert.equal(uses.length, 2, `only ${uses.length} path(s) record spend`);
-});
-
-test("failing to record the cost never fails the answer", () => {
-  // The reader asked a question, not for bookkeeping.
-  const route = server("app/api/chat/route.ts");
-  const fn = route.slice(route.indexOf("async function recordAnswerSpend"));
-  assert.match(fn.slice(0, 1200), /try \{/);
-  assert.match(fn.slice(0, 1200), /catch \(error\)/);
 });
 
 /* ---------------------------------------------------------------- the cache */
@@ -277,30 +238,6 @@ test("the cache is bounded", () => {
     );
   }
   assert.ok(cachedAnswerCount(start + MAX_ENTRIES) <= MAX_ENTRIES);
-});
-
-test("a follow-up is never answered from the cache", () => {
-  // A follow-up means something different depending on what came before it.
-  // The history the route passes ends with the question being asked, so its
-  // length is 1 on a first turn; requiring 0 meant nothing was ever cacheable,
-  // which is how that was found - the second identical question still took 21
-  // seconds against the live pilot.
-  const chat = server("lib/repository-chat.ts");
-  assert.match(chat, /const priorTurns = \(input\.history \?\? \[\]\)\.filter\(/);
-  assert.match(chat, /const cacheable = priorTurns\.length === 0 && !input\.forceChart;/);
-});
-
-test("a deferred answer is not cached as if it were the answer", () => {
-  // A 202 carries a job id, not an answer; and an answer with a limitation is
-  // not kept either (docs/32, 2.11, CHAT-5).
-  const chat = server("lib/repository-chat.ts");
-  assert.match(chat, /if \(cacheable && clean && result\.handled && !result\.jobId && result\.answer\.trim\(\)\)/);
-});
-
-test("a cached answer says so", () => {
-  const chat = server("lib/repository-chat.ts");
-  assert.match(chat, /cached: true/);
-  assert.match(chat, /chat_cache_hit/);
 });
 
 /* ------------------------------------------ a forced failure, actually forced */
@@ -396,24 +333,142 @@ test("both attempts failing reports the failure rather than hanging", async () =
   assert.equal((thrown as InstanceType<typeof ModelCallError>).advice.retryable, true);
 });
 
-test("a step that can degrade still degrades rather than failing the answer", () => {
-  // The retry buys one more chance; when it is used up, reranking falls back to
-  // deterministic fusion and the answer still arrives. This is what makes a
-  // single failure survivable end to end.
-  const chat = server("lib/repository-chat.ts");
-  const rerank = chat.slice(chat.indexOf('"CHAT_RERANK"'));
-  assert.match(rerank.slice(0, 900), /catch \{[\s\S]*Deterministic reciprocal-rank fusion remains the fallback/);
+test("a reader who has left is not retried into", async () => {
+  process.env.OPENAI_API_KEY = "test-key";
+  const { createChatCompletionResult, ModelCallError } = await import("../src/lib/openai");
+  const { runWithCancellation } = await import("../src/lib/chat-cancellation");
+  const left = new AbortController();
+  left.abort();
+
+  let thrown: unknown = null;
+  const { calls } = await withStubbedFetch(
+    [() => new Response("upstream exploded", { status: 503 })],
+    () =>
+      runWithCancellation(left.signal, async () => {
+        try {
+          await createChatCompletionResult([{ role: "user", content: "hi" }], 0, undefined, "CHAT_SYNTHESIS");
+        } catch (error) {
+          thrown = error;
+        }
+      })
+  );
+
+  assert.equal(calls, 1, "a failure after the reader left was retried");
+  assert.ok(thrown instanceof ModelCallError);
+  assert.equal((thrown as InstanceType<typeof ModelCallError>).advice.kind, "cancelled");
 });
 
-test("a cached answer is marked in the response and shown to the reader", () => {
-  // An answer that arrives in a second is either cached or wrong, and a reader
-  // should not have to guess which. The first version of this put the flag only
-  // in message metadata, so the live check reported cached=false while the
-  // cache was in fact working.
-  const route = server("app/api/chat/route.ts");
-  assert.match(route, /cached: repositoryResult\.diagnostics\.cached === true/);
+/** A call that waits until its signal aborts, then rejects with the signal's reason, as fetch does. */
+function hangingCall(seen: AbortSignal[]): (init?: RequestInit) => Promise<Response> {
+  return (init) =>
+    new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      if (!signal) return reject(new Error("the call was sent without a signal"));
+      seen.push(signal);
+      if (signal.aborted) return reject(signal.reason);
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+}
 
-  const client = server("components/chat/ChatClient.tsx");
+async function withSignalledFetch<T>(
+  responses: Array<(init?: RequestInit) => Promise<Response> | Response>,
+  run: () => Promise<T>
+): Promise<{ value: T; calls: number }> {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+    const next = responses[Math.min(calls, responses.length - 1)];
+    calls += 1;
+    return next(init);
+  }) as typeof fetch;
+  // AbortSignal.timeout's timer does not hold the process open; while a stubbed
+  // call hangs nothing else may, and the test runner would end the file early.
+  const keepAlive = setInterval(() => undefined, 1_000);
+  try {
+    return { value: await run(), calls };
+  } finally {
+    clearInterval(keepAlive);
+    globalThis.fetch = original;
+  }
+}
+
+test("a model call stops when the reader leaves, and when its deadline passes", async () => {
+  // Pressing Stop aborted the browser fetch while the server kept generating,
+  // so the answer went unseen and its tokens were still paid for.
+  process.env.OPENAI_API_KEY = "test-key";
+  const { createChatCompletionResult, ModelCallError } = await import("../src/lib/openai");
+  const { runWithCancellation } = await import("../src/lib/chat-cancellation");
+
+  const reader = new AbortController();
+  const seen: AbortSignal[] = [];
+  let thrown: unknown = null;
+  const left = await withSignalledFetch([hangingCall(seen)], () =>
+    runWithCancellation(reader.signal, async () => {
+      const pending = createChatCompletionResult([{ role: "user", content: "hi" }], 0, undefined, "CHAT_EXECUTION_PLAN", { timeoutMs: 60_000 });
+      setTimeout(() => reader.abort(), 50);
+      try {
+        await pending;
+      } catch (error) {
+        thrown = error;
+      }
+    })
+  );
+  assert.equal(left.calls, 1);
+  assert.equal(seen[0].aborted, true, "the reader leaving stopped the call itself");
+  assert.ok(thrown instanceof ModelCallError);
+  assert.equal((thrown as InstanceType<typeof ModelCallError>).advice.kind, "cancelled");
+
+  // No reader in scope: the deadline alone stops it.
+  const timed: AbortSignal[] = [];
+  const startedAt = Date.now();
+  await withSignalledFetch([hangingCall(timed), () => completion("The answer.")], () =>
+    createChatCompletionResult([{ role: "user", content: "hi" }], 0, undefined, "CHAT_EXECUTION_PLAN", { timeoutMs: 1_000 }).catch(() => null)
+  );
+  assert.equal(timed[0].aborted, true);
+  assert.equal((timed[0].reason as Error).name, "TimeoutError");
+  assert.ok(Date.now() - startedAt >= 950, "stopped at its deadline, not before");
+});
+
+test(
+  "a call that reaches its deadline is reported as a timeout, not as the reader stopping it",
+  async () => {
+    // fetch rejects a deadline with "The operation was aborted due to timeout";
+    // it was read as the reader cancelling ("Stopped at your request"). The
+    // deadline is its caller's time budget, so the call itself is not retried:
+    // callers that want another try make it (deep research's callTool).
+    process.env.OPENAI_API_KEY = "test-key";
+    const { createChatCompletionResult, ModelCallError } = await import("../src/lib/openai");
+    let failure: unknown = null;
+    const { calls } = await withSignalledFetch([hangingCall([]), () => completion("The answer.")], () =>
+      createChatCompletionResult([{ role: "user", content: "hi" }], 0, undefined, "CHAT_EXECUTION_PLAN", { timeoutMs: 1_000 }).catch((error) => {
+        failure = error;
+        return null;
+      })
+    );
+    assert.equal(calls, 1, "the deadline is not doubled");
+    assert.ok(failure instanceof ModelCallError);
+    assert.equal(failure.advice.kind, "timeout");
+    assert.match(failure.advice.message, /took longer than the time allowed/);
+  }
+);
+
+test("a timeout the network reports, with no deadline of the caller's, is retried once", async () => {
+  process.env.OPENAI_API_KEY = "test-key";
+  const { createChatCompletionResult } = await import("../src/lib/openai");
+  const { value, calls } = await withSignalledFetch(
+    [() => Promise.reject(new Error("connect ETIMEDOUT 104.18.2.115:443")), () => completion("The answer.")],
+    () => createChatCompletionResult([{ role: "user", content: "hi" }], 0, undefined, "CHAT_EXECUTION_PLAN")
+  );
+  assert.equal(calls, 2);
+  assert.equal(value?.content, "The answer.");
+});
+
+test("a cached answer is shown to the reader as cached", () => {
+  // An answer that arrives in a second is either cached or wrong, and a reader
+  // should not have to guess which. ChatClient's caveat block is an inner
+  // component of a page that needs the auth and workspace providers, so it is
+  // read here, not rendered; the flag it reads is run in chat-scope-behaviour-route.
+  const client = readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8");
   assert.match(client, /Answered from an earlier identical question/);
   // And the caveat block renders for a cached answer even when there is
   // nothing else to say.

@@ -107,7 +107,7 @@ const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"
 });
 import ReportActions from "@/components/chat/ReportActions";
 import MarkdownActions, { downloadMarkdown } from "@/components/chat/MarkdownActions";
-import { answerMarkdown, conversationMarkdown, markdownFileName } from "@/lib/answer-export";
+import { answerMarkdown, conversationMarkdown, isFinishedAnswer, markdownFileName } from "@/lib/answer-export";
 import type { Insight } from "@/lib/insights/types";
 import { safeCitationHref } from "@/lib/safe-citation-href";
 import { hasUsableAnalysis } from "@/lib/usable-analysis";
@@ -3371,7 +3371,7 @@ export default function ChatClient() {
                             )
                           )}
                           <AnswerCaveats metadata={message.metadata} />
-                          {message.kind !== "deep_research_report" && message.content.trim() ? (
+                          {message.kind !== "deep_research_report" && isFinishedAnswer(message) ? (
                             <MarkdownActions
                               markdown={() => answerMarkdown(message.content, message.citations, message.metadata)}
                               fileName={markdownFileName(questionBefore(visibleMessages, messageIndex) || pageTitle, "papertrend-answer")}
@@ -3380,7 +3380,7 @@ export default function ChatClient() {
                               compact
                             />
                           ) : null}
-                          {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading ? (
+                          {message.role === "assistant" && message === visibleMessages[visibleMessages.length - 1] && !loading && isFinishedAnswer(message) ? (
                             <FollowUpSuggestions
                               suggestions={followUpSuggestions({
                                 limitations: limitationsFromMetadata(message.metadata),

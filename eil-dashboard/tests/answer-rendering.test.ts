@@ -13,19 +13,15 @@ import {
   renderingInstruction,
   unsupportedMarkdown,
 } from "../src/lib/answer-rendering";
-import { formatPaperReferencesForReaders } from "../src/lib/repository-chat";
+import {
+  auditSkipBlocker,
+  composeAnswerSection,
+  formatPaperReferencesForReaders,
+} from "../src/lib/repository-chat";
 import {
   formatConstraintInstruction,
   readabilityIssues,
 } from "../src/lib/answer-readability";
-
-/** The chat page is two files since the answer renderer was extracted. */
-function client(): string {
-  return [
-    readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8"),
-    readFileSync(new URL("../src/components/chat/AnswerBody.tsx", import.meta.url), "utf8"),
-  ].join(String.fromCharCode(10));
-}
 
 /* ---------------------------------------------------------------- leaked JSON */
 
@@ -247,16 +243,8 @@ test("the window a reader should not have to get past is stated once", () => {
 
 /* --------------------------------------------------- the renderer matches the list */
 
-test("every construct the checks call supported is implemented by the renderer", () => {
-  // If these drift, the checks pass answers the renderer then leaks at readers.
-  const source = client();
-  assert.match(source, /token\.startsWith\("\*\*"\)/, "bold");
-  assert.match(source, /<em key=/, "italic");
-  assert.match(source, /<s key=/, "strikethrough");
-  assert.match(source, /<code$/m, "inline code");
-  assert.match(source, /isMarkdownTable/, "tables");
-  assert.match(source, /<blockquote/, "blockquote");
-});
+// That the renderer draws every construct these checks call supported is
+// rendered in chat-answer-behaviour-page.test.ts.
 
 test("the renderer draws italics and strikethrough, so they are not leaked markup", () => {
   // Both were previously unimplemented, so `*word*` reached the reader as
@@ -340,61 +328,38 @@ test("a clean answer produces no rewrite instruction", () => {
 test("markup the reader cannot see blocks the audit skip", () => {
   // The audit is the only step that can repair it, so an answer carrying it
   // must never take the fast path.
-  const chat = readFileSync(
-    new URL("../src/lib/repository-chat.ts", import.meta.url),
-    "utf8"
-  );
-  const blocker = chat.slice(chat.indexOf("function auditSkipBlocker"));
-  assert.match(blocker.slice(0, 1400), /renderingIssues\(input\.answer, \{ beforeCitationFormatting: true \}\)/);
+  const confident = (answer: string) =>
+    auditSkipBlocker({
+      parsedCleanly: true,
+      confidence: 0.9,
+      answer,
+      validation: { invalidPaperIds: [], citedPaperIds: ["12"], hasSubstantiveText: true },
+    });
+  assert.equal(confident("The study reported gains [Paper 12]."), null);
+  assert.equal(confident("The study reported <b>large</b> gains [Paper 12]."), "html-tag");
+  assert.equal(confident("## One\n## Two\n\nThe study reported gains [Paper 12]."), "a heading is followed immediately by another heading");
 });
 
-test("the house style names the subset that renders", () => {
-  const rules = readFileSync(
-    new URL("../src/lib/answer-readability.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(rules, /Images, horizontal rules, indented sub-bullets, checkboxes and HTML are not displayed/);
-  assert.match(rules, /Never put a heading directly under another heading/);
-});
+// That the writer and the review are told which markup renders is checked on
+// the prompts they receive, in chat-answer-behaviour-pipeline.test.ts.
 
 test("the section assembly does not stack a heading on a heading", () => {
-  const chat = readFileSync(
-    new URL("../src/lib/repository-chat.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(chat, /export function composeAnswerSection/);
-  assert.equal(
-    /sections\.push\(`## \$\{OPERATION_LABELS/.test(chat),
-    false,
-    "the unconditional heading must be gone"
-  );
+  // "## Document analysis" used to be put over every part, so a part that
+  // opened with "## Direct answer" became a label and then another label.
+  const headed = composeAnswerSection("Document analysis", "## Direct answer\n\nThe papers use five approaches.", 2);
+  assert.equal(headed, "## Direct answer\n\nThe papers use five approaches.");
+  const unheaded = composeAnswerSection("Evidence answer", "The papers use five approaches.", 2);
+  assert.equal(unheaded, "## Evidence answer\n\nThe papers use five approaches.");
+  // One part needs no label to tell it from the others.
+  assert.equal(composeAnswerSection("Evidence answer", "The papers use five approaches.", 1), "The papers use five approaches.");
+  assert.deepEqual(emptySections([composeAnswerSection("Documents", "## Papers\n\n1. A", 2), headed].join("\n\n")), []);
 });
 
 /* ------------------------------------------------------- the failure fallback */
 
-test("the fallback shown when synthesis fails is readable and direct", () => {
-  // A judge scored the old version 3.0 readable and 2.0 direct, the worst of
-  // the whole suite: it appended 260 characters of each paper's raw extracted
-  // abstract, so the reader met a 2,400 character wall of PDF fragments at
-  // exactly the moment the answer had failed.
-  const chat = readFileSync(
-    new URL("../src/lib/repository-chat.ts", import.meta.url),
-    "utf8"
-  );
-  const fallback = chat.slice(
-    chat.indexOf("function deterministicEvidenceFallback"),
-    chat.indexOf("async function checkFaithfulness")
-  );
-  assert.ok(fallback.length > 0, "fallback not found");
-  assert.equal(
-    /paper\.abstract\.slice/.test(fallback),
-    false,
-    "the fallback must not paste raw abstract text at the reader"
-  );
-  assert.match(fallback, /I could not finish this answer/);
-  // It must say what to do, not only what broke.
-  assert.match(fallback, /Please ask again/);
-});
+// The fallback the pipeline actually shows when synthesis fails is checked in
+// chat-answer-behaviour-pipeline.test.ts: short, direct, and with no raw
+// abstract text (a judge scored the old one 3.0 readable and 2.0 direct).
 
 test("the fallback text itself passes the readability checks", () => {
   const fallback = [
@@ -409,24 +374,6 @@ test("the fallback text itself passes the readability checks", () => {
   ].join("\n");
   assert.deepEqual(renderingIssues(fallback), []);
   assert.equal(leadsWithDirectAnswer(fallback).ok, true);
-});
-
-test("an explicit format request in the question outranks the house style", () => {
-  // Asked to summarise "in one paragraph", the model returned 4,378 characters
-  // across many paragraphs, and a judge marked it down for directness. The
-  // house rules push towards headings and bullets, and nothing said that what
-  // the reader actually asked for comes first.
-  const rules = readFileSync(
-    new URL("../src/lib/answer-readability.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(rules, /If the request names a format or a length/);
-  assert.match(rules, /It overrides every rule below/);
-  // It has to come before the rules it overrides, or it reads as an exception
-  // to nothing.
-  const override = rules.indexOf("If the request names a format or a length");
-  const headings = rules.indexOf("Use a descriptive heading for each distinct part");
-  assert.ok(override > 0 && override < headings, "the override must precede what it overrides");
 });
 
 /* ------------------------------------------------ invented citation identifiers */
@@ -552,15 +499,6 @@ test("the word limit is read back, not hardcoded", () => {
   assert.match(formatConstraintInstruction("in 40 words") ?? "", /40 words/);
 });
 
-test("both synthesis prompts receive the constraint", () => {
-  const server = readFileSync(
-    new URL("../src/lib/repository-chat.ts", import.meta.url),
-    "utf8"
-  );
-  const uses = server.match(/formatConstraintInstruction\(input\.prompt\)/g) ?? [];
-  assert.ok(uses.length >= 2, `only ${uses.length} synthesis prompt(s) carry the constraint`);
-});
-
 test("the shape rules yield to a shape the reader named", () => {
   // Asked for one paragraph, an answer is one long paragraph with no headings -
   // exactly what the paragraph-length and structure rules exist to prevent.
@@ -584,16 +522,9 @@ test("substance rules still apply under a named shape", () => {
   assert.ok(kinds.includes("too_long"), `only got: ${kinds.join(", ")}`);
 });
 
-test("the audit is told the shape, or it puts the headings back", () => {
-  const server = readFileSync(
-    new URL("../src/lib/repository-chat.ts", import.meta.url),
-    "utf8"
-  );
-  // Both audit call sites, or the path that was not told reshapes the answer.
-  const passes = server.match(/formatConstraint: formatConstraintInstruction\(input\.prompt\)/g) ?? [];
-  assert.equal(passes.length, 2, `only ${passes.length} audit call site(s) know the shape`);
-  assert.match(server, /formatConstrained: Boolean\(input\.formatConstraint\)/);
-});
+// That both answer writers and both reviews are told the shape, and the
+// reviews then stop asking for headings, is run in
+// chat-answer-behaviour-pipeline.test.ts.
 
 test("two papers cited in one bracket are both rendered", () => {
   // Models write "[Paper 12, Paper 34]" despite being told not to; read as one
@@ -608,7 +539,10 @@ test("two papers cited in one bracket are both rendered", () => {
   );
 });
 
-test("a deep research report is drawn like an answer, with numbered sources", () => {
+test("the page draws a deep research report like an answer, with numbered sources", () => {
+  // Kept as text: the full report view opens on a click and its report arrives
+  // by an effect, neither of which a static render runs. The drawing itself is
+  // rendered in chat-answer-behaviour-page.test.ts.
   const chat = readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8");
   // It was printed as plain text: "# Research Report" and "**bold**" showed as typed.
   assert.doesNotMatch(chat, /whitespace-pre-wrap text-\[17px\] leading-9/);

@@ -3,7 +3,14 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { VERIFIED_IDENTITY_TTL_MS, verifiedIdentityExpiry, type AuthIdentity } from "../src/lib/auth/adapter";
 
-/** A workspace page opens with fewer requests, and a token is verified once per request (docs/32, 3.2). */
+/**
+ * A workspace page opens with fewer requests, and a token is verified once per
+ * request (docs/32, 3.2). How often Firebase is asked, for a kept, refused or
+ * unmapped identity, runs in boot-security-behaviour-auth.test.ts; that the chat
+ * page leaves the dashboard's data alone and starts on the open repository is
+ * drawn in boot-security-behaviour-render.test.ts; the scope summary's years run
+ * through its route in boot-security-behaviour-routes.test.ts.
+ */
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -20,20 +27,15 @@ test("a verified identity is kept a minute, and never past its token's expiry", 
   assert.equal(verifiedIdentityExpiry(identity(Math.floor(now / 1000) + 3600), now), now + VERIFIED_IDENTITY_TTL_MS);
 });
 
-test("one verification per request and token; only an identity with an owner is kept", () => {
-  const adapter = read("src/lib/auth/adapter.ts");
-  const entry = adapter.slice(adapter.indexOf("export async function getAuthenticatedIdentityFromRequest("), adapter.indexOf("async function verifyRequestIdentity("));
-  assert.match(entry, /const pending = requestIdentities\.get\(request\);\s*if \(pending\) return pending;/);
-  assert.match(entry, /if \(kept && kept\.expiresAt > Date\.now\(\)\) return kept\.identity;/);
-  assert.match(entry, /else requestIdentities\.delete\(request\);/, "a refusal is checked again");
-  assert.match(adapter, /function rememberIdentity\(key: string, identity: AuthIdentity\): void \{\s*if \(!identity\.ownerUserId\) return;/);
-  // The key is a hash of the token, never the token itself.
-  assert.match(adapter, /createHash\("sha256"\)\.update\(token\)\.digest\("hex"\)/);
-  // Every token is still checked by Firebase the first time, with revocation as configured.
-  assert.match(adapter, /verifyIdToken\(token, getFirebaseCheckRevoked\(\)\)/);
+test("kept identities are filed under a hash of the token, never the token itself", () => {
+  // Kept as text: the store is private to the module, and nothing outside it
+  // can see its keys.
+  assert.match(read("src/lib/auth/adapter.ts"), /createHash\("sha256"\)\.update\(token\)\.digest\("hex"\)/);
 });
 
 test("the workspace asks for its repositories and folders once each", () => {
+  // Kept as text: these requests are made in the provider's effects, which a
+  // static render never runs, and the tests have no DOM to mount it in.
   const provider = read("src/components/workspace/WorkspaceProvider.tsx");
   assert.doesNotMatch(provider, /\/api\/workspace\/projects\?organizationId=/, "the scoped list comes from the full one");
   assert.doesNotMatch(provider, /\/api\/workspace\/folders\?projectId=/);
@@ -44,17 +46,16 @@ test("the workspace asks for its repositories and folders once each", () => {
   assert.match(provider, /if \(projectListRef\.current\) return projectListRef\.current;/);
 });
 
-test("a slow navigation is not reloaded as if it were stuck (SHELL-6)", () => {
+test("a slow navigation is not reloaded as if it were stuck (SHELL-6)", async () => {
+  const { STUCK_NAVIGATION_MS } = await import("../src/components/workspace/WorkspaceShell");
+  assert.equal(STUCK_NAVIGATION_MS, 12_000);
+  // Kept as text: the timer is set in an effect, which a static render never runs.
   const shell = read("src/components/workspace/WorkspaceShell.tsx");
-  assert.match(shell, /export const STUCK_NAVIGATION_MS = 12_000;/);
   assert.match(shell, /\}, STUCK_NAVIGATION_MS\);/);
   assert.doesNotMatch(shell, /\}, 1500\);/);
 });
 
-test("the chat page does not fetch the dashboard, and starts on the open repository", () => {
-  const chat = read("src/components/chat/ChatClient.tsx");
-  assert.doesNotMatch(chat, /useDashboardData/);
-  assert.match(chat, /useState<string>\(\(\) => currentProject\?\.id \?\? "all"\)/);
-  assert.match(chat, /setScopeYears\(Array\.isArray\(payload\.years\)/);
-  assert.match(read("src/app/api/chat/scope-summary/route.ts"), /years: \[\.\.\.new Set\(context\.papers\.map\(\(paper\) => paper\.year\)\)\]\.sort\(\)/);
+test("the chat page takes its years from the scope summary", () => {
+  // Kept as text: the summary is fetched in an effect, which a static render never runs.
+  assert.match(read("src/components/chat/ChatClient.tsx"), /setScopeYears\(Array\.isArray\(payload\.years\)/);
 });

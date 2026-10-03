@@ -676,6 +676,7 @@ export default function KeywordExplorer({
                   stroke={ct.axisLine}
                 />
                 <Tooltip
+                  {...themedTooltip}
                   formatter={(value, _name, item) => [
                     `${value} papers (${(item as { payload?: { occurrences?: number } })?.payload?.occurrences ?? 0} mentions)`,
                     "Used by",

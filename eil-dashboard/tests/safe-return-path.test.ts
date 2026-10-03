@@ -1,7 +1,25 @@
+/*
+ * Return paths after sign-in stay on the site: the check itself, and the
+ * sign-in page and the server's check run with addresses that leave it. The
+ * sign-in page runs through stub-uia11y-hooks.ts with the stub-auditfix-*
+ * sign-in and router; the OAuth return address is in
+ * small-fixes2-behaviour-auth.test.ts.
+ */
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
+import React, { type ReactNode } from "react";
 import { safeReturnPath } from "../src/lib/safe-return-path";
+import { validateSafeReturnTo } from "../src/lib/security-guards";
+import { WORKSPACE_LAST_ROUTE_STORAGE_KEY, WORKSPACE_PROJECT_STORAGE_KEY } from "../src/lib/workspace-session";
+import { stubModule } from "./support/route-harness";
+import { installDom } from "./support/stub-uia11y-dom";
+import { elements, mount } from "./support/stub-uia11y-hooks";
+
+const support = (name: string) => new URL(`./support/${name}`, import.meta.url).href;
+stubModule("/node_modules/next/navigation.js", support("stub-auditfix-navigation.ts"));
+stubModule("/src/components/auth/AuthProvider.tsx", support("stub-auditfix-auth.ts"));
+stubModule("/src/components/theme/ThemeProvider.tsx", support("stub-auditfix-theme.ts"));
+(globalThis as { React?: typeof React }).React = React;
 
 const FALLBACK = "/workspaces";
 
@@ -39,20 +57,57 @@ test("anything that would leave the site falls back", () => {
   assert.equal(safeReturnPath(undefined, FALLBACK), FALLBACK);
 });
 
-test("every sign-in return path goes through the one check", () => {
-  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
-  assert.match(read("src/app/login/page.tsx"), /safeReturnPath\(searchParams\.get\("returnTo"\)/);
-  assert.match(read("src/components/auth/AuthProvider.tsx"), /safeReturnPath\(currentUrl\.searchParams\.get\("returnTo"\), ""\)/);
-  assert.match(read("src/lib/security-guards.ts"), /return safeReturnPath\(raw, fallback\);/);
-  for (const path of ["src/app/login/page.tsx", "src/components/auth/AuthProvider.tsx"]) {
-    assert.doesNotMatch(read(path), /returnTo\.startsWith\("\/"\)/, `${path} still has its own check`);
+// The ones a browser was measured following off the site, and ones that stay.
+const LEAVING = ["/\\example.com", "/\t/example.com", "//example.com", "/.//example.com", "/%2e//example.com", "https://example.com"];
+
+test("the server's return check sends anything leaving the site to the fallback", () => {
+  for (const value of LEAVING) assert.equal(validateSafeReturnTo(value, FALLBACK), FALLBACK, JSON.stringify(value));
+  assert.equal(validateSafeReturnTo("/workspace/library?paper=1", FALLBACK), "/workspace/library?paper=1");
+  const site = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = "https://papertrend.test";
+  try {
+    // A full address on this site is taken as its path, which is checked too.
+    assert.equal(validateSafeReturnTo("https://papertrend.test/workspace/chat#latest", FALLBACK), "/workspace/chat#latest");
+    assert.equal(validateSafeReturnTo("https://papertrend.test/\\example.com", FALLBACK), FALLBACK);
+    assert.equal(validateSafeReturnTo("https://papertrend.test/.//example.com", FALLBACK), FALLBACK);
+  } finally {
+    if (site === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = site;
   }
 });
 
-test("the image optimizer and the framework banner are off", () => {
-  const config = readFileSync(new URL("../next.config.mjs", import.meta.url), "utf8");
-  assert.match(config, /images: \{ unoptimized: true \}/);
-  assert.match(config, /poweredByHeader: false/);
+/** Where the sign-in page sends someone already signed in, arriving with `returnTo`. */
+async function loginRedirect(returnTo: string, storedRoute?: string) {
+  const dom = installDom(`https://papertrend.test/login?returnTo=${encodeURIComponent(returnTo)}`);
+  if (storedRoute) {
+    dom.window.localStorage.setItem(WORKSPACE_PROJECT_STORAGE_KEY, "00000000-0000-4000-8000-0000000000a1");
+    dom.window.localStorage.setItem(WORKSPACE_LAST_ROUTE_STORAGE_KEY, storedRoute);
+  }
+  globalThis.__auditfixAuth = { hydrated: true, user: { id: "00000000-0000-4000-8000-00000000000a" }, session: { access_token: "token" } };
+  globalThis.__auditfixSearch = `returnTo=${encodeURIComponent(returnTo)}`;
+  globalThis.__auditfixNavigations = [];
+  try {
+    const { default: LoginPage } = await import("../src/app/login/page");
+    const content = elements(mount(LoginPage, {}).tree).find((found) => typeof found.type === "function" && found.type !== LoginPage)!;
+    const page = mount(content.type as (props: unknown) => ReactNode, content.props);
+    page.unmount();
+    return globalThis.__auditfixNavigations;
+  } finally {
+    dom.restore();
+  }
+}
+
+test("the sign-in page sends a signed-in reader back only to a path on this site", async () => {
+  assert.deepEqual(await loginRedirect("/workspace/library?paper=abc"), ["/workspace/library?paper=abc"]);
+  for (const value of LEAVING) assert.deepEqual(await loginRedirect(value), ["/workspaces"], JSON.stringify(value));
+  // With a repository open last time, the fallback is where they were.
+  assert.deepEqual(await loginRedirect("//example.com", "/workspace/chat"), ["/workspace/chat"]);
+});
+
+test("the image optimizer and the framework banner are off", async () => {
+  const config = (await import("../next.config.mjs")).default as { images?: { unoptimized?: boolean }; poweredByHeader?: boolean };
+  assert.equal(config.images?.unoptimized, true);
+  assert.equal(config.poweredByHeader, false);
 });
 
 test("no generated path that is accepted leads off the site", () => {

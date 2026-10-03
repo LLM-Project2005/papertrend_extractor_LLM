@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+/*
+ * Deployment configuration (docs/32, 1.2 and 1.4), read as text: the Cloud
+ * Build files, package.json and the CI workflow are what Cloud Build and
+ * GitHub run, and only they can run them.
+ */
+
 const read = (path: string) => readFileSync(new URL(`../../${path}`, import.meta.url), "utf8");
 
 /** The step ids of a Cloud Build file, in order. */

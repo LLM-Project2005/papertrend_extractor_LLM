@@ -36,7 +36,8 @@ export function normalizePaperId(value: unknown): string {
  * number). The copy kept in input_payload is that number as JSON, which
  * JSON.parse rounds - 1093441516503213193 arrives as 1093441516503213200 - so
  * it is only trusted when it can be exact: a string, or a safe integer. A copy
- * of a paper made in the Library points at the paper of the run it copied.
+ * made in the Library is a paper of its own, under its own run id (docs/32,
+ * 2.5); falling back to the run it was copied from opened the original instead.
  */
 export function paperIdForRun(run: {
   id: string;
@@ -47,7 +48,7 @@ export function paperIdForRun(run: {
   if (typeof stored === "string" && stored.trim()) return stored.trim();
   if (typeof stored === "number" && Number.isSafeInteger(stored)) return String(stored);
   if (typeof stored === "bigint") return stored.toString();
-  return paperIdFromRunId(run.copied_from_run_id || run.id);
+  return paperIdFromRunId(run.id);
 }
 
 export function paperLookupKey(input: {

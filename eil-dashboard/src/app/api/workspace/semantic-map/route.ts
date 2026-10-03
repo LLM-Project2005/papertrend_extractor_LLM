@@ -13,6 +13,7 @@ import {
 import { enqueueSemanticMapJob } from "@/lib/semantic-map-jobs";
 import { processSemanticMapJob } from "@/lib/semantic-map-service";
 import { getPublicRequestOrigin } from "@/lib/public-request-origin";
+import { GuardError } from "@/lib/security-guards";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,6 +22,22 @@ const GenerateSchema = z.object({ projectId: z.string().uuid(), force: z.boolean
 
 function enabled(): boolean {
   return process.env.SEMANTIC_MAP_ENABLED === "true";
+}
+
+/**
+ * Someone else's repository is "not found" whichever way it is asked for; a
+ * spend refusal keeps its own words; anything else is logged, and the browser
+ * is not shown a database error.
+ */
+function failure(error: unknown, action: "load" | "generate") {
+  const message = error instanceof Error ? error.message : "";
+  if (message === "Repository not found.") return NextResponse.json({ error: message }, { status: 404 });
+  if (error instanceof GuardError) return NextResponse.json({ error: error.message }, { status: error.status });
+  console.error("semantic_map_route_failed", { action, message: message.slice(0, 200) || "unknown_error" });
+  return NextResponse.json(
+    { error: action === "load" ? "The semantic map could not be loaded right now." : "The semantic map could not be generated right now." },
+    { status: 500 }
+  );
 }
 
 export async function GET(request: Request) {
@@ -41,8 +58,7 @@ export async function GET(request: Request) {
     ]);
     return NextResponse.json({ map, eligiblePapers: coverage.eligiblePapers, coverage });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load semantic map.";
-    return NextResponse.json({ error: message }, { status: message === "Repository not found." ? 404 : 500 });
+    return failure(error, "load");
   }
 }
 
@@ -78,6 +94,6 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ mapId, queued: true }, { status: 202 });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Failed to generate semantic map." }, { status: 500 });
+    return failure(error, "generate");
   }
 }

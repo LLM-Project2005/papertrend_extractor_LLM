@@ -63,10 +63,7 @@ test("a copy counts toward the account's papers; exempt roles are exempt (LIB-5)
   await db.query(`UPDATE user_profiles SET role = 'admin' WHERE id = $1`, [OWNER]);
   await assertRoomForAnotherPaper(client, OWNER);
   await db.close();
-  // Making a copy is where it is asked.
-  const library = read("src/lib/cloudsql/library-repository.ts");
-  const copyRun = library.slice(library.indexOf("async copyRun("), library.indexOf("async copyRun(") + 1500);
-  assert.match(copyRun, /await assertRoomForAnotherPaper\(client, ownerUserId\);/);
+  // A copy asked for in the Library when full is refused: small-fixes2-behaviour-library.test.ts.
 });
 
 test("a moved run records its new repository, and only the owner's run moves", async () => {
@@ -143,7 +140,8 @@ test("a moved paper's rows and search index move with it", async () => {
   await db.close();
 });
 
-test("the table list is the worker's, and the Library uses it", () => {
+test("the table list is the worker's", () => {
+  // The worker is Python and cannot run here, so the tables it writes are read from it.
   const persistence = read("worker/analysis_pipeline/persistence.py");
   // The table in each ("upsert", table, rows) step and each (dataset key, table) pair.
   const workerTables = [
@@ -151,13 +149,5 @@ test("the table list is the worker's, and the Library uses it", () => {
     ...persistence.matchAll(/\("[a-z_]+", "(paper_[a-z_]+)"\),/g),
   ].map((match) => match[1]);
   assert.deepEqual([...new Set(workerTables)].sort(), [...PAPER_TABLES].sort(), "copy every table the worker writes");
-  const library = read("src/lib/cloudsql/library-repository.ts");
-  const copyRun = library.slice(library.indexOf("async copyRun("), library.indexOf("async moveRun("));
-  assert.ok(copyRun.indexOf("paperOfRun(") < copyRun.indexOf("assertRoomForAnotherPaper(") && copyRun.indexOf("assertRoomForAnotherPaper(") < copyRun.indexOf("INSERT INTO public.ingestion_runs"), "checked before the copy is made");
-  assert.match(copyRun, /copyPaperAnalysis\(client, \{ ownerUserId, fromPaperId: sourcePaperId, toRunId: String\(created\.id\) \}\)/);
-  const moveRun = library.slice(library.indexOf("async moveRun("));
-  assert.match(moveRun, /FROM public\.research_folders WHERE id = \$1 AND owner_user_id = \$2/, "only into the owner's own folders");
-  assert.match(read("src/app/api/workspace/library/[runId]/route.ts"), /cloudSqlLibraryRepository\.moveRun\(user\.id, runId, body\.folderId\)/);
-  const correction = read("src/lib/cloudsql/analysis-job-repository.ts");
-  assert.match(correction, /return paper\.rows\[0\] \?\? null;/, "a correction with no paper reports it");
+  // The Library's copy, move and correction run through its route in small-fixes2-behaviour-library.test.ts.
 });
