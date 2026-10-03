@@ -1,11 +1,8 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { applyCachedIndexes, type RepositoryPaper } from "../src/lib/repository-chat";
 
 /** A question's repository load uses the stored word index before computing one (docs/32, 3.1). */
-
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 function paper(paperId: string, content: string, contentHash: string): RepositoryPaper {
   return {
@@ -35,14 +32,5 @@ test("an unchanged paper takes its stored index; a changed one is indexed again 
   assert.equal(missingPaper.totalWords, 1);
 });
 
-test("the text is tokenised only when the stored index is stale, and nothing unread is written", () => {
-  const chat = read("src/lib/repository-chat.ts");
-  const fromRow = chat.slice(chat.indexOf("function paperFromRow("), chat.indexOf("function addKeywordRows("));
-  assert.doesNotMatch(fromRow, /buildRepositoryTermCounts/, "no tokenising before the cache is read");
-  const load = chat.slice(chat.indexOf("export async function loadRepositoryContext("), chat.indexOf("Recovers readable prose"));
-  assert.ok(load.indexOf("loadTermIndexes(") < load.indexOf("applyCachedIndexes("));
-  assert.match(load, /if \(stale\.length > 0\) await saveTermIndexes\(/);
-  assert.match(load, /console\.info\("chat_repository_load"/);
-  // The context row nobody read, written with two deletes on every question.
-  assert.doesNotMatch(chat, /saveRepositoryCache|pruneRepositoryCacheForOwner|repository:v1:/);
-});
+// That a question's load reads the stored index first, builds only the stale
+// ones and writes nothing else runs in small-fixes2-behaviour-retrieval.test.ts.

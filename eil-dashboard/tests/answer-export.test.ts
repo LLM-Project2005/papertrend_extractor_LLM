@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -8,8 +7,6 @@ import { citationLabel } from "../src/lib/answer-citations";
 import { answerMarkdown, conversationMarkdown, isFinishedAnswer, markdownFileName, type ExportMessage } from "../src/lib/answer-export";
 
 /** Every chat answer copies and downloads with its references; a conversation exports whole (docs/32, 4.2). */
-
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 const READING = { paperId: "12", title: "Effects of Reading Instruction", year: "2016", href: "/workspace/library?paperId=12" };
 const WRITING = { paperId: "34", title: "Peer Feedback in EFL Writing", year: "2019", href: "/workspace/library?paperId=34" };
@@ -104,12 +101,5 @@ test("only a finished answer has the actions; a background answer still being wr
   assert.match(markdown, /## You\n\nWhich methods\?/);
 });
 
-test("every answer has the actions, and the conversation menu exports the whole conversation", () => {
-  const chat = read("src/components/chat/ChatClient.tsx");
-  assert.match(chat, /message\.kind !== "deep_research_report" && isFinishedAnswer\(message\) \? \(\s*<MarkdownActions/);
-  assert.match(chat, /answerMarkdown\(message\.content, message\.citations, message\.metadata\)/);
-  assert.match(chat, /Export conversation \(\.md\)/);
-  assert.match(chat, /await fetchWholeConversation\(threadId, session\.access_token\)/);
-  // The export reads every page, not only the one on screen.
-  assert.match(chat, /if \(!payload\.hasEarlierMessages \|\| !before\) break;/);
-});
+// That the chat page gives every finished answer these actions, and exports a
+// conversation's every page from its menu, runs in small-fixes2-behaviour-chat.test.ts.

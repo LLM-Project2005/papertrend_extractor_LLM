@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import {
   DEFAULT_FAST_MODEL,
   fastModelSetting,
@@ -96,22 +95,54 @@ test("structural membership is stated once, not duplicated per call site", () =>
   assert.equal(isStructuralTask(undefined), false);
 });
 
-test("every structural task name matches a real call site", () => {
-  // A renamed task would silently stop routing and quietly cost seconds again.
-  const chat = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
-  for (const task of ["CHAT_EXECUTION_PLAN", "CHAT_EVIDENCE_SUFFICIENCY"]) {
-    assert.ok(chat.includes(`"${task}"`), `${task} has no call site`);
+// That the chat really calls its steps by these names runs in small-fixes2-behaviour-retrieval.test.ts.
+
+/** The model each call asked the provider for, with `status` as the provider's answer. */
+async function modelsSent(env: Record<string, string>, work: (openai: typeof import("../src/lib/openai")) => Promise<unknown>, status = 200) {
+  const saved = Object.fromEntries(["OPENAI_API_KEY", "OPENAI_BASE_URL", "OPENAI_MODEL", "CHAT_FAST_MODEL", ...Object.keys(env)].map((key) => [key, process.env[key]]));
+  for (const key of ["OPENAI_BASE_URL", "OPENAI_MODEL", "CHAT_FAST_MODEL"]) delete process.env[key];
+  Object.assign(process.env, { OPENAI_API_KEY: "test-key", ...env });
+  const realFetch = globalThis.fetch;
+  const sent: string[] = [];
+  globalThis.fetch = (async (_url: string, init: { body?: string } = {}) => {
+    sent.push(JSON.parse(init.body ?? "{}").model);
+    return status === 200
+      ? new Response(JSON.stringify({ choices: [{ message: { content: "{}" } }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }))
+      : new Response("refused", { status });
+  }) as typeof fetch;
+  try {
+    await work(await import("../src/lib/openai"));
+    return sent;
+  } finally {
+    globalThis.fetch = realFetch;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
+}
+
+const OPENROUTER = { OPENAI_BASE_URL: "https://openrouter.ai/api/v1", OPENAI_MODEL: "vendor/configured-default" };
+const ask = (task?: string, model?: string) => (openai: typeof import("../src/lib/openai")) => openai.createChatCompletion([{ role: "user", content: "x" }], 0, model, task);
+
+test("the helper routes rather than passing the caller's model straight through", async () => {
+  assert.deepEqual(await modelsSent(OPENROUTER, ask("CHAT_EXECUTION_PLAN", PRIMARY)), [DEFAULT_FAST_MODEL]);
+  assert.deepEqual(await modelsSent(OPENROUTER, ask("CHAT_SYNTHESIS", PRIMARY)), [PRIMARY]);
+  assert.deepEqual(await modelsSent(OPENROUTER, ask("SOME_OTHER_TASK")), ["vendor/configured-default"], "no caller model: the configured one");
+  assert.deepEqual(await modelsSent({ ...OPENROUTER, CHAT_FAST_MODEL: "off" }, ask("CHAT_EXECUTION_PLAN", PRIMARY)), [PRIMARY]);
+  assert.deepEqual(await modelsSent({ OPENAI_MODEL: "gpt-configured" }, ask("CHAT_EXECUTION_PLAN", PRIMARY)), [PRIMARY], "not OpenRouter: left alone");
 });
 
-test("the helper routes rather than passing the caller's model straight through", () => {
-  const helper = readFileSync(new URL("../src/lib/openai.ts", import.meta.url), "utf8");
-  assert.match(helper, /modelForTask\(\{ taskName, requestedModel: modelOverride, usesOpenRouter \}\)/);
-  assert.match(helper, /model: routedModel \|\| config\.model/);
-});
-
-test("latency is attributed to the model that served the call", () => {
-  const helper = readFileSync(new URL("../src/lib/openai.ts", import.meta.url), "utf8");
+test("latency is attributed to the model that served the call", async () => {
   // Without this, a routing change could not be confirmed from the logs.
-  assert.match(helper, /recordModelCallLatency\(taskName, performance\.now\(\) - startedAt, "ok", String\(requestBody\.model\)\)/);
+  const { runWithModelLatency } = await import("../src/lib/model-latency");
+  const timed = async (status: number) => {
+    let timings: Array<{ task: string; outcome: string; model?: string }> = [];
+    await modelsSent(OPENROUTER, async (openai) => {
+      timings = (await runWithModelLatency(() => ask("CHAT_EVIDENCE_SUFFICIENCY", PRIMARY)(openai).catch(() => null))).timings;
+    }, status);
+    return timings.map(({ task, outcome, model }) => ({ task, outcome, model }));
+  };
+  assert.deepEqual(await timed(200), [{ task: "CHAT_EVIDENCE_SUFFICIENCY", outcome: "ok", model: DEFAULT_FAST_MODEL }]);
+  assert.deepEqual(await timed(400), [{ task: "CHAT_EVIDENCE_SUFFICIENCY", outcome: "failed", model: DEFAULT_FAST_MODEL }]);
 });
