@@ -132,6 +132,7 @@ export default function TrendAnalysis({ trends, planCharts, onDrilldown }: Props
                 stroke={ct.axisLine}
               />
               <Tooltip
+                {...themedTooltip}
                 formatter={(value, name, item) => {
                   const payload = (item as { payload?: { early: number; late: number } })?.payload;
                   const count = name === "earlier" ? payload?.early : payload?.late;
