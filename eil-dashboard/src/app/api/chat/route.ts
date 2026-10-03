@@ -492,19 +492,26 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
       folderId: knowledgeScope.folderId ?? null,
       message: failureMessage,
     });
-    const answer = `I could not access the selected Papertrend knowledge scope for this request. Your papers were not replaced with a generic answer. Please retry, or report request ID \`${requestId}\` if the problem continues.`;
+    // A failed model call says what to do next - wait, narrow the question, or
+    // top up the account - and "Please retry" is wrong for an empty account.
+    const advice = error instanceof ModelCallError ? error.advice : null;
+    const answer = advice
+      ? `${advice.message} (Request ID \`${requestId}\`.)`
+      : `I could not access the selected Papertrend knowledge scope for this request. Your papers were not replaced with a generic answer. Please retry, or report request ID \`${requestId}\` if the problem continues.`;
     await chatRepository.appendMessage({
       threadId: thread.id, ownerUserId, folderId: knowledgeScope.folderId, role: "assistant", content: answer,
       messageKind: "chat", citations: [], metadata: {
         mode: "fallback", groundingMode: "repository_unavailable", requestId,
         scopeSnapshot: preliminaryScopeSnapshot,
         repositoryLimitations: [failureMessage], failureStage: "repository_execution",
+        ...(advice ? { failureKind: advice.kind } : {}),
       },
     });
     const detail = await chatRepository.getThreadDetail(ownerUserId, thread.id);
     return NextResponse.json({
       mode: "fallback", groundingMode: "repository_unavailable", answer, citations: [], toolResults: [],
-      scopeSnapshot: preliminaryScopeSnapshot, requestId, limitations: ["Repository knowledge was temporarily unavailable."],
+      scopeSnapshot: preliminaryScopeSnapshot, requestId,
+      limitations: advice ? [] : ["Repository knowledge was temporarily unavailable."],
       thread: detail.thread, messages: detail.messages, deepResearchSession: detail.deepResearchSession,
     });
   }

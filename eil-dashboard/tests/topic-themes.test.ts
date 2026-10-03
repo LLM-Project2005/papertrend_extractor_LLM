@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import test from "node:test";
-import { readFileSync } from "node:fs";
+import { mock, test } from "node:test";
+import { createElement, Fragment } from "react";
 import {
   THEME_STORE_VERSION,
   addLeftoverGroups,
@@ -20,10 +20,15 @@ import {
   type ThemeStore,
 } from "../src/lib/topic-themes";
 import type { TrendRow } from "../src/types/database";
+import { paperIdFromRunId } from "../src/lib/paper-id";
+import { createGeneralAnalysisProfile } from "../src/lib/project-analysis-profile";
+import { routeHarness, stubModule } from "./support/route-harness";
+import type { ChatAnswerModel, ChatAnswerModelCall } from "./support/stub-chatanswer-openai";
+import { headlessRoot } from "./support/stub-smallfix-root";
 
-function read(relative: string): string {
-  return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
-}
+const support = (name: string) => new URL(`./support/${name}`, import.meta.url).href;
+stubModule("/src/lib/openai.ts", support("stub-chatanswer-openai.ts"));
+stubModule("/src/components/auth/AuthProvider.tsx", support("stub-auditfix-auth.ts"));
 
 function row(paper: string, topic: string, keyword = "k", extra: Partial<TrendRow> = {}): TrendRow {
   return {
@@ -278,49 +283,264 @@ test("without a store, every paper's own topic is shown", () => {
 
 /* ------------------------------------------------------------- contracts */
 
-test("the dashboard applies stored themes on Cloud SQL and never caches a pending read", () => {
-  const server = read("src/lib/dashboard-data-server.ts");
-  assert.match(server, /const themed = await applyStoredThemes\(\s*ownerUserId,\s*projectId,/);
-  assert.match(server, /if \(data\.topicThemes\?\.status !== "pending"\) \{\s*dashboardServerCache\.set/);
+/*
+ * The read, the grouping request and the dashboard's asking, run against
+ * PGlite under the app's role (tests/support/route-harness.ts). The model is
+ * stub-chatanswer-openai.ts, which records each call and answers from the
+ * test's script; the dashboard hook runs its effects through React's client
+ * renderer without a document (stub-smallfix-root.ts), signed in by
+ * stub-auditfix-auth.ts.
+ */
+
+const OWNER = "00000000-0000-4000-8000-00000000000a";
+const OTHER = "00000000-0000-4000-8000-00000000000b";
+const PROJECT = "00000000-0000-4000-8000-0000000000a1";
+const OTHER_PROJECT = "00000000-0000-4000-8000-0000000000a9";
+const FOLDER = "00000000-0000-4000-8000-0000000000f1";
+const runOf = (n: number) => `${n.toString(16).padStart(8, "0")}-e5f6-4a7b-8c9d-0e1f2a3b4c5d`;
+const GROUPED = JSON.stringify({ themes: [{ name: "Assessment", kind: "topic", topics: [1, 2, 3] }] });
+
+/** Calls made of the model, and what it answers each. */
+function model(reply: (call: ChatAnswerModelCall) => unknown) {
+  const script: ChatAnswerModel = { calls: [], reply };
+  globalThis.__chatAnswerModel = script;
+  return script;
+}
+
+async function repository() {
+  const harness = await routeHarness({ OPENAI_API_KEY: "test-key", OPENAI_BASE_URL: undefined, TOPIC_THEMES_MODEL: undefined });
+  model(() => null);
+  const owner = await harness.signIn(OWNER);
+  await harness.signIn(OTHER);
+  const profile = createGeneralAnalysisProfile();
+  await harness.db.exec(`
+    INSERT INTO workspace_organizations (id, owner_user_id, name) VALUES ('00000000-0000-4000-8000-0000000000c1', '${OWNER}', 'Org'), ('00000000-0000-4000-8000-0000000000c9', '${OTHER}', 'Org');
+  `);
+  for (const [id, who] of [[PROJECT, OWNER], [OTHER_PROJECT, OTHER]]) {
+    await harness.db.query(
+      `INSERT INTO workspace_projects (id, organization_id, owner_user_id, name, analysis_profile, analysis_profile_version, analysis_profile_hash, analysis_profile_updated_at)
+       VALUES ($1, $2, $3, 'Mine', $4::jsonb, $5, $6, now())`,
+      [id, who === OWNER ? "00000000-0000-4000-8000-0000000000c1" : "00000000-0000-4000-8000-0000000000c9", who, JSON.stringify(profile), profile.version, profile.profileHash]
+    );
+  }
+  await harness.db.query(`INSERT INTO research_folders (id, owner_user_id, name, project_id) VALUES ($1, $2, 'A', $3)`, [FOLDER, OWNER, PROJECT]);
+  /** A finished paper with these topics. */
+  const paper = async (n: number, topics: string[]) => {
+    const run = runOf(n);
+    const id = paperIdFromRunId(run);
+    await harness.db.query(`INSERT INTO ingestion_runs (id, owner_user_id, folder_id, source_type, status) VALUES ($1, $2, $3, 'upload', 'succeeded')`, [run, OWNER, FOLDER]);
+    await harness.db.query(`INSERT INTO papers (id, owner_user_id, folder_id, year, title) VALUES ($1, $2, $3, '2021', $4)`, [id, OWNER, FOLDER, `Paper ${n}`]);
+    await harness.db.query(`INSERT INTO paper_content (paper_id, owner_user_id, folder_id, ingestion_run_id) VALUES ($1, $2, $3, $4)`, [id, OWNER, FOLDER, run]);
+    for (const topic of topics) {
+      await harness.db.query(`INSERT INTO paper_keywords (paper_id, owner_user_id, folder_id, topic, keyword) VALUES ($1, $2, $3, $4, 'k')`, [id, OWNER, FOLDER, topic]);
+    }
+  };
+  /** The grouping request, as the signed-in owner unless told otherwise. */
+  const group = async (body: unknown, headers: Record<string, string> = owner) => {
+    const { POST } = await import("../src/app/api/workspace/topic-themes/route");
+    const response = await POST(harness.request("/api/workspace/topic-themes", { headers, body }));
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+  /** Every stored grouping, by owner. */
+  const stores = async () =>
+    (await harness.db.query<{ owner_user_id: string; scope_key: string; payload: ThemeStore & { pendingSince?: string | null } }>(
+      `SELECT owner_user_id, scope_key, payload FROM workspace_analytics_cache WHERE scope_type = 'custom' ORDER BY owner_user_id`
+    )).rows;
+  return { ...harness, paper, group, stores };
+}
+
+const quietly = async <T,>(work: () => Promise<T>) => {
+  const muted = ["error", "info", "warn"].map((level) => mock.method(console, level as "error", () => undefined));
+  try {
+    return await work();
+  } finally {
+    for (const method of muted) method.mock.restore();
+  }
+};
+
+test("the dashboard applies stored themes on Cloud SQL, never calls a model, and never caches a pending read", async () => {
+  const { db, paper } = await repository();
+  const script = model(() => GROUPED);
+  await paper(1, ["Dynamic Assessment Modalities"]);
+  await paper(2, ["Dynamic Assessment Interactional Frameworks"]);
+  const { loadDashboardDataServer } = await import("../src/lib/dashboard-data-server");
+  const read = () => quietly(() => loadDashboardDataServer(OWNER, [], PROJECT, "live"));
+
+  const pending = await read();
+  assert.equal(pending.topicThemes?.status, "pending", "two topics no grouping has seen");
+  assert.deepEqual(pending.trends.map((row) => row.topic).sort(), ["Dynamic Assessment Interactional Frameworks", "Dynamic Assessment Modalities"]);
+
+  // A grouping arrives; the next read is not handed the pending one back.
+  await db.query(
+    `INSERT INTO workspace_analytics_cache (owner_user_id, scope_type, scope_key, version_hash, payload) VALUES ($1, 'custom', $2, 'themes', $3::jsonb)`,
+    [OWNER, `topic-themes:v${THEME_STORE_VERSION}:${PROJECT}`, JSON.stringify(store([{ name: "Dynamic Assessment", kind: "topic" }], { "dynamic assessment modalities": 0, "dynamic assessment interactional frameworks": 0 }, { fullGroupingTopics: 2 }))]
+  );
+  const ready = await read();
+  assert.equal(ready.topicThemes?.status, "ready");
+  assert.deepEqual(ready.trends.map((row) => row.topic), ["Dynamic Assessment", "Dynamic Assessment"]);
+  assert.deepEqual(ready.trends.map((row) => row.raw_topic).sort(), ["Dynamic Assessment Interactional Frameworks", "Dynamic Assessment Modalities"]);
+
+  // A ready read is kept, so the pending one above was left out on purpose.
+  await paper(3, ["Washback"]);
+  assert.equal((await read()).trends.length, 2, "served from the cache");
+  assert.equal(script.calls.length, 0, "no read called a model");
 });
 
-test("a dashboard read never calls a model", () => {
-  const service = read("src/lib/topic-theme-service.ts");
-  const readPath = service.slice(service.indexOf("export async function applyStoredThemes"), service.indexOf("/* ------------------------------------------------------------ grouping */"));
-  assert.equal(/ask\(|createChatCompletion/.test(readPath), false);
+test("the grouping request trusts only the signed-in owner, and checks the repository is theirs", async () => {
+  const { paper, group, stores, request } = await repository();
+  const script = model(() => GROUPED);
+  await paper(1, ["Dynamic Assessment Modalities"]);
+  await paper(2, ["Dynamic Assessment Interactional Frameworks"]);
+  await paper(3, ["Washback"]);
+  const { POST } = await import("../src/app/api/workspace/topic-themes/route");
+  assert.equal((await POST(request("/api/workspace/topic-themes", { body: { projectId: PROJECT } }))).status, 401);
+  assert.equal((await group({ projectId: "not-a-repository" })).status, 400);
+  assert.deepEqual(await group({ projectId: OTHER_PROJECT }), { status: 404, body: { error: "Repository not found." } }, "someone else's repository");
+  assert.equal(script.calls.length, 0);
+
+  const grouped = await quietly(() => group({ projectId: PROJECT, ownerUserId: OTHER }));
+  assert.deepEqual(grouped, { status: 200, body: { status: "grouped", plan: "full", topics: 3, themes: grouped.body.themes } });
+  assert.ok(Number(grouped.body.themes) >= 1);
+  assert.deepEqual((await stores()).map((row) => row.owner_user_id), [OWNER], "stored for the signed-in owner, whatever the body says");
 });
 
-test("the grouping request trusts only the signed-in owner, and checks the repository is theirs", () => {
-  const route = read("src/app/api/workspace/topic-themes/route.ts");
-  assert.match(route, /const BodySchema = z\.object\(\{ projectId: z\.string\(\)\.uuid\(\) \}\);/, "no owner in the body");
-  assert.match(route, /projectBelongsTo\(user\.id, projectId\)/);
-  assert.match(route, /groupProjectThemes\(user\.id, projectId/);
-});
-
-test("nothing about a failed grouping invites a retry loop", () => {
+test("nothing about a failed grouping invites a retry loop", async () => {
   // The production task queue retries up to a hundred times with almost no
   // backoff; the grouping must not go through it, and must not answer 5xx.
-  const route = read("src/app/api/workspace/topic-themes/route.ts");
-  assert.equal(/status: 5\d\d/.test(route), false);
-  const service = read("src/lib/topic-theme-service.ts");
-  assert.equal(/cloudtasks\.googleapis\.com/.test(service), false);
-  assert.match(service, /FIRST_BACKOFF_MS \* 2 \*\* Math\.max\(0, failures - 1\)/);
-  assert.match(service, /WHERE workspace_analytics_cache\.payload->>'pendingSince' IS NULL/, "the claim is one statement");
+  const { db, paper, group, stores } = await repository();
+  const { failureBackoffMs } = await import("../src/lib/topic-theme-service");
+  await paper(1, ["Dynamic Assessment Modalities"]);
+  await paper(2, ["Dynamic Assessment Interactional Frameworks"]);
+  await paper(3, ["Washback"]);
+  const requests: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    requests.push(String(input instanceof Request ? input.url : input));
+    throw new Error("no network in this test");
+  }) as typeof fetch;
+  try {
+    const unreadable = model(() => "not json");
+    assert.deepEqual(await quietly(() => group({ projectId: PROJECT })), { status: 200, body: { status: "failed" } });
+    assert.equal(unreadable.calls.length, 6, "three groupings, and the missing ones asked for once more");
+    const [failed] = await stores();
+    assert.equal(failed.payload.failures, 1);
+    assert.equal(failed.payload.pendingSince ?? null, null, "the claim is released");
+    assert.ok(failed.payload.failedAt);
+
+    // Within the backoff, neither the request nor a read asks again.
+    assert.deepEqual(await quietly(() => group({ projectId: PROJECT })), { status: 200, body: { status: "unavailable" } });
+    const { loadDashboardDataServer } = await import("../src/lib/dashboard-data-server");
+    assert.equal((await quietly(() => loadDashboardDataServer(OWNER, [], PROJECT, "live", { fresh: true }))).topicThemes?.status, "unavailable");
+    assert.equal(unreadable.calls.length, 6);
+
+    // The backoff doubles: 15 minutes after one failure, 30 after two.
+    const failedAgo = (minutes: number, failures: number) =>
+      db.query(`UPDATE workspace_analytics_cache SET payload = payload || jsonb_build_object('failedAt', $1::text, 'failures', $2::int)`, [
+        new Date(Date.now() - minutes * 60_000).toISOString(),
+        failures,
+      ]);
+    await failedAgo(20, 1);
+    assert.deepEqual(await quietly(() => group({ projectId: PROJECT })), { status: 200, body: { status: "failed" } }, "tried again after 15 minutes");
+    assert.equal((await stores())[0].payload.failures, 2);
+    await failedAgo(20, 2);
+    assert.deepEqual(await quietly(() => group({ projectId: PROJECT })), { status: 200, body: { status: "unavailable" } }, "not yet after 20 of 30");
+    assert.deepEqual([1, 2, 3, 20].map(failureBackoffMs), [15 * 60_000, 30 * 60_000, 60 * 60_000, 24 * 60 * 60_000], "up to a day");
+    assert.deepEqual(requests, [], "no task queue, no request of its own");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });
 
-test("grouping runs with the settings it was evaluated with", () => {
-  const service = read("src/lib/topic-theme-service.ts");
-  assert.match(service, /reasoningEffort: "low"/);
-  assert.match(service, /if \(runs\.length < 2\) return null;/, "one grouping is not a consensus");
+test("one grouping runs at a time: a second request finds the claim and is told to wait", async () => {
+  const { paper, group } = await repository();
+  await paper(1, ["Dynamic Assessment Modalities"]);
+  await paper(2, ["Dynamic Assessment Interactional Frameworks"]);
+  await paper(3, ["Washback"]);
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  const script = model(async () => {
+    await gate;
+    return GROUPED;
+  });
+  const first = quietly(() => group({ projectId: PROJECT }));
+  while (script.calls.length < 3) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.deepEqual(await group({ projectId: PROJECT }), { status: 200, body: { status: "busy" } });
+  open();
+  assert.equal((await first).body.status, "grouped");
+  assert.equal(script.calls.length, 3, "the model was asked for one grouping");
+});
+
+test("grouping runs with the settings it was evaluated with", async () => {
+  const { db, paper, group, stores } = await repository();
+  await paper(1, ["Dynamic Assessment Modalities"]);
+  await paper(2, ["Dynamic Assessment Interactional Frameworks"]);
+  await paper(3, ["Washback"]);
+  const evaluated = model(() => GROUPED);
+  await quietly(() => group({ projectId: PROJECT }));
+  assert.deepEqual(
+    evaluated.calls.map((call) => [call.taskName, call.parameters.reasoningEffort, call.parameters.jsonObject]),
+    [0, 1, 2].map(() => ["TOPIC_THEME_GROUPING", "low", true])
+  );
+
+  // One usable grouping is not a consensus.
+  await db.query(`DELETE FROM workspace_analytics_cache`);
+  let replies = 0;
+  const once = model(() => (replies++ === 0 ? GROUPED : "not json"));
+  assert.equal((await quietly(() => group({ projectId: PROJECT }))).body.status, "failed");
+  assert.equal(once.calls.length, 5, "three asked, the two unusable asked again");
+  assert.deepEqual((await stores())[0].payload.themes, [], "nothing grouped from one reply");
+
   // Paper titles were measured and taken out: they pulled one paper's topics
   // together. Putting them back needs the evaluation re-run, not a quiet edit.
   const prompt = groupingMessages(collectTopicItems([row("1", "A Topic", "kw", { title: "A Paper Title" })]))[1].content;
   assert.equal(prompt.includes("A Paper Title"), false);
 });
 
-test("the dashboard asks for grouping once per repository and stops asking", () => {
-  const hook = read("src/hooks/useData.ts");
-  const request = hook.slice(hook.indexOf("function requestThemeGrouping"), hook.indexOf("function buildEmptyLiveData"));
-  assert.equal(/signal:/.test(request), false, "a started grouping is not abandoned on navigation");
-  assert.match(hook, /groupingAttemptsRef\.current >= THEME_GROUPING_MAX_ATTEMPTS/);
+test("the dashboard asks for grouping once per repository and stops asking", async () => {
+  globalThis.__auditfixAuth = { hydrated: true, user: { id: OWNER, email: "reader@papertrend.test" }, session: { access_token: "token" } };
+  const posts: RequestInit[] = [];
+  let answer: (() => void) | null = null;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (url.startsWith("/api/workspace/dashboard-data?")) {
+      return Response.json({ data: { trends: [row("1", "A new topic")], tracksSingle: [], tracksMulti: [], topicThemes: { status: "pending", ungroupedTopics: 1, groupedAt: null } } });
+    }
+    assert.equal(url, "/api/workspace/topic-themes");
+    posts.push(init ?? {});
+    if (!answer) await new Promise<void>((resolve) => (answer = resolve));
+    return Response.json({ status: "failed" });
+  }) as typeof fetch;
+  const { useDashboardData } = await import("../src/hooks/useData");
+  const root = await headlessRoot();
+  function Dashboard({ projectId }: { projectId: string }) {
+    useDashboardData("all", [], { projectId });
+    return null;
+  }
+  const settle = async () => {
+    let before = -1;
+    while (before !== posts.length) {
+      before = posts.length;
+      await root.act(() => new Promise((resolve) => setTimeout(resolve, 60)));
+    }
+  };
+  try {
+    // Two views of one repository: one request between them.
+    await root.render(createElement(Fragment, null, createElement(Dashboard, { projectId: PROJECT }), createElement(Dashboard, { projectId: PROJECT })));
+    await settle();
+    assert.equal(posts.length, 1, "one request, however many views ask");
+    // The reader moves on; the grouping in flight is not abandoned.
+    await root.render(createElement(Fragment));
+    assert.equal(posts[0].signal?.aborted ?? false, false, "leaving the page does not cancel it");
+    answer!();
+
+    // A view that keeps finding topics pending stops asking after a bounded number of tries.
+    posts.length = 0;
+    await root.render(createElement(Dashboard, { projectId: OTHER_PROJECT }));
+    await settle();
+    assert.equal(posts.length, 15);
+  } finally {
+    await root.unmount();
+    globalThis.fetch = realFetch;
+  }
 });

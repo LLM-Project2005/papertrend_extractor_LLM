@@ -1,19 +1,48 @@
+/*
+ * The privacy policy and terms (docs/32): the pages are rendered as the server
+ * sends them, with sign-in, the theme and Next's router swapped for what each
+ * test sets (tests/support/stub-auditfix-*.ts, used as they are).
+ */
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
+import React, { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { LEGAL_CONTACT_EMAIL, privacyPolicy, termsOfService } from "../src/lib/legal-content";
+import { stubModule } from "./support/route-harness";
 
-const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const support = (name: string) => new URL(`./support/${name}`, import.meta.url).href;
+stubModule("/node_modules/next/navigation.js", support("stub-auditfix-navigation.ts"));
+stubModule("/src/components/auth/AuthProvider.tsx", support("stub-auditfix-auth.ts"));
+stubModule("/src/components/theme/ThemeProvider.tsx", support("stub-auditfix-theme.ts"));
+(globalThis as { React?: typeof React }).React = React;
+
 const allText = (doc: typeof privacyPolicy) =>
   [...doc.intro, ...doc.sections.flatMap((s) => [s.heading, ...(s.paragraphs ?? []), ...(s.bullets ?? [])])].join(" ");
+const decode = (html: string) =>
+  html.replace(/&#x27;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+const visible = (html: string) => decode(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ");
+/** The text of every link to `href`. */
+const linksTo = (html: string, href: string) =>
+  [...html.matchAll(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g)].filter((match) => match[1] === href).map((match) => visible(match[2]).trim());
 
-test("the privacy policy and terms are published at the addresses Google is given", () => {
+async function legalPage(path: "privacy" | "terms") {
+  globalThis.__auditfixAuth = undefined;
+  const page = path === "privacy" ? await import("../src/app/privacy/page") : await import("../src/app/terms/page");
+  return { metadata: page.metadata, html: renderToStaticMarkup(createElement(page.default)) };
+}
+
+test("the privacy policy and terms are published at the addresses Google is given", async () => {
   // The OAuth consent screen needs a privacy policy URL on the app's own
   // domain before the app can leave Testing.
-  assert.ok(existsSync(new URL("../src/app/privacy/page.tsx", import.meta.url)));
-  assert.ok(existsSync(new URL("../src/app/terms/page.tsx", import.meta.url)));
-  assert.match(read("src/app/privacy/page.tsx"), /canonical: "\/privacy"/);
-  assert.match(read("src/app/terms/page.tsx"), /canonical: "\/terms"/);
+  for (const [path, document, other] of [["privacy", privacyPolicy, "/terms"], ["terms", termsOfService, "/privacy"]] as const) {
+    const { metadata, html } = await legalPage(path);
+    assert.equal(metadata.alternates?.canonical, `/${path}`, path);
+    assert.match(html, new RegExp(`<h1[^>]*>${document.title}</h1>`), path);
+    for (const section of document.sections) assert.ok(html.includes(`id="${section.id}"`), `${path} draws ${section.id}`);
+    assert.ok(linksTo(html, other).length > 0, `${path} links to ${other}`);
+  }
+  const { html } = await legalPage("privacy");
+  assert.ok(linksTo(html, `mailto:${LEGAL_CONTACT_EMAIL}`).includes(LEGAL_CONTACT_EMAIL), "the contact address is a mail link");
 });
 
 test("the privacy policy states what Google requires and what the app actually does", () => {
@@ -32,11 +61,19 @@ test("the privacy policy states what Google requires and what the app actually d
   assert.ok(text.includes(LEGAL_CONTACT_EMAIL));
 });
 
-test("both documents can be found from every page and from sign-in", () => {
-  const footer = read("src/components/marketing/MarketingLayout.tsx");
-  assert.match(footer, /href="\/privacy"/);
-  assert.match(footer, /href="\/terms"/);
-  const login = read("src/app/login/page.tsx");
-  assert.match(login, /By continuing, you agree to the/);
+test("both documents can be found from every page and from sign-in", async () => {
+  globalThis.__auditfixAuth = undefined;
+  const { default: LandingPage } = await import("../src/app/page");
+  const pages = [renderToStaticMarkup(createElement(LandingPage)), (await legalPage("privacy")).html, (await legalPage("terms")).html];
+  for (const html of pages) {
+    assert.ok(linksTo(html, "/privacy").includes("Privacy"), "the footer links the privacy policy");
+    assert.ok(linksTo(html, "/terms").includes("Terms"), "and the terms");
+  }
+
+  const { default: LoginPage } = await import("../src/app/login/page");
+  const login = renderToStaticMarkup(createElement(LoginPage));
+  assert.match(visible(login), /By continuing, you agree to the Terms of Service and Privacy Policy \./);
+  assert.deepEqual(linksTo(login, "/terms"), ["Terms of Service"]);
+  assert.deepEqual(linksTo(login, "/privacy"), ["Privacy Policy"]);
   assert.ok(allText(termsOfService).includes("Privacy Policy"), "the terms point to the privacy policy");
 });

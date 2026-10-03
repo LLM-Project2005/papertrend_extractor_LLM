@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   AUDIT_EVIDENCE_CHARS,
@@ -16,7 +15,12 @@ import {
   UNVERIFIED_ANSWER_LIMITATION,
 } from "../src/lib/repository-chat";
 
-/** No chat answer skips the fact-check (docs/32, 2.2). */
+/**
+ * No chat answer skips the fact-check (docs/32, 2.2). How the pipeline uses
+ * these - what each review and repository-wide answer is shown, and what the
+ * reader sees for each review outcome - is run in
+ * chat-answer-behaviour-pipeline.test.ts.
+ */
 
 test("the audit sees the evidence a repository-wide answer was written from", () => {
   // Found on the pilot: the whole audit prompt was cut at 24,000 characters,
@@ -27,15 +31,6 @@ test("the audit sees the evidence a repository-wide answer was written from", ()
   const cut = auditEvidence("y".repeat(AUDIT_EVIDENCE_CHARS.focused + 500), "focused");
   assert.ok(cut.startsWith("y".repeat(AUDIT_EVIDENCE_CHARS.focused)));
   assert.match(cut, /\[Evidence shortened here: judge only claims about the evidence shown/);
-  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
-  const audit = source.slice(source.indexOf("async function checkFaithfulness("), source.indexOf("export const UNCHECKED_ANSWER_LIMITATION"));
-  assert.match(audit, /auditEvidence\(input\.evidenceText, input\.scopeMode\)/);
-  assert.doesNotMatch(audit, /\.slice\(0, 24_000\)/);
-  // Grounding and coverage are judged apart: leaving something out is not an unsupported claim.
-  assert.match(audit, /A claim is never unsupported because the draft leaves something out\./);
-  assert.match(audit, /need not name each paper, nor be longer than the reader asked for/);
-  // A count the system computed is evidence; the audit does not ask for the papers behind it.
-  assert.match(audit, /a claim that repeats one of them is supported, and an answer need not list the papers behind a count/);
 });
 
 test("a repository-wide answer and its audit see the counted figures", () => {
@@ -49,13 +44,6 @@ test("a repository-wide answer and its audit see the counted figures", () => {
   assert.match(counts, /^## Counted across all 41 papers in scope/);
   assert.match(counts, /- Academic writing: 9 papers\n- Assessment: 1 paper\n/);
   assert.match(counts, /Keywords:\n- feedback: 4 papers/);
-  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
-  const corpus = source.slice(source.indexOf("async function aggregateCorpusResult("));
-  assert.match(corpus, /`Eligible papers: \$\{context\.papers\.length\}`, countsEvidence, "Use these counts for any claim about how often or how many/);
-  assert.match(corpus, /evidenceText: \[countsEvidence, \.\.\.summaries\]\.join/);
-  // An answer of counts names no paper; with the counts in evidence it is not failed for that.
-  assert.match(corpus, /formatConstraint: formatConstraintInstruction\(input\.prompt\),\s*countsBacked: true,/);
-  assert.match(source, /validation\.citedPaperIds\.length > 0 \|\| input\.countsBacked === true\)/);
 });
 
 test("repository-wide answers count themes as the dashboard does, methods apart (CHAT-11)", () => {
@@ -82,9 +70,6 @@ test("repository-wide answers count themes as the dashboard does, methods apart 
   // With themes, the raw labels are not sent as a second, different count.
   const counts = corpusCountsEvidence({ papers: [] as never, topicCounts: [{ label: "x", paperCount: 1, mentions: 1 }], keywordCounts: [] }, 15, { topicLabels: false });
   assert.doesNotMatch(counts, /Topic labels as each paper's analysis named them/);
-  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
-  assert.match(source, /corpusCountsEvidence\(context, 15, \{ topicLabels: !themeCounts \}\)/);
-  assert.match(source, /Do not count papers or topics: this is one batch of the repository/);
 });
 
 test("a corpus-wide audit that names many papers is read, not rejected", () => {
@@ -155,13 +140,4 @@ test("the corpus path says so when its check did not run", () => {
   assert.match(decision.limitations[0], /could not be checked/);
   // Unchanged when the audit ran.
   assert.deepEqual(decideFromAudit({ valid: true, grounded: true, incomplete: false, reason: "" }), { useCorrected: true, limitations: [] });
-});
-
-test("the question-answering path uses the decision, and the audit reports when it did not run", () => {
-  const source = readFileSync(new URL("../src/lib/repository-chat.ts", import.meta.url), "utf8");
-  assert.match(source, /const outcome = resolveQaAudit\(\{ checked, draft: answer, draftNeedsRepair, allowedIds \}\);/);
-  assert.doesNotMatch(source, /\} else if \(checked\.grounded\) \{/, "the old branch chain is gone");
-  const audit = source.slice(source.indexOf("async function checkFaithfulness("), source.indexOf("export const UNCHECKED_ANSWER_LIMITATION"));
-  assert.equal((audit.match(/auditRan: false/g) ?? []).length, 2, "an unreadable and a failed audit");
-  assert.equal((audit.match(/auditRan: true/g) ?? []).length, 1);
 });

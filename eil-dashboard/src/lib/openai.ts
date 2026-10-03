@@ -184,6 +184,7 @@ export async function createChatCompletionResult(
    */
   let response: Response | null = null;
   let lastFailure: { status?: number; message?: string } = {};
+  let deadlinePassed = false;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (attempt > 0) {
       const wait = backoffMs(classifyFailure(lastFailure));
@@ -208,9 +209,12 @@ export async function createChatCompletionResult(
       lastFailure = { status: attempted.status, message: await attempted.text() };
     } catch (error) {
       lastFailure = { message: error instanceof Error ? error.message : String(error) };
+      deadlinePassed = error instanceof Error && error.name === "TimeoutError";
     }
     // A reader who has gone away, or a request already refused, is not retried.
-    if (cancellationSignal()?.aborted || !isTransient(lastFailure)) break;
+    // Nor is one that used up its caller's deadline: that is the caller's time
+    // budget, and callers that want another try (deep research) make it.
+    if (cancellationSignal()?.aborted || deadlinePassed || !isTransient(lastFailure)) break;
   }
 
   if (!response) {

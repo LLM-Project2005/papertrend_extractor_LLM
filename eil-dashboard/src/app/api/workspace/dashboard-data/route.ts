@@ -70,6 +70,11 @@ export async function GET(request: Request) {
       timeoutMs: 8000,
       throwOnTimeout: true,
     });
+    // Without a session the loader falls back to invented preview figures,
+    // which the dashboard would show as the reader's own; refuse instead.
+    if (!user) {
+      return NextResponse.json({ error: "Sign in to see your dashboard." }, { status: 401 });
+    }
     const { searchParams } = new URL(request.url);
     const folderIds = parseFolderIds(searchParams);
     const projectId = searchParams.get("projectId");
@@ -77,7 +82,7 @@ export async function GET(request: Request) {
 
     const data = await withRouteTimeout(
       loadDashboardDataServer(
-        user?.id ?? null,
+        user.id,
         folderIds,
         projectId && projectId !== "all" ? projectId : null,
         mode,

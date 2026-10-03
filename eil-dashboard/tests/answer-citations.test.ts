@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readFileSync } from "node:fs";
 import {
   CITATION_TITLE_MAX,
   FOLD_THRESHOLD_CHARS,
@@ -18,14 +17,7 @@ import {
   metaLineHeightRatio,
   metaSmLineHeightRatio,
 } from "../src/lib/answer-typography";
-
-/** The chat page is two files since the answer renderer was extracted. */
-function client(): string {
-  return [
-    readFileSync(new URL("../src/components/chat/ChatClient.tsx", import.meta.url), "utf8"),
-    readFileSync(new URL("../src/components/chat/AnswerBody.tsx", import.meta.url), "utf8"),
-  ].join(String.fromCharCode(10));
-}
+import { formatPaperReferencesForReaders } from "../src/lib/repository-chat";
 
 const READING = {
   paperId: "12",
@@ -61,19 +53,17 @@ test("an empty title still produces something a reader can see", () => {
   assert.equal(citationLabel({ title: "   ", year: "2016" }), "Untitled paper, 2016");
 });
 
-test("the server writes labels through this same function", () => {
+test("what the server writes for a cited paper is what the page turns into a marker", () => {
   // Matching is by exact string, so a divergence of one character would leave
   // the parenthetical in place with no footnote and no error anywhere.
-  const server = readFileSync(
-    new URL("../src/lib/repository-chat.ts", import.meta.url),
-    "utf8"
-  );
-  assert.match(server, /import \{ citationLabel \} from "@\/lib\/answer-citations"/);
+  const tricky = { paperId: "9", title: "Reading (L2) + Writing [a study]", year: "Unknown", href: "/x" };
+  const papers = [READING, AUTONOMY, tricky];
+  const written = formatPaperReferencesForReaders("Gains were reported [Paper 12]. Both agree [Paper 12, Paper 7]. So does [Paper 9].", papers);
   assert.equal(
-    /function citationLabel\s*\(/.test(server),
-    false,
-    "the server must not keep its own copy of the label"
+    written,
+    `Gains were reported (${citationLabel(READING)}). Both agree (${citationLabel(READING)}; ${citationLabel(AUTONOMY)}). So does (${tricky.title}).`
   );
+  assert.equal(markCitations(written, papers).text, "Gains were reported [[cite:1]]. Both agree [[cite:1,2]]. So does [[cite:3]].");
 });
 
 /* ------------------------------------------------------------------ the markers */
@@ -221,41 +211,14 @@ test("answer text is allowed to wrap rather than widen its column", () => {
   assert.match(ANSWER_BODY_CLASS, /break-words/);
 });
 
-test("the chat page uses the shared body class rather than its own spacing", () => {
-  const source = client();
-  assert.match(source, /ANSWER_BODY_CLASS/);
-  assert.equal(
-    /leading-7/.test(source),
-    false,
-    "leading-7 is below the Thai floor and must not be used for text"
-  );
-});
-
 test("text that can carry Thai clears the floor; fixed English chrome need not", () => {
   // The first version of this test banned every tight line height on the page
   // and failed on "Sources: 3 total" and an empty-state line - fixed English
   // copy that no Thai ever reaches. The rule is about content, not spelling.
+  // Which classes the chat page sets that text in is rendered in
+  // small-fixes2-behaviour-chat.test.ts.
   assert.ok(metaLineHeightRatio() >= MIN_THAI_LINE_HEIGHT_RATIO);
   assert.ok(metaSmLineHeightRatio() >= MIN_THAI_LINE_HEIGHT_RATIO);
-
-  const source = client();
-  const contentSlots = [
-    "{citation.reason}",
-    "{deepSession.plan_summary}",
-    "{stepBody}",
-    "{item.snippet}",
-  ];
-  // A regex, not a string: these files are CRLF on this machine.
-  const lines = source.split(/\r?\n/);
-  for (const slot of contentSlots) {
-    const index = lines.findIndex((line) => line.includes(slot));
-    assert.ok(index > 0, `${slot} not found`);
-    const className = [lines[index - 1], lines[index]].join(" ");
-    assert.ok(
-      /ANSWER_META_CLASS|ANSWER_META_SM_CLASS|ANSWER_BODY_CLASS/.test(className),
-      `${slot} renders model or paper text but does not use a shared class: ${className.trim().slice(0, 110)}`
-    );
-  }
 });
 
 /* --------------------------------------------------- the marker reaches the page */

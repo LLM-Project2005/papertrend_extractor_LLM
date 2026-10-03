@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 import { isParticipantDescriptor } from "../src/lib/participant-terms";
 import { withoutParticipantTopics } from "../src/lib/corpus-topic-cache";
-
-function read(relative: string): string {
-  return readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
-}
 
 test("a group of people is not a topic; what was studied about them is", () => {
   for (const phrase of [
@@ -51,10 +46,5 @@ test("stored papers lose their participant topics without being analysed again",
   ]);
 });
 
-test("every place that builds topics from keyword rows applies the rule", () => {
-  const cache = read("src/lib/corpus-topic-cache.ts");
-  assert.match(cache, /return withoutParticipantTopics\(\(data \?\? \[\]\) as KeywordSourceRow\[\]\);/);
-  assert.match(cache, /!isParticipantDescriptor\(coerceString\(row\.concept_label\)\)/);
-  const server = read("src/lib/dashboard-data-server.ts");
-  assert.equal((server.match(/withoutParticipantTopics\(/g) ?? []).length, 2);
-});
+// That every place building topics from keyword or concept rows applies the
+// rule runs in small-fixes2-behaviour-topics.test.ts.

@@ -1,7 +1,14 @@
+/*
+ * The semantic map's maths, its presentation helpers and its free graph, run.
+ * Its routes run in semantic-map-behaviour.test.ts. The projection view and the
+ * dashboard stay as text checks at the end, because they need a browser.
+ */
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import React, { createElement, type ComponentProps } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { buildSimilarityEdges, clusterEmbeddings, cosineSimilarity, euclideanDistance, projectEmbeddings } from "../src/lib/semantic-map-math";
 import { buildSemanticSelectionInsight, selectReadableOverviewEdges } from "../src/lib/semantic-map-presentation";
 import { semanticSourceHash } from "../src/lib/semantic-map-repository";
@@ -162,26 +169,43 @@ test("source hash is order independent, content-sensitive, and folder-agnostic",
   assert.notEqual(first, semanticSourceHash([{ ...paper(1), contentHash: "f".repeat(64) }, paper(2)]));
 });
 
-test("semantic-map API derives ownership only from verified authentication", () => {
-  const route = readFileSync(join(process.cwd(), "src/app/api/workspace/semantic-map/route.ts"), "utf8");
-  const repository = readFileSync(join(process.cwd(), "src/lib/semantic-map-repository.ts"), "utf8");
-  assert.match(route, /getAuthenticatedUserFromRequest/);
-  assert.match(route, /user\.id/);
-  assert.doesNotMatch(route, /ownerUserId:\s*parsed\.data/);
-  assert.match(repository, /p\.owner_user_id=\$1/);
-  assert.match(repository, /workspace_projects WHERE id=\$1 AND owner_user_id=\$2/);
-  assert.match(route, /loadSemanticMapCoverage\(user\.id, projectId\)/);
-  assert.match(route, /eligiblePapers: coverage\.eligiblePapers/);
-  assert.match(repository, /ir\.owner_user_id=\$1/);
-  assert.match(repository, /missing_analysis/);
+// The component has no `import React` of its own; classic JSX finds this one.
+(globalThis as { React?: typeof React }).React = React;
+
+type ForceGraphProps = ComponentProps<typeof import("../src/components/workspace/ForceDirectedSemanticGraph").default>;
+
+async function forceGraphMarkup(props: Partial<ForceGraphProps> & Pick<ForceGraphProps, "points" | "edges">): Promise<string> {
+  const { default: ForceDirectedSemanticGraph } = await import("../src/components/workspace/ForceDirectedSemanticGraph");
+  const error = console.error;
+  // The server renderer's warning about the tooltip <title>; see semantic-map-labels.test.ts.
+  console.error = (...args: unknown[]) => void (String(args[0]).includes("prop of <title> tags") || error(...args));
+  try {
+    return renderToStaticMarkup(createElement(ForceDirectedSemanticGraph, {
+      colors: {}, dimmedPaperIds: new Set<string>(), selectedPaperIds: new Set<string>(), selectedEdgeId: null,
+      running: false, resetVersion: 0, showLabels: false, onPaperSelect: () => {}, onEdgeSelect: () => {},
+      ...props,
+    }));
+  } finally {
+    console.error = error;
+  }
+}
+
+test("the free graph draws each relationship between its two papers and says its distance is not similarity", async () => {
+  const markup = await forceGraphMarkup({
+    points: [mapPoint("1", 120, 340), mapPoint("2", 610, 455), mapPoint("3", 800, 200)],
+    // Paper 9 is hidden, so its relationship is not drawn.
+    edges: [mapEdge("1", "2", 0.2), mapEdge("2", "3", 0.4), mapEdge("3", "9", 0.1)],
+  });
+  const lines = [...markup.matchAll(/<line\b[^>]*>/g)].map(([tag]) =>
+    ["x1", "y1", "x2", "y2"].map((name) => Number(tag.match(new RegExp(` ${name}="([^"]+)"`))?.[1]))
+  );
+  assert.deepEqual(lines, [[120, 340, 610, 455], [610, 455, 800, 200]]);
+  assert.match(markup, /distance does not show similarity/);
 });
 
-test("semantic-map browser contract never exposes embeddings or document text", () => {
-  const types = readFileSync(join(process.cwd(), "src/types/semantic-map.ts"), "utf8");
-  const publicContract = types.slice(types.indexOf("export interface RepositorySemanticMap"), types.indexOf("export interface SemanticPaperDocument"));
-  assert.doesNotMatch(publicContract, /embedding|documentText/);
-});
-
+// RepositorySemanticMap loads its map with fetch in an effect and draws it
+// with React Flow, so it needs a browser; the free graph's simulation and
+// dragging run in effects and pointer handlers, likewise. These stay as text.
 test("semantic-map paper filters preserve the canvas and cannot hide every scoped paper", () => {
   const component = readFileSync(
     join(process.cwd(), "src/components/workspace/RepositorySemanticMap.tsx"),
@@ -208,20 +232,11 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.match(forceGraph, /setPointerCapture/);
   assert.match(forceGraph, /node\.fx = null/);
   assert.match(forceGraph, /node\.fy = null/);
-  assert.match(forceGraph, /x1=\{source\.x\}/);
-  assert.match(forceGraph, /x2=\{target\.x\}/);
   assert.match(component, /nodesDraggable=\{false\}/);
   assert.match(component, />Fixed projection</);
   assert.match(component, />Free graph</);
-  // In the free graph distance is not similarity, and the map says so.
-  assert.match(forceGraph, /distance does not show similarity/);
   assert.match(component, /All retained relationships are visible/);
-  // Labels still come from the point's title and are still gated on the
-  // toggle; they are now shortened for the canvas, because the longest one
-  // measured 199 characters in a 220px box. The full title stays on the
-  // tooltip and in the detail panel.
-  assert.match(component, /label: showPaperLabels \? nodeLabel\(point\.title\) : ""/);
-  assert.match(forceGraph, /\{nodeLabel\(point\.title\)\}/);
+  // Node labels are checked in semantic-map-labels.test.ts.
   assert.doesNotMatch(component, /onNodeMouseEnter/);
   assert.doesNotMatch(component, /onNodeMouseLeave/);
   assert.doesNotMatch(component, /w-\[150px\].*truncate/);
@@ -232,6 +247,7 @@ test("semantic-map paper filters preserve the canvas and cannot hide every scope
   assert.doesNotMatch(component, /hideAllPapersInScope/);
 });
 
+// DashboardClient (1,200 lines, router and contexts) and the Library are too big to render here.
 test("semantic map is a dashboard tab and no longer a library view", () => {
   const dashboard = readFileSync(join(process.cwd(), "src/components/DashboardClient.tsx"), "utf8");
   const library = readFileSync(join(process.cwd(), "src/components/admin/AdminImportClient.tsx"), "utf8");

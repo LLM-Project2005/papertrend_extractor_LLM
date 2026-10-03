@@ -1,3 +1,9 @@
+/*
+ * The smaller findings of the site audit, each fixed where it was found
+ * (docs/32, 2.11). What can run outside a browser runs in
+ * audit-fixes-behaviour-*.test.ts; each check left here as text says why it
+ * needs a browser or the chat page's providers.
+ */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -15,12 +21,9 @@ import {
 } from "../src/lib/semantic-map-colors";
 import { TOPIC_PALETTE } from "../src/lib/constants";
 import { ORDINAL_RAMP } from "../src/lib/chart-palette";
-import { CHAT_JOB_FAILED_MESSAGE, MAX_CHAT_JOB_ATTEMPTS } from "../src/lib/repository-chat-jobs";
 import { isInAppBrowser } from "../src/lib/auth/in-app-browser";
 import { friendlyAuthError } from "../src/lib/auth/auth-errors";
 import { runsInProgress } from "../src/lib/run-polling";
-
-/** The smaller findings of the site audit, each fixed where it was found (docs/32, 2.11). */
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (path: string) => readFileSync(join(root, path), "utf8");
@@ -37,13 +40,13 @@ test("a pending invite code is kept for a week, then forgotten", () => {
   assert.equal(parsePendingInvite(null, now), "");
 });
 
-test("the invite code lives in localStorage, not in one tab's sessionStorage", () => {
+test("the sign-in panel keeps the invite code only through the stored copy", () => {
+  // The panel reads and saves the code in an effect and clears it on submit, which a static render never runs.
   const panel = read("src/components/auth/AuthPanel.tsx");
   assert.match(panel, /readPendingInvite\(\)/);
   assert.match(panel, /savePendingInvite\(/);
   assert.match(panel, /clearPendingInvite\(\)/);
   assert.doesNotMatch(panel, /sessionStorage/);
-  assert.match(read("src/lib/pending-invite.ts"), /window\.localStorage\.setItem/);
 });
 
 // AUTH-2: an app's built-in browser blocks the Google and Facebook window; the reader is told why.
@@ -68,54 +71,41 @@ test("in-app browsers are recognised, ordinary browsers are not", () => {
     friendlyAuthError({ code: "auth/operation-not-supported-in-this-environment" }, "fallback"),
     /Open this page in Chrome or Safari/
   );
+  // The notice shows once an effect has read the user agent, which a static render never runs.
   assert.match(read("src/components/auth/AuthPanel.tsx"), /\{inAppBrowser \? \(\s*<p role="note"[^>]*>\s*\{IN_APP_BROWSER_NOTICE\}/);
 });
 
-// AUTH-8: waiting for the confirmation email is its own step; reset only for an account that exists.
-test("the confirmation step replaces the sign-up form and offers a way back", () => {
-  const panel = read("src/components/auth/AuthPanel.tsx");
-  const early = panel.indexOf("if (awaitingConfirmation) {");
-  const form = panel.indexOf('passwordMode === "signup" ? "Create your account" : title');
-  assert.ok(early > 0 && early < form, "the waiting step returns before the form is drawn");
-  assert.match(panel.slice(early, form), /Check your inbox/);
-  assert.match(panel.slice(early, form), /Wrong address\? Start again/);
-  assert.match(panel, /passwordMode === "signin" \? \(\s*<button[\s\S]{0,200}handlePasswordReset/);
-  assert.match(read("src/lib/firebase-client.ts"), /sendPasswordResetEmail\(auth, email, \{ url: `\$\{window\.location\.origin\}\/login` \}\)/);
+// AUTH-8: reset only for an account that exists.
+test("a password reset is not offered while creating an account", () => {
+  // Sign-up is reached by a click, which a static render never makes; the sign-in form's reset button is rendered in audit-fixes-behaviour-auth.
+  assert.match(read("src/components/auth/AuthPanel.tsx"), /passwordMode === "signin" \? \(\s*<button[\s\S]{0,200}handlePasswordReset/);
 });
 
-// SHELL-3 / SHELL-4: settings opens without a repository; sign-in returns to the full address.
-test("settings needs no repository, and sign-in returns to the page with its query", () => {
+// SHELL-4: sign-in returns to the full address.
+test("sign-in returns to the page with its query", () => {
+  // The shell sends a signed-out reader to sign in from an effect, which a static render never runs.
   const shell = read("src/components/workspace/WorkspaceShell.tsx");
-  assert.match(shell, /const PROJECT_OPTIONAL_ROUTES = \["\/workspace\/settings"\]/);
   assert.match(shell, /encodeURIComponent\(`\$\{pathname \|\| "\/workspace\/home"\}\$\{window\.location\.search\}`\)/);
-  assert.match(shell, /href: "\/workspace\/settings\?section=repository"/);
 });
 
-// SHELL-5: every workspace page names itself in the browser tab.
-test("each workspace page has its own title", () => {
-  for (const [page, title] of [["home", "Home"], ["library", "Library"], ["dashboard", "Dashboard"], ["chat", "Chat"], ["settings", "Settings"]]) {
-    assert.match(read(`src/app/workspace/${page}/page.tsx`), new RegExp(`export const metadata: Metadata = \\{ title: "${title}" \\}`), page);
-  }
-});
-
-// SHELL-10: a queued paper waiting its turn is not "stuck".
-test("only a paper being analysed can be stuck", () => {
+// SHELL-10: Home's figures follow the papers as they finish.
+test("Home reloads its figures as each followed paper finishes, and on Try again", () => {
+  // An effect and a click handler, which a static render never runs; the Try again button is rendered in audit-fixes-behaviour-workspace.
   const home = read("src/components/workspace/WorkspaceHomeClient.tsx");
-  const body = home.slice(home.indexOf("function isRunStuck("), home.indexOf("function isRunStuck(") + 200);
-  assert.match(body, /if \(run\.status !== "processing"\) \{/);
-  assert.doesNotMatch(body, /"queued"/);
   assert.match(home, /if \(finishedRunCount > finishedRunCountRef\.current\) void refreshDashboardData\(\)/);
   assert.match(home, /onClick=\{\(\) => void refreshDashboardData\(\)\}[\s\S]{0,120}Try again/);
 });
 
 // SHELL-7: search shows what the Library shows.
 test("global search names papers and statuses as the Library does", () => {
+  // Paper results appear only once the palette is opened and has fetched them, in a browser.
   const search = read("src/components/workspace/WorkspaceGlobalSearch.tsx");
   assert.match(search, /import \{ getRunDisplayTitle, getRunStatusLabel \} from "@\/lib\/ingestion-status"/);
   assert.match(search, /searchText: \[titleOf\(run\), run\.source_filename \?\? "", getRunStatusLabel\(run\)\]\.join\(" "\)/);
 });
 
-test("search lists each place once and hands the typed words to the Library", () => {
+test("search lists each action once and hands the typed words to the Library", () => {
+  // The actions live inside the palette, shown once it is opened, and choosing one is a click.
   const hrefsOf = (source: string, start: string) => {
     const block = source.slice(source.indexOf(start), source.indexOf("\n];", source.indexOf(start)));
     return [...block.matchAll(/href: "([^"]+)"/g)].map((match) => match[1]);
@@ -124,35 +114,8 @@ test("search lists each place once and hands the typed words to the Library", ()
   const pages = hrefsOf(read("src/components/workspace/WorkspaceShell.tsx"), "const SEARCH_PAGE_ITEMS");
   assert.ok(actions.length >= 1 && pages.length >= 6);
   assert.deepEqual(actions.filter((href) => pages.includes(href)), [], "an action with a page's address is listed twice");
-  assert.equal(new Set(pages).size, pages.length);
   const search = read("src/components/workspace/WorkspaceGlobalSearch.tsx");
   assert.match(search, /router\.push\(`\/workspace\/library\?q=\$\{encodeURIComponent\(normalizedQuery\)\}`\)/);
-  assert.match(read("src/components/admin/AdminImportClient.tsx"), /searchParams\.get\("q"\)/);
-});
-
-// CHAT-4: a transient failure is retried; the reader never sees a raw error.
-test("a chat job is retried on a transient failure and fails with a plain message", () => {
-  assert.equal(MAX_CHAT_JOB_ATTEMPTS, 3);
-  assert.match(CHAT_JOB_FAILED_MESSAGE, /Ask again/);
-  const route = read("src/app/api/chat/jobs/process/route.ts");
-  assert.match(route, /const refusal = error instanceof GuardError;/);
-  assert.match(route, /request\.headers\.get\("x-cloudtasks-taskretrycount"\)/);
-  assert.match(route, /if \(!refusal && attempt < MAX_CHAT_JOB_ATTEMPTS\) \{\s*await releaseRepositoryChatJob\(/);
-  assert.match(route, /\{ ok: false, retry: true \}, \{ status: 503 \}/);
-  // The final failure answers with success so Cloud Tasks stops retrying.
-  assert.match(route, /await failRepositoryChatJob\(job\.ownerUserId, job\.id, error, refusal \? \(error as GuardError\)\.message : undefined\);\s*\/\/[^\n]*\n\s*return NextResponse\.json\(\{ ok: false \}\);/);
-  const jobs = read("src/lib/repository-chat-jobs.ts");
-  assert.match(jobs, /\[id, readerMessage\.slice\(0, 1_000\), ownerUserId\]/);
-  assert.match(jobs, /repositoryLimitations: \[readerMessage\.slice\(0, 1_000\)\]/);
-  assert.doesNotMatch(jobs, /\[id, message\.slice\(0, 1_000\), ownerUserId\]/);
-});
-
-// CHAT-5: a cached answer is only served for the same model and web setting, and only if it was clean.
-test("the answer cache keys on model and web search, and keeps only clean answers", () => {
-  const chat = read("src/lib/repository-chat.ts");
-  assert.match(chat, /`model:\$\{input\.model \?\? ""\}`,\s*`web:\$\{input\.allowWeb \? 1 : 0\}`/);
-  assert.match(chat, /const clean = \(result\.limitations \?\? \[\]\)\.length === 0;\s*if \(cacheable && clean && /);
-  assert.match(chat, /execution: result\.execution \? structuredClone\(result\.execution\) : undefined/);
 });
 
 // CHAT-7: the source cards follow the numbers in the answer.
@@ -164,11 +127,13 @@ test("answer sources are numbered in the order the answer cites them", () => {
   ];
   const numbered = numberAnswerSources("Autonomy helps (Learner autonomy, 2021), as does fluency (Reading fluency, 2019).", citations);
   assert.deepEqual(numbered.map((source) => [source.paperId, source.number]), [["2", 1], ["1", 2], ["3", undefined]]);
+  // ChatClient needs the auth and workspace providers and a browser to draw a conversation.
   assert.match(read("src/components/chat/ChatClient.tsx"), /previewConversationSources\(numberAnswerSources\(message\.content, message\.citations\), 5\)/);
 });
 
 // CHAT-8: phones and tablets can manage their chats, and the tray leaves the composer free.
 test("below the large breakpoint the chat list is a drawer with every action", () => {
+  // ChatClient needs the auth and workspace providers and a browser: the drawer opens on a click, its chats load in an effect, and Escape is a key handler.
   const client = read("src/components/chat/ChatClient.tsx");
   assert.match(client, /const chatListIsOverlay = useIsNarrow\(1024\);/);
   assert.match(client, /useDialogLayer\(chatListDrawer, chatListRef, \(\) => setChatListOpen\(false\)\);/);
@@ -188,20 +153,21 @@ test("below the large breakpoint the chat list is a drawer with every action", (
 });
 
 test("the analysis tray stands above the chat composer", () => {
+  // The composer is ChatClient's, measured with a ResizeObserver in an effect, and where the tray lands is layout; all need a browser.
+  // That the tray is drawn in the dock and card these rules move is rendered in audit-fixes-behaviour-workspace.
   assert.match(read("src/components/chat/ChatClient.tsx"), /<div ref=\{composerAreaRef\} className="flex-none/);
   assert.match(read("src/lib/composer-offset.ts"), /root\.style\.setProperty\(COMPOSER_OFFSET_VAR,/);
   assert.match(read("src/lib/composer-offset.ts"), /root\.style\.removeProperty\(COMPOSER_OFFSET_VAR\)/);
-  assert.match(read("src/components/workspace/WorkspaceShell.tsx"), /className="tray-dock pointer-events-none fixed/);
   const css = read("src/app/globals.css");
   assert.match(css, /\.tray-dock \{\s*bottom: calc\(max\(0\.75rem, env\(safe-area-inset-bottom\)\) \+ var\(--chat-composer-offset, 0px\)\);/);
   assert.match(css, /bottom: calc\(1\.25rem \+ var\(--chat-composer-offset, 0px\)\);/);
   // Open, it stops below the headers (on a phone it covered the chat list button).
   assert.match(css, /\.tray-card \{\s*max-height: min\(72dvh, 600px, calc\(100dvh - var\(--chat-composer-offset, 0px\) - 9rem\)\);/);
-  assert.match(read("src/components/workspace/AnalysisStatusCard.tsx"), /className=\{`\$\{floatingPanelClass\} tray-card pointer-events-auto/);
 });
 
 // CHAT-10: an arriving answer is announced; opening a conversation is not.
 test("screen readers hear that an answer arrived", () => {
+  // ChatClient needs the auth and workspace providers and a browser; the announcement and the scrolling happen in effects.
   const client = read("src/components/chat/ChatClient.tsx");
   assert.match(client, /const announcedAnswerRef = useRef<string \| null>\(""\);/);
   assert.match(client, /setAnswerAnnouncement\(`Answer ready/);
@@ -216,31 +182,14 @@ test("screen readers hear that an answer arrived", () => {
 });
 
 // DASH-6: tooltips readable in dark mode; stacked trends capped.
-test("chart tooltips follow the theme and trends stack at most eight series", () => {
+test("chart tooltips are themed for light and dark, and stacked trends stop at eight series", () => {
   assert.equal(tooltipTheme(true).contentStyle.backgroundColor, "#1f1f1f");
   assert.equal(tooltipTheme(false).contentStyle.backgroundColor, "#ffffff");
   assert.notEqual(tooltipTheme(true).itemStyle.color, tooltipTheme(false).itemStyle.color);
   assert.equal(MAX_STACKED_SERIES, 8);
-  for (const tab of ["TrendAnalysis", "KeywordExplorer", "TrackAnalysis"]) {
-    assert.match(read(`src/components/tabs/${tab}.tsx`), /tooltipTheme\(/, tab);
-  }
-  assert.match(read("src/components/tabs/TrendAnalysis.tsx"), /MAX_STACKED_SERIES/);
 });
 
-// DASH-7: an empty repository says so; the tabs' empty messages only ever mean the filters.
-test("an empty repository is not blamed on the filters", () => {
-  const dashboard = read("src/components/DashboardClient.tsx");
-  assert.match(dashboard, /const repositoryHasNoPapers = Boolean\(\s*data &&\s*!loading &&\s*!liveDataError &&/);
-  assert.match(dashboard, /\{repositoryHasNoPapers && !isSemanticMapTab \? \(\s*<div[^>]*>\s*<h2[^>]*>No analysed papers yet<\/h2>/);
-  assert.match(dashboard, /\{repositoryHasNoPapers && !isSemanticMapTab \? null : <>/);
-  for (const tab of ["TrendAnalysis", "KeywordExplorer", "Overview"]) {
-    const source = read(`src/components/tabs/${tab}.tsx`);
-    assert.match(source, /No papers match the current filters\./, tab);
-    assert.doesNotMatch(source, /No data for the selected filters/, tab);
-  }
-  assert.doesNotMatch(read("src/components/tabs/TrackAnalysis.tsx"), />No data</);
-});
-
+// DASH-7: papers in progress are counted where they belong.
 test("papers still being analysed are counted for their repository only", () => {
   const runs = [
     { status: "queued", input_payload: { project_id: "p1" } },
@@ -252,10 +201,8 @@ test("papers still being analysed are counted for their repository only", () => 
   assert.equal(runsInProgress(runs, "p1"), 3);
   assert.equal(runsInProgress(runs, "p2"), 2);
   assert.equal(runsInProgress([], "p1"), 0);
-  const dashboard = read("src/components/DashboardClient.tsx");
-  assert.match(dashboard, /useContext\(AnalysisRunsContext\)\?\.runs/);
-  assert.match(dashboard, /if \(papersFinished > papersFinishedRef\.current\) void refresh\(\);/);
-  assert.match(dashboard, /being analysed\. The charts update as each one finishes\./);
+  // The dashboard reloads from an effect as each paper finishes, which a static render never runs.
+  assert.match(read("src/components/DashboardClient.tsx"), /if \(papersFinished > papersFinishedRef\.current\) void refresh\(\);/);
 });
 
 // DASH-8: one colour per value; labels by default only on a readable map.
@@ -282,11 +229,13 @@ test("the semantic map gives each category its own colour, and years an ordered 
   assert.equal(showLabelsByDefault(LABELS_BY_DEFAULT_MAX, null), true);
   assert.equal(showLabelsByDefault(LABELS_BY_DEFAULT_MAX + 1, null), false);
   assert.equal(showLabelsByDefault(500, true), true);
+  // RepositorySemanticMap loads its map with fetch in an effect and draws it with React Flow, so it needs a browser.
   assert.doesNotMatch(read("src/components/workspace/RepositorySemanticMap.tsx"), /function hashColor/);
 });
 
 // LIB-7: the Library's filters and columns describe what is there.
 test("the Library offers only filters that can match and a useful column", () => {
+  // The type menu opens on a click and the columns appear once the papers load in an effect; both need a browser.
   const library = read("src/components/admin/AdminImportClient.tsx");
   const options = library.slice(library.indexOf("const TYPE_OPTIONS"), library.indexOf("];", library.indexOf("const TYPE_OPTIONS")));
   assert.match(options, /"all"/);
