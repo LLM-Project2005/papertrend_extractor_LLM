@@ -71,6 +71,7 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | 2 | In production (2026-10-02) |
 | 3 | In production (2026-10-02), except the items listed as open under its results |
 | 4 | In production (2026-10-02): web 00072, worker 00062 |
+| Long-term health | Schema and legacy removal in production (2026-10-02): web 00074, worker 00063. Behaviour tests continue on development. |
 
 ## Phase 1 results
 
@@ -164,9 +165,9 @@ Found verifying production, and fixed the same day:
 
 ## Long-term health results
 
-State on 2026-10-02. Changes listed "on development" go out with the next build batch (a pilot and a production build); a build for them alone is not worth it.
+State on 2026-10-03. Changes listed "on development" go out with the next build batch (a pilot and a production build); a build for them alone is not worth it.
 
-**Record the database schema: done** (ledger in production; the folded schema on development).
+**Record the database schema: done, in production** (2026-10-02, web 00074).
 - The migration ledger is described under the phase 4 results.
 - `schema.sql` alone now builds the live database. Six applied migrations had never been copied into it (the phase 8 search index and chat jobs, the semantic map and its distances, dynamic categories, repository profiles), and three NOT NULL rules had been set on the live database outside any file. All are folded in.
 - `cloudsql/live-structure.json` records the live structure, read on 2026-10-02: 41 tables, every column's type and nullability, 155 indexes and 8 views. `schema-authority.test.ts` fails if `schema.sql` builds anything else. After applying a migration, fold it into `schema.sql` and refresh the snapshot.
@@ -184,11 +185,18 @@ State on 2026-10-02. Changes listed "on development" go out with the next build 
 - The new tests found one bug, fixed on development: a file name with two dots in a row (`report..final.pdf`) kept them in its storage path, and finalize refuses any path containing "..", so the upload failed. Stored names now fold runs of dots.
 - Next: route handlers called with fake requests (which needs a seam for auth), `renderToStaticMarkup` for components, PGlite for the SQL still pinned as text (32 assertions), and imported constants in place of matched ones.
 
-**Remove the unreachable legacy paths: unwired (on development); the unused files are listed for deletion.**
+**Remove the unreachable legacy paths: unwired, in production (2026-10-02, web 00074, worker 00063; rollback 00072 and 00062); the unused files are listed for deletion.**
 - **The chat route** keeps what answers today: the repository chat, deep research v2, streaming, spend and the per-person slot. It drops the chart agent, the general model answer with its own web search, and the old deep research plan and run, going from 4,750 lines to 832.
 - **The repository chat** always plans with v2. The other planner ran only with `REPOSITORY_CHAT_V2_ENABLED=false`, which no deployment sets.
 - **A session planned before v2** is answered with a clear refusal (409). Production holds 8 of them; their card now offers **Plan again** instead of **Start**. Pressing Start used to send one to the Python worker. Completed old reports still display as before.
 - **The worker** no longer serves research, chat, keyword search or chart planning. `graphs.py` keeps only the ingestion graph, so the research code (`nodes/deep_research.py`, `workspace_data.py`) is no longer loaded at startup.
+- **Smoke check, on the pilot and then in production,** each in a signed-in browser with the test account:
+  - Chat: a whole-repository question runs as a background job, and the open page replaces its placeholder with the answer (pilot 112 s, 6 sources; production 67 s, 12 sources).
+  - Chart: chart mode draws "Papers per year", 15 rows (pilot 12 s, production 19 s).
+  - Deep research on 2 selected papers: planned, started, and completed on the open page (pilot 36 s, 36 sources; production 26 s, 35 sources), 6 of 6 steps.
+  - Ingestion: a scanned paper analysed again on the pilot worker in 147 s (vision fallback), succeeded.
+  - No page errors and no failed API responses. Model spend: $0.125 on the pilot and $0.049 in production.
+  - It found one small fault: Copy and Download showed under a background answer's placeholder. Fixed on development (`isFinishedAnswer`, which also keeps the follow-up suggestions and the conversation export from using a placeholder).
 - **Left to do by hand:** Claude Code's auto mode refuses to delete files or read the ingestion hook.
   - *Delete (web):* `src/lib/chart-agent.ts`, `src/lib/chart-recommendation.ts`, `src/lib/python-node-service.ts`, then `getPythonNodeServiceUrl` (and its fallback in `getWorkerServiceUrl`) in `server-env.ts` and the chart-agent entry in `tests/spend-limits.test.ts`.
   - *Delete (web):* `src/app/api/cron/process-research-queue/route.ts`, its `vercel.json` crons and its lines in `security-surface.test.ts`.
