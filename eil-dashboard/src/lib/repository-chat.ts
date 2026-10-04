@@ -223,6 +223,23 @@ export interface RepositoryChatResult {
   };
 }
 
+/**
+ * How much of each abstract a repository-wide summary reads (docs/32, CHAT-11).
+ * It was 500 characters, about a quarter of the median abstract (1,833 in the
+ * test repository). 1,500 added about $0.001 to a repository-wide answer.
+ */
+export const CORPUS_ABSTRACT_CHARS = 1_500;
+
+/**
+ * The planner and the sufficiency check run on the fast model (model-routing.ts),
+ * which reasons before it writes, and its reasoning counts against max_tokens.
+ * At 700 and 500 tokens the reasoning used nearly all of it: the JSON stopped
+ * after about 75 characters (finish_reason "length") on most questions, the
+ * repair call was cut off the same way, and the chat fell back to its built-in
+ * plan (docs/32, CHAT-8). Room for the reasoning, and a little less of it.
+ */
+const STRUCTURED_STEP = { maxTokens: 2_500, reasoningEffort: "low" as const };
+
 export interface RepositoryChatInput {
   ownerUserId: string;
   threadId?: string | null;
@@ -1927,7 +1944,7 @@ async function evaluateEvidenceSufficiency(input: {
       0,
       input.model,
       "CHAT_EVIDENCE_SUFFICIENCY",
-      { maxTokens: 500 }
+      STRUCTURED_STEP
     );
     const parsed = EvidenceSufficiencySchema.safeParse(
       extractJsonObject(completion?.content ?? "")
@@ -2831,13 +2848,13 @@ export async function planRepositoryExecution(
     },
   ];
   try {
-    const first = await createChatCompletionResult(messages, 0, input.model, "CHAT_EXECUTION_PLAN", { maxTokens: 700, timeoutMs: 12_000 });
+    const first = await createChatCompletionResult(messages, 0, input.model, "CHAT_EXECUTION_PLAN", { ...STRUCTURED_STEP, timeoutMs: 12_000 });
     let parsed = ExecutionPlanSchema.safeParse(normalizeExecutionPlanCandidate(extractJsonObject(first?.content ?? "")));
     if (!parsed.success) {
       const repair = await createChatCompletionResult([
         { role: "system", content: buildPapertrendSystemPrompt("request_director", ["Repair the supplied planner output to the requested JSON schema. Return JSON only and preserve the user's scope."]) },
         { role: "user", content: JSON.stringify({ request: input.prompt, invalidOutput: first?.content ?? "", schema: "RepositoryExecutionPlan" }) },
-      ], 0, input.model, "CHAT_EXECUTION_PLAN_REPAIR", { maxTokens: 700, timeoutMs: 12_000 });
+      ], 0, input.model, "CHAT_EXECUTION_PLAN_REPAIR", { ...STRUCTURED_STEP, timeoutMs: 12_000 });
       parsed = ExecutionPlanSchema.safeParse(normalizeExecutionPlanCandidate(extractJsonObject(repair?.content ?? "")));
     }
     if (!parsed.success) {
@@ -3550,7 +3567,7 @@ async function aggregateCorpusResult(
     const evidence = batch.map((paper) => [
       `[Paper ${paper.paperId}] ${paper.title} (${paper.year})`,
       `Topics: ${[...paper.topics.keys()].slice(0, 8).join(", ") || "Not available"}`,
-      `Abstract: ${paper.abstract.slice(0, 500) || "Not available"}`,
+      `Abstract: ${paper.abstract.slice(0, CORPUS_ABSTRACT_CHARS) || "Not available"}`,
       `Methods: ${paper.methods.slice(0, 350) || "Not available"}`,
       `Results: ${paper.results.slice(0, 450) || "Not available"}`,
       `Conclusion: ${paper.conclusion.slice(0, 350) || "Not available"}`,
