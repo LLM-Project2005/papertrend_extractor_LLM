@@ -26,7 +26,6 @@ WORKER_FILES = [
     "requirements.txt",
     "node_service.py",
     "graphs.py",
-    "workspace_data.py",
     "state.py",
     "supabase_http.py",
     "nodes/**",

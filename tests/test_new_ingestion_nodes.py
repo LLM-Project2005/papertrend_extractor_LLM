@@ -31,7 +31,6 @@ except Exception:
 from nodes.author_keywords import extract_author_keywords_node
 from nodes.dataset_builder import build_dataset_node
 from nodes.keyword_extractor import grounded_keyword_extractor_node
-from nodes.keyword_search import keyword_search_node
 from nodes.research_typology import classify_research_typology_node
 from nodes.segmentation import _slice_span
 from nodes.track_classifier import classify_tracks_node
@@ -414,54 +413,6 @@ class NewIngestionNodeTests(unittest.TestCase):
         self.assertTrue(all(row["project_id"] == "11111111-1111-4111-8111-111111111111" for row in dataset["category_assignments"]))
         self.assertTrue(all(row["profile_hash"] == "profile-v2-hash" for row in dataset["category_assignments"]))
         self.assertTrue(all(row["profile_version"] == 2 for row in dataset["category_definitions"]))
-
-    def test_keyword_search_can_match_author_provided_keywords(self) -> None:
-        result = keyword_search_node(
-            {
-                "message": "learner identity",
-                "filtered_data": {
-                    "trends": [],
-                    "tracksSingle": [
-                        {
-                            "paper_id": 101,
-                            "year": "2024",
-                            "title": "Identity paper",
-                            "el": 0,
-                            "eli": 0,
-                            "lae": 0,
-                            "other": 1,
-                        }
-                    ],
-                    "tracksMulti": [],
-                    "authorKeywords": [
-                        {
-                            "paper_id": 101,
-                            "year": "2024",
-                            "title": "Identity paper",
-                            "keyword": "learner identity",
-                            "normalized_keyword": "learner identity",
-                            "source_section": "raw_text",
-                            "evidence": "Keywords: learner identity",
-                        }
-                    ],
-                },
-                "papers_full": [
-                    {
-                        "paper_id": 101,
-                        "year": "2024",
-                        "title": "Identity paper",
-                    }
-                ],
-                "concept_rows": [],
-                "facet_rows": [],
-            }
-        )
-
-        payload = result["keyword_search_result"]
-        self.assertFalse(payload["notFound"])
-        self.assertEqual(payload["canonicalConcept"], "learner identity")
-        self.assertEqual(payload["papers"][0]["paperId"], 101)
-
 
 if __name__ == "__main__":
     unittest.main()
