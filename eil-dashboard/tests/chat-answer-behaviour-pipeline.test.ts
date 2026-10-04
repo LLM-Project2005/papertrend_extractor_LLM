@@ -485,6 +485,21 @@ test("with stored themes, a repository-wide answer counts them as the dashboard 
   assert.match(system(task("CHAT_CORPUS_MAP")[0]), /Do not count papers or topics: this is one batch of the repository/);
 });
 
+test("a repository-wide summary reads most of each abstract, not its first quarter (CHAT-11)", async () => {
+  // 500 characters was about a quarter of the median abstract in the test
+  // repository (1,833); measured, 1,500 added about $0.001 an answer.
+  const { db, ask, task, script, peerFeedback } = await repository();
+  const sentence = "Peer feedback rounds changed how students revised their drafts. ";
+  const abstract = `${sentence.repeat(20)}INSIDE-THE-CUT ${sentence.repeat(4)}BEYOND-THE-CUT ${sentence.repeat(10)}`;
+  assert.ok(abstract.indexOf("INSIDE-THE-CUT") > 1_200 && abstract.indexOf("BEYOND-THE-CUT") > 1_500, "the markers sit either side of the cut");
+  await db.query(`UPDATE paper_content SET abstract = $1 WHERE paper_id = $2`, [abstract, peerFeedback]);
+  script((call) => (call.taskName === "CHAT_CORPUS_REDUCE" ? `Peer feedback is studied [Paper ${peerFeedback}].` : null));
+  await ask("What are the main findings across the repository?", { executionPlan: plan("aggregate_corpus", "complete", "What are the main findings?") });
+  const mapped = task("CHAT_CORPUS_MAP").map(user).join("\n");
+  assert.ok(mapped.includes("INSIDE-THE-CUT"), "the summary sees well past the first 500 characters");
+  assert.ok(!mapped.includes("BEYOND-THE-CUT"), "and is still bounded");
+});
+
 /* ------------------------------------------------- focused answers, reviewed */
 
 test("a focused answer whose review cannot be read or does not run is shown marked, never as checked", async () => {

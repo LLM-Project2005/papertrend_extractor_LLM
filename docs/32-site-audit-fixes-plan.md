@@ -131,8 +131,8 @@ Found on the pilot: a paper's PDF stored in production's bucket does not load in
 Still open from the items given to phase 3, with what each needs:
 
 - **DASH-5** the whole row-level corpus is sent to the browser and filtered there on every keystroke. **Measured and addressed in 4.3** (see phase 4 results).
-- **CHAT-8** *engine*: the planner and checks run on the reader's chosen model. Changing them needs a measured before/after on answer quality and cost; it is left for its own evaluation rather than changed blind.
-- **CHAT-11** *engine*: abstracts are cut at 500 characters in the repository-wide summaries. Longer abstracts cost tokens on every such answer; to be weighed with CHAT-8.
+- **CHAT-8** *engine*: measured and fixed on 2026-10-04 (see "CHAT-8 and CHAT-11, measured" below).
+- **CHAT-11** *engine*: abstracts in repository-wide summaries now run to 1,500 characters (see below).
 - **SHELL-6** a slow navigation (over 1.5 s) reloaded the whole page. **Fixed** (it now waits 12 s, for a truly stuck navigation), with phase 4.
 
 ## Phase 4 results
@@ -216,6 +216,21 @@ State on 2026-10-03. Changes listed "on development" go out with the next build 
   - Web: the chart agent and chart recommendations, the Python-node client and the `PYTHON_NODE_SERVICE_URL` fallback (both deployments set `WORKER_SERVICE_URL`), the research cron route and its Vercel cron, and the v1 planner (`refineRepositoryPrompt`) with its live eval script.
   - Worker: the research, chat, keyword-search, chart-planning and workspace-loading nodes, `workspace_data.py`, the research queue worker, the offline chat evaluation, their state types, and the hook that moved old research sessions on after analysis (with its database methods); no production session was in either status it set.
   - Their tests went with them (56 Python tests). Each item was checked first for any remaining reference outside the set. Python 171/171 and the TypeScript suite pass afterwards.
+  - In production 2026-10-04 (PR #254/#255): web 00078-fix, worker 00064-65k (rollback web 00076, worker 00063). Checked on the pilot (a paper re-analysed on the trimmed worker, chat, chart, dashboard and semantic map, deep research) and in production (the same, without the re-analysis); no errors. Model spend for both checks: $0.123.
+
+### CHAT-8 and CHAT-11, measured (2026-10-04)
+
+Run locally against the live test repository with the production models, one variant per process. Model spend for the whole evaluation: $0.337.
+
+- **The planner and the sufficiency check had stopped working.** Both already ran on the fast model (`google/gemini-3.7-flash`, routed in `model-routing.ts`), which reasons before it writes, and its reasoning counts against `max_tokens`.
+  - At 700 tokens (planner) and 500 (sufficiency), the plan's JSON ended after about 75 characters with `finish_reason: "length"`. The repair call was cut off the same way.
+  - The planner needed that repair on 5 of 7 questions, and failing it, the chat answered from its built-in plan. Each repair also cost about 5.5 s.
+  - **Fixed:** both steps get 2,500 tokens and low reasoning effort. Afterwards every reply finished normally, no repair was needed, and planning took 4.5–7.4 s instead of about 10.6 s.
+  - The sufficiency check now returns its full verdict, so its follow-up searches run where they were silently skipped before.
+- **The audit stays on the reader's model.** Moved to the fast model, it cost about 2.5 times as much per answer ($0.008 against $0.003 focused, $0.022 against $0.010 repository-wide), was not reliably faster, and on the one question where the two disagreed it passed an answer the reader's model had judged unsupported.
+- **The reranker stays on the reader's model,** as measured in docs/25 (the fast model never narrowed the evidence).
+- **CHAT-11, longer abstracts.** Every abstract in the test repository exceeds 500 characters; the median is 1,833 and p90 3,072, so a repository-wide summary read about a quarter of a typical abstract. At 1,500 characters the same overview cost $0.0255 against $0.0250, took 102 s against 107 s, and its audit found it supported and complete where the 500-character run was marked unsupported. One pair of runs, so that last point is a sign rather than proof; the cost is negligible either way.
+- **Tests:** the planner, its repair and the sufficiency check must be sent with room to reason (it fails at the old limits), and a repository-wide summary must see past 1,200 characters of an abstract but not beyond 1,500.
 
 ## 2.11 — the remaining medium findings
 
@@ -261,7 +276,7 @@ Every medium finding the audit made in the Library, chat, dashboard, shell and s
 | CHAT-5 *engine* The answer cache ignores the model and keeps failures | **Fixed.** The key includes the model and web search; only answers with no limitation are kept; a hit returns how the answer was reached and its coverage. |
 | CHAT-6 *engine* Every question re-reads all full text | **Fixed in 3.1.** |
 | CHAT-7 *engine* Search index filled by hand, ranking biased | **Fixed in 2.3.** |
-| CHAT-8 *engine* Planner and checks on a thinking model | Open: needs its own measured evaluation (see phase 3 results). |
+| CHAT-8 *engine* Planner and checks on a thinking model | **Fixed 2026-10-04.** The planner and sufficiency check were already on the fast model, and cut off by its reasoning; they now have room for it. The audit stays on the reader's model, measured. |
 | CHAT-9 *engine* Citations name a whole paper | Own plan (claim-level citations). |
 | CHAT-10 *engine* Unreachable code in the chat route | Long-term health (legacy paths). |
-| CHAT-11 *engine* Counts disagree with the dashboard | **Not changed for duplicates:** the dashboard counts every analysed paper too, and folding copies would hide ones kept on purpose. **Fixed in 3.1:** repository-wide answers count the dashboard's themes. Shortened abstracts: open, with CHAT-8. |
+| CHAT-11 *engine* Counts disagree with the dashboard | **Not changed for duplicates:** the dashboard counts every analysed paper too, and folding copies would hide ones kept on purpose. **Fixed in 3.1:** repository-wide answers count the dashboard's themes. Shortened abstracts: **fixed 2026-10-04**, 500 to 1,500 characters. |
