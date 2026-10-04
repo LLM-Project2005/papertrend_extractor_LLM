@@ -126,6 +126,31 @@ test("planner calls are bounded while the answer itself is not cut short", async
   assert.match(result.answer, /Peer feedback improved revision quality/);
 });
 
+test("the fast model's structured steps leave room for its reasoning (CHAT-8)", async () => {
+  // Measured 2026-10-04: at 700 and 500 tokens the fast model's reasoning used
+  // nearly all of max_tokens, the plan's JSON stopped after about 75
+  // characters (finish_reason "length"), the repair was cut off the same way,
+  // and the chat answered from its built-in plan on most questions.
+  const { ask, calls, script, peerFeedback } = await repository();
+  script((call) => {
+    if (call.taskName === "CHAT_EXECUTION_PLAN") return "not a plan";
+    if (call.taskName === "CHAT_EXECUTION_PLAN_REPAIR") return plan("search_evidence", "focused", QUESTION);
+    // One paper of three, so there is room to expand and the sufficiency check runs.
+    if (call.taskName === "CHAT_RERANK") return { paperIds: [peerFeedback], reason: "direct", confidence: 0.9 };
+    if (call.taskName === "CHAT_SYNTHESIS") {
+      return { answer: `Peer feedback improved revision quality [Paper ${peerFeedback}].`, citedPaperIds: [peerFeedback], confidence: 0.9 };
+    }
+    return null;
+  });
+  await ask(QUESTION);
+  const structured = calls.filter((call) => /^CHAT_(EXECUTION_PLAN|EXECUTION_PLAN_REPAIR|EVIDENCE_SUFFICIENCY)$/.test(call.taskName));
+  assert.deepEqual([...new Set(structured.map((call) => call.taskName))].sort(), ["CHAT_EVIDENCE_SUFFICIENCY", "CHAT_EXECUTION_PLAN", "CHAT_EXECUTION_PLAN_REPAIR"]);
+  for (const call of structured) {
+    assert.ok((call.parameters.maxTokens ?? 0) >= 2_000, `${call.taskName} has room for reasoning and its JSON`);
+    assert.equal(call.parameters.reasoningEffort, "low", call.taskName);
+  }
+});
+
 test("a grounded answer gets one review, and its verdict on intent, completeness and language shapes the reply", async () => {
   const { ask, calls, script, peerFeedback, tasks, UNVERIFIED_ANSWER_LIMITATION, CORRECTED_ANSWER_LIMITATION, LANGUAGE_LIMITATION } = await repository();
   const draft = `Peer feedback improved revision quality [Paper ${peerFeedback}].`;
