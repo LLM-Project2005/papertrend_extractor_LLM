@@ -24,7 +24,6 @@
     "test:semantic-map:pilot": "tsx scripts/semantic-map-pilot-live.ts",
     "test:chat:selected-papers:pilot": "tsx scripts/chat-selected-papers-pilot-live.ts",
     "test:chat:timeout:pilot": "tsx scripts/repository-chat-timeout-pilot-live.ts",
-    "test:repository-chat:live": "tsx scripts/repository-chat-live-eval.ts",
     "test:repository-chat:v2-planner-live": "tsx scripts/repository-chat-v2-planner-live.ts",
     "test:repository-chat:cloudsql": "tsx scripts/repository-chat-cloudsql-live.ts",
     "repository-memory:backfill": "tsx scripts/backfill-repository-memory.ts",
@@ -37,9 +36,7 @@
     "import-csv": "npx tsx scripts/import-csv.ts",
     "sync-supabase": "npx tsx scripts/import-csv.ts",
     "worker:queue": "python worker/process_ingestion_queue.py",
-    "worker:queue:once": "python worker/process_ingestion_queue.py --once",
-    "worker:research": "python worker/process_research_queue.py",
-    "worker:research:once": "python worker/process_research_queue.py --once"
+    "worker:queue:once": "python worker/process_ingestion_queue.py --once"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.21.0",

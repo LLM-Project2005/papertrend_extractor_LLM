@@ -376,27 +376,6 @@ interface TermIndexRow {
   term_counts: Record<string, number> | null;
 }
 
-const PromptPlanSchema = z.object({
-  intent: z.enum([
-    "general",
-    "repository_qa",
-    "repository_statistics",
-    "word_count",
-    "topic_summary",
-    "topic_chart",
-  ]),
-  refinedQuestion: z.string().min(1).max(1000),
-  terms: z.array(z.string().min(1).max(100)).max(8).default([]),
-  retrievalQueries: z.array(z.string().min(1).max(240)).max(8).default([]),
-  evidenceNeeds: z.array(z.string().min(1).max(240)).max(8).default([]),
-  answerLanguage: z.string().min(1).max(80).default("same as user"),
-  retrievalMode: z.enum(["focused", "comparative", "exhaustive"]).default("focused"),
-  needsChart: z.boolean().default(false),
-  chartType: z.enum(["bar", "line", "pie", "table"]).default("bar"),
-  reason: z.string().max(500).default(""),
-  confidence: z.enum(["high", "medium", "low"]).default("medium"),
-});
-
 const ExecutionPlanSchema = z.object({
   operation: z.enum([
     "converse",
@@ -1204,25 +1183,6 @@ function normalizeStringList(value: unknown, max: number): string[] {
   return [...new Set(values.map((item) => String(item).trim()).filter(Boolean))].slice(0, max);
 }
 
-function normalizePromptPlanCandidate(value: Record<string, unknown> | null): Record<string, unknown> | null {
-  if (!value) return null;
-  const chartLabel = typeof value.chartType === "string" ? value.chartType.toLowerCase() : "";
-  const chartType = chartLabel.includes("line")
-    ? "line"
-    : chartLabel.includes("pie")
-      ? "pie"
-      : chartLabel.includes("table")
-        ? "table"
-        : "bar";
-  return {
-    ...value,
-    terms: normalizeStringList(value.terms, 8),
-    retrievalQueries: normalizeStringList(value.retrievalQueries, 8),
-    evidenceNeeds: normalizeStringList(value.evidenceNeeds, 8),
-    chartType,
-  };
-}
-
 export function requestsRepositoryStatistics(prompt: string): boolean {
   const normalized = prompt.toLowerCase().replace(/\s+/g, " ").trim();
   return (
@@ -1287,103 +1247,6 @@ export function fallbackPromptPlan(prompt: string, forceChart: boolean): Reposit
     confidence: "low",
     source: "fallback",
   };
-}
-
-export async function refineRepositoryPrompt(
-  prompt: string,
-  context: RepositoryContext,
-  model?: string,
-  forceChart = false,
-  history: RepositoryChatInput["history"] = []
-): Promise<RepositoryPromptPlan> {
-  const fallback = fallbackPromptPlan(prompt, forceChart);
-  if (process.env.REPOSITORY_CHAT_DISABLE_LLM === "true") return fallback;
-  const explicitChart = promptRequestsChart(prompt, forceChart);
-  try {
-    const completion = await createChatCompletionResult(
-      [
-        {
-          role: "system",
-          content: buildPapertrendSystemPrompt("request_director", [
-            "Infer intent semantically, not through a fixed keyword taxonomy. " +
-            "Return one JSON object only. Use general only when the request does not need the selected research repository. " +
-            "Use word_count for exact word or phrase occurrence calculations. Use topic_summary for corpus topic summaries. " +
-            "Use repository_statistics for deterministic corpus metadata questions such as how many papers are in the selected repository, folder, or project. " +
-            "Use topic_chart only when the user explicitly asks for a chart, graph, plot, visualization, table, bar chart, line chart, or chart mode is forced. " +
-            "Use repository_qa for questions, comparisons, synthesis, methods, findings, and summaries grounded in papers. " +
-            "Rewrite follow-up questions so they are understandable with the recent conversation, but preserve the user's meaning. " +
-            "Generate 2-6 focused retrieval queries and concise evidenceNeeds. Do not create a hypothetical answer or add unsupported assumptions. " +
-            "Set retrievalMode=focused for a narrow factual question, comparative for multi-paper comparison, and exhaustive when the request explicitly concerns all papers or repository-wide coverage. " +
-            "Set answerLanguage to the language the final answer should use. Do not answer the question and do not invent paper data. Preserve exact requested terms in terms. " +
-            "If the user asks to summarize or identify topics without chart language, set intent=topic_summary and needsChart=false. " +
-            "If the user asks for counts without chart language, set intent=word_count and needsChart=false. " +
-            "Schema: {intent, refinedQuestion, terms, retrievalQueries, evidenceNeeds, answerLanguage, retrievalMode, needsChart, chartType, reason, confidence}.",
-          ]),
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            request: prompt,
-            forceChart,
-            scope: context.scopeLabel,
-            paperCount: context.papers.length,
-            papers: context.papers.slice(0, 30).map((paper) => ({
-              id: paper.paperId,
-              title: paper.title,
-              year: paper.year,
-              topics: [...paper.topics.keys()].slice(0, 6),
-            })),
-            recentConversation: history.slice(-6).map((message) => ({
-              role: message.role,
-              content: message.content.slice(0, 800),
-            })),
-          }),
-        },
-      ],
-      0.1,
-      model,
-      "CHAT_INTENT",
-      { maxTokens: 700 }
-    );
-    const parsed = PromptPlanSchema.safeParse(
-      normalizePromptPlanCandidate(extractJsonObject(completion?.content ?? ""))
-    );
-    if (!parsed.success) {
-      if (process.env.REPOSITORY_CHAT_DEBUG === "true") {
-        console.warn("Repository planner returned invalid structured output.", {
-          content: completion?.content?.slice(0, 1_500) ?? null,
-          issues: parsed.error.issues,
-        });
-      }
-      return fallback;
-    }
-    const intent: RepositoryIntent = requestsRepositoryStatistics(prompt)
-      ? "repository_statistics"
-      : !explicitChart && parsed.data.intent === "topic_chart"
-        ? "topic_summary"
-        : parsed.data.intent;
-    const fallbackBreadth = fallback.retrievalMode;
-    const retrievalMode = intent === "repository_statistics" || fallbackBreadth === "exhaustive"
-      ? "exhaustive"
-      : fallbackBreadth === "comparative" && parsed.data.retrievalMode === "focused"
-        ? "comparative"
-        : parsed.data.retrievalMode;
-    return {
-      ...parsed.data,
-      intent,
-      retrievalMode,
-      terms: [...new Set(parsed.data.terms.map((term) => term.trim()).filter(Boolean))],
-      needsChart: explicitChart && (forceChart || parsed.data.needsChart || parsed.data.intent === "topic_chart"),
-      source: "llm",
-    };
-  } catch (error) {
-    if (process.env.REPOSITORY_CHAT_DEBUG === "true") {
-      console.warn("Repository planner request failed.", {
-        message: error instanceof Error ? error.message : "Unknown planner error",
-      });
-    }
-    return fallback;
-  }
 }
 
 export function countTermInRepositoryPaper(paper: RepositoryPaper, term: string): number {
@@ -3911,9 +3774,8 @@ async function runRepositoryChatWithContext(
   context: RepositoryContext
 ): Promise<RepositoryChatResult> {
   reportChatProgress("planning");
-  // Every request is planned as typed operations (chat v2). The planner it
-  // replaced, refineRepositoryPrompt, ran only with REPOSITORY_CHAT_V2_ENABLED
-  // set to "false", which no deployment does (docs/32, long-term health).
+  // Every request is planned as typed operations (chat v2); the planner before
+  // it was removed (docs/32, long-term health).
   const execution = input.executionPlan ?? await planRepositoryExecution(input, context);
   const plan = legacyPlanForExecution(execution, input.prompt);
   const diagnostics = {

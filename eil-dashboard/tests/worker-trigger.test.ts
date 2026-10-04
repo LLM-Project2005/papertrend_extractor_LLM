@@ -94,7 +94,6 @@ test("with no worker address or credential, nothing is sent", async () => {
   const saved = { ...process.env };
   try {
     process.env.WORKER_SERVICE_URL = "";
-    delete process.env.PYTHON_NODE_SERVICE_URL;
     assert.deepEqual((await triggerWorkerQueue()).payload, { skipped: true, reason: "missing_worker_config" });
     process.env.WORKER_SERVICE_URL = "https://worker.papertrend.test";
     delete process.env.WORKER_WEBHOOK_SECRET;

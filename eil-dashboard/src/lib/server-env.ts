@@ -225,16 +225,8 @@ export function getSiteUrl(): string {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "";
 }
 
-export function getPythonNodeServiceUrl(): string {
-  return (process.env.PYTHON_NODE_SERVICE_URL ?? "").replace(/\/$/, "");
-}
-
 export function getWorkerServiceUrl(): string {
-  const explicit = process.env.WORKER_SERVICE_URL ?? "";
-  if (explicit) {
-    return explicit.replace(/\/$/, "");
-  }
-  return getPythonNodeServiceUrl();
+  return (process.env.WORKER_SERVICE_URL ?? "").replace(/\/$/, "");
 }
 
 export function getCronSecret(): string {

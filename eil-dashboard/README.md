@@ -85,12 +85,6 @@ MODEL_TASK_QUERY_EXPANSION=google/gemini-2.5-flash-lite
 MODEL_TASK_QUERY_EXPANSION_FALLBACK=openai/gpt-4.1-nano
 ```
 
-Optional but recommended for the node-first interactive backend:
-
-```bash
-PYTHON_NODE_SERVICE_URL=http://127.0.0.1:8001
-```
-
 Optional for the Google Drive connector:
 
 ```bash

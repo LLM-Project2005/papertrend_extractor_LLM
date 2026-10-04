@@ -603,45 +603,6 @@ class SupabaseRestClient:
         )
         response.raise_for_status()
 
-    def list_waiting_research_sessions(self, owner_user_id: str, folder_id: str) -> List[Dict[str, Any]]:
-        response = self.session.get(
-            self._rest_url("deep_research_sessions"),
-            params={
-                "select": "*",
-                "owner_user_id": f"eq.{owner_user_id}",
-                "folder_id": f"eq.{folder_id}",
-                "status": "eq.waiting_on_analysis",
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        return payload if isinstance(payload, list) else []
-
-    def list_active_runs_for_folder(self, owner_user_id: str, folder_id: str) -> List[Dict[str, Any]]:
-        response = self.session.get(
-            self._rest_url("ingestion_runs"),
-            params={
-                "select": "id,status",
-                "owner_user_id": f"eq.{owner_user_id}",
-                "folder_id": f"eq.{folder_id}",
-                "status": "in.(queued,processing)",
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        payload = response.json()
-        return payload if isinstance(payload, list) else []
-
-    def update_research_session(self, session_id: str, patch: Dict[str, Any]) -> None:
-        response = self.session.patch(
-            self._rest_url("deep_research_sessions"),
-            params={"id": f"eq.{session_id}"},
-            json={"updated_at": now_iso(), **patch},
-            timeout=60,
-        )
-        response.raise_for_status()
-
     def touch_run(self, run_id: str) -> None:
         response = self.heartbeat_session.patch(
             self._rest_url("ingestion_runs"),
@@ -922,7 +883,6 @@ def recover_stale_processing_runs(client: SupabaseRestClient, config: WorkerConf
                 },
             )
             sync_folder_analysis_job(client, run)
-            resume_waiting_research_sessions_for_folder(client, run)
             logger.warning(
                 "stale run marked failed after repeated recovery attempts",
                 extra={"run_id": run_id, "recovery_count": recovery_attempts},
@@ -1362,29 +1322,6 @@ def mirror_completed_dataset(
     run["input_payload"] = mirrored_payload
 
 
-def resume_waiting_research_sessions_for_folder(
-    client: SupabaseRestClient,
-    run: Dict[str, Any],
-) -> None:
-    owner_user_id = str(run.get("owner_user_id") or "").strip()
-    folder_id = str(run.get("folder_id") or "").strip()
-    if not owner_user_id or not folder_id:
-        return
-
-    if client.list_active_runs_for_folder(owner_user_id, folder_id):
-        return
-
-    for session in client.list_waiting_research_sessions(owner_user_id, folder_id):
-        client.update_research_session(
-            str(session.get("id") or ""),
-            {
-                "status": "queued",
-                "pending_run_count": 0,
-                "requires_analysis": False,
-            },
-        )
-
-
 def duplicate_payload(client: Any, run: Dict[str, Any], raw_text: str, title: str) -> Dict[str, Any]:
     """Fingerprint the paper's text and note an earlier copy in the same
     repository. A failed lookup never fails the paper."""
@@ -1744,7 +1681,6 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
                         },
                     )
                     sync_folder_analysis_job(client, claimed)
-                    resume_waiting_research_sessions_for_folder(client, claimed)
                     logger.warning(
                         "re-analysis failed; earlier results kept",
                         extra={"run_id": run_id, "error_message": message},
@@ -1783,7 +1719,6 @@ def process_once(client: Any, config: WorkerConfig) -> bool:
                     },
                 )
                 sync_folder_analysis_job(client, claimed)
-                resume_waiting_research_sessions_for_folder(client, claimed)
             except Exception as update_error:
                 logger.error(
                     "failed to persist run failure state",

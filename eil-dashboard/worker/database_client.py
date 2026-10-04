@@ -280,17 +280,6 @@ class CloudSqlWorkerClient:
     def update_folder_analysis_job(self, folder_job_id: str, patch: Dict[str, Any]) -> None:
         self._update_owned_record("folder_analysis_jobs", folder_job_id, patch)
 
-    def list_waiting_research_sessions(
-        self, owner_user_id: str, folder_id: str
-    ) -> List[Dict[str, Any]]:
-        with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT * FROM public.deep_research_sessions "
-                "WHERE owner_user_id = %s AND folder_id = %s AND status = 'waiting_on_analysis'",
-                (owner_user_id, folder_id),
-            )
-            return self._rows(cursor)
-
     def list_run_fingerprints(
         self, owner_user_id: str, folder_id: Optional[str], exclude_run_id: str, limit: int = 2000
     ) -> List[Dict[str, Any]]:
@@ -326,88 +315,6 @@ class CloudSqlWorkerClient:
                 (owner_user_id, exclude_run_id, owner_user_id, folder_id, folder_id, owner_user_id, max(int(limit), 1)),
             )
             return self._rows(cursor)
-
-    def list_active_runs_for_folder(
-        self, owner_user_id: str, folder_id: str
-    ) -> List[Dict[str, Any]]:
-        with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT id, status FROM public.ingestion_runs "
-                "WHERE owner_user_id = %s AND folder_id = %s "
-                "AND status IN ('queued', 'processing')",
-                (owner_user_id, folder_id),
-            )
-            return self._rows(cursor)
-
-    def update_research_session(self, session_id: str, patch: Dict[str, Any]) -> None:
-        self._update_owned_record("deep_research_sessions", session_id, patch)
-
-    def list_queued_sessions(self, limit: int) -> List[Dict[str, Any]]:
-        return self._list_research_sessions("queued", "created_at ASC", limit)
-
-    def list_waiting_sessions(self, limit: int) -> List[Dict[str, Any]]:
-        return self._list_research_sessions("waiting_on_analysis", "updated_at ASC", limit)
-
-    def _list_research_sessions(self, status: str, order: str, limit: int) -> List[Dict[str, Any]]:
-        with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                f"SELECT * FROM public.deep_research_sessions WHERE status = %s "
-                f"ORDER BY {order} LIMIT %s",
-                (status, max(int(limit), 1)),
-            )
-            return self._rows(cursor)
-
-    def claim_session(self, session_id: str) -> Optional[Dict[str, Any]]:
-        with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "UPDATE public.deep_research_sessions SET status='processing',last_error=NULL,updated_at=now() "
-                "WHERE id=%s AND status='queued' RETURNING *",
-                (session_id,),
-            )
-            row = cursor.fetchone()
-            return {str(key): _json_safe(value) for key, value in dict(row).items()} if row else None
-
-    def update_session(self, session_id: str, patch: Dict[str, Any]) -> None:
-        self.update_research_session(session_id, patch)
-
-    def get_session_steps(self, session_id: str) -> List[Dict[str, Any]]:
-        with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT * FROM public.deep_research_steps WHERE session_id=%s ORDER BY position ASC",
-                (session_id,),
-            )
-            return self._rows(cursor)
-
-    def update_step(self, session_id: str, position: int, patch: Dict[str, Any]) -> None:
-        from psycopg import sql
-
-        allowed = {"status", "input_payload", "output_payload", "title", "description", "tool_name"}
-        values = [(key, value) for key, value in patch.items() if key in allowed]
-        if not values:
-            return
-        assignments = sql.SQL(", ").join(
-            sql.SQL("{} = %s").format(sql.Identifier(key)) for key, _ in values
-        )
-        with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                sql.SQL("UPDATE public.deep_research_steps SET {},updated_at=now() "
-                        "WHERE session_id=%s AND position=%s").format(assignments),
-                [_json_value(value) for _, value in values] + [session_id, position],
-            )
-
-    def insert_step(self, row: Dict[str, Any]) -> None:
-        with self._connection() as connection, connection.cursor() as cursor:
-            cursor.execute(
-                "INSERT INTO public.deep_research_steps "
-                "(session_id,owner_user_id,position,title,description,tool_name,status,input_payload,output_payload,updated_at) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,now()) "
-                "ON CONFLICT (session_id,position) DO UPDATE SET "
-                "title=EXCLUDED.title,description=EXCLUDED.description,tool_name=EXCLUDED.tool_name,"
-                "status=EXCLUDED.status,input_payload=EXCLUDED.input_payload,output_payload=EXCLUDED.output_payload,updated_at=now()",
-                (row.get("session_id"), row.get("owner_user_id"), row.get("position"), row.get("title"),
-                 row.get("description"), row.get("tool_name"), row.get("status") or "planned",
-                 _json_value(row.get("input_payload") or {}), _json_value(row.get("output_payload") or {})),
-            )
 
     def list_project_folder_ids(self, owner_user_id: str, project_id: str) -> List[str]:
         with self._connection() as connection, connection.cursor() as cursor:
