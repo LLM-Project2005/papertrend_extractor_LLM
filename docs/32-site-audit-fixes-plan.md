@@ -216,6 +216,7 @@ State on 2026-10-03. Changes listed "on development" go out with the next build 
   - Web: the chart agent and chart recommendations, the Python-node client and the `PYTHON_NODE_SERVICE_URL` fallback (both deployments set `WORKER_SERVICE_URL`), the research cron route and its Vercel cron, and the v1 planner (`refineRepositoryPrompt`) with its live eval script.
   - Worker: the research, chat, keyword-search, chart-planning and workspace-loading nodes, `workspace_data.py`, the research queue worker, the offline chat evaluation, their state types, and the hook that moved old research sessions on after analysis (with its database methods); no production session was in either status it set.
   - Their tests went with them (56 Python tests). Each item was checked first for any remaining reference outside the set. Python 171/171 and the TypeScript suite pass afterwards.
+  - In production 2026-10-04 (PR #254/#255): web 00078-fix, worker 00064-65k (rollback web 00076, worker 00063). Checked on the pilot (a paper re-analysed on the trimmed worker, chat, chart, dashboard and semantic map, deep research) and in production (the same, without the re-analysis); no errors. Model spend for both checks: $0.123.
 
 ## 2.11 — the remaining medium findings
 
