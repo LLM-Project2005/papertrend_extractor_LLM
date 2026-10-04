@@ -52,31 +52,6 @@ test("the retired server-side Drive OAuth flow stays gone", () => {
   }
 });
 
-test("the research cron refuses a wrong or missing secret", async () => {
-  const { GET } = await import("../src/app/api/cron/process-research-queue/route");
-  const call = (authorization: string) => GET(new Request("https://papertrend.test/api/cron/process-research-queue", { headers: { authorization } }));
-  const configured = process.env.CRON_SECRET;
-  process.env.CRON_SECRET = "research-cron-secret";
-  try {
-    for (const authorization of ["", "Bearer research-cron-secreT", "Bearer research-cron", "research-cron-secret", "Bearer "]) {
-      assert.equal((await call(authorization)).status, 401, JSON.stringify(authorization));
-    }
-    delete process.env.CRON_SECRET;
-    assert.equal((await call("Bearer anything")).status, 500, "an unconfigured secret fails closed");
-  } finally {
-    if (configured === undefined) delete process.env.CRON_SECRET;
-    else process.env.CRON_SECRET = configured;
-  }
-});
-
-test("the research cron compares its secret in constant time", () => {
-  // Kept as text: how long a comparison takes cannot be measured reliably in a
-  // test. The comparison itself is run in security-behaviour.test.ts.
-  const src = read("src/app/api/cron/process-research-queue/route.ts");
-  assert.match(src, /isValidBearerSecret\(authHeader, expectedCronSecret\)/);
-  assert.equal(/authHeader !== `Bearer \$\{/.test(src), false, "a plain string compare short-circuits on the first differing byte");
-});
-
 test("SQL is parameterized, never concatenated from values", () => {
   // Kept as text: a rule for every query, including ones not yet written.
   // Hostile values sent through the routes that build SQL from fragments

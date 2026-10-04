@@ -71,7 +71,7 @@ Larger items the audit named — sharing with a supervisor, analysis-finished no
 | 2 | In production (2026-10-02) |
 | 3 | In production (2026-10-02), except the items listed as open under its results |
 | 4 | In production (2026-10-02): web 00072, worker 00062 |
-| Long-term health | Schema and legacy removal in production (2026-10-02): web 00074, worker 00063. Behaviour tests continue on development. |
+| Long-term health | Done. Schema and legacy removal in production 2026-10-02 (web 00074, worker 00063); behaviour tests and the fixes they found in production 2026-10-04 (web 00076, PR #253; rollback 00074). |
 
 ## Phase 1 results
 
@@ -172,7 +172,7 @@ State on 2026-10-03. Changes listed "on development" go out with the next build 
 - `schema.sql` alone now builds the live database. Six applied migrations had never been copied into it (the phase 8 search index and chat jobs, the semantic map and its distances, dynamic categories, repository profiles), and three NOT NULL rules had been set on the live database outside any file. All are folded in.
 - `cloudsql/live-structure.json` records the live structure, read on 2026-10-02: 41 tables, every column's type and nullability, 155 indexes and 8 views. `schema-authority.test.ts` fails if `schema.sql` builds anything else. After applying a migration, fold it into `schema.sql` and refresh the snapshot.
 
-**Replace source-text tests with behaviour tests: done (on development, 2026-10-04).** Of about 1,180 assertions that read source, about 300 remain, each with a one-line reason beside it. The TypeScript suite grew from 1,033 tests to 1,186, all passing (twice in a row). Tests build nothing, so this went out with no Cloud Build.
+**Replace source-text tests with behaviour tests: done; the fixes are in production (2026-10-04, web 00076, PR #253; checked on the pilot and in production: background chat answer with no actions under its placeholder, chart, dashboard and semantic map, dashboard-data 401 without a session; model spend $0.050 for both checks together).** Of about 1,180 assertions that read source, about 300 remain, each with a one-line reason beside it. The TypeScript suite grew from 1,033 tests to 1,186, all passing (twice in a row). Tests build nothing, so this went out with no Cloud Build.
 
 - **How a test now runs the code** (all in `tests/support/`):
   - *Routes:* `route-harness.ts` calls a route as a signed-in person against PGlite, which is built from `schema.sql` and runs as the app's role under row-level security. Node's module hooks swap only Firebase's token check and the Cloud SQL connection; the auth adapter, owner mapping, pilot gate, guards and SQL run as written. `stubModule` swaps one more module per test file, such as a scripted model, Cloud Tasks or storage.
@@ -200,7 +200,7 @@ State on 2026-10-03. Changes listed "on development" go out with the next build 
   - The Stop notice said "Nothing was saved" while being saved itself.
 - **Noted, not changed:** the paper explorer's tab bar is a 90% blurred surface since the "calmer paper explorer" redesign (commit 74406e7), not opaque as the earlier fix made it.
 
-**Remove the unreachable legacy paths: unwired, in production (2026-10-02, web 00074, worker 00063; rollback 00072 and 00062); the unused files are listed for deletion.**
+**Remove the unreachable legacy paths: unwired, in production (2026-10-02, web 00074, worker 00063; rollback 00072 and 00062); the unused code deleted on 2026-10-04.**
 - **The chat route** keeps what answers today: the repository chat, deep research v2, streaming, spend and the per-person slot. It drops the chart agent, the general model answer with its own web search, and the old deep research plan and run, going from 4,750 lines to 832.
 - **The repository chat** always plans with v2. The other planner ran only with `REPOSITORY_CHAT_V2_ENABLED=false`, which no deployment sets.
 - **A session planned before v2** is answered with a clear refusal (409). Production holds 8 of them; their card now offers **Plan again** instead of **Start**. Pressing Start used to send one to the Python worker. Completed old reports still display as before.
@@ -212,13 +212,10 @@ State on 2026-10-03. Changes listed "on development" go out with the next build 
   - Ingestion: a scanned paper analysed again on the pilot worker in 147 s (vision fallback), succeeded.
   - No page errors and no failed API responses. Model spend: $0.125 on the pilot and $0.049 in production.
   - It found one small fault: Copy and Download showed under a background answer's placeholder. Fixed on development (`isFinishedAnswer`, which also keeps the follow-up suggestions and the conversation export from using a placeholder).
-- **Left to do by hand:** Claude Code's auto mode refuses to delete files or read the ingestion hook.
-  - *Delete (web):* `src/lib/chart-agent.ts`, `src/lib/chart-recommendation.ts`, `src/lib/python-node-service.ts`, then `getPythonNodeServiceUrl` (and its fallback in `getWorkerServiceUrl`) in `server-env.ts` and the chart-agent entry in `tests/spend-limits.test.ts`.
-  - *Delete (web):* `src/app/api/cron/process-research-queue/route.ts`, its `vercel.json` crons and its lines in `security-surface.test.ts`.
-  - *Delete (web):* `refineRepositoryPrompt`, `PromptPlanSchema` and `normalizePromptPlanCandidate` in `repository-chat.ts`, with `scripts/repository-chat-live-eval.ts`.
-  - *Delete (worker):* `nodes/deep_research.py`, `nodes/report_citations.py`, `nodes/conversation.py`, `nodes/visualization.py`, `nodes/keyword_search.py`, `nodes/workspace_loader.py`, `workspace_data.py`, `eil-dashboard/worker/process_research_queue.py` and `scripts/evaluate_chatbot_offline.py`; then the `DeepResearch*` and `WorkspaceQueryState` types in `state.py`, and the `worker:research` scripts in `package.json`.
-  - *Delete (worker tests):* `tests/test_deep_research.py`, `test_deep_research_thai_and_provider.py`, `test_deep_research_state_contract.py`, `test_report_citations.py`, `test_conversation_tools.py`, `test_workspace_data.py`, and the keyword-search cases in `test_new_ingestion_nodes.py`.
-  - *Edit:* in `eil-dashboard/worker/process_ingestion_queue.py`, `resume_waiting_research_sessions_for_folder` and its three calls (with the research-session methods in `database_client.py`) move sessions from "waiting on analysis" to "queued", statuses only the old path used. No production session is in either.
+- **The unused code, deleted (2026-10-04, at the owner's request):**
+  - Web: the chart agent and chart recommendations, the Python-node client and the `PYTHON_NODE_SERVICE_URL` fallback (both deployments set `WORKER_SERVICE_URL`), the research cron route and its Vercel cron, and the v1 planner (`refineRepositoryPrompt`) with its live eval script.
+  - Worker: the research, chat, keyword-search, chart-planning and workspace-loading nodes, `workspace_data.py`, the research queue worker, the offline chat evaluation, their state types, and the hook that moved old research sessions on after analysis (with its database methods); no production session was in either status it set.
+  - Their tests went with them (56 Python tests). Each item was checked first for any remaining reference outside the set. Python 171/171 and the TypeScript suite pass afterwards.
 
 ## 2.11 — the remaining medium findings
 
