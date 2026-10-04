@@ -231,6 +231,7 @@ Run locally against the live test repository with the production models, one var
 - **The reranker stays on the reader's model,** as measured in docs/25 (the fast model never narrowed the evidence).
 - **CHAT-11, longer abstracts.** Every abstract in the test repository exceeds 500 characters; the median is 1,833 and p90 3,072, so a repository-wide summary read about a quarter of a typical abstract. At 1,500 characters the same overview cost $0.0255 against $0.0250, took 102 s against 107 s, and its audit found it supported and complete where the 500-character run was marked unsupported. One pair of runs, so that last point is a sign rather than proof; the cost is negligible either way.
 - **Tests:** the planner, its repair and the sufficiency check must be sent with room to reason (it fails at the old limits), and a repository-wide summary must see past 1,200 characters of an abstract but not beyond 1,500.
+- **In production 2026-10-04** (PR #256/#257): web 00080-ton (rollback 00078). On the pilot and in production a chat question's plan took one call (4.3 s and 4.5 s) with no repair; in production the week before, 8 of 23 chat requests had gone through the failing repair. The two checks cost $0.043, so $0.380 in all.
 
 ## 2.11 — the remaining medium findings
 
