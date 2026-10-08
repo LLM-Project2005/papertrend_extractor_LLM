@@ -110,7 +110,7 @@ export async function planResearch(body: ResearchRequest, ownerUserId: string): 
     }),
     planTool(),
     "DEEP_RESEARCH_PLAN",
-    { maxTokens: 1_500, timeoutMs: 40_000, reasoningEffort: "low" }
+    { maxTokens: 3_000, timeoutMs: 40_000, reasoningEffort: "low" }
   );
   const plan = parsePlan(raw, { question: prompt, webAvailable: true }) ?? fallbackPlan(prompt);
   const planned = await latestPlannedSession(ownerUserId, thread.id);

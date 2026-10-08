@@ -30,7 +30,7 @@ export async function searchWeb(query: string, question: string, today: string):
       0,
       undefined,
       "DEEP_RESEARCH_WEB",
-      { maxTokens: 500, plugins: [{ id: "web", engine: "exa", max_results: 5 }], timeoutMs: 45_000 }
+      { maxTokens: 2_000, reasoningEffort: "low", plugins: [{ id: "web", engine: "exa", max_results: 5 }], timeoutMs: 45_000 }
     );
     const pages = webSourcesFromAnnotations(completion?.annotations ?? [])
       .filter((source) => source.content.length >= 80)

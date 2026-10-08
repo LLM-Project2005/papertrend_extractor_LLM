@@ -149,6 +149,14 @@ test("the fast model's structured steps leave room for its reasoning (CHAT-8)", 
     assert.ok((call.parameters.maxTokens ?? 0) >= 2_000, `${call.taskName} has room for reasoning and its JSON`);
     assert.equal(call.parameters.reasoningEffort, "low", call.taskName);
   }
+  // GPT-6 Luna on the reader's side too (docs/34): at 450 tokens the reranker
+  // was cut off by its own reasoning, and at 3,600 once the audit.
+  const rerank = calls.find((call) => call.taskName === "CHAT_RERANK");
+  assert.ok(rerank && (rerank.parameters.maxTokens ?? 0) >= 2_000 && rerank.parameters.reasoningEffort === "low", "the reranker has room and reasons briefly");
+  for (const task of ["CHAT_SYNTHESIS", "CHAT_FAITHFULNESS"]) {
+    const call = calls.find((entry) => entry.taskName === task);
+    if (call) assert.ok((call.parameters.maxTokens ?? 0) >= 6_000, `${task} has room to reason before it writes`);
+  }
 });
 
 test("a grounded answer gets one review, and its verdict on intent, completeness and language shapes the reply", async () => {

@@ -498,6 +498,12 @@ test("a repository-wide summary reads most of each abstract, not its first quart
   const mapped = task("CHAT_CORPUS_MAP").map(user).join("\n");
   assert.ok(mapped.includes("INSIDE-THE-CUT"), "the summary sees well past the first 500 characters");
   assert.ok(!mapped.includes("BEYOND-THE-CUT"), "and is still bounded");
+  // A group summary reasons briefly, with room to finish (docs/34): at 1,500
+  // tokens GPT-6 Luna's reasoning cut them short, one to nothing.
+  for (const call of task("CHAT_CORPUS_MAP")) {
+    assert.ok((call.parameters.maxTokens ?? 0) >= 4_000);
+    assert.equal(call.parameters.reasoningEffort, "low");
+  }
 });
 
 /* ------------------------------------------------- focused answers, reviewed */

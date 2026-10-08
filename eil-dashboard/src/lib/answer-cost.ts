@@ -19,6 +19,10 @@
  * too low, Luna twelve times too high - so every recorded estimate was off.
  */
 const PRICES: Record<string, { prompt: number; completion: number }> = {
+  "openai/gpt-6-luna-20260922": { prompt: 0.1, completion: 0.5 },
+  "openai/gpt-6-luna": { prompt: 0.1, completion: 0.5 },
+  "google/gemini-3.8-flash": { prompt: 0.75, completion: 3.75 },
+  // Earlier models, for answers recorded before 2026-10-09.
   "openai/gpt-5.6-luna-20260709": { prompt: 0.2, completion: 1.2 },
   "openai/gpt-5.6-luna": { prompt: 0.2, completion: 1.2 },
   "google/gemini-3.7-flash": { prompt: 0.75, completion: 3.75 },

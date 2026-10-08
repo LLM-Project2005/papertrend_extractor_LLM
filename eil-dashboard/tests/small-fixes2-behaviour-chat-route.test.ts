@@ -89,18 +89,15 @@ test("one person has at most two answers in flight; a third is refused before an
   }
 });
 
-test("an answer is written by one of the two approved models, whatever the request names", async () => {
+test("an answer is written by GPT-6 Luna, whatever model the request names", async () => {
+  // One model since 2026-10-09 (docs/34): a model named by the browser, an
+  // earlier one or a costly one, never reaches the answer.
   const { owner, ask, asked } = await chat();
-  for (const model of ["google/gemini-3.7-flash", "openai/gpt-5.6-luna-20260709", "anthropic/some-costly-model", undefined]) {
+  for (const model of ["openai/gpt-6-luna-20260922", "google/gemini-3.7-flash", "openai/gpt-5.6-luna-20260709", "anthropic/some-costly-model", undefined]) {
     const response = await ask(owner, { message: "What is in these papers?", ...(model ? { model } : {}) });
     assert.equal(response.status, 200);
   }
-  assert.deepEqual(asked.map((input) => input.model), [
-    "google/gemini-3.7-flash",
-    "openai/gpt-5.6-luna-20260709",
-    "openai/gpt-5.6-luna-20260709",
-    "openai/gpt-5.6-luna-20260709",
-  ]);
+  assert.deepEqual(asked.map((input) => input.model), Array(5).fill("openai/gpt-6-luna-20260922"));
 });
 
 test("the Adaptive insights request carries no free text to the model", async () => {
