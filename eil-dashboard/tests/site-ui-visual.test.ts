@@ -11,7 +11,7 @@ import vm from "node:vm";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 import { chartTheme } from "../src/lib/chart-theme";
-import { proofMetrics } from "../src/components/marketing/marketing-content";
+import { productDetails } from "../src/components/marketing/marketing-content";
 
 function exists(relative: string): boolean {
   return existsSync(new URL(`../${relative}`, import.meta.url));
@@ -90,22 +90,20 @@ test("a product clip waits for the reader's motion setting and for being on scre
   assert.match(clip, /Pause the product video/, "moving content beside text can be stopped");
 });
 
-test("the figures under the hero are figures, and each one is checkable", () => {
+test("the published step count is the ingestion graph's", () => {
   // "4 core research workflows" and "1 workspace for papers, charts and chat"
-  // were set at display size and proved nothing.
-  const figures = proofMetrics.map((metric) => `${metric.value} ${metric.label}`);
-  assert.equal(figures.includes("4 core research workflows"), false);
-  assert.ok(figures.includes("12 analysis stages per paper"), figures.join("; "));
-  assert.ok(figures.some((figure) => figure.startsWith("6 dashboard views")), figures.join("; "));
+  // were once set at display size and proved nothing; "12 analysis stages"
+  // left out the step that saves. The details list says 13.
+  const analysis = productDetails.find((item) => item.term === "Analysis")?.detail ?? "";
+  assert.match(analysis, /^13 steps per paper/);
 
-  // Twelve is the ingestion graph's analysing nodes. graphs.py is the Python
-  // worker's graph, which these Node tests cannot build, so its registrations
-  // are counted. (The six dashboard views are counted as rendered tabs in
-  // site-ui-behaviour.test.ts.)
+  // graphs.py is the Python worker's graph, which these Node tests cannot
+  // build, so its registrations are counted. (The six dashboard views are
+  // counted as rendered tabs in site-ui-behaviour.test.ts.)
   const graphs = readFileSync(new URL("../../graphs.py", import.meta.url), "utf8");
   const ingestion = graphs.slice(graphs.indexOf("def build_ingestion_graph"));
   const nodes = (ingestion.slice(0, ingestion.indexOf("return")).match(/workflow\.add_node\(/g) ?? []).length;
-  assert.equal(nodes, 13, "12 analysing nodes plus build_dataset");
+  assert.equal(nodes, 13, "the 13 steps the public pages describe");
 });
 
 test("a perpetual rainbow sweep is no longer in the stylesheet", () => {

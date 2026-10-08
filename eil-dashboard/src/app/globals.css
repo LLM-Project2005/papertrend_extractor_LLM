@@ -398,6 +398,46 @@ html:focus-within {
   }
 }
 
+/*
+ * The feature pages' kit (src/components/marketing/kit). A marker that opens
+ * a note breathes once every few seconds, so a reader sees there is something
+ * to open; the global reduced-motion rule stills it.
+ */
+.hotspot-ring {
+  animation: hotspot-breathe 2.8s var(--ease-out-expo) infinite;
+}
+
+@keyframes hotspot-breathe {
+  0% {
+    opacity: 0.9;
+    transform: scale(0.55);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.35);
+  }
+}
+
+/* Text a model read a value from: the PDF viewer's warm marker, as a sweep. */
+.evidence-mark {
+  background-image: linear-gradient(rgb(250 204 21 / 0.42), rgb(250 204 21 / 0.42));
+  background-repeat: no-repeat;
+  background-size: 0% 100%;
+  border-radius: 3px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background-size 700ms var(--ease-out-expo);
+}
+
+.evidence-mark[data-on="true"] {
+  background-size: 100% 100%;
+}
+
+.dark .evidence-mark {
+  background-image: linear-gradient(rgb(250 204 21 / 0.28), rgb(250 204 21 / 0.28));
+}
+
 .modal-backdrop {
   animation: modal-backdrop-in var(--motion-ui) ease both;
 }

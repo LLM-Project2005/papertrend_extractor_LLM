@@ -26,6 +26,7 @@ export default function ProductShot({
   sizes = "(min-width: 1280px) 1152px, 100vw",
   className = "",
   fade = false,
+  still = false,
 }: {
   name: string;
   alt: string;
@@ -34,6 +35,8 @@ export default function ProductShot({
   className?: string;
   /** Let the bottom of the shot dissolve into the page (hero use). */
   fade?: boolean;
+  /** The screenshot alone, without its clip: for notes pinned to places on it. */
+  still?: boolean;
 }) {
   const size = SHOT_SIZES[name] ?? { width: 2000, height: 1250 };
   const shared = {
@@ -53,7 +56,7 @@ export default function ProductShot({
       <div className="group/clip relative overflow-hidden rounded-xl border border-hairline bg-surface">
         <Image {...shared} src={`/marketing/${name}-light.webp`} alt={alt} className="block h-auto w-full dark:hidden" />
         <Image {...shared} src={`/marketing/${name}-dark.webp`} alt={alt} className="hidden h-auto w-full dark:block" />
-        {CLIPS.has(name) ? <ProductClip name={name} label={alt} controlsAt={fade ? "top" : "bottom"} /> : null}
+        {CLIPS.has(name) && !still ? <ProductClip name={name} label={alt} controlsAt={fade ? "top" : "bottom"} /> : null}
       </div>
     </figure>
   );

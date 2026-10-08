@@ -54,12 +54,11 @@ def main() -> None:
     existing: dict[str, dict[str, int]] = {}
     if MANIFEST.exists():
         text = MANIFEST.read_text(encoding="utf-8")
-        start, end = text.find("{"), text.rfind("}")
+        # The object starts after "= ": the type annotation before it has braces of its own.
+        start, end = text.find("= {"), text.rfind("}")
         if start >= 0 and end > start:
-            try:
-                existing = json.loads(text[start : end + 1])
-            except json.JSONDecodeError:
-                existing = {}
+            # A manifest that cannot be read must not be overwritten with only this run's shots.
+            existing = json.loads(text[start + 2 : end + 1])
     existing.update(sizes)
     body = json.dumps(dict(sorted(existing.items())), indent=2)
     MANIFEST.write_text(
