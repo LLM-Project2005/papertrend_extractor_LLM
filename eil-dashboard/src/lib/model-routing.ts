@@ -37,8 +37,12 @@ const STRUCTURAL_TASKS: ReadonlySet<string> = new Set([
   "CHAT_EVIDENCE_SUFFICIENCY",
 ]);
 
-/** Already listed as tool-capable for this account, so no new dependency. */
-export const DEFAULT_FAST_MODEL = "google/gemini-3.7-flash";
+/**
+ * GPT-6 Luna since 2026-10-09 (docs/34): measured on the test repository it
+ * planned in the same 3-5 s as Gemini 3.7 and 3.8 Flash, with no failed plans,
+ * at about 40% less per question (Gemini bills its reasoning at $3.75/M).
+ */
+export const DEFAULT_FAST_MODEL = "openai/gpt-6-luna-20260922";
 
 export function isStructuralTask(taskName: string | undefined): boolean {
   return Boolean(taskName && STRUCTURAL_TASKS.has(taskName));

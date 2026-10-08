@@ -304,7 +304,9 @@ export async function addWebContext(input: {
       input.model,
       "CHAT_WEB_AUGMENT",
       {
-        maxTokens: 900,
+        // Room for the reader's model to reason first (see STEP_BUDGETS in repository-chat.ts).
+        maxTokens: 3_000,
+        reasoningEffort: "low",
         plugins: [{ id: "web", engine: "exa", max_results: MAX_RESULTS }],
         timeoutMs: 45_000,
       }
