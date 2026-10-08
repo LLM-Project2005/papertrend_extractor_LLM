@@ -312,9 +312,7 @@ test("the public pages show screenshots of the real product, each with its size 
   }
   assert.ok(shots.size >= 5, `expected several screenshots, found ${[...shots.keys()].join(", ")}`);
   for (const feature of marketingFeatures) {
-    for (const name of [feature.shot, ...feature.sections.flatMap((section) => (section.shot ? [section.shot] : []))]) {
-      assert.ok(shots.has(name), `${feature.slug}'s ${name} screenshot is shown`);
-    }
+    assert.ok(shots.has(feature.shot), `${feature.slug}'s ${feature.shot} screenshot is shown`);
   }
   for (const [name, themes] of shots) {
     assert.deepEqual([...themes].sort(), ["dark", "light"], `${name} is drawn for both themes`);
@@ -382,14 +380,18 @@ test("the recording's mock API answers what it knows from the invented collectio
 test("each figure on the feature pages is one the product can be counted to have", async () => {
   // "9 analysis passes" matched nothing; "Live library updates" claimed a
   // refresh the dashboard does not do, and "4 category views" were six.
-  const proof = (html: string) =>
-    [...html.matchAll(/<dt class="sr-only">([^<]*)<\/dt><dd[^>]*>([^<]*)<\/dd>/g)].map((match) => `${decode(match[2])} ${decode(match[1])}`);
-  const analysis = proof(await featurePage("paper-analysis"));
-  assert.ok(analysis.includes("12 analysis stages per paper"), JSON.stringify(analysis));
-  assert.equal(analysis.some((figure) => /analysis passes/.test(figure)), false);
-  const dashboardFigures = proof(await featurePage("research-dashboard"));
-  assert.ok(dashboardFigures.includes("6 dashboard views"), JSON.stringify(dashboardFigures));
-  assert.equal(dashboardFigures.some((figure) => /^Live |^4 category views/.test(figure)), false);
+  const analysis = text(await featurePage("paper-analysis"));
+  assert.match(analysis, /Thirteen steps\. Four at a time\./);
+  assert.match(analysis, /13 per paper/);
+  assert.equal(/analysis passes|12 analysis stages/.test(analysis), false);
+  // The timeline draws the thirteen steps, each a control that opens its note.
+  const timeline = analysis.match(/Read the PDF[\s\S]*?Save/)?.[0] ?? "";
+  for (const step of ["Read the PDF", "Clean", "Translate", "Find the sections", "Title and year", "Grounded keywords", "own keywords", "Aims and contributions", "Group into topics", "Name the topics", "Category", "Kind of study"]) {
+    assert.ok(timeline.includes(step), step);
+  }
+  const dashboardPage = text(await featurePage("research-dashboard"));
+  assert.match(dashboardPage, /Six views, six questions\./);
+  assert.equal(/^Live |4 category views/.test(dashboardPage), false);
 
   // Six views: the dashboard draws six tabs.
   const html = await dashboard(ANALYSED);

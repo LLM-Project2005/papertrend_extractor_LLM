@@ -23,7 +23,7 @@ import Mascot from "@/components/ui/Mascot";
 export const metadata: Metadata = {
   title: { absolute: "Papertrend | Read a whole field of research at once" },
   description:
-    "Upload research papers and Papertrend reads each one for its year, methods, topics and category, charts how the field has moved, and answers questions with a citation for every claim.",
+    "Upload research papers and Papertrend reads each one for its year, methods, topics and category, charts how the field has moved, and answers questions with a source for every claim.",
   alternates: {
     canonical: "/",
   },
@@ -64,7 +64,7 @@ function FeatureRow({
 }) {
   return (
     <section className="px-4 py-20 sm:px-6 sm:py-28">
-      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-16">
+      <div className="mx-auto grid grid-cols-1 max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-16">
         <div className={`reveal lg:col-span-5 ${flip ? "lg:order-2" : ""}`}>
           <h2 className={sectionTitleClass}>{item.title}</h2>
           <p className={`mt-5 ${leadClass}`}>{item.description}</p>
@@ -111,7 +111,7 @@ export default function LandingPage() {
             <p className="mx-auto mt-6 max-w-2xl text-lg leading-8 text-body">
               Upload the papers you work with. Papertrend reads each one for its year, methods,
               topics and category, charts how the field has moved, and answers your questions with
-              a citation for every claim.
+              a source for every claim.
             </p>
             <div className="mt-9 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
               <MarketingCTA size="lg" label="Start with your papers" />
@@ -119,7 +119,7 @@ export default function LandingPage() {
                 See how it works
               </a>
             </div>
-            <p className="mt-5 text-[13px] text-mute">English and Thai papers · PDFs up to 10 MB · 50 at a time</p>
+            <p className="mt-5 text-[13px] text-mute">English and Thai papers · From your computer or Google Drive · 50 at a time</p>
             <p className="mt-2 text-[13px] text-mute">
               Invite-only during the beta.{" "}
               <Link href="/request-access" className="font-medium text-ink underline underline-offset-2">
@@ -145,7 +145,7 @@ export default function LandingPage() {
           <h2 className={`reveal max-w-2xl ${sectionTitleClass}`}>
             From a folder of PDFs to answers you can check.
           </h2>
-          <ol className="mt-14 grid gap-10 md:grid-cols-3 md:gap-10">
+          <ol className="mt-14 grid grid-cols-1 gap-10 md:grid-cols-3 md:gap-10">
             {workflowSteps.map((step, index) => (
               <li key={step.title} className="reveal border-t border-hairline pt-6">
                 <span className="font-mono text-sm tabular-nums text-mute">0{index + 1}</span>
@@ -158,17 +158,12 @@ export default function LandingPage() {
       </section>
 
       {/* -------------------------------------------------------- features */}
-      <FeatureRow
-        item={analysis}
-        shot="paper"
-        shotAlt={analysis.shotAlt}
-        bullets={analysis.sections[0].bullets}
-      />
+      <FeatureRow item={analysis} shot="paper" shotAlt={analysis.shotAlt} bullets={analysis.homeBullets} />
       <FeatureRow
         item={dashboard}
         shot="dashboard-categories"
-        shotAlt={dashboard.sections[0].shotAlt ?? dashboard.shotAlt}
-        bullets={[...dashboard.sections[0].bullets, ...dashboard.sections[1].bullets.slice(0, 1)]}
+        shotAlt="The Category Analysis view of the 41-paper sample repository: papers per year in its own categories, Adaptation strategies, Governance and finance, and Hazards and risk."
+        bullets={dashboard.homeBullets}
         flip
       />
 
@@ -176,15 +171,17 @@ export default function LandingPage() {
         <div className="mx-auto max-w-6xl">
           <div className="reveal mx-auto max-w-2xl text-center">
             <h2 className={sectionTitleClass}>{chat.title}</h2>
-            <p className={`mt-5 ${leadClass}`}>{chat.description}</p>
+            <p className={`mt-5 ${leadClass}`}>
+              Chat answers from the papers in your repository, in English or Thai, with a numbered source on every claim.
+            </p>
           </div>
           <div className="reveal mt-14">
             <ProductShot name={chat.shot} alt={chat.shotAlt} />
           </div>
-          <dl className="reveal mx-auto mt-14 grid max-w-4xl gap-8 sm:grid-cols-3">
+          <dl className="reveal mx-auto mt-14 grid grid-cols-1 max-w-4xl gap-8 sm:grid-cols-3">
             {[
-              ["Cited", "Every claim carries a number that opens the paper it came from."],
-              ["Scoped", "Ask a whole repository, or only the papers you attach."],
+              ["Cited", "Every claim carries a number that opens the paper at the sentence it came from."],
+              ["Checked", "A draft whose support is in doubt is read again beside its sources before you see it."],
               ["Honest", "When the papers do not answer the question, the answer says so."],
             ].map(([term, detail]) => (
               <div key={term} className="border-l border-hairline pl-5">
@@ -193,7 +190,12 @@ export default function LandingPage() {
               </div>
             ))}
           </dl>
-          <div className="mt-12 text-center">
+          <p className="reveal mx-auto mt-12 max-w-2xl text-center text-[15px] leading-7 text-body">
+            For a bigger question, <span className="font-medium text-ink">deep research</span> plans its reading, writes a
+            report and has another model check every sentence. For a count,{" "}
+            <span className="font-medium text-ink">Chart mode</span> draws it from your papers.
+          </p>
+          <div className="mt-8 text-center">
             <Link href={`/features/${chat.slug}`} className={arrowLinkClass}>
               More on research chat
               <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
@@ -203,7 +205,7 @@ export default function LandingPage() {
       </section>
 
       <section className="px-4 py-20 sm:px-6 sm:py-28">
-        <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-16">
+        <div className="mx-auto grid grid-cols-1 max-w-6xl items-center gap-12 lg:grid-cols-12 lg:gap-16">
           <div className="reveal lg:col-span-5">
             <h2 className={sectionTitleClass}>Your categories, not a fixed list.</h2>
             <p className={`mt-5 ${leadClass}`}>
@@ -223,24 +225,45 @@ export default function LandingPage() {
           <div className="reveal lg:col-span-7">
             <ProductShot
               name="settings-analysis"
-              alt="Repository settings: choosing between General Research, EIL Tracks and a custom taxonomy, with the official EIL category definitions."
+              alt="Repository settings, Analysis and classification: a custom taxonomy named Research focus selected, beside the General Research and EIL Tracks options."
               sizes="(min-width: 1024px) 680px, 100vw"
             />
           </div>
         </div>
       </section>
 
-      <FeatureRow
-        item={batch}
-        shot={batch.shot}
-        shotAlt={batch.shotAlt}
-        bullets={[...batch.sections[0].bullets, batch.sections[1].bullets[0]]}
-        flip
-      />
+      <FeatureRow item={batch} shot={batch.shot} shotAlt={batch.shotAlt} bullets={batch.homeBullets} flip />
+
+      {/* --------------------------------------------------- look inside */}
+      <section className="px-4 py-24 sm:px-6 sm:py-28">
+        <div className="mx-auto max-w-6xl">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-end">
+            <h2 className={`reveal lg:col-span-6 ${sectionTitleClass}`}>Look inside each part.</h2>
+            <p className={`reveal lg:col-span-6 ${leadClass}`}>
+              Each part has a page that opens it up: the steps, the models, and a puzzle or two to try for yourself. No
+              background in AI needed.
+            </p>
+          </div>
+          <ul className="reveal mt-12 border-t border-hairline">
+            {marketingFeatures.map((item) => (
+              <li key={item.slug} className="border-b border-hairline">
+                <Link
+                  href={`/features/${item.slug}`}
+                  className="group grid grid-cols-1 items-baseline gap-2 py-6 transition-colors sm:grid-cols-[200px_minmax(0,1fr)_24px] sm:gap-6 sm:py-7"
+                >
+                  <span className="text-[22px] font-semibold tracking-[-0.02em] text-ink">{item.navLabel}</span>
+                  <span className="text-[15px] leading-7 text-body transition-colors group-hover:text-ink">{item.inside}</span>
+                  <ArrowRightIcon className="hidden h-5 w-5 text-mute transition-transform duration-300 ease-out-expo group-hover:translate-x-1 group-hover:text-ink sm:block" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
 
       {/* --------------------------------------------------------- details */}
       <section className="px-4 py-24 sm:px-6 sm:py-32">
-        <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-12 lg:gap-16">
+        <div className="mx-auto grid grid-cols-1 max-w-6xl gap-12 lg:grid-cols-12 lg:gap-16">
           <div className="reveal lg:col-span-4">
             <h2 className={sectionTitleClass}>The details.</h2>
             <p className={`mt-5 ${leadClass}`}>What it handles, how it handles it, and who can see the result.</p>
@@ -251,7 +274,7 @@ export default function LandingPage() {
           </div>
           <dl className="reveal divide-y divide-hairline border-y border-hairline lg:col-span-8">
             {productDetails.map((item) => (
-              <div key={item.term} className="grid gap-1.5 py-5 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-6">
+              <div key={item.term} className="grid grid-cols-1 gap-1.5 py-5 sm:grid-cols-[150px_minmax(0,1fr)] sm:gap-6">
                 <dt className="text-sm font-medium text-ink">{item.term}</dt>
                 <dd className="text-[15px] leading-7 text-body">{item.detail}</dd>
               </div>
@@ -262,7 +285,7 @@ export default function LandingPage() {
 
       {/* ------------------------------------------------------------- faq */}
       <section className="px-4 pb-24 sm:px-6 sm:pb-32">
-        <div className="mx-auto grid max-w-6xl gap-12 lg:grid-cols-12 lg:gap-16">
+        <div className="mx-auto grid grid-cols-1 max-w-6xl gap-12 lg:grid-cols-12 lg:gap-16">
           <h2 className={`reveal lg:col-span-4 ${sectionTitleClass}`}>Questions people ask first.</h2>
           <div className="reveal border-t border-hairline lg:col-span-8">
             {faqs.map((item) => (

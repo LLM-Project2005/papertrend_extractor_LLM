@@ -40,6 +40,8 @@ GPT-6 Luna reasons before it writes, more than GPT-5.6 Luna did, and the reasoni
 
 Every step on the reader's model now has room (`STEP_BUDGETS` in `src/lib/repository-chat.ts`), and the mechanical ones (choosing papers, summarising a group, the web step) are asked to reason briefly. Afterwards no call was cut off: the group summaries' reasoning fell from 500–1,500 tokens to 150–250, and the overview cited all 41 papers and was checked supported and complete for $0.011, against $0.0255 on GPT-5.6 Luna. A limit is a ceiling, not a charge; only tokens used are paid for. Deep research's limits were raised the same way.
 
+One deep research run on the whole test repository ("What do these papers find about feedback, and how do their methods differ?") then completed in 42 s for $0.0135, against a median of $0.023 on GPT-5.6 Luna (docs/31), with no call cut off. GPT-6 Luna's plan, three findings calls, report and revision cost $0.0054; Gemini 3.8 Flash's claim check cost $0.0081. Checking with GPT-6 Luna as well would roughly halve a run's cost, but the report would then be checked by the model that wrote it.
+
 ## Decisions
 
 | Step | Model |
@@ -52,4 +54,8 @@ Every step on the reader's model now has room (`STEP_BUDGETS` in `src/lib/reposi
 | Chart view, Adaptive write-up | Gemini 3.1 Flash-Lite, unchanged: tiny calls, already tested |
 | Reclassification, paper analysis | Gemini 2.5 / 3.1 Flash-Lite, unchanged: they must match each other, and changing them needs the pipeline evaluation (docs/29) |
 
-Model spend for the measurement: $0.162.
+Model spend for the measurement: $0.176 ($0.162 for the chat, $0.0135 for the deep research run).
+
+## Rollout
+
+In production 2026-10-09: web `papertrend-web-production-00082-gap` (rollback `00080-ton`), pilot `00269-rs4`. On both, a signed-in check passed: a chat answer from the whole repository, checked supported and complete, and a deep research run (22–25 sources, about $0.007 each); no warnings in the logs. The two checks cost $0.028.

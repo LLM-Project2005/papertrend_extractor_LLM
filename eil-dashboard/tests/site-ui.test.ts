@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, readFileSync } from "node:fs";
-import { valuePillars } from "../src/components/marketing/marketing-content";
+import { faqs, marketingFeatures, productDetails } from "../src/components/marketing/marketing-content";
 import { docsPages, popularDocsPages } from "../src/lib/docs-content";
 
 function read(relative: string): string {
@@ -30,17 +30,26 @@ test("the browser is told which palette to paint its own furniture in", () => {
 /* ------------------------------------------------------------ honesty of copy */
 
 test("no build note ships as a reason to choose the product", () => {
-  // "Static marketing pages with client-only auth CTA" was the fourth value
-  // pillar on the public landing page.
-  assert.equal(valuePillars.some((pillar) => /client-only auth CTA/.test(pillar)), false, "an implementation detail must not be sold to visitors");
-  assert.ok(valuePillars.includes("Per-file queue status and stalled-queue recovery"));
+  // "Static marketing pages with client-only auth CTA" was once a value pillar
+  // on the public landing page. Every selling point is something a reader
+  // could check in the product.
+  const copy = [
+    ...marketingFeatures.flatMap((feature) => [feature.description, feature.homeSummary, feature.inside, ...feature.homeBullets]),
+    ...productDetails.map((item) => item.detail),
+    ...faqs.map((item) => item.answer),
+  ];
+  for (const line of copy) {
+    assert.equal(/static|client-only|CTA|SSR|bundle|deploy/i.test(line), false, `"${line}" describes the build, not the product`);
+  }
 });
 
-test("every value pillar is something a reader could verify", () => {
-  assert.equal(valuePillars.length, 4);
-  for (const pillar of valuePillars) {
-    assert.equal(/static|client-only|CTA|SSR|bundle|deploy/i.test(pillar), false, `"${pillar}" describes the build, not the product`);
-  }
+test("the public copy does not claim what the product does not show", () => {
+  // Year confidence is stored but never shown, and the answer check is skipped
+  // for clean, confident drafts (repository-chat.ts), so neither may be promised.
+  const copy = JSON.stringify({ marketingFeatures, productDetails, faqs });
+  assert.equal(/confidence/i.test(copy), false, "year confidence is not shown to readers");
+  assert.equal(/every answer is (?:audited|checked)/i.test(copy), false);
+  assert.equal(/12 analysis stages/.test(copy), false, "the graph has 13 steps");
 });
 
 /* ------------------------------------------------------- docs navigation */
