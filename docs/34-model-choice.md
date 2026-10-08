@@ -55,3 +55,7 @@ One deep research run on the whole test repository ("What do these papers find a
 | Reclassification, paper analysis | Gemini 2.5 / 3.1 Flash-Lite, unchanged: they must match each other, and changing them needs the pipeline evaluation (docs/29) |
 
 Model spend for the measurement: $0.176 ($0.162 for the chat, $0.0135 for the deep research run).
+
+## Rollout
+
+In production 2026-10-09: web `papertrend-web-production-00082-gap` (rollback `00080-ton`), pilot `00269-rs4`. On both, a signed-in check passed: a chat answer from the whole repository, checked supported and complete, and a deep research run (22–25 sources, about $0.007 each); no warnings in the logs. The two checks cost $0.028.
