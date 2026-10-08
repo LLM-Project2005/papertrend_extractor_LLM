@@ -66,7 +66,6 @@ import {
   CopyIcon,
   DownloadIcon,
   BooksIcon,
-  GeminiIcon,
   OpenAIIcon,
   DriveIcon,
   ListViewIcon,
@@ -228,7 +227,7 @@ interface ChatSearchResult {
 const PINNED_THREADS_STORAGE_KEY = "papertrend_pinned_chat_threads_v1";
 const CHAT_MODEL_STORAGE_KEY = "papertrend_chat_model_v1";
 const CHAT_PARAMETERS_STORAGE_KEY = "papertrend_chat_parameters_v1";
-const DEFAULT_CHAT_MODEL = "openai/gpt-5.6-luna-20260709";
+const DEFAULT_CHAT_MODEL = "openai/gpt-6-luna-20260922";
 
 type ChatGenerationParameters = {
   temperature: number;
@@ -293,9 +292,11 @@ const DEFAULT_RESEARCH_SOURCE_POLICY: DeepResearchSourcePolicy = {
   budget: STRICT_RESEARCH_BUDGET,
 };
 
+// One model since 2026-10-09 (docs/34): the evidence is chosen on the reader's
+// model, and Gemini never narrowed it (docs/25). A second entry brings the
+// picker back.
 const MODEL_OPTIONS = [
-  { value: "openai/gpt-5.6-luna-20260709", label: "GPT-5.6 Luna", description: "By OpenAI. The default.", Mark: OpenAIIcon },
-  { value: "google/gemini-3.7-flash", label: "Gemini 3.7 Flash", description: "By Google.", Mark: GeminiIcon },
+  { value: "openai/gpt-6-luna-20260922", label: "GPT-6 Luna", description: "By OpenAI.", Mark: OpenAIIcon },
 ] as const;
 
 
@@ -4173,7 +4174,22 @@ export default function ChatClient() {
 
                     </div>
 
-                    {!deepResearchEnabled && !chartModeEnabled ? (
+                    {!deepResearchEnabled && !chartModeEnabled && MODEL_OPTIONS.length === 1 ? (
+                      // One model: named, not offered as a choice.
+                      <span className="inline-flex h-9 items-center gap-1.5 px-2 text-xs font-medium text-slate-600 dark:text-[#b4b4b4]">
+                        {(() => {
+                          const only = MODEL_OPTIONS[0];
+                          return (
+                            <>
+                              <only.Mark className="h-3.5 w-3.5" />
+                              {only.label}
+                            </>
+                          );
+                        })()}
+                      </span>
+                    ) : null}
+
+                    {!deepResearchEnabled && !chartModeEnabled && MODEL_OPTIONS.length > 1 ? (
                       <Select
                         value={selectedModel}
                         onChange={setSelectedModel}

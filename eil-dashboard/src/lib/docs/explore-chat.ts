@@ -149,14 +149,14 @@ export const chatPage: DocsPageBase = {
         "**New chat** starts an empty conversation in normal mode.",
         "The **...** menu in the header lists **Files in this conversation**: every source cited so far.",
         "A long conversation opens on its newest messages; **Load earlier messages** at the top brings back older ones.",
-        "There is no export yet: answers, charts and reports cannot be downloaded or copied with one click.",
+        "Under each finished answer, **Copy** and **Download (.md)** save it with its numbered sources. The **...** menu in the header has **Export conversation (.md)** for the whole conversation. Charts are not exported.",
       ],
     },
     {
       id: "models",
       title: "Models",
       body: [
-        "The **Model** picker under the text box chooses who writes the answer: **GPT-5.6 Luna** (the default) or **Gemini 3.7 Flash**. The choice is remembered in this browser. Planning the search and judging whether the evidence is enough always use Gemini 3.7 Flash, whichever you pick. Chart mode and Deep research choose their own models, so the picker is hidden there.",
+        "Answers are planned, written and checked by **GPT-6 Luna**, named under the text box. Chart mode and Deep research choose their own models.",
       ],
     },
     {
@@ -299,7 +299,7 @@ export const deepResearchPage: DocsPageBase = {
       bullets: [
         "When the papers do not cover something, the report says the papers searched do not address it; it does not call it a gap in the literature.",
         "Text inside papers and web pages is treated as evidence, never as instructions.",
-        "The models are chosen for you: GPT-5.6 Luna plans, reads and writes; Gemini 3.1 Flash-Lite checks the claims, so the model that wrote a sentence is not the one that judges it.",
+        "The models are chosen for you: GPT-6 Luna plans, reads and writes; Gemini 3.8 Flash checks the claims, so the model that wrote a sentence is not the one that judges it.",
       ],
     },
     {

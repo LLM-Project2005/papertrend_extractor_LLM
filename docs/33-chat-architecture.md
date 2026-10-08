@@ -49,7 +49,7 @@ flowchart TD
     C --> D["Load the papers in scope:<br/>a repository, all repositories, or attached papers<br/>(only papers whose analysis succeeded)"]
     D --> E{"Same first question, same scope,<br/>in the last 30 minutes?"}
     E -- "yes" --> E2["Reuse that answer,<br/>marked 'Answered from an earlier identical question'"]
-    E -- "no" --> F["Plan the request<br/>(fast AI model, see section 3)"]
+    E -- "no" --> F["Plan the request<br/>(AI model, see section 3)"]
     F --> G{"Long request?<br/>web search, whole-repository overview,<br/>more than 80 papers one by one"}
     G -- "yes" --> H["Run as a background job<br/>(section 6)"]
     G -- "no" --> I["Carry out the plan<br/>(sections 4 and 5)"]
@@ -73,7 +73,7 @@ The first model call reads the question and returns a small, structured **plan**
 
 ```mermaid
 flowchart TD
-    Q["Question"] --> P["Planner<br/>(fast AI model)"]
+    Q["Question"] --> P["Planner<br/>(GPT-6 Luna, brief)"]
     P --> C1["converse<br/>greeting, or not about the papers"]
     P --> C2["inspect_scope / list_documents<br/>how many, which, list, oldest, newest"]
     P --> C3["analyze_text<br/>how often a word or phrase appears"]
@@ -108,12 +108,12 @@ flowchart TD
     B2["Meaning search<br/>over the search index (embeddings)"]
     B1 --> C["Combine the two rankings"]
     B2 --> C
-    C --> D["Reranker (main AI model):<br/>choose the papers that directly help answer"]
-    D --> E{"Sufficiency check (fast AI model):<br/>is this evidence enough?"}
+    C --> D["Reranker (GPT-6 Luna):<br/>choose the papers that directly help answer"]
+    D --> E{"Sufficiency check (GPT-6 Luna, brief):<br/>is this evidence enough?"}
     E -- "no" --> F["Search again with the<br/>missing points, then add what is found"]
     F --> G
-    E -- "yes" --> G["Write the answer (main AI model)<br/>only from the selected passages,<br/>citing a paper for every claim"]
-    G --> H{"Audit (main AI model):<br/>is each claim supported by the passages?<br/>does it answer the question? is it complete?<br/>is it in the reader's language?"}
+    E -- "yes" --> G["Write the answer (GPT-6 Luna)<br/>only from the selected passages,<br/>citing a paper for every claim"]
+    G --> H{"Audit (GPT-6 Luna):<br/>is each claim supported by the passages?<br/>does it answer the question? is it complete?<br/>is it in the reader's language?"}
     H -- "all supported" --> I["Answer"]
     H -- "problems found" --> J["Unsupported sentences are corrected or removed;<br/>a limitation line tells the reader"]
     J --> I
@@ -138,9 +138,9 @@ flowchart TD
     B --> C2["Group 2 summary"]
     B --> C3["... one summary per group"]
     A --> D["Exact counts computed by code:<br/>themes (grouped as the dashboard groups them),<br/>research methods, keywords"]
-    C1 & C2 & C3 --> E["One synthesis (main AI model)<br/>from every group summary and the counts"]
+    C1 & C2 & C3 --> E["One synthesis (GPT-6 Luna)<br/>from every group summary and the counts"]
     D --> E
-    E --> F["Audit against the summaries and counts<br/>(main AI model)"]
+    E --> F["Audit against the summaries and counts<br/>(GPT-6 Luna)"]
     F --> G["Answer, citing papers by title"]
 ```
 
@@ -152,7 +152,7 @@ flowchart TD
 
 ## 6. Background jobs
 
-Some requests take longer than a web request may stay open: web search, a whole-repository overview, analysing each of more than 80 papers one by one, or a plan that combines several heavy steps. These run as background jobs.
+Some requests take longer than a Firebase web request may stay open (60 seconds): web search, a whole-repository overview, analysing each of more than 80 papers one by one, or a plan that combines several heavy steps. These run as background jobs.
 
 ```mermaid
 sequenceDiagram
@@ -188,12 +188,12 @@ Deep research is a separate mode for questions that need a longer, structured in
 
 ```mermaid
 flowchart TD
-    A["Question in Deep research mode"] --> B["Plan: up to 5 sub-questions<br/>(main AI model)"]
+    A["Question in Deep research mode"] --> B["Plan: up to 5 sub-questions<br/>(GPT-6 Luna)"]
     B --> C["The reader sees the plan,<br/>and can edit it or cancel"]
     C -->|"Start (one of 10 runs a day)"| D["Queued as a background task"]
     D --> E["For each sub-question:<br/>gather passages from the papers<br/>(and the web, at most 4 searches, if needed)"]
-    E --> F["Write the report (main AI model),<br/>citing every claim"]
-    F --> G["Check every claim (a different model family,<br/>so no model grades its own writing)"]
+    E --> F["Write the report (GPT-6 Luna),<br/>citing every claim"]
+    F --> G["Check every claim (Gemini 3.8 Flash: a different<br/>model family, so no model grades its own writing)"]
     G --> H{"Supported?"}
     H -- "yes" --> I["Report added to the conversation"]
     H -- "no" --> J["The sentence is reworded or removed"]
@@ -206,18 +206,22 @@ Progress is shown step by step while it runs. If a step fails, a retry continues
 
 ## 8. Which AI model does what
 
-All models are reached through OpenRouter.
+All models are reached through OpenRouter. The choices were measured on the test repository on 2026-10-09 (see [docs/34](34-model-choice.md)).
 
 | Step | Model | Why |
 | --- | --- | --- |
-| Writing the answer | **GPT-5.6 Luna** by default; the reader can choose **Gemini 3.7 Flash** | The step the reader reads |
-| Choosing the evidence (reranker) | The reader's model | Decides what the answer is built from; the fast model returned every paper instead of choosing |
-| Checking the answer (audit) | The reader's model | Measured: the fast model cost about 2.5 times as much here and was not faster |
-| Planning, and judging whether the evidence is enough | **Gemini 3.7 Flash** | Short structured replies, read only by code |
+| Writing the answer | **GPT-6 Luna** | The step the reader reads. As grounded as GPT-5.6 Luna, at about half the cost |
+| Planning, and judging whether the evidence is enough | **GPT-6 Luna**, reasoning kept brief | Short structured replies, read only by code; as fast as Gemini 3.7 or 3.8 Flash and much cheaper |
+| Choosing the evidence (reranker) | **GPT-6 Luna**, reasoning kept brief | Decides what the answer is built from; Gemini Flash returned every paper instead of choosing |
+| Checking the answer (audit) | **GPT-6 Luna** | Gemini Flash cost about 2.5 times as much here and was not faster |
+| Whole-repository group summaries | **GPT-6 Luna**, reasoning kept brief | Many calls a question, so cost matters most here |
 | Chart: choosing the view | **Gemini 3.1 Flash-Lite** | A small choice from a fixed menu; code draws the chart |
 | Meaning search | **text-embedding-3-small** | Turns passages and questions into embeddings |
-| Deep research: plan, gather, write, revise | **GPT-5.6 Luna** | Long reading and writing |
-| Deep research: claim check | **Gemini 3.7 Flash** | A different model family from the writer |
+| Deep research: plan, gather, write, revise | **GPT-6 Luna** | Long reading and writing |
+| Deep research: claim check | **Gemini 3.8 Flash** | A different model family from the writer |
+| Paper analysis (when a paper is uploaded) | **Gemini 3.1 Flash-Lite** and **2.5 Flash-Lite** | High volume, structured extraction at the lowest price |
+
+"Reasoning kept brief": GPT-6 Luna thinks before it writes, and that thinking counts toward each step's output limit. The mechanical steps are asked to think briefly, and every step has room for it.
 
 ---
 

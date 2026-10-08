@@ -102,7 +102,7 @@ export async function gatherQuestion(input: {
     findingsMessages({ readerQuestion: input.readerQuestion, subQuestion: question.question, candidates }),
     findingsTool(),
     "DEEP_RESEARCH_FINDINGS",
-    { maxTokens: 1_800, timeoutMs: 75_000, reasoningEffort: "low" }
+    { maxTokens: 4_000, timeoutMs: 75_000, reasoningEffort: "low" }
   );
   const parsed = parseFindings(raw, new Set(candidates.map((candidate) => candidate.label)));
   if (!parsed) {
@@ -278,7 +278,7 @@ export async function checkReport(input: {
     const batch = flagged.slice(0, 30);
     const raw = await callTool(reviseMessages(batch, evidence, input.language), reviseTool(), "DEEP_RESEARCH_REVISE", {
       model: input.model,
-      maxTokens: 3_000,
+      maxTokens: 6_000,
       timeoutMs: 75_000,
       reasoningEffort: "low",
     });
@@ -450,7 +450,7 @@ export async function runResearchSession(input: {
         0.3,
         model,
         "DEEP_RESEARCH_REPORT",
-        { maxTokens: 4_000, timeoutMs: 150_000, reasoningEffort: "low" }
+        { maxTokens: 8_000, timeoutMs: 150_000, reasoningEffort: "low" }
       );
       draft = completion?.content?.trim() ?? "";
       if (!draft) throw new Error("The report could not be written just now.");

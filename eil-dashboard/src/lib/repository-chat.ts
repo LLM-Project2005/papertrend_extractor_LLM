@@ -240,6 +240,26 @@ export const CORPUS_ABSTRACT_CHARS = 1_500;
  */
 const STRUCTURED_STEP = { maxTokens: 2_500, reasoningEffort: "low" as const };
 
+/**
+ * Output room for the steps on the reader's model. GPT-6 Luna reasons before it
+ * writes, more than GPT-5.6 Luna did, and the reasoning counts against
+ * max_tokens: measured on 2026-10-09, it cut off the reranker at 450 tokens,
+ * the repository-wide group summaries at 1,500 (one came back empty) and once
+ * the audit at 3,600. A limit is a ceiling, not a charge: only the tokens used
+ * are paid for. The mechanical steps (choosing papers, summarising a group)
+ * also reason less.
+ */
+export const STEP_BUDGETS = {
+  rerank: { maxTokens: 2_000, reasoningEffort: "low" as const },
+  corpusMap: { maxTokens: 4_000, reasoningEffort: "low" as const },
+  corpusReduce: { maxTokens: 8_000 },
+  synthesis: { maxTokens: 6_000 },
+  titleRewrite: { maxTokens: 4_000 },
+  audit: { maxTokens: 8_000 },
+  converse: { maxTokens: 3_000 },
+  documentAnalysis: (papers: number) => ({ maxTokens: Math.min(10_000, 3_000 + papers * 550) }),
+};
+
 export interface RepositoryChatInput {
   ownerUserId: string;
   threadId?: string | null;
@@ -2047,7 +2067,7 @@ async function selectEvidence(
         0,
         model,
         "CHAT_RERANK",
-        { maxTokens: 450 }
+        STEP_BUDGETS.rerank
       );
       const parsed = RerankSchema.safeParse(extractJsonObject(completion?.content ?? ""));
       if (parsed.success) {
@@ -2297,7 +2317,7 @@ async function checkFaithfulness(input: {
       0,
       input.model,
       "CHAT_FAITHFULNESS",
-      { maxTokens: 3_600 }
+      STEP_BUDGETS.audit
     );
     const parsed = FaithfulnessSchema.safeParse(extractJsonObject(completion?.content ?? ""));
     if (!parsed.success) {
@@ -2532,7 +2552,7 @@ async function repositoryQaResult(
       0.2,
       input.model,
       "CHAT_SYNTHESIS",
-      { maxTokens: 2_800 }
+      STEP_BUDGETS.synthesis
     );
     const parsed = GroundedAnswerSchema.safeParse(extractJsonObject(completion?.content ?? ""));
     if (parsed.success) {
@@ -3259,7 +3279,7 @@ async function generateDocumentAnalysisBatch(
         0.15,
         input.model,
         attempt === 0 ? "CHAT_DOCUMENT_ANALYSIS" : "CHAT_DOCUMENT_ANALYSIS_REPAIR",
-        { maxTokens: Math.min(4_800, 1_300 + papers.length * 550) }
+        STEP_BUDGETS.documentAnalysis(papers.length)
       );
       raw = completion?.content?.trim() ?? "";
       const parsed = DocumentAnalysisBatchSchema.safeParse(extractJsonObject(raw));
@@ -3340,7 +3360,7 @@ async function attributeOverview(
       0,
       model,
       "CHAT_SYNTHESIS",
-      { maxTokens: 1_600 }
+      STEP_BUDGETS.titleRewrite
     );
     const parsed = extractJsonObject(completion?.content ?? "");
     const repaired = typeof parsed?.overview === "string" ? parsed.overview.trim() : "";
@@ -3579,7 +3599,7 @@ async function aggregateCorpusResult(
           content: buildPapertrendSystemPrompt("corpus_mapper", ["Extract compact repository-level facts for a later synthesis. Preserve differences, methods, findings, gaps, and paper IDs. Do not count papers or topics: this is one batch of the repository, and the counts for the whole repository are supplied separately."]),
         },
         { role: "user", content: `Research request: ${execution.refinedQuestion}\n\n${evidence}` },
-      ], 0, input.model, "CHAT_CORPUS_MAP", { maxTokens: 1_500 });
+      ], 0, input.model, "CHAT_CORPUS_MAP", STEP_BUDGETS.corpusMap);
       summaries.push(completion?.content?.trim() || evidence);
     } catch {
       summaries.push(evidence);
@@ -3603,7 +3623,7 @@ async function aggregateCorpusResult(
         role: "user",
         content: [`Original request: ${input.prompt}`, `Refined request: ${execution.refinedQuestion}`, `Answer language: ${execution.answerLanguage}`, formatConstraintInstruction(input.prompt) ?? "", `Eligible papers: ${context.papers.length}`, countsEvidence, "Use these counts for any claim about how often or how many - prefer the themes, which are what the dashboard shows; the batch findings below are for what the papers say.", ...summaries.map((summary, index) => `## Batch ${index + 1}\n${summary}`)].join("\n\n").slice(0, 60_000),
       },
-    ], 0.15, input.model, "CHAT_CORPUS_REDUCE", { maxTokens: 3_000 });
+    ], 0.15, input.model, "CHAT_CORPUS_REDUCE", STEP_BUDGETS.corpusReduce);
     const answer = completion?.content?.trim();
     if (answer) {
       const allowed = context.papers.map((paper) => paper.paperId);
@@ -3682,7 +3702,7 @@ async function converseResult(
       0.3,
       input.model,
       "CHAT_CONVERSE",
-      { maxTokens: 1_200 }
+      STEP_BUDGETS.converse
     );
     if (completion?.content?.trim()) {
       return {

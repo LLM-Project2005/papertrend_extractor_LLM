@@ -206,10 +206,9 @@ function parseChatRequestBody(value: unknown): ChatRequestBody {
   return parsed.data as ChatRequestBody;
 }
 
-const DEFAULT_CHAT_MODEL = "openai/gpt-5.6-luna-20260709";
+const DEFAULT_CHAT_MODEL = "openai/gpt-6-luna-20260922";
 const TOOL_CAPABLE_CHAT_MODELS = [
-  "openai/gpt-5.6-luna-20260709",
-  "google/gemini-3.7-flash",
+  "openai/gpt-6-luna-20260922",
 ] as const;
 
 function resolveChatModel(model?: string | null) {
