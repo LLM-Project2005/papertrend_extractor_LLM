@@ -118,7 +118,7 @@ function describeSelection(years: string[], categories: string[], search: string
   if (chosen.length > 0 && chosen.length < allYears.length) {
     parts.push(chosen.length === 1 ? `the year ${chosen[0]}` : `years ${chosen[0]}–${chosen[chosen.length - 1]}`);
   }
-  if (categories.length) parts.push(`categories: ${categories.join(", ")}`);
+  if (categories.length) parts.push(`research areas: ${categories.join(", ")}`);
   if (search.trim()) parts.push(`papers matching "${search.trim().slice(0, 80)}"`);
   return parts.length ? parts.join("; ") : "the whole repository";
 }
