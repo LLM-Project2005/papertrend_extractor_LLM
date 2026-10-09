@@ -819,17 +819,29 @@ function AnswerCaveats({ metadata }: { metadata?: Record<string, unknown> | null
     coverage && typeof coverage.eligiblePapers === "number" && coverage.eligiblePapers > 0;
   const diagnostics = metadata.repositoryDiagnostics as { cached?: unknown } | null;
   const cached = diagnostics?.cached === true;
-  if (!hasCoverage && limitations.length === 0 && !cached) return null;
+  // Which effort answered, when it was not the usual one (ThinkingEffort.tsx).
+  const effortNote =
+    metadata.effort === "low"
+      ? "Answered at Low effort: the papers that matter most, briefly."
+      : metadata.effort === "high"
+        ? "Answered at High effort: read more widely and thought longer."
+        : null;
+  if (!hasCoverage && limitations.length === 0 && !cached && !effortNote) return null;
 
   return (
     <div className="max-w-[720px] space-y-1 border-l-2 border-slate-200 pl-3 text-xs leading-5 text-slate-600 dark:border-[#242424] dark:text-[#8e8e8e]">
       {hasCoverage ? (
         <p>
           {coverage!.complete
-            ? `Covered all ${coverage!.eligiblePapers} paper${coverage!.eligiblePapers === 1 ? "" : "s"} in ${coverage!.scopeLabel ?? "this scope"}.`
+            ? coverage!.eligiblePapers === 1
+              ? /^“|^1 selected/.test(coverage!.scopeLabel ?? "")
+                ? `Covered ${coverage!.scopeLabel}.`
+                : `Covered the one paper in ${coverage!.scopeLabel ?? "this scope"}.`
+              : `Covered all ${coverage!.eligiblePapers} papers in ${coverage!.scopeLabel ?? "this scope"}.`
             : `Based on ${coverage!.returnedPapers ?? 0} of ${coverage!.eligiblePapers} paper${coverage!.eligiblePapers === 1 ? "" : "s"} in ${coverage!.scopeLabel ?? "this scope"}.`}
         </p>
       ) : null}
+      {effortNote ? <p>{effortNote}</p> : null}
       {limitations.map((limitation, index) => (
         <p key={`limitation-${index}`}>{limitation}</p>
       ))}

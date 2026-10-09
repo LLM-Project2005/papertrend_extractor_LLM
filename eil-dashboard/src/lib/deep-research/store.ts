@@ -134,7 +134,7 @@ export async function savePlan(input: {
         input: { engine: ENGINE, question },
       })),
       {
-        title: /thai|ไทย/i.test(input.plan.language) ? "เขียนรายงาน" : "Write the report",
+        title: /thai|ไทย/i.test(input.plan.language) ? "เขียนคำตอบ" : "Write the answer",
         description: /thai|ไทย/i.test(input.plan.language) ? "เรียบเรียงข้อค้นพบพร้อมอ้างอิงแหล่งที่มาทุกข้อ" : "Bring the findings together, citing a source for every claim.",
         tool: "dr2_write",
         input: { engine: ENGINE, plan: input.plan, scope: input.scope, readerQuestion: input.prompt, model: input.model },

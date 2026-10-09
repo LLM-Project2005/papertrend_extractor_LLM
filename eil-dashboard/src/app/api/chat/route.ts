@@ -435,6 +435,7 @@ async function normalChat(request: Request, body: ChatRequestBody, ownerUserId: 
         scopeSnapshot: repositoryResult.scopeSnapshot,
         requestId,
         model: selectedModel,
+        effort: body.effort ?? "medium",
         toolResults,
         chart: repositoryCharts[0] ?? null,
         charts: repositoryCharts,

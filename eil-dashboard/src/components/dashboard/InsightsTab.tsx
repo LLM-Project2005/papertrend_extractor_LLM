@@ -163,6 +163,8 @@ export default function InsightsTab({
   const [answers, setAnswers] = useState<AskEntry[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  // Said when the examples run out or start again: a small repository answers only a few views.
+  const [suggestionsNote, setSuggestionsNote] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [generateNote, setGenerateNote] = useState<string | null>(null);
   const requestId = useRef(0);
@@ -278,6 +280,7 @@ export default function InsightsTab({
     setSuggestions(null);
     const timer = window.setTimeout(() => {
       shownViews.current = new Set();
+      setSuggestionsNote(null);
       void fetchViews(3)
         .then(({ views }) => {
           if (current) setSuggestions(views);
@@ -302,7 +305,10 @@ export default function InsightsTab({
           const list = current ?? [];
           const index = list.findIndex((item) => item.key === suggestion.key);
           const rest = list.filter((item) => item.key !== suggestion.key);
-          if (views.length === 0) return rest;
+          if (views.length === 0) {
+            setSuggestionsNote("That was every question these papers can answer just now; Other questions starts them again.");
+            return rest;
+          }
           return index < 0 ? [...rest, ...views] : [...rest.slice(0, index), ...views, ...rest.slice(index)];
         })
       )
@@ -314,11 +320,14 @@ export default function InsightsTab({
     setRefreshing(true);
     try {
       let { views } = await fetchViews(3);
+      let restarted = false;
       if (views.length === 0) {
         shownViews.current = new Set();
         ({ views } = await fetchViews(3));
+        restarted = true;
       }
       setSuggestions(views);
+      setSuggestionsNote(restarted ? "That was every question these papers can answer just now, so these start again." : null);
     } catch {
       // The current examples stay.
     } finally {
@@ -516,7 +525,7 @@ export default function InsightsTab({
           </p>
           {suggestions === null ? (
             <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Finding questions these papers can answer…</p>
-          ) : suggestions.length > 0 ? (
+          ) : suggestions.length > 0 || suggestionsNote ? (
             <div className="mt-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Questions these papers can answer:</p>
@@ -544,6 +553,7 @@ export default function InsightsTab({
                   </li>
                 ))}
               </ul>
+              {suggestionsNote ? <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">{suggestionsNote}</p> : null}
             </div>
           ) : null}
           {askError ? <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300" role="alert">{askError}</p> : null}

@@ -472,5 +472,6 @@ test("a cached answer is shown to the reader as cached", () => {
   assert.match(client, /Answered from an earlier identical question/);
   // And the caveat block renders for a cached answer even when there is
   // nothing else to say.
-  assert.match(client, /if \(!hasCoverage && limitations\.length === 0 && !cached\) return null;/);
+  // (It also renders for a Low or High answer's effort note.)
+  assert.match(client, /if \(!hasCoverage && limitations\.length === 0 && !cached && !effortNote\) return null;/);
 });
