@@ -56,8 +56,8 @@ const MORE = [
   },
   {
     Icon: SearchIcon,
-    title: "Deep research",
-    copy: "A plan of two to five sub-questions you see before it starts. It reads the papers first, and the web only where they cannot answer. Gemini 3.8 Flash, a different model family from the writer, checks every sentence. About 40 seconds; stop it at any time.",
+    title: "Deep thinking",
+    copy: "Choose Deep under the text box: the question is split into two to five parts, shown as its thinking while it reads the papers first and the web only where they cannot answer. Gemini 3.8 Flash, a different model family from the writer, checks every sentence. About 40 seconds; stop it at any time.",
   },
   {
     Icon: RefreshIcon,

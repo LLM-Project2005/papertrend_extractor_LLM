@@ -18,7 +18,7 @@ export const startCategory: DocsCategoryBase = {
           id: "what-papertrend-does",
           title: "What Papertrend does",
           body: [
-            "Papertrend reads research papers for you, one at a time and always the same way. For every PDF you add it works out the title and publication year, splits the paper into its sections, collects the paper's own keywords, finds the topics it studies and the methods it uses, and, if you ask it to, sorts it into categories you choose.",
+            "Papertrend reads research papers for you, one at a time and always the same way. For every PDF you add it works out the title and publication year, splits the paper into its sections, collects the paper's own keywords, finds the topics it studies and the methods it uses, and, if you ask it to, sorts it into research areas you choose.",
             "Because every paper is read the same way, the results add up. The **Dashboard** charts how the topics in a collection have moved over the years, and **Chat** answers questions about the papers with a numbered citation for each claim, so you can open the paper and check.",
           ],
           figure: {
@@ -64,7 +64,7 @@ export const startCategory: DocsCategoryBase = {
           steps: [
             "Open **Repositories** (the account menu at the top right, or the name at the top left of any workspace page).",
             "Click **New repository** and give it a name.",
-            "Choose an **Analysis profile**. **General Research** suits most collections; **EIL Tracks** uses the official English as an International Language categories; **Custom Taxonomy** lets you define 2 to 12 categories of your own. You can change this later.",
+            "Choose an **Analysis profile**. **General Research** suits most collections; **EIL Tracks** uses the official English as an International Language research areas; **Custom Taxonomy** lets you define 2 to 12 research areas of your own. You can change this later.",
             "Click **Create repository**. You arrive on its Home page, which is empty until the first papers are analyzed.",
           ],
           callout: {
@@ -100,8 +100,8 @@ export const startCategory: DocsCategoryBase = {
           title: "Read the results",
           body: ["As soon as a paper finishes it appears everywhere at once."],
           definitions: [
-            { term: "Library", detail: "Every paper in the repository. Click a finished paper to open the paper explorer: its category and the reason for it, the year with the line it came from, keywords with their evidence, and the PDF. See [Reading a paper's analysis](/docs/reading-a-paper)." },
-            { term: "Dashboard", detail: "Charts of the whole repository: themes by year, categories over time, keywords and a map of how the papers relate. See [The dashboard](/docs/dashboard)." },
+            { term: "Library", detail: "Every paper in the repository. Click a finished paper to open the paper explorer: its research area and the reason for it, the year with the line it came from, keywords with their evidence, and the PDF. See [Reading a paper's analysis](/docs/reading-a-paper)." },
+            { term: "Dashboard", detail: "Charts of the whole repository: themes by year, research areas over time, keywords and a map of how the papers relate. See [The dashboard](/docs/dashboard)." },
             { term: "Chat", detail: "Questions answered from the papers, with a numbered citation for each claim. See [Research chat](/docs/chat)." },
           ],
         },
@@ -111,7 +111,7 @@ export const startCategory: DocsCategoryBase = {
           body: [],
           checklist: [
             "Add a description to the repository in **Settings > General**.",
-            "Open one paper in the Library and check its year and category. If either is wrong, use **Correct title or year**.",
+            "Open one paper in the Library and check its year and research area. If either is wrong, use **Correct title or year**.",
             "Ask Chat one question you already know the answer to, and open the citations.",
             "Read [The dashboard](/docs/dashboard) before drawing conclusions from a chart.",
           ],
@@ -249,12 +249,12 @@ export const startCategory: DocsCategoryBase = {
           title: "Analyzing a paper again",
           body: [
             "**Analyze again** (a finished paper) or **Try again** (a failed one) runs the whole analysis once more, using today's pipeline and the repository's current analysis profile. **New > Analyze repository again** does the same for every finished paper in the repository, up to 200 at a time.",
-            "Before it starts, Papertrend shows how many papers will be analyzed and roughly what that costs in model use (about US$0.02 per paper). Titles and years you corrected by hand are kept. The papers then appear in the progress tray, exactly like a new upload.",
+            "Before it starts, Papertrend shows how many papers will be analyzed and roughly how many tokens of model use that takes (about 30,000 a paper; analysis does not count toward your daily chat tokens). Titles and years you corrected by hand are kept. The papers then appear in the progress tray, exactly like a new upload.",
           ],
           callout: {
             tone: "info",
-            title: "Changed your categories?",
-            body: "If you only changed the analysis profile, you do not need a full re-analysis. **Settings > Analysis & classification > Reclassify existing papers** re-sorts the papers into the new categories much faster. See [Analysis profiles](/docs/analysis-profiles).",
+            title: "Changed your research areas?",
+            body: "If you only changed the analysis profile, you do not need a full re-analysis. **Settings > Analysis & classification > Reclassify existing papers** re-sorts the papers into the new research areas much faster. See [Analysis profiles](/docs/analysis-profiles).",
           },
         },
         {

@@ -58,6 +58,18 @@ export async function installMockApi(
     const method = request.method();
 
     if (path === "/api/auth/profile" && method === "GET") return json(route, fixtures.profile);
+    // An invented day's use, for the usage meter beside the chat composer.
+    if (path === "/api/workspace/usage" && method === "GET") {
+      const resetsAt = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), new Date().getUTCDate() + 1)).toISOString();
+      return json(route, {
+        exempt: false,
+        tokens: { used: 184_200, limit: 1_000_000 },
+        messages: { used: 12, limit: 100 },
+        deepResearch: { used: 1, limit: 10 },
+        webSearches: { used: 3, limit: 40 },
+        resetsAt,
+      });
+    }
     if (path === "/api/workspace/projects" && method === "GET") return json(route, fixtures.projects);
     if (path === "/api/workspace/organizations") return json(route, fixtures.organizations);
     if (path === "/api/workspace/folders") return json(route, fixtures.folders);

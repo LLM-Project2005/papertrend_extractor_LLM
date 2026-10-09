@@ -49,7 +49,6 @@ async function tabs() {
     TrendAnalysis: (await import("../src/components/tabs/TrendAnalysis")).default,
     KeywordExplorer: (await import("../src/components/tabs/KeywordExplorer")).default,
     TrackAnalysis: (await import("../src/components/tabs/TrackAnalysis")).default,
-    Overview: (await import("../src/components/tabs/Overview")).default,
   };
 }
 
@@ -109,12 +108,11 @@ test("the themes-by-year chart stacks at most eight themes, even when its plan a
 
 // DASH-7: the tabs' empty messages only ever mean the filters.
 test("a tab with nothing to show says the filters match no papers", async () => {
-  const { TrendAnalysis, KeywordExplorer, TrackAnalysis, Overview } = await tabs();
+  const { TrendAnalysis, KeywordExplorer, TrackAnalysis } = await tabs();
   const empty = { trends: [], tracksSingle: [], tracksMulti: [], selectedTracks: TRACKS };
   for (const [tab, html] of [
     ["TrendAnalysis", draw(TrendAnalysis, empty)],
     ["KeywordExplorer", draw(KeywordExplorer, empty)],
-    ["Overview", draw(Overview, empty)],
   ] as const) {
     assert.match(html, /No papers match the current filters\./, tab);
     assert.doesNotMatch(html, /No data for the selected filters/, tab);
@@ -143,7 +141,9 @@ async function dashboard(data: Partial<DashboardData> | null, options: { loading
     loading: options.loading ?? false,
     data: data && { trends: [], tracksSingle: [], tracksMulti: [], categoryAssignments: [], useMock: false, diagnostics: {}, ...data },
   };
-  globalThis.__auditfixSearch = options.search ?? "";
+  // These cases are about the chart tabs; the dashboard opens on the semantic
+  // map, which has its own empty state, so Area Analysis is opened here.
+  globalThis.__auditfixSearch = options.search ?? "tab=area_analysis";
   try {
     const { default: DashboardClient } = await import("../src/components/DashboardClient");
     const { AnalysisRunsContext } = await import("../src/components/workspace/AnalysisRunsContext");
@@ -176,7 +176,7 @@ test("a repository with no analysed paper says so, instead of every tab blaming 
   assert.doesNotMatch(await dashboard({}, { search: "tab=semantic_map" }), /No analysed papers yet/, "the map has its own empty state");
   const withPaper = await dashboard(ONE_PAPER);
   assert.doesNotMatch(withPaper, /No analysed papers yet/);
-  assert.match(withPaper, /<h2[^>]*>\s*Overview\s*<\/h2>/);
+  assert.match(withPaper, /<h2[^>]*>\s*Trend analysis\s*<\/h2>/);
 });
 
 test("the dashboard counts the papers the shell is following for this repository only", async () => {

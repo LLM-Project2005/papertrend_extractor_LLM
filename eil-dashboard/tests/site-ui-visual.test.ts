@@ -11,7 +11,6 @@ import vm from "node:vm";
 import { existsSync, readFileSync } from "node:fs";
 import ts from "typescript";
 import { chartTheme } from "../src/lib/chart-theme";
-import { productDetails } from "../src/components/marketing/marketing-content";
 
 function exists(relative: string): boolean {
   return existsSync(new URL(`../${relative}`, import.meta.url));
@@ -90,12 +89,12 @@ test("a product clip waits for the reader's motion setting and for being on scre
   assert.match(clip, /Pause the product video/, "moving content beside text can be stopped");
 });
 
-test("the published step count is the ingestion graph's", () => {
+test("the published step count is the ingestion graph's", async () => {
   // "4 core research workflows" and "1 workspace for papers, charts and chat"
   // were once set at display size and proved nothing; "12 analysis stages"
   // left out the step that saves. The details list says 13.
-  const analysis = productDetails.find((item) => item.term === "Analysis")?.detail ?? "";
-  assert.match(analysis, /^13 steps per paper/);
+  const { ANALYSIS_STEP_COUNT } = await import("../src/components/marketing/how-it-works-content");
+  assert.equal(ANALYSIS_STEP_COUNT, 13, "How it works says 13 steps");
 
   // graphs.py is the Python worker's graph, which these Node tests cannot
   // build, so its registrations are counted. (The six dashboard views are

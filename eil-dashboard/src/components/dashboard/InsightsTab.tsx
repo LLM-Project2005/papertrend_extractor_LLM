@@ -114,11 +114,11 @@ interface AskEntry {
   unanswerable?: string;
 }
 
-const ASK_EXAMPLES = [
-  "Which methods are used for which themes?",
-  "How have the kinds of contribution changed?",
-  "What do the papers on assessment set out to produce?",
-];
+/** An example question these papers can answer, with the view it stands for (insights/suggestions.ts). */
+interface Suggestion {
+  question: string;
+  query: unknown;
+}
 
 function Notices({ notices }: { notices: Array<Pick<InsightNotice, "id" | "text">> }) {
   if (notices.length === 0) return null;
@@ -152,6 +152,7 @@ export default function InsightsTab({
   const [asking, setAsking] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [answers, setAnswers] = useState<AskEntry[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const requestId = useRef(0);
   const askId = useRef(0);
 
@@ -207,7 +208,7 @@ export default function InsightsTab({
     setAskError(null);
   }, [body]);
 
-  async function ask(event?: FormEvent<HTMLFormElement>, text = question) {
+  async function ask(event?: FormEvent<HTMLFormElement>, text = question, query?: unknown) {
     event?.preventDefault();
     const trimmed = text.trim();
     if (!projectId || !accessToken || trimmed.length < 3 || asking) return;
@@ -217,7 +218,8 @@ export default function InsightsTab({
       const response = await fetch("/api/workspace/insights/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ ...body, question: trimmed }),
+        // A suggested example sends its own view, which runs without a model call.
+        body: JSON.stringify({ ...body, question: trimmed, ...(query === undefined ? {} : { query }) }),
       });
       const payload = (await response.json().catch(() => ({}))) as { insight?: Insight; unanswerable?: string; error?: string };
       if (!response.ok || (!payload.insight && !payload.unanswerable)) {
@@ -232,6 +234,33 @@ export default function InsightsTab({
       setAsking(false);
     }
   }
+
+  // Example questions these papers can answer, for the current filters. Each
+  // was checked against the papers on the server before it is offered.
+  const enoughPapers = (result?.report.summary.papers ?? 0) >= 3;
+  useEffect(() => {
+    if (!projectId || !accessToken || !enoughPapers) return;
+    let current = true;
+    setSuggestions(null);
+    const timer = window.setTimeout(() => {
+      void fetch("/api/workspace/insights/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify(body),
+      })
+        .then(async (response) => (response.ok ? ((await response.json()) as { suggestions?: Suggestion[] }) : { suggestions: [] }))
+        .then((payload) => {
+          if (current) setSuggestions(payload.suggestions ?? []);
+        })
+        .catch(() => {
+          if (current) setSuggestions([]);
+        });
+    }, 400);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [accessToken, body, enoughPapers, projectId, dataVersion]);
 
   // New filters or new data: recompute (free), after the filters settle.
   useEffect(() => {
@@ -366,28 +395,31 @@ export default function InsightsTab({
           </form>
           <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">
             One short AI call turns the question into a view; the numbers are computed from the papers.{" "}
-            {answers.length === 0 ? (
-              <>
-                Try:{" "}
-                {ASK_EXAMPLES.map((example, index) => (
-                  <span key={example}>
+          </p>
+          {suggestions === null ? (
+            <p className="mt-3 text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Finding questions these papers can answer…</p>
+          ) : suggestions.length > 0 ? (
+            <div className="mt-3">
+              <p className="text-xs leading-5 text-slate-500 dark:text-[#8f8f8f]">Questions these papers can answer:</p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {suggestions.map((suggestion) => (
+                  <li key={suggestion.question}>
                     <button
                       type="button"
                       onClick={() => {
-                        setQuestion(example);
-                        void ask(undefined, example);
+                        setQuestion(suggestion.question);
+                        void ask(undefined, suggestion.question, suggestion.query);
                       }}
                       disabled={asking}
-                      className="rounded text-slate-700 underline underline-offset-2 hover:text-slate-950 dark:text-[#d4d4d4] dark:hover:text-white"
+                      className="inline-flex min-h-9 items-center rounded-full border border-slate-200 bg-white px-3.5 text-left text-xs font-medium text-slate-700 transition-colors hover:border-slate-400 hover:text-slate-950 disabled:cursor-not-allowed disabled:opacity-60 dark:border-[#2a2a2a] dark:bg-[#050505] dark:text-[#d4d4d4] dark:hover:border-[#4a4a4a] dark:hover:text-white"
                     >
-                      {example}
+                      {suggestion.question}
                     </button>
-                    {index < ASK_EXAMPLES.length - 1 ? " · " : ""}
-                  </span>
+                  </li>
                 ))}
-              </>
-            ) : null}
-          </p>
+              </ul>
+            </div>
+          ) : null}
           {askError ? <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300" role="alert">{askError}</p> : null}
         </section>
       ) : null}

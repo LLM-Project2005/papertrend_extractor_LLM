@@ -30,7 +30,7 @@ test("charts, tabs and the paper window load when they are needed", () => {
   assert.match(chat, /dynamic\(\(\) => import\("@\/components\/chat\/ChatChartCard"\)/);
   assert.match(chat, /dynamic\(\(\) => import\("@\/components\/chat\/ChatInsightCard"\)/);
   const dashboard = read("src/components/DashboardClient.tsx");
-  for (const tab of ["tabs/TrendAnalysis", "tabs/TrackAnalysis", "tabs/KeywordExplorer", "dashboard/InsightsTab", "workspace/RepositorySemanticMap"]) {
+  for (const tab of ["tabs/AreaAnalysis", "tabs/KeywordExplorer", "dashboard/InsightsTab", "workspace/RepositorySemanticMap"]) {
     assert.match(dashboard, new RegExp(`dynamic\\(\\(\\) => import\\("@/components/${tab}"\\)`), tab);
   }
   assert.match(read("src/components/workspace/PaperViewerProvider.tsx"), /dynamic\(\(\) => import\("@\/components\/workspace\/PaperAnalysisExplorerModal"\)/);
@@ -55,7 +55,7 @@ test("a visited dashboard tab stays mounted, and keeps still while hidden (DASH-
   const dashboard = read("src/components/DashboardClient.tsx");
   assert.match(dashboard, /<div hidden=\{!active\}>\s*<FrozenWhileHidden node=\{active \? children : lastShown\.current\} \/>/);
   assert.match(dashboard, /const FrozenWhileHidden = memo\(/);
-  for (const key of ["overview", "trend_analysis", "track_analysis", "keyword_explorer", "semantic_map", "adaptive"]) {
+  for (const key of ["area_analysis", "keyword_explorer", "semantic_map", "adaptive"]) {
     assert.match(dashboard, new RegExp(`<TabPanel active=\\{currentTabKey === "${key}"\\} visited=\\{visitedTabs\\.has\\("${key}"\\)\\}>`), key);
   }
 });

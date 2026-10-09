@@ -14,9 +14,10 @@ test("a correction needs a sensible title or a four-digit year", () => {
   assert.equal(validatePaperCorrection({ title: "ab" }).ok, false);
 });
 
-test("the estimate names the paper count and the cost", () => {
-  assert.equal(formatReanalysisEstimate(1), "1 paper, about $0.02 of model use");
-  assert.equal(formatReanalysisEstimate(39), "39 papers, about $0.78 of model use");
+test("the estimate names the paper count and the tokens it will use", () => {
+  assert.equal(formatReanalysisEstimate(1), "1 paper, about 30,000 tokens of model use");
+  assert.equal(formatReanalysisEstimate(12), "12 papers, about 360,000 tokens of model use");
+  assert.equal(formatReanalysisEstimate(39), "39 papers, about 1.2 million tokens of model use");
 });
 
 test("re-analysis is scoped to the verified owner's finished papers", async () => {

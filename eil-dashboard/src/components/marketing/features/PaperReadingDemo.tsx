@@ -23,7 +23,7 @@ const FIELDS = [
   { key: "keywords", label: "The paper’s own keywords", value: DEMO_PAPER.authorKeywords.join(" · "), from: "Its keyword list" },
   { key: "method", label: "Method", value: "Household survey (412 households) and interviews", from: "The methods section" },
   { key: "finding", label: "A key finding", value: "38% less flood damage near restored mangroves", from: "The results section" },
-  { key: "category", label: "Category", value: DEMO_PAPER.category, from: "With a written reason" },
+  { key: "category", label: "Research area", value: DEMO_PAPER.category, from: "With a written reason" },
 ] as const;
 
 type FieldKey = (typeof FIELDS)[number]["key"];

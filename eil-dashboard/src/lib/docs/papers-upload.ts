@@ -160,7 +160,7 @@ export const readingAPaperPage: DocsPageBase = {
       ],
       figure: {
         shot: "paper",
-        alt: "The paper explorer for a 2017 study: its category and rationale, the year with the journal line it came from, research type, the paper's own keywords and the method found.",
+        alt: "The paper explorer for a 2017 study: its research area and rationale, the year with the journal line it came from, research type, the paper's own keywords and the method found.",
         caption: "Every finding in the explorer comes with where it came from.",
       },
     },
@@ -203,9 +203,9 @@ export const readingAPaperPage: DocsPageBase = {
       body: ["The first tab gathers what the analysis decided about the paper as a whole."],
       subsections: [
         {
-          title: "Category",
+          title: "Research area",
           body: [
-            "The category the paper was placed in under the repository's analysis profile, any secondary categories (**Also:**), and the model's written reason. **Current profile** means it was classified with today's profile; **Needs reclassification** means the profile changed since. In a General Research repository this card reads **Classification not enabled**.",
+            "The research area the paper was placed in under the repository's analysis profile, any secondary research areas (**Also:**), and the model's written reason. **Current profile** means it was classified with today's profile; **Needs reclassification** means the profile changed since. In a General Research repository this card reads **Classification not enabled**.",
           ],
         },
         {
@@ -259,7 +259,7 @@ export const readingAPaperPage: DocsPageBase = {
       id: "reports",
       title: "The downloadable report",
       body: [
-        "**Download report** builds a Markdown (.md) file named after the paper: its metadata, the year with where it was read, the research type, the category and the reason for it, the paper's own keywords, its methods, topics and their keywords, facets, keywords with evidence, the extracted abstract, methods, results and conclusion, and any analysis notes or duplicate note.",
+        "**Download report** builds a Markdown (.md) file named after the paper: its metadata, the year with where it was read, the research type, the research area and the reason for it, the paper's own keywords, its methods, topics and their keywords, facets, keywords with evidence, the extracted abstract, methods, results and conclusion, and any analysis notes or duplicate note.",
       ],
       callout: {
         tone: "info",

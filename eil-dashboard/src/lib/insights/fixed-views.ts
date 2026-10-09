@@ -14,16 +14,11 @@ export interface FixedView extends ViewSignature {
 }
 
 export const FIXED_VIEWS: FixedView[] = [
-  { tab: "Overview", chart: "Papers published per year", measure: "papers", rows: "year" },
-  { tab: "Overview", chart: "What this repository studies", measure: "papers", rows: "theme" },
-  { tab: "Overview", chart: "Category distribution", measure: "papers", rows: "category" },
-  { tab: "Overview", chart: "Category overlap", measure: "papers", rows: "category (multi-label)" },
-  { tab: "Overview", chart: "How these studies were done", measure: "papers", rows: "method" },
-  { tab: "Trend Analysis", chart: "Themes by year", measure: "papers", rows: "year", cols: "theme" },
-  { tab: "Trend Analysis", chart: "Gaining and losing ground", measure: "share early vs late", rows: "theme" },
-  { tab: "Category Analysis", chart: "Papers per category per year", measure: "papers", rows: "year", cols: "category" },
-  { tab: "Category Analysis", chart: "Category co-occurrence", measure: "papers", rows: "category", cols: "category" },
-  { tab: "Category Analysis", chart: "Top topics per category", measure: "papers", rows: "theme", cols: "category" },
+  { tab: "Area Analysis", chart: "Themes by year", measure: "papers", rows: "year", cols: "theme" },
+  { tab: "Area Analysis", chart: "Gaining and losing ground", measure: "share early vs late", rows: "theme" },
+  { tab: "Area Analysis", chart: "Papers per research area per year", measure: "papers", rows: "year", cols: "category" },
+  { tab: "Area Analysis", chart: "Research area co-occurrence", measure: "papers", rows: "category", cols: "category" },
+  { tab: "Area Analysis", chart: "Top topics per research area", measure: "papers", rows: "theme", cols: "category" },
   { tab: "Keyword Explorer", chart: "Keywords used by the most papers", measure: "papers", rows: "keyword" },
   { tab: "Keyword Explorer", chart: "Themes across years", measure: "papers", rows: "theme", cols: "year" },
   { tab: "Keyword Explorer", chart: "Theme sizes", measure: "papers", rows: "theme (treemap)" },

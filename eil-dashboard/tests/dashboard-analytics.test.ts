@@ -303,7 +303,6 @@ function tabData() {
 
 async function tabs() {
   const { ThemeProvider } = await import("../src/components/theme/ThemeProvider");
-  const { default: Overview } = await import("../src/components/tabs/Overview");
   const { default: TrendAnalysis } = await import("../src/components/tabs/TrendAnalysis");
   const { default: TrackAnalysis } = await import("../src/components/tabs/TrackAnalysis");
   const { default: KeywordExplorer } = await import("../src/components/tabs/KeywordExplorer");
@@ -312,7 +311,6 @@ async function tabs() {
   const common = { trends: data.trends, tracksSingle: [], tracksMulti: [], selectedTracks: [] };
   return {
     data,
-    overview: () => draw(createElement(Overview, common)),
     trend: () => draw(createElement(TrendAnalysis, { trends: data.trends })),
     track: (classificationEnabled = true) =>
       draw(createElement(TrackAnalysis, { ...common, categoryAssignments: data.categoryAssignments, categoryOptions: data.categoryOptions, classificationEnabled })),
@@ -338,24 +336,22 @@ test("the Adaptive tab carries its own header, and no data pill remains (U2)", (
 test("the category chip tells the truth about classification (U3)", async () => {
   const { track } = await tabs();
   const off = track(false);
-  assert.match(off, /Categories are off for this repository/);
-  assert.equal(takeaway(off), "Nothing to show: this repository does not sort papers into categories.");
+  assert.match(off, /Research areas are off for this repository/);
+  assert.equal(takeaway(off), "Nothing to show: this repository does not sort papers into research areas.");
   assert.doesNotMatch(off, /recharts-surface/, "and no category chart is drawn");
   const on = track(true);
-  assert.doesNotMatch(on, /Categories are off/);
+  assert.doesNotMatch(on, /Research areas are off/);
   assert.match(on, /recharts-surface/);
   // The chip sits in DashboardClient's header (see U2 for why it is read).
-  assert.match(read("src/components/DashboardClient.tsx"), /: "Categories off"\}/);
+  assert.match(read("src/components/DashboardClient.tsx"), /: "Research areas off"\}/);
 });
 
 test("each fixed tab opens with a takeaway computed from its own numbers (U4)", async () => {
   // Drawn in the server render, before any effect could fetch anything: the
   // sentence is worked out from the tab's own rows.
-  const { overview, trend, track, keywords } = await tabs();
-  assert.match(takeaway(overview()), /^14 papers, published 2016–2021, /);
-  assert.match(takeaway(overview()), /The largest themes are Reading \(6\), Teacher Cognition and Beliefs \(6\) and Writing \(4\); 4 themes are shared by two or more papers\.$/);
+  const { trend, track, keywords } = await tabs();
   assert.match(takeaway(trend()), /^Comparing 2016–2018 \(6 papers\) with 2019–2021 \(6\): /);
-  assert.equal(takeaway(track()), "Instruction holds the most papers: 9 papers, 75% of the 12 with a dated category. Next is Assessment with 3.");
+  assert.equal(takeaway(track()), "Instruction holds the most papers: 9 papers, 75% of the 12 with a dated research area. Next is Assessment with 3.");
   assert.match(takeaway(keywords()), /^The keywords used by the most papers are reading \(6\), teacher cognition beliefs \(6\) and writing \(4\)\./);
 });
 
@@ -475,9 +471,9 @@ test("horizontal bar charts give their bars room on a phone (U5)", async () => {
   const { labelColumn } = await import("../src/lib/use-narrow");
   assert.deepEqual(labelColumn(true, { width: 300, chars: 46 }), { width: 118, chars: 17 });
   assert.deepEqual(labelColumn(false, { width: 300, chars: 46 }), { width: 300, chars: 46 });
-  const { overview, trend, keywords } = await tabs();
+  const { trend, keywords } = await tabs();
   const ticks = (html: string) => [...html.matchAll(/class="recharts-text recharts-cartesian-axis-tick-value"[^>]*><tspan[^>]*>([^<]*)<\/tspan>/g)].map((match) => text(match[1]));
-  for (const [name, draw] of [["Overview", overview], ["Trend analysis", trend], ["Keyword explorer", keywords]] as const) {
+  for (const [name, draw] of [["Trend analysis", trend], ["Keyword explorer", keywords]] as const) {
     const label = name === "Keyword explorer" ? "teacher cognition beliefs" : LONG;
     globalThis.__profiledashNarrow = false;
     assert.ok(ticks(draw()).includes(label), `${name}: the whole name on a desktop`);

@@ -50,7 +50,8 @@ function BarsChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers }
             </div>
             <div className="flex items-center gap-3">
               <span className="h-3 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1a1a1a]" aria-hidden>
-                <span className="block h-full rounded-full bg-slate-700 dark:bg-[#d4d4d4]" style={{ width: `${(row.value / max) * 100}%` }} />
+                {/* One quantity, one fill: the accent, in colour rather than grey (2026-10-09 review). */}
+                <span className="block h-full rounded-full bg-accent" style={{ width: `${(row.value / max) * 100}%` }} />
               </span>
               <span className="w-10 flex-none text-right text-xs tabular-nums text-slate-700 dark:text-[#d4d4d4]">{row.value}</span>
             </div>
@@ -78,7 +79,7 @@ function PairsChart({ insight, onOpen }: { insight: Insight; onOpen: OpenPapers 
           </p>
           <div className="flex items-center gap-3">
             <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-[#1a1a1a]">
-              <span className="block h-full rounded-full bg-slate-700 dark:bg-[#d4d4d4]" style={{ width: `${(row.together / max) * 100}%` }} />
+              <span className="block h-full rounded-full bg-accent" style={{ width: `${(row.together / max) * 100}%` }} />
             </span>
             <span className="w-32 flex-none text-right text-xs tabular-nums text-slate-600 dark:text-[#a3a3a3]">
               {row.together} papers · {Math.round(row.lift * 10) / 10}× chance

@@ -88,7 +88,7 @@ test("every chart hands over the papers behind the mark", async () => {
   const dom = installDom();
   try {
     const shapes = new Set<string>();
-    for (const name of ["Overview", "TrendAnalysis", "TrackAnalysis", "KeywordExplorer"]) {
+    for (const name of ["TrendAnalysis", "TrackAnalysis", "KeywordExplorer"]) {
       const Tab = (await import(`../src/components/tabs/${name}.tsx`)).default as (props: unknown) => ReactNode;
       const handed: Target[] = [];
       const trends = name === "TrendAnalysis" ? [...TRENDS, ...SHIFTING] : TRENDS;
@@ -109,7 +109,8 @@ test("every chart hands over the papers behind the mark", async () => {
       });
       tab.unmount();
     }
-    assert.ok(shapes.size >= 19, `found ${shapes.size} kinds of drilldown:\n${[...shapes].join("\n")}`);
+    // Thirteen kinds since the Overview's six went with it (2026-10-09 review).
+    assert.ok(shapes.size >= 13, `found ${shapes.size} kinds of drilldown:\n${[...shapes].join("\n")}`);
   } finally {
     dom.restore();
   }
@@ -119,15 +120,20 @@ test("a theme's bar hands over exactly its papers, a keyword's chip every spelli
   const dom = installDom();
   try {
     const handed: Target[] = [];
-    const { default: Overview } = await import("../src/components/tabs/Overview");
-    const overview = mount(Overview as (props: unknown) => ReactNode, { trends: TRENDS, tracksSingle: TRACKS, tracksMulti: TRACKS, selectedTracks: ["EL", "ELI"], onDrilldown: (target: Target) => void handed.push(target) });
-    pressEverything(overview.tree, null, (_kind, run) => run());
-    const feedback = handed.filter((target) => target.topic === "Feedback").map((target) => [...(target.paperIds as string[])].sort());
+    // Themes by year: each segment is one theme in one year.
+    const { default: TrendAnalysis } = await import("../src/components/tabs/TrendAnalysis");
+    const trend = mount(TrendAnalysis as (props: unknown) => ReactNode, { trends: TRENDS, onDrilldown: (target: Target) => void handed.push(target) });
+    pressEverything(trend.tree, null, (_kind, run) => run());
+    const feedback = handed.filter((target) => target.topic === "Feedback");
     assert.ok(feedback.length > 0, JSON.stringify(handed));
-    for (const ids of feedback) assert.deepEqual(ids, ["1", "2", "3"]);
-    const in2021 = handed.filter((target) => target.year === "2021").map((target) => [...(target.paperIds as string[])].sort());
-    assert.ok(in2021.length > 0);
+    for (const target of feedback) {
+      const expected = [...new Set(TRENDS.filter((entry) => entry.topic === "Feedback" && (!target.year || entry.year === target.year)).map((entry) => entry.paper_id))].sort();
+      assert.deepEqual([...(target.paperIds as string[])].sort(), expected, JSON.stringify(target));
+    }
+    const in2021 = handed.filter((target) => target.topic === "Feedback" && target.year === "2021").map((target) => [...(target.paperIds as string[])].sort());
+    assert.ok(in2021.length > 0, JSON.stringify(handed));
     for (const ids of in2021) assert.deepEqual(ids, ["2", "3"]);
+    trend.unmount?.();
 
     handed.length = 0;
     const { default: KeywordExplorer } = await import("../src/components/tabs/KeywordExplorer");
@@ -142,7 +148,9 @@ test("a theme's bar hands over exactly its papers, a keyword's chip every spelli
 });
 
 test("the dashboard lists exactly the papers a chart handed it, in view, with no rule of its own on top", async () => {
-  const dom = installDom("https://papertrend.test/workspace/dashboard");
+  const dom = installDom("https://papertrend.test/workspace/dashboard?tab=area_analysis");
+  // The dashboard opens on the semantic map; the charts that hand over papers are on Area Analysis.
+  globalThis.__auditfixSearch = "tab=area_analysis";
   globalThis.__auditfixAuth = { user: { id: "00000000-0000-4000-8000-00000000000a" }, session: { access_token: "token" } };
   globalThis.__auditfixWorkspace = {
     currentProject: { id: PROJECT, name: "Assessment studies" }, hasActiveProject: true, selectedProjectId: PROJECT, filtersLoadedFor: PROJECT, profile: {},
@@ -168,6 +176,7 @@ test("the dashboard lists exactly the papers a chart handed it, in view, with no
     assert.deepEqual(drill({ year: "2021" }), ["Paper 2", "Paper 3"]);
     page.unmount();
   } finally {
+    globalThis.__auditfixSearch = undefined;
     dom.restore();
   }
 });

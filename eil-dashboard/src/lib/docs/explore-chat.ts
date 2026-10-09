@@ -90,12 +90,12 @@ export const chatPage: DocsPageBase = {
       title: "Chart mode",
       body: [
         "Open **+** and turn on **Chart mode** to get a chart built from the repository's data. Describe the chart you want in your own words, or send an empty box for the strongest pattern in the papers. Typing chart words in a normal message (in English, or กราฟ and แผนภูมิ in Thai) offers **Use Chart mode**.",
-        "The chart is worked out from your question and drawn from the same themes, methods and categories as the dashboard, with a likely duplicate upload counted once. Its title, numbers and caption are computed, not written by a model. Press a bar or cell to list the papers behind it; each opens in place.",
+        "The chart is worked out from your question and drawn from the same themes, methods and research areas as the dashboard, with a likely duplicate upload counted once. Its title, numbers and caption are computed, not written by a model. Press a bar or cell to list the papers behind it; each opens in place.",
       ],
       table: {
         columns: ["You can ask for", "For example"],
         rows: [
-          ["How the papers divide by theme, method, category, contribution, kind of study, aim or year", "\"Papers per year\", \"Which methods are used most?\""],
+          ["How the papers divide by theme, method, research area, contribution, kind of study, aim or year", "\"Papers per year\", \"Which methods are used most?\""],
           ["Any two of those crossed", "\"Which methods are used for which themes?\""],
           ["Narrowed to a subject, or two values compared", "\"What do the writing papers set out to produce?\", \"Writing compared with reading\""],
           ["How shares changed from the earlier papers to the later", "\"Is qualitative research becoming more common?\""],
@@ -163,7 +163,7 @@ export const chatPage: DocsPageBase = {
       id: "stop",
       title: "Stopping an answer",
       body: [
-        "While an answer is being written, **Send** becomes **Stop**, and pressing Enter in the text box also stops it. Your question stays in the conversation. A deep research run cannot be stopped once started.",
+        "While an answer is being written, **Send** becomes **Stop**, and pressing Enter in the text box also stops it. Your question stays in the conversation. A Deep run is stopped with **Stop research** on its card.",
       ],
     },
     {
@@ -251,30 +251,30 @@ export const deepResearchPage: DocsPageBase = {
       id: "when-to-use",
       title: "When to use it",
       body: [
-        "A normal answer reads the passages most relevant to one question. **Deep research** breaks a broader question into up to five parts, searches the full text of every paper in scope for each, writes a report from what it found, and then checks every claim in the report against the passage it cites. It takes a few minutes.",
+        "A normal answer reads the passages most relevant to one question. **Deep research** breaks a broader question into up to five parts, searches the full text of every paper in scope for each, writes a report from what it found, and then checks every claim in the report against the passage it cites. It usually takes under a minute.",
         "Use it for questions such as \"How is dynamic assessment used to support Thai EFL learners, and what do the studies find?\". For a fact, a count or one paper's method, a normal answer is faster.",
       ],
     },
     {
       id: "plan-and-start",
-      title: "Plan, then start",
+      title: "Choose Deep, then ask",
       steps: [
-        "In Chat, open **+** and turn on **Deep research**.",
-        "Write your question and send it. You get a **plan**, not yet a report: the parts of the question it will research, and for each whether it uses your papers, the web, or both.",
-        "Read the plan. **Edit** puts your question back in the text box to change it; sending it again replaces the plan. **Cancel** drops it. **Start** begins the run.",
+        "In Chat, set the thinking effort under the text box to **Deep**. **Standard** is the usual answer.",
+        "Write your question and send it. It starts at once: first it splits the question into the parts it will research, and for each whether it uses your papers, the web, or both. Those parts are shown as its thinking.",
+        "**Stop research** stops it at any time; **Resume** carries on from where it stopped.",
       ],
       body: [],
       callout: {
         tone: "info",
         title: "One run, one request",
-        body: "You have 10 deep research runs a day. Planning is free of that count (it uses a little of the daily token limit); **Start** uses one. Retrying a run that failed, or resuming one you stopped, uses none.",
+        body: "You have 10 deep research runs a day, and each question asked with **Deep** uses one. Retrying a run that failed, or resuming one you stopped, uses none.",
       },
     },
     {
       id: "while-it-runs",
       title: "While it runs",
       body: [
-        "Each part of the plan shows what it is doing and then what it found, such as `Found 6 passages in 4 papers.` or `Not found in the 39 papers searched.` Then the report is written, and then every claim is checked.",
+        "Each part shows what it is doing and then what it found, such as `Found 6 passages in 4 papers.` or `Not found in the 39 papers searched.` Then the report is written, and then every claim is checked. Once the report is ready the thinking folds away above it; **Show the thinking** opens it again.",
       ],
       bullets: [
         "It uses the papers that have finished analysis; papers still being analysed are named in the report's limits rather than waited for.",

@@ -187,6 +187,8 @@ test("the dashboard's filter panel closes on a press beside it", async () => {
     data: { trends: [{ paper_id: "1", year: "2020", title: "Paper 1", topic: "Reading", keyword: "fluency", keyword_frequency: 1, evidence: "" }], tracksSingle: [], tracksMulti: [], categoryAssignments: [], useMock: false, diagnostics: {} },
   };
   globalThis.__auditfixPathname = "/workspace/dashboard";
+  // The filters belong to the chart tabs; the dashboard opens on the semantic map.
+  globalThis.__auditfixSearch = "tab=area_analysis";
   globalThis.__profiledashNarrow = false;
   const { default: DashboardClient } = await import("../src/components/DashboardClient");
   const dashboard = mount(DashboardClient, {});
@@ -199,4 +201,5 @@ test("the dashboard's filter panel closes on a press beside it", async () => {
   assert.equal(sheetOpen(), false);
   dashboard.unmount();
   globalThis.__profiledashNarrow = undefined;
+  globalThis.__auditfixSearch = undefined;
 });

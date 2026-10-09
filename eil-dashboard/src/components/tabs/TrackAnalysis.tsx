@@ -274,8 +274,8 @@ export default function TrackAnalysis({
     return (
       <div className="space-y-6">
         <section className="app-surface px-5 py-5">
-          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Category analysis</h2>
-          <Takeaway>Nothing to show: this repository does not sort papers into categories.</Takeaway>
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Research areas</h2>
+          <Takeaway>Nothing to show: this repository does not sort papers into research areas.</Takeaway>
         </section>
         <CategoriesOffNotice />
       </div>
@@ -296,24 +296,24 @@ export default function TrackAnalysis({
     <div className="space-y-6">
       <section className="app-surface px-5 py-5">
         <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
-          Category analysis
+          Research areas
         </h2>
         {lead && classifiedPapers > 0 ? (
           <Takeaway>
-            {`${lead.label} holds the most papers: ${plural(lead.papers, "paper")}, ${Math.round((lead.papers / classifiedPapers) * 100)}% of the ${classifiedPapers} with a dated category.`}
+            {`${lead.label} holds the most papers: ${plural(lead.papers, "paper")}, ${Math.round((lead.papers / classifiedPapers) * 100)}% of the ${classifiedPapers} with a dated research area.`}
             {categoryTotals.length > 1 && categoryTotals[1].papers > 0
               ? ` Next is ${categoryTotals[1].label} with ${categoryTotals[1].papers}.`
               : ""}
           </Takeaway>
         ) : (
-          <Takeaway>No paper in the current filters has a category yet.</Takeaway>
+          <Takeaway>No paper in the current filters has a research area yet.</Takeaway>
         )}
       </section>
 
       {orderedCharts.includes("track_year_stacked") && stackedData.length > 0 && (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Papers per category per year
+            Papers per research area per year
           </h3>
           <div className="mt-4 h-[340px]">
             <ResponsiveContainer width="100%" height="100%">
@@ -342,9 +342,9 @@ export default function TrackAnalysis({
             </ResponsiveContainer>
           </div>
           <ChartValues
-            title="Papers per category per year"
+            title="Papers per research area per year"
             csv={{
-              name: "Papers per category per year",
+              name: "Papers per research area per year",
               ...seriesTable(
                 stackedData as Array<Record<string, unknown>>,
                 "year",
@@ -371,16 +371,16 @@ export default function TrackAnalysis({
       {orderedCharts.includes("track_cooccurrence") && coMatrix.length > 0 && (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Category co-occurrence
+            Research area co-occurrence
           </h3>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-            How often categories appear together on the same paper.
+            How often research areas appear together on the same paper.
           </p>
           <ChartCsvButton
             className="mt-1"
             csv={{
-              name: "Category co-occurrence",
-              header: ["Category", ...topicChartCategories.map((category) => category.label)],
+              name: "Research area co-occurrence",
+              header: ["Research area",...topicChartCategories.map((category) => category.label)],
               rows: topicChartCategories.map((category, index) => [category.label, ...(coMatrix[index] ?? [])]),
             }}
           />
@@ -399,7 +399,7 @@ export default function TrackAnalysis({
       Object.keys(topicsPerTrack).length > 0 ? (
         <section className="app-surface px-5 py-5">
           <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-            Top topics per category
+            Top topics per research area
           </h3>
           <div
             className="mt-5 grid gap-6"
@@ -481,7 +481,7 @@ export default function TrackAnalysis({
                       />
                     </div>
                   ) : (
-                    <p className="text-sm text-slate-500 dark:text-slate-400">No papers in this category match the current filters.</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">No papers in this research area match the current filters.</p>
                   )}
                 </div>
               );

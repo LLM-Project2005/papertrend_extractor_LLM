@@ -4,7 +4,7 @@ export const analysisPipelinePage: DocsPageBase = {
   slug: "analysis-pipeline",
   title: "How a paper is analyzed",
   description:
-    "Every step between upload and Ready: reading the text, translation, sections, title and year, keywords, topics, category, research type and facets, with the rules each step follows.",
+    "Every step between upload and Ready: reading the text, translation, sections, title and year, keywords, topics, research area, research type and facets, with the rules each step follows.",
   tags: ["analysis", "pipeline", "ocr", "translation", "year", "keywords", "topics"],
   related: ["reading-a-paper", "analysis-profiles", "uploading-papers"],
   sections: [
@@ -21,7 +21,7 @@ export const analysisPipelinePage: DocsPageBase = {
         "Find the sections: abstract, introduction, literature review, methods, results, discussion, conclusion and references.",
         "At the same time: work out the title and year, collect the paper's own keyword list, find keywords in the text, and note the paper's objective and contribution (facets).",
         "Group the keywords into topics and give each topic a short label.",
-        "At the same time: place the paper in a category (if the repository uses categories) and decide its research type.",
+        "At the same time: place the paper in a research area (if the repository uses research areas) and decide its research type.",
         "Assemble and save everything, then check whether the paper duplicates another one in the repository.",
       ],
     },
@@ -41,7 +41,7 @@ export const analysisPipelinePage: DocsPageBase = {
           ["**Sections**", "The text is translated if necessary and divided into sections."],
           ["**Metadata**", "The title, year and the paper's own keywords are worked out."],
           ["**Keywords**", "Keywords are found in the text, grouped into topics and labeled."],
-          ["**Classify**", "Category, research type and facets."],
+          ["**Classify**", "Research area, research type and facets."],
           ["**Save**", "The results are assembled and saved."],
           ["**Done**", "The paper is Ready everywhere."],
         ],
@@ -138,13 +138,13 @@ export const analysisPipelinePage: DocsPageBase = {
     },
     {
       id: "category-type-facets",
-      title: "Category, research type and facets",
+      title: "Research area, research type and facets",
       body: [],
       subsections: [
         {
-          title: "Category",
+          title: "Research area",
           body: [
-            "In a repository with categories, the paper is placed in one primary category and up to two secondary ones, with a written reason. General Research repositories skip this step. [Analysis profiles](/docs/analysis-profiles) explains the rules.",
+            "In a repository with research areas, the paper is placed in one primary research area and up to two secondary ones, with a written reason. General Research repositories skip this step. [Analysis profiles](/docs/analysis-profiles) explains the rules.",
           ],
         },
         {
@@ -206,36 +206,36 @@ export const analysisPipelinePage: DocsPageBase = {
 
 export const analysisProfilesPage: DocsPageBase = {
   slug: "analysis-profiles",
-  title: "Analysis profiles and categories",
+  title: "Analysis profiles and research areas",
   description:
-    "How a repository sorts its papers into categories: General Research, the official EIL tracks, or your own taxonomy, and how to reclassify papers after a change.",
-  tags: ["categories", "profile", "eil", "taxonomy", "reclassify", "classification"],
+    "How a repository sorts its papers into research areas: General Research, the official EIL tracks, or your own taxonomy, and how to reclassify papers after a change.",
+  tags: ["research areas", "profile", "eil", "taxonomy", "reclassify", "classification"],
   related: ["account-and-settings", "analysis-pipeline", "dashboard"],
   sections: [
     {
       id: "what-a-profile-does",
       title: "What a profile decides",
       body: [
-        "Each repository has one analysis profile. It decides whether papers are sorted into categories and, if so, which ones. Everything else in the analysis (text, sections, title, year, keywords, topics, research type, facets) happens the same way under every profile.",
+        "Each repository has one analysis profile. It decides whether papers are sorted into research areas and, if so, which ones. Everything else in the analysis (text, sections, title, year, keywords, topics, research type, facets) happens the same way under every profile.",
         "You choose a profile when you create a repository, and you can change it at any time in **Settings > Analysis & classification**, or with **Change** in the upload dialog. New repositories start on General Research.",
       ],
       figure: {
         shot: "settings-analysis",
-        alt: "The analysis profile chooser with General Research, EIL Tracks and Custom Taxonomy, and the three official EIL categories.",
+        alt: "The analysis profile chooser with General Research, EIL Tracks and Custom Taxonomy, and the three official EIL research areas.",
       },
     },
     {
       id: "general-research",
       title: "General Research",
       body: [
-        "Recommended for most disciplines. Papers are analyzed without being sorted into categories: no category is stored, the paper explorer's category card reads **Classification not enabled**, and the dashboard's Category Analysis explains how to turn categories on.",
+        "Recommended for most disciplines. Papers are analyzed without being sorted into research areas: no research area is stored, the paper explorer's research area card reads **Classification not enabled**, and the dashboard's research areas view explains how to turn research areas on.",
       ],
     },
     {
       id: "eil-tracks",
       title: "EIL Tracks",
       body: [
-        "The official English as an International Language categories, with their boundary rules. They cannot be edited.",
+        "The official English as an International Language research areas, with their boundary rules. They cannot be edited.",
       ],
       definitions: [
         { term: "English Linguistics (EL)", detail: "Research primarily explaining English language structure, meaning, variation, discourse, translation, or language use in global and local contexts." },
@@ -245,39 +245,39 @@ export const analysisProfilesPage: DocsPageBase = {
       callout: {
         tone: "info",
         title: "The boundary rules",
-        body: "Classify by the paper's primary contribution. Instructional interventions belong to ELI even when tests measure outcomes. Linguistic analysis belongs to EL unless it primarily builds or validates an assessment, which belongs to LAE. Add secondary categories only for genuine contributions.",
+        body: "Classify by the paper's primary contribution. Instructional interventions belong to ELI even when tests measure outcomes. Linguistic analysis belongs to EL unless it primarily builds or validates an assessment, which belongs to LAE. Add secondary research areas only for genuine contributions.",
       },
     },
     {
       id: "custom-taxonomy",
       title: "Custom Taxonomy",
       body: [
-        "Your own categories, from 2 to 12. Each needs a name and a description of what evidence belongs in it: the description is what the model reads when it decides, so write it the way you would brief a colleague.",
+        "Your own research areas, from 2 to 12. Each needs a name and a description of what evidence belongs in it: the description is what the model reads when it decides, so write it the way you would brief a colleague.",
       ],
       table: {
         columns: ["Field", "Limit", "What it is for"],
         rows: [
-          ["**Taxonomy name**", "120 characters", "Shown on the category card and the repository list."],
+          ["**Taxonomy name**", "120 characters", "Shown on the research area card and the repository list."],
           ["**Research domain**", "160 characters", "The field, in a phrase."],
-          ["**Purpose and inclusion boundaries**", "1,200 characters", "The rules for telling categories apart, like the EIL boundary rules."],
+          ["**Purpose and inclusion boundaries**", "1,200 characters", "The rules for telling research areas apart, like the EIL boundary rules."],
           ["**Domain definition**", "1,200 characters", "What the field covers."],
-          ["Category name", "80 characters", "Must be unique."],
-          ["Category description", "600 characters", "What evidence belongs here."],
+          ["Research area name", "80 characters", "Must be unique."],
+          ["Research area description", "600 characters", "What evidence belongs here."],
           ["**Additional guidance**", "2,000 characters", "Anything else the classifier should know."],
         ],
       },
       bullets: [
-        "Reorder categories with the arrows; remove one with the bin (not below two).",
+        "Reorder research areas with the arrows; remove one with the bin (not below two).",
         "**Copy from repository** starts from another repository's profile; editing the copy does not change the original.",
-        "Do not add an \"Other\" category: **Other / Unclassified** is always available automatically.",
-        "Two names that differ only in punctuation or non-Latin letters count as the same name, because each category also gets an internal key made of Latin letters and digits.",
+        "Do not add an \"Other\" research area: **Other / Unclassified** is always available automatically.",
+        "Two names that differ only in punctuation or non-Latin letters count as the same name, because each research area also gets an internal key made of Latin letters and digits.",
       ],
     },
     {
       id: "other-unclassified",
       title: "Other / Unclassified",
       body: [
-        "Every classifying profile has an extra category, **Other / Unclassified**, for evidence that is weak, ambiguous or outside the taxonomy (not merely because a paper is interdisciplinary). It never comes with secondary categories. If the classifier fails for any reason, the paper is placed here with a note, and reclassifying or analyzing it again usually fixes it.",
+        "Every classifying profile has an extra research area, **Other / Unclassified**, for evidence that is weak, ambiguous or outside the taxonomy (not merely because a paper is interdisciplinary). It never comes with secondary research areas. If the classifier fails for any reason, the paper is placed here with a note, and reclassifying or analyzing it again usually fixes it.",
       ],
     },
     {
@@ -285,14 +285,14 @@ export const analysisProfilesPage: DocsPageBase = {
       title: "How a paper is classified",
       body: [
         "The classifier reads the title, the abstract, methods, results and conclusion (up to 7,000 characters each) and the paper's topic labels, together with the profile's domain, boundary rules and guidance. It is told to treat the paper's text as material to judge, never as instructions.",
-        "It chooses the category that best represents the paper's primary contribution, judged from its stated aim, method, findings and contribution rather than stray words, and adds at most two secondary categories for genuine secondary contributions. Its reason is stored and shown on the paper.",
+        "It chooses the research area that best represents the paper's primary contribution, judged from its stated aim, method, findings and contribution rather than stray words, and adds at most two secondary research areas for genuine secondary contributions. Its reason is stored and shown on the paper.",
       ],
     },
     {
       id: "changing-a-profile",
       title: "Changing a profile",
       body: [
-        "Saving a new profile applies to new uploads straight away. Papers already analyzed keep their category, now marked **Needs reclassification** in the paper explorer, until you bring them up to date. Papers still waiting in the queue keep the profile they were uploaded under.",
+        "Saving a new profile applies to new uploads straight away. Papers already analyzed keep their research area, now marked **Needs reclassification** in the paper explorer, until you bring them up to date. Papers still waiting in the queue keep the profile they were uploaded under.",
       ],
     },
     {
@@ -305,29 +305,29 @@ export const analysisProfilesPage: DocsPageBase = {
         columns: ["", "Reclassify", "Analyze again"],
         rows: [
           ["What it reads", "The stored text and topics", "The PDF, from the start"],
-          ["What changes", "Categories only", "Everything: text, year, keywords, topics, categories..."],
+          ["What changes", "Research areas only", "Everything: text, year, keywords, topics, research areas..."],
           ["Speed", "Fast; four papers at a time", "Minutes per paper"],
           ["Where", "Settings", "The Library"],
-          ["If something fails", "Nothing is published; the previous categories stay", "The paper keeps its earlier results"],
+          ["If something fails", "Nothing is published; the previous research areas stay", "The paper keeps its earlier results"],
         ],
       },
       bullets: [
         "Reclassifying reads **every** finished paper in the repository again, so all of them end up under the same profile.",
-        "Results are published all at once when every paper has a new category. If any paper fails, nothing changes and **Retry failed papers** tries just those again.",
-        "**Cancel reclassification** stops the job and keeps the previous categories.",
-        "Switching to General Research and reclassifying removes the categories.",
+        "Results are published all at once when every paper has a new research area. If any paper fails, nothing changes and **Retry failed papers** tries just those again.",
+        "**Cancel reclassification** stops the job and keeps the previous research areas.",
+        "Switching to General Research and reclassifying removes the research areas.",
       ],
     },
     {
       id: "where-categories-appear",
-      title: "Where categories appear",
+      title: "Where research areas appear",
       body: [
-        "On each paper's category card in the paper explorer, in the dashboard's Category Analysis tab and category filters, and in the Overview's category charts.",
+        "On each paper's research area card in the paper explorer, in the second half of the dashboard's Area Analysis tab, and in its research area filters.",
       ],
       callout: {
         tone: "info",
         title: "A few views still use the original EIL codes",
-        body: "The concept search's **Track spread** chart and the semantic map's **Color: track** still show the original EL, ELI and LAE slots. With a custom taxonomy, use the category views and the Adaptive tab, which use your own categories.",
+        body: "The concept search's **Track spread** chart and the semantic map's **Color: track** still show the original EL, ELI and LAE slots. With a custom taxonomy, use the research area views and the Adaptive tab, which use your own research areas.",
       },
     },
   ],

@@ -146,7 +146,7 @@ export default function BigPicture() {
               <ChartIcon className="mt-0.5 h-5 w-5 flex-none text-accent-ink" />
               <span>
                 <span className="block text-[14px] font-medium text-ink">Dashboard</span>
-                <span className="block text-[13px] leading-5 text-body">Themes, categories and keywords over time</span>
+                <span className="block text-[13px] leading-5 text-body">Themes, research areas and keywords over time</span>
               </span>
             </Link>
             <Link

@@ -105,6 +105,7 @@ const ChatInsightCard = dynamic(() => import("@/components/chat/ChatInsightCard"
   ),
 });
 import ReportActions from "@/components/chat/ReportActions";
+import UsageMeter from "@/components/chat/UsageMeter";
 import MarkdownActions, { downloadMarkdown } from "@/components/chat/MarkdownActions";
 import { answerMarkdown, conversationMarkdown, isFinishedAnswer, markdownFileName } from "@/lib/answer-export";
 import type { Insight } from "@/lib/insights/types";
@@ -1488,6 +1489,11 @@ export default function ChatClient() {
   // A v2 run's report is a message in the conversation, drawn like an answer
   // with its sources, and each new question keeps the reports before it.
   const researchV2 = useMemo(() => isV2Session(deepSession), [deepSession]);
+  // The thinking stays open while it runs and folds away once the answer is
+  // ready; the reader's own choice wins until another research starts.
+  const [thinkingOpen, setThinkingOpen] = useState<boolean | null>(null);
+  useEffect(() => setThinkingOpen(null), [deepSession?.id]);
+  const thinkingFolded = researchV2 && (thinkingOpen === null ? deepSession?.status === "completed" : !thinkingOpen);
   const [researchStarting, setResearchStarting] = useState(false);
   const researchScopeLabel = useMemo(() => {
     const write = deepSession?.steps?.find((step) => step.tool_name === "dr2_write");
@@ -2677,6 +2683,10 @@ export default function ChatClient() {
         researchSourcePolicy: effectiveResearchSourcePolicy,
       });
       applyPayload(payload);
+      const planned = payload.deepResearchSession;
+      if (planned?.status === "planned" && isV2Session(planned) && payload.thread?.id) {
+        await startPlannedResearch(payload.thread.id, planned.id);
+      }
     } catch (nextError) {
       if (nextError instanceof Error && nextError.name === "AbortError") return;
       setError(
@@ -2687,6 +2697,28 @@ export default function ChatClient() {
     } finally {
       abortControllerRef.current = null;
       setLoading(false);
+    }
+  }
+
+  /** Starts a plan the moment it exists (Deep thinking), with the ids the plan reply carried. */
+  async function startPlannedResearch(threadId: string, sessionId: string) {
+    setResearchStarting(true);
+    try {
+      const payload = await sendRequest({
+        folderId: activeKnowledgeScope.folderId,
+        projectId: activeKnowledgeScope.projectId ?? undefined,
+        knowledgeScope: activeKnowledgeScope,
+        selectedRunIds,
+        threadId,
+        sessionId,
+        chatMode: "deep_research",
+        action: "continue",
+        researchSourcePolicy: effectiveResearchSourcePolicy,
+      });
+      applyPayload(payload);
+      await refreshThreads(threadId);
+    } finally {
+      setResearchStarting(false);
     }
   }
 
@@ -3550,6 +3582,11 @@ export default function ChatClient() {
                           <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[#1d4ed8] text-white">
                             <SparkIcon className="h-4 w-4" />
                           </span>
+                          {researchV2 ? (
+                            <span className="text-xs font-medium uppercase tracking-[0.04em] text-slate-600 dark:text-[#a3a3a3]">
+                              {deepSession.status === "completed" ? "Thought it through" : deepSession.status === "processing" || deepSession.status === "planned" ? "Thinking" : "Deep thinking"}
+                            </span>
+                          ) : null}
                           <p className="text-[1.35rem] font-semibold tracking-normal text-slate-900 dark:text-[#ececec]">
                             {researchTitle}
                           </p>
@@ -3652,7 +3689,20 @@ export default function ChatClient() {
                       </div>
                     </div>
 
-                    <div className="mt-6 space-y-4">
+                    {researchV2 && researchProgress.steps.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setThinkingOpen(thinkingFolded)}
+                        aria-expanded={!thinkingFolded}
+                        className="mt-5 inline-flex items-center gap-2 rounded-full text-sm font-medium text-slate-700 transition-colors hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 dark:text-[#d4d4d4] dark:hover:text-white"
+                      >
+                        <ChevronDownIcon className={`h-4 w-4 transition-transform ${thinkingFolded ? "-rotate-90" : ""}`} />
+                        {thinkingFolded
+                          ? `Show the thinking (${researchProgress.steps.length} step${researchProgress.steps.length === 1 ? "" : "s"})`
+                          : "Hide the thinking"}
+                      </button>
+                    ) : null}
+                    <div className="mt-6 space-y-4" hidden={thinkingFolded}>
                       {researchV2 ? null : <ResearchEvidenceSummary summary={researchEvidenceSummary} />}
 
                       {researchProgress.steps.map((step) => {
@@ -3962,9 +4012,9 @@ export default function ChatClient() {
                   <p className="mb-2 flex items-start gap-2 text-xs leading-5 text-mute">
                     <SparkIcon className="mt-0.5 h-3.5 w-3.5 flex-none" />
                     <span>
-                      Deep research breaks your question into up to 5 parts, reads the full text of every paper in scope,
-                      searches the web only where the papers cannot answer, and checks every claim against its source.
-                      You see the plan before it starts.
+                      Deep thinking splits your question into up to 5 parts, reads the full text of every paper in scope,
+                      searches the web only where the papers cannot answer, and checks every claim against its source. You
+                      see it think as it goes; stop it at any time.
                     </span>
                   </p>
                 ) : null}
@@ -4134,7 +4184,6 @@ export default function ChatClient() {
                               {[
                                 { key: "chart", label: "Chart mode", description: "Build a chart from repository data", icon: ChartIcon, active: chartModeEnabled },
                                 { key: "web", label: "Web search", description: "Add current external sources", icon: SearchIcon, active: webSearchEnabled },
-                                { key: "research", label: "Deep research", description: "Run a longer evidence workflow", icon: SparkIcon, active: deepResearchEnabled },
                               ].map((item) => {
                                 const Icon = item.icon;
                                 return (
@@ -4145,12 +4194,8 @@ export default function ChatClient() {
                                       if (item.key === "chart") {
                                         setChartModeEnabled(!chartModeEnabled);
                                         setDeepResearchEnabled(false);
-                                      } else if (item.key === "web") {
-                                        setWebSearchEnabled(!webSearchEnabled);
                                       } else {
-                                        const nextEnabled = !deepResearchEnabled;
-                                        setDeepResearchEnabled(nextEnabled);
-                                        setChartModeEnabled(false);
+                                        setWebSearchEnabled(!webSearchEnabled);
                                       }
                                       setMenuOpen(false);
                                     }}
@@ -4206,19 +4251,54 @@ export default function ChatClient() {
                       />
                     ) : null}
 
-                    {deepResearchEnabled ? (
-                      <span className="group inline-flex h-9 items-center gap-2 rounded-full border border-sky-200 bg-sky-100 px-3 text-xs font-medium text-sky-800 dark:border-[#3a3a3a] dark:bg-[#171717] dark:text-[#f3f3f3]">
-                        <SparkIcon className="h-3.5 w-3.5" />
-                        Deep research
-                        <button
-                          type="button"
-                          onClick={() => setDeepResearchEnabled(false)}
-                          className="inline-flex h-5 w-5 items-center justify-center rounded-full text-sky-800 opacity-0 transition-opacity hover:bg-sky-200 dark:text-[#f3f3f3] dark:hover:bg-[#0a0a0a] group-hover:opacity-100 focus-visible:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
-                          aria-label="Disable deep research"
-                        >
-                          <CloseIcon className="h-3 w-3" />
-                        </button>
-                      </span>
+                    <UsageMeter requestHeaders={requestHeaders} refreshKey={`${messages.length}:${loading}`} />
+
+                    {/* How hard to think (2026-10-09 review): Standard is the
+                        usual answer; Deep runs the deep research engine, which
+                        splits the question, reads every paper and checks every
+                        claim, and shows that work as it thinks. */}
+                    {!chartModeEnabled ? (
+                      <div
+                        role="radiogroup"
+                        aria-label="Thinking effort"
+                        className="inline-flex h-9 items-center rounded-full border border-slate-200 p-0.5 dark:border-[#2a2a2a]"
+                        onKeyDown={(event) => {
+                          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                          event.preventDefault();
+                          const next = !deepResearchEnabled;
+                          setDeepResearchEnabled(next);
+                          if (next) setChartModeEnabled(false);
+                          const group = event.currentTarget;
+                          window.requestAnimationFrame(() => group.querySelector<HTMLButtonElement>('[aria-checked="true"]')?.focus());
+                        }}
+                      >
+                        {[
+                          { deep: false, label: "Standard", hint: "An answer in seconds, from the papers that bear on the question." },
+                          { deep: true, label: "Deep", hint: "Thinks it through: up to 5 parts, every paper read, every claim checked. About a minute." },
+                        ].map((option) => {
+                          const on = deepResearchEnabled === option.deep;
+                          return (
+                            <button
+                              key={option.label}
+                              type="button"
+                              role="radio"
+                              aria-checked={on}
+                              tabIndex={on ? 0 : -1}
+                              title={option.hint}
+                              onClick={() => {
+                                setDeepResearchEnabled(option.deep);
+                                if (option.deep) setChartModeEnabled(false);
+                              }}
+                              className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/70 ${
+                                on ? "bg-slate-900 text-white dark:bg-white dark:text-[#111111]" : "text-slate-600 hover:text-slate-900 dark:text-[#b4b4b4] dark:hover:text-white"
+                              }`}
+                            >
+                              {option.deep ? <SparkIcon className="h-3.5 w-3.5" /> : null}
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     ) : null}
 
                     {chartModeEnabled && !deepResearchEnabled ? (
