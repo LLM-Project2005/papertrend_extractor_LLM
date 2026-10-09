@@ -116,7 +116,7 @@ export default function UsageMeter({ requestHeaders, refreshKey }: { requestHead
       >
         <Ring share={usage.exempt ? 0 : share} />
         <span className="tabular-nums">{usage.exempt ? "Usage" : `${percent}%`}</span>
-        <span className="sr-only">{label}. Show today's AI use.</span>
+        <span className="sr-only">{label}. Show today’s AI use.</span>
       </button>
       {open ? (
         <div
