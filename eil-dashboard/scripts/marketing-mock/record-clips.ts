@@ -141,6 +141,14 @@ const SCENES: Scene[] = [
     name: "dashboard-trends",
     route: "/workspace/dashboard?tab=area_analysis",
     settleMs: 7000,
+    // The other tabs load their code on first open; open each once before
+    // recording so the clip shows them, not their loading notes.
+    setup: async (page) => {
+      for (const tab of ["Semantic Map", "Keyword Explorer", "Area Analysis"]) {
+        await page.locator('nav[aria-label="Tabs"] button', { hasText: tab }).click();
+        await wait(page, 4000);
+      }
+    },
     play: async (page) => {
       // The pointer starts and ends over the summary text, off the chart, so
       // no tooltip is open where the loop joins.
@@ -247,8 +255,11 @@ const SCENES: Scene[] = [
     settleMs: 7000,
     // Research areas are the second half of Area Analysis.
     prepare: async (page) => {
-      await page.locator("h2", { hasText: "Research areas" }).first().scrollIntoViewIfNeeded();
-      await page.mouse.wheel(0, -24);
+      // Put the heading at the top, just under the workspace header.
+      await page.locator("h2", { hasText: "Research areas" }).first().evaluate((heading) => {
+        (heading as HTMLElement).style.scrollMarginTop = "88px";
+        heading.scrollIntoView({ block: "start" });
+      });
       await wait(page, 1500);
     },
   },
